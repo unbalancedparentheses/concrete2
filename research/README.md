@@ -6,6 +6,29 @@ This directory contains design notes, open questions, architectural explorations
 
 These files are exploratory unless they explicitly say otherwise. Once a design becomes a stable project rule or implementation contract, it should move into `docs/`.
 
+## Non-Normative — And Therefore Ungated (convention, decided 2026-07-31)
+
+`research/` is **outside `check_docs_drift.sh`** on purpose, and this is a decision
+rather than an omission. These are *dated investigation records*: their value is that
+they state what was believed, measured, or feared at a particular time. A drift gate
+would force one of two bad outcomes — rewriting the record whenever the code moves, or
+freezing the code to protect the record.
+
+The consequences, which is what makes this safe:
+
+- **Nothing here is a claim about the current system.** A present-tense sentence in
+  `research/` describes its own moment. If you need to know what is true now, read
+  `docs/` or run the report.
+- **A note that becomes normative moves to `docs/` and enters the gate**, rather than
+  being promoted in place. `docs/PROVER_NEUTRAL_OBLIGATIONS.md` is the worked example:
+  its predecessors are still here, and the normative version is gated.
+- **Date and stamp findings.** A measurement recorded with its date and tool versions
+  stays useful after it stops being current; one written in the timeless present
+  becomes a lie the moment the code moves.
+
+`docs/NOTES/` is the opposite case and IS gated (by glob), because notes there are cited
+from normative documents and make present-tense claims about modules and report kinds.
+
 ## How To Use This Directory
 
 - use `ROADMAP.md` for active project sequencing

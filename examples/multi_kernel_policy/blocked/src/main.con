@@ -1,0 +1,10 @@
+// `a * b` with only 0 <= a, 0 <= b cannot be shown to fit i32 — no kernel closes
+// it, so it never reaches two, and `[policy] require-two-kernels = true` rejects
+// the build (E0616). The policy is not a rubber stamp.
+mod blocked {
+    #[overflow_checked]
+    #[requires(0 <= a && 0 <= b)]
+    fn mul_unbounded(a: i32, b: i32) -> i32 { return a * b; }
+
+    pub fn main() -> i32 { return mul_unbounded(2, 3); }
+}

@@ -28,6 +28,272 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H24. Obligation generation keeps its own weaker copy of the trap rules — CLOSED 2026-08-03 (R-0464)
+
+`Concrete.Semantics.IntArith` is the single-source trap semantics: it makes `trap` a
+first-class result and defines checked division as trapping on *divide-by-zero, signed
+`MIN / -1`, and shift out of range*. The interpreter, `EmitSSA`, `SSAVerify`,
+`SSACleanup` and `TypeJudgment` all consume it. Obligation generation imports it for
+range constants and then states its **own** trap conditions, which are weaker.
+
+Two live consequences, both reproduced in `examples/trap_semantics_gap/`:
+
+| | Obligation | Runtime |
+|---|---|---|
+| `a / b` at `(i32::MIN, -1)` | `div_nonzero` → **`proved_by_kernel_decision (omega)`** under `b ≠ 0` | **aborts, exit 134** |
+| `a << b` at `(1, 40)` | **none generated** — `--report vcs` is empty for it | **aborts, exit 134** |
+
+These are the two failure modes [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) names under
+"what faithful means", and both are live: the first is **insufficiency** (`divObligations`
+emits only `divisor ≠ 0`), the second is **inapplicability** (there is no shift family at
+all, so nothing looks for the fault).
+
+Note what this is *not*. It is not H23 — every hypothesis here is sound, and the div
+obligation is correctly proved; it simply does not say enough. And it is **not fixed by
+moving obligation generation to SSA**: relocating a rule does not merge it with the
+definition it should have been derived from. The fix is one trap-semantics definition
+consumed by SSA construction, interpretation, optimization, obligation generation *and*
+the backends — otherwise each new consumer is another independent copy of the rules.
+
+Gate-coverage note worth recording: `check_vc_bridge_register.sh` asserts every family
+*generator* has a register row. It cannot detect a **missing family**, because there is no
+generator to notice. The shift gap was invisible to it for exactly that reason.
+
+**How it was closed (R-0464).** The fix is the one this entry demanded: not a more careful
+copy of the rules, but a single place that names them.
+
+1. `IntArith.TrapCondition` enumerates what a checked op owes — `divisorNonZero`,
+   `quotientInRange`, `resultInRange`, `shiftAmountInRange` — with `trapConditions : BinOp →
+   List TrapCondition` reading them off `evalIntBinOp`'s trap branches. Held to the evaluator
+   by 18 kernel-checked examples at the exact inputs the gap was reproduced at, including the
+   type-relativity that a hand-written rule gets wrong: `MIN / -1` fires at `i32` and not at
+   `.int` for the same literal operands.
+2. `divObligations` now emits `quotientInRange` as a SEPARATE VC (`…#div0q`,
+   `div_quotient_in_range`) alongside `divisor ≠ 0`. Separate because a division can
+   discharge one and fail the other, which is precisely how the weaker condition masked the
+   stronger. The dividend is threaded through the collector to make it expressible at all.
+3. A shift family exists (`shift_amount_in_range`), taking its width from the **shifted
+   operand's** type, matching `IntArith.shiftAmountInRange` — the amount's type is the wrong
+   one and would pass while stating nothing.
+4. `familyForTrapCondition` (in `ObligationCore.lean`, the only module that can see both
+   `IntArith` and `kindVocabulary`) maps each condition to the kind that discharges it, with
+   compile-time proofs of **totality** and **injectivity**. Adding a condition to the
+   semantics without a family is a missing-cases build error — verified by mutation, not
+   assumed. Injectivity is the H24 defect stated as a property: two conditions must not be
+   answered by one obligation.
+
+Why the gate suite could not have found this: `check_vc_bridge_register.sh` asserts every
+family *generator* has a register row, so a family that does not exist has no generator to
+notice. The totality lock closes that by walking from the SEMANTICS to the families, so
+**absence** is what it detects.
+
+**What generating the missing obligations immediately surfaced**, none of which was known:
+
+- `examples/hmac_sha256`'s `rotr` carried `#[requires(0 <= n && n < 32)]` — **too weak**. At
+  `n == 0` the body computes `x << 32`, out of range for `u32`, which traps. A hand-written
+  contract admitting an input its body cannot handle, found by generating the obligation
+  rather than by reading the contract. Tightened to `0 < n`.
+- `std`'s `sha256.rotr` had the same shape with no precondition at all. Not reachable — every
+  caller passes a constant in 2..25 — but the contract was real and unstated. Verified the
+  trap directly at `n == 0` (exit 134) before adding `#[requires]`.
+- Two obligations remain honestly unproven and are NOT bugs papered over:
+  `sha256.hash_raw#shift0` (`shift = (7 - li) * 8` needs `li`'s loop bound) and
+  `rand.random_range#div0q` (`r / range` at `range == -1` needs `libc_rand`'s range, which
+  its signature does not state). Both are now visible obligations where before there was
+  nothing; discharging them is follow-on work.
+
+The fixture still traps, and should: the inputs are genuinely out of range. R-0464 made the
+obligations state that in advance. `check_known_wrong_corpus.sh` asserts the fix.
+
+### H23. An unproven hypothesis launders into a proved obligation — CLOSED 2026-08-03 (R-0461)
+
+**Was the most severe hole in this file: a guaranteed out-of-bounds access reported
+`proved_by_multi_kernel (3: lean, rocq, isabelle)`.** Closed by R-0461. The fixture stays
+in `examples/unsound_hypothesis/` and `check_known_wrong_corpus.sh` now asserts the *cap*
+rather than the hole, so a regression is a red gate. The description below is retained
+because the three lessons under it outlived the bug.
+
+Runtime-safety obligations inside a loop may assume the loop's `#[invariant]`
+(`loopHypsAt`, `Concrete/Report/ReportObligations.lean:80`). Whether that invariant is
+*established* (O1) and *preserved* (O2) is computed as a separate VC — and the two
+statuses are never composed. An obligation is reported at the strength of its own proof,
+ignoring the strength of the facts it assumed.
+
+Reproduce with `examples/unsound_hypothesis/src/main.con` — a 4-element array indexed by
+a counter running to 99:
+
+```
+[lam.bad#bounds0]  array_bounds             ->  proved_by_kernel_decision (omega)
+                     --all-provers          ->  proved_by_multi_kernel (3: lean, rocq, isabelle)
+                     hypotheses: ((0 ≤ i ∧ i ≤ 3) ∧ i < 100)
+[lam.bad@6#O2]     invariant_preservation   ->  unproven
+[lam.bad@6#inv_vac0] vacuity                ->  unproven
+```
+
+Both lines appear in the *same* `--report obligation-ledger` output, adjacent, unrelated.
+The compiled binary aborts (SIGABRT, exit 134) on the access reported proved; the runtime
+bounds check is what actually prevents the memory error. `[policy] require-two-kernels =
+true` **built this program with exit 0** — the strongest release stance in the system
+green-lit it. (No longer: R-0461 blocks it with `E0617` under `forbid-assume`, and R-0465's
+5th part blocks it with `E0616` under `require-two-kernels` too, because the gate now reads
+badges off the capped ledger instead of recounting kernels from a second prover run. Both
+stances reject it; `check_known_wrong_corpus.sh` asserts both.)
+
+Three things this demonstrates, beyond the specific bug:
+
+1. **Kernel multiplicity offers no protection here and actively amplifies the error.**
+   Three kernels across two logics (CIC and HOL) agree, because they are all handed the
+   same unsound hypothesis. This is the concrete instance of H19's "hypothesis soundness"
+   clause, and it needed no exotic program to trigger.
+2. **The missing rule is compositional, not local.** Every individual VC is computed
+   correctly. What is absent is `status(O) ≤ min(status(O), min over h ∈ hyps(O)
+   status(h))` — the same discipline already applied to proof *dependencies* (staleDeps)
+   and to the `trusted` boundary, but never to hypotheses.
+3. **Hypotheses have no provenance.** `hyps : List Expr` is a bare list of propositions,
+   so the system cannot even ask what justifies one. Guards are sound by construction,
+   `#[requires]` is discharged at every call site, and invariants owe O1 ∧ O2 — three very
+   different justification statuses, all erased into one list.
+
+**How it was closed (R-0461).** Three parts, because two of them alone would each have
+left a hole with better manners:
+
+1. *Provenance.* `loopInvariantDebt` (`ReportObligations.lean`) matches an obligation's
+   hypotheses against the enclosing loop's `#[invariant]` list and records the O1/O2 VC ids
+   it therefore owes. Carried as `hypDebt` on the family obligations and on `VC`.
+2. *Composition.* `capOnHypothesisDebt` (`Report.lean`) runs **after** `dischargeVCs` —
+   necessarily, since whether O2 is proved is only known once every status is final — and
+   demotes any `proved*` obligation with outstanding debt to `assumed` via Register C's
+   `Evidence.present`. C3 is what guarantees the demoted value is never a `proved_*` string;
+   this pass is what made C3 fire on live verdicts instead of sitting as proved substrate.
+   `--report vcs` names the outstanding VCs (`rests on (unproved): …`), so the reader gets an
+   action, not just a verdict.
+3. *Enforcement.* Display is not a gate. The first two parts made the fixture report
+   `assumed` everywhere while `concrete check` still exited 0, because `enforceNoAssume`
+   keys on the `assume(...)` **construct** and a capped obligation has none. `E0617`
+   (`enforceNoCappedHypotheses`, under `[policy] forbid-assume`) closes that: a release now
+   fails on an obligation resting on an unproved invariant. Gated under `forbid-assume`
+   because an obligation silently leaning on an unestablished invariant *is* the trust
+   escape hatch, taken implicitly rather than written down.
+
+The **multi-kernel report needed fixing separately** from the ledger, and this is the
+generalisable lesson: it re-derived its class from `omegaProved` instead of consulting the
+discharged ledger, so capping the ledger left the louder surface still badging the
+obligation `proved_by_multi_kernel`. Two surfaces, two derivations, and the wrong one was
+the one users read. It now reads `cappedKeys` off the same ledger.
+
+What R-0461 did **not** change: the compiled binary still traps (SIGABRT) on the access.
+That is correct — the index really is out of range and the runtime bounds check is doing
+its job. R-0461 fixed the *claim* and the *gate*, not the program.
+
+### H19. The Core→obligation bridge is unproven — OPEN
+
+Every runtime-safety claim, and every `proved_by_two_kernels` badge, rests on the
+lowering that turns a function body into a proposition (`overflowObligations`,
+`boundsObligations`, `divObligations`, `callSiteObligations`). That lowering has no
+soundness proof. Adding kernels cannot detect a fault in it: all kernels check the
+SAME lowered proposition, so a mis-lowering produces unanimous agreement on the wrong
+formula.
+
+Consequence, stated concretely: if a rule emits an obligation that is *weaker* than
+the runtime property, a program can be reported `proved_by_multi_kernel` and still
+fault. If it attaches a hypothesis not actually established at that program point,
+the obligation is trivially dischargeable and the proof is vacuous.
+
+**The second clause is no longer hypothetical — see H23**, which reproduces exactly that
+sentence with a ten-line program: an unproven loop invariant is attached as a hypothesis,
+the bounds obligation reports `proved_by_multi_kernel`, and the binary aborts. H19 remains
+the broader hole (the *rules* are unproven); H23 is the specific, fixable instance of its
+hypothesis-soundness clause, and is owned separately by R-0461 because the fix is a
+composition rule rather than a soundness proof.
+
+Owned by **R-0460** (discharge the obligation-sufficiency register, rule by rule);
+R-0449 is a different axis — realizing the *theories* in each target prover — and cannot
+close this. Enumerated rule-by-rule in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md) with
+the theorem that will discharge each: **0 of 5 rows fully discharged; 4 of 5 half**
+(2026-08-04 — semantics half proved and tight for overflow, bounds, div/mod, shift; the
+lowering half of every row is this hole). Partially probed today
+by `--report bridge-check` (fuzzes concrete inputs against a *proved* obligation —
+does NOT test sufficiency — see H24; it checks the obligation against an evaluator of the
+*same* obligation, so it tests lowering fidelity) and `--report core-semantics-diff` (cross-checks
+the arithmetic model). Neither covers hypothesis soundness or applicability, which
+need the proofs. `independent_of.bridge = "no"` reports this per obligation rather
+than leaving it to prose.
+
+### H20. `bv_decide`'s certificate check runs as native code — OPEN
+
+Bit-blasting proofs extend trust to `Lean.ofReduceBool` / `Lean.trustCompiler`,
+because the LRAT certificate checker executes as compiled Lean rather than by kernel
+reduction. Six named theorems in the SHA-256 refinement stack rest on this; the list
+is in [AXIOMS.md](AXIOMS.md) and gate-enforced against
+`scripts/tests/axiom_native_trust.txt`.
+
+Mitigated, not closed: `make test-bv-certificates` captures the CNF Lean bit-blasted,
+re-solves it independently, and verifies a DRAT certificate with drat-trim — a
+separately implemented checker. A single checker bug can therefore no longer carry an
+unsound bit-blasting claim unnoticed. drat-trim is itself unverified C, so this is two
+independent checkers agreeing, not one proved correct.
+
+Two closure paths: a verified checker (`cake_lpr`; not packaged in nixpkgs, and
+building it means trusting a prebuilt CakeML binary), or — fully within our control —
+decomposing those goals until kernel-reduction LRAT checking is practical, which
+AXIOMS.md records as the reason the extension exists.
+
+### H21. Nonlinear SMT results cannot be certificate-replayed — OPEN (upstream)
+
+`solver_checked` (kernel corroboration) is the ceiling for nonlinear obligations.
+`solver_replayed` requires reconstructing the solver's proof in a kernel, and
+reconstruction is **linear-only**: z3 4.4.0pre, cvc5 and veriT 2021.06.2 each
+reconstruct a linear goal and each fail on `0 ≤ a ⟹ 0 ≤ a * a` at a 120s timeout.
+Since the SMT path exists precisely for the nonlinear VCs the kernel tiers cannot
+close, `refused` in the replay column is expected, not a defect.
+
+Not fixable in this repo: it needs upstream reconstruction support or a certified
+nonlinear checker. A gate assertion locks the measured limitation, so if Isabelle
+gains nonlinear reconstruction the gate fails loudly and the class becomes reachable.
+Related roadmap work: R-0451 (port a refutation-certificate checker into code the
+project controls).
+
+### H22. `check_checked_arith.sh` was decorative — CLOSED 2026-07-31
+
+The gate-mutation harness reported `checked-arith-trap (SURVIVED — gate stayed green)`:
+replacing the checked-arithmetic call in `Concrete/Backend/EmitSSA.lean` with a plain
+`add` did **not** turn `check_checked_arith.sh` red. A gate that cannot detect the
+removal of the property it guards provides no protection.
+
+Cause: every trap probe deliberately returns a nonzero *wrap sentinel* (9) on the
+wrapping path, but the assertions tested `exit != 0`, which the sentinel satisfies. With
+the trap removed, `255 + 1` wrapped, `main` returned 9, and the gate printed "aborts
+(exit 9)" — a wrap was indistinguishable from an abort. The other four probes passed for
+the right reason (SIGABRT ⇒ 134), which is why it stayed hidden.
+
+Fixed in `1497c689`: all five trap assertions now require death by *signal* (`>= 128`) via
+an `expect_trap` helper that names the wrap case explicitly.
+
+**Closure confirmed by the harness that found it, 2026-07-31.**
+`FAMILY=3 check_gate_mutation_coverage.sh` — the same mutation that produced the original
+SURVIVED — now reports:
+
+```
+--- family 3/10: checked-arith-trap (Concrete/Backend/EmitSSA.lean -> check_checked_arith.sh) ---
+  ok   checked-arith-trap KILLED (killed by check_checked_arith.sh)
+```
+
+The confirmation was run by manual dispatch, because waiting was not an option: the
+scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'` and this
+repository is `unbalancedparentheses/concrete2`, so the schedule can never fire here. An
+earlier version of this entry said "pending nightly confirmation", which would have left
+it open forever while reading as merely pending. R-0468 owns making that path reachable.
+
+Reproduced originally on a clean worktree of `main`, so it was independent of the
+multi-kernel branch. The reason it could persist: `check_gate_mutation_coverage.sh` runs
+only in that repo-pinned job and had never executed here.
+
+**Still true after closure, and the reason R-0468 matters:** only families 1 and 3 of 10
+have been run in this repository. `corecheck-unsafe-op` also KILLED; the other eight
+families are unverified here, and the gate that would verify them is the gate whose
+absence is self-concealing. Do not read H22's closure as evidence that the other gates are
+load-bearing.
+
 ### Policy (not a hole): HashMap/HashSet traversal is UNORDERED — permanent
 
 `for_each`/`fold` walk raw slot order: reproducible within a build, NOT a
@@ -642,3 +908,53 @@ whole picture is in one place.
 - The `check_docs_drift` gate (ROADMAP Phase 4 #44) should treat this file as
   claim-bearing: an OPEN entry whose gate no longer reproduces the hole, or a
   CLOSED entry whose regression fixture is missing, is drift.
+
+---
+
+## Why these holes were found late, and the one mechanism that catches the class
+
+Every hole in this file was found by *behaviour* — a fixture that trapped, a number that looked
+implausible, a mutation that stayed green. None was found by reading code, and several sat under
+a **passing gate suite** for days.
+
+The unifying cause is not carelessness. It is that a check can pass because it did not look:
+
+| What passed | What was broken |
+|---|---|
+| gate mutation coverage 10/10 | two live holes outside every family's scope (H23, H24) |
+| `make test` 1653/49/2, stable | 49 tests could not run at all; `lli` could not JIT our IR |
+| `check_evidence_algebra` green | `loweringAgreed := true` asserted a check nobody performed |
+| `check_artifact_fuzz` 7/0 | its coverage metric was wrong by 70× |
+| a "restrict to this file" filter | always true — `buildFnLocMap` stamps one file on everything |
+| `trapConditionHolds .resultInRange` | the constant `true`, making a sufficiency claim false |
+
+Each is the same shape: **the check verified that something was DONE, not that it had EFFECT.**
+A filter that filters nothing, a predicate that cannot be false, a metric nobody cross-checked,
+a test that cannot execute, a gate outside the defect's scope.
+
+The antidote that has actually worked here is a **negative control**: for every check, a case
+where it MUST fail, asserted to fail. That is what `check_gate_mutation_coverage.sh` does, and
+on 2026-08-04 it covered **11 of 180 gates** — none of them the R-0460..R-0465 gates doing the
+newest and most load-bearing work, which is precisely where the week's failures landed.
+
+Ten families were added that day, in two passes: six for the new evidence gates, then four from
+a sweep of the **soundness** gates (a gate qualifies if breaking the rule it guards would let
+the compiler assert something FALSE — a missing trap, a false `proved`, a laundered axiom).
+Current coverage: **18 of the 55 soundness gates; 37 have none** (run `check_gate_mutation_coverage.sh --coverage`; do not grep the file for gate names — that counted prose and inflated the figure to 20) (recomputed — a first
+version of this line said 17/38, obtained by adding that pass's four families to an earlier
+count, which double-counted six covered gates that are not soundness gates). Those 38 are not known to be
+decorative — they are *unmeasured*, which is a different claim from safe.
+
+One of the four needed replacing, and the reason is the lesson in miniature. The first
+`checked-div-overflow` mutation removed the signed `MIN / -1` trap from `evalIntBinOp` — and
+did not compile, because `div_obligation_necessary` rejects it. Stronger protection than a
+gate, and a *worse* negative control: the family reported KILLED while proving the THEOREM was
+load-bearing, not the gate it named. A control that validates something other than its stated
+subject is the same false green this harness exists to prevent, arriving inside the harness.
+Replaced with a mutation to `foldIntBinOp`, which no theorem covers, and re-verified: killed by
+`check_int_arith_semantics.sh` itself.
+
+The rule worth keeping: **a new gate is not finished until a mutation kills it, and the mutation
+is registered rather than run once by hand.** Verified-by-hand means verified once, by whoever
+remembered. Every hand-verified mutation in this session was correct and none of them would
+have run again.

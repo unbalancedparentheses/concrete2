@@ -36,6 +36,18 @@ that `concrete audit`, CI, and release bundles can inspect.
 10. `assume` is a controlled trapdoor: it taints its obligation to `assumed`
     (never `proved`), flows into the same audit ledger as `assumptions.toml`,
     and is gate-forbiddable in release.
+11. **Every hypothesis taints its conclusion by the strength of its own
+    justification.** Rule 10 states this for `assume`; it holds for *all* four
+    hypothesis sources, and generalizing it is the whole content of R-0461. A
+    control-flow guard is sound by construction and taints nothing. A
+    `#[requires]` is discharged at each call site, so it taints only as much as
+    that discharge. A loop `#[invariant]` is justified by O1 ∧ O2 and taints
+    exactly as much as those. Today the rule is enforced for `assume` and **not**
+    for invariants, which is H23 in [KNOWN_HOLES.md](KNOWN_HOLES.md): an
+    obligation assuming an unproven invariant is reported `proved`, and with
+    external kernels `proved_by_multi_kernel`. Reproduced in
+    `examples/unsound_hypothesis/`; the compiled program aborts on the access
+    reported safe.
 
 **Build order — the proof teaches the syntax.** This document is a *design
 proposal*; the contract syntax and VC shapes are not frozen. They must be
@@ -737,6 +749,113 @@ invokes a solver. `counterexample` / `unknown` / `timeout` / `solver_error` are
 non-proofs regardless of policy and are never counted as evidence. When Lean
 replay (item 12) lands, a replayed fragment graduates from `solver_trusted` to a
 kernel-checked class and is no longer subject to this gate.
+
+### Shipped: the multi-kernel release-policy gate
+
+Independent-kernel agreement is also a release stance, not just a report. The
+compiler's own kernel is Lean; requiring a *second, independently implemented*
+kernel to close the same obligation is what turns "our prover says so" into
+evidence that does not rest on one implementation:
+
+```toml
+[policy]
+require-two-kernels = true   # every obligation needs >= 2 independent kernels (E0616)
+```
+
+`Policy.enforceRequireTwoKernels` receives the obligation ids that did not reach
+two kernels (`Main.computeBelowTwoKernels`, run only when the policy asks for it,
+since `coqc`/`isabelle` are slow) and rejects the build with E0616. Lean's `omega`
+plus *either* Rocq's `lia` or Isabelle's `presburger` satisfies it.
+
+It **fails closed**. If no external kernel can be run at all, the requirement is
+unverified, which is not the same as satisfied — the build is rejected, and the
+diagnostic points at the missing toolchain (`nix develop .#provers`) rather than
+blaming the proof. `examples/multi_kernel_policy/` has both halves: `allow/`
+builds, `blocked/` contains an obligation no kernel can close and is rejected.
+
+### Shipped: the Core-semantics differential test (`--report core-semantics-diff`)
+
+Multi-kernel evidence has a structural blind spot, which the report states as a
+non-attestation: every kernel checks a lowering produced by **one** Core→VC bridge.
+If that bridge mis-lowers `a - b` as `b - a`, all three kernels prove the wrong
+obligation and the badge still reads `proved_by_multi_kernel`. Checker diversity
+cannot detect a bridge bug, because the bridge is upstream of every checker.
+
+`--report core-semantics-diff` adds a **second, independent path from Core to a value**
+and differential-tests the two:
+
+1. Concrete's Lean interpreter evaluates `f(args)` — the oracle already trusted as
+   the differential-testing reference for codegen.
+2. `Concrete/Report/CoreExtract.lean` extracts the same function to Rocq (Gallina) as
+   a *computation*, and Rocq's kernel evaluates it by checking
+   `Goal f args = <interpreter result>. Proof. reflexivity. Qed.`
+
+Agreement means two independently-implemented evaluators computed the same value.
+A mismatch is a genuine Core-level defect. This is a differential test over sampled
+inputs, not a proof of equivalence — what it buys is that the bridge is no longer a
+single unchecked implementation.
+
+Two semantic details the extraction gets right on purpose, and which the test
+enforces:
+
+- **Division truncates toward zero.** Concrete follows `Int.tdiv`/`Int.tmod` (LLVM
+  `sdiv`/`srem`). Coq's `Z.div`/`Z.modulo` are *flooring* and differ on negatives, so
+  the extraction emits `Z.quot`/`Z.rem`. Substituting `Z.div` makes `div_safe`
+  disagree at `(-7)/2` — the probe set includes negatives for exactly this reason,
+  and a gate assertion locks the distinction.
+- **Fixed-width arithmetic traps.** The interpreter traps on overflow as the compiled
+  binary does, while Gallina `Z` is unbounded. Rather than model traps, inputs on
+  which the interpreter fails are *skipped*, never counted as agreement.
+
+Coverage is stated rather than implied: functions outside the extractable fragment
+are **named** in the report, so "N functions agree" cannot be misread as "everything
+agrees". The fragment is integer/boolean locals, `let`/assignment, `if`/`else`,
+`return`, early-return guards, and direct calls; it excludes loops (Gallina needs a
+termination argument), structs, enums, arrays, matches, borrows, casts, generics,
+floats and strings. Extraction is also **closed under calling** — a function whose
+callee is outside the fragment is excluded, since otherwise the emitted Gallina
+references an unbound name.
+
+Across the example corpus this covers **50 functions in 20 files**, with no
+disagreements. `examples/crypto_verify` is covered *completely* — every function
+including `verify_message` and `main`. `examples/elf_header` covers its whole
+**provable core** (the five pure, zero-capability functions the file itself
+identifies as such); what remains outside is exactly its `trusted` I/O boundary
+(`fopen`/`fread`, raw pointer dereference), which has no pure semantics to extract.
+
+The early-return guard (`if !ok { return 0; } ...`) is what unlocked most of that,
+and it is only sound because `blockTerminates` checks the `then` branch really leaves
+the function. `if c { x = 1; } rest` is deliberately **refused**: both paths continue
+into `rest` with different state, which a `let`-chain cannot express, and extracting
+it anyway would silently check a different function than the one written. A gate
+asserts both halves — the real guard is extracted, the fall-through is refused.
+
+### Why loops are not next
+
+Adding fuel-parameterised loop extraction would gain **zero** coverage on the current
+corpus: every loop in `examples/` also indexes arrays or pushes to strings
+(`data.get_unchecked`, `line.push_char`), so those functions stay outside the fragment
+on the array/string restriction regardless of loop support. Arrays, not loops, are the
+binding constraint.
+
+Loops would also need care to avoid *false* disagreements: the interpreter's loop fuel
+is 10,000,000, which cannot be encoded as a Coq unary `nat`, so a smaller Gallina fuel
+would report a semantic mismatch where there is only a bound mismatch. Any loop
+support therefore has to distinguish "fuel exhausted, not compared" from "the two
+evaluators disagree" before it can be trusted.
+
+Two caveats on what the badge means, both checkable:
+
+- Kernels are matched on the obligation **key**, and each prover driver re-spells
+  the obligation in its own syntax. `--report lowering-agreement` verifies those
+  spellings actually denote the same proposition, by pinning the variables of the
+  driver's own rendering to concrete assignments, making the prover decide the
+  result, and comparing against an independent concrete evaluator. Without it,
+  two kernels could each close a *different* proposition under one badge.
+- A kernel that exits nonzero has either **refused** (its decision procedure said
+  no) or **errored** (our emitted script was malformed, a library was missing, the
+  tool broke). These are reported as distinct cells, because calling the second
+  one "refused" invents a kernel disagreement out of our own bug.
 
 ## Threat Model
 

@@ -1,0 +1,13 @@
+[package]
+name = "multi_kernel_policy_allow"
+version = "0.1.0"
+
+# Release stance: every runtime-safety obligation must be closed by at least TWO
+# INDEPENDENT kernels (Lean's omega plus Rocq's lia and/or Isabelle's presburger),
+# not just by the compiler's own in-toolchain kernel.
+#
+# Fails CLOSED: if no external kernel can be run at all, the requirement is
+# unverified and the build is rejected (E0616) rather than silently passing. Build
+# this under `nix develop .#provers` so coqc/isabelle are on PATH.
+[policy]
+require-two-kernels = true

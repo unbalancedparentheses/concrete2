@@ -36,6 +36,20 @@ jobs:
       - name: Gate-hygiene gate (every gate is pipe-safe and fails loudly)
         run: bash scripts/tests/check_gate_hygiene.sh
 
+      - name: VC-bridge register gate (every obligation family is registered)
+        run: bash scripts/tests/check_vc_bridge_register.sh
+
+      # Source-level only (greps modules and gate scripts), so it belongs in this
+      # build-free job. check_known_wrong_corpus.sh does NOT belong here — it needs the
+      # compiled binary and lives in `extra-gates` alongside the other corpus gates.
+      - name: Register C gate (evidence is never stronger than its inputs)
+        run: bash scripts/tests/check_evidence_algebra.sh
+
+      # Source-level too: compares hole status across documents and against the corpus
+      # gate's fixture list. No build needed.
+      - name: Hole-status consistency (no document contradicts KNOWN_HOLES)
+        run: bash scripts/tests/check_hole_status_consistency.sh
+
       - name: Run Python LL(1) checker
         run: python3 scripts/check_ll1.py grammar/concrete.ebnf
 
@@ -935,6 +949,24 @@ jobs:
       - name: Wrong-code corpus
         run: bash ./scripts/tests/test_wrong_code.sh
 
+      # Counterexample fixtures for OPEN holes (H23, H24). Here rather than in the
+      # build-free `grammar` job because it compiles and RUNS the fixtures to assert they
+      # still trap. A red result usually means a hole got fixed — see the script header.
+      - name: Known-wrong corpus (open holes still reproduce)
+        run: bash ./scripts/tests/check_known_wrong_corpus.sh
+
+      # R-0462: run the compiled BINARY against the safety claims. Here, not in the
+      # build-free job, because it compiles and executes generated drivers — that is the
+      # point: it crosses surface -> Core -> SSA -> LLVM, which no register row covers.
+      - name: Artifact fuzz (the binary vs the safety claims)
+        run: bash ./scripts/tests/check_artifact_fuzz.sh
+
+      # R-0455 Register B: transformation soundness. Cheap (grep + the build is the proof),
+      # but it lives here rather than in the build-free job because it asserts theorems exist
+      # in a compiled module.
+      - name: Transformation register (Register B rows)
+        run: bash ./scripts/tests/check_transform_register.sh
+
       - name: Reducer smoke
         run: bash ./scripts/tests/test_reducer_smoke.sh
 
@@ -949,3 +981,84 @@ jobs:
 
       - name: string_char_at differential
         run: bash ./scripts/tests/check_string_char_at.sh
+
+  # Independent-kernel evidence (Rocq + Isabelle). Deliberately NOT on every PR:
+  # Isabelle is a multi-GB closure and cold proof runs cost ~30s/goal, so this job
+  # is opt-in — on demand, on the weekly schedule, or on a PR labelled
+  # `multi-kernel`. Everything it checks is skip-if-absent in the default shell, so
+  # the ordinary jobs stay fast and green without these tools.
+  #
+  # Nix is used because the prover toolchain is pinned in flake.nix (Rocq 9.0.1,
+  # Isabelle2025-2, veriT, cvc5, drat-trim); reproducing that with apt would fork the
+  # definition of "which kernels attested this".
+  multi-kernel:
+    name: Multi-kernel evidence (Rocq + Isabelle)
+    # R-0467: runs on MERGES TO MAIN, not only on dispatch/schedule/label.
+    #
+    # Everything the multi-kernel arc built — the badge classes, the discharge-adapter
+    # firewall, lowering agreement, certificate replay, the release-gate composition,
+    # kernel_disagreement — was verified only when someone remembered to ask for it. A
+    # label-gated job does not protect main; it protects the PRs whose authors already
+    # suspected they needed it. The 78 prover assertions were green all session and would
+    # have stayed green through a merge that broke them.
+    #
+    # `push` here means post-merge on main (see the `on:` block). PRs still need the label,
+    # which keeps a 90-minute Rocq+Isabelle job off every unrelated pull request while
+    # guaranteeing main is never left unverified.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      contains(github.event.pull_request.labels.*.name, 'multi-kernel')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # No /nix/store cache here on purpose: actions/cache cannot round-trip
+      # root-owned store paths reliably, and cache.nixos.org already serves these
+      # closures. Expect a few minutes of substitution on a cold run.
+      - name: Build the compiler in the provers shell
+        run: nix develop .#provers --command lake build
+
+      - name: Report which kernels are actually present
+        run: |
+          nix develop .#provers --command bash -c '
+            echo "coqc:     $(coqc --version 2>/dev/null | head -1)"
+            echo "isabelle: $(isabelle version 2>/dev/null)"
+            echo "z3:       $(z3 --version 2>/dev/null)"
+            echo "cvc5:     $(cvc5 --version 2>/dev/null | head -1)"
+            # NOT $VERIT_SOLVER: that variable is empty in this shell even though
+            # veriT is present and used for certificate replay, so printing it
+            # reports ABSENT for a working prover. Isabelle bundles veriT as a
+            # COMPONENT, readable only from inside its own settings environment.
+            echo "veriT:    $(isabelle getenv -b ISABELLE_VERIT 2>/dev/null || echo ABSENT)"'
+
+      # The full gate: multi-kernel classes, the release gate, lowering agreement,
+      # bridge diversity (Core->Rocq extraction vs the interpreter), certificate
+      # replay, and the flagship (elf_header) carrying every surface at once.
+      - name: Multi-kernel evidence gate
+        run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
+
+      # The composition assertions — a lowering that DISAGREES must not earn the badge and
+      # must not pass the release gate — are the strongest thing this suite checks, and they
+      # were the least often run: MULTI_KERNEL_MUTATE=1 is opt-in because it mutates tracked
+      # source and needs two extra rebuilds. Opt-in plus label-gated meant approximately
+      # never. Scheduled runs can afford it, so that is where it lives.
+      - name: Multi-kernel mutation coverage (scheduled only — mutates source, 2 rebuilds)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          MULTI_KERNEL_MUTATE: "1"
+        run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
+
+      # Corroborates the Tier-1 native-trust step recorded in docs/AXIOMS.md:
+      # bv_decide's LRAT checker runs as compiled Lean, so this re-checks the same
+      # bit-blasting with an independently implemented checker (drat-trim).
+      - name: Independent DRAT check of bv_decide bit-blasting
+        run: nix develop .#provers --command bash ./scripts/tests/check_bv_certificates.sh

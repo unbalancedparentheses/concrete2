@@ -82,7 +82,7 @@ def helpText : String := String.intercalate "\n" [
   ""]
 
 def usage : String :=
-  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
+  "Usage: concrete <file.con> [-o output] [--emit-llvm] [--emit-core] [--emit-ssa] [--emit-trace-json] [--trace-pipeline] [--test] [--test --module <name>] [--interp] [--report caps|unsafe|layout|interface|alloc|mono|authority|proof|eligibility|proof-status|obligations|extraction|subject-facts|lean-stubs|check-proofs|proof-diagnostics|proof-deps|proof-bundle|traceability|diagnostics-json|effects|recursion|stack-depth|fingerprints|consistency|contracts|vcs|obligation-ledger|compiler-ledger|verify|audit|arithmetic|multi-kernel|bridge-check|solver-cert|lowering-agreement|artifact-fuzz|term-ir|core-semantics-diff] [--report multi-kernel [--rocq] [--isabelle] [--all-provers] [--require-two-kernels]] [--query KIND|KIND:FUNCTION|fn:FUNCTION] [--fmt (legacy; use `concrete fmt`)]\n       concrete build [-o output] [--emit-llvm]\n       concrete check\n       concrete fmt <file.con> [--check | --write | --stdin]\n       concrete audit <file.con>\n       concrete prove <file.con> <module.function> [--json] [--out <path>] [--force] [--emit-link] [--emit-lean] [--emit-artifacts] [--out-dir <dir>] [--show-obligation <id>] [--replay] [--nearest-lemmas] [--check] [--workspace <dir>]\n       concrete prove --help=agent | --capabilities | --schema\n       concrete run [-- args...]\n       concrete test [--module <name>]\n       concrete diff <old.json> <new.json> [--json]\n       concrete snapshot <file.con> [-o output.json]\n       concrete debug-bundle <file.con> [-o dir]\n       concrete reduce <file.con> --predicate <pred> [-o output] [--verbose]\n       concrete --version"
 
 /-- Capture compiler identity: version, git commit, lean toolchain. -/
 def compilerIdentity : IO String := do
@@ -678,7 +678,7 @@ def computeVCsDischarged (modules : List Concrete.Module) (locMap : Report.FnLoc
   let vcs := Report.collectVCs modules locMap registry
   let omegaGoals := Report.callPrecondGoals modules ++ Report.assertGoals modules
     ++ Report.vacuityGoals modules ++ Report.loopVCGoals modules
-    ++ Report.boundsGoals modules ++ Report.divGoals modules ++ Report.overflowGoals modules
+    ++ Report.boundsGoals modules ++ Report.divGoals modules ++ Report.divQuotGoals modules ++ Report.shiftGoals modules ++ Report.overflowGoals modules
   let omegaProved ← kernelDischargeLoopVCs omegaGoals
   let obs := Report.callSiteObligations modules
   let cands := ((List.range obs.length).zip obs).filterMap fun (i, o) => o.leanGoal.map (fun g => (i, g))
@@ -686,7 +686,10 @@ def computeVCsDischarged (modules : List Concrete.Module) (locMap : Report.FnLoc
   let bvCallKeys := bvIdx.filterMap fun i => obs[i]?.map (·.key)
   let ovfBV := (Report.overflowBVGoals modules).filter (fun (k, _) => !omegaProved.contains k)
   let bvOvfKeys ← bvDischargeOverflow ovfBV
-  return Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys)
+  -- R-0461: cap each obligation by the weakest thing its hypotheses rest on. LAST, because
+  -- whether a loop's O1/O2 is proved is only known once every VC has a final status — the
+  -- ordering is the reason this is a pass rather than a check inside the collectors.
+  return Report.capOnHypothesisDebt (Report.dischargeVCs vcs omegaProved (bvCallKeys ++ bvOvfKeys))
 
 /-- Read the value Z3 assigned to variable `v` from `(get-model)` output. Handles
     both `... Int 100000)` and the negative `... Int (- 5))` shapes, across lines.
@@ -790,6 +793,492 @@ def leanReplayCheck (goals : List (String × String)) : IO (List String) := do
     if ok then closed := closed ++ [k]
   return closed
 
+/-- Identity of the IN-TOOLCHAIN kernel (Lean), read from `lean-toolchain`, e.g.
+    "lean leanprover/lean4:v4.28.0". Recorded alongside the external kernels so a
+    stored multi-kernel claim names every attester, not only the external ones. -/
+def leanToolchainId : IO String := do
+  try
+    let tc ← IO.FS.readFile ⟨"lean-toolchain"⟩
+    let t := tc.trimAscii.toString
+    pure (if t.isEmpty then "lean (unknown)" else s!"lean {t}")
+  catch _ => pure "lean (unknown)"
+
+/-- Rocq (second-kernel) identity + version for provenance, e.g. "coqc 8.20.1", or
+    "coqc (unavailable)" when Coq is not on PATH. `coqc --version` prints
+    "The Coq Proof Assistant, version X.Y.Z". -/
+def coqVersionId : IO String := do
+  try
+    let o ← IO.Process.output { cmd := "coqc", args := #["--version"] }
+    if o.exitCode != 0 then return "coqc (unavailable)"
+    -- `coqc --version` prints two lines ("The Rocq Prover, version X.Y.Z" then
+    -- "compiled with OCaml ..."); parse the FIRST line only so the version token
+    -- does not swallow the newline + "compiled".
+    let firstLine := ((o.stdout.splitOn "\n").head?.getD "").trimAscii.toString
+    match (firstLine.splitOn " ").dropWhile (· != "version") with
+    | _ :: v :: _ => return s!"coqc {v.trimAscii.toString}"
+    | _ => return "coqc"
+  catch _ => return "coqc (unavailable)"
+
+/-- Is a command on PATH? Used to distinguish "kernel absent" from "kernel refused"
+    in the discharge functions — the difference between "not asked" and "said no". -/
+def commandAvailable (cmd : String) : IO Bool := do
+  try
+    let o ← IO.Process.output { cmd := "bash", args := #["-c", s!"command -v {cmd}"] }
+    pure (o.exitCode == 0)
+  catch _ => pure false
+
+/-- Where prover verdicts are cached (gitignored). -/
+def proverCacheDir : String := ".concrete-cache/provers"
+
+/-- Does `pat` occur in `s`? (`splitOn` on a non-empty needle yields >1 piece iff
+    the needle occurs.) Used to classify prover output by message, not exit code. -/
+def strContains (s pat : String) : Bool := (s.splitOn pat).length > 1
+
+/-- What an external kernel actually said about one goal. THREE-valued, because
+    exit-code-only classification lies: `coqc` exits 1 both when `lia` genuinely
+    cannot prove the goal and when our emitted script is malformed. Reporting the
+    latter as `refused` claims an independent kernel DISAGREES with Lean when in
+    truth our own lowering is broken — the most misleading thing an evidence report
+    can do, because it looks like exactly the signal the report exists to find.
+
+    Empirically determined (coqc 9.0.1 / Isabelle2025-2), see `classifyRocqFailure`
+    and `classifyIsabelleFailure` for the message markers. -/
+inductive KernelVerdict where
+  /-- The kernel checked a proof term for the goal. -/
+  | closed
+  /-- The kernel was asked and its decision procedure could not close the goal.
+      This is the only verdict that means "the kernel says no". -/
+  | refused
+  /-- No verdict was obtained: malformed script, missing library, timeout, or an
+      infrastructure failure. OUR problem, not a statement about the goal. -/
+  | error (detail : String)
+deriving Inhabited, BEq
+
+/-- Report-cell spelling of a verdict. -/
+def KernelVerdict.cell : KernelVerdict → String
+  | .closed => "closed"
+  | .refused => "refused"
+  | .error _ => "error"
+
+/-- Is this a statement ABOUT THE GOAL (so safe to cache and to count as evidence)?
+    An `error` is not: it says nothing about the goal and must never persist. -/
+def KernelVerdict.isDefinitive : KernelVerdict → Bool
+  | .error _ => false
+  | _ => true
+
+/-- Memoize a prover verdict on disk, keyed on `(tag, script)`. `tag` MUST encode
+    the prover name AND version, so a tool upgrade invalidates the key.
+
+    Two properties this cache must have, both of which a naive version gets wrong:
+
+    * Only DEFINITIVE verdicts are stored. Caching an `error` would turn a transient
+      failure (mktemp failure, OOM-killed prover, full disk) into a PERMANENT
+      "this kernel refuses this goal" — and since neither the tool version nor the
+      script changes on a re-run, the key never changes, so it would never
+      self-heal. A release gate would then fail forever for a reason that has
+      nothing to do with the proof.
+    * The full key WITNESS is stored alongside the verdict and compared on read. A
+      64-bit `hash` as the filename is not collision-free, and a collision on a
+      stored `closed` would FABRICATE evidence that a kernel proved a goal it never
+      saw. On witness mismatch we treat the entry as a miss and recompute.
+
+    Any cache I/O error falls back to recomputation: the cache can only make things
+    faster, never change a verdict. -/
+def cachedKernelVerdict (tag src : String) (run : IO KernelVerdict) : IO KernelVerdict := do
+  -- `\n` separates the two fields; the witness is stored verbatim so an exact
+  -- comparison on read is possible.
+  let witness := tag ++ "\n" ++ src
+  let path : System.FilePath := ⟨proverCacheDir ++ "/" ++ toString (hash witness)⟩
+  let hit ← (try
+      let contents ← IO.FS.readFile path
+      match contents.splitOn "\n" with
+      | verdict :: rest =>
+        -- witness mismatch ⇒ hash collision ⇒ not our entry ⇒ recompute
+        if "\n".intercalate rest == witness then
+          pure (match verdict with
+                | "closed"  => some KernelVerdict.closed
+                | "refused" => some KernelVerdict.refused
+                | _         => none)
+        else pure none
+      | [] => pure none
+    catch _ => pure none)
+  match hit with
+  | some v => pure v
+  | none =>
+    let v ← run
+    if v.isDefinitive then
+      try
+        IO.FS.createDirAll proverCacheDir
+        IO.FS.writeFile path (v.cell ++ "\n" ++ witness)
+      catch _ => pure ()
+    pure v
+
+/-- Classify a nonzero-exit `coqc` run. Verified against coqc 9.0.1:
+
+    * `lia` cannot prove it      → `Error: Tactic failure:  Cannot find witness.`
+    * our lowering is malformed  → `Error: Syntax error: ...`
+    * bad/missing import         → `Error: Cannot find a physical path bound to ...`
+
+    All three exit 1, so ONLY the tactic-failure marker counts as the kernel saying
+    no; anything else is our bug and must surface as `error`. -/
+def classifyRocqFailure (output : String) : KernelVerdict :=
+  if strContains output "Tactic failure" then .refused
+  else .error (firstDiagnosticLine output)
+where
+  /-- First `Error:`-bearing line, trimmed, for a short report detail. -/
+  firstDiagnosticLine (s : String) : String :=
+    let errLines := (s.splitOn "\n").filter (fun l => strContains l "Error")
+    let line := (errLines.head?.getD "unclassified prover failure").trimAscii.toString
+    if line.length > 160 then String.ofList (line.toList.take 160) ++ "..." else line
+
+/-- Classify a nonzero-exit `isabelle build` run. Verified against Isabelle2025-2
+    (markers appear on STDOUT, and stderr additionally carries unrelated fontconfig
+    noise, so match markers rather than "did it print anything"):
+
+    * `presburger` cannot prove it → `*** Failed to apply initial proof method`
+    * our lowering is malformed    → `*** Inner syntax error` / `Failed to parse prop`
+
+    Both exit 1. `Failed to finish proof` covers the multi-step-proof form. -/
+def classifyIsabelleFailure (output : String) : KernelVerdict :=
+  if strContains output "Failed to apply initial proof method"
+     || strContains output "Failed to finish proof" then .refused
+  else .error (firstDiagnosticLine output)
+where
+  firstDiagnosticLine (s : String) : String :=
+    let errLines := (s.splitOn "\n").filter (fun l => strContains l "***")
+    let line := (errLines.head?.getD "unclassified prover failure").trimAscii.toString
+    if line.length > 160 then String.ofList (line.toList.take 160) ++ "..." else line
+
+/-- Second-kernel discharge (Rocq/`coqc`). Given `(vcKey, coqSource)` pairs, write
+    each `.v` and run `coqc` on it. Returns `none` if `coqc` is NOT on PATH (the
+    kernel was never asked — no honest verdict), else a per-goal `KernelVerdict`:
+
+    * `closed`  — exit 0: `lia` closed the goal and the kernel checked the term.
+    * `refused` — coqc reported a TACTIC FAILURE: the decision procedure said no.
+    * `error`   — nonzero exit for any other reason (malformed script, missing
+                  library, tool failure). Says nothing about the goal.
+
+    A key absent from the result was never emitted (outside the fragment). No VC is
+    ever fabricated. Only called behind `--rocq`. -/
+def rocqDischarge (goals : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
+  if !(← commandAvailable "coqc") then return none
+  let version ← coqVersionId
+  let mut out : List (String × KernelVerdict) := []
+  for (k, src) in goals do
+    let v ← cachedKernelVerdict s!"rocq|{version}" src (do
+      try
+        let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
+        let dir := tmpDir.stdout.trimAscii.toString
+        if dir.isEmpty then
+          pure (.error "could not create a temp dir for the Rocq script")
+        else do
+          IO.FS.writeFile ⟨dir ++ "/vc_rocq.v"⟩ src
+          -- `-native-compiler no` skips a native `.vo` (faster); `cwd := dir` keeps
+          -- coqc's `.lia.cache` scratch inside the temp dir, removed below.
+          let r ← IO.Process.output { cmd := "coqc", args := #["-native-compiler", "no", dir ++ "/vc_rocq.v"], cwd := some dir }
+          let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+          -- coqc reports diagnostics on stderr; check both streams.
+          let combined := r.stdout ++ "\n" ++ r.stderr
+          -- ATTEST before believing exit 0. `coqc` exits 0 on `Admitted.` as well as
+          -- `Qed.` — verified — so the exit code alone cannot distinguish a closed proof
+          -- from a merely stated one. The emitted script ends in `Print Assumptions`,
+          -- which prints "Closed under the global context" for a Qed-closed proof and
+          -- lists the constant under "Axioms:" otherwise. An unattested exit 0 is OUR
+          -- problem (a malformed or non-closing script), never a statement about the
+          -- goal, so it classifies as `error` rather than `closed` or `refused`.
+          pure (if r.exitCode == 0 then
+                  if strContains combined "Axioms:" then
+                    .error "proof not closed: `Print Assumptions` reports axioms (admitted, not proved)"
+                  else if !strContains combined "Closed under the global context" then
+                    .error "proof unattested: no `Print Assumptions` confirmation in coqc output"
+                  else .closed
+                else classifyRocqFailure combined)
+      catch e => pure (.error s!"coqc could not be run: {e}"))
+    out := out ++ [(k, v)]
+  return some out
+
+/-- Isabelle (HOL kernel) identity + version, e.g. "isabelle Isabelle2025", or
+    "isabelle (unavailable)" when not on PATH. `isabelle version` prints "Isabelle2025". -/
+def isabelleVersionId : IO String := do
+  try
+    let o ← IO.Process.output { cmd := "isabelle", args := #["version"] }
+    if o.exitCode != 0 then return "isabelle (unavailable)"
+    return s!"isabelle {o.stdout.trimAscii.toString}"
+  catch _ => return "isabelle (unavailable)"
+
+/-- Independent-kernel discharge (Isabelle/HOL). Same contract as `rocqDischarge`:
+    `none` if `isabelle` is absent, else a per-goal `KernelVerdict`. Writes each
+    `(vcKey, theorySource)` as `VC.thy` + a minimal `ROOT` and runs `isabelle build`
+    — exit 0 iff `presburger` closed the lemma and the HOL kernel checked it. HOL
+    (not CIC), so agreement with Lean/Rocq spans logics. Only called behind
+    `--isabelle`; slower than coqc (session build), so opt-in. -/
+def isabelleDischarge (goals : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
+  if !(← commandAvailable "isabelle") then return none
+  let version ← isabelleVersionId
+  let mut out : List (String × KernelVerdict) := []
+  for (k, src) in goals do
+    let v ← cachedKernelVerdict s!"isabelle|{version}" src (do
+      try
+        let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
+        let dir := tmpDir.stdout.trimAscii.toString
+        if dir.isEmpty then
+          pure (.error "could not create a temp dir for the Isabelle theory")
+        else do
+          IO.FS.writeFile ⟨dir ++ "/VC.thy"⟩ src
+          IO.FS.writeFile ⟨dir ++ "/ROOT"⟩ "session VCsess = HOL +\n  theories VC\n"
+          -- build the one-theory session; the prebuilt HOL heap is reused.
+          let r ← IO.Process.output { cmd := "isabelle", args := #["build", "-D", dir], cwd := some dir }
+          let _ ← IO.Process.output { cmd := "rm", args := #["-rf", dir] }
+          -- Isabelle prints proof/syntax diagnostics on STDOUT; stderr additionally
+          -- carries unrelated fontconfig noise, so classify on markers, not streams.
+          pure (if r.exitCode == 0 then .closed
+                else classifyIsabelleFailure (r.stdout ++ "\n" ++ r.stderr))
+      catch e => pure (.error s!"isabelle could not be run: {e}"))
+    out := out ++ [(k, v)]
+  return some out
+
+/-- Only `closed` counts as evidence: `refused` and `error` both contribute nothing
+    (and `error` is not even a statement about the goal). -/
+def closedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
+
+/-- Obligation ids the kernel actively REFUSED — it rendered the goal, decided it, and
+    said no. Distinct from `error` (our script broke) and from absence (never asked),
+    and the distinction is the whole point: only a refusal can dissent from Lean.
+    Kept separate from `closedKeysOf` because "did not attest" and "said no" are
+    different facts and collapsing them is what hid verdict disagreement. -/
+def refusedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .refused then some k else none)
+
+-- REMOVED 2026-08-03: `disagreeingKeysOf`, which returned the ids whose agreement lemma
+-- was REFUSED. Every consumer now uses `validatedKeysOf` instead, and leaving the old
+-- function in place would be worse than dead code: it is the fail-open shape, sitting one
+-- identifier away from the fail-closed one, in the file where confusing them awards a
+-- badge to an unvalidated lowering. If a future caller genuinely needs "which renderings
+-- were refused" — for a diagnostic, not for a badge — reintroduce it with that use named.
+
+/-- Run the SMT rendering-validation queries and classify each instance.
+
+    Expected answer is ALWAYS `unsat` — see `smtAgreementGoals`: the query asserts the
+    negation when the reference says true and the formula itself when it says false, so
+    agreement means unsat either way. `sat` is therefore a real disagreement (the rendering
+    denotes something else), and `unknown`/timeout/absence is OUR problem, classified as
+    `error` so it can never pass as validation.
+
+    Deliberately NOT reusing `smtDischarge`: that maps answers onto solver-evidence classes
+    (`solver_trusted` / `counterexample`), which is a statement about the OBLIGATION. Here
+    the same answers mean something different — a statement about the RENDERING — and
+    collapsing the two is how a validation result would end up read as a proof result. -/
+def smtAgreementCheck (queries : List (String × String)) : IO (Option (List (String × KernelVerdict))) := do
+  if queries.isEmpty then return some []
+  let haveZ3 ← (try
+      let o ← IO.Process.output { cmd := "bash", args := #["-c", "command -v z3"] }
+      pure (o.exitCode == 0)
+    catch _ => pure false)
+  if !haveZ3 then return none          -- absent tool: no verdicts, never a false pass
+  let dir ← IO.Process.run { cmd := "mktemp", args := #["-d"] }
+  let dir := dir.trimAscii.toString
+  let mut out : List (String × KernelVerdict) := []
+  for (k, q) in queries do
+    let f := s!"{dir}/q.smt2"
+    IO.FS.writeFile f q
+    let r ← (try
+        IO.Process.output { cmd := "z3", args := #["-T:5", f] }
+      catch _ => pure { exitCode := 1, stdout := "", stderr := "" })
+    let o := r.stdout.trimAscii.toString
+    let v : KernelVerdict :=
+      if o.startsWith "unsat" then .closed
+      else if o.startsWith "sat" then .refused
+      else .error s!"z3 said '{o}' (expected unsat)"
+    out := out ++ [(k, v)]
+  _ ← (try IO.Process.run { cmd := "rm", args := #["-rf", dir] } catch _ => pure "")
+  return some out
+
+/-- Obligation ids whose SMT RENDERING is validated: EVERY ground instance agreed, and
+    there was at least one.
+
+    Keys arrive as `{obligationId}#smtagree{N}` — one per instance — so they are grouped
+    back to the obligation. `all` rather than `any` is the whole point: one disagreeing
+    instance means the rendering denotes something else, and a single agreeing instance
+    proves nothing about the rest. The non-empty check blocks the vacuous case, where an
+    obligation contributed no instances and would otherwise pass `all` trivially.
+
+    `none` (no agreement run — no z3) yields `[]`: nothing validated, so nothing folds.
+    Fail closed, same direction as `validatedKeysOf`. -/
+def smtValidatedObligations (r : Option (List (String × KernelVerdict))) : List String :=
+  match r with
+  | none => []
+  | some vs =>
+    let base := fun (k : String) => match k.splitOn "#smtagree" with | h :: _ => h | [] => k
+    let ids := (vs.map (fun (k, _) => base k)).eraseDups
+    ids.filter (fun id =>
+      let mine := vs.filter (fun (k, _) => base k == id)
+      !mine.isEmpty && mine.all (fun (_, v) => v == .closed))
+
+/-- Keep only the SMT results whose rendering was validated, and say how many were dropped.
+
+    Without this an obligation could be marked `solver_trusted` — a verdict that enters the
+    TCB with no kernel re-deriving it — on a rendering nobody checked. It is the same
+    composition the witness change closed for the kernel path: closing a goal is evidence
+    about the OBLIGATION only if the goal denotes the obligation.
+
+    Dropped verdicts are reported rather than silently discarded. A VC that quietly stays
+    `unproven` because its rendering failed validation is indistinguishable from one the
+    solver could not close, and those are different facts. -/
+def gateSmtOnValidation (results : List (String × String × List (String × String)))
+    (validated : List String) : IO (List (String × String × List (String × String))) := do
+  let kept := results.filter (fun (k, _, _) => validated.contains k)
+  let dropped := results.length - kept.length
+  if dropped > 0 then
+    IO.eprintln s!"warning: {dropped} SMT verdict(s) DROPPED — rendering not validated \
+(run `--report lowering-agreement` for the disagreeing instances). A solver verdict on an \
+unvalidated rendering is not evidence about the obligation."
+  pure kept
+
+/-- Obligation ids whose lowering was POSITIVELY VALIDATED: the agreement lemma was
+    closed, so the emitted goal provably has the same truth table as the reference
+    evaluator on the sampled grid.
+
+    Validation must be asserted, never inferred from the absence of a refusal. An
+    agreement run can end in `error` (our emitted script was malformed, a library was
+    missing, the tool died) or omit a key entirely, and in both cases we know NOTHING
+    about whether that rendering denotes the obligation. Treating "no refusal" as
+    "validated" hands the badge to a lowering whose check never ran — fail-open in the
+    one place the composition exists to fail closed. Found by an external review,
+    2026-08-01; the previous code keyed only on `.refused` while the comment beside it
+    claimed unvalidated lowerings were excluded. -/
+def validatedKeysOf (r : Option (List (String × KernelVerdict))) : List String :=
+  (r.getD []).filterMap (fun (k, v) => if v == .closed then some k else none)
+
+/-- What the external kernels told us about one module set. A named record rather than
+    nested tuples: this was `(((closed),(validated)),(refused))`, which is unreadable at
+    the call site and made it easy to wire the wrong pair — and the whole point of the
+    witness change is that a caller cannot accidentally supply the wrong fact.
+
+    `*Validated` are the ids whose AGREEMENT lemma closed. They are what mints a
+    `LoweringValidated` witness; the closed/refused sets alone can never do that, which is
+    what stops a consumer asserting a validation it did not perform. -/
+structure ExternalKernelEvidence where
+  rocqClosed    : List String := []
+  isaClosed     : List String := []
+  rocqRefused   : List String := []
+  isaRefused    : List String := []
+  rocqValidated : List String := []
+  isaValidated  : List String := []
+
+/-- R-0465: collapse one kernel's two id lists into per-obligation cells, which is what
+    `foldMultiKernelResults` now takes. The lists are disjoint by construction upstream —
+    both come from a single `List (String × KernelVerdict)`, and a verdict is one or the
+    other — but that fact lived in the producer, not the type.
+
+    **Refusals are listed FIRST, so `find?` resolves any overlap to `.refused`.** The order
+    only matters if the upstream invariant is ever broken, which is exactly when a default
+    must be chosen deliberately: a kernel that said no is the safety-relevant fact, and
+    resolving to `.closed` would turn a broken invariant into a badge. Fail-closed. -/
+def kernelCells (closed refused : List String) : List (String × Report.KernelCell) :=
+  refused.map (fun k => (k, Report.KernelCell.refused))
+    ++ closed.map (fun k => (k, Report.KernelCell.closed))
+
+/-- Run the enabled external kernels over the multi-kernel obligation goals and
+    return the VC ids each independently closed, PLUS the ids whose lowering failed
+    the agreement check. Shared by the multi-kernel report, the ledger fold and the
+    release gate so every surface composes the same two facts.
+
+    Why both: closing a goal is only evidence about the OBLIGATION if the goal
+    actually denotes the obligation. Those are separate checks, and running the first
+    without the second is how a corrupted operator column earns
+    `proved_by_two_kernels` — the kernel really did close a proposition, just not this
+    one. `--report lowering-agreement` existed for this; nothing consulted it, so the
+    badge and the release gate certified lowerings they had never validated. -/
+def externalKernelFacts (modules : List Concrete.Module) (rocqRun isaRun : Bool)
+    : IO ExternalKernelEvidence := do
+  -- Bind each discharge ONCE and derive both fact sets from it. Refusals are needed so
+  -- the LEDGER can express a verdict disagreement rather than only the report; running
+  -- the discharge a second time to collect them would double the prover cost for facts
+  -- already in hand.
+  let rocqRes ← if rocqRun then rocqDischarge (Report.rocqReplayGoals modules) else pure none
+  let isaRes ← if isaRun then isabelleDischarge (Report.isabelleReplayGoals modules) else pure none
+  let rocqClosed := closedKeysOf rocqRes
+  let isaClosed := closedKeysOf isaRes
+  let rocqRefused := refusedKeysOf rocqRes
+  let isaRefused := refusedKeysOf isaRes
+  -- Agreement is checked with the SAME discharge path, so a malformed agreement script
+  -- reads as `error` (our bug). We therefore collect what was POSITIVELY VALIDATED
+  -- rather than what was refused: an `error`, or a key the agreement run never reached,
+  -- leaves us knowing nothing about that rendering, and "we did not learn it is wrong"
+  -- is not "we checked it". Returning the validated set makes the caller's filter
+  -- fail closed by construction.
+  let rocqOk ← if rocqRun then do
+      let r ← rocqDischarge (Report.rocqAgreementGoals modules); pure (validatedKeysOf r)
+    else pure []
+  let isaOk ← if isaRun then do
+      let r ← isabelleDischarge (Report.isabelleAgreementGoals modules); pure (validatedKeysOf r)
+    else pure []
+  pure { rocqClosed, isaClosed, rocqRefused, isaRefused
+       , rocqValidated := rocqOk, isaValidated := isaOk }
+
+/-- Attestation sets restricted to lowerings that were POSITIVELY VALIDATED — the
+    composed fact every badge and gate should rest on.
+
+    Note the direction: keep what was validated, rather than drop what was refused. The
+    two differ exactly on the cases where validation did not produce an answer (`error`,
+    a key the agreement run never reached), and those are the cases where we know
+    nothing. Keeping-what-was-validated is fail-closed; dropping-what-was-refused was
+    fail-open and is what this function used to do.
+
+    Refusals are filtered the same way: a kernel whose lowering was never validated did
+    not dissent about THIS obligation either, so its refusal is no more admissible than
+    its closure. Such a kernel neither attests nor dissents, which is the honest
+    reading. -/
+def externalClosedSets (modules : List Concrete.Module) (rocqRun isaRun : Bool)
+    : IO ExternalKernelEvidence := do
+  let e ← externalKernelFacts modules rocqRun isaRun
+  -- The validated sets are carried through UNFILTERED because they are what mints the
+  -- witnesses downstream. Filtering closed/refused here as well is belt-and-braces: a
+  -- consumer that forgot to pass the validated sets would then get an empty attestation
+  -- set rather than an unchecked one.
+  pure { e with
+         rocqClosed  := e.rocqClosed.filter  (fun k => e.rocqValidated.contains k)
+       , isaClosed   := e.isaClosed.filter   (fun k => e.isaValidated.contains k)
+       , rocqRefused := e.rocqRefused.filter (fun k => e.rocqValidated.contains k)
+       , isaRefused  := e.isaRefused.filter  (fun k => e.isaValidated.contains k) }
+
+/-- **R-0465 (5th part): the two-kernel release gate, read OFF the ledger.**
+
+    `computeBelowTwoKernels` used to run its own prover discharge and rebuild the verdicts
+    itself. Two consequences, and the second is the one that matters:
+
+    - The provers ran twice per release build, once for the artifact and once for the gate.
+    - The gate and the stored artifact could be built from SEPARATE prover runs. Nothing
+      forced their transient results to agree — a timeout, a flaky `isabelle build`, or a
+      version skew between the two runs and the release ships an artifact whose badges the
+      gate never actually checked. Unifying the input is the only fix that scales; keeping
+      two derivations in step by inspection is what R-0461 measured the cost of.
+
+    So this folds multi-kernel results into the SAME ledger the policy quals come from, and
+    reads the answer out of the resulting statuses. An obligation is below two kernels unless
+    its VC carries a two-or-more badge. That follows from the firewall rather than from a
+    reimplementation of the counting: `multiKernelAdapter.allowed` contains exactly the
+    badges, so a VC holding one is a VC that passed admission with ≥2 attesters.
+
+    Three cases fall out for free, each of which the old recount had to state:
+    - `kernel_disagreement` is not a badge, so a dissent blocks. An unexplained disagreement
+      means one of the two kernels is wrong and we do not know which.
+    - A VC Lean never proved was outside `actsOn`, so it holds no badge and blocks.
+    - A VC R-0461 CAPPED reads `assumed`, is outside `actsOn`, and blocks — so an obligation
+      resting on an unproved invariant now fails `require-two-kernels` as well, which is the
+      composition H23 was missing, arriving here at no extra cost.
+
+    An obligation with no VC at all counts as below: fail-closed, because "we could not find
+    what this claim is" is not evidence that two kernels agreed on it. -/
+def belowTwoKernelsOf (modules : List Concrete.Module) (folded : List Report.VC) : List String :=
+  (Report.multiKernelObligations modules).filterMap fun o =>
+    match folded.find? (·.id == o.key) with
+    | some v =>
+      if v.status == "proved_by_two_kernels" || v.status == "proved_by_multi_kernel"
+      then none else some o.key
+    | none => some o.key
+
 /-- Phase 3 #14: policy inputs derived from the ONE obligation ledger. Builds the
     discharged ledger (folding the external-SMT path when a solver-evidence stance
     is set, so `solver_trusted` is present), then projects the vacuous / assume /
@@ -798,7 +1287,8 @@ def leanReplayCheck (goals : List (String × String)) : IO (List String) := do
     solverTrustedQuals)`, dep-filtered exactly as before. -/
 def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concrete.Module)
     (depNames : List String) (locMap : Report.FnLocMap) (registry : Concrete.ProofRegistry) :
-    IO (List String × List String × List String) := do
+    IO (List String × List String × List String × List (String × List String)
+        × List String × Bool) := do
   let dvcs ← computeVCsDischarged modules locMap registry
   -- fold the external-SMT path into the ledger only when a stance is set (matches
   -- the old computeSolverTrustedQuals gating; otherwise no solver runs).
@@ -809,17 +1299,64 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
       let dvcs := Report.markSmtEligible dvcs smtGoals replayGoals
       let solverId ← z3VersionId
       let results ← smtDischarge smtGoals 5
+      -- A solver verdict counts only if the rendering it answered about denotes the
+      -- obligation. Same composition as the kernel path; this is the release-policy side,
+      -- so an unvalidated rendering must not reach `solver_trusted`.
+      let agree ← smtAgreementCheck (Report.smtAgreementGoals modules)
+      let results ← gateSmtOnValidation results (smtValidatedObligations agree)
       let dvcs := Report.foldSmtResults dvcs results solverId
       let trusted := dvcs.filterMap fun v => if v.status == "solver_trusted" then some v.id else none
       let rg := replayGoals.filter (fun (k, _) => trusted.contains k)
       let replayed ← leanReplayCheck rg
       pure (Report.foldReplayResults dvcs replayed)
+  -- R-0465 (5th part): fold multi-kernel evidence into THIS ledger when the policy needs
+  -- it, so `require-two-kernels` is answered from the same VCs the rest of the gate reads
+  -- instead of from a second prover run. Only under the policy: coqc/isabelle are slow and
+  -- a normal build must not silently start invoking them.
+  let mut externalRan := false
+  let dvcs ← if !policy.requireTwoKernels then pure dvcs else do
+    let rocqAvail ← commandAvailable "coqc"
+    let isaAvail ← commandAvailable "isabelle"
+    externalRan := rocqAvail || isaAvail
+    if !externalRan then pure dvcs else do
+      -- externalClosedSets already drops kernels whose lowering disagreed with the
+      -- reference evaluator, so the gate cannot certify a kernel that closed a different
+      -- proposition than the obligation.
+      let ev ← externalClosedSets modules rocqAvail isaAvail
+      let lv ← leanToolchainId
+      let rv ← if rocqAvail then coqVersionId else pure "rocq (not run)"
+      let iv ← if isaAvail then isabelleVersionId else pure "isabelle (not run)"
+      pure (Report.foldMultiKernelResults dvcs
+              (kernelCells ev.rocqClosed ev.rocqRefused)
+              (kernelCells ev.isaClosed ev.isaRefused)
+              lv rv iv ev.rocqValidated ev.isaValidated)
   let ledger := Concrete.ObligationCore.ledgerOfVCs dvcs
   let keep := fun (q : String) => !depNames.any (fun d => q.startsWith (d ++ "."))
   let vac := (Concrete.ObligationCore.vacuousFunctions ledger).filter keep
   let asm := (Concrete.ObligationCore.assumeFunctions ledger).filter keep
   let st := Concrete.ObligationCore.solverTrustedIds ledger
-  return (vac, asm, st)
+  -- R-0461: obligations the cap demoted, with what they still owe. Projected from the SAME
+  -- discharged ledger as the other three, so the gate and the reports cannot disagree.
+  let cap := dvcs.filterMap (fun v =>
+    if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
+  let btk := if policy.requireTwoKernels then belowTwoKernelsOf modules dvcs else []
+  return (vac, asm, st, cap, btk, externalRan)
+
+
+-- REMOVED 2026-08-03 (R-0465, 5th part): `computeBelowTwoKernels`, which ran its own
+-- prover discharge and rebuilt the multi-kernel verdicts to answer
+-- `[policy] require-two-kernels`. `computePolicyQuals` now folds multi-kernel evidence into
+-- the one ledger and `belowTwoKernelsOf` reads the answer off the resulting statuses.
+--
+-- Deleted rather than left unused, for the reason `disagreeingKeysOf` was: a second
+-- derivation of the same fact, sitting one identifier away from the one in use, is worse
+-- than dead code. The whole defect this closes is that a release gate and a stored artifact
+-- could be computed from separate prover runs; keeping a function that does exactly that
+-- available to the next caller re-arms it.
+--
+-- It also halves the prover cost of a `require-two-kernels` build, which used to invoke
+-- coqc and isabelle twice.
+
 
 /-- Render the contracts report plus the call-site obligation section AS A VIEW
     over the one discharged ObligationCore ledger (Phase 3 #15 / #18e).
@@ -891,7 +1428,22 @@ def compileAndReport (inputPath : String) (reportType : String)
     (proveNearestId : Option String := none) (reportJson : Bool := false)
     (smtRun : Bool := false) (smtEmit : Bool := false)
     (smtReplay : Bool := false) (emitLeanReplay : Bool := false)
-    (smtTimeoutMs : Option Nat := none) : IO UInt32 := do
+    (smtTimeoutMs : Option Nat := none) (rocqRun : Bool := false)
+    (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
+  -- The second-kernel flags only affect the multi-kernel report; warn rather than
+  -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
+  -- Three cases, not two. Saying "ignored" for a report that then visibly runs coqc
+  -- misinforms about the very thing this warning exists to prevent.
+  let flagSelected := ["multi-kernel", "obligation-ledger", "lowering-agreement"]
+  -- These invoke an external prover UNCONDITIONALLY, so the flag is redundant rather
+  -- than ignored: `core-semantics-diff` discharges its equations with coqc, and
+  -- `solver-cert` corroborates with Rocq `nia`, whether or not --rocq was passed.
+  let proverAlways := ["core-semantics-diff", "solver-cert"]
+  if (rocqRun || isaRun) && !flagSelected.contains reportType then
+    if proverAlways.contains reportType then
+      IO.eprintln s!"note: `--report {reportType}` already uses an external prover unconditionally; --rocq/--isabelle are redundant here, not ignored"
+    else
+      IO.eprintln s!"warning: --rocq/--isabelle select kernels for `--report {"|".intercalate flagSelected}`; ignored for `--report {reportType}`"
   let source ← readFile inputPath
   let mainSrcMap : SourceMap := [(inputPath, source)]
   -- Interface report only needs parse + resolveFiles + summary
@@ -1184,6 +1736,31 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- (runtime-safety, contracts incl. clause diagnostics) PLUS the proof-link
       -- freshness family (#11), projected into the one schema.
       let dvcs ← computeVCsDischarged parsed.modules locMap registry
+      -- Opt-in: with --rocq/--isabelle, fold independent-kernel agreement into the
+      -- ONE ledger so `proved_by_two_kernels`/`proved_by_multi_kernel` are produced
+      -- by a real ledger path (not only the multi-kernel report). Default unchanged.
+      let dvcs ← if rocqRun || isaRun then do
+          let ev ← externalClosedSets parsed.modules rocqRun isaRun
+          -- Record WHICH prover builds attested, not just that some did.
+          let lv ← leanToolchainId
+          let rv ← if rocqRun then coqVersionId else pure "rocq (not run)"
+          let iv ← if isaRun then isabelleVersionId else pure "isabelle (not run)"
+          -- Validated sets are passed EXPLICITLY: the fold mints witnesses from them and
+          -- attests nothing without one. Omitting them yields no attestations rather than
+          -- unchecked ones.
+          -- R-0450: validate Lean's OWN rendering before trusting the badges it underwrites.
+          -- Costs an omega pass, no external toolchain, and it is the rendering every other
+          -- kernel's goal is derived from — so it is the one whose fault no amount of
+          -- kernel agreement could reveal.
+          let leanAgree := Report.leanAgreementGoals parsed.modules
+          let leanOk ← if leanAgree.isEmpty then pure none else do
+            let closed ← kernelDischargeLoopVCs leanAgree
+            pure (some (Report.leanValidatedObligations leanAgree closed))
+          pure (Report.foldMultiKernelResults dvcs
+                  (kernelCells ev.rocqClosed ev.rocqRefused)
+                  (kernelCells ev.isaClosed ev.isaRefused)
+                  lv rv iv ev.rocqValidated ev.isaValidated leanOk)
+        else pure dvcs
       let vcLedger := Concrete.ObligationCore.ledgerOfVCs dvcs
       let proofLinks := Concrete.ObligationCore.proofLinkLedger
         (Report.proofStatusEntries validCore.coreModules locMap registry pc)
@@ -1213,6 +1790,9 @@ def compileAndReport (inputPath : String) (reportType : String)
       let dvcs ← if smtRun then do
           let solverId ← z3VersionId
           let results ← smtDischarge smtGoals 5 smtTimeoutMs
+          -- Same gate as the policy path: no verdict without a validated rendering.
+          let agree ← smtAgreementCheck (Report.smtAgreementGoals parsed.modules)
+          let results ← gateSmtOnValidation results (smtValidatedObligations agree)
           let dvcs := Report.foldSmtResults dvcs results solverId
           -- --replay: try to kernel-check each solver_trusted VC in Lean; a success
           -- graduates it to proved_by_lean_replay (solver dropped from the claim).
@@ -1228,7 +1808,601 @@ def compileAndReport (inputPath : String) (reportType : String)
       if reportJson then
         IO.println (Report.vcsJson dvcs 1)
       else
-        IO.println (Report.vcsReport dvcs)
+        IO.println (Report.vcsReport dvcs (Report.unresolvedBoundsAccesses parsed.modules))
+      return 0
+    if reportType == "multi-kernel" then
+      -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
+      -- layer. The SAME linear no-overflow obligations are discharged by Lean's
+      -- in-toolchain `omega` AND by each enabled EXTERNAL kernel — Rocq's `lia`
+      -- (CIC) and Isabelle's `presburger` (HOL). Each kernel is a driver
+      -- (`Report.ProverLowering`); adding a prover is data, not new plumbing. A VC
+      -- Lean + ≥1 external kernel independently close on the same subject graduates
+      -- to `proved_by_two_kernels` (n=2) / `proved_by_multi_kernel` (n≥3). Externals
+      -- are OPT-IN (`--rocq`, `--isabelle`); an absent/off kernel never attests.
+      -- ALL linear runtime-safety families (overflow / bounds / div), not just
+      -- overflow — the prover-neutral layer covers every family via multiKernelObligations.
+      let linear := Report.multiKernelObligations parsed.modules
+      -- R-0461 / H23: the badge must not outrank the LEDGER. This report used to recompute
+      -- its class from `omegaProved` alone, so an obligation the ledger had capped to
+      -- `assumed` — because it rests on a loop invariant whose O1/O2 is unproven — still
+      -- displayed `proved_by_multi_kernel` here. Two surfaces, two answers, and the wrong
+      -- one was the louder. Consult the discharged ledger instead of re-deriving.
+      let cappedVCs ← computeVCsDischarged parsed.modules locMap registry
+      let cappedKeys := cappedVCs.filterMap (fun v =>
+        if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
+      let omegaProved ← kernelDischargeLoopVCs
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules ++ Report.divQuotGoals parsed.modules ++ Report.shiftGoals parsed.modules)
+      -- External-kernel drivers, each: (name, displayLabel, enabled, versionId,
+      -- emittedKeys, result). `emittedKeys` are the obligations the driver COULD
+      -- lower (others are dropped as outside the fragment — "not asked"); `result`
+      -- is `none` when the tool is absent (also "not asked") vs. `some closedKeys`
+      -- when it ran. This three-valued model is what keeps "refused" distinct from
+      -- "never asked" — the one thing a graded-evidence report must not conflate.
+      let rocqGoals := Report.rocqReplayGoals parsed.modules
+      let isaGoals := Report.isabelleReplayGoals parsed.modules
+      let rocqId ← if rocqRun then coqVersionId else pure "not run (pass --rocq)"
+      let rocqRes ← if rocqRun then rocqDischarge rocqGoals else pure none
+      let isaId ← if isaRun then isabelleVersionId else pure "not run (pass --isabelle)"
+      let isaRes ← if isaRun then isabelleDischarge isaGoals else pure none
+      -- COMPOSITION: closing a goal is evidence about the obligation only if the goal
+      -- denotes the obligation. Both facts are computed here and the badge rests on
+      -- their conjunction. Previously `--report lowering-agreement` checked the second
+      -- fact and nothing consulted it, so a corrupted operator column still earned
+      -- `proved_by_two_kernels` — the kernel did close a proposition, just not this one.
+      -- POSITIVELY VALIDATED, not "not refused". An agreement run that ends in `error`
+      -- tells us nothing about that rendering, and treating "no refusal" as "checked" is
+      -- what let a badge rest on an unvalidated lowering. `validatedKeysOf` keys on
+      -- `.closed`, so absence of an answer excludes the kernel.
+      let rocqOk ← if rocqRun then do
+          let r ← rocqDischarge (Report.rocqAgreementGoals parsed.modules)
+          pure (validatedKeysOf r)
+        else pure []
+      let isaOk ← if isaRun then do
+          let r ← isabelleDischarge (Report.isabelleAgreementGoals parsed.modules)
+          pure (validatedKeysOf r)
+        else pure []
+      let validatedOf := fun (name : String) => if name == "rocq" then rocqOk else isaOk
+      let kernels : List (String × String × Bool × String × List String × Option (List (String × KernelVerdict))) :=
+        [ ("rocq", "rocq:lia", rocqRun, rocqId, rocqGoals.map (·.1), rocqRes),
+          ("isabelle", "isabelle:presburger", isaRun, isaId, isaGoals.map (·.1), isaRes) ]
+      -- cell verdict for obligation key `k` under one external kernel. `error` is
+      -- kept DISTINCT from `refused`: both come from a nonzero prover exit, but only
+      -- `refused` is the kernel saying no about the goal — `error` means the script
+      -- we emitted was malformed / the tool broke, i.e. OUR bug. Collapsing them
+      -- would report a fake kernel disagreement, which reads exactly like the
+      -- genuine signal this report exists to surface.
+      let cellOf := fun (en : Bool) (emitted : List String)
+                        (res : Option (List (String × KernelVerdict))) (k : String) =>
+        if !en then "off"
+        else match res with
+          | none => "unavailable"
+          | some verdicts =>
+            if !emitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
+      -- error details, surfaced separately so a broken lowering is loud, not a cell.
+      let kernelErrors : List (String × String × String) :=
+        kernels.flatMap (fun (_, label, en, _, _, res) =>
+          if !en then [] else
+          match res with
+          | none => []
+          | some verdicts => verdicts.filterMap (fun (k, v) =>
+              match v with | .error d => some (label, k, d) | _ => none))
+      let mut out := "=== Multi-kernel evidence (spike: prover-neutral obligation layer) ==="
+      let mut belowTwo := 0
+      out := out ++ "\n  lean:omega (in-toolchain kernel)"
+      for (_, label, _, id, _, _) in kernels do out := out ++ s!"\n  {label}:  {id}"
+      -- Honesty boundary: CHECKER diversity, not BRIDGE diversity. All kernels check
+      -- their own lowering of the SAME obligation Expr from Concrete's single
+      -- Core->VC bridge; that bridge is not diversified and stays trusted. There is
+      -- no digest cross-check that the lowerings spell the same proposition.
+      out := out ++ "\n  attests: N independent kernels each closed a lowering of the OBLIGATION whose"
+      out := out ++ "\n           truth table matches the reference evaluator (composed here, per kernel)."
+      out := out ++ "\n  does NOT attest: that the Core->obligation lowering itself is faithful —"
+      out := out ++ "\n                   see `--report core-semantics-diff` for that axis.\n"
+      out := out ++ "\n  cell legend: closed | refused (kernel says no) | error (OUR script/tool broke —"
+      out := out ++ "\n               NOT a kernel disagreement) | not-asked (outside fragment) |"
+      out := out ++ "\n               unavailable (no tool) | off (flag not set)"
+      out := out ++ "\n  a kernel whose lowering DISAGREES with the reference evaluator does not attest,"
+      out := out ++ "\n  even when it closed its goal: it proved a different proposition.\n"
+      if linear.isEmpty then
+        out := out ++ "\n(no linear runtime-safety obligations in this file)\n"
+      let mut lowerBad := 0
+      let mut disagreed := 0
+      for o in linear do
+        let leanOk := omegaProved.contains o.key
+        -- Attesting kernels = lean (if omega closed) + externals that BOTH closed
+        -- their goal AND whose lowering agreed with the reference evaluator. A kernel
+        -- that closed a goal denoting something else contributes nothing.
+        -- ONE derivation, shared with the ledger fold (Report.multiKernelVerdict), so
+        -- this report and the stored artifact cannot disagree about the same
+        -- obligation. They used to compute the class independently.
+        -- R-0465: one shared constructor with the other two consumers. This surface learns
+        -- what a kernel said from a driver result string rather than a verdict list, which is
+        -- its own business; what happens NEXT — absent contributes nothing, the witness is
+        -- minted — is not, and is no longer restated here.
+        let inputs : List Report.KernelInput := kernels.flatMap (fun (name, label, en, _, em, res) =>
+          Report.kernelInputOf o.key name label
+            (match cellOf en em res o.key with
+              | "closed"  => .closed
+              | "refused" => .refused
+              | _         => .absent)     -- off / unavailable / not-asked / error
+            (validatedOf name))
+        -- A capped obligation earns no badge, whatever the kernels said. The kernels did
+        -- close their goals; the goals rest on something unestablished. Recorded as
+        -- `assumed` for the same reason the ledger does — it is gate-forbiddable.
+        let verdict := Report.multiKernelVerdict o.key leanOk inputs
+        let attest := verdict.attest
+        let n := attest.length
+        if n < 2 then belowTwo := belowTwo + 1
+        -- VERDICT disagreement, as distinct from LOWERING disagreement below. Two
+        -- kernels that render the SAME proposition (lowering agrees) and return
+        -- OPPOSITE verdicts have told us something no amount of agreement can: either
+        -- this driver renders that goal wrongly for that kernel, or a decision
+        -- procedure is wrong. For the linear fragment both `omega` and `lia`/
+        -- `presburger` are COMPLETE, so a disagreement here is nearly always our bug —
+        -- which is exactly why it must be loud rather than absorbed.
+        --
+        -- Only `closed`/`refused` count: those are verdicts. `off`, `unavailable`,
+        -- `not-asked` and `error` are absences, and treating an absence as dissent is
+        -- the conflation this report exists to prevent.
+        --
+        -- Kernels whose LOWERING disagreed are excluded — their verdict is about a
+        -- different proposition, so it is not evidence about this one, and it is
+        -- already reported on its own line.
+        if !verdict.dissent.isEmpty then disagreed := disagreed + 1
+        -- `present`, not `cls`: Register C's C3 guarantees a claim with outstanding
+        -- assumptions renders as `assumed` rather than any `proved_*` string. Empty
+        -- R-0461 made this non-empty: the ledger's outstanding debt is loaded into the
+        -- verdict's evidence, so C3 does the capping and this surface cannot disagree
+        -- with the ledger about whether the obligation is proved.
+        let cls := match cappedKeys.find? (fun p => p.1 == o.key) with
+          | some (_, debt) => (debt.foldl (fun (e : Report.Evidence) r => e.assuming r)
+                                 verdict.evidence).present
+          | none => verdict.displayStatus
+        out := out ++ s!"\n  [{o.key}]  {o.desc}"
+        out := out ++ s!"\n      lean:omega = {if leanOk then "closed" else "refused"}"
+        for (_, label, en, _, em, res) in kernels do out := out ++ s!"   {label} = {cellOf en em res o.key}"
+        -- Name the disqualified kernels explicitly. A silently-dropped attester would
+        -- look identical to a kernel that simply could not close the goal.
+        -- A kernel that ran, gave a verdict, and has NO validation witness. Previously
+        -- this listed only kernels whose agreement lemma was refused, so a kernel whose
+        -- agreement check errored was silently treated as fine and never named here.
+        let disq := kernels.filterMap (fun (name, label, en, _, em, res) =>
+          let c := cellOf en em res o.key
+          if en && (c == "closed" || c == "refused") && !(validatedOf name).contains o.key
+          then some label else none)
+        if !disq.isEmpty then
+          lowerBad := lowerBad + 1
+          out := out ++ s!"\n      LOWERING DISAGREES ({", ".intercalate disq}) — closed a different"
+          out := out ++ " proposition, so it does NOT attest"
+        out := out ++ s!"\n      => {cls}"
+      -- A kernel `error` is a defect in THIS tool (a malformed emitted script, a
+      -- missing library, a broken install), never evidence about the program. Print
+      -- the diagnostics so it gets fixed instead of silently degrading the report to
+      -- "that kernel didn't attest".
+      if !kernelErrors.isEmpty then
+        out := out ++ s!"\n\n  ERRORS ({kernelErrors.length}) — these are OUR bugs, not kernel disagreements:"
+        for (label, k, d) in kernelErrors do
+          out := out ++ s!"\n    {label} [{k}]: {d}"
+      if lowerBad > 0 then
+        out := out ++ s!"\n\n  LOWERING DISAGREEMENTS: {lowerBad} obligation(s) where a kernel's rendering"
+        out := out ++ "\n  does not denote the obligation. Those kernels were excluded from the badge."
+        out := out ++ "\n  Run `--report lowering-agreement` for the per-instance detail."
+      -- A verdict disagreement is the single most informative thing this report can
+      -- produce, so it gets its own block and its own exit code rather than being a
+      -- missing badge. `omega` and `lia`/`presburger` are all complete for linear
+      -- integer arithmetic: if they differ, something here is WRONG, and shipping while
+      -- it is unexplained means shipping a claim we cannot account for.
+      if disagreed > 0 then
+        out := out ++ s!"\n\n  KERNEL DISAGREEMENTS: {disagreed} obligation(s) where kernels rendering the"
+        out := out ++ "\n  SAME proposition returned OPPOSITE verdicts. All these kernels are complete for"
+        out := out ++ "\n  linear integer arithmetic, so this is a defect — most likely in our driver for"
+        out := out ++ "\n  the dissenting kernel, possibly in a decision procedure. Investigate before"
+        out := out ++ "\n  trusting any badge in this file: the same driver produced them all."
+      -- Release gate: with --require-two-kernels, fail if any in-scope obligation
+      -- did not reach ≥2 independent kernels. A genuine CI gate, not just a report.
+      if reqTwoKernels && (belowTwo > 0 || disagreed > 0) then
+        if disagreed > 0 then
+          out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {disagreed} kernel disagreement(s)."
+        if belowTwo > 0 then
+          out := out ++ s!"\n\nGATE: --require-two-kernels FAILED — {belowTwo} obligation(s) below 2 independent kernels."
+        IO.println (out ++ "\n")
+        return 1
+      if reqTwoKernels then out := out ++ "\n\nGATE: --require-two-kernels PASSED — every obligation has ≥2 independent kernels."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "bridge-check" then
+      -- Feature #1: differential-test the Core→VC BRIDGE against an INDEPENDENT
+      -- concrete evaluator. For each linear obligation, fuzz hypothesis-satisfying
+      -- assignments and look for one that refutes the safety conclusion. A
+      -- counterexample under a PROVED obligation is a bridge/discharge unsoundness
+      -- (exit 1). A counterexample under an UNPROVED one is expected and shows the
+      -- fuzzer has teeth. This checks a different axis than multi-kernel: not "do N
+      -- kernels agree the VC is valid" but "does the VC actually match execution".
+      let omegaProved ← kernelDischargeLoopVCs
+        (Report.overflowGoals parsed.modules ++ Report.boundsGoals parsed.modules ++ Report.divGoals parsed.modules ++ Report.divQuotGoals parsed.modules ++ Report.shiftGoals parsed.modules)
+      let results := Report.bridgeFuzz parsed.modules
+      let mut out := "=== Bridge differential-check (concrete evaluation vs the VC) ==="
+      out := out ++ "\n  tests whether a PROVED obligation is ever refuted by a concrete, hypothesis-"
+      out := out ++ "\n  satisfying input (would mean the Core→VC bridge or discharge is unsound).\n"
+      let mut unsound := 0
+      for r in results do
+        let proved := omegaProved.contains r.key
+        let verdict ←
+          match r.counterexample with
+          | some env =>
+            let e := ", ".intercalate (env.map (fun (n, v) => s!"{n}={v}"))
+            if proved then do
+              unsound := unsound + 1
+              pure s!"UNSOUND — proved, but refuted by [{e}]"
+            else pure s!"violation found by fuzzer (expected: unproved) [{e}]"
+          | none =>
+            if r.hypSat == 0 then pure "inconclusive (no hypothesis-satisfying inputs in grid)"
+            else if proved then pure s!"ok — proved; {r.hypSat} inputs checked, no counterexample"
+            else pure s!"no counterexample in grid ({r.hypSat} inputs); unproved"
+        out := out ++ s!"\n  [{r.key}]  {r.desc}\n      {verdict}"
+      if unsound > 0 then
+        out := out ++ s!"\n\nBRIDGE-CHECK FAILED — {unsound} proved obligation(s) refuted by concrete inputs."
+        IO.println (out ++ "\n"); return 1
+      out := out ++ "\n\nBRIDGE-CHECK: no proved obligation refuted by concrete evaluation."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "core-semantics-diff" then
+      -- BRIDGE diversity, the gap `--report multi-kernel` names as a
+      -- non-attestation: all kernels check their own lowering of an obligation
+      -- produced by ONE Core→VC bridge, so a bridge bug is invisible to every one of
+      -- them. Here Core takes a SECOND, independent path — extracted to Rocq
+      -- (Gallina) as a computation — and the two are differential-tested:
+      --   * Concrete's Lean interpreter evaluates f(args)   (the existing oracle)
+      --   * Rocq's kernel evaluates the extracted definition, by checking
+      --     `Goal f args = <interpreter result>. Proof. reflexivity. Qed.`
+      -- Agreement means two independently-implemented evaluators computed the same
+      -- value. A mismatch is a real bridge-level defect.
+      let fns := Concrete.Interp.collectFns validCore.coreModules
+      let enums := Concrete.Interp.collectEnums validCore.coreModules
+      let extractable := Concrete.CoreExtract.extractableFns fns
+      let missed := Concrete.CoreExtract.unextractableFns fns
+      let allDefs := "\n".intercalate (extractable.map (·.2))
+      -- Probe values: small magnitudes plus negatives, because the truncating-vs-
+      -- flooring division difference (Z.quot vs Z.div) only shows on negatives.
+      let probes : List Int := [-7, -3, -1, 0, 1, 2, 3, 7]
+      let perFnCap := 24
+      let mut out := "=== Core-semantics differential test (Rocq extraction vs the interpreter) ==="
+      out := out ++ "\n  Two INDEPENDENT paths from Core to a value:"
+      out := out ++ "\n    (1) Concrete's Lean interpreter — the existing differential-testing oracle"
+      out := out ++ "\n    (2) a Rocq/Gallina extraction of the same function, evaluated by Rocq's kernel"
+      out := out ++ "\n  agree    = both evaluators computed the same value on every sampled input"
+      out := out ++ "\n  DISAGREE = the two paths differ — a Core-level bridge defect"
+      out := out ++ "\n  Differential test, not a proof of equivalence: it covers sampled inputs only.\n"
+      if extractable.isEmpty then
+        out := out ++ "\n  (no function in this file is inside the extractable fragment)"
+      let mut disagree := 0
+      let mut checked := 0
+      let mut errored := 0
+      for (f, _) in extractable do
+        -- Only integer parameters can be sampled with literals.
+        let intParams := f.params.all (fun (_, t) => Concrete.CoreExtract.isIntTy t)
+        if !intParams then
+          out := out ++ s!"\n  [{f.name}]  extracted, but not sampled (non-integer parameter)"
+        else
+          -- cartesian product of probes over the parameters, capped
+          let mut product : List (List Int) := [[]]
+          for _ in f.params do
+            product := product.flatMap (fun a => probes.map (fun v => a ++ [v]))
+          let argSets := product.take perFnCap
+          let mut goals : List String := []
+          let mut skipped := 0
+          for args in argSets do
+            -- Build `f(a, b, ...)` in Core and evaluate it with the interpreter.
+            let argExprs := (args.zip f.params).map
+              (fun (v, (_, t)) => Concrete.CExpr.intLit v t)
+            let callExpr := Concrete.CExpr.call (.direct f.name) [] argExprs f.retTy
+            match Concrete.Interp.evalExprVal fns enums [] callExpr with
+            | .error _ => skipped := skipped + 1   -- trap or unsupported: never counted
+            | .ok (_, v) =>
+              let expected : Option String := match v with
+                | .int n _ => some (if n < 0 then s!"({n})" else s!"{n}")
+                | .bool b => some (if b then "true" else "false")
+                | _ => none
+              match expected with
+              | none => skipped := skipped + 1
+              | some e =>
+                let argStr := " ".intercalate
+                  (args.map (fun v => if v < 0 then s!"({v})" else s!"{v}"))
+                let app := if argStr.isEmpty then f.name else s!"{f.name} {argStr}"
+                -- Named lemma + `Print Assumptions` so this script attests its own
+                -- integrity like every other Rocq script we emit. rocqDischarge
+                -- requires that attestation before believing exit 0, because `coqc`
+                -- exits 0 on `Admitted.` as well as `Qed.`; an unattested script is
+                -- classified `error`, so every emitter must opt in or its results stop
+                -- counting. Uniform by construction rather than per-call-site.
+                let nm := s!"diff{goals.length}"
+                goals := goals ++
+                  [s!"Lemma {nm} : {app} = {e}. Proof. reflexivity. Qed.\nPrint Assumptions {nm}."]
+          if goals.isEmpty then
+            out := out ++ s!"\n  [{f.name}]  no comparable input (all {skipped} probes trapped or were unsupported)"
+          else
+            let src := Concrete.CoreExtract.extractPreamble ++ allDefs ++ "\n"
+                       ++ "\n".intercalate goals ++ "\n"
+            let res ← rocqDischarge [(f.name, src)]
+            let cell := match res with
+              | none => "unavailable (coqc not on PATH)"
+              | some verdicts => match verdicts.lookup f.name with
+                | none => "not-asked"
+                -- coqc accepted every equation: the two evaluators agree.
+                | some .closed => s!"agree ({goals.length} inputs, {skipped} skipped)"
+                -- `reflexivity` failing means the two computed DIFFERENT values.
+                -- classifyRocqFailure calls that an `error` because it is not a
+                -- tactic-failure marker, so re-read it here where a non-unifying
+                -- equation is precisely the signal we are looking for.
+                | some (.error d) =>
+                  if strContains d "Unable to unify" || strContains d "Not convertible"
+                  then s!"DISAGREE — {d}"
+                  else s!"error — {d}"
+                | some .refused => "DISAGREE — Rocq could not verify the equation"
+            -- Count only genuine agreement as agreement. Counting an `error` here
+            -- would let a broken emitted script read as a checked function, which is
+            -- the same class of lie as calling it `refused`.
+            if strContains cell "DISAGREE" then disagree := disagree + 1
+            else if strContains cell "error" then errored := errored + 1
+            else if strContains cell "agree" then checked := checked + 1
+            out := out ++ s!"\n  [{f.name}]  {cell}"
+      if !missed.isEmpty then
+        out := out ++ s!"\n\n  OUTSIDE the extractable fragment ({missed.length}), so NOT bridge-checked:"
+        out := out ++ s!"\n    {", ".intercalate missed}"
+        out := out ++ "\n  (loops, structs, enums, arrays, matches, borrows, casts, generics, floats,"
+        out := out ++ "\n   strings — named rather than silently skipped, so coverage is not overstated)"
+      if disagree > 0 then
+        out := out ++ s!"\n\nCORE-SEMANTICS-DIFF FAILED — {disagree} function(s) where the interpreter and the"
+        out := out ++ "\n  Rocq extraction compute different values. One of the two mis-models Core."
+        IO.println (out ++ "\n")
+        return 1
+      if errored > 0 then
+        out := out ++ s!"\n\nCORE-SEMANTICS-DIFF FAILED — {errored} function(s) produced an unusable extraction"
+        out := out ++ "\n  (a malformed or non-self-contained Gallina script). That is a defect in the"
+        out := out ++ "\n  extractor, not evidence about the program, so it is not reported as agreement."
+        IO.println (out ++ "\n")
+        return 1
+      out := out ++ s!"\n\nCORE-SEMANTICS-DIFF: {checked} function(s) agree across two independent evaluators."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "term-ir" then
+      -- R-0455: how much the STRING lowering loses, as a number. `exprToProver` drops any
+      -- term containing `div`/`mod` or a spec call; `ofExpr` carries both. The two therefore
+      -- disagree on exactly the obligations the prover path silently loses today, which is
+      -- the defect R-0455 describes in prose.
+      let dropped := Report.droppedByStringLayer parsed.modules
+      let carried := Report.carriedByBoth parsed.modules
+      let both := Report.droppedByBoth parsed.modules
+      IO.println "=== Term IR coverage vs the string lowering (R-0455) ==="
+      IO.println "  `exprToProver` renders an obligation to a prover's syntax and returns"
+      IO.println "  `none` for anything outside an infix-only operator table — div/mod inside a"
+      IO.println "  larger term, and spec-function calls. Those obligations are DROPPED from the"
+      IO.println "  prover path. The IR carries them."
+      IO.println ""
+      IO.println s!"  obligations examined:              {carried.length + dropped.length + both.length}"
+      IO.println s!"    carried by both layers:          {carried.length}"
+      IO.println s!"    DROPPED by the string layer only: {dropped.length}   <- the IR's win"
+      IO.println s!"    dropped by BOTH:                 {both.length}   <- outside the IR's fragment too"
+      IO.println ""
+      IO.println "  Casts ARE modelled, as a wrap at the target width matching the reference"
+      IO.println "  (`Interp.evalCast`/`IntArith.wrapToType`) — not as identity, which would make"
+      IO.println "  the IR denote a different value than the program computes. Before that,"
+      IO.println "  `arr[(a / b) as Int]` was dropped by BOTH layers and the IR recovered nothing."
+      IO.println ""
+      IO.println "  Measured across examples/: the IR recovers 0, because the corpus contains no"
+      IO.println "  obligation with a division inside a cast. The capability is exercised by a"
+      IO.println "  constructed fixture in check_transform_register.sh, so 'recovers 0 here' is a"
+      IO.println "  fact about this corpus rather than about the IR."
+      if carried.isEmpty && dropped.isEmpty && both.isEmpty then
+        IO.println ""
+        IO.println "  (no linear obligations in this file — the comparison examined nothing,"
+        IO.println "   which is not the same as nothing being dropped)"
+      for (k, e) in dropped do
+        IO.println s!"    [{k}]  {e}"
+      return 0
+    if reportType == "artifact-fuzz" then
+      -- R-0462: emit a driver that exercises every fuzzable function with contract-satisfying
+      -- inputs. Compiling and running it is `check_artifact_fuzz.sh`'s job — the compiler
+      -- cannot re-invoke itself, and keeping the plan separate makes it deterministic and
+      -- diffable rather than hidden inside a process the gate spawns.
+      -- Classify each function by what the obligation layer CLAIMS about its runtime safety.
+      -- Derived from the SAME discharged ledger the reports and the release gate read, so the
+      -- fuzzer cannot disagree with them about whether something was proved.
+      let dvcs ← computeVCsDischarged parsed.modules locMap registry
+      let safetyKinds := ["no_overflow", "array_bounds", "div_nonzero",
+                          "div_quotient_in_range", "shift_amount_in_range"]
+      let claimOf : String → String := fun fq =>
+        let mine := dvcs.filter (fun v => v.fn == fq && safetyKinds.contains v.kind)
+        if mine.isEmpty then "unclaimed"
+        else if mine.all (fun v => v.status.startsWith "proved" || v.status == "arithmetic_proved")
+        then "claimed" else "unproved"
+      -- The invoked file's own functions, from the SCOPED Core rather than from `locMap`
+      -- (whose `file` field is stamped uniformly and cannot distinguish dependencies).
+      let ownFns := (scopedValidCore.coreModules.flatMap Report.coreFnFingerprints).map (·.1)
+      let cases := Report.artifactFuzzCases parsed.modules ownFns claimOf
+      let total := cases.foldl (fun n c => n + c.argRows.length) 0
+      let allFns := ownFns.length
+      IO.println "=== Artifact fuzz plan (R-0462: run the BINARY against the safety claims) ==="
+      IO.println "  Register A says: if the obligation holds, the runtime property holds."
+      IO.println "  This tests that empirically against the artifact that ships, so it also"
+      IO.println "  crosses surface -> Core -> SSA -> LLVM, which no register row covers."
+      IO.println ""
+      IO.println s!"  fuzzable functions: {cases.length} of {allFns}   argument tuples: {total}"
+      if cases.isEmpty then
+        IO.println ""
+        IO.println "  (nothing fuzzable here — see the exclusion rules on `artifactFuzzCases`:"
+        IO.println "   public, integer params and result, no capabilities, no type params)"
+      let byClaim := fun (k : String) => cases.filter (fun c => c.claim == k)
+      IO.println s!"  claimed   (all safety obligations proved): {(byClaim "claimed").length}"
+      IO.println s!"  unclaimed (no safety obligation at all):   {(byClaim "unclaimed").length}"
+      IO.println s!"  unproved  (NOT fuzzed — a trap is expected): {(byClaim "unproved").length}"
+      IO.println ""
+      for c in cases do
+        IO.println s!"    [{c.claim}] {c.fnQual}  ({c.argRows.length} rows)"
+      IO.println ""
+      IO.println "--- BEGIN DRIVER ---"
+      IO.print (Report.artifactFuzzDriver cases)
+      IO.println "--- END DRIVER ---"
+      IO.println "--- BEGIN MECHANISM DRIVER ---"
+      IO.print (Report.artifactFuzzMechanismDriver cases)
+      IO.println "--- END MECHANISM DRIVER ---"
+      return 0
+    if reportType == "lowering-agreement" then
+      -- Closes the hole `--report multi-kernel` states as a non-attestation: that the
+      -- per-kernel lowerings spell the SAME proposition. For each obligation we emit
+      -- GROUND instances of that prover's own rendering and make the prover decide
+      -- them, comparing against the independent concrete evaluator. `refused` here
+      -- means the rendering has a different truth table than the reference — a real
+      -- disagreement, and grounds to distrust that kernel's cell in the badge.
+      let drivers : List (String × String × Bool × List (String × String)) :=
+        [ ("rocq:lia", "rocq", rocqRun, Report.rocqAgreementGoals parsed.modules),
+          ("isabelle:presburger", "isabelle", isaRun, Report.isabelleAgreementGoals parsed.modules) ]
+      let mut out := "=== Lowering-agreement check (does each kernel's rendering mean the SAME thing?) ==="
+      out := out ++ "\n  method: substitute literals -> the driver renders a CLOSED proposition ->"
+      out := out ++ "\n          the prover decides it -> compare against the independent evaluator."
+      out := out ++ s!"\n  up to {Report.agreementInstanceCap} ground instances per obligation,"
+      out := out ++ " hypothesis-satisfying ones first.\n"
+      out := out ++ "\n  agrees   = same truth table as the reference evaluator on the grid"
+      out := out ++ "\n  DISAGREES = the rendering means something else (do not trust that cell)"
+      out := out ++ "\n  error    = the rendering is malformed (our bug)\n"
+      let mut disagreements := 0
+      let mut ran := false
+      for (label, _, enabled, goals) in drivers do
+        if !enabled then
+          out := out ++ s!"\n  {label}: off (flag not set)"
+        else
+          ran := true
+          let res ← if label == "isabelle:presburger"
+                    then isabelleDischarge goals else rocqDischarge goals
+          match res with
+          | none => out := out ++ s!"\n  {label}: unavailable (tool not on PATH)"
+          | some verdicts =>
+            out := out ++ s!"\n  {label}:"
+            if verdicts.isEmpty then
+              out := out ++ "\n      (no obligation lowerable to this prover in this file)"
+            for (k, v) in verdicts do
+              let cell := match v with
+                | .closed => "agrees"
+                | .refused => "DISAGREES — rendering differs from the reference evaluator"
+                | .error d => s!"error — {d}"
+              if v == .refused then disagreements := disagreements + 1
+              out := out ++ s!"\n      [{k}]  {cell}"
+      if !ran then
+        out := out ++ "\n\n  (pass --rocq and/or --isabelle to actually check a kernel's lowering)"
+      -- The SMT rendering is checked ALWAYS, with no flag, because unlike the external
+      -- kernels it needs no extra toolchain (z3 is in the base dev shell) and unlike them
+      -- its verdict enters the TCB as `solver_trusted` with no kernel re-deriving it. It
+      -- was the only lowering with no agreement check at all — the cheapest diversity in
+      -- the system (one printer, every SMT-LIB consumer) and the least validated.
+      -- R-0450: Lean's OWN rendering, checked on the same scale as everyone else's and
+      -- with no flag, because omega needs no extra toolchain. Lean was the last unchecked
+      -- lowering, and the reason recorded for that — "its rendering IS the reference, so
+      -- nothing exists to validate it with" — was wrong: the reference is the EVALUATOR,
+      -- and Lean's rendering is measured against it exactly as Rocq's and Isabelle's are.
+      let leanGoals := Report.leanAgreementGoals parsed.modules
+      if leanGoals.isEmpty then
+        out := out ++ "\n\n  lean:omega (exprToLeanProp): no obligation lowerable"
+      else
+        let closed ← kernelDischargeLoopVCs leanGoals
+        out := out ++ s!"\n\n  lean:omega (exprToLeanProp): {closed.length}/{leanGoals.length} agree"
+        for (k, _) in leanGoals do
+          if !closed.contains k then
+            disagreements := disagreements + 1
+            out := out ++ s!"\n      [{k}]  DISAGREES — rendering differs from the reference evaluator"
+      let smtGoals := Report.smtAgreementGoals parsed.modules
+      if smtGoals.isEmpty then
+        out := out ++ "\n\n  smt (exprToSmt): no obligation renders into the SMT column"
+      else
+        match ← smtAgreementCheck smtGoals with
+        | none =>
+          out := out ++ "\n\n  smt (exprToSmt): unavailable (no z3) — NOT validated"
+        | some verdicts =>
+          let bad := verdicts.filter (fun (_, v) => v == .refused)
+          let errs := verdicts.filter (fun (_, v) => match v with | .error _ => true | _ => false)
+          out := out ++ s!"\n\n  smt (exprToSmt): {verdicts.length - bad.length - errs.length}/{verdicts.length} ground instances agree"
+          for (k, _) in bad do
+            out := out ++ s!"\n      [{k}]  DISAGREES — exprToSmt renders a different proposition"
+            disagreements := disagreements + 1
+          for (k, v) in errs do
+            match v with
+            | .error d => out := out ++ s!"\n      [{k}]  error — {d}"
+            | _ => pure ()
+      if disagreements > 0 then
+        out := out ++ s!"\n\nLOWERING-AGREEMENT FAILED — {disagreements} lowering(s) do not mean what the"
+        out := out ++ "\n  obligation means. Any multi-kernel badge resting on them is unearned."
+        IO.println (out ++ "\n")
+        return 1
+      out := out ++ "\n\nLOWERING-AGREEMENT: every checked rendering matches the reference evaluator."
+      IO.println (out ++ "\n")
+      return 0
+    if reportType == "solver-cert" then
+      -- Feature #2: certificate-check the SMT solver. Nonlinear overflow VCs the
+      -- kernel tiers can't close go to an external solver (`solver_trusted` — solver
+      -- in the TCB). Here we ALSO hand each to Rocq's `nia`: a VC the solver reports
+      -- unsat AND `nia` independently closes graduates to `solver_checked` — a kernel
+      -- corroborated the solver, so the solver drops out of the trusted base. Honest
+      -- boundary: this is kernel corroboration, not literal LRAT/Alethe proof-term
+      -- replay (that needs a certified SAT/SMT checker — future work).
+      let smtGoals := Report.overflowSmtGoals parsed.modules
+      let solverId ← z3VersionId
+      let z3res ← smtDischarge smtGoals 5
+      let niaGoals := Report.rocqNiaGoals parsed.modules
+      let niaEmitted := niaGoals.map (·.1)
+      let niaClosed ← rocqDischarge niaGoals
+      -- Certificate REPLAY (strictly stronger than corroboration): Isabelle's `smt`
+      -- with smt_oracle=false reconstructs the solver's proof in the HOL kernel, and
+      -- the emitted theory asserts the result carries no oracle.
+      let replayGoals := Report.isabelleSmtReplayGoals parsed.modules
+      let replayEmitted := replayGoals.map (·.1)
+      let replayRes ← isabelleDischarge replayGoals
+      let mut out := "=== Solver certificate-check (SMT solver + independent kernel corroboration + REPLAY) ==="
+      out := out ++ s!"\n  solver: {solverId}   corroborating kernel: Rocq nia   replay: Isabelle smt(verit), smt_oracle=false"
+      out := out ++ "\n  solver_trusted  = solver in the TCB."
+      out := out ++ "\n  solver_checked  = an independent decision procedure reached the same verdict"
+      out := out ++ "\n                    (solver drops out of the TCB, but its reasoning was not checked)."
+      out := out ++ "\n  solver_replayed = the solver's PROOF was reconstructed inference-by-inference in a"
+      out := out ++ "\n                    kernel, and asserted oracle-free. Strictly stronger."
+      out := out ++ "\n  NOTE: reconstruction supports LINEAR integer arithmetic only — z3, cvc5 and"
+      out := out ++ "\n        veriT all fail on nonlinear goals. These VCs are nonlinear by selection,"
+      out := out ++ "\n        so `refused` in the replay column is the expected status today, not a bug.\n"
+      if smtGoals.isEmpty then
+        out := out ++ "\n(no SMT-eligible nonlinear obligations in this file)\n"
+      for (k, cls, _) in z3res do
+        let niaCell := match niaClosed with
+          | none => "unavailable"
+          | some verdicts =>
+            if !niaEmitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
+        let replayCell := match replayRes with
+          | none => "unavailable"
+          | some verdicts =>
+            if !replayEmitted.contains k then "not-asked"
+            else match verdicts.lookup k with
+              | none => "not-asked"
+              | some v => v.cell
+        -- Only a genuine `closed` graduates the class. An `error` cell must never
+        -- graduate (and never silently read as `refused`). Replay outranks
+        -- corroboration: a checked proof is stronger than a matching verdict.
+        let final :=
+          if cls == "solver_trusted" && replayCell == "closed" then "solver_replayed"
+          else if cls == "solver_trusted" && niaCell == "closed" then "solver_checked"
+          else cls
+        out := out ++ s!"\n  [{k}]\n      z3 = {cls}   rocq:nia = {niaCell}   isabelle:smt(verit) = {replayCell}   => {final}"
+      -- Loud on our own bugs, as in the multi-kernel report.
+      match niaClosed with
+      | some verdicts =>
+        let errs := verdicts.filterMap (fun (k, v) =>
+          match v with | .error d => some (k, d) | _ => none)
+        if !errs.isEmpty then
+          out := out ++ s!"\n\n  ERRORS ({errs.length}) — OUR bugs, not kernel disagreements:"
+          for (k, d) in errs do out := out ++ s!"\n    rocq:nia [{k}]: {d}"
+      | none => pure ()
+      IO.println (out ++ "\n")
       return 0
     if reportType == "caps" then
       IO.println (Report.capabilityReport validCore.coreModules)
@@ -1364,13 +2538,24 @@ def compileAndReport (inputPath : String) (reportType : String)
       let combined := result.stdout.trimAscii.toString ++ "\n" ++ result.stderr.trimAscii.toString
       let mut verified : List String := []
       let mut failed : List (String × String) := []
-      for (fn, proofName, _, _) in proofNames do
+      -- `unbound` links are deliberately INCLUDED above (kernel replay is how a link
+      -- without a stored subject earns one), but a type-checking theorem does not make
+      -- the CLAIM proved: with no stored proof-subject digest the freshness check
+      -- compares the body with itself, so nothing detects a changed body. Counting
+      -- those as "verified" is the claim outrunning its evidence — on
+      -- examples/hmac_sha256 it read "11 verified" while ProofCore was simultaneously
+      -- emitting 11 "this claim is unbound, not proved" errors. Bucketed separately so
+      -- the summary cannot say verified when it means only type-checked.
+      let mut unboundChecked : List String := []
+      for (fn, proofName, _, oblStatus) in proofNames do
         -- Check if this proof name produced an error (Lean uses backticks in error messages)
         let errNeedle := s!"`{proofName}`"
         let stderrParts := combined.splitOn errNeedle
         let hasError := stderrParts.length != 1
         if hasError then
           failed := failed ++ [(fn, proofName)]
+        else if oblStatus.canonical == "unbound" then
+          unboundChecked := unboundChecked ++ [fn]
         else
           verified := verified ++ [fn]
       -- If exit code non-zero but no specific failures found, mark all as failed
@@ -1410,7 +2595,8 @@ def compileAndReport (inputPath : String) (reportType : String)
           ",\n  \"all_checked\": ", (if failed.isEmpty && !generalFailure then "true" else "false"),
           ",\n  \"checks\": [\n", ",\n".intercalate allObjs, "\n  ],\n",
           "  \"lean_error\": ", q leanErr,
-          ",\n  \"summary\": {\"verified\": ", toString verified.length, ", \"failed\": ", toString failed.length,
+          ",\n  \"summary\": {\"verified\": ", toString verified.length,
+          ", \"unbound\": ", toString unboundChecked.length, ", \"failed\": ", toString failed.length,
           ", \"total\": ", toString (proofNames.length + ensuresThms.length), "}\n}"])
         let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
         return (if failed.isEmpty && !generalFailure then 0 else 1)
@@ -1430,6 +2616,11 @@ def compileAndReport (inputPath : String) (reportType : String)
           let source := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.2.1) |>.getD .hardcoded
           let sourceTag := if source == .registry then "registry" else "hardcoded"
           out := out ++ s!"    ✓ {fn} — {proofName} ({sourceTag})\n"
+      if !unboundChecked.isEmpty then
+        out := out ++ s!"\n  Type-checked but UNBOUND — not proved ({unboundChecked.length}):\n"
+        for fn in unboundChecked do
+          let proofName := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.1) |>.getD "?"
+          out := out ++ s!"    ? {fn} — {proofName} (no stored proof-subject digest; add #[proof_fingerprint(\"...\")])\n"
       if !failed.isEmpty then
         out := out ++ s!"\n  Failed ({failed.length}):\n"
         for (fn, proofName) in failed do
@@ -1449,9 +2640,22 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ s!"\n  Diagnostics ({checkDiags.length}):\n"
         for d in checkDiags do
           out := out ++ s!"    [{d.kind.code}] {d.function}: failure={d.failureClass}, repair={d.repairClass}\n"
+      -- Keep `N verified, M failed` CONTIGUOUS: check_proof_freshness.sh extracts
+      -- exactly that substring to compare verdicts across working directories, and
+      -- because it compares two extracted strings, breaking the pattern would make
+      -- both empty and the assertion pass VACUOUSLY rather than fail. The unbound
+      -- count is appended after, so the honest number is present without silently
+      -- disarming an existing gate.
       out := out ++ s!"\nSummary: {verified.length} verified, {failed.length} failed"
+      if !unboundChecked.isEmpty then
+        out := out ++ s!"; {unboundChecked.length} unbound (type-checked, NOT proved)"
       if generalFailure then
         out := out ++ " (general compilation error)"
+      if !unboundChecked.isEmpty then
+        -- Enforcement lives in the policy gate, which fails closed on `.unbound`
+        -- (E0612). Say so, so a reader does not mistake exit 0 here for "shippable".
+        out := out ++ "\n  NOTE: an unbound claim is not evidence. `[policy] require-proofs`"
+        out := out ++ " rejects these (E0612)."
       -- Clean up temp dir
       let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
       IO.println out
@@ -1585,10 +2789,11 @@ def compileBuild (projectRoot : String) (outputPath : Option String) (emitLLVM :
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-        (assumeQuals := asm) (solverTrustedQuals := st)
+        (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
+        (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
         return 1
@@ -1649,10 +2854,11 @@ partial def compileTestBuild (projectRoot : String) (moduleFilter : Option Strin
     if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
       return 1
     if !policy.isEmpty then
-      let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+      let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
       let policyDs := enforcePolicy policy validCore.coreModules
         (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-        (assumeQuals := asm) (solverTrustedQuals := st)
+        (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
+        (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
       if hasErrors policyDs then
         IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
         return 1
@@ -1912,10 +3118,11 @@ def main (args : List String) : IO UInt32 := do
         for d in ledger.diagnostics do
           if d.code == "registry" then IO.eprintln d.message
         if !policy.isEmpty then
-          let (vac, asm, st) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
+          let (vac, asm, st, cap, btk, ekr) ← computePolicyQuals policy parsed.modules depNames policyLocMap registry
           let policyDs := enforcePolicy policy validCore.coreModules
             (locMap := policyLocMap) (pc := pc) (depNames := depNames) (vacuousQuals := vac)
-            (assumeQuals := asm) (solverTrustedQuals := st)
+            (assumeQuals := asm) (solverTrustedQuals := st) (cappedObligations := cap)
+            (belowTwoKernelQuals := btk) (externalKernelRan := ekr)
           if hasErrors policyDs then
             IO.eprintln (renderDiagnostics policyDs (sourceMap := allSrcMap))
             return 1
@@ -2305,6 +3512,21 @@ def main (args : List String) : IO UInt32 := do
     compileAndReport inputPath reportType (smtEmit := true)
   | [inputPath, "--report", reportType, "--emit-lean-replay"] =>
     compileAndReport inputPath reportType (emitLeanReplay := true)
+  | [inputPath, "--report", reportType, "--rocq"] =>
+    compileAndReport inputPath reportType (rocqRun := true)
+  | [inputPath, "--report", reportType, "--isabelle"] =>
+    compileAndReport inputPath reportType (isaRun := true)
+  -- both orders accepted so flag order is not load-bearing
+  | [inputPath, "--report", reportType, "--rocq", "--isabelle"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--isabelle", "--rocq"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--all-provers"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
+  | [inputPath, "--report", reportType, "--all-provers", "--require-two-kernels"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (isaRun := true) (reqTwoKernels := true)
+  | [inputPath, "--report", reportType, "--rocq", "--require-two-kernels"] =>
+    compileAndReport inputPath reportType (rocqRun := true) (reqTwoKernels := true)
   | [inputPath, "--report", reportType, "--smt"] =>
     compileAndReport inputPath reportType (smtRun := true)
   | [inputPath, "--report", reportType, "--smt", "--json"] =>
@@ -2332,6 +3554,27 @@ def main (args : List String) : IO UInt32 := do
     | .ok modules =>
       IO.print (formatProgram modules)
       return 0
+  -- General prover-flag parsing for the multi-kernel family: ANY subset, ANY order.
+  -- The exact-match patterns above enumerate combinations one by one, so a perfectly
+  -- valid request like `--rocq --isabelle --require-two-kernels` fell through to the
+  -- usage dump — and a caller checking only the exit code would read that usage error
+  -- as a failed evidence gate. Placed after the specific patterns so they still win.
+  | inputPath :: "--report" :: reportType :: rest =>
+    -- `--json` is accepted alongside them: the multi-kernel provenance is recorded in
+    -- the JSON artifact, so asking for both at once is the natural request.
+    let proverFlags := ["--rocq", "--isabelle", "--all-provers", "--require-two-kernels", "--json"]
+    if !rest.isEmpty && rest.all (fun a => proverFlags.contains a) then
+      -- Flags go through Cli.hasFlag, not an inline `contains`: one definition of what
+      -- a boolean flag means (ROADMAP Phase 4 #14b, enforced by check_cli_plumbing).
+      let allProvers := Cli.hasFlag rest "--all-provers"
+      compileAndReport inputPath reportType
+        (rocqRun := allProvers || Cli.hasFlag rest "--rocq")
+        (isaRun := allProvers || Cli.hasFlag rest "--isabelle")
+        (reqTwoKernels := Cli.hasFlag rest "--require-two-kernels")
+        (reportJson := Cli.hasFlag rest "--json")
+    else do
+      IO.eprintln usage
+      return 1
   | _ =>
     IO.eprintln usage
     return 1

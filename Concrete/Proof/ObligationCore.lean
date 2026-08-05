@@ -24,6 +24,38 @@ namespace Concrete.ObligationCore
     `proved_by_kernel_decision`; an external solver only the solver classes. -/
 def statusVocabulary : List String :=
   [ "proved_by_lean", "proved_by_kernel_decision", "proved_by_lean_replay",
+    -- Second-kernel classes (spike/multi-prover-evidence). `proved_by_rocq` /
+    -- `proved_by_isabelle` = that independent kernel closed its lowering of the
+    -- obligation; `proved_by_two_kernels` / `proved_by_multi_kernel` = Lean plus
+    -- one / ≥2 external kernels each closed their lowering of the obligation. These
+    -- attest CHECKER diversity, not BRIDGE diversity: kernels are matched on the
+    -- obligation KEY, and each per-prover renderer re-spells the obligation with
+    -- nothing verifying they spell the SAME proposition (there is no subject-digest
+    -- cross-check — that is future work). So this means "N kernels each accepted a
+    -- lowering of this VC", NOT "N kernels agree on one checked proposition". When
+    -- Isabelle (HOL) is among them the kernels span CIC and HOL. Never launders past
+    -- a `trusted` boundary.
+    "proved_by_rocq", "proved_by_isabelle",
+    "proved_by_two_kernels", "proved_by_multi_kernel",
+    -- `kernel_disagreement` = kernels rendering the SAME proposition (lowering agreed)
+    -- returned OPPOSITE verdicts. Neither a badge nor `unproven`: every kernel here is
+    -- complete for linear integer arithmetic, so a disagreement is a defect report,
+    -- most likely about our driver for the dissenting kernel. It CAPS the claim and
+    -- fails the two-kernel release gate. Distinct from a lowering disagreement, where
+    -- the kernels decided different propositions and the dissenter simply does not
+    -- attest.
+    "kernel_disagreement",
+    -- `solver_checked` = an external SMT solver reported unsat AND an independent
+    -- kernel (Rocq `nia`) also closed the goal, so the solver leaves the TCB —
+    -- strictly stronger than `solver_trusted` (solver-in-TCB). This corroborates the
+    -- solver's VERDICT; it does not check the solver's reasoning.
+    "solver_checked",
+    -- `solver_replayed` = the solver's PROOF was reconstructed inference-by-inference
+    -- in a kernel (Isabelle `smt` with `smt_oracle = false`, asserted oracle-free),
+    -- not merely corroborated by a second decision procedure. Strictly stronger than
+    -- `solver_checked`. Reconstruction covers linear integer arithmetic only, so a
+    -- nonlinear VC cannot currently reach this class — see docs/SMT_SOUNDNESS.md.
+    "solver_replayed",
     "arithmetic_proved", "solver_trusted", "tested_by_oracle", "runtime_checked",
     "enforced", "assumed", "trusted", "partial", "stale", "vacuous", "missing",
     "unproven", "planned", "counterexample", "unknown", "timeout", "solver_error",
@@ -38,6 +70,12 @@ def statusVocabulary : List String :=
 def kindVocabulary : List String :=
   [ "requires_at_entry", "postcondition", "precondition", "array_bounds",
     "div_nonzero", "no_overflow", "assert", "assume", "vacuity",
+    -- R-0464 / H24: the two trap conditions obligation generation used to omit.
+    -- `div_quotient_in_range` is signed `MIN / -1`, which `div_nonzero` does not imply;
+    -- `shift_amount_in_range` had no family at all. Both are tied to
+    -- `IntArith.allTrapConditions` by a totality example in Report.lean, so a condition
+    -- added to the semantics cannot be left unclaimed by a family.
+    "div_quotient_in_range", "shift_amount_in_range",
     "loop_invariant_init", "loop_invariant_preservation", "loop_exit_implies_post",
     "variant_nonnegative", "variant_decreases", "invalid_contract_expression",
     "impure_contract_call", "source_proof_link", "proof_fingerprint", "spec_drift",
@@ -46,6 +84,41 @@ def kindVocabulary : List String :=
     -- Companion kind for the `unbound` status above; distinct from `spec_drift`
     -- so a release gate can tell "the subject moved" from "there is no subject".
     "unbound_proof_link" ]
+
+/-! ### Trap conditions ↔ obligation families (R-0464 / H24)
+
+`IntArith.trapConditions` says what a checked op owes. This says which obligation family
+discharges each, and the example below makes the correspondence TOTAL: a condition added to
+the semantics has no family until someone names one here, and naming a family that emits no
+such VC kind fails too.
+
+That totality is the part `check_vc_bridge_register.sh` structurally could not provide. It
+asserts every family GENERATOR has a register row, so a family that does not exist has no
+generator to notice — which is exactly how the shift gap stayed invisible while the gate
+suite was green. The direction matters: this walks from the SEMANTICS to the families, so
+absence is what it detects. -/
+
+/-- The VC kind that discharges each trap condition. Total by construction — a new
+    `TrapCondition` constructor makes this a missing-case error, which is the point. -/
+def familyForTrapCondition : IntArith.TrapCondition → String
+  | .divisorNonZero     => "div_nonzero"
+  | .quotientInRange    => "div_quotient_in_range"
+  | .resultInRange      => "no_overflow"
+  | .shiftAmountInRange => "shift_amount_in_range"
+
+/-- Every trap condition in the semantics is claimed by a real obligation kind. Fails if a
+    condition is added to `IntArith` without a family, or if `familyForTrapCondition` names
+    a kind that is not in the canonical vocabulary. -/
+example : IntArith.allTrapConditions.all
+    (fun c => kindVocabulary.contains (familyForTrapCondition c)) = true := rfl
+
+/-- And the map is injective: two conditions must not be answered by ONE obligation, which is
+    the specific defect H24 was. `div_nonzero` covered `divisorNonZero` and was treated as if
+    it also covered `quotientInRange`; a division discharged `b ≠ 0`, reported
+    `proved_by_kernel_decision`, and aborted on `MIN / -1`. Distinct conditions, distinct
+    obligations, distinct keys. -/
+example : (IntArith.allTrapConditions.map familyForTrapCondition).eraseDups.length
+    = IntArith.allTrapConditions.length := rfl
 
 /-- ObligationCore schema — the one typed obligation record (Phase 3 #18d). It is
     now an `abbrev` of `Report.Obligation`: there is a SINGLE record type, hosted
@@ -210,6 +283,13 @@ def toJson (o : Obligation) : String :=
     s!"{q "dependencies"}: {jarrStr o.dependencies}",
     s!"{q "allowed_engines"}: {jarrStr o.allowedEngines}",
     s!"{q "status"}: {q o.status}", s!"{q "engine"}: {q o.engine}",
+    -- Multi-kernel provenance: which kernels attested, at which VERSIONS. Empty
+    -- arrays when no external kernel ran, so the default ledger is unchanged. A
+    -- stored `proved_by_two_kernels` without versions cannot be re-audited — the
+    -- reader cannot tell which prover builds agreed, nor invalidate the claim if one
+    -- is later found buggy.
+    s!"{q "attesting_kernels"}: {jarrStr o.attestingKernels}",
+    s!"{q "attesting_kernel_versions"}: {jarrStr o.attestingKernelVersions}",
     s!"{q "counterexample"}: {jobjStr o.counterexample}",
     s!"{q "replay"}: {q o.replay}", s!"{q "policy_impact"}: {q o.policyImpact}" ]
     |> (fun body => "{" ++ body ++ "}")

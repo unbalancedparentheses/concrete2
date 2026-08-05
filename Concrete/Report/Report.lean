@@ -13,6 +13,7 @@ import Concrete.Report.Json
 import Concrete.Report.ReportBase
 import Concrete.Report.ReportInterface
 import Concrete.Report.ReportObligations
+import Concrete.Report.Evidence
 
 namespace Concrete
 namespace Report
@@ -216,6 +217,77 @@ def authorityReport (modules : List CModule) : String :=
 -- Determines which functions could be extracted for ProofCore
 -- (pure, no trusted, no extern calls, no raw pointer ops).
 
+/-- Close a set of function names BACKWARDS over the call graph: every caller that can reach a
+    member is added, to a fixpoint.
+
+    Used for the two profile properties that are not backed by a capability. Alloc and the
+    blocking caps are transitive for free — the compiler already refuses `E0520: requires Alloc
+    but caller has (none)`, so a caller must declare the capability and the effects report sees
+    it. FFI has no capability behind it, only a direct-callee check, so `f` calling `g` calling
+    an extern reported `ffi: no` and `evidence: enforced` while transitively crossing FFI. This
+    makes FFI agree with the two gates that were already transitive. -/
+private partial def closeBackward (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
+    List String :=
+  match fuel with
+  | 0 => seed
+  | fuel + 1 =>
+    let more := callGraph.filterMap fun (n, cs) =>
+      if !seed.contains n && cs.any (fun c => seed.contains c) then some n else none
+    if more.isEmpty then seed else
+      -- Both the qualified node name AND its final component. The call graph resolves callees
+      -- to qualified names, but the effects report compares against RAW callee names, so a
+      -- qualified-only set never matches there. Carrying the bare form can over-flag a
+      -- same-named function in another module; that direction refuses a function rather than
+      -- admitting one, which is the side to err on for a profile.
+      let bare := more.map fun n => (n.splitOn ".").getLast!
+      closeBackward callGraph (seed ++ (more ++ bare).eraseDups) fuel
+
+/-- Functions that cannot be certified acyclic, closed over callers.
+
+    "Predictable execution" is a property of RUNNING a function: if `f` calls `g`, running `f`
+    runs `g`, so `f` can only be predictable if `g` is. The label was computed from `f`'s own
+    body alone, so this was `enforced`:
+
+        fn recurses(x: i32) -> i32 { if x <= 0 { return 0; } return recurses(x - 1); }
+        fn caller(x: i32)   -> i32 { return recurses(x); }        -- enforced
+
+    `caller` contains no recursion textually and unbounded recursion in practice.
+
+    The other gates never had this problem, and not by design: alloc and the blocking caps are
+    transitive because the COMPILER forces it (`E0520: requires Alloc but caller has (none)`), and
+    FFI was closed over the call graph earlier. Recursion was the last gate detected by a graph
+    walk rather than by types, and the only one still asking "is it written in your body?"
+    instead of "can you reach it?".
+
+    The seed includes bodies containing an INDIRECT call: with no edge for `f(x)` the callee set
+    is unknown, so acyclicity is not established there either. -/
+private def recursionUncertain (callGraph : CallGraph)
+    (recMap : List (String × RecursionKind × List String))
+    (indirectFns : List String) : List String :=
+  let seed := (recMap.filterMap fun (n, k, _) =>
+    match k with | .none => none | _ => some n) ++ indirectFns
+  closeBackward callGraph seed.eraseDups (callGraph.length + 1)
+
+/-- Qualified names of functions whose body contains an indirect call. -/
+private partial def indirectCallFns (m : CModule) (pfx : String := "") : List String :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  (m.functions.filterMap fun f =>
+      if hasIndirectCallStmts f.body then some (qualPrefix ++ "." ++ f.name) else none)
+    ++ m.submodules.foldl (fun acc sub => acc ++ indirectCallFns sub qualPrefix) []
+
+/-- The two transitively-closed sets every profile consumer needs, from one place.
+
+    Returned together deliberately. When FFI was closed over the call graph, three of the six
+    consumers kept passing the UNCLOSED set and stayed non-transitive — the same
+    "one path updated, the rest silently not" defect this session keeps turning up, introduced
+    by the fix for it. Computing both here means a consumer cannot obtain one without the
+    other. -/
+def profileClosures (modules : List CModule) (pc : Concrete.ProofCore) :
+    List String × List String :=
+  let indirect := modules.foldl (fun acc m => acc ++ indirectCallFns m) []
+  ( closeBackward pc.callGraph pc.externNames (pc.callGraph.length + 1)
+  , recursionUncertain pc.callGraph pc.recMap indirect )
+
 /-- Reasons a function is excluded from ProofCore. -/
 private def proofExclusionReasons (externNames : List String) (f : CFnDef) : List String :=
   let reasons : List String := []
@@ -303,6 +375,7 @@ private def fmtEffectsRow (e : FnEffects) : String :=
 
 private partial def effectsForModule
     (externNames : List String)
+    (recUncertain : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : FnLocMap)
     (pc : Concrete.ProofCore)
@@ -324,7 +397,12 @@ private partial def effectsForModule
     let loopClass := classifyLoops f.body
     -- Evidence level: enforced if passes all 5 predictable gates
     let (concreteCaps, _) := f.capSet.normalize
-    let hasRecursion := rec_ != "none"
+    -- An indirect call means the callee set is not statically known, so this function cannot
+    -- be shown acyclic. Treated as recursion for admission purposes: the profile's claim is
+    -- "no recursion", and "we could not tell" does not support it.
+    let hasIndirect := hasIndirectCallStmts f.body
+    -- Transitive: reaching a function that cannot be certified acyclic is enough.
+    let hasRecursion := rec_ != "none" || hasIndirect || recUncertain.contains qualName
     let hasUnboundedLoops := loopClass == "unbounded" || loopClass == "mixed"
     let hasAllocEvidence := !allocs.isEmpty || concreteCaps.any (· == "Alloc")
     let hasFfi := crossesFfi
@@ -356,20 +434,21 @@ private partial def effectsForModule
       evidence := evidenceLevel
       loc := lookupLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recMap locMap pc sub qualPrefix) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc sub qualPrefix) []
 
 def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : String :=
   let header := "=== Combined Effects Report ==="
   -- Use shared analysis results from ProofCore
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  -- Transitively closed: reaching an extern through another function still crosses FFI.
+  let (externNames, recUncertain) := profileClosures modules pc
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   -- Format per-module
   let body := modules.map fun m =>
-    let modEffects := effectsForModule externNames recMap locMap pc m
+    let modEffects := effectsForModule externNames recUncertain recMap locMap pc m
     let fnLines := modEffects.map fmtEffectsRow
     s!"module {m.name}:\n{"\n".intercalate fnLines}"
   -- Summary counts
@@ -534,13 +613,29 @@ private partial def collectStackFns
   let fns := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
     let frame := computeFrameBytes ctx f
-    let isRec := match recMap.find? (fun (n, _, _) => n == qualName) with
+    -- An indirect call contributes no call-graph edge, so the deepest chain through this body
+    -- looks like one frame and the report would state a specific byte bound for a function that
+    -- may recurse arbitrarily deep. A false NUMBER is worse than a missing one: it is quotable.
+    -- Grouped with the recursive functions, which is where "no bound established" already lives.
+    let isRec := if hasIndirectCallStmts f.body then true else
+      match recMap.find? (fun (n, _, _) => n == qualName) with
       | some (_, .none, _) => false
       | some _ => true
       | none => false
     (qualName, f.name, frame, isRec, lookupLoc locMap qualName)
   fns ++ m.submodules.foldl (fun acc sub =>
     acc ++ collectStackFns ctx recMap locMap sub qualPrefix) []
+
+/-- Close a set of "no bound established" functions backwards over the call graph.
+
+    `computeCallDepths` FILTERED recursive callees out of each chain, so a function calling an
+    unbounded one still received a finite byte bound: `ping` calling `apply` (unbounded) was
+    reported as `depth: 1, stack: 32 bytes`, and that number became the program's
+    `Max stack bound`. Dropping the edge understates the answer instead of declining to give
+    one. Unboundedness has to propagate to callers, which is what this does. -/
+private def closeUnbounded (callGraph : CallGraph) (seed : List String) (fuel : Nat) :
+    List String :=
+  closeBackward callGraph seed fuel
 
 /-- Stack-depth report for functions passing the no-recursion profile. -/
 def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
@@ -553,9 +648,12 @@ def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
   let frameSizes := allFns.map fun (qn, _, frame, _, _) => (qn, frame)
   -- Compute call depths
   let depths := computeCallDepths frameSizes callGraph recMap
+  -- Anything that can REACH a function with no bound has no bound either.
+  let seed := (allFns.filter (fun (_, _, _, isRec, _) => isRec)).map (fun (qn, _, _, _, _) => qn)
+  let unbounded := closeUnbounded callGraph seed (frameSizes.length + 1)
   -- Build FnStackInfo records
   let infos := allFns.map fun (qn, name, frame, isRec, loc) =>
-    if isRec then
+    if isRec || unbounded.contains qn then
       { qualName := qn, name := name, frameBytes := frame,
         callDepth := 0, stackBound := 0, isRecursive := true, loc := loc : FnStackInfo }
     else
@@ -613,6 +711,7 @@ structure ProfileViolation where
 
 partial def checkPredictableModule
     (recMap : List (String × RecursionKind × List String))
+    (recUncertain : List String)
     (externNames : List String)
     (locMap : FnLocMap)
     (m : CModule) (modulePath : String := "") : List ProfileViolation :=
@@ -637,6 +736,33 @@ partial def checkPredictableModule
          , hint := "Break the cycle by restructuring into a loop or state machine."
          , loc := fnLoc }]
       | _ => []
+    -- 1b. Indirect calls. The call graph records only DIRECT callees, so a cycle that passes
+    -- through a function pointer produces no edge and SCC finds nothing: `ping` calling
+    -- `apply(ping, …)` reported `recursion: none` and passed this gate, and `--report
+    -- stack-depth` stated a specific byte bound for it. The callee set is not statically known,
+    -- so acyclicity cannot be established -- and "could not tell" does not support a
+    -- `no recursion` claim.
+    -- 1c. TRANSITIVE recursion. "Predictable execution" is a property of RUNNING the function:
+    -- if it calls something that cannot be certified acyclic, its own execution inherits that.
+    -- `caller` calling a directly recursive `recurses` was `enforced` because the label was
+    -- computed from its own body alone. Alloc and the blocking caps never had this problem --
+    -- the compiler forces a caller to declare the capability -- and FFI was closed earlier, so
+    -- recursion was the last gate asking "is it written here?" instead of "can you reach it?".
+    let transRecViolations :=
+      if recUncertain.contains qualName && (recMap.find? (fun (n, k, _) => n == qualName && k != .none)).isNone
+         && !hasIndirectCallStmts f.body then
+        [{ fnName := f.name, qualName := qualName
+         , reason := "reaches a function whose recursion cannot be ruled out"
+         , hint := "Predictable execution is transitive: the callee must itself pass the profile."
+         , loc := fnLoc }]
+      else []
+    let indirectViolations :=
+      if hasIndirectCallStmts f.body then
+        [{ fnName := f.name, qualName := qualName
+         , reason := "indirect call (callee not statically known, so recursion cannot be ruled out)"
+         , hint := "Call a named function directly, or keep this function out of the predictable profile."
+         , loc := fnLoc }]
+      else []
     -- 2. Loop boundedness — point at the offending loop
     let loopClass := classifyLoops f.body
     let loopSpan := findLoopSpan astBody
@@ -683,9 +809,9 @@ partial def checkPredictableModule
       else [{ fnName := f.name, qualName := qualName, reason := s!"may block ({", ".intercalate blockingUsed})"
             , hint := s!"Remove {", ".intercalate blockingUsed} from with(...) or move I/O to a non-predictable caller."
             , loc := fnLoc, violationSpan := match entry with | some e => some e.fnSpan | none => none }]
-    acc ++ recViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
+    acc ++ recViolations ++ transRecViolations ++ indirectViolations ++ loopViolations ++ allocViolations ++ ffiViolations ++ blockViolations) []
   fnViolations ++ m.submodules.foldl (fun acc sub =>
-    acc ++ checkPredictableModule recMap externNames locMap sub qualPrefix) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap sub qualPrefix) []
 
 /-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
 private def getSourceLine (source : String) (lineNum : Nat) : String :=
@@ -729,9 +855,9 @@ private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : Str
 def checkPredictable (modules : List CModule) (locMap : FnLocMap := [])
     (sourceMap : SourceMap := []) (pc : Concrete.ProofCore) : Bool × String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let allFns := modules.foldl (fun acc m => acc ++ collectAllFnDefs m) []
   let violatingFns := (violations.map (·.fnName)).eraseDups
   let passingFns := allFns.length - violatingFns.length
@@ -2027,6 +2153,58 @@ what stops a solver from silently becoming a "proved" path. -/
 
 def vcSchemaVersion : Nat := 1
 
+/-- What ONE kernel reported about ONE obligation: the auditable unit the
+    multi-kernel classes are composed from.
+
+    `verdict` is the kernel's own cell (`closed` / `refused` / `error` /
+    `not-asked`); `loweringAgreed` records whether the goal that kernel was handed
+    was verified to denote the obligation. BOTH are required for the receipt to count
+    as evidence — a kernel that closed a goal denoting something else proved a
+    different proposition. `replay` is the command an outsider runs to re-derive this
+    receipt, which is what makes the evidence portable rather than merely asserted. -/
+structure KernelReceipt where
+  kernel         : String        -- "lean" | "rocq" | "isabelle"
+  version        : String        -- exact tool identity, e.g. "coqc 9.0.1"
+  verdict        : String        -- "closed" | "refused" | "error" | "not-asked"
+  loweringAgreed : Bool          -- did its rendering denote the obligation?
+  replay         : String := ""  -- how to re-check this receipt independently
+  deriving Inhabited, BEq
+
+/-- Does this receipt count toward the multi-kernel class? -/
+def KernelReceipt.attests (r : KernelReceipt) : Bool :=
+  r.verdict == "closed" && r.loweringAgreed
+
+/-- The independence axes a multi-kernel claim spans, stated structurally so a stale
+    claim fails a gate instead of merely reading oddly in a comment.
+
+    `bridge` is the honest "no": every kernel checks a lowering produced by ONE
+    Core→obligation bridge, so agreement says nothing about that bridge's
+    faithfulness until realization proofs or a discharged bridge register exist. -/
+structure IndependenceFacts where
+  specFormalization    : String  -- "no" — one spec, one formalization
+  kernelImplementation : String  -- "yes" once an external kernel attests
+  kernelFoundations    : String  -- "no" | "partial (CIC×CIC)" | "yes (CIC×HOL)"
+  bridge               : String  -- "no (single shared Core→obligation bridge)"
+  deriving Inhabited, BEq
+
+/-- Derive the independence axes from the set of attesting kernels.
+
+    R-0458: `kernelFoundations` now comes from `Evidence.foundationSummary` rather than from
+    a local `contains "isabelle"` / `contains "rocq"` chain. The old chain was a SECOND copy
+    of which kernel belongs to which foundation, sitting in a different module from the badge
+    that reports it — so adding a fourth kernel meant remembering to edit both, and the two
+    could disagree about the same attester set. One definition, two consumers. -/
+def independenceOf (attest : List String) : IndependenceFacts :=
+  let (n, names) := foundationSummary attest
+  { specFormalization := "no (one spec, one formalization)"
+    kernelImplementation :=
+      if attest.any (fun k => k != "lean") then "yes" else "no (lean only)"
+    kernelFoundations :=
+      if n ≥ 2 then s!"yes ({names})"
+      else if attest.length ≥ 2 then s!"partial ({names}×{names} — {attest.length} kernels, one foundation)"
+      else "no (single foundation)"
+    bridge := "no (single shared Core→obligation bridge; see --report core-semantics-diff)" }
+
 /-- The ONE obligation record (Phase 3 #18d). Formerly two types — `Report.VC`
     and `ObligationCore.Obligation` — now a single struct hosted here (the module
     `collectVCs` lives in; `ObligationCore` imports `Report`, so the canonical
@@ -2045,6 +2223,10 @@ structure Obligation where
   conclusion    : String
   origin        : String
   dependencies  : List String
+  -- Loop VCs this obligation's HYPOTHESES owe (R-0461). Distinct from `dependencies`,
+  -- which is the function-level proof-dependency edge: this is the VC-level hypothesis
+  -- edge, and H23 was exactly the absence of a composition along it.
+  hypDebt       : List String := []
   arithProfile  : String       -- constant | linear | bitvector | nonlinear | refinement | operational | unsupported
   dischargeMode : String       -- constant_fold | omega | bv_decide | lean | smt | none
   -- discharge OUTCOME (filled in by `dischargeVCs` after the backends run):
@@ -2062,6 +2244,27 @@ structure Obligation where
   allowedEngines : List String := []   -- which backends may discharge it
   replay         : String := ""        -- human replay hint
   policyImpact   : String := ""        -- release-policy consequence of `status`
+  -- independent kernels that each accepted a lowering of this obligation (spike
+  -- multi-prover-evidence); set by foldMultiKernelResults, e.g. ["lean","rocq"].
+  attestingKernels : List String := []
+  -- The SAME attesters with their tool versions, e.g.
+  -- ["lean 4.28.0", "coqc 9.0.1", "isabelle Isabelle2025-2"]. Recorded because a
+  -- STORED `proved_by_two_kernels` claim is otherwise un-auditable: months later the
+  -- artifact says two kernels agreed but not which builds, so the claim cannot be
+  -- reproduced or invalidated by a known-buggy prover release. Versions are exactly
+  -- what the verdict cache keys on, so both come from one source.
+  attestingKernelVersions : List String := []
+  /-- One RECEIPT per kernel that was consulted. The multi-kernel class is COMPOSED
+      from these (count the receipts that both closed and agreed), never decided by a
+      coordinator that holds its own opinion about what agreement means. That
+      direction matters: a class computed from receipts cannot drift from the receipts,
+      whereas a separately-maintained class can — and did, until the badge was
+      composed with lowering agreement. -/
+  kernelReceipts : List KernelReceipt := []
+  /-- Which axes of independence this obligation's evidence actually spans. Structured
+      rather than prose, because a prose non-attestation is the drift class this
+      project keeps rediscovering: comments do not fail a gate when they go stale. -/
+  independence : Option IndependenceFacts := none
 
 /-- Compatibility alias: `VC` is the obligation record, kept for the existing
     discharge/schema/render call sites. -/
@@ -2207,8 +2410,9 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"0 ≤ {Concrete.fmtExpr o.idxExpr} ∧ {Concrete.fmtExpr o.idxExpr} < {o.size}"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "array_bounds" o.fnQual file line hyps concl
-      s!"index {o.arrName}[{Concrete.fmtExpr o.idxExpr}] (size {o.size}) in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "array_bounds" o.fnQual file line hyps concl
+      s!"index {o.arrName}[{Concrete.fmtExpr o.idxExpr}] (size {o.size}) in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- div/mod nonzero.
   for o in divObligations modules do
     let (file, line) := loc o.fnQual
@@ -2218,8 +2422,37 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"{Concrete.fmtExpr o.divExpr} ≠ 0"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "div_nonzero" o.fnQual file line hyps concl
-      s!"{if o.isMod then "%" else "/"} divisor {Concrete.fmtExpr o.divExpr} in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "div_nonzero" o.fnQual file line hyps concl
+      s!"{if o.isMod then "%" else "/"} divisor {Concrete.fmtExpr o.divExpr} in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
+    -- R-0464 / H24: the SECOND condition `IntArith.trapConditions` lists for `/` and `%`.
+    -- A separate VC with its own key, because a division can discharge `divisor ≠ 0` and
+    -- still trap on signed `MIN / -1` — one status for two conditions is how the weaker one
+    -- masked the stronger. Emitted only where the operand type has a signed minimum to
+    -- exclude; unsigned and unknown-width operands cannot hit the quotient overflow.
+    match o.quotGoal, o.quotMin with
+    | some g, some m =>
+      let (qh, qc) := splitVCGoal g
+      out := out ++ [{ mkVC (o.key ++ "q") "div_quotient_in_range" o.fnQual file line qh qc
+        s!"{if o.isMod then "%" else "/"} quotient of {Concrete.fmtExpr o.numExpr} by {Concrete.fmtExpr o.divExpr} in {o.fnQual} (excludes {m} / -1)"
+        [] "linear" "omega" "planned" ""
+        with hypDebt := o.hypDebt }]
+    | _, _ => pure ()
+  -- R-0464 / H24: shift amounts. A family that did not exist, so `<<`/`>>` produced no VC
+  -- at all and `--report vcs` was silent about an operation that aborts.
+  for o in shiftObligations modules do
+    let (file, line) := loc o.fnQual
+    let (hyps, concl, profile, mode, status, engine) := match o.leanGoal with
+      | some g => let (h, c) := splitVCGoal g; (h, c, "linear", "omega", "planned", "")
+      | none =>
+        let c := s!"0 ≤ {Concrete.fmtExpr o.amountExpr} ∧ {Concrete.fmtExpr o.amountExpr} < {o.width}"
+        let (st, en) := constStatus o.closedVerdict
+        if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en)
+        else ([], c, "unsupported", "none", "ineligible", "")
+    out := out ++ [{ mkVC o.key "shift_amount_in_range" o.fnQual file line hyps concl
+      s!"shift of {Concrete.fmtExpr o.shiftedExpr} by {Concrete.fmtExpr o.amountExpr} in {o.fnQual} (width {o.width})"
+      [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- overflow (omega tier, then the interval-gated bv_decide fallback, then const).
   for o in overflowObligations modules do
     let (file, line) := loc o.fnQual
@@ -2230,8 +2463,9 @@ def collectVCs (modules : List Module) (locMap : FnLocMap)
         let c := s!"{o.lo} ≤ {Concrete.fmtExpr o.opExpr} ∧ {Concrete.fmtExpr o.opExpr} ≤ {o.hi}"
         let (st, en) := constStatus o.closedVerdict
         if o.closedVerdict.isSome then ([], c, "constant", "constant_fold", st, en) else ([], c, "unsupported", "none", st, en)
-    out := out ++ [mkVC o.key "no_overflow" o.fnQual file line hyps concl
-      s!"no-overflow of {Concrete.fmtExpr o.opExpr} in [{o.lo}, {o.hi}] in {o.fnQual}" [] profile mode status engine]
+    out := out ++ [{ mkVC o.key "no_overflow" o.fnQual file line hyps concl
+      s!"no-overflow of {Concrete.fmtExpr o.opExpr} in [{o.lo}, {o.hi}] in {o.fnQual}" [] profile mode status engine
+      with hypDebt := o.hypDebt }]
   -- loop obligations (reuse loopObInfo for kind/hyps/conclusion). Discharge is
   -- decided by omega (O1/O3/O4/O5) or stays operational/lean (O2) → planned here.
   for (pfx, f) in (modules.flatMap allFunctions).filter (fun (_, f) => !f.loopContracts.isEmpty) do
@@ -2292,12 +2526,42 @@ a class it does not own (the evidence-class firewall is structural, not a
 convention). omega/bv_decide own the kernel classes, external SMT owns only the
 solver classes, Lean-replay owns only `proved_by_lean_replay`. -/
 
+/-- **R-0465: how a backend may treat what a claim RESTS ON — the firewall's second axis.**
+
+    `allowed` governs *who may claim what*. Evidence has a second axis, *what the claim
+    rests on*, and it had no framework until Register C. H23 lived entirely in the second
+    one, which is why a well-built firewall did not catch it: the fold correctly refuses to
+    upgrade an `assumed` VC, but a VC proved under an unestablished invariant carries
+    `proved_by_kernel_decision` and sailed straight through.
+
+    `union` is the only sound default. A backend that closes a goal has learned something
+    about the goal, not about the hypotheses it was handed — so discharging a proof
+    obligation must never shrink the assumption set. `reset` exists to be *named and
+    unused*: it is what a backend that genuinely discharges assumptions would declare, and
+    having the case forces a new adapter to state its choice rather than inherit silence.
+    The compile-time example below pins that no adapter selects it today. -/
+inductive AssumptionPolicy where
+  | union
+  | reset
+  deriving DecidableEq, Repr
+
 structure DischargeAdapter where
   engine     : String              -- the engine string stamped on a touched VC
   allowed    : List String         -- the ONLY statuses this backend may assign
   actsOn     : String → Bool       -- precondition: which CURRENT status it may act on
   finalize   : String → String → String  -- (vcKind, rawResultClass) → final status
   setsSolver : Bool := false       -- whether to stamp the solver-identity field
+  assumptions : AssumptionPolicy := .union  -- R-0465: never `reset` without saying so
+
+/-- The firewall's admission test: may this adapter move a VC in `curStatus` to `cls`?
+
+    Extracted from `fold` so a backend that cannot use `fold` still passes the SAME test.
+    `foldMultiKernelResults` is that backend — it computes a rich verdict (receipts,
+    attesters, independence axes) rather than a bare class, so it cannot be expressed as a
+    `results` list, and it therefore assigned its status by direct record update, outside
+    the firewall built to govern exactly that. R-0465 routes it through here instead. -/
+def DischargeAdapter.admits (a : DischargeAdapter) (curStatus cls : String) : Bool :=
+  a.actsOn curStatus && a.allowed.contains cls
 
 /-- Apply a backend's `(id, rawClass, model)` results through the adapter
     firewall. A result is applied to VC `v` only when `v.id` matches, `actsOn
@@ -2311,10 +2575,18 @@ def DischargeAdapter.fold (a : DischargeAdapter) (solverId : String)
     | none => v
     | some (_, raw, model) =>
       let cls := a.finalize v.kind raw
-      if a.actsOn v.status && a.allowed.contains cls then
+      if a.admits v.status cls then
         { v with status := cls, engine := a.engine,
                  counterexample := if cls == "counterexample" then model else v.counterexample,
-                 solver := if a.setsSolver then solverId else v.solver }
+                 solver := if a.setsSolver then solverId else v.solver,
+                 -- EXPLICIT, not incidental. Record-update already preserved `hypDebt`, so
+                 -- this line changes no behaviour — and that is the point: the preservation
+                 -- was an accident of syntax that any future rewrite of this branch could
+                 -- drop without a single gate noticing. Stating it makes the second axis a
+                 -- declared property of the choke point.
+                 hypDebt := match a.assumptions with
+                   | .union => v.hypDebt
+                   | .reset => [] }
       else v
 
 /-- omega: a kernel decision procedure. Owns `proved_by_kernel_decision`, plus
@@ -2378,15 +2650,58 @@ def assumptionAdapter : DischargeAdapter :=
   { engine := "assumed", allowed := ["assumed", "trusted"],
     actsOn := fun _ => true, finalize := fun _ raw => raw }
 
+/-- **Multi-kernel attestation (R-0465).** Owns the three classes produced by consulting
+    independent kernels on an obligation Lean already closed: the two badges and the
+    downgrade. Acts ONLY on a VC that Lean has proved — external attestation is a strengthening
+    of an existing Lean proof, never a way to obtain one, so a `planned` or `unproven` VC is
+    outside its precondition and stays untouched.
+
+    `kernel_disagreement` is in `allowed` because this adapter is the thing that assigns it;
+    it is deliberately NOT in `proofClasses`, being a downgrade rather than a claim.
+
+    These were the newest and strongest classes in the system and the only ones outside the
+    firewall — protected by a hand-rolled `actsOn` in `foldMultiKernelResults`, which was
+    not unsound but was convention where everything around it was structure. -/
+def multiKernelAdapter : DischargeAdapter :=
+  { engine := "multi-kernel",
+    allowed := ["proved_by_two_kernels", "proved_by_multi_kernel", "kernel_disagreement"],
+    actsOn := fun s => s == "proved_by_kernel_decision" || s == "proved_by_lean"
+                       || s == "proved_by_lean_replay",
+    finalize := fun _ raw => raw }
+
 /-- Every backend adapter, for the firewall properties below and documentation. -/
 def dischargeAdapters : List DischargeAdapter :=
   [constantFoldAdapter, omegaAdapter, bvAdapter, linkedLeanAdapter, replayAdapter,
-   smtAdapter, oracleAdapter, runtimeAdapter, assumptionAdapter]
+   smtAdapter, oracleAdapter, runtimeAdapter, assumptionAdapter, multiKernelAdapter]
 
 /-- The static-proof evidence classes — the ones an untrusted backend (SMT,
     runtime, oracle, assumption) must NEVER be able to emit. -/
 def proofClasses : List String :=
-  ["proved_by_kernel_decision", "proved_by_lean", "proved_by_lean_replay", "arithmetic_proved"]
+  ["proved_by_kernel_decision", "proved_by_lean", "proved_by_lean_replay", "arithmetic_proved",
+   -- R-0465: the multi-kernel badges belong here. Their absence meant the four
+   -- "untrusted backends emit no proof class" examples below would have stayed GREEN if an
+   -- untrusted adapter had listed `proved_by_multi_kernel` — the strongest claim the system
+   -- can make was the one the firewall did not defend.
+   "proved_by_two_kernels", "proved_by_multi_kernel"]
+
+/-- Register C companion to `Evidence.c3_caps_to_assumed`, kept here because this is
+    where `proofClasses` lives. C3 proves a claim with outstanding assumptions presents
+    as exactly `"assumed"`; this proves `"assumed"` is not a proof class. Together:
+    **a claim resting on an unestablished hypothesis can never present as proved** — the
+    H23 *class*, as a compile-time fact rather than a gate.
+
+    R-0461 (2026-08-03) closed H23 itself: `capOnHypothesisDebt` populates the assumption
+    set from loop-invariant provenance, so this example now constrains live verdicts. The
+    fixture in `check_known_wrong_corpus.sh` asserts the cap rather than the hole.
+    `docs/KNOWN_HOLES.md` is the authority on hole status; this comment is a reference to
+    it, and `check_hole_status_consistency.sh` fails if a reference disagrees in EITHER
+    direction — the stale-open form that replaced this sentence's stale-closed predecessor
+    was found by exactly that check.
+
+    The two halves are deliberately in different modules. Evidence.lean must not import
+    the report layer, and putting the list here keeps one definition of what counts as a
+    proof class for both the adapter firewall and the assumption cap. -/
+example : (!proofClasses.contains "assumed") = true := rfl
 
 /-! ### The evidence-class firewall, proved at compile time (Phase 3 #13)
 
@@ -2419,6 +2734,60 @@ example : (omegaAdapter.fold "" [fwVC "planned"]
 -- replay acts ONLY on solver_trusted: a planned VC is untouched.
 example : (replayAdapter.fold "" [fwVC "planned"]
     [("f#x", "x", [])]).map (·.status) = ["planned"] := rfl
+
+/-! #### R-0465: the multi-kernel classes, and the assumption axis
+
+The badges were the strongest claims in the system and the only ones the firewall did not
+govern. These pin both halves of that fix. -/
+
+-- Untrusted backends cannot emit a multi-kernel badge either. This is the check whose
+-- ABSENCE was the hole: before `proved_by_two_kernels`/`proved_by_multi_kernel` were added
+-- to `proofClasses`, the four examples above passed while saying nothing about them —
+-- widening the list is what gave them teeth, and this one states the property directly for
+-- EVERY adapter rather than the four that were spelled out by hand.
+example : dischargeAdapters.all (fun a =>
+  a.engine == "multi-kernel" || a.allowed.all (fun c =>
+    c != "proved_by_two_kernels" && c != "proved_by_multi_kernel")) = true := rfl
+
+-- Attestation STRENGTHENS an existing Lean proof; it is never a route to one. A VC the
+-- kernels never proved cannot be badged, whatever the external kernels claim.
+example : multiKernelAdapter.admits "planned" "proved_by_multi_kernel" = false := rfl
+example : multiKernelAdapter.admits "unproven" "proved_by_two_kernels" = false := rfl
+example : multiKernelAdapter.admits "assumed" "proved_by_multi_kernel" = false := rfl
+example : multiKernelAdapter.admits "solver_trusted" "proved_by_multi_kernel" = false := rfl
+-- ...and cannot mint a class it does not own, even from a legitimate precondition.
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "proved_by_lean_replay" = false := rfl
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "trusted" = false := rfl
+-- What it MAY do: strengthen a Lean-proved VC, or downgrade one on disagreement.
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "proved_by_multi_kernel" = true := rfl
+example : multiKernelAdapter.admits "proved_by_lean" "proved_by_two_kernels" = true := rfl
+example : multiKernelAdapter.admits "proved_by_kernel_decision" "kernel_disagreement" = true := rfl
+-- The downgrade is not a proof class, so nothing above lets it launder into one.
+example : (!proofClasses.contains "kernel_disagreement") = true := rfl
+
+-- The assumption axis. No backend discharges assumptions, so every adapter unions; a new
+-- adapter selecting `.reset` is a deliberate, visible act that breaks this line.
+example : dischargeAdapters.all (fun a => a.assumptions == .union) = true := rfl
+
+-- One obligation, one verdict per kernel: the shape that replaced parallel closed/refused
+-- lists. `find?` cannot report both, so `proved_by_two_kernels` beside a stored refusal is
+-- now unrepresentable rather than merely unreachable.
+example : (([("k", KernelCell.refused), ("k", KernelCell.closed)].find? (·.1 == "k")).map (·.2))
+    = some KernelCell.refused := rfl
+
+private def debtVC (st : String) : VC :=
+  { fwVC st with hypDebt := ["g@1#O2"] }
+
+-- Behavioural: discharging a goal does not shrink what the goal RESTS ON. This is the H23
+-- axis, and it is the lock that a rewrite of `fold` would otherwise silently drop — the
+-- preservation used to be an accident of record-update syntax.
+example : (omegaAdapter.fold "" [debtVC "planned"]
+    [("f#x", "proved_by_kernel_decision", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
+example : (smtAdapter.fold "z3" [debtVC "unproven"]
+    [("f#x", "solver_trusted", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
+-- ...and a REFUSED fold leaves the debt alone too, rather than clearing it on the way out.
+example : (smtAdapter.fold "z3" [debtVC "unproven"]
+    [("f#x", "proved_by_kernel_decision", [])]).map (·.hypDebt) = [["g@1#O2"]] := rfl
 
 def dischargeVCs (vcs : List VC) (omegaProved bvProved : List String) : List VC :=
   -- omega then bv_decide through the adapter firewall; whatever stays `planned`
@@ -2453,6 +2822,213 @@ def markSmtEligible (vcs : List VC) (smtGoals : List (String × String))
 def foldReplayResults (vcs : List VC) (replayed : List String) : List VC :=
   replayAdapter.fold "" vcs (replayed.map (fun k => (k, "replayed", [])))
 
+/-- Fold independent-kernel (Rocq/Isabelle) agreement into the ledger (spike
+    multi-prover-evidence). ONLY enriches VCs Lean already kernel-proved
+    (`proved_by_kernel_decision` / `proved_by_lean` / `proved_by_lean_replay`): a
+    VC an external kernel ALSO closed graduates to `proved_by_two_kernels` (one
+    external) or `proved_by_multi_kernel` (≥2), recording the attesters. It never
+    upgrades an unproved VC, and — per the honesty boundary — attests only that each
+    kernel accepted its OWN lowering (no digest cross-check).
+
+    **It CAN downgrade, and that is deliberate.** An earlier version of this comment said
+    "never downgrades"; the dissent path added later makes that false, and an external
+    review caught the stale claim. A VC Lean proved that an external kernel then REFUSED
+    becomes `kernel_disagreement`: every kernel here is complete for linear integer
+    arithmetic, so opposite verdicts on the same rendering mean something is wrong, and
+    reporting the Lean proof unqualified would hide it. Downgrading on dissent is the
+    only status reduction this fold performs.
+    `rocqClosed`/`isaClosed` are VC ids the external kernels independently closed.
+    Applied only behind the explicit prover flags, so the default ledger is
+    unchanged.
+
+    `leanVer`/`rocqVer`/`isaVer` are the tool identities of the kernels that ran, so
+    the stored claim records WHICH builds attested it. Without them the artifact says
+    "two kernels agreed" but not which ones, and the claim cannot be reproduced later
+    or invalidated when a prover release turns out to be buggy.
+
+    **`rocqValidated`/`isaValidated` carry the validation.** They are the obligation
+    ids whose agreement lemma each kernel positively CLOSED, and a witness is minted per
+    obligation from them. This fold used to write `loweringAgreed := true` literally,
+    trusting the caller to have filtered — which is a claim about a check rather than a
+    product of one, and is how an agreement run that ended in `error` still produced a
+    badge. Defaulting these to `[]` would restore that hazard silently, so they default to
+    `[]` meaning NOTHING is validated: a caller that forgets them gets no attestations
+    rather than unchecked ones. Fail closed on the caller's mistake too. -/
+def foldMultiKernelResults (vcs : List VC)
+    (rocqVerdicts isaVerdicts : List (String × KernelCell))
+    (leanVer : String := "lean") (rocqVer : String := "rocq") (isaVer : String := "isabelle")
+    (rocqValidated isaValidated : List String := [])
+    (leanValidated : Option (List String) := none)
+    : List VC :=
+  vcs.map fun v =>
+    if v.status == "proved_by_kernel_decision" || v.status == "proved_by_lean"
+       || v.status == "proved_by_lean_replay" then
+      -- One RECEIPT per kernel consulted. `loweringAgreed` is DERIVED from whether a
+      -- validation witness could be minted for this kernel and this obligation, never
+      -- written as a literal. It used to be `true` at five sites, which was accidentally
+      -- correct because the caller had filtered — the same assert-instead-of-derive shape
+      -- that let an errored agreement check pass as a passed one. Lean is the exception
+      -- and says why — but the REASON on record was wrong, and R-0450's slice (2026-08-03)
+      -- corrected it. The claim was "Lean's rendering IS the reference the others are
+      -- validated against, so there is nothing to validate it with". The agreement check
+      -- actually validates a rendering against the reference EVALUATOR (`safeOn` /
+      -- `evalBoolEnv`, which walk the AST), not against Lean. The real obstacle was that
+      -- Lean's lowering was not expressible as a driver, so the machinery could not be
+      -- pointed at it. That obstacle is now gone (`exprToLeanProp` delegates to
+      -- `exprToProverU`); running the agreement scripts through a Lean driver and minting a
+      -- witness here is the remaining work, still filed under R-0450. The literal stays
+      -- until then — but it is a TODO, not a fundamental asymmetry.
+      let rocqW := LoweringValidated.mint "rocq" v.id rocqValidated
+      let isaW  := LoweringValidated.mint "isabelle" v.id isaValidated
+      -- R-0450: Lean's rendering is validated on the same terms as everyone else's now.
+      -- `none` means the check was not run (the caller had no Lean agreement pass), and
+      -- gating on a check nobody performed would silently delete every badge. `some ks`
+      -- means it RAN, and then absence from `ks` is a real negative.
+      let leanW := leanValidated.bind (fun ks => LoweringValidated.mint "lean" v.id ks)
+      let leanChecked := leanValidated.isSome
+      -- R-0465: ONE lookup per kernel, so an obligation has exactly one verdict from each.
+      -- This replaced parallel `closed`/`refused` lists whose type could not say they were
+      -- disjoint: given `rocqClosed = ["k"]` and `rocqRefused = ["k"]`, both receipts were
+      -- written while the `if closed … else if refused` chain passed only `.closed` to
+      -- `multiKernelVerdict`, yielding `proved_by_two_kernels` beside a stored refusal. It
+      -- was unreachable — both lists came from one verdict list upstream — but the API could
+      -- not express that, and an invariant held only by its producer is one refactor from
+      -- being lost. `find?` makes the question unaskable rather than answered.
+      let rocqCell := cellFor rocqVerdicts v.id
+      let isaCell  := cellFor isaVerdicts v.id
+      let receipts : List KernelReceipt :=
+        -- DERIVED, not asserted. This was the last `loweringAgreed := true` literal in the
+        -- system, kept because Lean's rendering had no agreement check — for a reason that
+        -- turned out to be wrong (the check measures a rendering against the reference
+        -- EVALUATOR, not against Lean). With `leanAgreementGoals` it has one.
+        [{ kernel := "lean", version := leanVer, verdict := "closed"
+         , loweringAgreed := if leanChecked then leanW.isSome else true
+         , replay := "concrete <file> --report multi-kernel" }]
+        ++ (if rocqCell == .closed then
+              [{ kernel := "rocq", version := rocqVer, verdict := "closed"
+               , loweringAgreed := rocqW.isSome
+               , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
+        ++ (if isaCell == .closed then
+              [{ kernel := "isabelle", version := isaVer, verdict := "closed"
+               , loweringAgreed := isaW.isSome
+               , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
+      -- A kernel that RENDERED this obligation and said no is a dissenter, not an
+      -- absence. It gets a receipt too, with `verdict := "refused"`, so the artifact
+      -- records that a kernel was consulted and disagreed — previously the stored
+      -- claim was indistinguishable from one where no external kernel ran.
+      let dissentReceipts : List KernelReceipt :=
+        (if rocqCell == .refused then
+           [{ kernel := "rocq", version := rocqVer, verdict := "refused"
+            , loweringAgreed := rocqW.isSome
+            , replay := "concrete <file> --report multi-kernel --rocq" }] else [])
+        ++ (if isaCell == .refused then
+              [{ kernel := "isabelle", version := isaVer, verdict := "refused"
+               , loweringAgreed := isaW.isSome
+               , replay := "concrete <file> --report multi-kernel --isabelle" }] else [])
+      let receipts := receipts ++ dissentReceipts
+      let attesting := receipts.filter (·.attests)
+      let versionOf := fun (n : String) =>
+        if n == "rocq" then rocqVer else if n == "isabelle" then isaVer else leanVer
+      -- Derived by the SAME function the multi-kernel report uses, so the ledger and
+      -- the report cannot disagree about one obligation. `v.status` being a kernel
+      -- proof class means Lean closed it, hence `leanClosed := true`.
+      -- Witnesses are MINTED per obligation from the validated sets, never asserted. If
+      -- the agreement lemma did not close for this kernel and this id, `mint` yields
+      -- `none` and multiKernelVerdict excludes the kernel entirely.
+      let verdict := multiKernelVerdict v.id true (
+        kernelInputOf v.id "rocq" "rocq:lia" rocqCell rocqValidated
+        ++ kernelInputOf v.id "isabelle" "isabelle:presburger" isaCell isaValidated)
+      if !verdict.dissent.isEmpty then
+        -- Dissent CAPS the stored claim exactly as it caps the report, and everything a
+        -- kernel said stays in the artifact even when what it said blocks the badge:
+        -- receipts (including the dissenter's, with verdict "refused"), the attesters,
+        -- their versions, AND the independence axes.
+        --
+        -- Independence is recorded over the kernels that were CONSULTED, not the ones
+        -- that agreed — a disagreement between a CIC kernel and a HOL kernel is a
+        -- different and more interesting fact than one within a single family, and
+        -- dropping the axes would erase that. An external review found this branch
+        -- silently leaving `independence := none` while the comment claimed otherwise.
+        -- R-0465: the status passes the SAME admission test as every other backend's.
+        -- Everything else the kernels said is recorded regardless — refusing the status
+        -- change must not silently discard receipts, which are the audit trail.
+        let base :=
+          { v with kernelReceipts := receipts,
+                   attestingKernels := verdict.attest,
+                   independence := some (independenceOf (receipts.map (·.kernel)).eraseDups),
+                   attestingKernelVersions := verdict.attest.map versionOf }
+        if multiKernelAdapter.admits v.status verdict.evidence.present
+        then { base with status := verdict.evidence.present } else base
+      else if attesting.length < 2 then v
+      else
+        let attest := attesting.map (·.kernel)
+        let base :=
+          { v with attestingKernels := attest,
+                   kernelReceipts := receipts,
+                   independence := some (independenceOf attest),
+                   attestingKernelVersions := attest.map versionOf,
+                   -- engine lists the EXTERNAL attesters (lean is already there) — but ONLY
+                   -- when their attestation is being honoured. With Lean's rendering
+                   -- unvalidated the kernels closed goals derived from a lowering we do not
+                   -- trust, so advertising `omega+rocq+isabelle` beside a status that
+                   -- deliberately withholds the badge states the opposite of the finding.
+                   -- Receipts still record everything; the summary field must not oversell.
+                   engine := if leanChecked && leanW.isNone then v.engine
+                             else "+".intercalate (v.engine :: attest.filter (· != "lean")) }
+        -- If the Lean agreement check RAN and this obligation's Lean rendering did not
+        -- agree, no badge. Every kernel here closed a goal that Lean's lowering produced,
+        -- so a faulty Lean rendering means they all agreed about the wrong proposition —
+        -- the one failure mode kernel multiplicity provably cannot detect. Display without
+        -- enforcement was the H23 mistake; this is the enforcement.
+        if leanChecked && leanW.isNone then base
+        else if multiKernelAdapter.admits v.status verdict.evidence.present
+        then { base with status := verdict.evidence.present } else base
+    else v
+
+/-- **R-0461 / H23: cap a VC by the weakest thing its hypotheses rest on.**
+
+    An obligation discharged inside a loop may assume that loop's `#[invariant]`. Whether
+    the invariant holds is answered by that loop's O1 (init) and O2 (preservation), and until
+    this pass existed nothing related the two statuses: a bounds obligation reported
+    `proved_by_multi_kernel (3: lean, rocq, isabelle)` while its O2 read `unproven` in the
+    same report, and the compiled program aborted on the access. See
+    `examples/unsound_hypothesis/`.
+
+    Runs AFTER discharge, necessarily: whether O2 is proved is only known once every VC has
+    a final status. That ordering is the reason this is a separate pass rather than a check
+    inside the family collectors.
+
+    The capped status is `assumed`, via `Evidence.present` — not a new conditional badge.
+    `assumed` is already in `statusVocabulary`, already what `#[assume]` produces, and
+    already gate-forbiddable through `ProjectPolicy.forbidAssume` — via `E0617`
+    (`enforceNoCappedHypotheses`), which R-0461 had to add because `enforceNoAssume` keys on
+    the `assume(...)` construct and a capped obligation has none — so capping makes H23
+    catchable by enforcement that already exists. Register C's C3 is what guarantees the
+    capped value is never a `proved_*` string, and this is the pass that finally makes C3
+    fire on real verdicts rather than sit as proved substrate.
+
+    A VC that is not otherwise proved keeps its own more specific status: replacing
+    `unproven` with `assumed` would trade a fact about this obligation for a fact about
+    someone else's, which is the same rule R-0004 slice 3 applies to dependencies. -/
+def capOnHypothesisDebt (vcs : List VC) : List VC :=
+  let provedIds := vcs.filterMap (fun v =>
+    if v.status.startsWith "proved" || v.status == "trusted" then some v.id else none)
+  -- POST-CONDITION: `hypDebt` holds exactly the OUTSTANDING refs. Before this pass it holds
+  -- every invariant the obligation leans on, proved or not. Keeping the raw list here made
+  -- `constant_time_tag` print `rests on (unproved): ...@52#O1, ...#O2` for two obligations
+  -- whose O1 AND O2 were both proved — the cap correctly declined to fire and the render
+  -- said otherwise. Narrowing to `outstanding` on every branch is what keeps the field's
+  -- meaning the same as its label, and the same as what the policy gate projects.
+  vcs.map fun v =>
+    if v.hypDebt.isEmpty then v else
+    let outstanding := v.hypDebt.filter (fun r => !provedIds.contains r)
+    if outstanding.isEmpty then { v with hypDebt := [] } else
+    if !(v.status.startsWith "proved") then { v with hypDebt := outstanding } else
+      -- Build the claim's evidence and let Register C decide how it presents.
+      let ev := outstanding.foldl (fun (e : Evidence) r => e.assuming r)
+                  (Evidence.proved v.status)
+      { v with status := ev.present, hypDebt := ev.conditions }
+
 /-- Fold external-solver results into the VC schedule. A result class
     (`solver_trusted` / `counterexample` / `unknown` / `timeout` / `solver_error`)
     is applied ONLY to a VC the kernel-checked tiers left `unproven` — so an
@@ -2466,8 +3042,19 @@ def foldSmtResults (vcs : List VC) (results : List (String × String × List (St
 
 /-- Human-readable VC schedule (post-discharge), grouped by originating function.
     `vcs` is the output of `collectVCs` after `dischargeVCs` has folded in results. -/
-def vcsReport (vcs : List VC) : String := Id.run do
-  if vcs.isEmpty then return "=== Verification Conditions (schema v1) ===\n\n(no VCs generated)"
+def vcsReport (vcs : List VC) (unresolvedBounds : List (String × String) := []) : String := Id.run do
+  -- Array accesses that reached no obligation are named HERE rather than nowhere. The empty-VC
+  -- branch has to render them too: a function whose only access has an unresolvable size
+  -- produces zero VCs, and "(no VCs generated)" alone reads as "nothing to check".
+  let unresolvedSection : String :=
+    if unresolvedBounds.isEmpty then "" else
+      let rows := unresolvedBounds.map fun (fq, arr) => s!"\n  {fq}: {arr}[…]"
+      "\n\nARRAY ACCESSES OUTSIDE the bounds fragment — no obligation generated"
+        ++ " (no statically known array size at the access):"
+        ++ String.join rows
+        ++ "\n  (these are NOT covered by the counts above; runtime bounds checks still apply)"
+  if vcs.isEmpty then
+    return "=== Verification Conditions (schema v1) ===\n\n(no VCs generated)" ++ unresolvedSection
   let mut out := "=== Verification Conditions (schema v1) ==="
   let fns := (vcs.map (·.fn)).eraseDups
   for fq in fns do
@@ -2481,8 +3068,13 @@ def vcsReport (vcs : List VC) : String := Id.run do
       let prov := if v.smtHash.isEmpty then ""
         else s!"\n      solver:  {if v.solver.isEmpty then "(not run)" else v.solver} | logic QF_NIA | timeout 5s | smtlib-sha {v.smtHash}"
           ++ (if v.leanReplay.isEmpty then "" else "\n      lean-replay:  artifact emitted (check with `--emit-lean-replay`); kernel-checks → proved_by_lean_replay")
+      -- R-0461: name what the cap rests on. `assumed` alone tells a reader the obligation
+      -- is unproved but not what would prove it; the outstanding refs point at the exact
+      -- loop VCs to go fix, which is the difference between a verdict and an action.
+      let rests := if v.hypDebt.isEmpty then ""
+        else s!"\n      rests on (unproved):  {", ".intercalate v.hypDebt}"
       out := out ++ s!"\n  [{v.id}]  {v.kind}"
-        ++ s!"\n      status:  {v.status}{eng}"
+        ++ s!"\n      status:  {v.status}{eng}{rests}"
         ++ s!"\n      profile/expected:  {v.arithProfile} / {v.dischargeMode}"
         ++ s!"\n      hypotheses:  {hyps}"
         ++ s!"\n      conclusion:  {v.conclusion}{deps}{cex}{prov}"
@@ -2493,7 +3085,7 @@ def vcsReport (vcs : List VC) : String := Id.run do
   let cex := (vcs.filter (·.status == "counterexample")).length
   let unproven := (vcs.filter (fun v => v.status == "unproven" || v.status == "missing" || v.status == "planned")).length
   out := out ++ s!"\n\nTotal: {vcs.length} VCs — {proved} proved_by_kernel_decision, {lean} proved_by_lean, {arith} arithmetic_proved, {cex} counterexample, {unproven} outstanding"
-  return out
+  return out ++ unresolvedSection
 
 /-- Compact VC-evidence summary for the audit report (the reviewer artifact):
     counts per evidence class, plus the audit-critical lines — every
@@ -3444,9 +4036,9 @@ open Json in
 def collectPredictableFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   violations.map violationToFact
 
 open Json in
@@ -3622,9 +4214,9 @@ open Json in
 def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   allEffects.map effectsToFact
 
 open Json in
@@ -3801,6 +4393,32 @@ def vcToJson (v : VC) : Val :=
     ("expected_discharge", .str v.dischargeMode),
     ("status", .str v.status),
     ("engine", .str v.engine),
+    -- Multi-kernel provenance. `null` unless an external kernel actually attested,
+    -- so the default artifact is unchanged. Present WITH versions, because a stored
+    -- `proved_by_two_kernels` is otherwise un-auditable — the reader could not tell
+    -- which prover builds agreed, nor invalidate the claim if one is later found
+    -- buggy. This is the same (tool, version) tuple the verdict cache keys on.
+    ("multi_kernel", if v.attestingKernels.isEmpty then Json.Val.null else .obj [
+      ("attesting_kernels", .arr (v.attestingKernels.map (.str ·))),
+      ("attesting_kernel_versions", .arr (v.attestingKernelVersions.map (.str ·))),
+      -- One receipt per kernel consulted. The class above is COMPOSED from these, so
+      -- a reader can recompute it rather than trust it, and each receipt carries the
+      -- command to re-derive it independently.
+      ("receipts", .arr (v.kernelReceipts.map (fun r => Json.Val.obj [
+        ("kernel", .str r.kernel), ("version", .str r.version),
+        ("verdict", .str r.verdict),
+        ("lowering_agreed", .str (if r.loweringAgreed then "yes" else "no")),
+        ("attests", .str (if r.attests then "yes" else "no")),
+        ("replay", .str r.replay)]))),
+      -- STRUCTURED independence, not a prose sentence: a stale field can be gated, a
+      -- stale comment cannot. `bridge: no` is the standing honest disclaimer.
+      ("independent_of", match v.independence with
+        | none => Json.Val.null
+        | some i => .obj [
+            ("spec_formalization", .str i.specFormalization),
+            ("kernel_implementation", .str i.kernelImplementation),
+            ("kernel_foundations", .str i.kernelFoundations),
+            ("bridge", .str i.bridge)])]),
     ("counterexample", .obj (v.counterexample.map (fun (n, x) => (n, Json.Val.str x)))),
     -- SMT provenance (determinism / replay). Present only for SMT-routed VCs;
     -- `null` otherwise, so the default report carries no solver data.
@@ -4052,9 +4670,9 @@ open Json in
 def predictableQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let fnViolations := violations.filter fun v =>
     v.fnName == fnName
   let answer := if fnViolations.isEmpty then "pass" else "fail"
@@ -4124,15 +4742,15 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (registry : ProofRegistry := [])
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   -- Get effects for evidence level
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   let matchFn (e : FnEffects) := e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   let fnEffects := allEffects.find? matchFn
   -- Get violations
   let violations := modules.foldl (fun acc m =>
-    acc ++ checkPredictableModule recMap externNames locMap m) []
+    acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
   let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
   -- Get proof status
   let entries := modules.foldl (fun acc m =>
@@ -4173,13 +4791,13 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     (fnName : String) (registry : ProofRegistry := [])
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  let (externNames, recUncertain) := profileClosures modules pc
   let capLookup := buildCapLookup modules
   let fnLookup := buildFnLookup modules
   let externLookup := buildExternLookup modules
   -- Effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recMap locMap pc m) []
+    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
   let fnEffects := allEffects.find? fun e => e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
   | none =>
@@ -4206,7 +4824,7 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
       .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
     -- Predictable
     let violations := modules.foldl (fun acc m =>
-      acc ++ checkPredictableModule recMap externNames locMap m) []
+      acc ++ checkPredictableModule recMap recUncertain externNames locMap m) []
     let fnViolations := violations.filter fun v => v.fnName == fnName || v.qualName == fnName || v.qualName.endsWith ("." ++ fnName)
     let violationFacts := fnViolations.map fun v =>
       .obj ([("gate", .str v.reason), ("hint", .str v.hint)]

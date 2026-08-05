@@ -14,7 +14,11 @@
 #                    does not compile yet (see docs/EXAMPLE_LIFECYCLE.md), or a
 #                    file exercised by a dedicated gate with special flags
 #                    (proof_patterns, vc_discharge, vc_suite, smt/teaching,
-#                    contract_stability, obligation_core_probe, stale snippets).
+#                    contract_stability, obligation_core_probe, stale snippets,
+#                    two_kernel_demo and multi_kernel_policy — the last two need
+#                    an EXTERNAL kernel (coqc/isabelle) that this gate's shell
+#                    does not provide, so scripts/tests/check_multi_kernel.sh
+#                    owns them and skips itself when the tools are absent).
 #
 # Checked by scripts/tests/check_examples.sh, which FAILS if a .con file under
 # examples/ is missing from this manifest (or listed here but deleted on disk).
@@ -105,6 +109,8 @@ examples/kvstore/src/main.con project-build
 examples/loop_invariant/src/main.con compile
 examples/lox/src/main.con project-build
 examples/mal/main.con skip
+examples/multi_kernel_policy/allow/src/main.con skip
+examples/multi_kernel_policy/blocked/src/main.con skip
 examples/obligation_core_probe/src/main.con skip
 examples/packet/src/main.con project-build
 examples/parse_validate/catches/01_authority_widening.con expected-error
@@ -214,6 +220,19 @@ examples/wordfreq/src/main.con project-build
 examples/thesis_demo/src/main.con compile
 examples/thesis_demo/src/main_drifted.con compile
 examples/toml/src/main.con project-build
+examples/two_kernel_demo/src/families.con skip
+examples/two_kernel_demo/src/main.con skip
+# H23 counterexample: compiles and reports its bounds obligation PROVED (three
+# kernels) while the invariant it assumes is unproven, and the binary then aborts.
+# `skip` because the corpus checks compile-and-run success and this is deliberately
+# a program whose evidence is wrong — R-0461's gate owns it and asserts the
+# obligation must NOT read proved.
+examples/unsound_hypothesis/src/main.con skip
+# H24 counterexample: `d` reports its div obligation proved and traps on MIN/-1; `s`
+# generates NO obligation and traps on an over-width shift. `skip` for the same reason
+# as above — the corpus checks success and these programs are meant to trap. R-0464's
+# gate owns them.
+examples/trap_semantics_gap/src/main.con skip
 examples/vc_discharge/assumed.con skip
 examples/vc_discharge/bv_decide.con skip
 examples/vc_discharge/counterexample.con skip

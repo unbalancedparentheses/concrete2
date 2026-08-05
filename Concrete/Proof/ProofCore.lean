@@ -90,6 +90,81 @@ partial def collectCallsStmts (ss : List CStmt) : List String :=
   ss.foldl (fun acc s => acc ++ collectCallsStmt s) []
 end
 
+/-! ### Indirect calls
+
+`collectCalls*` above records only DIRECT callees, and says so: an indirect callee is a fn-typed
+binding whose statically-known target set is empty, so it contributes no dependency edge. That
+is the right call for extraction. It is the WRONG call for two guarantees that were quietly
+built on the same call graph:
+
+* **`no recursion`** — a cycle that passes through a function pointer has no edge, so SCC finds
+  no cycle, so the function reports `recursion: none` and `--check predictable` admits it. A
+  genuinely recursive program passes the no-recursion gate.
+* **`--report stack-depth`** — with no edge, the deepest chain is one frame, so the report
+  states a specific `Max stack bound` in bytes for a function that recurses to an arbitrary
+  depth. A false NUMBER, not merely a missing warning.
+
+Both are fixed by refusing to certify: a body containing an indirect call cannot be shown
+acyclic here, so it is excluded rather than assumed acyclic. Resolving the target set (every
+call site of a combinator passes a known function) is a whole-program analysis and a real
+project; assuming it is empty is not a conservative approximation of it, it is the opposite. -/
+mutual
+partial def hasIndirectCallExpr (e : CExpr) : Bool :=
+  match e with
+  | .call callee _ args _ =>
+    callee.directName?.isNone || args.any hasIndirectCallExpr
+  | .binOp _ l r _ => hasIndirectCallExpr l || hasIndirectCallExpr r
+  | .unaryOp _ e _ => hasIndirectCallExpr e
+  | .structLit _ _ fields _ => fields.any (fun (_, v) => hasIndirectCallExpr v)
+  | .fieldAccess obj _ _ => hasIndirectCallExpr obj
+  | .enumLit _ _ _ fields _ => fields.any (fun (_, v) => hasIndirectCallExpr v)
+  | .match_ scrut arms _ => hasIndirectCallExpr scrut || arms.any hasIndirectCallArm
+  | .borrow inner _ | .borrowMut inner _ | .deref inner _ => hasIndirectCallExpr inner
+  | .arrayLit elems _ => elems.any hasIndirectCallExpr
+  | .arrayIndex arr idx _ => hasIndirectCallExpr arr || hasIndirectCallExpr idx
+  | .cast inner _ | .try_ inner _ => hasIndirectCallExpr inner
+  | .allocCall inner alloc _ => hasIndirectCallExpr inner || hasIndirectCallExpr alloc
+  | .ifExpr cond th el _ =>
+    hasIndirectCallExpr cond || hasIndirectCallStmts th || hasIndirectCallStmts el
+  | _ => false
+
+partial def hasIndirectCallArm (arm : CMatchArm) : Bool :=
+  match arm with
+  | .enumArm _ _ _ guard body =>
+    (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .litArm v guard body =>
+    hasIndirectCallExpr v || (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .varArm _ _ guard body =>
+    (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+  | .rangeArm lo hi _ guard body =>
+    hasIndirectCallExpr lo || hasIndirectCallExpr hi
+      || (guard.map hasIndirectCallExpr).getD false || hasIndirectCallStmts body
+
+partial def hasIndirectCallStmt (s : CStmt) : Bool :=
+  match s with
+  | .letDecl _ _ _ v => hasIndirectCallExpr v
+  | .assign _ v => hasIndirectCallExpr v
+  | .return_ (some v) _ => hasIndirectCallExpr v
+  | .return_ none _ => false
+  | .expr e _ => hasIndirectCallExpr e
+  | .ifElse c t el =>
+    hasIndirectCallExpr c || hasIndirectCallStmts t
+      || (match el with | some ss => hasIndirectCallStmts ss | none => false)
+  | .while_ cond body _ step =>
+    hasIndirectCallExpr cond || hasIndirectCallStmts body || hasIndirectCallStmts step
+  | .fieldAssign obj _ v => hasIndirectCallExpr obj || hasIndirectCallExpr v
+  | .derefAssign t v => hasIndirectCallExpr t || hasIndirectCallExpr v
+  | .arrayIndexAssign arr idx v =>
+    hasIndirectCallExpr arr || hasIndirectCallExpr idx || hasIndirectCallExpr v
+  | .break_ (some v) _ => hasIndirectCallExpr v
+  | .break_ none _ | .continue_ _ => false
+  | .defer body => hasIndirectCallExpr body
+  | .borrowIn _ _ _ _ _ body => hasIndirectCallStmts body
+
+partial def hasIndirectCallStmts (ss : List CStmt) : Bool :=
+  ss.any hasIndirectCallStmt
+end
+
 -- Defer collection
 
 mutual
@@ -405,10 +480,50 @@ def classifyRecursion (graph : CallGraph) (sccs : List (List String))
 -- Loop-boundedness classification
 -- ============================================================
 
-private def isBoundedCond (cond : CExpr) : Bool :=
+/-- Does `step` move `v` in `dir` (true = up) by a constant?
+
+    Only literal steps count. `i = i + k` for a variable `k` cannot be certified here — `k`
+    could be 0 or negative — so it reads as no progress, which classifies the loop unbounded
+    and gets it REJECTED by the predictable profile. That is the safe direction: a loop wrongly
+    called unbounded is refused, a loop wrongly called bounded is admitted and may hang. -/
+private def stepsToward (v : String) (dir : Bool) (step : List CStmt) : Bool :=
+  step.any fun st => match st with
+    | .assign nm (.binOp op (.ident nm2 _) (.intLit k _) _) =>
+        nm == v && nm2 == v && k > 0 &&
+          ((dir && op == .add) || (!dir && op == .sub))
+    -- `i = 1 + i`, the commuted form
+    | .assign nm (.binOp op (.intLit k _) (.ident nm2 _) _) =>
+        nm == v && nm2 == v && k > 0 && dir && op == .add
+    | _ => false
+
+/-- A loop is BOUNDED only if a variable in its condition is stepped toward the bound.
+
+    The previous version asked two much weaker questions — "is the condition a comparison?" and
+    "is the step list non-empty?" — and tied them to nothing. Both of these passed, and both
+    run forever:
+
+        for (let mut i = 0; i < n; z = z + 1) { … }   -- step touches an unrelated variable
+        for (let mut i = 0; i < n; i = i - 1) { … }   -- step moves AWAY from the bound
+
+    `--check predictable` admitted a module containing them and reported
+    `0 unbounded loops`, while `PREDICTABLE_BOUNDARIES.md` claims bounded iteration is
+    compiler-enforced. This is a liveness claim, so the consequence of getting it wrong is a
+    program that hangs rather than one that crashes — invisible to every safety obligation.
+
+    `neq` is deliberately NOT accepted: `while (i != n)` terminates only for a starting value
+    this analysis cannot see, so it cannot be certified locally. -/
+private def isBoundedCond (cond : CExpr) (step : List CStmt) : Bool :=
   match cond with
-  | .binOp op _ _ _ =>
-    op == .lt || op == .gt || op == .leq || op == .geq || op == .neq
+  -- `i < n` / `i <= n`: i must increase.   `i > n` / `i >= n`: i must decrease.
+  | .binOp op (.ident v _) _ _ =>
+      if op == .lt || op == .leq then stepsToward v true step
+      else if op == .gt || op == .geq then stepsToward v false step
+      else false
+  -- the commuted form: `n > i` means i increases; `n < i` means i decreases.
+  | .binOp op _ (.ident v _) _ =>
+      if op == .gt || op == .geq then stepsToward v true step
+      else if op == .lt || op == .leq then stepsToward v false step
+      else false
   | _ => false
 
 inductive LoopBound where
@@ -445,8 +560,7 @@ partial def collectLoopBoundsArm (arm : CMatchArm) : List LoopBound :=
 partial def collectLoopBoundsStmt (s : CStmt) : List LoopBound :=
   match s with
   | .while_ cond body _ step =>
-    let hasStep := !step.isEmpty
-    let thisBound := if isBoundedCond cond && hasStep then .bounded else .unbounded
+    let thisBound := if isBoundedCond cond step then .bounded else .unbounded
     [thisBound] ++ collectLoopBoundsStmts body
   | .letDecl _ _ _ v => collectLoopBoundsExpr v
   | .assign _ v => collectLoopBoundsExpr v

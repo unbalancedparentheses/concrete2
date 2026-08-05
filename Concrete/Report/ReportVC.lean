@@ -541,9 +541,48 @@ def obBinOpSmt : BinOp → Option String
   | .add => some "+"  | .sub => some "-" | .mul => some "*"
   | _ => none
 
+/-- Rocq/Gallina infix spelling of a binary operator over `Z`: `(symbol, wrap-in-parens)`.
+    The THIRD column of the shared lowering table (`obBinOpLean` / `obBinOpSmt`),
+    for the second, independent kernel (`coqc`) behind the `proved_by_two_kernels`
+    path. Same linear fragment `obBinOpLean` supports; `div`/`mod` are excluded
+    here exactly as in `toLeanProp` (Coq's `Z.div`/`Z.modulo` are not infix, and the
+    finitist fragment never needs them for the two-kernel demo). Equality/negation
+    follow Coq's `Z_scope`: `=`/`<>`, and `/\`/`\/` for the connectives. -/
+def obBinOpRocq : BinOp → Option (String × Bool)
+  | .leq => some ("<=", false) | .lt => some ("<", false)
+  | .geq => some (">=", false) | .gt => some (">", false)
+  | .eq  => some ("=", false)  | .neq => some ("<>", false)
+  | .and_ => some ("/\\", true) | .or_ => some ("\\/", true)
+  | .add => some ("+", true)   | .sub => some ("-", true) | .mul => some ("*", true)
+  | _ => none
+
+/-- Isabelle/HOL inner-syntax spelling of a binary operator over `int`: the FOURTH
+    column of the shared lowering table. Isabelle is HOL, not CIC — so agreement
+    between Lean/Rocq (both CIC-flavored) and Isabelle buys FOUNDATIONAL kernel
+    independence, the strongest form of the multi-kernel argument. ASCII inner
+    syntax: `&`/`|` for the connectives, `~=` for `neq`; `div`/`mod` excluded as
+    everywhere else. Implication/quantifiers are handled by the goal template. -/
+def obBinOpIsabelle : BinOp → Option (String × Bool)
+  | .leq => some ("<=", false) | .lt => some ("<", false)
+  | .geq => some (">=", false) | .gt => some (">", false)
+  | .eq  => some ("=", false)  | .neq => some ("~=", false)
+  | .and_ => some ("&", true)  | .or_ => some ("|", true)
+  | .add => some ("+", true)   | .sub => some ("-", true) | .mul => some ("*", true)
+  | _ => none
+
 /-- Render a binary operator's Lean infix form from the shared table. -/
 def leanBinOp (op : BinOp) (L R : String) : Option String :=
   (obBinOpLean op).map fun (sym, paren) =>
+    if paren then s!"({L} {sym} {R})" else s!"{L} {sym} {R}"
+
+/-- Render a binary operator's Rocq/Gallina infix form from the shared table. -/
+def rocqBinOp (op : BinOp) (L R : String) : Option String :=
+  (obBinOpRocq op).map fun (sym, paren) =>
+    if paren then s!"({L} {sym} {R})" else s!"{L} {sym} {R}"
+
+/-- Render a binary operator's Isabelle/HOL inner-syntax form from the shared table. -/
+def isabelleBinOp (op : BinOp) (L R : String) : Option String :=
+  (obBinOpIsabelle op).map fun (sym, paren) =>
     if paren then s!"({L} {sym} {R})" else s!"{L} {sym} {R}"
 
 /-- Lower a contract expression to a Lean `Prop`/`Int` term (`&&`→`∧`, `<=`→`≤`,

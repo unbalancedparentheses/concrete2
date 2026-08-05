@@ -1,0 +1,45 @@
+// COUNTEREXAMPLE FIXTURE — both functions trap at runtime. That is the point.
+//
+// H24 in docs/KNOWN_HOLES.md. `Concrete.Semantics.IntArith` is the single-source trap
+// semantics — it defines a checked division as trapping on "divide-by-zero, signed
+// MIN / -1, shift out of range" — and it is consumed by the interpreter, EmitSSA,
+// SSAVerify, SSACleanup and TypeJudgment. Obligation generation imports it too, but
+// then states its OWN, weaker trap conditions instead of deriving them from it.
+//
+//   div_min_over_neg_one:  [dv.d#div0] div_nonzero -> proved_by_kernel_decision (omega)
+//                          under hypothesis (b != 0).  Binary ABORTS (exit 134).
+//                          divObligations emits only `divisor != 0`; IntArith also
+//                          traps on signed MIN / -1. The obligation is INSUFFICIENT.
+//
+//   shift_over_width:      NO obligation is generated at all — `--report vcs` is empty
+//                          for it.  Binary ABORTS (exit 134). There is no shift family,
+//                          so nothing is looking for anything it could be wrong about.
+//                          The obligation is INAPPLICABLE (never fires).
+//
+// Together these are the two failure modes VC_BRIDGE_REGISTER.md names under "what
+// faithful means" — sufficiency and applicability — and both are live. Neither is fixed
+// by moving obligation generation to SSA (R-0464): relocating a rule does not merge it
+// with the definition it should have been derived from. One trap-semantics definition,
+// consumed by SSA construction, interpretation, optimization, obligation generation and
+// the backends, is the actual fix.
+//
+// Owned by R-0464. When a single trap definition feeds obligation generation, `d` must
+// carry an obligation covering MIN / -1 and `s` must carry a shift-range obligation.
+mod tg {
+    // Provable today, traps at runtime on (i32::MIN, -1).
+    #[requires(b != 0)]
+    pub fn d(a: i32, b: i32) -> i32 {
+        return a / b;
+    }
+
+    // No obligation generated at all; traps at runtime on (1, 40).
+    pub fn s(a: u32, b: u32) -> u32 {
+        return a << b;
+    }
+}
+
+pub fn main() with(Std) -> Int {
+    let q: i32 = tg::d(-2147483648, -1);
+    let r: u32 = tg::s(1, 40);
+    return 0;
+}

@@ -65,9 +65,41 @@ c = all(v['status']!='proved_by_kernel_decision' or v['kind']=='vacuity' for v i
 sys.exit(0 if (a and b and c) else 1)" \
   && ok "lying 'unsat' solver → solver_trusted only; kernel VCs untouched" \
   || no "a lying solver breached the evidence-class firewall"
+# A lying `sat` solver. UPDATED 2026-08-04, and the change is a strengthening rather than an
+# accommodation, so the reasoning is here rather than in a commit message.
+#
+# This used to assert `sat` -> `counterexample`. That expectation predates SMT verdicts being
+# gated on lowering validation (`gateSmtOnValidation`). It meant the system BELIEVED a lying
+# solver's model far enough to mark the obligation refuted — bad in the opposite direction
+# from a false proof: a broken or hostile solver could brand correct programs as violating,
+# using a model nobody checked.
+#
+# Now the same lying solver also lies on the AGREEMENT queries (whose expected answer is
+# always `unsat`), so validation fails, the verdict is discarded, and the obligation stays
+# `unproven`. A verdict on an unvalidated rendering is not evidence about the obligation —
+# in EITHER direction. The lie is caught upstream of classification.
 printf '#!/bin/sh\necho sat\necho "(model (define-fun a () Int 100000) (define-fun b () Int 100000))"\n' > "$TMP/z3"
-sat="$(PATH="$TMP:$PATH" "$COMPILER" "$F" --report vcs --smt --json 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(next((v['status'] for v in d['vcs'] if v['id']=='rt.unsafe_mul#ovf0'),'?'))")"
-[ "$sat" = "counterexample" ] && ok "lying 'sat' solver → counterexample, never a proof" || no "sat result mis-classified ($sat)"
+satout="$(PATH="$TMP:$PATH" "$COMPILER" "$F" --report vcs --smt 2>&1 >/dev/null || true)"
+sat="$(PATH="$TMP:$PATH" "$COMPILER" "$F" --report vcs --smt --json 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(next((v['status'] for v in d['vcs'] if v['id']=='rt.unsafe_mul#ovf0'),'MISSING'))" 2>/dev/null)"
+[ "$sat" = "unproven" ] \
+  && ok "lying 'sat' solver → verdict DROPPED (never a proof, and never a counterexample either)" \
+  || no "lying 'sat' solver produced '$sat' — an unvalidated rendering must yield no verdict"
+printf '%s' "$satout" | grep -q "DROPPED — rendering not validated" \
+  && ok "and the drop is reported, not silent" \
+  || no "the verdict vanished with no warning — a silent drop is indistinguishable from no solver run"
+
+# THE POSITIVE CASE, without which the assertion above is satisfied by a compiler that simply
+# never classifies anything. A REAL solver on a genuinely-violating obligation must still
+# produce `counterexample`; if it does not, validation-gating has broken the feature rather
+# than hardened it.
+if command -v z3 >/dev/null 2>&1; then
+  real="$("$COMPILER" "$F" --report vcs --smt --json 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(next((v['status'] for v in d['vcs'] if v['id']=='rt.unsafe_mul#ovf0'),'MISSING'))" 2>/dev/null)"
+  [ "$real" = "counterexample" ] \
+    && ok "REAL solver on a genuine violation still yields counterexample (gating did not break it)" \
+    || no "real solver yields '$real' for a genuinely violating obligation — counterexamples are lost"
+else
+  echo "  (skip real-solver counterexample check — z3 not on PATH)"
+fi
 
 echo "=== 4. POLICY catches every escape (E0613 vacuous, E0614 assume, E0615 solver) ==="
 # fresh HONEST-shaped solver: `unsat` so the nonlinear VC is solver_trusted and

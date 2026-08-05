@@ -493,6 +493,47 @@ elif [ -x "${LLI_PATH:-}" ]; then
     LLI="$LLI_PATH"
 fi
 
+# --- lli FUNCTIONAL probe (added 2026-08-04) ---
+# Being on PATH is not the same as working. Measured on LLVM 21.1.8: `lli` runs a trivial
+# hand-written module fine, but fails on the IR this compiler emits with
+#
+#     lli: Symbol "orc_rt_alt_UnwindInfoManager_register" not found in bootstrap symbols map
+#
+# exiting 1 with empty stdout. The harness discards lli's stderr, so every affected test
+# reported the generic "expected printed '...', got rc 1 ''" and 49 of them looked like
+# compiler bugs. They were not: verified against origin/main in a clean worktree, which
+# emits byte-identical IR and fails identically, with the same 1653/49/2 split.
+#
+# The cost of not detecting this is worse than a confusing message. The harness ALREADY has
+# a native-clang fallback for when lli is absent, so a broken lli silently converted 49 real
+# tests into 49 that check nothing — while still reporting a failure count that looked like
+# a baseline. Probe once, and on failure fall back to the path that works.
+if [ -n "$LLI" ] && [ -x "$COMPILER" ]; then
+    _probe_dir="$(mktemp -d)"
+    cat > "$_probe_dir/probe.con" <<'PROBE_EOF'
+pub fn main() with(Std) -> Int {
+    print_int(7);
+    return 0;
+}
+PROBE_EOF
+    if "$COMPILER" "$_probe_dir/probe.con" --emit-llvm > "$_probe_dir/probe.ll" 2>/dev/null; then
+        _probe_err="$("$LLI" "$_probe_dir/probe.ll" 2>&1 >/dev/null)" || true
+        _probe_rc=$?
+        if printf '%s' "$_probe_err" | grep -q "not found in bootstrap symbols map"; then
+            echo ""
+            echo "  WARNING: '$LLI' cannot execute this compiler's IR on this machine."
+            echo "           $(printf '%s' "$_probe_err" | head -1)"
+            echo "           This is an LLVM/ORC toolchain issue, NOT a compiler bug — it"
+            echo "           reproduces on origin/main with byte-identical IR."
+            echo "           Falling back to native clang so these tests actually run."
+            echo "           (Without this fallback ~49 tests fail with 'rc 1' and empty output.)"
+            echo ""
+            LLI=""
+        fi
+    fi
+    rm -rf "$_probe_dir"
+fi
+
 PASS=0
 FAIL=0
 SKIP=0
@@ -2376,9 +2417,12 @@ check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable
     "predictable rejects direct recursion" \
     "predictable should reject recursion"
 
+# Was "1 function(s) failed". Now 2: `main` calls `countdown`, so main's own execution is
+# unbounded recursion. Predictable execution is a property of RUNNING a function, and the label
+# used to be computed from each body in isolation.
 check_profile "$TESTDIR/report_check_predictable_fail_recursion.con" predictable \
-    "1 function(s) failed" \
-    "predictable recursion: 1 failed" \
+    "2 function(s) failed" \
+    "predictable recursion: caller of a recursive fn fails too (transitive)" \
     "predictable recursion: wrong fail count"
 
 # --- Gate 2: unbounded loop rejection ---
@@ -2602,9 +2646,10 @@ check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
     "adversarial: mutual recursion detected by profile" \
     "adversarial: mutual recursion not caught"
 
+# Was "2 function(s) failed" (ping + pong). Now 3, including whatever calls into the cycle.
 check_profile "$TESTDIR/adversarial_profile_mutual_recursion.con" predictable \
-    "2 function(s) failed" \
-    "adversarial: both ping and pong flagged" \
+    "3 function(s) failed" \
+    "adversarial: the mutual cycle AND its caller are flagged" \
     "adversarial: mutual recursion wrong fail count"
 
 # --- Profile: hidden Alloc capability caught ---
@@ -2699,10 +2744,23 @@ check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
     "adversarial: fn pointer apply not proved" \
     "adversarial: fn pointer apply should not be proved" "!"
 
+# Was "0 proved, 3 enforced". The fixture's own comment says an indirect callee "cannot be
+# statically resolved", and this assertion checked only that it does not claim PROVED -- while
+# `enforced` means "passes all five predictable gates", which was equally unwarranted: the call
+# graph records no edge for an indirect call, so no-recursion could not be established either.
+# `apply` is now `reported`, which is what the fixture always intended.
+# 2 enforced -> 1: `apply` is `reported` because it calls through a fn pointer (the callee set
+# is unknown, so acyclicity is not established), and `main` is `reported` because it calls
+# `apply`. Only `add_one` is genuinely predictable.
 check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
-    "0 proved, 3 enforced" \
+    "0 proved, 1 enforced" \
     "adversarial: fn pointer file has 0 proved (no registered proof)" \
     "adversarial: fn pointer file wrong evidence counts"
+
+check_report "$TESTDIR/adversarial_fn_ptr_indirect.con" effects \
+    "2 reported" \
+    "adversarial: the indirect call AND its caller are reported, not enforced" \
+    "adversarial: an indirect call still claims the predictable profile"
 
 # --- Linear type system: compiler rejects violations ---
 run_err "$TESTDIR/adversarial_linear_double_use.con" "used after move"

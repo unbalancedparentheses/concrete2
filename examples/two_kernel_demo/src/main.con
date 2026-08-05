@@ -1,0 +1,26 @@
+// Multi-kernel evidence demo (branch spike/multi-prover-evidence).
+//
+// A LINEAR no-overflow obligation: with both operands bounded by #[requires],
+// `a + b` lies in [0, 200], which fits i32. This is squarely in the linear
+// fragment, so Lean's `omega`, Rocq's `lia`, and Isabelle's `presburger` can each
+// discharge it independently. Run (needs `nix develop .#provers` for coqc/isabelle):
+//
+//   concrete src/main.con --report multi-kernel                 # Lean only
+//   concrete src/main.con --report multi-kernel --rocq          # + Rocq
+//   concrete src/main.con --report multi-kernel --all-provers   # + Rocq + Isabelle
+mod demo {
+    #[overflow_checked]
+    #[requires(0 <= a && a <= 100 && 0 <= b && b <= 100)]
+    fn add_bounded(a: i32, b: i32) -> i32 {
+        return a + b;
+    }
+
+    // Weakly-bounded: `a * b` with only 0 <= a, 0 <= b cannot be shown in range —
+    // NEITHER kernel can close it, so it must stay `unproven`. This is the teeth of
+    // the differential test: the badge is not a rubber stamp.
+    #[overflow_checked]
+    #[requires(0 <= a && 0 <= b)]
+    fn mul_unbounded(a: i32, b: i32) -> i32 {
+        return a * b;
+    }
+}

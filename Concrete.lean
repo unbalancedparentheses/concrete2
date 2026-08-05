@@ -2,6 +2,10 @@ import Concrete.Frontend.Token
 import Concrete.Report.Diagnostic
 import Concrete.Frontend.AST
 import Concrete.Semantics.IntArith
+import Concrete.Semantics.TermIR
+import Concrete.Report.TermTranslate
+import Concrete.Report.TermOfExpr
+import Concrete.Report.DiscoveryComplete
 import Concrete.Semantics.Capabilities
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.BuiltinSigs
@@ -28,7 +32,9 @@ import Concrete.IR.SSACleanup
 import Concrete.Backend.EmitSSA
 import Concrete.Backend.LLVM
 import Concrete.Backend.EmitLLVM
+import Concrete.Report.Evidence
 import Concrete.Report.Report
+import Concrete.Report.CoreExtract
 import Concrete.Report.Diff
 import Concrete.Pipeline.Pipeline
 import Concrete.Proof.ProofCore

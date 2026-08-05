@@ -1,0 +1,310 @@
+# Register B — transformation soundness
+
+**Scope: `obligation → transformed goal`.** Every row here owes one sentence, as a
+kernel-checked theorem:
+
+> the transformed goal implies the input goal
+
+Why3, whose pipeline shape this adopts, does **not** prove its transformations — they are
+trusted. That difference is why this is a register and not a refactor.
+
+## What this register deliberately excludes
+
+Print fidelity. Proving "this printer emits syntax denoting the same proposition" requires a
+formal semantics of the **target** syntax, and there is none for SMT-LIB or Coq's parser that
+is ours. Formalising them means trusting that our formalisation matches the real parser — the
+same trust relocated, not removed.
+
+| step | ours? | status |
+|---|---|---|
+| obligation → transformed goal | both sides | **provable** — this register |
+| transformed goal → target text | target is not | validated, plausibly forever |
+
+That inverts how to treat print validation: it is not a temporary embarrassment to be proved
+away, it is a permanent cost whose only lever is having ONE printer instead of N.
+
+## Status
+
+Rows discharged: **1 of 3**. The IR is `Concrete/Semantics/TermIR.lean`.
+
+Difficulty across rows is **skewed by orders of magnitude**, and recording that is part of
+the register's job — a flat row list would imply the remaining two are more of the same.
+
+---
+
+### Row 1 — `eliminate_tmod` — **DISCHARGED 2026-08-04**
+
+| | |
+|---|---|
+| **Transformation** | Rewrite every `a tmod b` into `a - b * (a tdiv b)`. |
+| **Why** | A target with quotient but no remainder currently **loses the subterm**. R-0455: "a driver states what a target cannot express so the pipeline transforms instead of silently dropping." This shrinks the operator set a driver must support by one. |
+| **Theorem** | `TermIR.evalInt_elimTmod` / `evalBool_elimTmod` (meaning preservation) and `TermIR.elimTmod_sound` (the register's sentence: transformed entails input). |
+| **Rests on** | `Int.mul_tdiv_add_tmod` from core Lean, plus the divisor-nonzero guard both sides share. |
+| **Quantified over** | An arbitrary `SymEnv`. The transformation knows nothing about spec functions, so it must hold whatever they mean — that is what "uninterpreted" has to mean for this to be honest. |
+| **Non-vacuity** | Pinned separately: `hasTmod (elimTmod t) = false` on nested, `sym`-wrapped and arithmetic-embedded occurrences. A meaning-preserving **no-op** would satisfy the soundness theorem while transforming nothing, which is the vacuity failure this project keeps finding. |
+
+### Row 2 — `eliminate_div_mod` (fresh-variable form) — **OPEN**
+
+Replace `a tdiv b` by a fresh variable `q` constrained by `q*b + r = a` and `|r| < |b|`.
+
+Two concrete blockers, both worth stating because neither is "more of row 1":
+
+1. **Needs decidable equality on `Term`.** Lean cannot derive it through the nested
+   `List Term` in `sym`; it must be hand-written mutually. A first attempt compared terms by
+   their `repr` **strings** — the same category of error as validating a rendering by reading
+   it back, and it is recorded here so it is not retried.
+2. **The real content is the magnitude constraint** `|r| < |b|`, which needs `Int.natAbs`
+   reasoning. This repo has **no Mathlib**, so that is a hand proof rather than a lemma call.
+
+Note what row 1 does *not* buy: the identity `q*b + r = a` alone, with `r` defined as
+`a - q*b`, is true for **any** `q`. It constrains nothing. The magnitude bound is what pins
+`q` to be the quotient, so a row that added only the identity would be sound and useless.
+
+### Row 3 — `eliminate_algebraic` — **OPEN, and different in kind**
+
+Axiomatize datatypes for a target without them. R-0455 flags this explicitly: the row
+requires the axiomatization be **conservative over the datatype theory**, which is
+model-theoretic rather than a rewriting argument. It is not a longer version of rows 1–2.
+
+Measured constraint on the same tier (2026-07-31): SMT datatype reasoning is provable but
+**not Alethe-certifiable**, which is why the non-arithmetic tier stays kernel-proved.
+
+---
+
+## The IR is on the production path (`Expr → Term`), and what measuring it showed
+
+`Concrete/Report/TermOfExpr.lean` translates obligation expressions into the IR, so Register B
+row 1 is a theorem about a transformation real obligations can now enter. `--report term-ir`
+reports three buckets.
+
+**Casts are modelled** (2026-08-04), as a wrap at the target width matching the reference
+(`Interp.evalCast` → `IntArith.wrapToType`) — **not** as identity. A cast truncates, so
+treating it as transparent would make the IR denote a different value than the program
+computes, which is the silent misinterpretation this IR exists to remove. Unknown-width
+targets (`Int`/`Uint`, whose overflow is profile-dependent) are still rejected rather than
+given a guessed width.
+
+That was the unblocking step. Before it, R-0455's headline defect could not be demonstrated
+at all: every obligation carrying a division subterm also carried a cast
+(`arr[(a / b) as Int]`), so it was dropped by BOTH layers and the IR recovered nothing.
+With casts carried, the IR recovers it.
+
+**Measured honestly across `examples/`: the IR recovers 0.** Not because cast support is
+broken — because the corpus contains no obligation with a division inside a cast. The
+capability is exercised by a constructed fixture in `check_transform_register.sh`, which is
+the difference between "recovers 0 because there is nothing to recover" and "recovers 0
+because it regressed". The report says so in those terms, so a zero cannot be read as either
+over- or under-claiming.
+
+One remaining `dropped by both` in the corpus, in `fixed_capacity` — outside the IR's
+fragment for a different reason, not yet classified.
+
+Two things this also established, both by trying and failing:
+
+- **`exprToProver` CAN be locked by `rfl`** — after removing a `partial` keyword it never
+  needed. This bullet previously said the opposite, which was true of the code and false
+  about the code's necessity: seven functions in the report layer (including `exprToSmt`,
+  both prover lowerings and the bv renderer) recurse only on direct subterms and were marked
+  `partial` by habit. The drop the IR repairs is now a compile-time lock, not just a runtime
+  count. A provable printer still does not make print fidelity provable — the target syntax
+  is not ours — but the printer's own behaviour no longer sits outside the kernel.
+- **`hasTmod ∘ elimTmod` composes with the translation**, pinned by `rfl`: a real obligation
+  expression carrying `mod` is translated and then eliminated.
+
+## Obligation DISCOVERY, the question the three registers never asked
+
+Registers A, B and C all begin *after* an obligation exists. None of them can observe an
+obligation that was **never generated** — a missed shift produces no failed proof and no
+`unproven` marker, just a green report. It is the pipeline's worst failure mode precisely
+because nothing downstream is capable of noticing it.
+
+`collectShiftsE_complete` (`Concrete/Report/DiscoveryComplete.lean`) is the first statement
+about that prior question: if a shift is present in the arithmetic fragment, the walker that
+feeds shift-amount obligation generation finds it. Contrapositive: an empty result means
+there was nothing to find, not that the walker looked past it.
+
+Three qualifications, all load-bearing:
+
+- **It exists only because the walker stopped being `partial`.** Unlike the seven functions
+  above, `collectShiftsE` recurses under `List.flatMap`, so deleting the keyword is not
+  enough — it needs `attach` plus a `decreasing_by` discharging a list-membership size bound.
+- **Well-founded ≠ kernel-reducible.** A WF definition does *not* reduce by `rfl`; the kernel
+  will not unfold `WellFounded.fix`. It gains equation lemmas and a recursion principle, so it
+  becomes reasoning-accessible — enough for a theorem, not enough for `decide`. This was
+  checked by trying `rfl` and watching it fail, not assumed.
+- **The antecedent is narrow, and that is pinned.** `hasShift` is false for a shift nested in
+  a call argument, which the walker *does* traverse. A completeness theorem is only as strong
+  as its predicate, and `∀ e, P e → Q e` reads like global completeness to anyone who checks
+  the theorem's name instead of `P`. The gap is a build-enforced example rather than a remark.
+
+**All four families now have one** (`collectDivisorsE`, `collectIndexUsesE`, `collectArithE`
+followed; each sat in a `mutual` block, where `partial` is all-or-nothing, so the whole block
+had to be totalised before any of them could be discussed). Of the report layer's 17
+`partial def`s, 6 remain — none on the discovery path.
+
+### The bug this found
+
+Writing `hasIndex` meant answering "which array expressions does bounds discovery actually
+RECORD?", and the answer was: a bare `.ident`. So `(a)[i]` generated **no array-bounds
+obligation at all** — not an unproven VC, not a warning, absent from `--report vcs` entirely,
+while the semantically identical `a[i]` produced one. Confirmed on a real program before being
+believed, then fixed by rooting the access through `arrayRootName`.
+
+Three things worth recording about it:
+
+- **The corpus never covered it.** The full suite stayed at 1702/0 before and after the fix.
+  A `rfl` lock could not have caught what no fixture exercised, so the regression check is
+  end-to-end (compile a program, count `array_bounds` VCs) and lives in the gate.
+- **Memory safety was never at risk.** Codegen emits `__cc_bounds_check` at every access
+  regardless. What was missing is the PROOF — and, until now, any indication it was missing.
+  A release gate demanding all VCs proved would have passed this program by having nothing
+  to fail.
+- **`b.data[i]` — CLOSED 2026-08-05.** Initially left open for a real reason: the length lookup
+  was keyed by variable NAME, so a field path had nothing to resolve, and peeling `.fieldAccess`
+  the way `.paren` is peeled would have produced an obligation about the WRONG array — merely
+  louder than a missing one, not safer. Once `ScopeDecls` threaded types the honest fix became
+  cheap: discovery records the array EXPRESSION rather than a name, and `arrayAccessOf` resolves
+  a length either from the scoped size map (the only route that knows literal-inferred lengths)
+  or by following the field path with `placeTy` to the declared type. `b.data[i]` now yields
+  `0 ≤ i ∧ i < 16`, and `b.data[99]` is **refuted** — an out-of-bounds access the proof layer
+  could not previously see. Recording more accesses does not mean claiming more: one whose
+  length still cannot be resolved is named, exactly as before.
+  Two consequences: nested `m[i][j]` records BOTH levels now (the outer array expression was not
+  an `.ident`, so only the inner access was ever found), and `hasIndex` lost its narrow
+  antecedent — bounds discovery completeness covers ALL array accesses, a stronger theorem than
+  the one it replaces.
+
+That is the argument for discovery completeness in one example: the defect was not a failed
+proof or a bad translation, and no register could see it. It was a question nobody had asked.
+
+### Then the same question found a WRONG obligation, which is worse
+
+Pulling on "which accesses actually reach an obligation?" led past discovery into the sizing
+step, where `boundsObligations` resolved an array's length by name via `find?` — first match
+wins. Shadowing therefore produced an obligation about the wrong array:
+
+```
+let a: [i32; 16] = [0; 16];
+let b: i32 = a[0];
+let a: [i32; 4]  = [7; 4];
+return a[10] + b;        // obligation generated: 0 ≤ 10 ∧ 10 < 16
+```
+
+`10 < 16` is **true**, so the kernel proved it and the report read `2 proved, 0 outstanding`
+for a program that traps at runtime. Every earlier bug in this file was a *missing* claim.
+This one was a **false claim, certified** — the failure mode the whole pipeline exists to
+prevent, sitting in the layer that generates what everything else then proves.
+
+First fixed by refusing to answer — a name bound at two different sizes was dropped rather
+than guessed — which traded coverage for honesty. **Then fixed properly:** sizes are threaded
+per SCOPE through `scopedWalkSized{S,B}`, alongside the hypothesis scope that walker already
+carried. A declaration is visible to what follows it and shadows an outer binding of the same
+name; declarations inside a block do not escape it; a `for`-init binding reaches the
+condition, step and body.
+
+So the same access has had three verdicts, and only the last is both honest and useful:
+
+| | `a[10]` on the shadowed 4-element array |
+|---|---|
+| flat map, first match wins | `10 < 16` — **proved**. A false claim, certified. |
+| refuse on conflict | no obligation; access named as outside the fragment |
+| per-scope sizing | `10 < 4` — **counterexample**. The bug is caught. |
+
+The compiler now *detects* an out-of-bounds access it once certified as safe.
+
+Two coverage gaps found in the same pass, both silent, both now closed:
+
+- `let a = [0; 16]` — an **unannotated** let. The size is in the initialiser, but the map read
+  only explicit annotations, so an entirely ordinary array had no bounds obligation.
+- an array declared **inside** an `if`/`while`/`for` body — the map scanned only the flat
+  top-level statement list.
+
+Generation and gap-reporting now share one walk, so an access cannot fall between them and be
+counted by neither — which is the shape of every bug in this cluster.
+
+And the silence itself is now a reported thing: `--report vcs` prints
+`ARRAY ACCESSES OUTSIDE the bounds fragment`, naming each access that reached no obligation,
+including on the zero-VC path (a function whose only access is unresolvable used to print
+`(no VCs generated)`, which reads as "nothing to check"). This is the discipline
+`core-semantics-diff` already applied to unextractable functions, applied to the layer that
+was quietly exempt.
+
+**The corpus covered none of it.** `make test` was 1702/0 before and after every one of these
+fixes. No fixture used a parenthesised access, a shadowed array, an unannotated array literal,
+or an array declared in a nested block. That is why the regression guards for all of them are
+end-to-end in the gate rather than `rfl` locks: the defects lived precisely where no example
+looked, and a lock only protects code someone thought to exercise.
+
+### The same root cause was in three families, not one
+
+`varTyMap` was the identical construct for TYPES: one flat, per-function, name-keyed map. Asking
+the same question there found two more defects, with different symptoms:
+
+- **shift — a WRONG obligation.** `x << 40` where `x : i8` took its width from a shadowed
+  earlier `x : i64` and generated `40 < 64`, which is true, so the report read **proved**. The
+  compiler certified a 40-bit shift of an 8-bit value. Now `40 < 8`, refuted.
+- **overflow — a MISSING obligation.** Shadowing made type resolution fail on the mismatch, so
+  an addition inside an explicitly `#[overflow_checked]` function produced **no VC at all** and
+  nothing said so. Now covered at the correct `i8` range.
+
+Both are fixed the same way as bounds: types and array lengths are threaded together through
+`scopedWalkSized{S,B}` as one `ScopeDecls` record, resolved at the access. `varTyMap`,
+`arraySizeMap` and `collectLetTys` are all deleted — there is no flat name-keyed map left in
+this layer to resolve the wrong binding from.
+
+One record rather than two threaded parameters, deliberately: a future declaration kind cannot
+be added to types and forgotten in sizes. That has already paid for itself in the gate — a
+single mutation reversing shadowing precedence in `ScopeDecls.extend` now fails **8**
+assertions across all three families, because they share one environment instead of three.
+
+**What is deliberately NOT done:** unannotated `let`s still contribute no type. Inferring one
+here risks disagreeing with the checker, and a wrong type is precisely the defect being fixed —
+so those obligations are dropped rather than guessed. Array *lengths* are the exception, since
+`let a = [0; 16]` fixes the length without any inference.
+
+Two smaller lessons from mutating the per-scope version:
+
+- **A gate can encode the workaround instead of the goal.** The refusal-era assertions
+  (`the access is NAMED`, `the conflicting-size filter is present`) FAILED once sizing became
+  correct — they pinned the mechanism, not the property. They now assert the right bound and
+  the refutation, which the correct implementation satisfies and both wrong ones do not.
+- **One mutation survived**: dropping `for`-init bindings from the threaded sizes passed this
+  gate AND the full 1702-test suite, because nothing in the corpus declares an array in a
+  for-init. A fixture now covers it.
+- **A third assertion pinned an argument list** rather than a property (`scopedWalkSizedB
+  boundsLeaf lcs scope paramSizes body`) and reported a regression when a parameter was merely
+  renamed. It now matches the CALL rather than its arguments — after breaking a SECOND time the
+  same way on the very next change, which is the more useful data point: an assertion that
+  quotes a call site verbatim keeps failing on refactors that change nothing it cares about, and
+  a false alarm costs the same to diagnose as a real one. A separate mutation — making a declaration visible to its
+  own statement — is an EQUIVALENT mutant, not a survivor: a `let` initialiser cannot index the
+  name being declared, so the change is unobservable.
+
+## Drivers as data (R-0455, same slice)
+
+`tactics` is now a **field** on `ProverLowering`, ordered for cheap-then-expensive attempts.
+Measured cost of it having been a template literal: `rocqNiaLowering` was a full clone of
+`rocqLowering` whose only substantive difference was the word `lia` becoming `nia`. Reaching
+a different tactic cost an entire driver that then had to be kept in step with its twin.
+
+It is now a two-field override, and both Rocq drivers share one `rocqScript` builder. Inline
+`render` literals: **5 → 3**, ratcheted by the gate.
+
+**One thing this refactor got wrong, recorded because the failure mode is invisible.**
+Collapsing the clone dropped `batchRender` from `rocqLowering`. That does not fail the build
+and does not stop `coqc` closing the proof — `batchRender` builds the *agreement* script (N
+pinned instances of one obligation), which is a different shape from `render`. Losing it left
+the agreement check with nothing to check, so every Rocq cell read `LOWERING DISAGREES` and
+the badge silently vanished: 78/78 became three failures with `rocq:lia = closed` sitting
+beside a refused attestation. The gate now asserts each driver keeps it, mutation-verified.
+
+Isabelle's scripts are deliberately **not** yet derived from a shared builder: its batch form
+(one theory, N indexed lemmas) differs structurally from its single form, and collapsing them
+without changing emitted output needs that split handled first.
+
+## Gate
+
+`scripts/tests/check_transform_register.sh` asserts every discharged row names a theorem that
+exists, that no row uses `sorry`/`admit`/`native_decide`, that the non-vacuity locks survive,
+and that the discharged count matches the rows — in both directions, so the register cannot
+understate the compiler either.

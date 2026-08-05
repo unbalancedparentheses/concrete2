@@ -50,6 +50,37 @@ Reason: the SHA-256 refinement stack discharges word-level identities with
 impractical. Revisit if `bv_decide` gains a kernel-reduction mode or the
 goals shrink.
 
+### Corroborating the native LRAT check independently
+
+The native certificate check is not removable today, but it need not be the *only*
+implementation that ever validates the bit-blasting.
+`scripts/tests/check_bv_certificates.sh` (`make test-bv-certificates`) captures the
+exact CNF Lean bit-blasted, independently re-solves it, and verifies its DRAT
+certificate with **drat-trim** — a separate implementation, in C, by different
+authors. A bug in Lean's native LRAT checker alone therefore cannot make an unsound
+bit-blasting claim pass unnoticed.
+
+Capture works through `set_option sat.solver`, pointed at
+`scripts/bv_capture_solver.sh`. Lean invokes its solver as
+`<solver> <cnf-in> <lrat-out> --lrat --binary=true …` and deletes the temp files
+afterwards, with no option to retain them; the shim copies the CNF aside and then
+delegates to the real `cadical` unchanged, so `bv_decide` behaves exactly as it
+would otherwise. Lean's proof is *binary LRAT*, which drat-trim does not read, so
+the gate re-solves the captured CNF to obtain a textual DRAT proof instead — making
+the solve independent as well as the check.
+
+Two honesty boundaries the gate enforces on itself rather than assuming:
+
+- **drat-trim is itself unverified C.** Two independent checkers agreeing is
+  strictly better than one and strictly weaker than a verified checker. The
+  CakeML-verified `cake_lpr` would be the real answer; it is not packaged in
+  nixpkgs, and neither is SMTCoq.
+- **A trivially contradictory CNF is reported `VERIFIED` without the proof being
+  read at all** (drat-trim warns `stop reading proof`). Those are counted
+  separately, and the gate fails if *no* non-trivial certificate was actually
+  checked — otherwise it could look green while exercising nothing. It also asserts
+  drat-trim rejects an empty certificate, so a rubber-stamping checker cannot pass.
+
 `Concrete.Sha256Spec`'s RFC test vectors and `Concrete.Diagnostic`'s render
 self-test also use `native_decide`, but they are anonymous
 `example`s/internal checks, not proof evidence, so they are outside the

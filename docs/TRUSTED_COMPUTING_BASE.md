@@ -241,6 +241,69 @@ Not yet defined. The intended shape is to inherit all three TCBs (safe + predict
 
 ---
 
+## What multi-kernel agreement does and does not remove from the TCB
+
+`proved_by_two_kernels` / `proved_by_multi_kernel` move exactly one thing out of the
+trusted base, and leave one conspicuous thing in it. Both directions belong here,
+because the badge is easy to read as stronger than it is.
+
+**Removed: sole dependence on one kernel's soundness.** An obligation closed by Lean's
+`omega` *and* by Rocq's `lia` (and/or Isabelle's `presburger`) no longer rests on any
+single prover implementation being correct. With Isabelle among the attesters the
+agreement also spans logics — HOL rather than a CIC-family type theory — so a
+foundational error in one family does not silently carry the claim. Each attestation
+is recorded as a receipt carrying the exact tool version, so a claim can be
+re-audited, or invalidated, when a specific prover release is later found buggy.
+
+**NOT removed: the Core→obligation bridge.** Every kernel checks a lowering produced
+by ONE shared bridge. If that bridge emits the wrong proposition, all kernels agree on
+the wrong proposition and the badge still appears. Bridge trust is therefore
+untouched by adding kernels, and stays untouched until the per-rule bridge register is
+discharged (R-0460; **0 of 5 rows fully discharged today, 4 of 5 half** — the semantics
+half of overflow/bounds/div/shift is proved and proved tight, while the lowering half, which
+is precisely the trust this paragraph is about, is untouched) or realization proofs exist
+(R-0449). The
+obligation record states this structurally rather than in prose —
+`independent_of.bridge` is `"no"` — so the disclaimer cannot quietly go stale.
+
+The asymmetry is worth stating plainly, because it inverts the intuition the badge
+creates: kernels are redundant checkers of the bridge's *output*, so they are strongest
+exactly where failure was least likely (a prover implementation being unsound) and blind
+exactly where our own code is (the lowering). Measured over this arc, kernel agreement
+found no faults; the faults were found by differential tests and by reading reports. Read
+the badge as reducing *whose* soundness you must assume, not as reducing *how much* is
+assumed.
+
+**ALSO NOT REMOVED, and currently unsound: the hypothesis set.** Every obligation is
+discharged *under hypotheses*, and those hypotheses are part of the trusted base whenever
+their own justification is weaker than the conclusion drawn from them. Today that is not
+merely a boundary but a defect: a loop `#[invariant]` is attached as a hypothesis
+regardless of whether its preservation VC is discharged, so a badge can rest on a fact
+nothing established. H23 in [KNOWN_HOLES.md](KNOWN_HOLES.md) reproduces it — three
+kernels, two logics, unanimous, on a program that aborts. Until R-0461 composes status
+across the assumption edge, the TCB for any `proved` runtime-safety obligation on a
+function containing a loop silently includes **that loop's invariants as unverified
+assumptions**.
+
+This is the clearest illustration of the section's point. Adding kernels did nothing about
+it, because all three were handed the same hypothesis.
+
+Two narrower guarantees, both gate-enforced rather than asserted:
+
+- A kernel that closed a goal whose *lowering* does not denote the obligation is
+  excluded from the badge and named in the report. Closing a different proposition is
+  not evidence about this one.
+- Agreement never launders past a `trusted` boundary. A trusted obligation stays
+  trusted however many kernels run, so a consumer filtering for `proved_by_*` cannot
+  mistake a conditional claim for an unconditional one.
+
+Separately, the bit-blasting path's certificate check is corroborated by an
+independently implemented checker (drat-trim) — see [AXIOMS.md](AXIOMS.md). That does
+not remove the `Lean.trustCompiler` extension; it means a single checker bug cannot
+carry an unsound bit-blasting claim unnoticed.
+
+---
+
 ## Practical Rule
 
 When a claim gets stronger, ask:

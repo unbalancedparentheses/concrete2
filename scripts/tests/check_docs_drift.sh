@@ -49,7 +49,28 @@ PRESENT_DOCS=(
   docs/PHASE3_OBLIGATION_CORE_AUDIT.md
   docs/PHASE4_COMPILER_LEDGER_AUDIT.md
   CHANGELOG.md
+  # Evidence-surface docs. They make present-tense claims about --report modes,
+  # policy keys, gates and trust boundaries, so they drift exactly like the four
+  # above. They were outside this gate while carrying that content, which is the
+  # same failure this gate exists to catch, one level up.
+  docs/CONTRACTS_AND_VCS.md
+  docs/SMT_SOUNDNESS.md
+  docs/AXIOMS.md
+  docs/TRUSTED_COMPUTING_BASE.md
+  # Normative architecture for the prover-neutral obligation layer.
+  docs/PROVER_NEUTRAL_OBLIGATIONS.md
 )
+# docs/NOTES/ by GLOB, not by name. These are design notes that make present-tense
+# claims about modules and report kinds, and the design in them was re-derived more
+# than once precisely because nothing checked them. A glob rather than a list so the
+# NEXT note is gated on arrival instead of when someone remembers to add it — the
+# failure mode here has always been the unlisted file.
+#
+# research/ is deliberately NOT included: it holds dated investigation records whose
+# value is that they say what was believed at the time. Gating them would force either
+# rewriting history or freezing it. That convention is written down in
+# research/README.md so the omission reads as a decision, not an oversight.
+for f in docs/NOTES/*.md; do [ -e "$f" ] && PRESENT_DOCS+=("$f"); done
 REPORT_DOCS=(  # --report claims here describe the current CLI
   docs/CLAIMS_TODAY.md
   docs/KNOWN_HOLES.md

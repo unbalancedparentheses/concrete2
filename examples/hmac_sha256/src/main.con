@@ -122,7 +122,12 @@ mod hmac_sha256 {
     // `assumed_at_entry` — call-site checking is a later slice.
     spec fn rotr_spec(x: u32, n: u32) -> u32;
 
-    #[requires(0 <= n && n < 32)]
+    // R-0464: `0 <= n` was too WEAK, and the shift-range obligation is what caught it. At
+    // n == 0 the second shift is `x << 32`, out of range for u32, which traps. The contract
+    // admitted an input the body cannot handle — a pre-existing bug in a hand-written
+    // #[requires], found by generating the obligation that had been missing rather than by
+    // reviewing the contract.
+    #[requires(0 < n && n < 32)]
     #[ensures(result == rotr_spec(x, n))]
     fn rotr(x: u32, n: u32) -> u32 {
         return (x >> n) | (x << (32 - n));

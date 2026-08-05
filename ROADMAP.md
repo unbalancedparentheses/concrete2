@@ -40,11 +40,61 @@ main-return / exit-code model across the whole fixture corpus) done commit-by-
 commit on `main` has produced multi-commit red streaks; isolate it, finish it to
 green, and merge once.
 
+### Evidence Debt Rule
+
+**Every new evidence surface must retire a register row or close a hole.**
+
+The failure this rule exists to prevent is not any single defect — it is that evidence
+infrastructure grows faster than the debt it accounts for, because infrastructure is more
+fun to build than proofs are. The 2026-07-31 state that prompted the rule: four kernels,
+five report surfaces and a receipt schema, sitting above a Register A with **0 of 4 rows
+discharged** (as of that date; 2026-08-04: **0 of 5 fully discharged, 4 of 5 half** — the
+count was also wrong, there are five lowering rows plus a projection) — and, as H23 showed, above an obligation layer that could hand all four
+kernels a hypothesis nothing had established.
+
+Two corollaries, both measured rather than asserted:
+
+- **No further prover before the first Register A row is discharged.** Kernel agreement
+  has surfaced zero real defects on this arc; the faults came from differential tests and
+  from reading reports. A discharged row moves the ceiling further than a fourth kernel.
+- **A surface that only renders is not a payment.** Register C counts because it made a
+  bug class unrepresentable; a new report view does not, however useful it is.
+
+The rule is deliberately cheap to satisfy and hard to ignore: it does not forbid building
+surfaces, it forbids building them *for free*.
+
 ### Pull-Gated Work
 
 Deferred work stays in the phase where its trigger lives. Do not build machinery
 because the roadmap can imagine it; build it when a workload, proof, failing gate,
 or public API forces it.
+
+### Cross-Document Consistency (pull-gated note, 2026-07-31)
+
+**Trigger to build on: a second instance of two documents contradicting each other where
+both pass their gates.** There is one instance so far, and it now has a specific gate; do
+not generalize until a second one bites.
+
+The instance: three files said "H23 closed as a compile-time fact" while <!-- HOLE-STATUS-OK: quoting the wrong claim -->
+[docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) said OPEN and
+`check_known_wrong_corpus.sh` asserted it still reproduces. All green. `check_docs_drift.sh`
+verifies that referenced artifacts *exist*, not that statements *agree* — a limitation its
+own commit named (`5a0c4e3e`) before the contradiction recurred. Closed for hole status by
+`check_hole_status_consistency.sh`.
+
+The template, if a second instance appears: name ONE authority file, give the fact a
+machine-readable form in it, and check that every reference agrees — plus, where possible,
+tie the authority to *observed behaviour* rather than to other prose, which is the check
+with teeth. Candidate pairs already visible: `CLAIMS_TODAY.md` against the report
+vocabulary in `ObligationCore.statusVocabulary`, and `VC_BRIDGE_REGISTER.md`'s rows against
+the family generators (the register gate checks generators have rows, not that the rows
+describe what the generators emit — H24's insufficient div row passed it).
+
+Why this is a note and not a task: a general "documents must agree" checker greps English
+and would be mostly false positives, which is how a gate becomes something people learn to
+ignore. The hole-status gate is narrow enough to be exact about the part that matters and
+heuristic-with-an-escape-hatch about the rest, and that ratio is what a second instance
+should be judged against before any machinery is built.
 
 ### Spike-First / Kill Criteria
 
@@ -70,6 +120,585 @@ lists. Phase headings are milestone labels only.
 Phases 1–6E and completed Phase 7 foundations/workloads 1–8 are historical and
 live in [CHANGELOG.md](CHANGELOG.md). Phase 7.5's QBE backend is specified but
 has not started.
+
+## Current Execution State (2026-08-01)
+
+Not a second task queue — a map from *what is broken* to *who owns it* to *how you know
+when it is fixed*. Added because the information existed only as prose spread across
+KNOWN_HOLES, the gate scripts and commit messages, which is how the H23 status
+contradiction survived. [docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) remains the authority
+on hole status; this table is a reference to it and
+`scripts/tests/check_hole_status_consistency.sh` fails if the two disagree.
+
+### The next 20 tasks, in execution order
+
+**This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,
+which the header already calls a milestone label rather than a queue — so the task that
+owns a reproduced soundness hole can sit five thousand lines below the task you should do
+first. It did: R-0461 (now done) and R-0464 are in Phase 13 because that is where they
+belong topically, while the sequencing table below is what actually said when to do them. The
+task bodies are deliberately NOT reordered; moving them would put runtime-safety
+obligations inside "Phase 7: Standard Library And Core APIs" and destroy the only
+organizing principle the file has. This list is the queue; the phases are the filing
+system.
+
+| # | Task | Why here |
+|---|---|---|
+| — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope |
+| — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
+| 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
+| 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
+| 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
+| 6 | **R-0469** | bug 065 — stack unboundedness propagation |
+| — | ~~**R-0465**~~ | **DONE 2026-08-03.** Promoted ahead of R-0464 because R-0461 measured the cost of not having it. All five parts, incl. the release gate now reading badges off the one ledger — which also made `require-two-kernels` reject the H23 fixture |
+| — | ~~**R-0458**~~ | **DONE 2026-08-03.** The badge states both coordinates: `proved_by_two_kernels (lean, rocq) [1 foundation: CIC]`. `independenceOf` derives from the same function, so the CIC/HOL knowledge exists once |
+| 8 | **R-0454** | neutral digest — closing window, alpha-normalized |
+| — | ~~**R-0467**~~ | **DONE 2026-08-03.** Multi-kernel runs on merges to main; mutation coverage moved to the scheduled path |
+| 10 | **R-0468** | nightly reachability in this repository |
+| 11 | **R-0450** (agreement slice) | **agreement half DONE 2026-08-03** — every lowering (Rocq, Isabelle, SMT, and now Lean itself) is validated against the reference evaluator; the IR unification remains. Previously: the linear fragment is now lowered by ONE function (`exprToProverU`), so `exprToLeanProp` is a delegation rather than a near-copy. Remaining: run the agreement scripts through a Lean driver and mint its witness. **The recorded justification for Lean being exempt was wrong** — see below. Also `exprToSmt` |
+| — | ~~**R-0462**~~ | **DONE 2026-08-04.** `--report artifact-fuzz` + `check_artifact_fuzz.sh`: runs the compiled binary against the safety claims, classified by what the obligation layer claims. Mechanism proven; soundness check currently vacuous in `examples/` (0 claimed functions) and says so |
+| 13 | **R-0455** | term IR + Register B — **slice 1 DONE 2026-08-04**: typed IR (`Concrete/Semantics/TermIR.lean`) with sorts, arity/fixity, binders-free terms, uninterpreted symbols, and a STRUCTURAL evaluator; Register B row 1 (`eliminate_tmod`) discharged with non-vacuity locks. Remaining: rows 2–3, absorbing the four drivers, one-printer collapse |
+| 14 | **R-0460** | Register A rows — **4 of 5 half-discharged 2026-08-04** (div/mod and shift; shifts also became single-source, the interpreter now consumes `evalIntShift`) (`trapConditions_sufficient`: the div/mod conditions are strong enough, proved for all inputs). The lowering half stays open (H19), and the shift row is untouched: `evalIntBinOp` does not model shifts, so the theorem covers them only vacuously |
+| 15 | **R-0459** | non-arithmetic families |
+| 16 | **R-0463** | Farkas-witness probe — before any further prover, never after |
+| 17 | **R-0448** | graduate the arc, once the above hold |
+| 18 | **R-0456** | eval port, on meta-theory grounds only |
+| 19 | **R-0449** | realization research, pull-gated |
+
+After 20, file order resumes at R-0440, R-0435, R-0006–R-0010. The argument for each
+position is in the sequencing note below; this table is the index, not the reasoning.
+
+### Open holes, owners, acceptance tests
+
+| Hole | Owner | Reproduce | Done when |
+|---|---|---|---|
+| **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
+| **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 5 register rows fully discharged, 4 of 5 half — the *semantics* half of each is proved, the *lowering* half IS H19) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
+| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
+| **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
+
+**No reproduced unsoundness remains** (2026-08-03). H23 and H24 are both closed and both
+fixtures are retained as regression guards. The scope limits that remain are *structural*
+rather than reproduced — H19 (the Core→obligation bridge is unproven), H20, H21 — and they
+are bounded by Register A, not by anything a fixture currently demonstrates.
+
+Read that precisely: R-0464 proves every trap condition in the semantics has an obligation
+family, **not** that the families' propositions are strong enough. Sufficiency is Register A, where as of
+2026-08-04 **4 of 5 rows have their semantics half proved and proved tight** — overflow,
+bounds, div/mod and shift. That is genuine progress and it does not touch H19: every one of
+those theorems says the CONDITIONS suffice, never that the emitted obligation denotes them.
+`VC_BRIDGE_REGISTER.md`'s rows are the list of what is still owed, and the remaining row
+(`callSiteObligations`) is different in kind — its content is substitution correctness.
+
+**Correction worth carrying (2026-08-03).** Four places recorded that Lean's rendering
+cannot be validated because "its rendering IS the reference the others are validated
+against, so there is nothing to validate it with". That is false. The lowering-agreement
+check validates a rendering against the reference **evaluator** (`safeOn`/`evalBoolEnv`,
+walking the AST) — Lean's rendering is not the yardstick, it is simply the one never
+measured. The actual obstacle was that Lean's lowering was not expressible as a driver, so
+the existing machinery could not be pointed at it; R-0450's slice removed that. The gap is a
+TODO, not an asymmetry that cannot be closed, and the difference matters for planning: it
+was being treated as unfixable-in-principle.
+
+H23 no longer needs such a caveat: an obligation resting on an unproved invariant now
+reports `assumed` on every surface and fails `[policy] forbid-assume` with `E0617`. What it
+leaves behind is a **method**, recorded here because R-0464 and R-0460 will hit it too:
+
+- *Fixing the derivation is not fixing the report.* The ledger and the multi-kernel report
+  each computed the class, so capping the ledger left the badge surface still printing
+  `proved_by_multi_kernel`. Any status change must be checked on **every** surface that
+  renders it, and R-0465's firewall is what would make that structural rather than diligent.
+- *Display is not enforcement.* The cap read `assumed` while `concrete check` exited 0,
+  because the existing `forbid-assume` gate keys on the `assume(...)` construct, not on the
+  status. A status is only load-bearing once a policy fails on it.
+- *Renaming a gate block can silently drop its coverage.* Relabelling the corpus heading to
+  `=== H23 (CLOSED …)` removed H23 from `check_hole_status_consistency.sh`'s checked set —
+  it went green by no longer looking. That gate now rejects an unclassifiable heading
+  instead of skipping it, and the mutation is verified to be caught.
+
+### Gate inventory — what was added, and what each actually guards
+
+| Gate | Guards | Build? | CI job |
+|---|---|---|---|
+| `check_evidence_algebra.sh` | Register C rows present, no `sorry`/`native_decide`, one construction site per badge string, all consumers share the derivation | no | `grammar` |
+| `check_known_wrong_corpus.sh` | H24's fixture still reproduces; H23's now guards its fix (`assumed` on both surfaces + `E0617`) — a counterexample that stops demonstrating its hole is worse than none | **yes** | `extra-gates` |
+| `check_hole_status_consistency.sh` | no document contradicts KNOWN_HOLES; every fixtured hole's corpus heading declares reproduces-vs-guards and matches its documented status (an unclassifiable heading FAILS rather than skipping — see R-0461's note) | no | `grammar` |
+| `check_multi_kernel.sh` | 14 assertions bare, 74 with provers, 82 with `MULTI_KERNEL_MUTATE=1` | yes | `multi-kernel` (opt-in — **R-0467**) |
+| `check_vc_bridge_register.sh` | every family *generator* has a register row — **cannot detect a missing family**, which is how H24's shift gap hid | no | `grammar` |
+
+### Mutation coverage: 10 of 10 families KILLED (2026-08-01, this repository)
+
+Every gate in `check_gate_mutation_coverage.sh` detects removal of the property it guards.
+The run was manual — the scheduled job is pinned to `lambdaclass/concrete` and cannot fire
+here (**R-0468**).
+
+This retires the standing suspicion R-0468 recorded ("assume more H22s until the gate has
+run clean once"). It has run clean.
+
+**But note precisely what a KILLED verdict means, because it is narrower than it feels.**
+Family 9 `fact-invalidation` is KILLED — removing fact invalidation turns
+`check_scoped_collector.sh` red — and H23 lives in that exact machinery, untouched. The
+gate guards *staleness* (does a mutated variable drop its facts?); H23 is *composition* (is
+the invariant that supplied the fact itself established?). A fully load-bearing gate,
+adjacent to the bug, blind to it.
+
+> **Mutation coverage proves a gate detects the removal of what it tests. It never shows
+> the gate tests the right thing.** Both H22 and H23 were invisible to gate suites that
+> were green — H22 because its gate was decorative, H23 because no gate had the property
+> in scope at all. The second failure mode is not detectable by mutation testing and needs
+> counterexample fixtures instead, which is what `check_known_wrong_corpus.sh` is for.
+
+### Running things
+
+```
+lake build                                            # required by any gate marked Build? yes
+bash scripts/tests/check_known_wrong_corpus.sh        # both live holes, ~1 min
+bash scripts/tests/check_hole_status_consistency.sh   # doc/behaviour agreement, instant
+bash scripts/tests/check_multi_kernel.sh              # 14 assertions without provers
+nix develop .#provers --command bash scripts/tests/check_multi_kernel.sh    # 74
+MULTI_KERNEL_MUTATE=1 nix develop .#provers --command bash scripts/tests/check_multi_kernel.sh   # 82, ~40 min
+FAMILY=<n> bash scripts/tests/check_gate_mutation_coverage.sh   # one family, ~15 min if it rebuilds
+bash scripts/tests/run_ci_gates_local.sh <area>       # the gates CI runs for an area
+```
+
+`check_gate_mutation_coverage.sh` mutates tracked source. It refuses to start on a dirty
+tree and restores on EXIT/INT/TERM — but bash defers a trap until the current foreground
+command returns, so a kill during `lake build` is not prompt. **After interrupting it, run
+`git status` before doing anything else.**
+
+### External review
+
+`.claude/codex-review-prompt.md` holds the review criteria as a versioned file — its seven
+checks each correspond to a defect this codebase actually shipped, so it is project
+knowledge rather than a one-off prompt. Run it read-only:
+
+```
+codex exec --sandbox read-only -c model_reasoning_effort="xhigh" \
+  "$(cat .claude/codex-review-prompt.md)" < /dev/null > review.md
+```
+
+Three things that cost a run each: `codex exec` hangs without `< /dev/null`; the default
+reasoning effort is `none`, which produces a near-worthless review; and `codex resume`
+needs a TTY, so a truncated non-interactive run must be restarted rather than continued —
+give the prompt a tool-call budget and pre-seed established findings instead.
+
+`--sandbox read-only` is deliberate: the reviewer reports, it does not edit. The cost is
+that it cannot mutation-test, which is where its sharpest finding came from — it deleted a
+filter and showed the gate stayed green. Preserve that by asking it to NAME the mutation
+and its prediction; apply and verify the mutation yourself.
+
+Its 2026-08-01 findings landed in `0281890d` and `037e9616`; two structural ones are filed
+under R-0465, and one reported divergence was a false positive (it compared different
+inputs) and is recorded as such rather than left to be re-found.
+
+### Sequencing note: the prover-neutral arc (R-0004, R-0450, R-0448, R-0454–R-0456, R-0458–R-0464, R-0467, R-0468)
+
+These tasks are entangled enough that picking one without reading the others has
+already produced rework. The order below is argued from the 2026-07-31 audit of
+`spike/multi-prover-evidence`, not from phase numbering — several of these sit in
+later phases and should still be pulled in this sequence.
+
+**Why this note is load-bearing, stated plainly.** The roadmap advances by FILE POSITION,
+and every task below except R-0459 sits between lines ~6100 and ~6900 — roughly five
+thousand lines after R-0004. A reader following file order does twenty other things and
+never reaches them. That is the same failure the R-0466 block's paragraph names about
+unreferenced ledger bugs, and as of 2026-08-01 it was true of **R-0464, which owns a
+reproduced soundness hole and had no stated position at all.** Anything pulled forward
+here must say so here; a task whose urgency lives only in its own body is not sequenced.
+
+0. **R-0004's remaining slices come first, and are not optional to this arc.** R-0454
+   states in its own body that it belongs immediately after them, and slice 4 (the receipt
+   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3
+   have landed; 4–7 have not.
+
+   **Slice 3 is also the template for R-0461, which is why R-0004 leads rather than
+   merely precedes.** It closed bug 062 by making a not-current dependency downgrade its
+   dependent, transitively, with which statuses count decided in ONE place
+   (`ObligationStatus.isCurrentForDependents`). H23 is that identical defect one dimension
+   over: bug 062 was "dependency statuses are computed and never consulted to downgrade
+   the caller"; H23 is "hypothesis statuses are attached and never consulted to downgrade
+   the conclusion". The project found this class, fixed it once, and shipped the second
+   dimension without it.
+
+   **What R-0461 actually did with this instruction (2026-08-03), since it qualifies the
+   advice for R-0464.** It reused slice 3's *shape* and could not reuse its *code*:
+   `ObligationStatus.isCurrentForDependents` ranges over function qualNames (proof links),
+   while hypothesis debt ranges over VC ids (`fn@line#O2`). The two are disjoint key spaces,
+   so `capOnHypothesisDebt` is a separate VC-level composition that mirrors the discipline —
+   compute the weakest input, cap the output, decide "counts as proved" in one place — rather
+   than calling into it. The stated risk stands and is now real: two predicates decide what
+   counts as proved, and if they diverge that divergence is the next bug. Unifying them is
+   the honest content of a future slice; pretending one call site covered both would have
+   been the wrong fix.
+
+1. ~~**R-0461, because the arc is currently decorating a defect.**~~ **DONE 2026-08-03.**
+   H23 was: an obligation may assume a loop invariant whose preservation VC is unproven, and
+   nothing composes the two statuses — so a guaranteed out-of-bounds access reported
+   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and `require-two-kernels` built it.
+
+   Closed in three parts, and the estimate of "Register C already proves the composition, so
+   this is wiring" was **wrong in an instructive way**: the algebra was indeed ready, and the
+   cap that used it was the cheapest third. The other two thirds were the ones this arc keeps
+   underestimating — deriving real provenance (`loopInvariantDebt`), and making the resulting
+   status *enforced* (`E0617`) rather than merely displayed, on *every* surface that renders
+   it. Full account in `docs/KNOWN_HOLES.md` under H23, and the transferable method is in the
+   scope-limits section above.
+
+1b. **R-0464 immediately after, on the same grounds. Also precedes the R-0466–R-0469
+   block.** H24: obligation generation restates `IntArith`'s trap conditions and states
+   them weaker, so a division reports proved and aborts on signed `MIN / -1`, and shifts
+   generate no obligation at all. Reproduced in `examples/trap_semantics_gap/`. Paired
+   with R-0461 because both are reproduced holes with failing fixtures already written,
+   and because a reader who fixes only the first still ships a compiler that reports
+   `proved` for an operation that traps. R-0461 having landed, **H24 is the only reproduced
+   unsoundness left**, and R-0461's three-part shape is the checklist: derive the fact,
+   compose it into the status on every surface, then make a policy fail on it.
+
+   **Why this one outranks the block while the rest of the arc does not.** The block's
+   argument is that continuous measurement of the language surface beats further agreement
+   between checkers of a model — and that argument is right about *arc work*. H24 is not
+   arc work. It is a live unsoundness in what the compiler already claims: a `proved`
+   division that aborts, and a shift family that claims nothing at all. Measurement of a
+   surface that reports `proved` for a trapping operation measures the wrong thing until
+   this is fixed. Everything from 1c down stays behind the block, because vocabulary,
+   digests and IRs are exactly the "more arc work" the block was sequenced ahead of.
+
+1c. **R-0458, which R-0461 forced and then shipped without.** A claim capped
+   by an outstanding hypothesis is *proved conditional on invariant@6* — real evidence
+   naming exactly one remaining VC, which the current vocabulary cannot express. That is
+   `strength` and `independence` as separate coordinates, and R-0461 is their first real
+   consumer rather than a hypothetical one. Note the part already landed (the four-field
+   `independent_of`, per-kernel receipts, display-only composite) so this is scoped to the
+   remainder; see its body.
+2. **R-0454 (neutral digest), because its window is closing.** Digests are
+   *stored*. No `subjectDigest` field exists in `Concrete/` yet, so migration cost is
+   zero today and rises with every artifact written. It also closes the substantive
+   gap in R-0448: kernels currently agree on an obligation *id*, so "two kernels
+   agreed" means "two kernels each closed something filed under the same key".
+   Alpha-normalize before hashing — the third encoding invariant, added from the R-0464
+   cross-check, without which R-0464 invalidates every stored digest.
+3. **R-0467 and R-0468 here, not later, because everything above is unverified on the
+   merge commit without them.** The multi-kernel job runs on dispatch, schedule or a
+   label, so a regression in R-0461's or R-0464's work merges green; and the scheduled
+   jobs are pinned to `lambdaclass/concrete`, so in this repository the nightly can never
+   fire. Both are hours, not weeks, and they are what stops the rest of this list from
+   being verified by hand each time. Sequenced after the two hole fixes only because
+   there is no point automating the verification of work not yet done.
+4. **Point the existing agreement technique at `exprToSmt` and Lean's own rendering**
+   (recorded under R-0450). Cheap, needs no IR, and it tells the IR work what the
+   fragment actually has to preserve. The SMT path matters most: its verdict enters
+   the TCB as `solver_trusted`, and no kernel re-derives it.
+5. **R-0462 (fuzz the compiled binary against the safety claims).** Placed above the IR
+   and the register rows deliberately: it is the highest fault-finding value per unit of
+   work on this list, it would have caught H24 in seconds, and it is the only item here
+   that tests a claim against the ARTIFACT rather than against another model of it. Every
+   static surface reported success on `examples/trap_semantics_gap/`.
+6. **R-0455 (term IR + Register B), absorbing the four drivers that landed ahead of
+   it.** Every further kernel added before this multiplies the thing being removed.
+7. **R-0460 (Register A rows).** One discharged row moves the ceiling further than a
+   third kernel does — see the priority argument recorded in that task.
+8. **R-0459 before R-0448's credibility gate**, because that gate is currently
+   unsatisfiable rather than merely un-run: every obligation family is arithmetic, so
+   flagship code produces nothing to badge.
+9. **R-0463 (probe whether a Farkas witness extracts from `micromega`).** Timeboxed, and
+   scheduled late only because its result changes strategy rather than unblocking work: a
+   positive result deletes the case for a second kernel at the linear tier, which is where
+   multi-kernel evidence is currently deployed. Do it before any further prover, never
+   after.
+10. **R-0448 (graduate the arc) once the above hold**, and not before — its own merge bar
+   already names H23 as blocking.
+11. **R-0456 and R-0449 last, and only on their own merits** — meta-theory in a second
+   host, and realization — both explicitly de-prioritised or pull-gated.
+
+The governing principle, measured rather than assumed: kernel diversity is a
+*portability* property for auditors, not a bug-finding strategy. Zero real defects on
+this arc came from kernel agreement; the faults came from differential tests, and H23 —
+the worst of them — was found by writing a wrong program and reading the report, while
+every kernel-side surface reported success. Sequence accordingly, and note that R-0462
+(fuzz the compiled binary against the safety claims) would have caught H23 in seconds.
+
+The same principle applied one level out, added 2026-07-31: this arc strengthens claims
+the language already makes, and nothing on it widens what the language can claim or makes
+a rejection legible to the model that has to act on it. R-0459 is the first of those and
+is already sequenced above; **R-0466, R-0471, R-0470 and R-0469 are the rest and sit ahead
+of this arc by file position**, on the argument that a continuous empirical measurement of
+the language surface outranks further agreement between checkers of a model — the same
+trade R-0462 represents against R-0460. None is a substitute for the arc; all are cheaper,
+and all fail loudly in places the arc reports success.
+
+**Two exceptions, and only two: R-0461 (done 2026-08-03) and R-0464 precede this block.** Both own
+reproduced unsoundness — a bounds obligation reported `proved_by_multi_kernel` on a
+program that aborts, and a division reported `proved` that aborts on signed `MIN / -1`.
+The argument above holds against *arc work*; it does not hold against a compiler that
+currently reports `proved` for operations that trap, because measuring a surface in that
+state measures the wrong thing. Everything else in the arc — vocabulary (R-0458), digests
+(R-0454), CI reachability (R-0467/R-0468), the IR (R-0455), register rows (R-0460) — stays
+behind this block, which is precisely the "more arc work" it was sequenced ahead of.
+
+That block is four tasks, so state what earns each position rather than leaving the
+count to look like drift. R-0466 is the measurement. R-0471 is hours of work the
+measurement needs in order to have anything to move, and it pulls three defects out
+from behind R-0137's Phase 8 dashboard. R-0470 closes a capability-inference path that
+manufactures an empty capability set and is caught today only by a type mismatch —
+authority visibility is a pillar claim, so it is worth closing while still a false
+rejection. R-0469 is the least urgent and says so in its own body; it is here because
+its trigger is unpredictable and it must precede any stack-budget work. Two of the four
+(R-0470, R-0469) are ledger bugs that had no roadmap owner at all, which is the actual
+defect being corrected: an unreferenced ledger bug is invisible to a sequence that
+advances by file position.
+
+**R-0461 came before all four, and file position said otherwise — kept as the worked
+example of this override.** R-0461 landed 2026-08-03 and H23 is closed; R-0464 now holds
+the position this paragraph argued for, on the same criterion. R-0461 sat at a much later
+file position than these tasks purely because it was allocated after them. Item 0 above
+already placed it ahead of the arc; it was ahead of this block too, on the one criterion
+that separates them: **it was the only item in either group where a shipped claim was
+false.** A guaranteed out-of-bounds access reported
+`proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborted. Against that,
+R-0466 is a measurement, R-0471 is legibility, R-0470 is a false *rejection* (no wrong
+code), and R-0469 is latent — no budgeted project is recursive today. A false `proved`
+outranks all four, and the block was inserted without saying so, which is the gap this
+paragraph closes rather than a change of plan.
+
+The general rule this instance illustrates, since it will recur every time an urgent
+defect gets a late ID: file position is the default order, not an argument. Where a
+later-positioned task fixes a live false claim and an earlier-positioned one does not,
+the false claim goes first, and the override is written here rather than left for the
+next reader to rediscover.
+
+## Outstanding work recorded 2026-08-04
+
+Everything below was found or deferred during the R-0460..R-0465 arc and is filed here so it
+is not carried in someone's head. Each entry says what is *measured* rather than what is
+hoped, because several of these exist precisely because a number was restated instead of
+recomputed.
+
+### The `predictable` profile audit (2026-08-05) — three fail-open gates
+
+Same bug class as the obligation layer, in the checker analyses that back
+`--check predictable`. All were **fail-open**: an analysis that could not establish a property
+reported that the property held.
+
+- **Bounded iteration admitted non-terminating loops.** The rule asked "is the condition a
+  comparison?" and "is the step list non-empty?" and tied them to nothing, so
+  `for (let mut i = 0; i < n; z = z + 1)` and `for (…; i < n; i = i - 1)` were both `bounded`,
+  the module PASSED, and the report said `0 unbounded loops`. Now a variable in the condition
+  must be stepped toward the bound by a constant; everything else is refused. Zero corpus
+  change — all 31 previously-`bounded` loops use the `i = i + 1` idiom.
+- **An indirect call could claim no-recursion.** The call graph has no edge for `f(x)`, so
+  recursion through a function pointer was invisible: `ping` calling `apply(ping, …)` reported
+  `recursion: none` and passed. Now refused.
+- **`--report stack-depth` stated a byte-exact bound for unbounded recursion** — `32 bytes` for
+  the above, and recursive callees were filtered out of every chain so a caller of an unbounded
+  function also kept a finite bound. A false NUMBER is worse than a missing one. Unboundedness
+  now propagates to callers.
+
+- **The remaining two gates, audited 2026-08-05.** **Alloc and blocking are sound** — the
+  compiler already refuses `E0520: requires Alloc but caller has (none)`, so capabilities are
+  transitive by enforcement, and a fn-pointer type carries its capset (passing an `with(Alloc)`
+  function as a pure `fn(i32) -> i32` is an `E0220` type error), so a combinator cannot launder
+  one. Nothing to fix. **FFI was the odd one out**: no capability behind it, only a direct-callee
+  check, so `f` calling `g` calling an extern reported `ffi: no` and `evidence: enforced`. Now
+  closed over the call graph, which makes FFI agree with the two gates that already were.
+  Reclassified three real examples (`http`, `integrity`, `verify`) and all were true positives —
+  in `http` the chain is `send_string` → `handle_client` → `main`.
+
+**Why the obligation work could not have found these:** they are LIVENESS claims. Every proof
+obligation rules out a bad *event*; a program that hangs or overflows the stack performs no bad
+event, so no obligation and no register could notice. This is the first defect cluster this
+week that no amount of work on the obligation layer would have reached.
+
+- **Recursion admission is now TRANSITIVE — DONE 2026-08-05**, on an explicit decision rather
+  than as a side effect. `main` calling a directly recursive `fib` was `enforced` because the
+  label came from each body in isolation; predictable execution is a property of running the
+  function, so it now closes over the call graph like FFI, alloc and blocking already did.
+  Recursion was the last gate asking "is it written here?" instead of "can you reach it?".
+  **Measured:** 14 functions across 10 examples moved `enforced` → `reported`, all true
+  positives; four goldens updated. Nothing stops compiling — it is an admission/label change,
+  and module-level `--check predictable` already failed these programs.
+  **A consumer was silently left behind, twice:** of seven call sites, the FFI closure reached
+  only four — missing the `Check/Policy.lean` path that REJECTS builds. `profileClosures` now
+  returns both closed sets together so one cannot be taken without the other.
+  **Still direct, deliberately:** extraction eligibility (`proofExclusionReasons`) answers a
+  different question and would change which proofs are attempted.
+
+**Superseded note — the profile is not transitive — `caller` calling a directly
+recursive `recurses` is still `enforced`, though module-level `--check predictable` does fail.
+Making admission transitive is a semantics change that would reclassify existing code, so it is
+a decision to take explicitly rather than as a side effect. The stack-depth report, which makes
+a numeric rather than a label claim, IS transitive as of this change.
+
+### From R-0455 (term IR + Register B) — slices 1–2 landed, four things remain
+
+- **Register B row 2, `eliminate_div_mod` (fresh-variable form).** Two concrete blockers, in
+  `docs/TRANSFORM_REGISTER.md`: it needs hand-written `DecidableEq` on `Term` (Lean cannot
+  derive it through the nested `List Term` in `sym`), and its real content is the magnitude
+  bound `|r| < |b|`, which needs `Int.natAbs` reasoning with **no Mathlib in this repo**.
+  Recorded there: comparing terms by their `repr` STRINGS was tried and is the wrong answer.
+  Also recorded: the identity `q*b + r = a` alone is true for *any* `q` and constrains
+  nothing, so a row adding only it would be sound and useless.
+- ~~The remaining `partial def`s in the report layer~~ **PARTLY DONE 2026-08-05.** Of 17,
+  four (`exprIntTy`, `exprIntervalMax`, `cartesianEnvs`, `cartesianEnvsPer`) recovered
+  structural recursion by deleting the keyword. The rest recurse under `List.flatMap` over a
+  nested-inductive list, which the termination checker cannot see through; `collectShiftsE`
+  was converted with `attach` + `decreasing_by` and the pattern generalises.
+  **Two corrections to earlier claims, both found by testing rather than reasoning:**
+  a first sweep reported "green" from a loop whose exit condition grepped only for
+  *termination* errors, so a `cannot mix partial and non-partial definitions` failure read as
+  success — `partial` is all-or-nothing inside a `mutual` block, so the four S/E walker pairs
+  cannot be split. And a well-founded definition does **not** become `rfl`-reducible; the
+  kernel will not unfold `WellFounded.fix`. It becomes reasoning-accessible (equation lemmas,
+  recursion principle), which is a different and smaller gain than the seven structural ones.
+- **NEW: obligation discovery completeness.** `collectShiftsE_complete` proves a present shift
+  is always found — the first statement about whether an obligation gets *generated* at all,
+  which Registers A/B/C are all structurally unable to ask. **Its antecedent is narrow**
+  (`hasShift` misses a shift under a call argument, which the walker does traverse) and that
+  gap is pinned by a build-enforced example so the theorem is not over-read.
+  **DONE 2026-08-05 for all four families**: `collectDivisorsE`, `collectIndexUsesE` and
+  `collectArithE` followed (each `mutual` block totalised as a unit, since `partial` is
+  all-or-nothing inside one). 17 report-layer `partial def`s are now 6, none on discovery.
+- **A real bug found by writing the predicate, not by testing.** `(a)[i]` generated NO
+  array-bounds obligation — absent from `--report vcs`, not merely unproven — while `a[i]`
+  did, because discovery matched a bare `.ident`. Fixed via `arrayRootName`. The suite was
+  1702/0 before AND after: no fixture had ever used a parenthesised array access, so the
+  regression guard is end-to-end rather than a `rfl` lock. Memory safety was never affected
+  (codegen bounds-checks every access); the missing thing was the proof, and any sign of its
+  absence. `b.data[i]` recorded nothing either — **CLOSED 2026-08-05**: discovery now records the
+  array EXPRESSION rather than a name, and `arrayAccessOf` resolves the length either from the
+  scoped size map or by following the field path with the new `placeTy`. `b.data[i]` yields
+  `0 ≤ i ∧ i < 16`; `b.data[99]` is REFUTED — an out-of-bounds access the proof layer could not
+  see before. Nested `m[i][j]` now records both levels, and `hasIndex` lost its narrow
+  antecedent, so bounds discovery completeness covers ALL accesses. It became cheap only after
+  `ScopeDecls` threaded types; the wider-peel shortcut was refused because it would have
+  produced an obligation about the wrong array.
+- **The same defect was in TWO more families, via `varTyMap` — DONE 2026-08-05.** That was the
+  identical construct for TYPES: one flat, per-function, name-keyed map. **shift** produced a
+  WRONG obligation — `x << 40` on an `i8` took width 64 from a shadowed `x : i64`, generating
+  `0 ≤ 40 ∧ 40 < 64`, reported **proved**: a certified 40-bit shift of an 8-bit value. Now
+  `40 < 8`, refuted. **overflow** produced a MISSING obligation — shadowing broke type
+  resolution, so an addition inside an explicitly `#[overflow_checked]` function had no VC and
+  no mention of one. Now covered at the `i8` range. Fixed by threading types and array lengths
+  together as one `ScopeDecls` record through `scopedWalkSized{S,B}`. `varTyMap`,
+  `arraySizeMap` and `collectLetTys` are deleted — no flat name-keyed map remains in this
+  layer. A single mutation reversing shadowing precedence now fails 8 gate assertions across
+  all three families, because they share one environment.
+  **Deliberately not done:** unannotated `let`s contribute no type — inferring one could
+  disagree with the checker, and a wrong type is the defect being fixed. Array lengths are the
+  exception, since `let a = [0; 16]` fixes the length with no inference.
+- **A WRONG obligation, found by the same question and more serious than the missing ones.**
+  `boundsObligations` resolved an array's length by NAME with `find?` — first match wins — so a
+  shadowed array produced a bound from the wrong binding: `a[10]` on a 4-element array
+  generated `0 ≤ 10 ∧ 10 < 16`, which the kernel PROVED. The report read `2 proved, 0
+  outstanding` for a program that traps. Every other bug in this cluster was a missing claim;
+  this was a false claim, certified. Fixed by refusing to answer when a name has conflicting
+  sizes, then **DONE properly 2026-08-05**: sizes are threaded per SCOPE through
+  `scopedWalkSized{S,B}`, next to the hypothesis scope that walker already carried. The
+  shadowed access now yields `10 < 4` and is reported as a **counterexample** — the compiler
+  detects an out-of-bounds access it previously certified as proved. Declarations shadow
+  outward, do not escape their block, and a `for`-init binding reaches condition/step/body.
+  Generation and gap-reporting share one walk so nothing falls between them.
+  **Two lessons from mutating it:** the refusal-era gate assertions FAILED on the correct
+  implementation because they pinned the mechanism ("refuses to answer") rather than the
+  property (the right bound) — rewritten. And dropping `for`-init bindings survived both the
+  gate and all 1702 tests, since no fixture declares an array in a for-init; now covered.
+- **Two more silent bounds gaps, closed.** `let a = [0; 16]` (unannotated — the size sits in
+  the initialiser, but only annotations were read) and arrays declared inside an
+  `if`/`while`/`for` body (only the flat top-level statement list was scanned).
+- **The silence is now reported.** `--report vcs` prints `ARRAY ACCESSES OUTSIDE the bounds
+  fragment`, naming every access that reached no obligation, including on the zero-VC path.
+  `make test` stayed 1702/0 through ALL of these fixes — the corpus contained no parenthesised
+  access, no shadowed array, no unannotated array literal and no nested declaration, which is
+  why every regression guard here is end-to-end rather than a `rfl` lock.
+- **Register B row 3, `eliminate_algebraic`.** Different in kind — requires the
+  axiomatization be conservative over the datatype theory, which is model-theoretic rather
+  than a rewriting argument. Not a longer row 2.
+- **Absorb the four drivers into the IR** (`rocqLowering`, `isabelleLowering`,
+  `rocqNiaLowering`, `isabelleSmtReplayLowering`) with `tactics` as an ordered, budgeted
+  driver FIELD. Measured cost of not doing it: `rocqNiaLowering` is a whole cloned
+  `ProverLowering` record existing to change one word in a proof script.
+- **Collapse N printers to one.** The print step is validated, not provable (the target
+  syntax is not ours), so its cost is per-printer and permanent. `exprToSmt` already is that
+  printer for the arithmetic tier and is validated as of 2026-08-03.
+- ~~Model casts in the IR~~ **DONE 2026-08-04.** Carried as a wrap at the target width
+  matching `Interp.evalCast`/`IntArith.wrapToType`, not as identity; unknown-width targets
+  still rejected. This unblocked R-0455's headline defect, which previously could not be
+  demonstrated at all because every division-carrying obligation also carried a cast and was
+  dropped by both layers. Measured: the IR now recovers such an obligation, and
+  `examples/` contains none, so the corpus number is 0 for a reason about the corpus — a
+  constructed fixture in the gate exercises the capability.
+  **Remaining:** one `dropped by both` in `fixed_capacity`, unclassified.
+- ~~`exprToProver` is also a `partial def`~~ **DONE 2026-08-04.** It never needed to be —
+  nor did `exprToSmt`, `exprToLeanProp`, `arithToBVW`, `exprHasNonlinMul`, `collectIntLits`
+  or `conjuncts`. All seven recurse only on direct subterms and were marked `partial` by
+  habit; removing the keyword was the entire fix, and it makes the SMT printer, both prover
+  lowerings and the bv renderer kernel-reducible. The drop the IR exists to repair is now
+  pinned by `rfl` instead of only counted at runtime.
+  **What this does NOT change:** a provable printer still does not prove the TARGET syntax
+  means what we think — that needs the target's semantics, which are not ours. Print fidelity
+  stays validated rather than proved; what improved is that the printer's own behaviour is
+  now provable.
+- ~~`evalIntEnv` is a `partial def`~~ **DONE 2026-08-04.** `evalIntEnv`/`evalBoolEnv` are now
+  thin wrappers over `ofExpr` + `TermIR.eval*`, both structural, so the yardstick every
+  lowering-agreement check measures against is kernel-reducible and its behaviour is pinned by
+  `rfl` — including the truncating-division convention, which `check_vc_bridge_register.sh`
+  previously could only GREP for and now asserts as real locks. Two behaviour changes, both
+  gains: casts now have a reference value (previously `none`, so the instance was skipped),
+  and `geq`/`gt`/`neq` are canonicalised rather than special-cased. Verified identical on the
+  provers: multi-kernel 78/78.
+  **Remaining in this area:** the report layer still has ~17 `partial def`s (walkers and
+  collectors). They are not on the trust path, but the same question applies to each: is the
+  keyword load-bearing or habitual? Seven of seven checked so far were habitual.
+
+### From R-0462 (artifact fuzz) — works, covers almost nothing
+
+- **Measured coverage: 4 of 356 own functions across `examples/`.** The machinery is proven
+  able to find real traps (three fixtures, exit 134) but its useful coverage is ~1%. Widening
+  it — capability-holding functions, struct parameters, non-integer returns — is where the
+  fault-finding value actually is. This pass built the tool, not the coverage.
+- **Zero `claimed` functions in `examples/`**, so the soundness half of the gate is currently
+  vacuous and says so. That is a *consequence* of R-0461/R-0464 having closed H23/H24, not a
+  defect, but it means a future clean result only means something because of the separate
+  mechanism assertion.
+
+### From R-0460 (Register A) — 0 of 5 fully discharged, 4 of 5 half
+
+- **`callSiteObligations` is the remaining row and is different in kind:** its content is
+  substitution correctness — that the report layer's syntactic substitution of actuals for
+  formals means what the interpreter's binding of formals to values means. That is a bridge
+  property (H19), not a short proof.
+- **Every discharged row is only half done.** The *semantics* half is proved and proved tight;
+  the *lowering* half — that the emitted obligation denotes the condition — is H19 and no
+  theorem in the repo touches it. A half-discharged row is still a TRUSTED row.
+
+### From the gate-control sweep — 18 of 55 soundness gates
+
+- **37 soundness gates have no negative control.** Run
+  `check_gate_mutation_coverage.sh --coverage` for the list; do NOT grep the harness for gate
+  names, which counts prose and inflated the figure to 20.
+- **8 of the 37 are migration-shaped** (`check_*_migration.sh`): they assert a refactor
+  preserved behaviour and largely re-test rules the family gates already control. Deprioritise
+  explicitly rather than padding the count.
+- **~10 are genuinely distinct** and worth doing: `check_axiom_inventory`,
+  `check_bv_certificates`, `check_smt_redteam`, `check_smt_replay`, `check_evidence_corpus`,
+  `check_contract_negatives`, `check_codegen_differential`, `check_codegen_execution`,
+  `check_differential_positions`, `check_subject_facts`.
+- **`check_totality_judgment.sh`'s stated scope is wrong.** Its header names `blockDiverges`
+  among the facts it covers; no fixture in it exercises divergence detection. The rule IS
+  guarded — with divergence detection disabled, `make test` goes 1702/0 → 1315/76 — but by
+  the main suite, not by that gate. Fixing the gate means giving it a divergence fixture.
+- **Measured rate, for planning:** a family touching `EmitSSA`, `Lower` or `ProofCore`
+  rebuilds most of the compiler and then runs a gate that compiles and executes programs —
+  10–25 min each, and roughly a third of mutations need rework before they test their stated
+  subject. The remaining 37 are 8–15 hours of machine time.
+
+### Environmental, not ours
+
+- **`lli` 21.1.8 cannot JIT this compiler's IR** (`orc_rt_alt_UnwindInfoManager_register` not
+  in its bootstrap symbols map). Verified against `origin/main` in a clean worktree:
+  byte-identical `.ll`, identical failure. `run_tests.sh` now probes `lli` for FUNCTION and
+  falls back to native clang, which turned 49 silently-skipped tests back into real coverage
+  (1653/49 → 1702/0 on an affected machine).
 
 ## Inherited Scheduling Constraints From Earlier Phases
 
@@ -1975,17 +2604,224 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
+### Task R-0466
+
+**Objective:** Measure whether the language is legible to the consumer that
+actually writes it — a language model — by gating two numbers in CI: can a model
+author correct Concrete from the documentation alone, and can it repair a
+rejected program from the diagnostic alone.
+
+The premise, stated because it reorders other tasks: Concrete's code is written
+by models, so the ergonomic cost the external-validation trial was designed to
+price is largely not charged. A model does not resent `defer x.drop()` or
+`with(Console)` — keystrokes are the cheapest thing it spends, and linearity plus
+capability headers are close to free on the consumer side. What a model cannot do
+is guess. So explicitness is not one virtue among several here; it is the whole
+adoption surface, and every rule that lives only in a maintainer's head, and
+every rejection that does not name its own repair, is a defect rather than
+friction.
+
+Two measurements, both regression-tracked so a change can be shown to move them:
+
+- **Authoring.** Give a model the language reference and stdlib manifest and
+  nothing else; ask for N programs against fixed prompts; record the fraction
+  that compile and, for each failure, which invariant was violated. The output
+  that matters is not the score but the histogram: an invariant that models
+  breach repeatedly is one the documentation does not state, and that is a
+  reference defect with a named location.
+- **Repair.** For each rejected program, feed back ONLY the diagnostic — never
+  the fix — and measure rounds to green. One round is the bar. A diagnostic that
+  cannot close the loop at all is the strongest possible finding, and bug 064 is
+  the existence proof: it names a token unknown while displaying that token among
+  the known set, so no repair is derivable from it in any number of rounds.
+
+Seed the corpus from what exists rather than inventing one, and it is already
+large enough to start: measured 2026-07-31, `tests/wrong-code/cases/` holds 23
+documented WC cases and `tests/invalid_programs/` holds 15 programs, plus the
+`docs/bugs/` repros — roughly 38 rejected programs with known intended causes
+before anything is written. Report that denominator with both numbers; a repair
+rate without its corpus size is the single-badge failure this project refuses
+everywhere else.
+
+Why this sits here, ahead of the prover-neutral arc: it is the cheap empirical
+check on the language surface, in the same relation to R-0137 that R-0462 has to
+R-0460 — an afternoon-scale continuous measurement standing in for an argument
+that would otherwise be settled by assertion. It also front-runs R-0137's three
+human sessions without replacing them (a diagnostic that defeats a model defeats
+a newcomer), and unlike recruiting, it runs per commit. R-0137 owns the
+diagnostics bar itself and the measured 12-of-15 empty-hint baseline; this task
+owns the harness and the two numbers.
+
+Kill criterion, per the spike-first rule: if authoring failures cluster on
+prompt-shape or harness artifacts rather than on identifiable language or
+documentation facts, the trial is measuring the harness and should be stopped
+rather than tuned.
+
+Definition of done: the harness is deterministic enough to gate (pinned model
+version and prompts recorded in the artifact, so a number is comparable across
+runs or is explicitly marked incomparable); the repair number is reported per
+diagnostic code, not as one average, so a regression names its own code; and a
+mutation that blanks a populated `hint` must make the repair number visibly
+worse. Report both numbers with the corpus size, and never a single green badge —
+same no-erased-dimensions rule as R-0440.
+
+### Task R-0471
+
+**Objective:** Close the diagnostic-legibility defects the 2026-07-31 surface
+audit reproduced, as the early slice of R-0137's diagnostics bar rather than
+behind its Phase 8 dashboard.
+
+R-0137 owns the full bar and the measured baseline (12 of 15 rejected programs in
+`tests/invalid_programs/` emit an empty `hint`; ~25 `hint :=` sites against 215
+`E0NNN` codes). But R-0137 is a Phase 8 validation artifact, and these three are
+hours of work that R-0466 needs in place to have anything to measure. Pulling
+them forward is the point of this task; it does not narrow R-0137.
+
+- **Bug 064 — the rejection that cannot be acted on.** Every bare semantic
+  `--query KIND` exits 1 with `unknown query kind 'predictable'` and then lists
+  `predictable` first among known kinds. The arity is wrong, not the spelling:
+  the bare-form branch validates against `knownFactKinds`
+  (`Concrete/Report/Report.lean:4430`) while the message renders both lists
+  (`:4383`). Split the two cases, and give `traceability` — currently a fact
+  filter AND a separate backend path under one name — either one meaning or two
+  names. The gate is class-level: every member of both kind lists, in bare and
+  argument form, asserting the message never lists the rejected token as known.
+  That catches the next kind added to one list and not the other, which is the
+  mechanism that produced this bug.
+- **Retired syntax gets a generic parse error.**
+  `tests/invalid_programs/missing_variant.con` uses the DELETED `#` enum
+  qualifier and gets `E0001 expected ;, got #`, with no statement that the
+  separator was retired or that `Option::<i32>::Some` replaces it. This is the
+  error a model trained on older material will hit most. The class gate is a
+  corpus grep for fixtures exercising retired surface forms — the class size is
+  unmeasured, so measure it before fixing instances, and the fixture has also
+  drifted from its own name.
+- **Populate `hint` where the candidate set is already in hand.** `E0100`
+  prints no candidates although the resolver holds the in-scope set; the
+  field-not-found and missing-variant codes likewise know the legal set they
+  choose from. The field is already wired end to end and reaches
+  `--diagnostics-json`, so this is population, not plumbing. Gate that every code
+  reachable from the corpus carries a non-empty next action, with a mutation
+  blanking one hint.
+
+### Task R-0470
+
+**Objective:** Fix bug 063 — capability-variable inference reads "unknown
+argument type" as "no capabilities", so a stored or derived function pointer
+cannot reach a `cap C` parameter.
+
+Filed 2026-07-27 and reproduced on four derived argument forms; it had no roadmap
+owner until now, which is why it is here rather than later. A
+capability-polymorphic combinator accepts a function pointer written as a bare
+name or an annotated local, but rejects `apply(ops.op, 4)` — a fn pointer read
+from a struct field, a call result, or an array element — as an E0220 type
+mismatch against a `with()` the program never wrote.
+
+This is a rejected-valid-program defect today, not wrong code. It is scheduled
+early anyway because of what the repro shows about the mechanism: the authority
+check already passes on the fabricated empty capability set, and only `expectTy`
+stops the program. Authority visibility in the signature is a load-bearing pillar
+claim, so an inference path that silently manufactures an empty capset is worth
+closing while it is still merely a false rejection. See the repro table in
+[the bug](docs/bugs/063_cap_inference_defaults_derived_fnptr_to_empty.md); there
+is no fixture yet, and the four derived forms are the negative corpus.
+
+### Task R-0469
+
+**Objective:** Fix bug 065 — make stack unboundedness propagate through the call
+graph, and give `--report stack-depth` and `--report recursion` the gate neither
+has.
+
+`computeCallDepths` filters recursive callees out of every caller's callee set
+(`Concrete/Report/Report.lean:496`), so a `main` calling recursive code reports
+`depth: 0  stack: 8 bytes` and the summary prints `Max stack bound: 8 bytes` as
+the program maximum. A function is unbounded if it is itself recursive OR reaches
+anything unbounded; render the reached callee by name, and report the summary
+maximum as `unbounded` rather than maximizing over the bounded subset.
+
+**The number is a policy verdict and a published evidence field, which is why
+this is not cosmetic.** `scripts/tests/check_policy.sh:161` greps
+`Max stack bound:` and enforces `[policy] max_stack_bytes`;
+`check_assumptions.sh:128` does the same for `[allocation] stack_max_bytes`; and
+`capture_release_bundle.sh:128` publishes it as `evidence.max_stack_bytes`. The
+fail-closed branch that should catch this cannot fire — it triggers when the
+report has NO numeric max, and the defect guarantees a finite one is always
+printed. So a budget would pass on unbounded stack rather than refuse it.
+
+Not live: all five budgeted projects (`crypto_verify`, `parse_validate`,
+`fixed_capacity`, `hmac_sha256`, `constant_time_tag` — three flagships) are
+recursion-free, so every enforced number is currently correct. That is a property
+of the corpus, not the mechanism, and it is the reason this sits after R-0471 and
+R-0470 rather than at the front: lowest urgency of the three, but an unpredictable
+trigger, so not late either. **It must precede any work that implements or
+tightens a stack budget.** If a recursive function lands in one of those five
+first, this becomes an H-numbered evidence hole with no further investigation
+needed.
+
+Gates, since `scripts/tests/check_stack_depth.sh` does not exist and that absence
+is how the defect shipped: a fixture with direct recursion, mutual recursion, and
+a bounded caller of each; a class-level assertion that no function reported with a
+finite `stack:` can reach one reported `unbounded`, cross-checked against
+`--report recursion` — which is itself currently ungated, has zero references in
+`scripts/tests/`, and is folded in here because it is the same script and the
+cross-check needs both reports; a negative budgeted project with recursion that
+`check_policy.sh` and `check_assumptions.sh` must REFUSE; and confirmation that
+bundle consumers tolerate a non-numeric `evidence.max_stack_bytes` — the fallback
+is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
+`!isRecursive c` filter must fail the gate.
+
 ### Task R-0450
 
-**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
+**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. The problem is duplicated expression lowerings of the same obligations: several answers to one question, free to drift — and drift here means the Lean proof and the external check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
 
 This task's pulled-forward position is conditional: it may land representation,
 semantics, and differential gates after R-0004 only when the existing branch is
 merge-ready. It does not issue receipts or upgrade any verdict to authoritative
 evidence; if it is not ready, R-0006 proceeds rather than waiting for it.
 
-   Slice 1 unifies the two existing backends only — no new provers; the diff
-   should be net-negative in lowering code. Gates: constructor coverage
+   **The count has grown since this task was written, and the growth is the
+   argument.** It was two lowerings (`toLeanProp`, `exprToSmt`). Today there are
+   three expression lowerings — `toLeanProp`
+   (`Concrete/Report/ReportVC.lean:592`), `exprToSmt`
+   (`ReportObligations.lean:791`), `exprToLeanProp` (`:863`) — plus
+   `exprToProver` (`:930`) with four driver instances (`rocqLowering`,
+   `isabelleLowering`, `rocqNiaLowering`, `isabelleSmtReplayLowering`).
+   `exprToProver`'s own comment reads "Same linear fragment as
+   `exprToLeanProp`": the fragment is now *defined twice*, in prose, in two
+   functions that must agree. That is the exact drift this task exists to
+   remove, and every kernel added before it lands adds another copy.
+
+   **The generator feeding this IR may change under it (R-0464).** That task moves
+   obligation generation from the surface AST to SSA. It does not alter this
+   task's shape — the IR still receives an obligation and lowers it — but the
+   terms arriving will be over SSA names, so do not bake source-level naming
+   assumptions into the transforms. Landing this IR first is preferable, so the
+   SSA generator emits into it rather than into today's ad-hoc lowerings.
+
+   **Point the agreement technique at the older paths.** R-0448 invented a way to test
+   that a rendering denotes the obligation without writing a parser per target: pin the
+   driver's own output to ground assignments, make the target decide it, compare against
+   `evalBoolEnv`. Status 2026-08-03: `exprToSmt` IS now checked this way
+   (`smtAgreementGoals`, wired at all three consumers) — an earlier version of this
+   paragraph said it was not, and that stale claim misdirected a round of prioritisation.
+   Lean's own rendering is still unchecked and is the only remaining place validation is
+   asserted by construction rather than minted.
+
+   The reason once given for that — "its rendering is the reference the others are
+   validated against, so nothing exists to validate it with" — is FALSE. The agreement
+   check validates a rendering against the reference EVALUATOR (`safeOn`/`evalBoolEnv`,
+   which walk the AST); Rocq and Isabelle are not compared to Lean, they are compared to
+   what the expression means. The real obstacle was that Lean's lowering was not
+   expressible as a driver, which this task's 2026-08-03 slice removed: the linear fragment
+   is lowered by one parameterised function (`exprToProverU`) and `exprToLeanProp`
+   delegates to it. What remains is to run the agreement scripts through a Lean driver and
+   mint its witness.
+
+   Slice 1 unifies the *existing* backends only — no further provers; the diff
+   should be net-negative in lowering code. Note the original "two existing
+   backends" framing was overtaken by R-0448's spike, which landed four prover
+   drivers ahead of the IR: absorbing them is now part of slice 1's scope, not
+   a follow-on. Gates: constructor coverage
    (every transform/emitter handles or explicitly rejects every IR
    constructor, fail-closed), Lean/SMT verdict agreement on generated
    obligations including identical `unsupported`s, and identity carried as
@@ -2295,6 +3131,15 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
 
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). The spike branch may continue as an experiment, but supported-feature graduation follows R-0004, R-0450, R-0440, and the pulled-forward correctness queue; active ownership is not permission to displace known semantic defects.
 
+   **Blocking merge item added 2026-07-31, CLEARED 2026-08-03 (R-0461).** The badge was
+   attachable to a vacuous obligation: an unproven loop invariant was assumed without
+   composition, so a guaranteed out-of-bounds access reported
+   `proved_by_multi_kernel (3: lean, rocq, isabelle)` and the binary aborted. Graduating a
+   badge with that property would have shipped the defect with a stronger name on it.
+   R-0461 closed H23 — the obligation now caps to `assumed`, and BOTH release stances
+   reject the fixture (`E0617` under forbid-assume, `E0616` under require-two-kernels).
+   `examples/unsound_hypothesis/` is retained as a regression guard.
+
    Merge bar (the graduation note's verified list): badge-teeth negative
    case (a weakly-bounded `a * b` closes with no kernel and stays
    `unproven`), kernel-absent honesty (no `coqc` → no attestation), class
@@ -2309,7 +3154,15 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
    fragment boundary stays a gate, with scope growth only through R-0450's
    named transforms. Dependencies: R-0450 (the IR), R-0004 (receipts),
    R-0440 (the independence field ships inline here as its first consumer
-   if the full model has not landed). On merge, TRUSTED_COMPUTING_BASE.md
+   if the full model has not landed), and **R-0459 for the credibility gate
+   specifically** — measured 2026-07-31: `vc_suite` produces *no* linear
+   runtime-safety obligations at all, and `elf_header`/`crypto_verify` produce
+   exactly one badged row between them, `rand.random_range#div0`, a stdlib
+   divisor obligation rather than anything the flagship itself asserts. Every
+   family generated today is arithmetic (R-0459's diagnosis), so the flagship row
+   this criterion asks for cannot exist until non-arithmetic families do. Do not
+   read the criterion as merely un-run: it is currently unsatisfiable.
+   On merge, TRUSTED_COMPUTING_BASE.md
    records both trust directions: agreement reduces kernel-soundness
    trust; bridge trust is untouched until realization (R-0449).
 
@@ -4815,6 +5668,22 @@ lifecycle/owner record.
  the large proof-automation investment, so external evidence can redirect
  that investment rather than merely evaluate it afterward.
 
+ **Amended 2026-07-31: the authoring consumer is a language model, and the
+ primary trial is R-0466's, not this one.** Concrete's code is written by
+ models, so the ergonomic cost this trial was designed to price is largely not
+ charged: a model does not mind `defer x.drop()` or `with(Console)`, because
+ keystrokes are the cheapest thing it spends. Explicitness is what it cannot
+ substitute for — it cannot fall back on guessing, so any rule not stated in the
+ source, and any rejection that does not name its own repair, is a defect rather
+ than friction. That reorders this task's own contents: the diagnostics bar below
+ stops being an adoption prerequisite and becomes the primary correctness
+ surface, because a diagnostic is the model's only feedback channel.
+
+ This does **not** retire the three human sessions or the alpha bar's one
+ completed non-author workflow; a diagnostic that defeats a model defeats a
+ newcomer too, so R-0466 front-runs the human trial rather than replacing it,
+ and it is cheap enough to run per commit where recruiting is not.
+
  This task owns the minimum diagnostics bar rather than depending on an
  unowned notion of “usable.” For the first-session high-friction cases—an
  unconsumed linear value (E0208), a missing capability declaration (E0240), an
@@ -4826,6 +5695,24 @@ lifecycle/owner record.
  that explains the obligation. Gate the checked message structure and spans,
  not one brittle prose sentence. This is the bounded adoption prerequisite;
  general IDE quick-fixes remain later tooling work.
+
+ **Measured 2026-07-31, so the bar has a starting number rather than a
+ judgement.** Over `tests/invalid_programs/`, 12 of 15 rejected programs emit an
+ EMPTY `hint` in `--diagnostics-json`; roughly 25 `hint :=` sites exist against
+ 215 `E0NNN` codes. The field is already wired end-to-end and reaches the JSON,
+ so this is population work, not plumbing — and the facts are in hand at every
+ empty site measured: `E0100 undeclared variable 'b'` prints no candidates
+ although the resolver holds the in-scope set, and the field/variant cases
+ likewise know the legal set they are choosing from. Two findings from the same
+ pass belong to this bar: bug 064 (a `--query` rejection that lists the rejected
+ kind as known — a message from which no repair is derivable at all, the limiting
+ case of a missing next action), and `tests/invalid_programs/missing_variant.con`,
+ which exercises the DELETED `#` enum qualifier and gets a generic
+ `E0001 expected ;, got #` — the migration case a model trained on older material
+ will hit most, with no statement that the separator was retired or that
+ `Option::<i32>::Some` replaces it. That fixture has also drifted from its own
+ name. Fix the class, not the instance: a gate asserting every code carries a
+ non-empty next action, and a corpus grep for fixtures testing retired syntax.
 
  R-0445's focused non-author resource-report session counts as one recorded
  attempt here. It is an early pressure test, not a substitute for recruiting
@@ -6002,6 +6889,40 @@ the smaller boundary.
  `scripts/tests/check_solver_portfolio.sh`; the gate must prove no external
  solver result can overwrite kernel evidence and that disagreement blocks
  release claims unless explicitly assumed.
+
+### Task R-0451
+
+**Objective:** Reduce what `solver_trusted` actually asks a reviewer to trust by
+making refutation *certificates* replayable in code the project controls: port a
+CDCL SAT solver to Concrete, emit and consume DRAT, and gate that a corrupted
+certificate is rejected. Staged — microsat (251 lines, upstream `26985d9b`) as
+the probe that the port shape works, then MiniSat (5,296 lines, `37dc6c67`) as
+the real solver. Fit analysis is in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why it belongs in this phase rather than the port ladder: its value is a change
+to the trust model, not a workload lesson. R-0214 defines `solver_trusted` and
+`solver_cross_checked` as classes that record *which* external binary was
+believed; a Concrete checker that replays a DRAT certificate converts part of
+that belief into a mechanical check whose implementation is auditable in-tree.
+It executes after R-0214 because the class boundaries must exist before anything
+can strengthen a result inside them.
+
+**Definition of done.** The solver decides a pinned benchmark set with results
+matching MiniSat, emits DRAT for every `unsat`, and the in-tree checker accepts
+those certificates while rejecting mutated ones — certificate mutation is the
+red-team guard, and a checker that accepts a corrupted proof is the failure mode
+the gate exists to catch. Wire `scripts/tests/check_sat_certificate_replay.sh`,
+and cross-check the checker against `drat-trim` on the same certificates so a
+bug in the port cannot silently manufacture agreement.
+
+**Claim discipline.** A Concrete SAT solver produces **no kernel evidence**. Its
+own correctness rests on Concrete's compiler and Lean's kernel, so replaying a
+certificate with it yields at most a new distinctly-named class (a checked
+refutation certificate) that sits beside `solver_trusted` under R-0440's
+orthogonal-fields model — never `proved_by_lean`, and never a silent upgrade of
+an existing solver result. If the port cannot be given a class that is honestly
+weaker than kernel evidence, it does not ship.
 ### Task R-0215
 
 **Objective:** Add spec/proof mutation testing to prove evidence is load-bearing. Command surface: `concrete mutate-evidence --target <example> --json` creates controlled mutants: change a function body under a proof link, weaken or delete an `#[ensures]` clause, strengthen an impossible `#[requires]`, remove a loop invariant, alter a spec PExpr/table entry, change a theorem name, and perturb a trusted assumption. Expected outcomes must be explicit:
@@ -6056,6 +6977,40 @@ the smaller boundary.
 **Objective:** Add the Phase 11 validation artifact: a trust-gate pressure project that includes transitive proof dependencies, stale dependency propagation, tool-version drift, proof-corpus migration across a simulated toolchain bump, assumption widening, spec-adequacy policy, vacuity downgrade, solver portfolio / disagreement handling, evidence mutation testing, axiom inventory and clean-checkout replay, weaker-evidence monotonicity, and a release gate proving each status cannot be silently presented as stronger evidence. Include cache-off/on/verify parity and stale/corrupt-cache negatives so the trust gates cover the operational path
 
  users actually run.
+
+### Task R-0458
+
+**Objective:** Split the evidence vocabulary into two independent coordinates and make
+every attestation carry its own re-check procedure.
+
+`proved_by_two_kernels` currently fuses two unrelated facts into one string: how a claim
+was established, and how many independent implementations established it. Fused, it
+reads stronger than it is. Replace it with `strength` (per attestation) and
+`independence`, plus `statable_in` / `proved_in` for portability, and demote the composite
+name to a display label over the tuple as R-0440 requires.
+
+**Partially landed — scope this task to the remainder.** R-0448's spike already ships the
+independence coordinate as `independent_of` in the VC artifact
+(`Concrete/Report/Report.lean:3895`), with four fields rather than the three sketched here:
+`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`. Per-kernel
+receipts carrying kernel, version, verdict, `lowering_agreed` and a replay command also
+exist, and the composite string is already display-only in the artifact. What remains is
+the `strength` coordinate, `statable_in` / `proved_in`, and removing the composite from
+the *human report* line (`Main.lean:1677` still intercalates it), plus the `keep`/`attest`
+additions below.
+
+Two additions the current ledger lacks. `keep`: retain the certificate artifact, because
+"coqc exited 0 at time T on machine M" is neither re-checkable nor shippable in a proof
+bundle. `attest`: the emitted script must assert its own integrity rather than have the
+driver infer belief from an exit code — `coqc` exits 0 on `Admitted.`, and the Isabelle
+driver already demonstrates the pattern with `Thm_Deps.all_oracles`.
+
+The re-check ladder must stay honest: where a transferable certificate exists (LRAT,
+Alethe) a third party re-checks independently of our toolchain; where none exists
+(`omega`, `lia`, `presburger`) the claim is `trusted_modulo_toolchain`, because `lia` has
+no certificate export and a `.vo` is re-checkable only by the same Rocq version.
+
+Normative shape in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
 
 ## Phase 12: Provable And Predictable Subsets
 
@@ -6220,6 +7175,50 @@ bounds, explicit backend timing assumptions.
  passing expectation is never reported as `proved` and that a release/high-
  integrity profile cannot silently rely on it.
 
+### Task R-0459
+
+**Objective:** Add obligation families that are not arithmetic, so the ledger can demand
+non-arithmetic proofs instead of merely accepting them.
+
+Every family the compiler generates today is arithmetic: overflow, bounds, div,
+call-site preconditions, asserts. There is no family for exhaustiveness, termination,
+determinism, relational properties or refinement. That is why a 772-line parser produces
+zero obligations — nothing is looking for anything it could be wrong about. The
+non-arithmetic proofs that do exist are opt-in `#[proof_by]` attachments, so nothing
+enumerates them and nothing reports them missing.
+
+Two families first, chosen because neither needs new logic nor the typed obligation IR:
+
+- **Exhaustiveness** — every reachable `(state, opcode)` pair has a defined transition.
+  Finite case analysis, decidable, closable by all three hosts. `examples/vm` is the
+  corpus. This is the plumbing proof that a non-arithmetic kind flows through
+  obligations, ledger, reports and policy.
+
+  Discharge it with a **kernel** (Lean `decide`, Rocq case analysis, Isabelle), not with
+  SMT — and for a measured reason, not a stylistic one. cvc5 and z3 both *prove* datatype
+  goals of this shape, but cvc5's Alethe output cannot *certify* any datatype-bearing
+  proof: a trivial ground selector goal already fails with `DUMMY_SKOLEM`. Routing here to
+  SMT would therefore yield an unreplayable `solver_trusted` verdict, violating the
+  re-check invariant, in exchange for automation a kernel supplies anyway on a decidable
+  finite problem. Locked by `check_multi_kernel.sh`; if Alethe gains datatype support that
+  gate fails and this route should be revisited.
+- **Relational (2-safety)** — constant-time and determinism via a Core-to-Core
+  self-composition transform: two renamed copies, equal public inputs, assert equal
+  observable trace. Not expressible as a single-execution VC at all. Bounded, so it
+  unrolls to a bitvector query with a retained LRAT certificate checked by two
+  independent checkers. `ct_compare_32` is the target, and today that property is only
+  *enforced by a tag* — proving it is the `enforced -> proved` upgrade.
+
+Prerequisite discovered by inspection, not assumption: `arithToBVW` handles `.add` and
+`.mul` only, so the bitvector path drops xor/and/or/shift entirely. `ct_compare_32` is
+xor-and-or. The bitvector sort and those operators must land as a slice of the typed
+term IR (R-0454's substrate) rather than as another column in the abstraction that slice
+replaces.
+
+Also add `proved_by_hand` as a first-class strength, reusing the existing
+proof-fingerprint freshness machinery — the piece that usually kills hand-proof
+approaches and which already exists here.
+
 ## Phase 13: Runtime Safety Obligations
 
 Goal: generate SPARK-like obligations for boring runtime failures instead of
@@ -6376,10 +7375,401 @@ target byte claims distinct in the resulting evidence.
  prove constructor checks create reusable hypotheses, invalid constructors
  are rejected or return `Result`, raw/trusted paths do not silently inject
  facts, and obligation reports name the type invariant source.
+
+### Task R-0452
+
+**Objective:** Prove the obligation machinery survives obligation *density* on
+code that was written for speed, by porting zlib's inflate path (2,365 lines:
+`inflate.c`, `inftrees.c`, `inffast.c` plus headers, upstream `e3dc0a85`).
+Deflate (3,687 lines) is a second stage, admitted only if inflate's obligation
+story lands. Measurements and fit analysis are in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why this phase and this program: a bit reader plus a 32 KB sliding window is
+almost nothing but bounds, shift, and cast obligations, over the historically
+most CVE-dense shape in systems code, with a bit-exact oracle available for any
+corpus. The existing parser/security examples show that obligations *can* be
+reported; this shows what the ledger and the discharge path do when a single
+function carries dozens of them and the code was not written to be provable. It
+executes after the invariant/frame connection (R-0257) and newtype hypotheses
+(R-0258) because those are the facts the window and table indices need.
+
+**Definition of done.** The port round-trips a pinned corpus bit-exactly against
+zlib, as a regression gate, with malformed/truncated/adversarial streams as
+negative fixtures and fuzz counterexamples persisted. Every bounds, cast, and
+overflow obligation on the bit reader and window indexing carries a status from
+R-0241's schema, and the phase report names how many reached
+`proved_by_kernel_decision` versus `runtime_checked` — the ratio is the result
+this task is measuring, and a corpus that only shows `runtime_checked` is a
+finding, not a pass.
+
+**Claim discipline.** `inffast.c` exists because of pointer-arithmetic fast
+paths. Re-expressing them as index arithmetic under checked obligations is the
+point of the exercise; admitting them as a trusted island passes the gate while
+defeating its purpose, so any trusted island must be named in the audit bundle
+with the reason it could not be indexed, and performance evidence for the port
+belongs to Phase 15.75's machinery rather than to a hand-timed claim here.
 ### Task R-0259
 
 **Objective:** Add the Phase 13 validation artifact: a runtime-safety corpus covering bounds, div/mod-zero, overflow, casts, panic/abort/assert, byte/text/path boundaries, stack/recursion, inferred invariant candidates, newtype invariant hypotheses, arithmetic-site evidence mismatches, and obligation suppression. Each case must show one of `proved`, `enforced`, `assumed`, `missing`, or `blocked`, include a negative variant, and run through policy gates plus human/JSON reports.
 
+
+### Task R-0461
+
+**Objective:** Give hypotheses provenance, and compose obligation status across the
+assumption edge. **Closes H23, which is live: a guaranteed out-of-bounds access currently
+reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`.**
+
+Do this before any further evidence-surface work. It is not a refinement of the
+multi-kernel story; it is the defect that story is currently decorating.
+
+**The substrate now exists.** Register C shipped 2026-07-31 as
+`Concrete/Report/Evidence.lean`: `Evidence` carries an assumption set, `underHypotheses`
+folds a claim together with its hypotheses' debt, and `HypOrigin` already encodes the four
+sources below with `debt` total over them. C2′ and C3 are compile-time theorems, so once
+this task populates `assumes` the cap applies **by construction** — R-0461 is now wiring
+provenance into the generators, not designing a mechanism.
+
+The mechanism, not just the symptom. `hyps : List Expr` erases where a fact came from,
+and the three sources have entirely different justification status:
+
+| Origin | What justifies it |
+|---|---|
+| control-flow guard | sound by construction (the branch was taken) |
+| `#[requires]` | discharged at every call site by `callSiteObligations` |
+| loop `#[invariant]` | owes O1 (init) **and** O2 (preservation) for that loop |
+| explicit `#[assume]` | nothing — must downgrade the conclusion, permanently |
+
+So hypotheses become records carrying `origin` and an optional `justifiedBy` obligation
+reference, and status composes:
+
+```
+status(O)  ≤  min( status of O's own proof,
+                   min over h ∈ hyps(O) of status(justifiedBy(h)) )
+```
+
+This is the same discipline already applied to proof dependencies (`staleDeps`) and to the
+`trusted` boundary. Hypotheses are simply a dependency edge that was never modelled — which
+is why the fix is a record change plus a fold, not new proof machinery.
+
+**Reporting: DECIDED 2026-07-31, do not re-open when implementing.** The capped status is
+the EXISTING `assumed`, plus a structured `conditions : [{ref, status}]` naming what is
+outstanding. Not a new conditional badge, and specifically **no status string containing
+`proved` may be emitted for a claim with an undischarged condition** — that rule is the
+gate. Rationale in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md):
+a conditional badge still containing `proved` reproduces H23 for every consumer that
+pattern-matches the status, which is how H23 fooled the policy gate and the report reader
+alike. The precedent exists twice already (`assumed` for `#[assume]`, `assumed_at_entry`
+for `#[requires]`), and `assumed` is already gate-forbiddable via
+`ProjectPolicy.forbidAssume`, so the cap makes H23 catchable by machinery that is already
+wired. Independence is orthogonal and unchanged: the receipts still record that three
+kernels closed the goal.
+
+Gate over `examples/unsound_hypothesis/src/main.con`: the bounds obligation must NOT read
+proved while O2 is unproven, the fixture must stay non-vacuous (assert O2 really is
+undischarged, so the gate cannot pass by the invariant becoming provable), and a mutation
+must show the gate detects removal of the composition.
+
+Widen beyond loops once the mechanism exists: any obligation resting on an `#[assume]`,
+and any call-site precondition whose caller-side discharge is itself conditional.
+
+### Task R-0462
+
+**Objective:** Fuzz the *compiled binary* against the safety claims — the empirical shadow
+of Register A.
+
+Register A asserts *if the obligation holds, the runtime property holds*. That is a
+proof obligation, and R-0460 discharges it row by row over years. There is a cheap
+continuous check of the same statement available now, and it is missing: **for every
+function whose runtime-safety obligations all read `proved`, generate inputs satisfying
+its `#[requires]`, run the COMPILED binary, and assert it does not trap.** Any trap is a
+counterexample to Register A, to the obligation generator, or to the lowering — and it
+is found in seconds rather than argued about.
+
+Distinct from `--report bridge-check`, which fuzzes concrete inputs against the
+*obligation* as evaluated by the interpreter. That tests the obligation against a model.
+This tests the *claim* against the artifact that ships, and so also crosses the
+surface→Core→SSA→LLVM lowering that no register row covers today.
+
+H23 is the existence proof: a program whose bounds obligation reads
+`proved_by_multi_kernel` aborts on the first run. Any fuzzer pointed at the binary would
+have caught it immediately; every kernel-side surface reported success.
+
+This is the highest fault-finding value per unit of work available, and it is the
+project's own doctrine applied consistently — differential against the real artifact
+outranks agreement between checkers of a model.
+
+### Task R-0463
+
+**Objective:** Make the linear-arithmetic tier certificate-bearing, and reconsider whether
+a second kernel is the right spend at that tier at all.
+
+The tier that produces most claims — linear integer arithmetic via `omega` / `lia` /
+`presburger` — is currently `trusted_modulo_toolchain`: no transferable certificate, a
+`.vo` re-checkable only by the same Rocq version. That is also, not coincidentally, the
+tier where multi-kernel evidence is deployed.
+
+But linear arithmetic is the tier where certificates are *most* feasible. Rocq's
+`micromega` already builds a Positivstellensatz/Farkas witness and validates it by
+reflection against a checker with a soundness theorem; the witness is a first-class object,
+not a byproduct. If it can be extracted and checked by a small independent checker, the
+majority of claims move from `trusted_modulo_toolchain` to `replayed_certificate` — a far
+larger trust gain than a fourth prover, and the thing that makes the auditor story real:
+they run a few hundred lines of checker, not a multi-gigabyte Isabelle.
+
+The strategic point this raises, which belongs in the record even if the extraction proves
+impractical: **a certificate makes the second kernel unnecessary at that tier.** Multi-kernel
+evidence is currently spent where certificates would serve better, and it is the
+non-arithmetic tiers — where certification is measured to be impossible today (Alethe rejects
+any datatype-bearing proof) — that actually need independent kernels. The allocation is
+inverted. Probe the extraction before committing; kill criterion is a measured "the witness
+cannot be got out of micromega in a stable form".
+
+### Task R-0464
+
+**Objective:** ONE trap-semantics definition, consumed by SSA construction,
+interpretation, optimization, obligation generation and the backends — and, second,
+generate obligations from SSA rather than the surface AST.
+
+**The order here is deliberate and was corrected 2026-07-31.** Moving obligation
+generation to SSA fixes *staleness* (facts about a mutable `i`), which is real. It does
+nothing about *rule duplication*, and on its own it merely relocates a second copy of the
+trap rules onto a new representation. The single definition is the primary objective; the
+representation change is the secondary one.
+
+The evidence that this was the live problem, not a theoretical one — H24, reproduced in
+`examples/trap_semantics_gap/` and CLOSED 2026-08-03 by the single-definition fix this task
+describes (`IntArith.TrapCondition` plus the totality lock tying it to families). `IntArith` already IS the single source: it makes `trap` a
+first-class result and defines checked division as trapping on divide-by-zero, signed
+`MIN / -1`, and shift out of range. Interp, EmitSSA, SSAVerify, SSACleanup and
+TypeJudgment consume it. Obligation generation imports it for range constants and then
+states its own weaker conditions, so:
+
+- `a / b` reports `div_nonzero → proved_by_kernel_decision` under `b ≠ 0` and the binary
+  **aborts** on `(i32::MIN, -1)` — `divObligations` emits only `divisor ≠ 0` (insufficient);
+- `a << b` generates **no obligation at all** and the binary **aborts** on `(1, 40)` —
+  there is no shift family (inapplicable).
+
+So the concrete work is: derive each family's trap condition FROM `IntArith` rather than
+restating it, which closes both gaps at once and makes the next trap rule added to
+`IntArith` propagate to obligations by construction instead of by someone remembering.
+`VC_BRIDGE_REGISTER.md`'s div row must be corrected (its "Emits" is provably insufficient)
+and a shift row added.
+
+Note the gate-coverage lesson: `check_vc_bridge_register.sh` asserts every family
+*generator* has a row, so it cannot detect a **missing family** — there is no generator to
+notice. Registering families against the trap definition rather than against the existing
+generators is what makes that detectable.
+
+Second objective, and make every syntactic analysis feeding a proof total with an
+unsafe-by-default fallback:
+
+The hypothesis walker threads facts forward over MUTABLE surface syntax, so the name `i`
+denotes different values at different program points. That forces `dropStaleHyps` to
+*delete* every fact mentioning a just-assigned variable, driven by `assignedScalarsS` — a
+syntactic mutation analysis whose last case is `| _ => []`, i.e. an unrecognised statement
+is assumed to assign nothing. Fail-OPEN, exactly where being wrong is unsound, and any
+statement form added to the AST later is silently misclassified.
+
+In SSA each assignment binds a fresh name, so a fact about `i₁` cannot be invalidated by
+`i₂ = i₁ + 1`. The entire staleness problem is an artifact of the input representation.
+This task therefore **deletes** `dropStaleHyps`, `assignedScalarsS` and all reasoning about
+what a store, a call, or a nested loop can invalidate, rather than hardening them — the
+same "make the bad state unrepresentable" move Register C made for status composition.
+
+Two further wins. Path conditions become branch predicates on CFG edges, which fixes a
+known incompleteness: in `if a != 0 && b / a > 1` the divisor obligation inside the
+condition currently gets no `a != 0` hypothesis, because only the whole condition is added
+to the then-branch. And the shipped binary is compiled FROM SSA, so obligations move
+closer to the artifact that runs instead of describing a representation that does not.
+
+Costs, named because they are real: obligations mention `i₁` and need a mapping back to
+source names for diagnostics; a loop `#[invariant]` must be placed at the header and refer
+to the φ version — which is precisely where H23 lived, so it needs care rather than
+assumed ease; and an obligation mentioning a φ needs the invariant or a case split, the
+one genuinely new piece of work.
+
+Choose the SSA stage deliberately: generate BEFORE `SSACleanup`, so optimisation changes
+do not invalidate every stored claim, and make the cleanup→binary step its own register
+row rather than folding it in silently.
+
+Separately and cheaply, as the general rule this instance illustrates: every syntactic
+analysis feeding a proof must be total over its input type with an unsafe default —
+unknown construct invalidates everything in scope, or refuses to emit obligations there.
+Gate the exhaustiveness.
+
+**Relationship to R-0450 and R-0454 — read before scheduling.** These are three stages of
+one pipeline and they are easy to mistake for overlapping work:
+
+```
+  program  --[R-0464: which representation?]-->  obligation
+           --[R-0454: how is it identified?]-->  digest
+           --[R-0450: how is it said?]------->   prover syntax
+```
+
+- **R-0450 does not subsume this.** It unifies the *lowering* (obligation → prover
+  syntax); R-0464 changes the *input* obligations are generated from. Different stages,
+  neither one's IR fixes the other's problem. But sequencing matters: the SSA generator
+  should emit INTO R-0450's typed IR, so doing R-0464 first means writing the generator
+  against today's ad-hoc lowerings and migrating it later. Prefer R-0450 first, or accept
+  the rework knowingly.
+- **R-0454 must land first, and must alpha-normalize.** Obligations generated from SSA
+  mention `i₁` where AST-generated ones mention `i`. If variable names are in the digest
+  basis, this task invalidates every stored digest. The invariant is now recorded in
+  R-0454; this is the task that would otherwise pay for its absence.
+- **Register A rows are re-anchored, not invalidated.** The rows in
+  `VC_BRIDGE_REGISTER.md` state *if the flat goal holds, the runtime property holds*. The
+  goal's subject changes representation here, so each row's "Assumes" clause must be
+  restated against SSA — cheaper before R-0460 discharges rows than after.
+
+### Task R-0465
+
+**Objective:** Extend the discharge-adapter firewall to the assumption axis, and bring the
+multi-kernel path inside it.
+
+`DischargeAdapter` is the right shape and is genuinely well built: one choke point, a
+declared `actsOn` precondition, a declared `allowed` output set, and compile-time
+`example`s proving untrusted backends cannot emit a proof class. But it governs one axis —
+*who may claim what* — and evidence has two. The other is *what the claim rests on*, and
+it had no framework at all until Register C. H23 lived entirely in the second axis, which
+is why a well-designed firewall did not catch it: the fold correctly refuses to upgrade an
+`assumed` VC, but a VC proved under an unestablished invariant carries
+`proved_by_kernel_decision` and sails straight through.
+
+Two pieces:
+
+1. **Adapters declare assumption propagation**, defaulting to UNION and never to reset —
+   same choke point, one more field, with a compile-time example per adapter alongside the
+   existing `proofClasses` ones.
+2. **Make the multi-kernel path a real adapter.** `foldMultiKernelResults` assigns its
+   status by direct record update; there is no `multiKernelAdapter` in
+   `dischargeAdapters`, no `allowed` list constraining `proved_by_two_kernels` /
+   `proved_by_multi_kernel` / `kernel_disagreement`, and no compile-time example covering
+   them. The newest and strongest classes in the system are the only ones outside the
+   firewall built to govern exactly that. It has a hand-rolled `actsOn`, so it is not
+   unsound today — but the protection is convention where everything around it is
+   structure, and that distinction is the point of the firewall.
+
+Register C (2026-07-31) supplies the representation this needs; this task is the wiring
+that makes the guarantee structural at every backend rather than at the surfaces alone.
+
+**Two more instances of the same shape, from the 2026-08-01 external review.** Neither is
+reachable today; both are invariants held by convention where the type could hold them,
+which is precisely this task's subject.
+
+- **`foldMultiKernelResults` does not enforce that the closed and refused ID lists are
+  disjoint.** Given `rocqClosed = ["k"]` and `rocqRefused = ["k"]`, both receipts are
+  written but the `if closed … else if refused` chain passes only `.closed` to
+  `multiKernelVerdict`, so the result is `proved_by_two_kernels` beside a stored refusal.
+  Not reachable now — both sets are derived from one verdict list, and a verdict is either
+  closed or refused — but the bare `List String × List String` API cannot say so. Passing
+  the verdict list, or a type that makes the two mutually exclusive, removes the question.
+- **The three consumers share the final function, not one typed input.** The report and the
+  release policy each supply `leanClosed` independently; the ledger fold infers it from an
+  existing status and applies its own extra guard. They agree today — verified on identical
+  inputs, and a claimed divergence in that review turned out to compare different ones —
+  but agreement rests on three call sites staying in step rather than on a shared value.
+  Relatedly, `computeBelowTwoKernels` recomputes the evidence instead of reading the folded
+  ledger, so the release gate and the stored artifact can be built from separate prover
+  runs whose transient results differ.
+
+### Task R-0467
+
+**Objective:** Run the multi-kernel evidence job on merges to `main`, not only on
+dispatch, schedule, or a PR label.
+
+`.github/workflows/lean_action_ci.yml`'s `multi-kernel` job is gated on
+`workflow_dispatch || schedule || contains(labels, 'multi-kernel')`. Everything the
+multi-kernel arc built — the badge classes, lowering agreement, certificate replay, the
+release-gate composition, `kernel_disagreement` — is therefore unverified on the commit
+that actually lands. A regression merges green and is discovered whenever someone next
+remembers to dispatch the job.
+
+This is the pinning that let H22 survive: `check_gate_mutation_coverage.sh` was
+nightly-only, so a gate that could not detect removal of the property it guarded stayed
+green for months. Same shape, newer subsystem.
+
+The cost is real and is why this is a task rather than a one-line edit: the job installs a
+multi-gigabyte Isabelle closure and cold proof runs cost roughly 30s per goal, with a
+90-minute timeout. Options, cheapest first:
+
+1. `push: branches: [main]` only — pays the cost once per merge, not per PR push. The
+   recommended default; merges are rare relative to pushes.
+2. Split the job — the Rocq half (`coqc` is a small closure) on every PR, the Isabelle
+   half on merge. Most of the evidence surface at a fraction of the cost.
+3. Keep opt-in but make the label mandatory for PRs touching
+   `Concrete/Report/Evidence.lean`, `ReportObligations.lean` or the multi-kernel gate —
+   enforceable with a path filter, and it fails closed rather than relying on memory.
+
+Whichever is chosen, record it: an evidence gate that does not run on the merge commit
+should say so where readers of the evidence will see it, not only in the workflow file.
+
+### Task R-0468
+
+**Objective:** Make the nightly-pinned gates reachable in this repository, and fix the
+hole-closure conditions that currently depend on them.
+
+The scheduled jobs are gated on `github.repository == 'lambdaclass/concrete'`. This
+repository is `unbalancedparentheses/concrete2`, so **the scheduled path can never fire
+here** — `proof-replay`, the fuzz campaigns and `check_gate_mutation_coverage.sh` are
+reachable only by manual `workflow_dispatch`. The pin is correct in intent (a fork should
+not run the canonical nightly) and wrong in effect (the fork where the work happens gets
+no nightly at all).
+
+Two consequences, the second worse than the first:
+
+- **H22's closure condition is unsatisfiable as written.** It says the entry can be
+  deleted "once the nightly confirms the `checked-arith-trap` family reports KILLED". No
+  nightly will run. Either dispatch `check_gate_mutation_coverage.sh` manually and close
+  it, or restate the condition against something that can actually happen here. Corrected
+  in `KNOWN_HOLES.md` to say "manual dispatch" pending this task.
+- **Nobody knows what else the nightly would have caught.** `check_gate_mutation_coverage.sh`
+  is the gate that finds decorative gates — it is how H22 was found in the first place, on
+  a run someone did by hand. It has run in this repository approximately never. Assume
+  more H22s until it has run clean once.
+
+Minimum fix: make the repository pin a variable, or add this fork to it. Better fix: run
+the mutation-coverage gate on merges to `main` here, since it is the gate whose absence is
+self-concealing — a decorative gate stays green, so nothing else will report its absence.
+
+### Task R-0460
+
+**Objective:** Discharge the obligation-sufficiency register — *if the flat goal holds,
+the runtime property holds* — rule by rule.
+
+[docs/VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) enumerates the `Core ->
+obligation` lowering as four rows with the theorem each owes. Zero are discharged. This
+is the ceiling on every runtime-safety claim and every multi-kernel badge: adding kernels
+cannot detect a fault here, because all of them check the *same* lowered proposition, so
+a mis-lowering yields unanimous agreement on the wrong formula.
+
+Distinct from R-0455. That register asserts *transformed goal implies input goal*; this
+one asserts *flat goal implies runtime property*. A transformation register cannot
+discharge a row here, and conflating them loses the distinction the architecture rests
+on.
+
+Choose the first row on lemma shape rather than conclusion shape. `d /= 0` is the
+simplest conclusion to state but its lemma must relate the flat fact to the interpreter's
+division semantics, where truncation-versus-flooring and trap-on-zero live. Bounds has a
+duller conclusion but a cleaner definedness step, and far more real instances — though it
+carries an extra premise about `arraySizeMap` soundness, which is a fact about name
+resolution rather than semantics. Sketch both before committing.
+
+Exit criterion names rows, not a count: a bare "two rows discharged" is satisfiable by
+two rewriting arguments while the non-arithmetic ceiling does not move at all.
+
+**Priority argument, from the only fault this arc has actually caught.** R-0448 added two
+independent kernels and, to date, kernel agreement has surfaced zero defects — every
+disagreement observed was synthetic, injected by the gate's own mutation. The one real
+fault the work found was `Z.div` vs `Z.quot` disagreeing at `(-7)/2`, and it was found by
+`--report core-semantics-diff`: a *differential* test against an independent evaluator, not
+by a second kernel. That is the expected result rather than bad luck. Adding kernels buys
+independence on kernel implementation and kernel foundations — the axes where failure was
+already least likely — and buys nothing on the bridge, where our own code is the thing
+that can be wrong. So the differential surfaces (`core-semantics-diff`, `bridge-check`,
+`lowering-agreement`) and the rows in this register are where fault-finding actually lives,
+and they should outrank prover count N+1 when the two compete for the same week. Kernel
+diversity is for the auditor who does not trust Lean; it is not a bug-finding strategy.
 
 ## Phase 14: Compiler Soundness Bridge
 
@@ -6737,6 +8127,182 @@ compiler’s authority-report implementation.
 
 **Objective:** Add the Phase 14 validation artifact: a compiler-soundness dashboard with one witness program per shipped ProofCore construct, one status per R-rule, replay commands for proved/mechanically-validated facts, and regressions proving report facts (`proved`, `stale`, `blocked`, `missing`, `ineligible`, `trusted`) agree with compiler state. Include the `CoreCertificateV1` predicate/rule-set version, checker binary/source hash, soundness theorem names, independent receipt per artifact, mutation corpus, cache-off/on receipt parity, and a machine-readable list of every boundary V1 still leaves producer/compiler-trusted.
 
+
+### Task R-0454
+
+**Objective:** Encode obligations in a neutral term form and compute
+`ProofSubjectDigest` over that neutral term rather than over any host AST.
+
+**This belongs immediately after R-0004's remaining slices, and before the prover-neutral
+evidence work merges.** The reason is a closing window, not importance: digests are
+*stored*. Once artifacts carry a digest computed over a Lean AST, changing the basis
+invalidates every stored claim simultaneously and forces migrating every fingerprint in
+`examples/`. No `subjectDigest` field exists in `Concrete/` yet, so the migration cost is
+currently zero and only grows.
+
+It is R-0004's decoupling and is valuable even if no second prover ever ships: freshness
+becomes host-independent by construction, so every prover agrees on staleness without any
+of them seeing another's AST. It also closes a live defect — the multi-kernel fold matches
+kernels on the obligation *id*, not on a subject digest, which is precisely the gap the
+graduation criteria named.
+
+Scope: the neutral term encoding (`PExpr`/`PVal`/`PMatchPat` are already prover-agnostic;
+serialize versioned), the `NeutralObligation` and `HostAttestation` records, and
+`checkedAgainstDigest` such that a mismatch reads `stale`. Three encoding invariants must
+survive serialization: `.call` and `.applyVar` stay distinct (the two-namespace
+resolution that closed bug 061); `displayName` is excluded from the digest because
+identity is `CallableId`; and — **added 2026-07-31 from the R-0464 cross-check** —
+**variable naming must not affect the digest**, so the term is alpha-normalized (de Bruijn
+or a canonical renaming) before hashing.
+
+That third invariant is this task's own closing-window argument turned on itself. R-0464
+moves obligation generation from the surface AST to SSA, where the same obligation is
+spelled over `i₁` instead of `i`. If names are in the digest basis, R-0464 invalidates
+every stored digest — precisely the mass migration this task exists to avoid, arriving one
+task later. Alpha-normalizing now makes the AST→SSA move digest-neutral and costs nothing
+today. Getting this wrong is not detectable until R-0464 lands, which is exactly when it
+is expensive.
+
+Do not widen R-0004 to absorb this. That task is mid-flight; this is its successor.
+
+Normative rule and record shapes in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
+### Task R-0455
+
+**Objective:** Replace per-prover string printing with a transformation pipeline, and
+give each transformation a soundness register row.
+
+The current lowering fuses three jobs into string templates plus an exit code: how to say
+the obligation, how to try to prove it, and how to believe the answer. The defects follow
+from that fusion.
+
+`div`/`mod` sub-terms are dropped from the prover lowering (`exprToProver`,
+`Concrete/Report/ReportObligations.lean:930`, "`div`/`mod` dropped as in `toLeanProp`" —
+the comment states the fact without a reason). The operator table is infix-only, which is
+why a prefix form has nowhere to go; note this is a limit of the *table*, not of the
+targets, since `CoreExtract.lean:96` renders the same operators as prefix `Z.quot`/`Z.rem`
+in the extraction path. The divisor-nonzero *obligation* is unaffected and does flow
+through — only div/mod appearing inside a larger expression is lost.
+
+Spec-function calls are dropped because there are no uninterpreted symbols.
+
+The tactic is hardcoded **per driver**, so reaching a different one costs a cloned driver.
+This branch measured that cost rather than predicting it: `rocqNiaLowering`
+(`ReportObligations.lean:1277`) exists solely to reach `nia`, duplicating the whole
+`ProverLowering` record to change one word in a proof script, and
+`isabelleSmtReplayLowering` (`:1344`) is a third clone. Four drivers now differ mostly in
+a binop column and a tactic name. That is the argument for `tactics` (ordered, budgeted)
+being a driver *field* instead of a template literal.
+
+Adopt the Why3 shape: a typed term IR (sorts including bitvectors, operators carrying
+arity *and* fixity, binders, uninterpreted symbols) plus goal-to-goal transformations
+selected by declarative per-prover drivers. A driver states what a target *cannot*
+express so the pipeline transforms instead of silently dropping. Backends become
+`print` / `tactics` (ordered, budgeted) / `attest` / `keep`, with a batch interface so a
+session-building prover amortizes startup instead of paying it per goal.
+
+Concrete's improvement over Why3, and the reason this is a register and not just a
+refactor: Why3's transformations are trusted. Each pass here owes *transformed goal
+implies input goal*, recorded per row with a fingerprint of the transformation it
+justifies so a discharged row fails loudly rather than going vacuous when its subject
+changes.
+
+Difficulty is skewed and the register must record it: `eliminate_div_mod` is a rewriting
+argument, while `eliminate_algebraic` requires the axiomatization be conservative over the
+datatype theory, which is model-theoretic.
+
+**REGISTER B COVERS TRANSFORMATIONS, NOT THE PRINT STEP — and that distinction is the
+point of this task.** An earlier version of this section claimed a printer soundness row
+"deletes the validation layer" and ranked four options linearly. Both were wrong, corrected
+2026-08-03, and the correction changes what this task should promise.
+
+Proving "this printer emits syntax denoting the same proposition" requires a formal
+semantics of the TARGET syntax. There is none for SMT-LIB or Coq's parser, and neither is
+ours; formalising them means trusting that our formalisation matches the real parser — the
+same trust relocated. Why3 does not prove its printers either. So the honest split is:
+
+| step | ours? | status |
+|---|---|---|
+| obligation → transformed goal | both sides | **provable** — this is Register B's real scope |
+| transformed goal → target text | target is not | **validated, plausibly forever** |
+
+That inverts how to treat the validation cost. It is not a temporary embarrassment to be
+proved away; it is a permanent cost whose only lever is having ONE printer instead of N. A
+standard interchange format is therefore not a convenience but the architecture: SMT-LIB
+reaches z3, cvc5, veriT, Alt-Ergo and Yices from a single printer, so there is one thing to
+validate rather than one per target.
+
+**And the earlier ranking conflated two orthogonal axes.** Print fidelity and answer trust
+remove different things from the trusted path — a verified printer feeding a trusted solver
+still trusts the solver; a replayed certificate from a mis-rendered goal still proves the
+wrong thing. The best position is both, not one ranked above the other. See the corrected
+boundary model in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
+What this task should therefore deliver, in order of value:
+
+1. **A typed IR and Register B rows over the TRANSFORMATIONS** — genuinely provable,
+   because both sides are ours, and far more tractable than Register A: syntactic claims
+   relating two representations of the same term over a small fragment, not semantic claims
+   about program execution.
+2. **Collapse N printers to one standard-format printer** where the fragment allows,
+   because the print step's validation cost is per-printer and permanent. `exprToSmt`
+   already is that printer for the arithmetic tier, and its rendering is validated as of
+   2026-08-03 (`smtAgreementGoals`, 46/46 on the families fixture, mutation-verified).
+3. **Keep per-obligation print validation and make it non-vacuous**, rather than treating
+   it as debt. Gate the instance count; a `0/0` "all agree" is the failure mode.
+
+The consequence for kernel diversity, which belongs here because this is where the cost
+lives: a native driver per kernel is another printer to validate forever. Kernels address
+answer trust only, and only where certificates are impossible, while multiplying print
+validation. That is the case against adding a fifth prover, stated as a cost rather than a
+preference.
+
+The spike built option 4 because it was reachable without an IR, which was the right call
+for a spike and is not the destination. Recording the ranking here so the printer row is
+scheduled as *deleting the validation layer* rather than as bookkeeping — and so a future
+reader does not add a fifth prover under option 4 believing the marginal cost is a driver,
+when it is a driver plus a validator plus a prover run per obligation.
+
+### Task R-0456
+
+**Objective:** Port `eval` to a second host and relate the two semantics by an
+adversarial conformance vector suite.
+
+The honest constraint, and it is permanent: **no single kernel can bridge two kernels** —
+no checker sees both. So relating Lean's `eval` to another host's cannot be a proof. It
+is a spec plus a conformance suite of `(neutral program, neutral input) -> expected PVal`
+vectors that every host's `eval` must reproduce, and the resulting cross-semantics step is
+`tested_by_oracle`. The composition rule folds that in explicitly rather than laundering
+it as kernel evidence.
+
+Isabelle/HOL is the target, and the port is tractable by design rather than by luck:
+`PExpr`/`PVal` are simple inductive datatypes with no dependent types, partiality is
+`Option`, and recursion is fuel-structural, which is `primrec` on `nat` — the easiest case
+in a logic with no built-in general recursion.
+
+**DE-PRIORITISED by measurement — read this before scheduling it.** This task was
+originally justified partly on non-arithmetic proof ergonomics: port `eval` so another
+host can prove refinement and functional-correctness properties. That justification does
+not survive the deep-vs-shallow measurement recorded in
+[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md): per-function
+properties are *cheaper* proved against the SHALLOW extraction, because symbolic fuel in
+the deep embedding forces a case split per AST level before anything computes, and that
+cost grows with expression depth. Shallow extraction to another host is a **printer** —
+R-0455's factoring — not an `eval` port.
+
+So porting `eval` buys exactly one thing: **meta-theory in that host**, i.e. letting
+Isabelle check the preservation and transformation-soundness theorems itself. That is a
+real benefit and a much narrower one than "Isabelle can prove non-arithmetic properties",
+which the printer already delivers. Schedule this on meta-theory grounds or defer it;
+do not schedule it to unlock per-function proofs.
+
+Named risk: the `eval` port is where a subtle semantic divergence could silently weaken a
+two-host claim, so the conformance suite must be adversarial rather than illustrative.
+
+Depends on R-0454 for the neutral encoding and on R-0455 for the shared-versus-per-host
+split, without which this arrives as a second extractor and the factoring never happens.
 
 ## Phase 15: Backend, Target, And Stdlib Contracts
 
@@ -7476,6 +9042,38 @@ backend/toolchain boundary.
 
 **Objective:** Add the Phase 16 validation artifact: one freestanding demo project plus an MMIO/device-profile mock audit bundle. The demo must build with no hosted APIs, name allocator/startup/linker assumptions, reject hidden libc or allocation, and report `with(Device)`/`with(Mmio)`/`with(Unsafe)` evidence classes without pretending hardware behavior is proved.
 
+
+### Task R-0453
+
+**Objective:** Extend the freestanding story from "no libc" to "no libc, plus a
+device and a crash model" by porting littlefs, the power-loss-resilient flash
+filesystem: 7,633 lines (`lfs.c` 6,558 plus headers, upstream `6cb4e865`), zero
+dynamic allocation, fixed buffers, and an explicit `lfs_t` context over a
+block-device interface. Fit analysis is in
+[research/workloads/port-candidates.md](research/workloads/port-candidates.md).
+
+Why it belongs after R-0448 rather than beside it: MM0's verifier discharges this
+phase's trigger with a syscall surface and a single-bit output, which is the
+cheapest honest freestanding claim. littlefs adds the two things that claim does
+not reach — a block-device capability (the `with(Device)`/MMIO evidence decision
+this phase already owns) and correctness that spans *interrupted* runs. It should
+not start before the freestanding profiles, profile-split stdlib, and
+freestanding diagnostics exist, for the same reason R-0448 does not.
+
+**Definition of done.** The freestanding build passes the upstream test runner,
+and the red-team guard is `lfs_emubd` power-loss injection: for a recorded set of
+interruption points across mount/write/rename/remove, the filesystem must remain
+mountable with no lost committed operation, run as a regression gate rather than
+a transcript. The audit bundle reports the zero-allocation claim (no
+`with(Alloc)`), the device capability, the block-device trust boundary, and every
+remaining trusted island.
+
+**Claim discipline.** Crash consistency is a relational property across runs —
+every interrupted prefix leaves a mountable filesystem — and `#[requires]` /
+`#[ensures]` cannot state it today. The honest class is `tested_by_oracle` under
+adversarial power-loss injection, with the interruption-point coverage reported
+as a number rather than implied by a green gate. Do not describe the port as a
+verified or crash-safe filesystem; describe what the injection harness covered.
 
 ## Phase 17: Public Release Bar
 

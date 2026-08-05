@@ -102,6 +102,18 @@ expressions remain excluded. `PROVABLE_V1.md` is the canonical construct list.
 Every function has exactly one status: `proved`, `unbound`, `stale`, `missing`,
 `blocked`, `ineligible`, or `trusted`.
 
+**`unbound` is not `proved`, and `--report check-proofs` counts it separately.** An
+unbound link names a real theorem that really type-checks, but carries no stored
+proof-subject digest — so the freshness check would compare the current body against
+itself and could never detect a changed body. Its theorem being kernel-checked says
+nothing about whether it still describes the code.
+
+The report therefore reads `N verified, M failed; K unbound (type-checked, NOT proved)`
+rather than folding unbound into the verified count. `[policy] require-proofs` rejects
+unbound claims outright (E0612), which is where enforcement lives — a `check-proofs`
+exit of 0 with a nonzero unbound count means "nothing failed to type-check", not
+"shippable".
+
 ### What "proved" does NOT mean
 
 - Does not mean the compiled binary is correct (proof is over PExpr with unbounded integers, not the binary)
@@ -114,6 +126,84 @@ Every function has exactly one status: `proved`, `unbound`, `stale`, `missing`,
 **Claim class:** Proved. Lean 4 kernel has verified the theorem. Stale detection is compiler-enforced.
 
 References: [PROOF_CONTRACT.md](PROOF_CONTRACT.md), [PROOF_THEOREM_SHAPES.md](PROOF_THEOREM_SHAPES.md), [PROVABLE_V1.md](PROVABLE_V1.md), [PROVABLE_SUBSET.md](PROVABLE_SUBSET.md), [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md)
+
+### Independent-kernel evidence (opt-in)
+
+A runtime-safety obligation in the linear-integer fragment can be discharged by
+kernels other than Lean's. This is opt-in (`--rocq`, `--isabelle`, `--all-provers`)
+and absent tooling never fabricates an attestation.
+
+| Class | Means |
+|-------|-------|
+| `proved_by_two_kernels` | Lean's `omega` **and** one external kernel each closed a lowering of the obligation whose truth table matches an independent reference evaluator |
+| `proved_by_multi_kernel` | The same with ≥2 external kernels; with Isabelle among them the agreement spans logics (HOL, not a CIC-family type theory) |
+| `solver_checked` | An external SMT solver reported unsat **and** an independent decision procedure (Rocq `nia`) reached the same verdict — corroboration of the verdict, not of the reasoning |
+| `solver_replayed` | The solver's **proof** was reconstructed inference-by-inference in a kernel and asserted oracle-free — strictly stronger than `solver_checked` |
+| `kernel_disagreement` | Kernels rendering the **same** proposition returned **opposite** verdicts. Not a badge and not `unproven`: it is a defect report. All these kernels are complete for linear integer arithmetic, so a disagreement is most likely a bug in our driver for the dissenting kernel. Fails `--require-two-kernels`. |
+
+What these do **not** mean:
+
+- **Not bridge-verified.** Every kernel checks a lowering produced by ONE shared
+  Core→obligation bridge. A mis-lowering yields unanimous agreement on the wrong
+  formula. The obligation record states this structurally as
+  `independent_of.bridge = "no"`, and [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md)
+  enumerates that bridge rule by rule — **0 of 5 rows fully discharged today; 4 of 5
+  half-discharged** (semantics half proved and tight; lowering half open, and the lowering
+  half is the bridge).
+- **Not laundering past trust.** A `trusted` obligation stays trusted however many
+  kernels run (gate-enforced).
+- **Not sticky.** The badge is earned per run; with the kernel absent it disappears.
+- `solver_replayed` is currently **unreachable for the nonlinear VCs** the SMT path
+  exists to serve — proof reconstruction is linear-only across z3, cvc5 and veriT.
+  See [SMT_SOUNDNESS.md](SMT_SOUNDNESS.md).
+
+Each attestation is recorded as a receipt carrying the exact tool version, so a stored
+claim can be re-audited or invalidated when a prover release is found buggy.
+
+> **SECOND CAVEAT — H24, reproduced 2026-07-31.** A `proved` runtime-safety obligation
+> does not mean the operation cannot trap, because obligation generation states its own
+> trap conditions instead of deriving them from `IntArith`, and they are weaker.
+> Concretely: a division obligation covers `divisor ≠ 0` but **not** signed `MIN / -1`, so
+> `a / b` reports `proved_by_kernel_decision` and aborts on `(i32::MIN, -1)`; and
+> **shifts generate no obligation at all**, so an over-width shift aborts with nothing
+> having been claimed about it. See `examples/trap_semantics_gap/`, owned by R-0464.
+>
+> Note that `--report bridge-check` does **not** catch this and reports
+> `ok — proved; 9 inputs checked, no counterexample` on the aborting function: it checks
+> the obligation against an evaluator of the same obligation, which tests lowering
+> fidelity, not sufficiency. Until R-0464, read `proved` on a division as "the divisor is
+> nonzero", not "this division cannot trap".
+
+> **CAVEAT THAT OVERRIDES THIS WHOLE SECTION — H23, reproduced 2026-07-31.** A
+> runtime-safety obligation inside a loop may assume that loop's `#[invariant]` without
+> the invariant's preservation VC being discharged, and no status composition relates
+> them. A guaranteed out-of-bounds access therefore reports
+> `proved_by_multi_kernel (3: lean, rocq, isabelle)`, and `require-two-kernels` builds it
+> with exit 0. See `examples/unsound_hypothesis/`. Until R-0461 lands, treat every
+> `proved` runtime-safety obligation on a function **containing a loop** as conditional on
+> that loop's O1/O2, and verify them by hand in `--report vcs`. Obligations in
+> loop-free functions are unaffected.
+
+**Scope of what actually carries a badge today (measured 2026-07-31).** Every obligation
+family the compiler generates is arithmetic, so the badge lands where linear arithmetic
+does — overflow, bounds, divisor-nonzero, call-site preconditions. On the flagship
+examples this currently means one row, `rand.random_range#div0`, reached via the stdlib;
+`vc_suite` produces no linear runtime-safety obligations at all. Do not read
+"multi-kernel evidence exists" as "the flagships are multi-kernel proved". Non-arithmetic
+families are R-0459.
+
+**Kernel agreement is a portability property, not a bug-finding one.** It lets an auditor
+who does not trust Lean re-derive the claim in a kernel they do. It has surfaced no real
+defects; the faults on this path have come from the differential surfaces below, which
+compare against an independent evaluator rather than against another kernel.
+
+**Claim class:** Proved, with the independence axes stated per obligation.
+
+Related report surfaces: `--report multi-kernel`, `--report lowering-agreement`
+(does each kernel's rendering denote the obligation?), `--report solver-cert`,
+`--report core-semantics-diff` (differential test of Core semantics against a Rocq
+extraction), `--report bridge-check` (concrete-input fuzz of a *proved* obligation).
+Release stance: `[policy] require-two-kernels = true` (E0616, fails closed).
 
 ---
 

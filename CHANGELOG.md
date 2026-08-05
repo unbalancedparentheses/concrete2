@@ -10,6 +10,172 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Test Harness: `lli` Is Probed For Function, Not Just Presence
+
+_Branch `spike/multi-prover-evidence`, 2026-08-04._
+
+`make test` reported **1653 passed / 49 failed** on affected machines. All 49 were the same
+LLVM/ORC fault, not compiler bugs:
+
+```
+lli: Symbol "orc_rt_alt_UnwindInfoManager_register" not found in bootstrap symbols map
+```
+
+`lli` runs a trivial hand-written module fine, so a `command -v lli` check passes, but it
+cannot execute the IR this compiler emits. The harness discarded lli's stderr, so every
+affected test surfaced as the generic `expected printed '...', got rc 1 ''`.
+
+Confirmed environmental, not ours: `origin/main` built in a clean worktree emits
+**byte-identical IR** (45620 bytes) and fails identically, with the same 1653/49/2 split.
+
+The harness now probes `lli` on real emitted IR at startup and, on this failure, falls back
+to the native-clang path it already had for when `lli` is absent — printing what happened
+and why. **Result on an affected machine: 1702 passed, 0 failed.**
+
+The reason this mattered more than a confusing error message: the fallback existed, so a
+broken `lli` silently converted 49 real tests into 49 that checked nothing, while still
+reporting a failure count stable enough to be mistaken for a baseline. It was — repeatedly,
+in this session, by me. A test that cannot run should not be indistinguishable from a test
+that runs and fails.
+
+### Independent-Kernel Evidence (Rocq + Isabelle), Certificate Replay, And The VC-Bridge Register
+
+_Branch `spike/multi-prover-evidence`, 2026-07-31. Opt-in: nothing in the default
+dev shell or the default report changes._
+
+A runtime-safety obligation in the linear-integer fragment can now be discharged by
+kernels other than Lean's, and the resulting claim states precisely which axes of
+independence it spans. `proved_by_two_kernels` / `proved_by_multi_kernel` are
+**composed from per-kernel receipts** — each carrying kernel, exact tool version,
+verdict, whether its lowering was validated, and the command to re-derive it — rather
+than decided by a coordinator, so the class cannot drift from its evidence. A stored
+claim is therefore re-auditable, and invalidatable when a prover release is found
+buggy. Independence is recorded structurally (`independent_of`), not in prose.
+
+Five report surfaces, each answering a different question:
+
+- `--report multi-kernel` — which kernels closed this obligation (Rocq `lia`,
+  Isabelle `presburger`), with three-valued cells that keep `refused` (the kernel
+  said no) distinct from `error` (our emitted script broke) and `not-asked` (outside
+  the fragment).
+- `--report lowering-agreement` — does each kernel's *rendering* actually denote the
+  obligation? Pins the driver's own output to concrete assignments, makes the prover
+  decide it, and compares against an independent evaluator. The badge and the release
+  gate consume this: a kernel whose lowering disagrees is excluded and named.
+- `--report solver-cert` — `solver_checked` (an independent decision procedure
+  corroborated the solver's verdict) and the strictly stronger `solver_replayed` (the
+  solver's proof reconstructed in a kernel, asserted oracle-free).
+- `--report core-semantics-diff` — differential test of Core's semantics against a
+  Rocq/Gallina extraction, evaluated by Rocq's kernel against Concrete's interpreter.
+  Catches semantic modelling errors no amount of kernel agreement can, because every
+  kernel would agree on a consistently mis-lowered obligation.
+- `--report bridge-check` — fuzzes concrete inputs against a *proved* obligation.
+
+Release stance: `[policy] require-two-kernels = true` (E0616). It **fails closed** —
+if no external kernel can run, the requirement is unverified, and unverified is not
+satisfied.
+
+The bit-blasting path's certificate check is now corroborated by an independently
+implemented checker: `make test-bv-certificates` captures the CNF `bv_decide`
+bit-blasted, re-solves it, and verifies a DRAT certificate with drat-trim.
+
+Most importantly, the honest boundary is now enumerated rather than disclaimed.
+[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) inventories the Core→obligation
+lowering rule by rule — what each emits, assumes, rejects, and the theorem that will
+discharge it — because that bridge is shared by every kernel and so cannot be checked
+by adding more of them. **0 of 4 rows are discharged** *(as of this entry, 2026-07-31; see
+VC_BRIDGE_REGISTER.md for the current count — 4 of 5 rows had their semantics half proved on
+2026-08-04, and the row total was corrected to five)*; the register is gated so a new
+obligation family cannot ship unregistered. Holes H19–H22 in
+[KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
+certificate check, and the linear-only reconstruction ceiling. **H22 is CLOSED.** It recorded a pre-existing
+decorative gate — `check_checked_arith.sh` could not detect removal of the
+checked-arithmetic trap it guards, because a wrap sentinel satisfied its `exit != 0`
+assertion — fixed by requiring death by signal, and confirmed 2026-07-31 by the harness
+that found it: `check_gate_mutation_coverage.sh` now reports `checked-arith-trap KILLED`
+where it previously reported SURVIVED.
+
+Worth recording what closing it revealed. The confirmation had to be run by hand: the
+scheduled jobs are pinned to `github.repository == 'lambdaclass/concrete'` and this is a
+different repository, so the nightly can never fire here — the entry would have sat open
+forever while reading as merely pending (R-0468). And only 2 of the 10 mutation families
+have now been run here at all. H22's closure says that one gate is load-bearing; it says
+nothing about the other eight, and the gate that would answer that is precisely the one
+whose absence is self-concealing.
+
+Provers are an opt-in shell (`nix develop .#provers`); the evidence gate is
+skip-if-absent, so no contributor pays the Isabelle closure for a flagged-off feature.
+
+**Register C — evidence composition soundness — is DISCHARGED.** The first discharged
+soundness register in the project, and the answer to H23 below. `Evidence`
+(`Concrete/Report/Evidence.lean`) carries the assumption set a claim rests on; the only
+combining operation takes the union; `proved` is *defined* as the set being empty. Six
+compile-time theorems, so a green build is the proof rather than a test passing: a
+combination is proved iff every part is (C2), a claim folded with its hypotheses is proved
+iff none carry debt (C2′ — the exact statement H23 violated), a claim with outstanding
+assumptions presents as exactly `assumed` and never a `proved_*` class (C3), discharge is
+the only operation that shrinks an assumption set (C4), and guards and `#[requires]` never
+cap a claim (C5 — the modularity guarantee, load-bearing in the opposite direction).
+
+Registers A and B are about program semantics and are years of work; C is about the
+evidence data structure, which is why it was reachable in a day. It is the de Bruijn
+discipline the project already applied to other people's proofs and not to its own — the
+emitted Rocq scripts run `Print Assumptions`, and now Concrete's own claims carry their
+assumption set too.
+
+The multi-kernel report, the ledger fold and the `require-two-kernels` release policy now
+share ONE derivation (`multiKernelVerdict`), so they cannot disagree about an obligation —
+gated by asserting each badge string has exactly one construction site. That closes a
+divergence introduced days earlier, where `kernel_disagreement` existed in the report and
+not in the stored artifact. The ledger stores a canonical vocabulary word while the
+parenthetical stays display-only, per R-0440.
+
+**A second defect, H24 — and the one that says most about the architecture.** `IntArith`
+is the single-source trap semantics and is consumed by the interpreter, `EmitSSA`,
+`SSAVerify`, `SSACleanup` and `TypeJudgment`. Obligation generation imports it for range
+constants and then states its **own**, weaker trap conditions. So a division reports
+`proved_by_kernel_decision` under `divisor ≠ 0` and aborts on signed `MIN / -1`, and an
+over-width shift generates **no obligation at all** and aborts — the sufficiency and
+applicability failure modes [VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) names, both
+live. Reproduced in `examples/trap_semantics_gap/`.
+
+It also forced a correction to this project's own claims: the register said the
+differential surfaces "probe sufficiency". They do not. `bridge-check` evaluates the
+obligation against an evaluator of the *same* obligation, so on the aborting function it
+reports `ok — proved; 9 inputs checked, no counterexample`. It tests lowering fidelity;
+sufficiency needs the theorems (R-0460) or the artifact (R-0462). H24 is consequently the
+clearest argument for R-0462: **every** static surface reports success on that fixture and
+the binary aborts on the first run.
+
+Both holes now have a `check_known_wrong_corpus.sh` gate asserting their fixtures still
+reproduce — a counterexample that silently stops demonstrating its hole is worse than
+none, and these were `skip` in the example manifest precisely because they are meant to
+fail. Its assertions are written to be inverted when the fixes land.
+
+**The audit's most important result is a defect, not a feature: H23.** An obligation
+inside a loop may assume that loop's `#[invariant]` whether or not the invariant's
+preservation VC is discharged, and nothing composes the two statuses. A guaranteed
+out-of-bounds access therefore reports `proved_by_multi_kernel (3: lean, rocq, isabelle)`,
+`[policy] require-two-kernels = true` builds it with exit 0, and the compiled binary
+aborts on the access reported safe. Reproduced in `examples/unsound_hypothesis/`; owned by
+R-0461, which blocks graduation (R-0448). Nothing in this milestone should be read as
+sound for a function containing a loop until that lands. It is also the sharpest evidence
+for the point below: three kernels across two logics agreed, because all three were handed
+the same unsound hypothesis.
+
+Audited 2026-07-31 by running the evidence rather than reading it, and the audit is
+recorded where it changes decisions. Two further conclusions worth carrying forward. First, the
+`require-two-kernels` fail-closed path had no assertion anywhere — every policy check sat
+inside the isabelle-present branch, so the direction that matters was untested in both
+shells; it is now gated in the prover-absent branch. Second, kernel agreement has surfaced
+no real defects on this arc, while the one real fault (`Z.div` vs `Z.quot` at `(-7)/2`)
+came from `--report core-semantics-diff`, a differential test. Kernel diversity is
+therefore recorded throughout as a *portability* property for auditors, not a bug-finding
+strategy, and the differential surfaces plus
+[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md)'s rows are sequenced ahead of a third
+kernel. As-built-versus-as-specified for the whole layer is tabulated in
+[PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+
 ### Early Source-Resource Certificate Sequencing
 
 _Docs/roadmap only, 2026-07-25. No compiler, report, or language behavior

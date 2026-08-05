@@ -36,13 +36,20 @@ structure ProjectPolicy where
   /-- Named provenance/assumption justifying `solver_trusted` under the
       `"assumptions"` stance (e.g. "z3-4.16-QF_NIA-trusted"). -/
   solverAssumption : String := ""
+  /-- Require every eligible runtime-safety obligation to be closed by at least TWO
+      independent kernels (Lean's `omega` plus Rocq `lia` and/or Isabelle
+      `presburger`). The CLI has `--report multi-kernel --require-two-kernels`, but a
+      release requirement belongs in the package's policy, not in whatever flags the
+      CI job happens to pass. Fails CLOSED: if no external kernel actually ran, the
+      requirement is unverified and that is a blocker, never a silent pass. -/
+  requireTwoKernels : Bool := false
 
 instance : Inhabited ProjectPolicy := ⟨{}⟩
 
 /-- True when no policy constraints are set. -/
 def ProjectPolicy.isEmpty (p : ProjectPolicy) : Bool :=
   !p.predictable && p.deny.isEmpty && !p.requireProofs && !p.forbidAssume
-    && p.solverEvidence.isEmpty
+    && p.solverEvidence.isEmpty && !p.requireTwoKernels
 
 -- ============================================================
 -- TOML parsing
@@ -91,6 +98,8 @@ def parsePolicy (content : String) : ProjectPolicy × List String :=
           go rest true { p with solverEvidence := (parseValue trimmed).replace "\"" "" } warns
         else if trimmed.startsWith "solver-assumption" then
           go rest true { p with solverAssumption := (parseValue trimmed).replace "\"" "" } warns
+        else if trimmed.startsWith "require-two-kernels" then
+          go rest true { p with requireTwoKernels := parseValue trimmed == "true" } warns
         else if trimmed.startsWith "deny" then
           go rest true { p with deny := parseDenyList trimmed } warns
         else
@@ -113,9 +122,12 @@ private partial def collectModuleFnDefs (m : CModule) : List CFnDef :=
 private def enforcePredictable (projectModules : List CModule) (pc : ProofCore)
     (locMap : Report.FnLocMap) : Diagnostics :=
   let recMap := pc.recMap
-  let externNames := pc.externNames
+  -- Both sets transitively closed. This is the path that REJECTS a build, so it must not be the
+  -- one left on the direct-callee check: it was, for FFI, between the commit that closed FFI and
+  -- this one -- six other consumers were updated and this was not.
+  let (externNames, recUncertain) := Report.profileClosures projectModules pc
   let violations := projectModules.foldl (fun acc m =>
-    acc ++ Report.checkPredictableModule recMap externNames locMap m) []
+    acc ++ Report.checkPredictableModule recMap recUncertain externNames locMap m) []
   violations.map fun v =>
     let file := match v.loc with | some (f, _) => f | none => ""
     { severity := .error
@@ -218,6 +230,35 @@ def enforceNoAssume (assumeQuals : List String) : Diagnostics :=
       file := ""
       context := [] }
 
+/-- **R-0461 / H23: a release must not ship an obligation that rests on an unproved
+    invariant.**
+
+    `capOnHypothesisDebt` makes such an obligation *display* as `assumed` on every
+    surface. Display is not enforcement: `examples/unsound_hypothesis/` reported the cap
+    correctly and still passed the release gate, because `enforceNoAssume` keys on the
+    `assume(...)` CONSTRUCT (function qualNames) while a capped obligation has no
+    `assume(...)` anywhere in its source. Two different senses of "assumed", and only one
+    was gated. Closing H23 means closing both.
+
+    Gated under `forbid-assume` and not under a new switch, because that stance says the
+    trust escape hatch is forbidden, and an obligation silently resting on an unestablished
+    invariant IS the escape hatch — taken implicitly rather than written down. A project
+    that forbids the explicit form and tolerates the implicit one has gated the spelling.
+
+    Distinct code from E0614: the fix is different. E0614 says delete an `assume`; this says
+    go prove the loop VC named in the message. -/
+def enforceNoCappedHypotheses (capped : List (String × List String)) : Diagnostics :=
+  capped.map fun (id, outstanding) =>
+    { severity := .error
+      message := s!"policy violation: '{id}' is reported proved only under hypotheses that "
+        ++ s!"are themselves unproved ({", ".intercalate outstanding}) — [policy] forbid-assume"
+      pass := "policy"
+      span := none
+      hint := some s!"prove {", ".intercalate outstanding}, or weaken the invariant this obligation relies on"
+      code := "E0617"
+      file := ""
+      context := [] }
+
 /-- Release-policy gate on external-solver evidence. `solverTrustedQuals` are the
     VCs (by id) that an external solver discharged as `solver_trusted` during this
     build — solver evidence, NOT Lean/kernel evidence. The project's stance decides
@@ -250,12 +291,41 @@ def enforceSolverEvidence (solverTrustedQuals : List String) (policy : ProjectPo
       else []
     | _ => []  -- "allow" or unset
 
+/-- Release-policy gate on multi-kernel evidence (`require-two-kernels = true`).
+    `belowTwoQuals` are the obligation ids that did NOT reach two independent kernels.
+    `externalKernelRan` says whether any external kernel was actually consulted; when
+    it is false the requirement could not be checked at all, so the diagnostic points
+    at the missing toolchain rather than blaming the proof. Either way this fails
+    closed — an unverified requirement is not a satisfied one. -/
+def enforceRequireTwoKernels (belowTwoQuals : List String) (externalKernelRan : Bool)
+    : Diagnostics :=
+  if belowTwoQuals.isEmpty then [] else
+  belowTwoQuals.eraseDups.map fun q =>
+    { severity := .error
+      message :=
+        if externalKernelRan then
+          s!"policy violation: obligation '{q}' is closed by fewer than two independent kernels"
+        else
+          s!"policy violation: obligation '{q}' has no independent-kernel evidence — no external kernel could be run"
+      pass := "policy"
+      span := none
+      hint := some (
+        if externalKernelRan then
+          "prove it in a second kernel, or change [policy] require-two-kernels"
+        else
+          "install Rocq (coqc) and/or Isabelle — `nix develop .#provers` — or change [policy] require-two-kernels")
+      code := "E0616"
+      file := ""
+      context := [] }
+
 /-- Enforce policy constraints on compiled modules. Returns diagnostics for violations.
     Runs after CoreCheck (on ValidatedCore) so all type information is available. -/
 def enforcePolicy (policy : ProjectPolicy) (modules : List CModule)
     (locMap : Report.FnLocMap := []) (pc : ProofCore)
     (depNames : List String := []) (vacuousQuals : List String := [])
-    (assumeQuals : List String := []) (solverTrustedQuals : List String := []) : Diagnostics :=
+    (assumeQuals : List String := []) (solverTrustedQuals : List String := [])
+    (belowTwoKernelQuals : List String := []) (externalKernelRan : Bool := false)
+    (cappedObligations : List (String × List String) := []) : Diagnostics :=
   if policy.isEmpty then [] else
   let projectModules := modules.filter fun m => !depNames.contains m.name
   let ds1 := if policy.predictable then enforcePredictable projectModules pc locMap else []
@@ -264,7 +334,10 @@ def enforcePolicy (policy : ProjectPolicy) (modules : List CModule)
   -- vacuous contracts are rejected whenever any policy is set (release default).
   let ds4 := enforceNoVacuous vacuousQuals
   let ds5 := if policy.forbidAssume then enforceNoAssume assumeQuals else []
+  let ds5b := if policy.forbidAssume then enforceNoCappedHypotheses cappedObligations else []
   let ds6 := enforceSolverEvidence solverTrustedQuals policy
-  ds1 ++ ds2 ++ ds3 ++ ds4 ++ ds5 ++ ds6
+  let ds7 := if policy.requireTwoKernels
+             then enforceRequireTwoKernels belowTwoKernelQuals externalKernelRan else []
+  ds1 ++ ds2 ++ ds3 ++ ds4 ++ ds5 ++ ds5b ++ ds6 ++ ds7
 
 end Concrete

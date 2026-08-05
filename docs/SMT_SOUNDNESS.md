@@ -79,6 +79,59 @@ in-toolchain replay does not close, and the VC honestly stays `solver_trusted`.
 The artifact is still emitted so a reviewer — or a Mathlib-enabled build that
 swaps `omega` → `nlinarith` — can graduate it.
 
+## Corroboration vs replay: `solver_checked` and `solver_replayed`
+
+Two distinct, differently-strong ways to get a solver out of the trusted base.
+`--report solver-cert` shows both columns on the same goal.
+
+**Corroboration — `solver_checked`.** An independent decision procedure (Rocq's
+`nia`) is handed the same obligation and reaches the same verdict. The solver leaves
+the TCB, because the claim no longer depends on it. But nothing inspected the
+solver's reasoning: two implementations agreeing on an answer is weaker than one
+checked proof.
+
+**Replay — `solver_replayed`.** Isabelle's `smt` method, with `smt_oracle = false`,
+asks a proof-producing solver for its proof and reconstructs every inference in the
+HOL kernel. The solver's argument is checked, not just its answer. Two properties
+make that auditable rather than asserted:
+
+- `smt_oracle = false` is declared explicitly. Under `smt_oracle = true` the method
+  *stamps* the goal instead of checking it — exactly the trust leak replay exists to
+  close — so the flag is not left to a default.
+- the emitted theory asserts the resulting theorem carries no oracle, via
+  `Thm_Deps.all_oracles`. A stamped proof therefore fails the build instead of
+  passing as a replayed one. `check_multi_kernel.sh` verifies this in both
+  directions: the assertion passes under `smt_oracle = false` and fires under
+  `smt_oracle = true`.
+
+**Measured ceiling: reconstruction is linear-only.** This is why replay does not
+simply supersede corroboration. Every proof-producing solver reachable here
+reconstructs a linear goal and fails on a nonlinear one — including the trivial
+`0 ≤ a ⟹ 0 ≤ a * a` — at a 120s timeout:
+
+| solver | provenance | linear goal | nonlinear goal |
+|---|---|---|---|
+| z3 4.4.0pre | bundled with Isabelle for reconstruction | reconstructs | fails |
+| cvc5 | bundled, via `CVC5_SOLVER` | reconstructs | fails |
+| veriT 2021.06.2 | bundled, via `ISABELLE_VERIT` | reconstructs | fails |
+
+The SMT path exists *precisely* for the nonlinear VCs the kernel tiers cannot close.
+So replay cannot currently upgrade them, and `solver_checked` remains the ceiling for
+that family — `refused` in the replay column is the expected status, not a defect.
+
+The machinery is wired regardless: it reports the honest per-goal status today, and
+any goal that becomes replayable graduates on its own. A gate assertion locks the
+limitation, so if Isabelle gains nonlinear reconstruction it fails loudly and tells
+us the ceiling has moved.
+
+All three proof-producing solvers come **bundled** with Isabelle's nix package; no
+flake wiring is needed. One trap worth recording, because it cost a wrong conclusion
+here: `isabelle getenv VERIT_SOLVER` returns *empty*, which reads as "veriT is
+missing." It is not — the component variable Isabelle actually reads is
+`ISABELLE_VERIT`, and `contrib/verit-2021.06.2-rmx-3` is bundled and registered in
+`etc/components`. Verified by running `smt (verit)` under a plain
+`nix shell nixpkgs#isabelle`, where it closes a linear goal oracle-free.
+
 ## How a solver bug affects each claim class
 
 This is the blast-radius analysis a reviewer needs. A Z3 bug (wrong `unsat`,

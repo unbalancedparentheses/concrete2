@@ -19,22 +19,63 @@
             pkgs = import nixpkgs { inherit system; };
           });
     in {
-      devShells = forAllSystems ({ pkgs }: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
+      devShells = forAllSystems ({ pkgs }:
+        let
+          base = with pkgs; [
             lean4
             clang
             llvmPackages.llvm  # provides lli for fast test execution
+            z3                 # external SMT solver for the pre-existing solver_trusted path
             bash
             gnumake
             gnugrep
             coreutils
-            python3
+            # pyyaml so scripts/tests/check_workflow_yaml.sh can actually run: it
+            # needs pyyaml or ruby and FAILS (rather than skips) without either, so
+            # the gate was red in this shell for everyone.
+            (python3.withPackages (ps: [ ps.pyyaml ]))
             rustc
             typst
             zola
           ];
-        };
-      });
+        in {
+          # Default shell stays light: the pre-existing toolchain only. The
+          # second-kernel drivers (Rocq, Isabelle) are an opt-in spike and Isabelle
+          # is a multi-GB closure, so they live in a separate shell — no contributor
+          # pays for them unless they run `--report multi-kernel`.
+          default = pkgs.mkShell { packages = base; };
+
+          # `nix develop .#provers` — adds the independent second kernels.
+          provers = pkgs.mkShell {
+            packages = base ++ (with pkgs; [
+              coq                # independent CIC kernel (coqc/lia)
+              coqPackages.stdlib # Rocq 9.0 stdlib (ZArith, Lia) — split out of coq-core
+              isabelle           # independent HOL kernel (presburger) — foundational independence
+              # Certificate-replay toolchain (see docs/SMT_SOUNDNESS.md). Makes a
+              # solver's PROOF checkable rather than its verdict merely corroborated.
+              drat-trim          # DRAT/LRAT checker for bit-blasted (SAT) certificates
+              # cvc5 is here because check_multi_kernel.sh CONSUMES it: it locks the
+              # measured ceiling that SMT datatype reasoning is provable but not
+              # Alethe-certifiable, which is the reason the non-arithmetic tier stays
+              # kernel-proved. It was previously dropped as unused — correct then, wrong
+              # now. Isabelle's own CVC5_SOLVER is internal to its settings and is NOT
+              # exported to the shell, so relying on that left the check silently
+              # skipping with no change in the assertion count.
+              cvc5
+            ]);
+            # No veriT here on purpose (cvc5 IS listed above — see its comment).
+            # Isabelle's nix package already bundles `contrib/verit-2021.06.2-rmx-3`,
+            # registers it in etc/components, and sets ISABELLE_VERIT — verified by
+            # running `smt (verit)` under plain `nix shell nixpkgs#isabelle`, where it
+            # closes a linear goal oracle-free. (`VERIT_SOLVER` is empty there, which is
+            # misleading: the component variable Isabelle actually reads is
+            # ISABELLE_VERIT, visible only via `isabelle getenv`.)
+            #
+            # Isabelle's bundled CVC5_SOLVER is a DIFFERENT build from the cvc5 above
+            # (measured 2026-07-31: contrib 1.2.0 vs shell 1.3.2). Anything asserting a
+            # version-scoped fact about cvc5 must therefore report which one it ran;
+            # check_multi_kernel.sh prints it for exactly this reason.
+          };
+        });
     };
 }

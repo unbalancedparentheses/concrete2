@@ -86,14 +86,158 @@ The only resources predictable code may hold are file descriptors from Console (
 
 | Property | Guarantee level | Mechanism |
 |----------|----------------|-----------|
-| No recursion | Source-level | Call graph SCC analysis |
-| Bounded iteration | Source-level | Loop bound classification |
+| No recursion | Source-level | Call graph SCC analysis; an **indirect call is refused**, see below |
+| Bounded iteration | Source-level | Loop bound classification (see **What "bounded" means** below) |
 | No allocation | Source-level | Alloc capability + intrinsic detection |
 | No FFI | Source-level | Extern function detection |
 | No blocking I/O | Source-level | Capability gate (File, Network, Process) |
 | Acyclic call graph | Source-level | SCC analysis + recursion gate |
-| Bounded stack depth | Source-level | `--report stack-depth` (item 25), not gated |
+| Bounded stack depth | Source-level | `--report stack-depth` (item 25), not gated; a bound is claimed **only where establishable**, see below |
 | Report/IR determinism | Compiler | No HashMap in output paths, monotonic counters |
+
+### What "bounded" means (and what it does not)
+
+A loop is classified `bounded` only when a variable appearing in its condition is stepped
+**toward** the bound by a constant:
+
+```
+for (let mut i = 0; i < n; i = i + 1)     bounded    -- i increases toward n
+for (let mut i = n; i > 0; i = i - 1)     bounded    -- i decreases toward 0
+```
+
+Everything else is `unbounded`, and the `predictable` profile rejects it. That includes cases
+this analysis cannot certify rather than ones it knows to diverge:
+
+```
+for (let mut i = 0; i < n; z = z + 1)     unbounded  -- step touches an unrelated variable
+for (let mut i = 0; i < n; i = i - 1)     unbounded  -- step moves AWAY from the bound
+for (let mut i = 0; i < n; i = i + k)     unbounded  -- k is a variable; could be 0 or negative
+while (i != n)                            unbounded  -- terminates only for a start value
+                                                        this analysis cannot see
+```
+
+**This was previously much weaker, and wrong.** The rule asked only "is the condition a
+comparison?" and "is the step list non-empty?", with nothing connecting them. The first two
+examples above were classified `bounded`, `--check predictable` **passed** a module containing
+them, and the effects report said `0 unbounded loops` — for code that runs forever.
+
+Two things about that are worth keeping in mind for the rest of this document:
+
+- **It was a liveness claim, so no safety obligation could have caught it.** Every proof
+  obligation in the pipeline rules out a *bad event* (overflow, out-of-bounds). A program that
+  hangs performs no bad event; it just never finishes. Nothing downstream of the classifier was
+  capable of noticing.
+- **The tightening changed nothing in the corpus.** Per-function classification across every
+  example with a loop is byte-identical before and after — all 31 previously-`bounded` loops use
+  the `i = i + 1` idiom the new rule accepts. The defect survived because no fixture had a
+  fake-bounded loop, not because the rule was load-bearing.
+
+What is still NOT established: that a `bounded` loop terminates within any particular *number*
+of iterations, or that its bound relates to anything else in the program. `i < n` with
+`i = i + 1` terminates for every fixed `n`, and that is the whole of the claim. Bounding
+iteration COUNTS would need the measure supplied and proved, which is termination proof proper
+and is not attempted here.
+
+### Indirect calls cannot be certified acyclic
+
+The call graph records only DIRECT callees. That is deliberate and right for extraction — an
+indirect callee is a fn-typed binding whose statically-known target set is empty. But two
+guarantees were built on the same graph without revisiting that choice:
+
+```
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 { return f(x); }
+fn ping(x: i32) -> i32 {
+    if x <= 0 { return 0; }
+    return apply(ping, x - 1);      // recursion, through a function pointer
+}
+```
+
+There is no edge for `f(x)`, so SCC found no cycle. `ping` reported `recursion: none`,
+`--check predictable` **passed** the module, and `--report stack-depth` stated
+`depth: 1, stack: 32 bytes` with `Max stack bound: 32 bytes` — a byte-exact figure for a
+function that recurses to an arbitrary depth. **A false number is worse than a missing one,
+because it is quotable.**
+
+Now: a body containing an indirect call is refused by the profile, and gets no stack bound.
+Resolving the target set — proving every call site of a combinator passes a known function — is
+a whole-program analysis and a real project. Assuming the set is empty is not a conservative
+approximation of that; it is the opposite.
+
+Unboundedness also **propagates to callers** now. `computeCallDepths` filtered recursive callees
+out of each chain, so a function calling an unbounded one still received a finite bound; the
+edge was dropped rather than the answer declined.
+
+### Transitivity, gate by gate
+
+The five gates did not agree on this, and the disagreement was not deliberate.
+
+| Gate | Transitive? | Mechanism |
+|------|-------------|-----------|
+| No allocation | **Yes** | `E0520: requires Alloc but caller has (none)` — a caller must declare the capability, so the effects report sees it on the signature |
+| No blocking I/O | **Yes** | same, for `File` / `Network` / `Process` |
+| No FFI | **Yes, as of 2026-08-05** | closed over the call graph; previously a direct-callee check only |
+| No recursion | Per-function | see the gap below |
+| Bounded iteration | Per-function by nature | a loop is in one body |
+
+Alloc and blocking get transitivity for free from the capability system, and it cannot be
+laundered through a combinator either: a function-pointer type carries its capset, so passing an
+`with(Alloc)` function where a pure `fn(i32) -> i32` is expected is an `E0220` type error.
+
+FFI had no capability behind it. `f` calling `g` calling an extern reported `ffi: no` and
+`evidence: enforced` while transitively crossing FFI. Closing it over the call graph reclassified
+three real examples (`http`, `integrity`, `verify`, 1 → 3 FFI-crossing functions each) and all
+were true positives — in `http` the chain is `send_string` → `handle_client` → `main`.
+
+One imprecision worth stating: the call graph resolves callees to qualified names while the
+effects report compares raw ones, so the closed set carries both the qualified name and its final
+component. A same-named function in another module can therefore be over-flagged. That direction
+refuses a function rather than admitting one, which is the side to err on for an admission gate.
+
+### Admission is transitive (all five gates, as of 2026-08-05)
+
+"Predictable execution" is a property of RUNNING a function. If `f` calls `g`, running `f` runs
+`g`, so `f` can only be predictable if `g` is. The label used to be computed from each body in
+isolation, so this was `enforced`:
+
+```
+fn fib(n: Int)  -> Int { if n <= 1 { return n; } return fib(n - 1) + fib(n - 2); }
+fn main() -> Int { return fib(10); }          // enforced — contained no recursion textually
+```
+
+`main` contains no recursion in its own body and unbounded recursion in practice.
+
+| Gate | Mechanism |
+|------|-----------|
+| No allocation | capability: `E0520: requires Alloc but caller has (none)` |
+| No blocking I/O | capability, same |
+| No FFI | call-graph closure |
+| **No recursion** | **call-graph closure** — direct, mutual, and *reaching* either |
+| Bounded iteration | per body; a loop lives in one function |
+
+Recursion was the last gate asking "is it written in your body?" rather than "can you reach
+it?", and the difference was never designed — it is what you get when one property is enforced
+by types and another by a graph walk. A body containing an **indirect** call seeds the closure
+too: with no edge for `f(x)` the callee set is unknown, so acyclicity is not established there
+either, and callers inherit that.
+
+**Measured impact:** 14 functions across 10 examples moved from `enforced` to `reported`, and
+they are true positives — mostly a `main` calling a recursive `fib`/`factorial`/`gcd`, plus
+`lox` and `toml` (3 each). Four test goldens were counting the old behaviour and now assert the
+new one. Nothing stops compiling: this is an admission and label change, not a type error, and
+module-level `--check predictable` already failed these programs because the recursive function
+itself failed. What was fooled was anyone reading the per-function evidence level.
+
+**One consumer was silently left behind, twice over.** There are seven call sites of the
+predictable check, including `predictableQuery`, `evidenceQuery`, `auditQuery`, and the policy
+path in `Check/Policy.lean` that REJECTS builds. When FFI was closed over the call graph, three
+of them kept passing the unclosed set — including the policy path — so the gate that actually
+rejects a build was the one still on the direct-callee check. `Report.profileClosures` now
+returns both closed sets together, so a consumer cannot obtain one without the other.
+
+**Still not transitive, deliberately:** `proofReport`'s extraction eligibility
+(`proofExclusionReasons`). That answers a different question — can this body be extracted to
+Gallina — and changing it would affect which proofs are attempted, so it is a separate decision
+rather than part of this one.
 
 ### Planned unified resource certificate
 

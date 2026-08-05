@@ -172,6 +172,12 @@ inductive ArithResult where
   | notApplicable
   deriving Repr, BEq, Inhabited
 
+/-- Did this evaluation trap? Used by the trap-condition locks below, which check the
+    `TrapCondition` enumeration against this evaluator on concrete inputs. -/
+def ArithResult.isTrap : ArithResult → Bool
+  | .trap _ => true
+  | _       => false
+
 /-- Evaluate a binary op on two integer operands under the result type `ty`
     (the LHS/value type). This is the single arithmetic evaluator: the
     interpreter calls it directly, and the constant folder calls it (via
@@ -270,6 +276,327 @@ def unaryOpCanTrap (op : UnaryOp) (ty : Ty) : Bool :=
   -- Integer negation only. Float negation is total, and `~`/`!` cannot fail.
   | .neg => isIntTy ty
   | .bitnot | .not_ => false
+
+/-- **Evaluate a checked SHIFT — the shift arm of the reference (R-0460).**
+
+    `evalIntBinOp` deliberately omits shifts, and the omission had a cost: there was no
+    single definition of when a shift traps, so the interpreter carried the rule inline,
+    `SSACleanup` consulted `shiftAmountInRange` directly, and obligation generation had no
+    shift family at all until R-0464. Three consumers, no shared definition — the exact
+    shape H24 was.
+
+    This is that definition, and it is what the sufficiency theorem below is proved against.
+    Transcribed from the interpreter (the reference semantics, Principle 1) rather than
+    invented, including two details that are easy to get wrong:
+
+    * the trap is guarded by `isIntTy ty`, so a non-integer type does NOT trap even though
+      `shiftAmountInRange` is `false` for it;
+    * `shl` wraps with `wrapToWidth`, not `maskWidth` — the shifted value can exceed the
+      SIGNED width (`100 << 1` at `i8` is 200), and `maskWidth` only wraps unsigned, which
+      would leave a signed overflow untruncated and diverge from the compiled `shl`
+      (which truncates 200 to -56). -/
+def evalIntShift (op : BinOp) (a : Int) (ty : Ty) (b : Int) : ArithResult :=
+  match op with
+  | .shl =>
+    if isIntTy ty && !shiftAmountInRange ty b then .trap "shift amount out of range"
+    else .value (wrapToWidth ty (a * (2 ^ b.toNat))) ty
+  | .shr =>
+    if isIntTy ty && !shiftAmountInRange ty b then .trap "shift amount out of range"
+    else .value (maskWidth ty (a / (2 ^ b.toNat))) ty
+  | _ => .notApplicable
+
+/-! ### Trap conditions as first-class data (R-0464 / H24)
+
+`evalIntBinOp` above is the authority on *whether* a checked op traps at given values.
+Obligation generation cannot call it — an obligation is a proposition about symbolic
+operands, not a computation on two `Int`s — so it stated its own trap conditions, and stated
+them weaker: `divObligations` emitted only `divisor ≠ 0`, missing the signed `MIN / -1`
+quotient overflow, and no family collected shifts at all. `collectArithE` matches only
+`.add | .sub | .mul`, so nothing else covered them either. Both faults are reproduced in
+`examples/trap_semantics_gap/`.
+
+The fix is not to duplicate the rules more carefully. It is to name, in ONE place, which
+conditions a checked op owes — then hold that enumeration to `evalIntBinOp` by kernel-checked
+example, and hold obligation generation to the enumeration by totality. A new trap rule then
+cannot be added to the evaluator without breaking a lock here, and cannot be listed here
+without a family claiming it.
+-/
+
+/-- One condition a checked operation must discharge to be trap-free. Data, not a
+    proposition, so both the evaluator lock below and obligation generation can pattern
+    match on it exhaustively — the same discipline as `HypOrigin` in Register C, and for the
+    same reason: a catch-all would give a newly added condition zero obligations, silently. -/
+inductive TrapCondition where
+  /-- `b ≠ 0` for `/` and `%`. -/
+  | divisorNonZero
+  /-- The quotient fits the type: excludes signed `MIN / -1` (and `MIN % -1`, whose implied
+      quotient overflows identically). This is the one `divObligations` omitted. -/
+  | quotientInRange
+  /-- The result fits the type: `+ - *` overflow. -/
+  | resultInRange
+  /-- `0 ≤ b < bitWidth` for `<<` and `>>`. No family generated this at all. -/
+  | shiftAmountInRange
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Every trap condition, for the totality checks that keep families honest. -/
+def allTrapConditions : List TrapCondition :=
+  [.divisorNonZero, .quotientInRange, .resultInRange, .shiftAmountInRange]
+
+/-- **The complete set of trap conditions a CHECKED binary op owes.**
+
+    Read off `evalIntBinOp`'s trap branches, and locked to them by the examples below rather
+    than by trust. `wrapping_*` and `saturating_*` are absent because they are defined not to
+    trap; comparison and boolean ops carry no integer trap.
+
+    `bitand`/`bitor`/`bitxor` are total on in-range operands and appear with `[]` for the same
+    reason — stated explicitly rather than falling into a catch-all, so that adding a trapping
+    bitwise op forces a decision here. -/
+def trapConditions : BinOp → List TrapCondition
+  | .div | .mod => [.divisorNonZero, .quotientInRange]
+  | .add | .sub | .mul => [.resultInRange]
+  | .shl | .shr => [.shiftAmountInRange]
+  | .wrappingAdd | .wrappingSub | .wrappingMul => []
+  | .saturatingAdd | .saturatingSub | .saturatingMul => []
+  | .bitand | .bitor | .bitxor => []
+  | .eq | .neq | .lt | .gt | .leq | .geq | .and_ | .or_ => []
+
+/-- Does this specific condition hold at these values, for this type? The decidable
+    counterpart of what an obligation says symbolically — the bridge that lets the examples
+    below check the enumeration against `evalIntBinOp` on concrete inputs. -/
+def trapConditionHolds (c : TrapCondition) (op : BinOp) (ty : Ty) (a b : Int) : Bool :=
+  match c with
+  | .divisorNonZero => b != 0
+  | .quotientInRange => b == 0 || (checkedToType ty (tdiv a b)).isSome
+  -- Takes the OP, because "the result fits" is not one predicate: `a + b`, `a - b` and
+  -- `a * b` overflow at different inputs. R-0464 shipped this as `true` with the comment
+  -- "op-specific; the op's own range check covers it" — a placeholder that made this arm
+  -- VACUOUS, so any claim of the form "all listed conditions hold, therefore no trap" was
+  -- false for `+ - *` while looking discharged. Found by trying to prove exactly that
+  -- claim (R-0460), which is the argument for writing the theorem rather than the comment.
+  | .resultInRange =>
+      match op with
+      | .add => (checkedToType ty (a + b)).isSome
+      | .sub => (checkedToType ty (a - b)).isSome
+      | .mul => (checkedToType ty (a * b)).isSome
+      | _    => true
+  | .shiftAmountInRange => shiftAmountInRange ty b
+
+/-! #### R-0460: the enumeration is SUFFICIENT, as a theorem
+
+The examples below check the enumeration against the evaluator at chosen inputs. This
+proves the general statement they sample: **if every condition `trapConditions` lists for an
+op holds, that op does not trap** — at any inputs, not just the ones someone thought to
+write down.
+
+This is the semantics half of `VC_BRIDGE_REGISTER.md`'s `div_obligation_sufficient` row,
+and it is worth being exact about which half. It says the CONDITIONS are strong enough. It
+does not say the emitted obligation *denotes* the conditions — that is the lowering, which
+is validated by agreement checks (against a reference evaluator, on sampled assignments)
+and not proven. H19 is that gap, and no theorem here closes it.
+
+It does NOT discharge the shift row, and the reason is worth stating so nobody reads the
+`∀ op` and assumes otherwise: `evalIntBinOp` does not model shifts at all — it returns
+`notApplicable`, so `isTrap` is trivially false and the shift case of this theorem is
+VACUOUS. The reference deliberately keeps shifts in `shiftAmountInRange`/`maskWidth`
+instead of threading a shift-result formula through `ArithResult`. A shift sufficiency
+theorem has to be stated against those helpers; a theorem that holds because its subject is
+absent proves nothing.
+
+Writing the theorem is what found the defect it now forbids: `resultInRange` had been
+shipped as the constant `true`, so this statement was false for `+ - *` while the row it
+serves looked one step from discharged. A sampled example would not have caught it —
+`trapConditionHolds .resultInRange` returning `true` agrees with every non-trapping input,
+and nobody had written the trapping one. -/
+/-- The shape every checked arithmetic arm has: a range check whose `some` branch yields a
+    value and whose `none` branch traps. If the check succeeds, the arm does not trap. -/
+private theorem isTrap_checked {ty : Ty} {x : Int} {msg : String}
+    (hs : (checkedToType ty x).isSome = true) :
+    (match checkedToType ty x with
+     | some v => ArithResult.value v ty
+     | none   => ArithResult.trap msg).isTrap = false := by
+  cases hc : checkedToType ty x with
+  | none   => simp [hc] at hs
+  | some v => rfl
+
+theorem trapConditions_sufficient (op : BinOp) (ty : Ty) (a b : Int)
+    (h : ∀ c ∈ trapConditions op, trapConditionHolds c op ty a b = true) :
+    (evalIntBinOp op a ty b).isTrap = false := by
+  cases op
+  -- `+ - *`: the single `resultInRange` condition IS the range check the evaluator runs.
+  case add =>
+    exact isTrap_checked (by
+      simpa [trapConditionHolds] using h .resultInRange (by simp [trapConditions]))
+  case sub =>
+    exact isTrap_checked (by
+      simpa [trapConditionHolds] using h .resultInRange (by simp [trapConditions]))
+  case mul =>
+    exact isTrap_checked (by
+      simpa [trapConditionHolds] using h .resultInRange (by simp [trapConditions]))
+  -- `/` and `%`: BOTH conditions are needed, and this is exactly where shipping only the
+  -- first (H24) let a division report proved and then abort on signed MIN / -1.
+  case div =>
+    have h0 := h .divisorNonZero (by simp [trapConditions])
+    have hq := h .quotientInRange (by simp [trapConditions])
+    simp [trapConditionHolds] at h0 hq
+    simp only [evalIntBinOp, if_neg (by simpa using h0 : ¬ (b == 0) = true)]
+    exact isTrap_checked (by simpa [h0] using hq)
+  case mod =>
+    have h0 := h .divisorNonZero (by simp [trapConditions])
+    have hq := h .quotientInRange (by simp [trapConditions])
+    simp [trapConditionHolds] at h0 hq
+    simp only [evalIntBinOp, if_neg (by simpa using h0 : ¬ (b == 0) = true)]
+    cases hc : checkedToType ty (tdiv a b) with
+    | none   => simp_all
+    | some v => rfl
+  -- Everything else is total, saturating, wrapping, or not handled by this evaluator
+  -- (shifts and bitwise ops use the small helpers directly — see `evalIntBinOp`'s note).
+  all_goals rfl
+
+/-- **R-0460: the shift-amount condition is SUFFICIENT.**
+
+    `VC_BRIDGE_REGISTER.md`'s `shift_obligation_sufficient` row. Stated against
+    `evalIntShift` — the definition the interpreter now consumes — and NOT against
+    `evalIntBinOp`, which does not model shifts and would make this true vacuously. That
+    distinction is the whole reason this row stayed open when `trapConditions_sufficient`
+    landed: a theorem that holds because its subject is absent proves nothing.
+
+    Hypothesis is `shiftAmountInRange`, which is exactly what `shiftObligations` emits
+    (`0 ≤ amount < bitWidth`), taking the width from the SHIFTED operand's type. -/
+theorem shift_amount_sufficient (op : BinOp) (ty : Ty) (a b : Int)
+    (hop : op = .shl ∨ op = .shr)
+    (h : shiftAmountInRange ty b = true) :
+    (evalIntShift op a ty b).isTrap = false := by
+  rcases hop with rfl | rfl <;> simp [evalIntShift, h, ArithResult.isTrap]
+
+/-- And it is NECESSARY as well as sufficient, for integer types: an out-of-range amount
+    does trap. Without this the condition could be strengthened to `False` and the
+    sufficiency theorem would still hold — the direction that makes a rule useless rather
+    than unsound, and the one a sufficiency proof alone cannot see. -/
+theorem shift_amount_necessary (op : BinOp) (ty : Ty) (a b : Int)
+    (hop : op = .shl ∨ op = .shr)
+    (hty : isIntTy ty = true)
+    (h : shiftAmountInRange ty b = false) :
+    (evalIntShift op a ty b).isTrap = true := by
+  rcases hop with rfl | rfl <;> simp [evalIntShift, h, hty, ArithResult.isTrap]
+
+/-- The value a checked arithmetic op computes, BEFORE the range check — which is exactly
+    the expression `overflowObligations` renders and states bounds about. `none` for ops
+    whose obligation is not a range check. -/
+def rawResult (op : BinOp) (a b : Int) : Option Int :=
+  match op with
+  | .add => some (a + b)
+  | .sub => some (a - b)
+  | .mul => some (a * b)
+  | _    => none
+
+/-- In-range implies the checked conversion succeeds. The bridge between how the OBLIGATION
+    states the property (explicit bounds from `intRange`) and how the EVALUATOR decides it
+    (`checkedToType` returning `some`). Two spellings of one fact, and the row below needs
+    them related rather than assumed related. -/
+theorem checkedToType_isSome_of_inRange {ty : Ty} {n lo hi : Int}
+    (hr : intRange ty = some (lo, hi)) (hlo : lo ≤ n) (hhi : n ≤ hi) :
+    (checkedToType ty n).isSome = true := by
+  simp [checkedToType, hr, Int.not_lt.mpr hlo, Int.not_lt.mpr hhi]
+
+/-- **R-0460: `overflowObligations`'s condition is SUFFICIENT.**
+
+    `VC_BRIDGE_REGISTER.md`'s `overflow_obligation_sufficient` row. The obligation emitted for
+    a checked `+ - *` is `lo ≤ e ∧ e ≤ hi` with `(lo, hi)` from the operand type's range; this
+    proves that discharging it means the operation does not trap.
+
+    Stated over `rawResult` so the three ops share one statement, and over `intRange`'s own
+    bounds rather than literals so it holds at every width. Note the obligation generator
+    uses `Report.intRange`, which deliberately returns `none` for `Int`/`Uint` (their overflow
+    is profile-dependent) — that narrowing means the generator emits FEWER obligations than
+    this theorem covers, which is the safe direction: every obligation it does emit is one
+    this theorem discharges. -/
+theorem overflow_obligation_sufficient {op : BinOp} {ty : Ty} {a b lo hi v : Int}
+    (hraw : rawResult op a b = some v)
+    (hr : intRange ty = some (lo, hi)) (hlo : lo ≤ v) (hhi : v ≤ hi) :
+    (evalIntBinOp op a ty b).isTrap = false := by
+  cases op <;> simp [rawResult] at hraw <;> subst hraw <;>
+    exact isTrap_checked (checkedToType_isSome_of_inRange hr hlo hhi)
+
+/-- Out of range implies the checked conversion fails — the converse of
+    `checkedToType_isSome_of_inRange`. -/
+theorem checkedToType_eq_none_of_outOfRange {ty : Ty} {n lo hi : Int}
+    (hr : intRange ty = some (lo, hi)) (h : n < lo ∨ hi < n) :
+    checkedToType ty n = none := by
+  rcases h with h | h
+  · simp [checkedToType, hr, h]
+  · simp [checkedToType, hr, h]
+
+/-- **The overflow condition is NECESSARY as well as sufficient.**
+
+    Sufficiency alone cannot tell a useful rule from a vacuous one: strengthen the emitted
+    bounds to something unsatisfiable and `overflow_obligation_sufficient` still holds. This
+    says the bounds are TIGHT — outside them the operation really does trap — so the rule is
+    not over-restrictive either. Same reason `shift_amount_necessary` exists. -/
+theorem overflow_obligation_necessary {op : BinOp} {ty : Ty} {a b lo hi v : Int}
+    (hraw : rawResult op a b = some v)
+    (hr : intRange ty = some (lo, hi)) (h : v < lo ∨ hi < v) :
+    (evalIntBinOp op a ty b).isTrap = true := by
+  have hn := checkedToType_eq_none_of_outOfRange hr h
+  cases op <;> simp [rawResult] at hraw <;>
+    simp [evalIntBinOp, hraw, hn, ArithResult.isTrap]
+
+/-- **The div/mod conditions are NECESSARY as well as sufficient.**
+
+    Completes the tightness story for the four half-discharged rows. Two ways a division
+    traps, one per condition, so violating EITHER is enough — which is the same fact H24 was
+    the negative instance of: shipping only `divisorNonZero` left a real trap unstated. -/
+theorem div_obligation_necessary {op : BinOp} {ty : Ty} {a b : Int}
+    (hop : op = .div ∨ op = .mod)
+    (h : b = 0 ∨ checkedToType ty (tdiv a b) = none) :
+    (evalIntBinOp op a ty b).isTrap = true := by
+  rcases hop with rfl | rfl
+  · by_cases hb : b = 0
+    · subst hb; rfl
+    · rcases h with hz | hc
+      · exact absurd hz hb
+      · simp [evalIntBinOp, hb, hc, ArithResult.isTrap]
+  · by_cases hb : b = 0
+    · subst hb; rfl
+    · rcases h with hz | hc
+      · exact absurd hz hb
+      · simp [evalIntBinOp, hb, hc, ArithResult.isTrap]
+
+/-! #### The lock: the enumeration agrees with the evaluator
+
+If `evalIntBinOp` traps on a `/` or `%` at these inputs, some condition in
+`trapConditions` must be false there. These are the exact inputs the gap was reproduced at,
+so a regression is a build failure. -/
+
+-- i32 MIN / -1 traps, and `divisorNonZero` alone does NOT explain it — this is the pair
+-- whose second element `divObligations` was missing. If `quotientInRange` were dropped from
+-- `trapConditions .div`, the first line would still hold and the second would fail.
+example : (evalIntBinOp .div (-2147483648) (.i32) (-1)).isTrap = true := rfl
+example : trapConditionHolds .divisorNonZero .div (.i32) (-2147483648) (-1) = true := rfl
+example : trapConditionHolds .quotientInRange .div (.i32) (-2147483648) (-1) = false := rfl
+-- the same for `%`, whose implied quotient overflows identically
+example : (evalIntBinOp .mod (-2147483648) (.i32) (-1)).isTrap = true := rfl
+example : trapConditionHolds .quotientInRange .div (.i32) (-2147483648) (-1) = false := rfl
+-- divide by zero is still caught by the condition that was already there
+example : (evalIntBinOp .div 1 (.i32) 0).isTrap = true := rfl
+example : trapConditionHolds .divisorNonZero .div (.i32) 1 0 = false := rfl
+-- an ordinary division trips neither condition
+example : (evalIntBinOp .div 7 (.i32) 2).isTrap = false := rfl
+example : trapConditionHolds .divisorNonZero .div (.i32) 7 2 = true := rfl
+example : trapConditionHolds .quotientInRange .div (.i32) 7 2 = true := rfl
+-- MIN / -1 is type-relative: at 64-bit (`.int`) the same literal operands are fine, and the
+-- condition fires only at THAT type's minimum. A rule stated without the type — which is
+-- what a hand-written obligation is tempted to do — is wrong at one width or the other.
+example : trapConditionHolds .quotientInRange .div (.int) (-2147483648) (-1) = true := rfl
+example : trapConditionHolds .quotientInRange .div (.int) (-9223372036854775808) (-1) = false := rfl
+-- shift amounts: in range, at the boundary, and over-width (the fixture's `1 << 40`)
+example : trapConditionHolds .shiftAmountInRange .shl (.i32) 1 31 = true := rfl
+example : trapConditionHolds .shiftAmountInRange .shl (.i32) 1 32 = false := rfl
+example : trapConditionHolds .shiftAmountInRange .shl (.i32) 1 40 = false := rfl
+example : trapConditionHolds .shiftAmountInRange .shl (.i32) 1 (-1) = false := rfl
+-- the checked ops all owe something; the non-trapping families owe nothing
+example : trapConditions .div = [.divisorNonZero, .quotientInRange] := rfl
+example : trapConditions .wrappingAdd = [] := rfl
+example : (trapConditions .shl).length = 1 := rfl
 
 end IntArith
 end Concrete
