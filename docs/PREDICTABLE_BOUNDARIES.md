@@ -87,13 +87,56 @@ The only resources predictable code may hold are file descriptors from Console (
 | Property | Guarantee level | Mechanism |
 |----------|----------------|-----------|
 | No recursion | Source-level | Call graph SCC analysis |
-| Bounded iteration | Source-level | Loop bound classification |
+| Bounded iteration | Source-level | Loop bound classification (see **What "bounded" means** below) |
 | No allocation | Source-level | Alloc capability + intrinsic detection |
 | No FFI | Source-level | Extern function detection |
 | No blocking I/O | Source-level | Capability gate (File, Network, Process) |
 | Acyclic call graph | Source-level | SCC analysis + recursion gate |
 | Bounded stack depth | Source-level | `--report stack-depth` (item 25), not gated |
 | Report/IR determinism | Compiler | No HashMap in output paths, monotonic counters |
+
+### What "bounded" means (and what it does not)
+
+A loop is classified `bounded` only when a variable appearing in its condition is stepped
+**toward** the bound by a constant:
+
+```
+for (let mut i = 0; i < n; i = i + 1)     bounded    -- i increases toward n
+for (let mut i = n; i > 0; i = i - 1)     bounded    -- i decreases toward 0
+```
+
+Everything else is `unbounded`, and the `predictable` profile rejects it. That includes cases
+this analysis cannot certify rather than ones it knows to diverge:
+
+```
+for (let mut i = 0; i < n; z = z + 1)     unbounded  -- step touches an unrelated variable
+for (let mut i = 0; i < n; i = i - 1)     unbounded  -- step moves AWAY from the bound
+for (let mut i = 0; i < n; i = i + k)     unbounded  -- k is a variable; could be 0 or negative
+while (i != n)                            unbounded  -- terminates only for a start value
+                                                        this analysis cannot see
+```
+
+**This was previously much weaker, and wrong.** The rule asked only "is the condition a
+comparison?" and "is the step list non-empty?", with nothing connecting them. The first two
+examples above were classified `bounded`, `--check predictable` **passed** a module containing
+them, and the effects report said `0 unbounded loops` — for code that runs forever.
+
+Two things about that are worth keeping in mind for the rest of this document:
+
+- **It was a liveness claim, so no safety obligation could have caught it.** Every proof
+  obligation in the pipeline rules out a *bad event* (overflow, out-of-bounds). A program that
+  hangs performs no bad event; it just never finishes. Nothing downstream of the classifier was
+  capable of noticing.
+- **The tightening changed nothing in the corpus.** Per-function classification across every
+  example with a loop is byte-identical before and after — all 31 previously-`bounded` loops use
+  the `i = i + 1` idiom the new rule accepts. The defect survived because no fixture had a
+  fake-bounded loop, not because the rule was load-bearing.
+
+What is still NOT established: that a `bounded` loop terminates within any particular *number*
+of iterations, or that its bound relates to anything else in the program. `i < n` with
+`i = i + 1` terminates for every fixed `n`, and that is the whole of the claim. Bounding
+iteration COUNTS would need the measure supplied and proved, which is termination proof proper
+and is not attempted here.
 
 ### Planned unified resource certificate
 

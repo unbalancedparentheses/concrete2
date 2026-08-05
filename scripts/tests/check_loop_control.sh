@@ -72,6 +72,50 @@ reject_with neg_continue_leaks_linear E0211
 echo "=== 4. while-expression break/else type agreement ==="
 reject_with neg_while_expr_removed E0001
 
+echo "=== 5. the bounded-loop classifier is FAIL-CLOSED ==="
+# The `predictable` profile advertises "bounded iteration, compiler-enforced"
+# (docs/PREDICTABLE_BOUNDARIES.md). It was enforcing something much weaker: the condition had
+# to LOOK like a comparison and the step list had to be non-empty, with nothing tying the two
+# together. Both loops below were classified `bounded`, the module passed
+# `--check predictable`, and the effects report said `0 unbounded loops` -- for code that runs
+# forever. This is a LIVENESS claim, so no safety obligation could ever have noticed it.
+BIN_LC="$ROOT_DIR/.lake/build/bin/concrete"
+if lake build >/dev/null 2>&1 && [ -x "$BIN_LC" ]; then
+  TD_LC="$(mktemp -d)"; trap 'rm -rf "$TD_LC"' EXIT
+  cat > "$TD_LC/loops.con" <<'CON'
+mod loopcls {
+    fn honest(n: i32) -> i32 {
+        let mut z: i32 = 0;
+        for (let mut i: i32 = 0; i < n; i = i + 1) { z = z + 1; }
+        return z;
+    }
+    fn never_ends(n: i32) -> i32 {
+        let mut z: i32 = 0;
+        for (let mut i: i32 = 0; i < n; z = z + 1) { z = z + 1; }
+        return z;
+    }
+    fn wrong_way(n: i32) -> i32 {
+        let mut z: i32 = 0;
+        for (let mut i: i32 = 0; i < n; i = i - 1) { z = z + 1; }
+        return z;
+    }
+}
+CON
+  EFF="$("$BIN_LC" "$TD_LC/loops.con" --report effects 2>/dev/null)"
+  NUNB="$(printf '%s' "$EFF" | grep -c 'loops: unbounded')"
+  [ "$NUNB" = "2" ] \
+    && ok "a step on an unrelated variable, and a step AWAY from the bound, both read unbounded" \
+    || no "expected 2 unbounded loops, got $NUNB — a non-terminating loop reads as bounded"
+  printf '%s' "$EFF" | grep -q 'loops: bounded' \
+    && ok "and the honest i = i + 1 loop is still bounded (not merely rejecting everything)" \
+    || no "a genuinely bounded loop is now misclassified — the rule is too strict to be useful"
+  "$BIN_LC" "$TD_LC/loops.con" --check predictable >/dev/null 2>&1 \
+    && no "--check predictable ADMITS a module containing two infinite loops" \
+    || ok "--check predictable rejects the module"
+else
+  no "build failed or binary missing; the loop-classifier checks did not run"
+fi
+
 echo ""
 echo "LOOP-CONTROL: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
