@@ -123,6 +123,29 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
+### Multi-prover merge: what it took, and what it left open (2026-08-05)
+
+Merged the spike pinned at `80be5368` into main after the quarantine review. The merge
+itself was textually CLEAN — zero conflicts across a 105-commit divergence — but five
+distinct problems had to be fixed first, none of them visible from the conflict count.
+
+| # | problem | resolution |
+|---|---|---|
+| 1 | stackdepth expected 3 bounded/3 recursive | the spike FIXED a fail-open; the test asserted the defect. Corrected the counts. |
+| 2 | VC `kind`/`status` whitelists asserted a v1 set | extended to measured reality: `div_quotient_in_range`, `shift_amount_in_range`, `ineligible` |
+| 3 | three sites expected `solver_error` | never produced anywhere; all report `unproven`. Safety asserted harder, diagnostic TRACKED |
+| 4 | `assume_taint` contract snapshot drift | the spike added contracts to std's `rotr`; regenerated (1 of 14 actually changed) |
+| 5 | six report snapshots drifted | the spike modified the hmac fixture and std/sha256; regenerated (exactly 6 changed) |
+
+**A merge being conflict-free says nothing about it being correct.** Every one of these
+was found by RUNNING gates, and three of them were gates asserting behaviour the spike had
+deliberately changed for the better.
+
+**The convergence inventory** (`scripts/tests/check_convergence_inventory.sh`, 12 entries,
+CI-registered) makes every remaining gap executable. Each entry asserts the gap's CURRENT
+state, so closing one FAILS the gate and forces a deliberate inventory update. That is the
+machine-checked tracking this merge was conditioned on.
+
 ### Merge blocker RESOLVED: the spike fixed a fail-open, the test asserted the defect
 
 The pin `80be5368` failed one trust-gate case on its own (1500/1), identically on the
@@ -164,7 +187,11 @@ digest, so these statuses cannot become authoritative until R-0004 lands.
 4. **Receipts must bind the kernel set.** A receipt naming a subject digest and dependency
    root must also record WHICH kernels attested and at what versions, or replay cannot
    reproduce the verdict.
-5. **Re-pin, do not track a moving head.** Later spike deltas integrate as new pinned
+5. **`solver_error` is never produced.** Absent solver, garbage solver and the negatives
+   fixture all report `unproven`. Fail-closed, so nothing unsound — but a consumer cannot
+   distinguish an environment defect from a proof-difficulty statement. Three gate sites
+   track it; restoring their strict assertions is the close condition.
+6. **Re-pin, do not track a moving head.** Later spike deltas integrate as new pinned
    epochs against a green pin, with the convergence inventory updated each time.
 
 > **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).**> **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).** This section
