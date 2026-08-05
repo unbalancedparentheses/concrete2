@@ -169,5 +169,27 @@ else
   ok "the pairing types live on the Elab side, where CExpr is in scope"
 fi
 
+# ONE RESOLUTION OWNER. Callee identity must be an OUTPUT of the resolution that also
+# selects runtime behaviour. A second lookup — even one "sharing a precedence helper" —
+# can be handed a different spelling or observe different table state and diverge, with
+# runtime taking the intrinsic branch while evidence names the builtin. Both would be
+# individually defensible and jointly wrong, and no evidence-to-evidence gate would see
+# it.
+owners=$(grep -c "let resolveContractCall" Concrete/Elab/Elab.lean || true)
+if [ "$owners" -eq 1 ]; then
+  ok "exactly one callee-resolution owner"
+else
+  no "$owners callee-resolution owners — runtime and evidence could resolve differently"
+fi
+
+# Installed at ElabEnv CONSTRUCTION, not patched in afterwards: an optional resolver
+# added later leaves a window where identity silently answers none and callers emit gaps
+# for a reason that is not real.
+if grep -qE "^\s+resolveCallee := resolveContractCall" Concrete/Elab/Elab.lean; then
+  ok "the resolver is installed at ElabEnv construction, with no fail-open window"
+else
+  no "resolveCallee is not installed at construction — there would be a transient fail-open state"
+fi
+
 echo "BINDER-REFS: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

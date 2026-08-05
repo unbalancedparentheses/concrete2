@@ -56,6 +56,12 @@ structure ElabEnv where
   -- ConstId or CallableId — it would have to be emitted as a gap purely for want of
   -- context it could have had.
   proofPath : String := ""
+  -- Callee identity, as an OUTPUT of the resolution that also selects runtime
+  -- behaviour. Not a second lookup: two lookups can be handed different spellings or
+  -- observe different table state and diverge while both claim to share a precedence
+  -- rule. Installed at ElabEnv CONSTRUCTION, so there is no window in which this
+  -- silently answers `none` and callers emit gaps for a reason that is not real.
+  resolveCallee : String → Option CallableId := fun _ => none
   -- A scope has been ENTERED but no frame materialized yet. Frames open LAZILY on
   -- the first binder, so a scope that binds nothing does not shift `framesOut` for
   -- references inside it — an empty `if` must not move a digest.
@@ -471,7 +477,9 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       match ← lookupFnSig name with
       | some sig =>
         let paramTys := sig.params.map Prod.snd
-        return ElaboratedExprV2.mk (CExpr.ident name (.fn_ paramTys sig.capSet sig.retTy)) (Proof.evUnhandledExpr "fn value: CallableId not minted here")
+        return ElaboratedExprV2.mk (CExpr.ident name (.fn_ paramTys sig.capSet sig.retTy)) (match env.resolveCallee name with
+                 | some id => Proof.evFnRef id
+                 | none    => Proof.evUnhandledExpr "fn value: callee not resolvable")
       | none =>
         -- A name bound by `ghost let` is erased: reading it from runtime code is
         -- a leak, reported precisely instead of as a generic undeclared var.
@@ -888,7 +896,9 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
     match env.allFnSigPairs.lookup fnName with
     | some sig =>
       let paramTys := sig.params.map Prod.snd
-      return ElaboratedExprV2.mk (CExpr.fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)) (Proof.evUnhandledExpr "fn reference: CallableId not minted here")
+      return ElaboratedExprV2.mk (CExpr.fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)) (match env.resolveCallee fnName with
+                 | some id => Proof.evFnRef id
+                 | none    => Proof.evUnhandledExpr "fn reference: callee not resolvable")
     | none => throwElab (.unknownFunctionRef fnName) (some e.getSpan)
 
   | .methodCall _ obj methodName typeArgs args =>
@@ -1855,19 +1865,13 @@ partial def elabModule (m : Module) (summary : FileSummary)
   -- All named fn sigs for fnRef
   let fnSigPairs : List (String × FnSummary) :=
     userFnSigs ++ implMethodSigs ++ traitImplMethodSigs
-  let initEnv : ElabEnv := {
-    vars := []
-    proofPath := thisProofPath
-    structs := allStructs
-    enums := allEnums
-    fnSigs := allSigs
-    typeAliases := typeAliasMap
-    constants := constantsMap
-    traits := allTraits
-    allFnSigPairs := fnSigPairs
-    newtypes := m.newtypes ++ imports.newtypes
-  }
-  -- Elaborate only LOCAL functions (imported impl bodies are already elaborated in their module)
+  let finalDeclName := fun (f : FnDef) (implTy : Option Ty) =>
+    let localName := match implTy with
+      | some it =>
+        let tn := tyName it
+        if tn != "" then tn ++ "_" ++ f.name else f.name
+      | none => f.name
+    if proofFnPrefix.isEmpty then localName else proofFnPrefix ++ "_" ++ localName
   let regularFns := m.functions.map fun f => (f, (none : Option Ty))
   let implMethodPairs := m.implBlocks.foldl (fun acc ib =>
     let implTy := if ib.typeParams.isEmpty then tyFromName ib.typeName
@@ -1886,6 +1890,97 @@ partial def elabModule (m : Module) (summary : FileSummary)
                 isTrusted := f.isTrusted || tb.isTrusted }, some implTy)
   ) ([] : List (FnDef × Option Ty))
   let allFnPairs := regularFns ++ implMethodPairs ++ traitImplMethodPairs
+  let localCallIds : List (String × CallableId) := allFnPairs.map fun (f, implTy) =>
+    let localKey := match implTy with
+      | some it =>
+        let tn := tyName it
+        if tn != "" then tn ++ "_" ++ f.name else f.name
+      | none => f.name
+    (localKey, CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length)
+  let importedCallIds : List (String × CallableId) := m.imports.flatMap fun imp =>
+    let summary? := match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+      | some (_, s) => some (s, true)
+      | none => (summaryTable.lookup imp.moduleName).map fun s => (s, false)
+    match summary? with
+    | none => []
+    | some (s, isLocalSubmodule) => imp.symbols.filterMap fun sym =>
+      let localName := sym.effectiveName
+      match s.functions.find? fun (n, _) => n == sym.name with
+      | some (_, sig) =>
+        let defModule := if isLocalSubmodule then thisProofPath ++ "." ++ imp.moduleName else s.name
+        let declName := if isLocalSubmodule then
+            let p := if proofFnPrefix.isEmpty then imp.moduleName
+                     else proofFnPrefix ++ "_" ++ imp.moduleName
+            p ++ "_" ++ sym.name
+          else sym.name
+        some (localName, CallableId.ofUser defModule declName sig.typeParams.length)
+      | none =>
+        if s.externFnSigs.any fun (n, _) => n == sym.name then
+          some (localName, CallableId.ofExtern sym.name)
+        else none
+  -- `spec fn` declarations are resolvable targets in contracts. They were in none
+  -- of the tables below, so every contract mentioning one (hmac_sha256's
+  -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
+  -- whole subject UNCOVERED — a flagship's contracts silently outside the digest.
+  let specCallIds : List (String × CallableId) :=
+    m.specFns.map fun sf => (sf.name, CallableId.ofSpec thisProofPath sf.name)
+  let resolveContractCall : String → Option CallableId := fun name =>
+    -- AMBIGUITY FAILS CLOSED. A spec fn and a function of the same name are two
+    -- different callables, and preferring one by list order would silently pick
+    -- an abstraction over an implementation (or the reverse) inside evidence
+    -- bytes. Unresolvable is the honest answer; it makes the subject uncovered
+    -- rather than confidently wrong.
+    match specCallIds.lookup name, localCallIds.lookup name with
+    | some _, some _ => none
+    | some id, none  => some id
+    | none, _ =>
+    match localCallIds.lookup name with
+    | some id => some id
+    | none => match importedCallIds.lookup name with
+      | some id => some id
+      -- INTRINSICS BEFORE BUILTINS. Many names (`string_length` among them) appear
+      -- in both tables, and builtins-first classified compiler intrinsics as
+      -- `.builtin` — a wrong NAMESPACE in the identity, which is the one field
+      -- that exists to keep two same-named callables apart.
+      | none => match resolveIntrinsic name with
+        | some iid => some (CallableId.ofIntrinsic iid.canonicalName)
+        | none => match builtinFnSigs.find? fun (n, _) => n == name with
+          | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
+          | none => if m.externFns.any fun ef => ef.name == name
+                    then some (CallableId.ofExtern name) else none
+  -- Constant environment for contracts: identity AND meaning, built once per
+  -- module. Only the module's OWN constants: `ConstSummary` carries no initializer
+  -- and no defining module, so an imported constant has neither half available and
+  -- stays UNCOVERED — refusing rather than encoding a local guess about a foreign
+  -- definition. Declaration order lets a constant's initializer name an earlier
+  -- constant; a forward reference is not resolved and so fails closed.
+  -- Accumulated by PREPEND and reversed once. Appending a singleton to the
+  -- accumulator inside a fold over the module's constants is quadratic, which the
+  -- quadratic-append ratchet correctly rejected. Lookup here is by name, so prepend
+  -- order does not affect resolution; the single reverse restores declaration order
+  -- for anything that iterates. (Phrased without the literal operator: that ratchet
+  -- counts textual occurrences, so a comment naming the pattern trips it.)
+  -- CALLABLE RESOLUTION IS BUILT BEFORE ElabEnv, deliberately.
+  -- The CallableId must be an OUTPUT of the resolution that also selects runtime
+  -- behaviour, not a second lookup performed later: two lookups can be handed
+  -- different spellings or observe different table state and diverge while both
+  -- "use the shared helper". Installing the resolver into ElabEnv after construction
+  -- would also leave a transient window where callee identity silently resolves to
+  -- none, so every path running in it would emit gaps for a reason that is not real.
+  let initEnv : ElabEnv := {
+    vars := []
+    proofPath := thisProofPath
+    resolveCallee := resolveContractCall
+    structs := allStructs
+    enums := allEnums
+    fnSigs := allSigs
+    typeAliases := typeAliasMap
+    constants := constantsMap
+    traits := allTraits
+    allFnSigPairs := fnSigPairs
+    newtypes := m.newtypes ++ imports.newtypes
+  }
+  -- Elaborate only LOCAL functions (imported impl bodies are already elaborated in their module)
   let (fnResults, fnErrors, _) := allFnPairs.foldl (fun (acc, errs, env) (f, implTy) =>
     let env' := { env with currentImplType := implTy, traits := allTraits }
     let result := (do
@@ -2035,85 +2130,8 @@ partial def elabModule (m : Module) (summary : FileSummary)
   --
   -- Keyed by `CallableId`, not by name: two callables can share a name, and a
   -- rename must not move a subject.
-  let finalDeclName := fun (f : FnDef) (implTy : Option Ty) =>
-    let localName := match implTy with
-      | some it =>
-        let tn := tyName it
-        if tn != "" then tn ++ "_" ++ f.name else f.name
-      | none => f.name
-    if proofFnPrefix.isEmpty then localName else proofFnPrefix ++ "_" ++ localName
   -- Resolve contract calls at the same point. A textual call name is never put
   -- directly into evidence bytes: unresolved means uncovered, not guessed.
-  let localCallIds : List (String × CallableId) := allFnPairs.map fun (f, implTy) =>
-    let localKey := match implTy with
-      | some it =>
-        let tn := tyName it
-        if tn != "" then tn ++ "_" ++ f.name else f.name
-      | none => f.name
-    (localKey, CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length)
-  let importedCallIds : List (String × CallableId) := m.imports.flatMap fun imp =>
-    let summary? := match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
-      | some (_, s) => some (s, true)
-      | none => (summaryTable.lookup imp.moduleName).map fun s => (s, false)
-    match summary? with
-    | none => []
-    | some (s, isLocalSubmodule) => imp.symbols.filterMap fun sym =>
-      let localName := sym.effectiveName
-      match s.functions.find? fun (n, _) => n == sym.name with
-      | some (_, sig) =>
-        let defModule := if isLocalSubmodule then thisProofPath ++ "." ++ imp.moduleName else s.name
-        let declName := if isLocalSubmodule then
-            let p := if proofFnPrefix.isEmpty then imp.moduleName
-                     else proofFnPrefix ++ "_" ++ imp.moduleName
-            p ++ "_" ++ sym.name
-          else sym.name
-        some (localName, CallableId.ofUser defModule declName sig.typeParams.length)
-      | none =>
-        if s.externFnSigs.any fun (n, _) => n == sym.name then
-          some (localName, CallableId.ofExtern sym.name)
-        else none
-  -- `spec fn` declarations are resolvable targets in contracts. They were in none
-  -- of the tables below, so every contract mentioning one (hmac_sha256's
-  -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
-  -- whole subject UNCOVERED — a flagship's contracts silently outside the digest.
-  let specCallIds : List (String × CallableId) :=
-    m.specFns.map fun sf => (sf.name, CallableId.ofSpec thisProofPath sf.name)
-  let resolveContractCall : String → Option CallableId := fun name =>
-    -- AMBIGUITY FAILS CLOSED. A spec fn and a function of the same name are two
-    -- different callables, and preferring one by list order would silently pick
-    -- an abstraction over an implementation (or the reverse) inside evidence
-    -- bytes. Unresolvable is the honest answer; it makes the subject uncovered
-    -- rather than confidently wrong.
-    match specCallIds.lookup name, localCallIds.lookup name with
-    | some _, some _ => none
-    | some id, none  => some id
-    | none, _ =>
-    match localCallIds.lookup name with
-    | some id => some id
-    | none => match importedCallIds.lookup name with
-      | some id => some id
-      -- INTRINSICS BEFORE BUILTINS. Many names (`string_length` among them) appear
-      -- in both tables, and builtins-first classified compiler intrinsics as
-      -- `.builtin` — a wrong NAMESPACE in the identity, which is the one field
-      -- that exists to keep two same-named callables apart.
-      | none => match resolveIntrinsic name with
-        | some iid => some (CallableId.ofIntrinsic iid.canonicalName)
-        | none => match builtinFnSigs.find? fun (n, _) => n == name with
-          | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
-          | none => if m.externFns.any fun ef => ef.name == name
-                    then some (CallableId.ofExtern name) else none
-  -- Constant environment for contracts: identity AND meaning, built once per
-  -- module. Only the module's OWN constants: `ConstSummary` carries no initializer
-  -- and no defining module, so an imported constant has neither half available and
-  -- stays UNCOVERED — refusing rather than encoding a local guess about a foreign
-  -- definition. Declaration order lets a constant's initializer name an earlier
-  -- constant; a forward reference is not resolved and so fails closed.
-  -- Accumulated by PREPEND and reversed once. Appending a singleton to the
-  -- accumulator inside a fold over the module's constants is quadratic, which the
-  -- quadratic-append ratchet correctly rejected. Lookup here is by name, so prepend
-  -- order does not affect resolution; the single reverse restores declaration order
-  -- for anything that iterates. (Phrased without the literal operator: that ratchet
-  -- counts textual occurrences, so a comment naming the pattern trips it.)
   let constEnv : List (String × ConstId × String) :=
     (m.constants.foldl (init := []) fun acc c =>
       match Proof.contractCanonicalIn [] [] [] [] acc false (fun _ => none) c.value with
