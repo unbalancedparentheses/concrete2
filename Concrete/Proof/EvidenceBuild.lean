@@ -106,6 +106,29 @@ def evStructLitPending : EvidenceExprV2 :=
   .gap { code := .unhandledExpr,
          detail := "struct literal: initializer evaluation order is an open decision" }
 
+/-- A call to a resolved callee. Argument order is the ARGUMENT list's order, which is
+    the evaluation order — measured observable for calls.
+
+    An INCOMPLETE identity is refused: a generic callable missing its type arguments
+    would otherwise enter evidence looking resolved. -/
+def evCall (callee : CallableId) (args : List EvidenceExprV2) : EvidenceExprV2 :=
+  if callee.isComplete then .call callee args
+  else .gap { code := .unresolvedCallee, detail := "incomplete callee identity" }
+
+/-- A call whose callee could not be resolved to an identity at all. Separate from
+    `evCall` so the two refusal REASONS stay distinct in the gap inventory: an
+    unresolvable callee is a producer gap, an incomplete one is an identity defect. -/
+def evUnresolvedCall : EvidenceExprV2 :=
+  .gap { code := .unresolvedCallee, detail := "callee not resolvable to a CallableId" }
+
+/-- Anything the producer has no case for yet. The kind string is DIAGNOSTIC only —
+    `CompleteEvidenceBodyV2` cannot carry a gap, so it never reaches bytes. -/
+def evUnhandledExpr (kind : String) : EvidenceExprV2 :=
+  .gap { code := .unhandledExpr, detail := kind }
+
+def evUnhandledStmt (kind : String) : EvidenceStmtV2 :=
+  .gap { code := .unhandledStmt, detail := kind }
+
 /-- Parentheses are TRANSPARENT: they emit no node. `(p)` and `p` are the same program,
     so an extra wrapper would make a purely syntactic edit move the digest. -/
 def evParen (inner : EvidenceExprV2) : EvidenceExprV2 := inner
