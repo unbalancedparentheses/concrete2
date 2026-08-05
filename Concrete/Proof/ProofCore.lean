@@ -1706,7 +1706,13 @@ structure Obligation where
   status       : ObligationStatus
   spec         : Option SpecAttachment
   expectedFp   : String           -- from attachment, or ""
-  profileGates : List String      -- reasons for ineligibility (empty if eligible)
+  -- Reasons a function is not eligible for PROOF. Named for what it holds: these are
+  -- eligibility reasons (`is entry point (main)`, `has capabilities: Console`), not the
+  -- predictable-profile gates. The old name was `profileGates`, and the message built from it
+  -- claimed the function "passes the predictable profile" -- which stopped being true when
+  -- profile admission became transitive, at which point `--check predictable` and
+  -- `--report proof-status` printed opposite claims about the same function.
+  eligibilityReasons : List String
   ineligCat    : Option IneligibleCategory  -- typed ineligibility classification
   dependencies : List String      -- qualified names of proved callees
   /-- Reachable dependencies that are not current (stale / unbound / missing /
@@ -2445,7 +2451,7 @@ private def generateObligations
     , status
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
-    , profileGates := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
     , ineligCat := cat
     , dependencies := []  -- filled in second pass
     , notCurrentDeps := []
@@ -2465,7 +2471,7 @@ private def generateObligations
     , status
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
-    , profileGates := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+    , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
     , ineligCat := cat
     , dependencies := []
     , notCurrentDeps := []
@@ -2578,15 +2584,21 @@ private def generateDiagnostics
            , fingerprint := fp, expectedFp := o.expectedFp, loc := o.loc }
     | .missing =>
       some { kind := .missingProof, severity := .warning, function := qn
-           , message := s!"`{qn}` passes the predictable profile but has no registered proof."
+           -- NOT "passes the predictable profile". That phrase now means something different:
+           -- profile admission is TRANSITIVE (a caller of a recursive function fails it), while
+           -- proof eligibility is per-BODY and deliberately stays that way -- calling a recursive
+           -- function does not stop this function's own obligations from being provable. Two
+           -- notions, one phrase, and `--check predictable` and this report disagreed out loud:
+           -- `caller` was reported as PASSING the profile here while the gate rejected it.
+           , message := s!"`{qn}` is eligible for proof but has no registered proof."
            , hint := "Add a Lean proof for this function with the current fingerprint."
            , details := [], failureClass := failureClassOf .missingProof
            , repairClass := repairClassOf .missingProof
            , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .ineligible =>
-      let det := o.profileGates
+      let det := o.eligibilityReasons
       some { kind := .ineligible, severity := .info, function := qn
-           , message := s!"`{qn}` cannot be proved: fails predictable profile."
+           , message := s!"`{qn}` cannot be proved: fails the proof-eligibility gates."
            , hint := if det.isEmpty then ""
                else s!"Address these constraints to make this function eligible: {", ".intercalate det}."
            , details := det, failureClass := failureClassOf .ineligible o.ineligCat
