@@ -467,6 +467,93 @@ later-positioned task fixes a live false claim and an earlier-positioned one doe
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
 
+## Branch `spike/non-arithmetic-multi-kernel` (depends on `spike/multi-prover-evidence`)
+
+### Landed: rung 2 — boolean postconditions in all three kernels
+
+`--report bool-kernel`, gate `check_bool_kernel.sh` (14/0/0 with real provers). Obligations from
+`#[ensures(result == <boolexpr>)]` on a single-`return` body, closed by `destruct; reflexivity`
+(Rocq), `auto` (Isabelle/HOL), `decide` (Lean) — three *different* procedures, none arithmetic.
+
+Two properties the arithmetic tier does not have:
+
+- **agreement is EXHAUSTIVE**, not sampled: `2^n` assignments, all checked, so "this lowering
+  means the same proposition" is decided. Required making `evalBool` handle `.var` at all.
+- **the Rocq proofs are constructive**, `Print Assumptions` = "Closed under the global context".
+  Concrete `bool` → Rocq `bool`, NOT `Prop`: over `Prop` De Morgan needs classical logic, so the
+  lowering would put an axiom into an attestation. The kernels agree on `bool` and would not on
+  `Prop` — a portability fact only a non-arithmetic obligation surfaces.
+
+### The complexity ladder, and what each rung needs
+
+Obligations here are **closed, quantifier-free formulas per function**, lowered to text and closed
+by one tactic call. That shape is what makes rungs 1–7 reachable and rung 8 a redesign.
+
+| Rung | Needs | Status |
+|---|---|---|
+| 1. Linear arithmetic | `omega`/`lia`/`presburger` | done (base branch) |
+| 2. Propositional | boolean sorts, case analysis | **done, this branch** |
+| 3. Nonlinear arithmetic | `nia`/`polyrith` | partial: `rocqNiaLowering`; H21 blocks SMT replay |
+| 4. Bitvectors | `bv_decide`, Rocq/Isabelle Word libs | Lean only; H20 — native checker |
+| 5. Uninterpreted functions (EUF) | symbol declarations per prover | IR has `.sym`; string lowering drops calls |
+| 6. Algebraic datatypes | datatype *declarations* per prover | nothing emitted |
+| 7. Arrays | select/store | nothing |
+| 8. Induction over recursion | measure + induction scripts | see below |
+| 9. Full functional correctness | 6+7+8 | needs 8 |
+
+**Next rungs, in order:** 5 (EUF — closes the documented "calls are dropped" gap, and the IR is
+ready), then 6+7 together. The most complex thing reachable WITHOUT rung 8 is those combined in
+one obligation — a structural property over a datatype with an array field and an uninterpreted
+spec function, quantifier-free, case-analysed in three kernels. Real instances already in the
+repo: `crypto_verify`'s `verify_tag(msg, tag) ↔ compute_tag(msg) = tag` with `compute_tag`
+uninterpreted (EUF + booleans), and `elf_header`'s `validate_header` (struct fields + array
+indexing).
+
+### Lifting the recursion ban — how, and what it costs
+
+The ban does **two unrelated jobs**, and separating them is the whole design:
+
+1. **execution predictability** — bounded stack, what `--check predictable` is for;
+2. **proof tractability** — `assessEligibility` also excludes recursive functions.
+
+For (2) termination is not optional: **a non-terminating function cannot be defined in Gallina at
+all**, and Lean needs `termination_by`/structural. Isabelle admits partiality but every theorem
+then carries domain conditions. So the ban is forced by the target logics, not chosen.
+
+The mechanism is standard — an author-supplied measure:
+
+```
+#[decreases(n)]
+fn count(n: Int) -> Int { if n <= 0 { return 0; } return count(n - 1); }
+```
+
+**The key observation: the termination obligation is LINEAR ARITHMETIC** — `n > 0 → n - 1 < n` —
+so `omega`/`lia`/`presburger` close it today. Termination becomes another obligation family
+alongside overflow and bounds, reusing the multi-kernel machinery for the hard part. Extraction
+then emits `Fixpoint`/`Program Fixpoint`, `function … termination`, `termination_by`.
+
+For (1), a proved measure gives termination but **not a stack bound**; bounding the measure's
+initial value at every call site (`n ≤ 64`) bounds depth. Also arithmetic, also dischargeable.
+
+Work items, roughly in order: `#[decreases]` syntax → termination obligation family → per-kernel
+extraction of recursive definitions → induction-capable proof scripts (`render` already returns a
+whole source file, so it can emit `induction n; simp` as easily as `lia`).
+
+**The one real cost, and it should be a deliberate decision rather than a side effect:** the
+agreement check degrades. For an inductive property over unbounded inputs you cannot decide that
+a lowering means the same proposition — only sample it. The multi-kernel claim rests on that check,
+so rung 8 trades *faithfulness of the lowering* for *strength of the verification*:
+
+| | verification | lowering faithfulness |
+|---|---|---|
+| decidable goals (rungs 1–7) | weaker — no induction | **complete** (booleans: exhaustive) |
+| inductive goals (rung 8) | **stronger** | sampled — undecidable |
+
+**Stays refused regardless:** recursion through a function pointer cannot be measured locally, and
+`--check predictable` now rejects it. Mutual recursion needs a combined measure across the cycle.
+`--report stack-depth` would need the measure's bound, and if that bound is symbolic the byte
+figure becomes conditional — worth care, since a false byte count was removed from it this week.
+
 ## PRE-MERGE STATE of `spike/multi-prover-evidence` (recorded 2026-08-05)
 
 Written for a merge performed on a different machine. Everything below is either a
