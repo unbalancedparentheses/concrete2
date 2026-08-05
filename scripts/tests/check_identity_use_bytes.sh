@@ -221,5 +221,51 @@ else
   ok "the shadow digest is absent from SubjectFacts, so canonical cannot include it"
 fi
 
+# CONVERGENCE TRIPWIRE: the derived flat view vs the independent accumulator.
+#
+# `flatUsesOf` derives the legacy flat view FROM the tree so the accumulator can be
+# deleted — but only once they AGREE. Measured today they do NOT: the tree emits gaps for
+# structLit/enumLit/fieldAccess/match, so it carries no typeRef/field/variant uses while
+# the accumulator has them from lookupStruct/lookupEnum. Deleting the accumulator now
+# would silently drop every type, field and variant identity from the subject.
+#
+# This leg asserts the CURRENT divergence on purpose. It fails when the tree starts
+# carrying those identities, which is the signal that the accumulator can go.
+CMP="$(mktemp -d)"
+cat > "$CMP/p.lean" <<'LEAN'
+import Concrete
+open Concrete Concrete.Proof
+def cmp (src : String) : String :=
+  match (do
+    let pa ← Pipeline.parse src
+    let sm := Pipeline.buildSummary pa
+    let r ← Pipeline.resolve pa sm
+    Pipeline.check r sm
+    let el ← Pipeline.elaborate r sm
+    pure el.coreModules : Except Diagnostics (List CModule)) with
+  | .error _ => "ERR"
+  | .ok ms =>
+    let facts := (ms.map CModule.declFacts).flatten
+    let bodies := (ms.map CModule.evidenceBodies).flatten
+    let rows := facts.filterMap fun f =>
+      match bodies.find? (fun p => Prod.fst p == CheckedDeclFacts.id f) with
+      | none => some "NO-BODY"
+      | some p =>
+        let acc := ProofBodyIdentityInputsV2.uses (CheckedDeclFacts.bodyIdentityInputs f)
+        let der := flatUsesOf (Prod.snd p)
+        if acc == der then none else some "DIFF"
+    if rows.isEmpty then "AGREE" else "DIVERGE"
+#eval IO.println (cmp "mod m { struct Copy P { x: Int, y: Int } pub fn f(p: Int) -> Int { let q: P = P { x: p, y: 1 }; return q.x; } }")
+LEAN
+cmpout="$(lake env lean "$CMP/p.lean" 2>/dev/null | tr -d '\n' || true)"
+rm -rf "$CMP"
+if [ "$cmpout" = "DIVERGE" ]; then
+  ok "TRIPWIRE: derived flat view still diverges from the accumulator (tree lacks type/field/variant identities)"
+elif [ "$cmpout" = "AGREE" ]; then
+  no "the derived view now AGREES with the accumulator — wire struct/enum/field/variant identities confirmed, so DELETE the independent accumulator and convert this tripwire"
+else
+  no "convergence probe was inconclusive ([$cmpout]) — neither AGREE nor DIVERGE"
+fi
+
 echo "IDENTITY-USE-BYTES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

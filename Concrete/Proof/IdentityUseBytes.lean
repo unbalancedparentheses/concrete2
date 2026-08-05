@@ -266,6 +266,67 @@ partial def armBytes : EvidenceArmV2 → String
 
 end
 
+/-! ## Deriving the legacy flat view from the tree
+
+`bodyIdentityUses` is accumulated independently during elaboration, so it and the tree are
+two producers of one fact. These functions derive the flat view FROM the tree, so the
+accumulator can be deleted once the two are shown to agree on the real corpus.
+
+Order is the tree's traversal order, which is the order elaboration visits nodes — the
+same order the accumulator recorded in. Exhaustive at every level: a new constructor must
+state whether it contributes a use, or the derived view would silently lose one.
+-/
+
+mutual
+
+partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
+  | .binderRef o i   => [.binderRef o i]
+  | .intLit _ _ | .floatLit _ _ | .boolLit _ | .strLit _ | .charLit _
+  | .constRef _ | .fnRef _ | .gap _ => []
+  | .unary _ x | .deref x | .borrow _ x => exprFlatUses x
+  | .binary _ l r    => exprFlatUses l ++ exprFlatUses r
+  | .index c i       => exprFlatUses c ++ exprFlatUses i
+  | .call _ args     => args.flatMap exprFlatUses
+  | .field id o      => [.field id] ++ exprFlatUses o
+  | .structLit t fs  => [.typeRef t] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
+  | .variantLit i fs => [.variant i] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
+  | .cast t x        => [.typeRef t] ++ exprFlatUses x
+  | .arrayLit t els  => [.typeRef t] ++ els.flatMap exprFlatUses
+  | .tryProp x t     => [.typeRef t] ++ exprFlatUses x
+
+partial def patternFlatUses : EvidencePatternV2 → List BodyIdentityUse
+  | .wildcard | .binder | .gap _ => []
+  | .intLit _ _ | .boolLit _ | .strLit _ | .charLit _ => []
+  | .variant i fs   => [.variant i] ++ fs.flatMap (fun fp => [.field fp.1] ++ patternFlatUses fp.2)
+  | .structPat t fs => [.typeRef t] ++ fs.flatMap (fun fp => [.field fp.1] ++ patternFlatUses fp.2)
+  | .range lo hi _  => exprFlatUses lo ++ exprFlatUses hi
+
+partial def stmtFlatUses : EvidenceStmtV2 → List BodyIdentityUse
+  | .gap _ | .continueStmt _ => []
+  | .letBind t e     => (t.map (fun ty => [BodyIdentityUse.typeRef ty])).getD [] ++ exprFlatUses e
+  | .assign p v      => exprFlatUses p ++ exprFlatUses v
+  | .ret v           => (v.map exprFlatUses).getD []
+  | .breakStmt _ v   => (v.map exprFlatUses).getD []
+  | .exprStmt e _    => exprFlatUses e
+  | .deferStmt a     => exprFlatUses a
+  | .assertStmt pr | .assumeStmt pr => exprFlatUses pr
+  | .branch c t e    => exprFlatUses c ++ t.flatMap stmtFlatUses ++ e.flatMap stmtFlatUses
+  | .match_ sc arms  => exprFlatUses sc ++ arms.flatMap armFlatUses
+  | .loop c inv var b => exprFlatUses c ++ inv.flatMap exprFlatUses
+                          ++ (var.map exprFlatUses).getD [] ++ b.flatMap stmtFlatUses
+  | .block sts       => sts.flatMap stmtFlatUses
+
+partial def armFlatUses : EvidenceArmV2 → List BodyIdentityUse
+  | .gap _ => []
+  | .arm pat guard body =>
+      patternFlatUses pat ++ (guard.map exprFlatUses).getD [] ++ body.flatMap stmtFlatUses
+
+end
+
+/-- The legacy flat identity-use view, DERIVED from the structural body. -/
+def flatUsesOf (b : EvidenceBodyDraftV2) : List BodyIdentityUse :=
+  b.statements.flatMap stmtFlatUses
+
 /-- Canonical bytes for a COMPLETE evidence body. Only the complete type is accepted, so
     a gap reason cannot reach digest bytes — that is a type error, not a rule. -/
 def bodyBytesV2 (b : CompleteEvidenceBodyV2) : String :=
