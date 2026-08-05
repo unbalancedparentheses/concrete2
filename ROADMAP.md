@@ -123,6 +123,59 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
+### R-0004 evidence producer — landed state (2026-08-05)
+
+Canonical inventory of what exists, so the next session does not re-derive it. The
+constructor-by-constructor classification lives in `docs/EVIDENCE_PRODUCER_MATRIX.md`
+(gated against the AST, so it cannot silently omit a form).
+
+**Producer.** `elabExprEv` / `elabStmtEv` / `elabStmtsEv` / `elabCallEv` are ONE producer of
+Core and evidence. All 104 semantic child edges thread evidence; zero Core-only projections
+remain inside the mutual block, asserted by `check_binder_refs`. Callee identity is an
+OUTPUT of the resolution that selects runtime behaviour — one owner, installed at ElabEnv
+construction so there is no fail-open window.
+
+**Vocabulary now real, not gaps.** Literals with semantic width, binder references as
+relative lexical positions, constants, fn references, operators, calls with arguments in
+evaluation order, field access, struct literals, enum/variant literals, match with arm
+patterns and guards, arrays, index, deref, borrow, cast, try, defer, assert, assume.
+
+**Loop frames.** `ElabEnv.loopFrames` tracks enclosing loops innermost-first;
+`break`/`continue` carry a RELATIVE depth, never a label spelling, and both failure modes
+(no enclosing loop, label matching none) refuse rather than defaulting to 0. The frame
+covers the loop BODY only — a `break` in a while condition is not inside that loop.
+
+**Structural serializer.** `bodyBytesV2` accepts only `CompleteEvidenceBodyV2`, so a gap
+reason cannot reach digest bytes — a type error, not a rule. Distinct programs now produce
+distinct bytes: operators, nesting, argument order, field selection, variant selection and
+arm order all discriminate. The flat identity-use serializer could do none of that.
+
+**A latent bug worth remembering.** `ElaboratedExprV2` was declared in the Proof layer where
+`CExpr` is not in scope, so Lean AUTO-BOUND `CExpr` as an implicit type variable: the
+structure was silently polymorphic over a made-up type with its field in `Prop`. It sat in
+published, CI-green code because NOTHING HAD EVER CONSTRUCTED IT — the gates exercised the
+tree in isolation. A type nobody builds is a type nobody has checked. Fixed by moving the
+pairing types to the Elab layer, which is also the correct layering, and gated both ways.
+
+**Remaining, in order.** Each is an entry in `check_convergence_inventory.sh`:
+
+1. Delete the independent `bodyIdentityUses` accumulator. UNBLOCKED — the tree is proven to
+   lose nothing (subsequence containment across struct/field, enum/match, calls, loops).
+   Note the criterion is CONTAINMENT, not equality: the derived view is richer, because the
+   accumulator under-recorded pattern field uses.
+2. Switch shadow mode to `bodyBytesV2`.
+3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
+   and assumption edges, table reachability.
+4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong
+   proof status rather than rework.
+5. The 44-fingerprint migration and kernel replay.
+6. Receipts.
+7. The ninth proof table (blocked on mutable-borrow extraction).
+
+**Still unmeasured:** whether `lookupVar`'s raw binder position is stable across parameters,
+lets, loops, patterns and temporary scopes. Nothing depends on it — relative frame positions
+are used instead — and it must not enter canonical bytes until measured.
+
 ### Multi-prover merge: what it took, and what it left open (2026-08-05)
 
 Merged the spike pinned at `80be5368` into main after the quarantine review. The merge
