@@ -756,6 +756,73 @@ later-positioned task fixes a live false claim and an earlier-positioned one doe
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
 
+## Standing reference: open holes, register status, and how to write a gate
+
+_Extracted from the `spike/multi-prover-evidence` pre-merge record after that merge landed._
+_The merge-specific parts are dropped; what follows outlives it._
+
+### Known holes still open (from `docs/KNOWN_HOLES.md`)
+
+- **H19 — the Core→obligation bridge is unproven.** Listed above; repeated here because it is the
+  largest single gap in the trust story.
+- **H20 — `bv_decide`'s certificate check runs as native code.** The bitvector decision procedure
+  is trusted at the level of its checker binary, not the Lean kernel.
+- **H21 — nonlinear SMT results cannot be certificate-replayed** (upstream limitation). A
+  nonlinear goal closed by an SMT solver stays `solver_trusted`; only linear goals reach
+  `proved_by_lean_replay`.
+
+Related ceiling, measured and documented rather than assumed: **SMT datatype goals are provable
+but not Alethe-certifiable.** cvc5 proves a ground datatype goal and cannot emit a replayable
+certificate for it, so non-arithmetic obligations are kernel-proved rather than
+certificate-replayed. This is what a non-arithmetic multi-prover example (item 6 above) would run
+into, and it is a property of the tooling, not of this repo.
+
+### Register status, plainly
+
+- **Register A** (obligation sufficiency): 0 of 5 discharged, 4 half-discharged. Half means the
+  row is still *trusted*.
+- **Register B** (transformation soundness): 1 of 3 rows discharged (`eliminate_tmod`).
+- **Register C** (evidence composition): gated (59 assertions) rather than expressed as a row
+  table; no per-row discharge tracking exists for it yet, which is itself a gap.
+- **Discovery completeness** (added 2026-08-05): 4 of 4 runtime-safety families. This register did
+  not exist before and answers the question the other three structurally cannot — whether an
+  obligation is generated at all.
+
+### The composition test is opt-in
+
+`check_multi_kernel.sh`'s final section — a disagreeing lowering must not earn the two-kernel
+badge or pass the release gate — is **skipped unless `MULTI_KERNEL_MUTATE=1`**, because it mutates
+tracked source and needs two rebuilds. It therefore does NOT run in the normal 78/78 pass. Any
+claim that composition is gated should say "when that variable is set".
+
+### Writing gates that actually bite — checklist earned the hard way
+
+Recorded because this session produced eight concrete failures of gate quality, and the pattern
+is consistent enough to be a rule rather than an anecdote.
+
+1. **Assert the property, not the code.** Six assertions of mine fired on non-regressions. Every
+   one quoted something syntactic — an argument list, a call site verbatim, a mechanism ("the
+   access is NAMED") — and broke when the code improved. Twice the *same* assertion broke twice.
+2. **A check that greps one error class treats every other failure as success.** A sweep reported
+   GREEN from a loop whose exit condition looked only for termination errors, so
+   `cannot mix partial and non-partial definitions` read as a pass.
+3. **Never interrogate a binary you did not just build.** An end-to-end assertion passed while the
+   fix was reverted, because the mutated source failed to compile and `lake` left the old
+   executable in place. An mtime comparison is also wrong — `lake` does not relink on a cache hit.
+   Build inside the gate and fail if the build fails.
+4. **A section guarded on a temp dir skips itself when the build breaks.** Guard on failure, not on
+   the presence of a variable an unbuildable tree never sets.
+5. **Mutations must COMPILE to count.** A mutation rejected by the unused-variable lint looks
+   killed and tests nothing. Classify those INVALID; do not report them as kills.
+6. **Distinguish an equivalent mutant from a survivor.** Making a declaration visible to its own
+   statement is unobservable (a `let` initialiser cannot index the name being declared) — that is
+   INVALID, not a gate weakness.
+7. **A completeness theorem needs three things**, or it is true and worthless: a satisfiable
+   antecedent (non-vacuity), a negative case (the conclusion discriminates), and its boundary
+   pinned so `∀ e, P e → Q e` is not read as global completeness when `P` is narrow.
+8. **A false number is worse than a missing one**, because it is quotable. `--report stack-depth`
+   stated `Max stack bound: 32 bytes` for arbitrarily deep recursion.
+
 ## Outstanding work recorded 2026-08-04
 
 Everything below was found or deferred during the R-0460..R-0465 arc and is filed here so it
