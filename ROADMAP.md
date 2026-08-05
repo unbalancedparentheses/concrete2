@@ -570,7 +570,7 @@ rung on evidence quality overall: fewest kernels AND no certificate path.
 |---|---|
 | Lean | `bv_decide` works with `import Std.Tactic.BVDecide`. H20: its checker runs as native code |
 | Rocq | stdlib has only `Z`-level bitwise (`Z.land`, axiom-free). **No fixed-width word type.** A faithful 8-bit model needs an external library (bbv / coq-bits — absent) or `Z`-with-modulus |
-| Isabelle | `HOL-Library.Word` exists, but the session must be `= "HOL-Library"` (not `HOL`), and it builds in ~1:27 wall / 8:09 CPU — too slow for a per-run gate without a prebuilt heap |
+| Isabelle | `HOL-Library.Word` **loads fine** (session must be `= "HOL-Library"`, not `HOL`), but builds in ~1:27 wall / 8:09 CPU — too slow for a per-run gate without a prebuilt heap. Two attempts at the word bitwise-operator spelling failed with `Type unification failed: clash of "_ ⇒ _" and "_ word"`; that is a syntax question, not a capability one, and was left unresolved rather than guessed at |
 
 This is the one rung where the kernels would not be proving the same thing. Modelling Rocq's side
 as `Z`-with-modulus makes the three lowerings *different theories*, so the tier would need a proof
@@ -612,9 +612,19 @@ first (`magic h`), Lean puts it last (`h.magic`). Everything else about the prop
   quantifier-free, case-analysed in three kernels). `crypto_verify` and `elf_header` are the real
   instances.
 
-**Recommended order given the above:** 6 + 7 first (no blockers, highest value, reaches the
-ceiling), then rung 4 only if the model-equivalence proof is wanted, and rung 3 only alongside a
-decision about Mathlib.
+**Order followed:** 6 + 7 landed (see above — the ceiling). Rungs 3 and 4 are deliberately NOT
+implemented, and the reasons are different:
+
+- **Rung 3 was not built because a 2-of-3 tier would misrepresent the branch's claim.** The whole
+  point of these tiers is that N *independent* kernels agree; a nonlinear tier with Lean absent is
+  materially weaker, and labelling it "multi-kernel" would overstate it. It is cheap to add if
+  2-of-3 is acceptable — the Rocq and Isabelle tactics are both verified working above — but that
+  is a call about what the evidence is allowed to claim, not a technical gap.
+- **Rung 4 was not built because the three kernels do not share a type**, so the tier would owe a
+  proof that a `Z`-with-modulus model is equivalent to fixed-width semantics. That is a
+  Register-B-style transformation obligation and the actual content of the rung; the lowering is
+  the easy half. `bv_decide`'s native checker (H20) also caps the Lean column's evidence quality
+  regardless of how the model question is settled.
 
 ### Lifting the recursion ban — how, and what it costs
 
