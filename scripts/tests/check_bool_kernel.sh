@@ -158,6 +158,124 @@ grep -q "From Stdlib Require Import Bool" "$REPORT" \
   && ok "and imports Bool (required for nested boolean equality \`eqb\`)" \
   || no "the Bool import is gone — a nested equality will be a Prop/bool type error"
 
+# ============================ RUNG 5: EUF ============================
+echo "=== EUF (rung 5): uninterpreted spec functions in three kernels ==="
+EUFDEMO="examples/euf_kernel_demo/src/main.con"
+if [ ! -f "$EUFDEMO" ]; then
+  no "$EUFDEMO missing"
+else
+EW="$WORK/euf"; mkdir -p "$EW/n"
+"$BIN" "$EUFDEMO" --report bool-kernel > "$EW/report.txt" 2>&1
+
+# The symbol must be QUANTIFIED, never declared: a `Parameter`/`axiom` would enter the trusted
+# base and `Print Assumptions` would report it, turning an axiom-free attestation into an
+# axiom-bearing one.
+if grep -qE "^Parameter |^Axiom |^axiom " "$EW/report.txt"; then
+  no "a spec symbol is DECLARED (Parameter/Axiom) — that puts it in the trusted base"
+else
+  ok "spec symbols are quantified function variables, never declared"
+fi
+
+# Propositional abstraction is sound in ONE direction. It must never claim to refute: an earlier
+# version reported "FALSE — no kernel should close it" for CONGRUENCE, the defining property of
+# an uninterpreted function.
+if grep -q "no kernel should close it" "$EW/report.txt"; then
+  no "the abstraction claims to REFUTE — it cannot; it forgets that f is a function"
+else
+  ok "the abstraction only ever confirms (tautology) or reports inconclusive"
+fi
+grep -q "congruence#euf0\]" "$EW/report.txt" \
+  && ok "a congruence obligation is collected" \
+  || no "the congruence obligation is missing"
+# Symmetry through an opaque term IS a tautology once equality atoms are normalised: `f m = t`
+# and `t = f m` are one atom, and treating them as two made this look falsifiable.
+awk '/sym_through_opaque#euf0/{f=1} f&&/abstraction:/{print;exit}' "$EW/report.txt" \
+  | grep -q "tautology" \
+  && ok "symmetry through an opaque term is a tautology (equality atoms are normalised)" \
+  || no "equality atoms are not normalised — `f m = t` and `t = f m` count as two atoms"
+# And congruence must be inconclusive, not a tautology — that is the documented incompleteness.
+awk '/eufdemo.congruence#euf0/{f=1} f&&/abstraction:/{print;exit}' "$EW/report.txt" \
+  | grep -q "inconclusive" \
+  && ok "congruence is inconclusive under abstraction (the incompleteness, shown)" \
+  || no "congruence is being reported as decided — the abstraction cannot decide it"
+
+python3 - "$EW/report.txt" "$EW" <<'PYEUF'
+import re, sys
+report, work = sys.argv[1], sys.argv[2]
+txt = open(report).read()
+for b in re.split(r"\n  \[", txt)[1:]:
+    if "#euf" not in b.split("]")[0]: continue
+    name = b.split("]")[0].split(".")[1].split("#")[0]
+    def sect(marker):
+        # bounded by the NEXT marker, not end-of-block: an unbounded `.*?$` swallowed the other
+        # kernels' sections and produced files that could not parse.
+        m = re.search(r"--- " + marker + r" ---\n(.*?)(?=\n    ---|\Z)", b, re.S)
+        return m.group(1).rstrip() if m else None
+    for mk, ext in [("lean:by_cases", ".lean"), ("rocq:congruence", ".v")]:
+        v = sect(mk)
+        if v: open(f"{work}/{name}{ext}", "w").write(v + "\n")
+    iv = sect(r"isabelle:auto \(euf\)")
+    if iv:
+        d = work + "/n" if name == "bad_constant" else work
+        open(f"{d}/Thy_{name}.thy", "w").write(iv.replace("theory EufGoal", f"theory Thy_{name}") + "\n")
+good = ["sym_through_opaque", "congruence", "nested", "demorgan_opaque"]
+open(f"{work}/ROOT", "w").write("session EUF = HOL +\n  theories\n" + "".join(f"    Thy_{n}\n" for n in good))
+open(f"{work}/n/ROOT", "w").write("session EUFN = HOL +\n  theories\n    Thy_bad_constant\n")
+PYEUF
+
+EUF_TRUE="sym_through_opaque congruence nested demorgan_opaque"
+ELC=0
+for t in $EUF_TRUE; do
+  timeout 300 lake env lean "$EW/$t.lean" >/dev/null 2>&1 && ELC=$((ELC+1))
+done
+[ "$ELC" = "4" ] \
+  && ok "lean closed all 4 EUF goals (by_cases on DECIDABLE atoms, no classical axiom)" \
+  || no "lean closed only $ELC of 4 EUF goals"
+if timeout 300 lake env lean "$EW/bad_constant.lean" >/dev/null 2>&1; then
+  no "lean CLOSED \`f m = f t\` — the symbol is not uninterpreted"
+else
+  ok "lean refuses \`f m = f t\` (nothing implies an opaque f is constant)"
+fi
+
+if command -v coqc >/dev/null 2>&1; then
+  ERC=0; EAX=0
+  for t in $EUF_TRUE; do
+    O="$( cd "$EW" && coqc "$t.v" 2>&1 )"
+    echo "$O" | grep -q "Closed under the global context" && EAX=$((EAX+1))
+    echo "$O" | grep -qiE "^error|error:" || ERC=$((ERC+1))
+  done
+  [ "$ERC" = "4" ] && ok "rocq closed all 4 EUF goals" || no "rocq closed only $ERC of 4 EUF goals"
+  # The important one. `~(A/\B) -> ~A \/ ~B` is classically valid; importing `Classical` would
+  # close it and show up here as an axiom. Decidable case analysis keeps it clean.
+  [ "$EAX" = "4" ] \
+    && ok "all 4 are AXIOM-FREE — no Classical import leaked in" \
+    || no "only $EAX of 4 axiom-free — a classical axiom is in the attestation"
+  BO="$( cd "$EW" && coqc bad_constant.v 2>&1 )"
+  if echo "$BO" | grep -qiE "congruence failed|Tactic failure|No applicable"; then
+    ok "rocq refuses \`f m = f t\`"
+  else
+    no "rocq did not refuse \`f m = f t\`"
+  fi
+else
+  inconc "coqc absent — EUF Rocq assertions (incl. axiom-freedom) not run"
+fi
+
+if command -v isabelle >/dev/null 2>&1; then
+  EIO="$( cd "$EW" && isabelle build -D . 2>&1 )"
+  printf '%s' "$EIO" | grep -q "^Finished" \
+    && ok "isabelle closed all 4 EUF goals" \
+    || no "isabelle did not finish the EUF session"
+  EIN="$( cd "$EW/n" && isabelle build -D . 2>&1 )"
+  if printf '%s' "$EIN" | grep -qE "Failed to finish proof|FAILED"; then
+    ok "isabelle refuses \`f m = f t\`"
+  else
+    no "isabelle did not refuse \`f m = f t\`"
+  fi
+else
+  inconc "isabelle absent — EUF HOL assertions not run"
+fi
+fi
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]

@@ -282,5 +282,332 @@ example : badObl.holdsEverywhere = some false := rfl
 -- Outside the fragment renders as `none` rather than being guessed at.
 example : renderBool rocqBoolOps (.intLit spB 3) = none := rfl
 
+/-! # Rung 5 — uninterpreted functions (EUF)
+
+A `spec fn f(x: i32) -> i32;` is body-less, pure and erased: an **uninterpreted function**. The
+string lowering drops calls entirely today (`exprToProver` returns `none`), which is the
+documented gap this closes.
+
+## Two design decisions, both load-bearing
+
+**The symbol becomes a QUANTIFIED FUNCTION VARIABLE, not a declared constant.** `Parameter f : Z
+-> Z` in Rocq, or an `axiom` in Lean, would put a declaration into the trusted base and
+`Print Assumptions` would report it — turning an axiom-free attestation into an axiom-bearing one.
+Quantifying instead (`forall (f : Z -> Z), …`) proves the goal for EVERY interpretation of `f`,
+which is both stronger and axiom-free. Verified: both Rocq lemmas report
+"Closed under the global context".
+
+**This tier has a SEPARATE renderer from the boolean one, deliberately.** EUF goals live at
+proposition level (`(t = f m) <-> (f m = t)`); boolean postconditions live at `bool` level
+(`(!a || !b) = !(a && b)`). Forcing one renderer to do both is exactly what produced the `xor`
+type error — nested `a = b` emitted as a `bool` when it was a `Prop`. Two sorts, two renderers.
+
+## What DEGRADES here, stated plainly
+
+The boolean tier's agreement check is **exhaustive**: `2^n` assignments decide whether a lowering
+means the same proposition. That is impossible for EUF — an uninterpreted symbol has infinitely
+many interpretations, so there is no finite table to enumerate.
+
+What replaces it is **propositional abstraction**: each distinct comparison containing a spec call
+becomes a boolean atom, and the goal is checked as a propositional tautology over all assignments
+to those atoms. That is **sound** — a propositional tautology holds under every interpretation of
+the symbols — and **incomplete**: `x = y -> f x = f y` is EUF-valid but NOT a propositional
+tautology over the atoms `x = y` and `f x = f y`, because the abstraction forgets that `f` is a
+function. So a goal the reference check cannot confirm may still be closed by the kernels, and
+this tier reports `abstraction: inconclusive` rather than claiming agreement.
+
+That is the first rung where the reference check stops being decisive, and it is the same
+trade the roadmap records for induction — one rung earlier and milder.
+-/
+
+/-- One EUF obligation: `bodyExpr <-> postExpr` at proposition level, over quantified
+    integer variables and quantified uninterpreted symbols. -/
+structure EufObl where
+  fnQual   : String
+  key      : String
+  /-- Uninterpreted symbols used, as `(name, arity)`. Quantified, never declared. -/
+  symbols  : List (String × Nat)
+  /-- Integer variables to quantify. -/
+  intVars  : List String
+  /-- `#[requires]` clauses — the hypotheses. -/
+  hyps     : List Expr
+  /-- The `#[ensures]` clause — the conclusion. -/
+  concl    : Expr
+
+/-- Every spec-function application in an expression, as `(name, arity)`. -/
+partial def specCallsOf (specNames : List String) : Expr → List (String × Nat)
+  | .call _ f _ args =>
+      (if specNames.contains f then [(f, args.length)] else [])
+        ++ args.flatMap (specCallsOf specNames)
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specCallsOf specNames e
+  | .binOp _ _ l r => specCallsOf specNames l ++ specCallsOf specNames r
+  | _ => []
+
+/-- Collect EUF obligations as `requires -> ensures`.
+
+    NOT from the function body: a `spec fn` is **erased**, so it cannot appear in executable
+    code at all (`E0101: unknown function` if you try). Uninterpreted symbols live only in
+    contracts, which is why this tier reads the contract rather than substituting a body the way
+    the boolean tier does.
+
+    Clauses mentioning `result` are skipped: relating `result` to anything needs the operational
+    step, which is the `refinement` profile's job and not attempted here. -/
+def eufObligations (modules : List Module) : List EufObl := Id.run do
+  let specNames := modules.flatMap (fun m => m.specFns.map (·.name))
+  let mut out : List EufObl := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    if !f.params.isEmpty && f.params.all (fun p => p.ty != .bool) then
+      let mentionsResult : Expr → Bool := fun e =>
+        ((Concrete.fmtExpr e).splitOn "result").length > 1
+      let hyps := f.requires.filter (fun h => !mentionsResult h)
+      let mut i := 0
+      for ens in f.ensures do
+        if !mentionsResult ens then
+          let syms := ((hyps.flatMap (specCallsOf specNames))
+                        ++ specCallsOf specNames ens).eraseDups
+          if !syms.isEmpty then
+            out := out ++ [{ fnQual := pfx ++ f.name, key := s!"{pfx}{f.name}#euf{i}"
+                           , symbols := syms, intVars := f.params.map (·.name)
+                           , hyps := hyps, concl := ens }]
+            i := i + 1
+  return out
+
+/-! ### Proposition-level rendering, one spelling set per kernel -/
+
+private structure PropOps where
+  and_  : String
+  or_   : String
+  not_  : String
+  /-- Integer comparison at Prop level. -/
+  cmp   : BinOp → String → String → Option String
+  /-- Bi-implication. -/
+  iff   : String
+  /-- `f a b` application. -/
+  app   : String → List String → String
+
+private def rocqCmp : BinOp → String → String → Option String
+  | .eq, a, b => some s!"({a} = {b})"
+  | .neq, a, b => some s!"({a} <> {b})"
+  | .lt, a, b => some s!"({a} < {b})"
+  | .leq, a, b => some s!"({a} <= {b})"
+  | .gt, a, b => some s!"({a} > {b})"
+  | .geq, a, b => some s!"({a} >= {b})"
+  | _, _, _ => none
+
+private def isaCmp : BinOp → String → String → Option String
+  | .eq, a, b => some s!"({a} = {b})"
+  | .neq, a, b => some s!"({a} ~= {b})"
+  | .lt, a, b => some s!"({a} < {b})"
+  | .leq, a, b => some s!"({a} <= {b})"
+  | .gt, a, b => some s!"({a} > {b})"
+  | .geq, a, b => some s!"({a} >= {b})"
+  | _, _, _ => none
+
+private def leanCmp : BinOp → String → String → Option String
+  | .eq, a, b => some s!"({a} = {b})"
+  | .neq, a, b => some s!"({a} ≠ {b})"
+  | .lt, a, b => some s!"({a} < {b})"
+  | .leq, a, b => some s!"({a} ≤ {b})"
+  | .gt, a, b => some s!"({a} > {b})"
+  | .geq, a, b => some s!"({a} ≥ {b})"
+  | _, _, _ => none
+
+private def rocqPropOps : PropOps :=
+  { and_ := "/\\", or_ := "\\/", not_ := "~", cmp := rocqCmp, iff := "<->"
+  , app := fun f as => s!"({f} {" ".intercalate as})" }
+private def isaPropOps : PropOps :=
+  { and_ := "&", or_ := "|", not_ := "~", cmp := isaCmp, iff := "="
+  , app := fun f as => s!"({f} {" ".intercalate as})" }
+private def leanPropOps : PropOps :=
+  { and_ := "∧", or_ := "∨", not_ := "¬", cmp := leanCmp, iff := "↔"
+  , app := fun f as => s!"({f} {" ".intercalate as})" }
+
+/-- Integer-level term (inside a comparison): variables, literals, spec applications. -/
+private partial def renderTerm (ops : PropOps) : Expr → Option String
+  | .ident _ n => some n
+  | .intLit _ v => some (toString v)
+  | .paren _ e => renderTerm ops e
+  | .call _ f _ args => do
+      let as ← args.mapM (renderTerm ops)
+      some (ops.app f as)
+  | .binOp _ .add l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} + {b})"
+  | .binOp _ .sub l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} - {b})"
+  | .binOp _ .mul l r => do let a ← renderTerm ops l; let b ← renderTerm ops r; some s!"({a} * {b})"
+  | _ => none
+
+/-- Proposition-level formula: boolean structure over integer comparisons. -/
+private partial def renderProp (ops : PropOps) : Expr → Option String
+  | .paren _ e => renderProp ops e
+  | .unaryOp _ .not_ e => do let x ← renderProp ops e; some s!"({ops.not_} {x})"
+  | .binOp _ .and_ l r => do
+      let a ← renderProp ops l; let b ← renderProp ops r; some s!"({a} {ops.and_} {b})"
+  | .binOp _ .or_ l r => do
+      let a ← renderProp ops l; let b ← renderProp ops r; some s!"({a} {ops.or_} {b})"
+  | .binOp _ op l r => do
+      let a ← renderTerm ops l; let b ← renderTerm ops r; ops.cmp op a b
+  | _ => none
+
+/-- Atom key for the abstraction, with EQUALITY NORMALISED.
+
+    `tag_of(m) = t` and `t = tag_of(m)` are the same atom, and rendering them as different
+    strings made symmetry-through-an-opaque-term look falsifiable: the abstraction counted one
+    atom as two independent ones. Equality and disequality are symmetric, so the two sides are
+    sorted; the ordering comparisons are not, so they are left alone. -/
+private partial def atomKey (ops : PropOps) : Expr → Option String
+  | .paren _ e => atomKey ops e
+  | .binOp _ op l r =>
+      if op == .eq || op == .neq then do
+        let a ← renderTerm ops l
+        let b ← renderTerm ops r
+        let (x, y) := if a ≤ b then (a, b) else (b, a)
+        ops.cmp op x y
+      else do
+        let a ← renderTerm ops l; let b ← renderTerm ops r; ops.cmp op a b
+  | _ => none
+
+/-- Operand pairs of EQUALITY atoms, for decidable case analysis. Normalised the same way as
+    `atomKey` so `a = b` and `b = a` yield one split. -/
+private partial def eqPairs (ops : PropOps) : Expr → List (String × String)
+  | .paren _ e => eqPairs ops e
+  | .unaryOp _ .not_ e => eqPairs ops e
+  | .binOp _ .and_ l r => eqPairs ops l ++ eqPairs ops r
+  | .binOp _ .or_ l r => eqPairs ops l ++ eqPairs ops r
+  | .binOp _ op l r =>
+      if op == .eq || op == .neq then
+        match renderTerm ops l, renderTerm ops r with
+        | some a, some b => [if a ≤ b then (a, b) else (b, a)]
+        | _, _ => []
+      else []
+  | _ => []
+
+/-- The obligation as one kernel's proposition: `h1 -> h2 -> … -> concl`. -/
+def EufObl.prop (o : EufObl) (ops : PropOps) (arrow : String) : Option String := do
+  let hs ← o.hyps.mapM (renderProp ops)
+  let c ← renderProp ops o.concl
+  some (String.join (hs.map (fun h => s!"({h}) {arrow} ")) ++ s!"({c})")
+
+/-- Rocq: symbols and variables quantified, closed by `congruence` — which reasons about
+    equality with uninterpreted functions and nothing more. -/
+def EufObl.rocqScript (o : EufObl) : Option String := do
+  let p ← o.prop rocqPropOps "->"
+  let pairs := ((o.hyps.flatMap (eqPairs rocqPropOps)) ++ eqPairs rocqPropOps o.concl).eraseDups
+  let eqDestructs := pairs.map fun (a, b) => s!"destruct (Z.eq_dec {a} {b})"
+  let symBinders := o.symbols.map fun (n, ar) =>
+    s!"({n} : {" -> ".intercalate (List.replicate ar "Z")} -> Z)"
+  let varBinder := if o.intVars.isEmpty then "" else s!"({" ".intercalate o.intVars} : Z) "
+  some <| "\n".intercalate
+    [ "(* EUF: the spec function is a QUANTIFIED variable, not a Parameter — so"
+    , "   Print Assumptions stays clean and the result holds for every interpretation. *)"
+    , "From Stdlib Require Import ZArith."
+    , "Open Scope Z_scope."
+    , s!"Lemma eufgoal : forall {" ".intercalate symBinders} {varBinder}, {p}."
+    -- `congruence` alone is not enough. The De Morgan instance `~(A /\ B) -> ~A \/ ~B` is
+    -- CLASSICALLY valid and not intuitionistically provable, and Rocq's `tauto` is
+    -- intuitionistic. Importing `Classical` would close it and put an axiom in the
+    -- attestation, which `Print Assumptions` would then report. Instead: case-split on the
+    -- decidable equality atoms (`Z.eq_dec`), which is constructive and keeps the proof
+    -- "Closed under the global context". Same reason Lean needs `by_cases` rather than `simp_all`.
+    , "Proof."
+    , "  intros."
+    , s!"  {String.join (eqDestructs.map (fun d => d ++ "; "))}solve [ tauto | congruence ]."
+    , "Qed."
+    , "Print Assumptions eufgoal." ]
+
+/-- Isabelle/HOL: `ALL f::int=>int. …`, closed by `auto`. -/
+def EufObl.isabelleTheory (o : EufObl) (thyName : String) : Option String := do
+  let p ← o.prop isaPropOps "-->"
+  let symBinders := o.symbols.map fun (n, ar) =>
+    s!"({n}::{" => ".intercalate (List.replicate ar "int")} => int)"
+  let varBinders := o.intVars.map (fun v => s!"({v}::int)")
+  some <| "\n".intercalate
+    [ s!"theory {thyName}", "imports Main", "begin"
+    , s!"lemma eufgoal: \"ALL {" ".intercalate (symBinders ++ varBinders)}. {p}\""
+    , "  by auto", "end" ]
+
+/-- Lean goal. Function variables are quantified for the same reason. -/
+def EufObl.leanGoal (o : EufObl) : Option String := do
+  let p ← o.prop leanPropOps "→"
+  let symBinders := o.symbols.map fun (n, ar) =>
+    s!"({n} : {" → ".intercalate (List.replicate ar "Int")} → Int)"
+  let varBinder := if o.intVars.isEmpty then "" else s!"({" ".intercalate o.intVars} : Int) "
+  some s!"∀ {" ".intercalate symBinders} {varBinder}, {p}"
+
+/-! ### Propositional abstraction — sound, and explicitly incomplete -/
+
+/-- Distinct comparison atoms, keyed by their Lean rendering. -/
+private partial def atomsOf (ops : PropOps) : Expr → List String
+  | .paren _ e => atomsOf ops e
+  | .unaryOp _ .not_ e => atomsOf ops e
+  | .binOp _ .and_ l r => atomsOf ops l ++ atomsOf ops r
+  | .binOp _ .or_ l r => atomsOf ops l ++ atomsOf ops r
+  | e => match atomKey ops e with | some a => [a] | none => []
+
+/-- Truth of a formula under an assignment to its atoms. -/
+private partial def evalAbstract (ops : PropOps) (asg : List (String × Bool)) :
+    Expr → Option Bool
+  | .paren _ e => evalAbstract ops asg e
+  | .unaryOp _ .not_ e => (evalAbstract ops asg e).map (! ·)
+  | .binOp _ .and_ l r => do
+      let a ← evalAbstract ops asg l; let b ← evalAbstract ops asg r; some (a && b)
+  | .binOp _ .or_ l r => do
+      let a ← evalAbstract ops asg l; let b ← evalAbstract ops asg r; some (a || b)
+  | e => do let a ← atomKey ops e; asg.lookup a
+
+/-- Is the obligation a propositional TAUTOLOGY over its atoms?
+
+    `some ()` — a tautology, therefore valid under EVERY interpretation of the uninterpreted
+    symbols. This direction is sound.
+
+    `none` — **inconclusive, and nothing more.** Propositional abstraction is sound in one
+    direction only: a tautology implies validity, but a falsifying assignment implies NOTHING,
+    because the abstraction forgets that `f` is a function. `m = t -> tag_of m = tag_of t` is
+    EUF-valid and has a falsifying assignment under abstraction, since `m = t` and
+    `tag_of m = tag_of t` are treated as unrelated atoms.
+
+    An earlier version of this returned a third verdict, "FALSE under some assignment — no
+    kernel should close it", which is simply wrong: it labelled congruence — the defining
+    property of an uninterpreted function — as something no kernel should prove. Only the
+    kernels can refute an EUF goal; the abstraction can only ever confirm. -/
+def EufObl.abstractionVerdict (o : EufObl) : Option Unit := Id.run do
+  let atoms := ((o.hyps.flatMap (atomsOf leanPropOps)) ++ atomsOf leanPropOps o.concl).eraseDups
+  if atoms.length > 12 then return none   -- 2^12 rows; refuse rather than hang
+  let mut tautology := true
+  for bits in allAssignments atoms do
+    let hs := o.hyps.map (evalAbstract leanPropOps bits)
+    match evalAbstract leanPropOps bits o.concl with
+    | none => tautology := false
+    | some c =>
+      if hs.any (·.isNone) then tautology := false
+      else if (hs.all (· == some true)) && !c then tautology := false
+  return if tautology then some () else none
+
+/-- Lean SCRIPT, with named binders and explicit case analysis.
+
+    Three things forced this shape, each found by running it:
+
+    * `intros` produces INACCESSIBLE names (`tag_of✝`), so the atoms cannot be named in
+      `by_cases` afterwards. The generator knows the binder names, so it introduces them
+      explicitly.
+    * `simp_all` alone does not close these. The De Morgan instance is
+      `(A → ¬B) → ¬A ∨ ¬B`, which is **classically** valid and not constructively provable — and
+      this repo has no Mathlib, so no `tauto`.
+    * `by_cases` nonetheless needs no classical axiom here, because the atoms are `Int`
+      equalities and therefore DECIDABLE. Case analysis on a decidable proposition is
+      constructive.
+
+    Honest cross-kernel difference: `#print axioms` reports `propext` for these (from
+    `simp_all`), whereas Rocq reports "Closed under the global context". Lean's proofs here are
+    not axiom-free in the strict sense; `propext` is a standard Lean axiom, not classical choice. -/
+def EufObl.leanScript (o : EufObl) : Option String := do
+  let g ← o.leanGoal
+  let names := o.symbols.map (·.1) ++ o.intVars ++ (List.range o.hyps.length).map (fun i => s!"h{i}")
+  let atoms := ((o.hyps.flatMap (atomsOf leanPropOps)) ++ atomsOf leanPropOps o.concl).eraseDups
+  let cases := atoms.zipIdx.map fun (a, i) =>
+    if i == 0 then s!"  by_cases c{i} : {a}" else s!"  all_goals by_cases c{i} : {a}"
+  some <| "\n".intercalate
+    ([ s!"theorem eufgoal : {g} := by"
+     , s!"  intro {" ".intercalate names}" ] ++ cases ++ [ "  all_goals simp_all" ])
+
+
 end Report
 end Concrete

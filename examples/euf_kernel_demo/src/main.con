@@ -1,0 +1,50 @@
+// RUNG 5: uninterpreted functions (EUF) across Rocq, Isabelle/HOL and Lean.
+//
+//   concrete src/main.con --report bool-kernel
+//
+// A `spec fn` is body-less, pure and ERASED, so it is an uninterpreted function —
+// and it cannot appear in executable code at all (E0101). Uninterpreted symbols
+// live only in contracts, so these obligations are `requires -> ensures` rather
+// than a substituted body.
+//
+// The symbol is a QUANTIFIED function variable in every kernel, never a `Parameter`
+// or an `axiom`. The goal then holds for EVERY interpretation of the symbol and
+// `Print Assumptions` reports "Closed under the global context"; declaring it
+// instead would put it into the trusted base and show up there as an axiom.
+mod eufdemo {
+    spec fn tag_of(m: i32) -> i32;
+    spec fn norm(x: i32) -> i32;
+
+    // SYMMETRY of equality through an opaque term. A propositional tautology once
+    // `tag_of(m) == t` is treated as an atom, so the abstraction confirms it.
+    #[requires(tag_of(m) == t)]
+    #[ensures(t == tag_of(m))]
+    fn sym_through_opaque(m: i32, t: i32) -> i32 { return m; }
+
+    // CONGRUENCE: the defining property of an uninterpreted function. EUF-valid, and
+    // deliberately NOT a propositional tautology — the abstraction treats `m == t`
+    // and `tag_of(m) == tag_of(t)` as unrelated atoms, so it reports inconclusive
+    // while all three kernels still close it. This is the incompleteness, shown
+    // rather than described.
+    #[requires(m == t)]
+    #[ensures(tag_of(m) == tag_of(t))]
+    fn congruence(m: i32, t: i32) -> i32 { return m; }
+
+    // NESTED application through two symbols.
+    #[requires(norm(tag_of(m)) == k)]
+    #[ensures(k == norm(tag_of(m)))]
+    fn nested(m: i32, k: i32) -> i32 { return m; }
+
+    // BOOLEAN STRUCTURE over opaque atoms: De Morgan again, but the atoms are now
+    // uninterpreted applications rather than boolean variables.
+    #[requires(!((tag_of(m) == t) && (norm(m) == t)))]
+    #[ensures(!(tag_of(m) == t) || !(norm(m) == t))]
+    fn demorgan_opaque(m: i32, t: i32) -> i32 { return m; }
+
+    // NEGATIVE CONTROL: FALSE with no hypothesis. Nothing implies that an
+    // uninterpreted function maps two different arguments to the same value, so every
+    // kernel must REFUSE this — which is what proves the symbols are really opaque
+    // and that nothing has quietly assumed they are constant.
+    #[ensures(tag_of(m) == tag_of(t))]
+    fn bad_constant(m: i32, t: i32) -> i32 { return m; }
+}

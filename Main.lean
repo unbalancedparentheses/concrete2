@@ -1845,6 +1845,30 @@ def compileAndReport (inputPath : String) (reportType : String)
         IO.println "ALL-BOOLEAN FUNCTIONS SKIPPED (coverage stated, not implied):"
         for (fn, why) in skipped do
           IO.println s!"  {fn}: {why}"
+      -- Rung 5: uninterpreted functions. The symbol is a QUANTIFIED function variable in every
+      -- kernel, never a Parameter or axiom, so `Print Assumptions` stays clean.
+      let eufs := Report.eufObligations parsed.modules
+      if !eufs.isEmpty then
+        IO.println ""
+        IO.println "=== EUF: uninterpreted spec functions (rung 5) ==="
+        IO.println "  the reference check here is propositional abstraction: SOUND but"
+        IO.println "  INCOMPLETE — a congruence-valid goal is not a propositional tautology."
+        for o in eufs do
+          let verdict := match o.abstractionVerdict with
+            | some () => "tautology under abstraction — valid for EVERY interpretation"
+            | none => "inconclusive (abstraction cannot refute: it forgets f is a function)"
+          IO.println ""
+          IO.println s!"  [{o.key}]  symbols: {", ".intercalate (o.symbols.map (·.1))}"
+          IO.println s!"    abstraction: {verdict}"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:by_cases ---\n{sc}"
+          | none => IO.println "    lean: outside the EUF fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:congruence ---\n{sc}"
+          | none => IO.println "    rocq: outside the EUF fragment"
+          match o.isabelleTheory "EufGoal" with
+          | some th => IO.println s!"    --- isabelle:auto (euf) ---\n{th}"
+          | none => IO.println "    isabelle: outside the EUF fragment"
       return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation

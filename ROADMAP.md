@@ -495,14 +495,49 @@ by one tactic call. That shape is what makes rungs 1–7 reachable and rung 8 a 
 | 2. Propositional | boolean sorts, case analysis | **done, this branch** |
 | 3. Nonlinear arithmetic | `nia`/`polyrith` | partial: `rocqNiaLowering`; H21 blocks SMT replay |
 | 4. Bitvectors | `bv_decide`, Rocq/Isabelle Word libs | Lean only; H20 — native checker |
-| 5. Uninterpreted functions (EUF) | symbol declarations per prover | IR has `.sym`; string lowering drops calls |
+| 5. Uninterpreted functions (EUF) | quantified function variables | **done, this branch** |
 | 6. Algebraic datatypes | datatype *declarations* per prover | nothing emitted |
 | 7. Arrays | select/store | nothing |
 | 8. Induction over recursion | measure + induction scripts | see below |
 | 9. Full functional correctness | 6+7+8 | needs 8 |
 
-**Next rungs, in order:** 5 (EUF — closes the documented "calls are dropped" gap, and the IR is
-ready), then 6+7 together. The most complex thing reachable WITHOUT rung 8 is those combined in
+### Landed: rung 5 — uninterpreted functions (EUF)
+
+A `spec fn` is body-less, pure and **erased**, so it cannot appear in executable code at all
+(`E0101`) — uninterpreted symbols live only in contracts. These obligations are therefore
+`requires -> ensures`, not a substituted body, which is also how the rest of the pipeline states
+a VC.
+
+**The symbol is a quantified function variable, never a declaration.** `Parameter f : Z -> Z` or a
+Lean `axiom` would enter the trusted base and `Print Assumptions` would report it. Quantifying
+proves the goal for EVERY interpretation and stays axiom-free — all four Rocq lemmas report
+"Closed under the global context", gated.
+
+**What degrades, and this is the first rung where it does.** The boolean tier's agreement check is
+exhaustive; EUF has infinitely many interpretations, so there is no table to enumerate. What
+replaces it is **propositional abstraction** — each distinct comparison becomes a boolean atom and
+the goal is checked as a propositional tautology. Sound in ONE direction only: a tautology implies
+validity; a falsifying assignment implies **nothing**, because the abstraction forgets that `f` is
+a function. `m = t -> f m = f t` is EUF-valid and abstraction-falsifiable.
+
+An earlier version of this returned a third verdict — "FALSE, no kernel should close it" — which
+labelled **congruence**, the defining property of an uninterpreted function, as something no kernel
+should prove. There are only two honest verdicts here: tautology (valid), or inconclusive. Gated,
+because it is an easy mistake to reintroduce.
+
+Three per-kernel facts the implementation had to discover by running the generated scripts:
+
+- **Rocq needs decidable case analysis, not just `congruence`.** `~(A /\ B) -> ~A \/ ~B` is
+  classically valid and Rocq's `tauto` is intuitionistic. Importing `Classical` would close it and
+  put an axiom in the attestation; `destruct (Z.eq_dec …)` closes it constructively because `Z`
+  equality is decidable.
+- **Lean needs the same**, for the same reason, and needs NAMED binders: `intros` produces
+  inaccessible names (`f✝`) so the atoms cannot be referenced in `by_cases` afterwards.
+- **Lean's proofs are not strictly axiom-free**: `#print axioms` reports `propext` (from
+  `simp_all`), while Rocq reports nothing. `propext` is a standard Lean axiom, not classical
+  choice — but the two kernels are not equally clean here, and saying they are would be wrong.
+
+**Next rungs, in order:** 6+7 together (datatypes + arrays). The most complex thing reachable WITHOUT rung 8 is those combined in
 one obligation — a structural property over a datatype with an array field and an uninterpreted
 spec function, quantifier-free, case-analysed in three kernels. Real instances already in the
 repo: `crypto_verify`'s `verify_tag(msg, tag) ↔ compute_tag(msg) = tag` with `compute_tag`
