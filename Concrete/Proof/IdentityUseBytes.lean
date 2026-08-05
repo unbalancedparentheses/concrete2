@@ -1,4 +1,5 @@
 import Concrete.Proof.SubjectFacts
+import Concrete.Proof.EvidenceTree
 
 /-! # Identity-use serialization — NOT ProofBodyCanonicalV2
 
@@ -171,6 +172,105 @@ def serializeIdentityUses (inputs : ProofBodyIdentityInputsV2) : Option String :
 def shadowIdentityUseDigest (inputs : ProofBodyIdentityInputsV2) (hash : String → String)
     : Option String :=
   (serializeIdentityUses inputs).map hash
+
+/-! ## Structural serialization of the evidence TREE
+
+The flat serializer above encodes identity USES and cannot distinguish nesting. This
+encodes the tree, so `(p+q)*r` differs from `p+(q*r)` and `f(g(x))` from `g(f(x))`.
+
+Every node is tagged, length-prefixed and child-counted, which is what makes the stream
+injective: without a child count, a parenthesised subtree and a flat sequence of the same
+nodes would concatenate identically. Exhaustive with no wildcard at every level, so a new
+constructor cannot receive a generic encoding.
+-/
+
+private def lp (tag body : String) : String :=
+  tag ++ toString body.length ++ ":" ++ body
+
+mutual
+
+/-- Canonical bytes for an expression subtree. -/
+partial def exprBytes : EvidenceExprV2 → String
+  | .intLit v t      => lp "i" s!"{v}|{intTyTag t}"
+  | .floatLit b t    => lp "d" s!"{b}|{floatTyTag t}"
+  | .boolLit v       => lp "b" (if v then "1" else "0")
+  | .strLit v        => lp "s" v
+  | .charLit c       => lp "c" (toString c.toNat)
+  | .binderRef o i   => lp "r" s!"{o}.{i}"
+  | .constRef id     => lp "k" id.render
+  | .fnRef id        => lp "F" id.render
+  | .unary op x      => lp "u" (op ++ "|" ++ exprBytes x)
+  | .binary op l r   => lp "n" (op ++ "|" ++ exprBytes l ++ exprBytes r)
+  | .call c args     => lp "C" (c.render ++ "|" ++ toString args.length ++ ":"
+                                 ++ String.join (args.map exprBytes))
+  | .field id o      => lp "f" (id.render ++ "|" ++ exprBytes o)
+  | .structLit t fs  => lp "S" (t.render ++ "|" ++ toString fs.length ++ ":"
+                                 ++ String.join (fs.map fun fe => fe.1.render ++ exprBytes fe.2))
+  | .variantLit i fs => lp "V" (i.render ++ "|" ++ toString fs.length ++ ":"
+                                 ++ String.join (fs.map fun fe => fe.1.render ++ exprBytes fe.2))
+  | .deref x         => lp "D" (exprBytes x)
+  | .borrow m x      => lp "B" ((if m then "m" else "i") ++ exprBytes x)
+  | .index c i       => lp "X" (exprBytes c ++ exprBytes i)
+  | .cast t x        => lp "A" (t.render ++ "|" ++ exprBytes x)
+  | .arrayLit t els  => lp "R" (t.render ++ "|" ++ toString els.length ++ ":"
+                                 ++ String.join (els.map exprBytes))
+  | .tryProp x t     => lp "T" (t.render ++ "|" ++ exprBytes x)
+  -- A gap must never be serialized: CompleteEvidenceBodyV2 cannot contain one, so this
+  -- arm exists only for totality and emits a form no complete body can produce.
+  | .gap _           => lp "!" "gap"
+
+partial def patternBytes : EvidencePatternV2 → String
+  | .wildcard        => lp "p" "_"
+  | .binder          => lp "p" "@"
+  | .intLit v t      => lp "pi" s!"{v}|{intTyTag t}"
+  | .boolLit v       => lp "pb" (if v then "1" else "0")
+  | .strLit v        => lp "ps" v
+  | .charLit c       => lp "pc" (toString c.toNat)
+  | .variant i fs    => lp "pV" (i.render ++ "|" ++ toString fs.length ++ ":"
+                                   ++ String.join (fs.map fun fp => fp.1.render ++ patternBytes fp.2))
+  | .structPat t fs  => lp "pS" (t.render ++ "|" ++ toString fs.length ++ ":"
+                                   ++ String.join (fs.map fun fp => fp.1.render ++ patternBytes fp.2))
+  | .range lo hi inc => lp "pR" ((if inc then "=" else "<") ++ exprBytes lo ++ exprBytes hi)
+  | .gap _           => lp "!" "pgap"
+
+partial def stmtBytes : EvidenceStmtV2 → String
+  | .letBind t e     => lp "L" ((t.map TypeId.render).getD "-" ++ "|" ++ exprBytes e)
+  | .assign p v      => lp "=" (exprBytes p ++ exprBytes v)
+  | .ret v           => lp "E" ((v.map exprBytes).getD "-")
+  | .branch c t e    => lp "?" (exprBytes c ++ "|" ++ toString t.length ++ ":"
+                                 ++ String.join (t.map stmtBytes) ++ "|"
+                                 ++ toString e.length ++ ":" ++ String.join (e.map stmtBytes))
+  | .match_ sc arms  => lp "M" (exprBytes sc ++ "|" ++ toString arms.length ++ ":"
+                                 ++ String.join (arms.map armBytes))
+  | .loop c inv var b => lp "W" (exprBytes c ++ "|" ++ toString inv.length ++ ":"
+                                  ++ String.join (inv.map exprBytes) ++ "|"
+                                  ++ (var.map exprBytes).getD "-" ++ "|"
+                                  ++ toString b.length ++ ":" ++ String.join (b.map stmtBytes))
+  | .block sts       => lp "{" (toString sts.length ++ ":" ++ String.join (sts.map stmtBytes))
+  | .exprStmt e isV  => lp "e" ((if isV then "v" else "s") ++ exprBytes e)
+  | .breakStmt t v   => lp "K" (toString t ++ "|" ++ (v.map exprBytes).getD "-")
+  | .continueStmt t  => lp "N" (toString t)
+  -- defer's POSITION already encodes its registration order, since the statement list is
+  -- ordered; cleanup is LIFO, so reordering two defers changes these bytes.
+  | .deferStmt a     => lp "G" (exprBytes a)
+  -- assert and assume must never collide: one is discharged, the other relied upon.
+  | .assertStmt pr   => lp "Y" (exprBytes pr)
+  | .assumeStmt pr   => lp "Z" (exprBytes pr)
+  | .gap _           => lp "!" "sgap"
+
+partial def armBytes : EvidenceArmV2 → String
+  | .arm pat guard body =>
+      lp "a" (patternBytes pat ++ "|" ++ (guard.map exprBytes).getD "-" ++ "|"
+                ++ toString body.length ++ ":" ++ String.join (body.map stmtBytes))
+  | .gap _ => lp "!" "agap"
+
+end
+
+/-- Canonical bytes for a COMPLETE evidence body. Only the complete type is accepted, so
+    a gap reason cannot reach digest bytes — that is a type error, not a rule. -/
+def bodyBytesV2 (b : CompleteEvidenceBodyV2) : String :=
+  "bodyV2:n" ++ toString b.val.statements.length ++ ":"
+    ++ String.join (b.val.statements.map stmtBytes)
 
 end Concrete.Proof
 

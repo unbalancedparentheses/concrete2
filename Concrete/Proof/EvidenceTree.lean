@@ -67,6 +67,15 @@ inductive EvidenceFloatTy where
   | f32 | f64
 deriving BEq, Repr, Inhabited
 
+/-- Stable tag for an integer width. Explicit, not derived: a derived rendering could
+    change with a constructor rename and move every digest. -/
+def intTyTag : EvidenceIntTy → String
+  | .i8 => "i8" | .i16 => "i16" | .i32 => "i32" | .int => "int"
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32" | .uint => "uint"
+
+def floatTyTag : EvidenceFloatTy → String
+  | .f32 => "f32" | .f64 => "f64"
+
 mutual
 
 /-- An expression, as resolved evidence. -/
