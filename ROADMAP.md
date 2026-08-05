@@ -857,9 +857,11 @@ digests, typed dependency roots, and replay receipts meaning what they claim.
 The immediate sequence is normative:
 
 1. R-0004 completes evidence integrity.
-2. R-0450 may land the common obligation IR immediately afterward only if its
-   existing implementation is merge-ready and does not mint authoritative
-   evidence; otherwise it yields rather than blocking the defect queue.
+2. R-0450 may land the common obligation IR immediately afterward only as
+   focused representation/semantics slices ported onto a fresh branch; the
+   accumulated `origin/spike/multi-prover-evidence` branch is research input,
+   not a merge candidate. The port may not mint authoritative evidence;
+   otherwise it yields rather than blocking the defect queue.
 3. R-0006, R-0007, R-0008, and R-0434 close the remaining structural
    destruction, semantic-symbol/import identity, and aggregate-layout
    verification defects.
@@ -1977,12 +1979,15 @@ not promote automated verdicts into authoritative claims before this gate.
 
 ### Task R-0450
 
-**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
+**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape). A measured implementation exists on `origin/spike/multi-prover-evidence`, but that accumulated research branch is NOT a merge candidate; port the typed IR, semantics, and drivers onto a fresh worktree in focused slices after R-0004. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
 
 This task's pulled-forward position is conditional: it may land representation,
-semantics, and differential gates after R-0004 only when the existing branch is
-merge-ready. It does not issue receipts or upgrade any verdict to authoritative
-evidence; if it is not ready, R-0006 proceeds rather than waiting for it.
+semantics, and differential gates after R-0004 only when the PORTED SLICES are
+individually green. It does not issue receipts or upgrade any verdict to
+authoritative evidence; if a focused port is not ready, R-0006 proceeds rather
+than waiting for it. Do not rebase or merge the accumulated spike merely to
+preserve its history: retain provenance in the extraction inventory described
+under R-0448, and let the supported implementation have reviewable ownership.
 
    Slice 1 unifies the two existing backends only — no new provers; the diff
    should be net-negative in lowering code. Gates: constructor coverage
@@ -2295,6 +2300,125 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
 
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). The spike branch may continue as an experiment, but supported-feature graduation follows R-0004, R-0450, R-0440, and the pulled-forward correctness queue; active ownership is not permission to displace known semantic defects.
 
+**Spike disposition — measured 2026-08-05 at remote tip `728e8fa0`.** Do NOT
+merge `origin/spike/multi-prover-evidence` during R-0004, and do not merge that
+branch wholesale later. It is an extraction source and research record, not the
+integration vehicle. At this snapshot it was 99 commits ahead and 29 behind
+the R-0004 integration head, changed 68 files (`+13,713/-289`), and had six textual conflict
+areas, including `Report.lean`, CI, this roadmap, and bug-corpus machinery. It
+also mixed the multi-prover experiment with later obligation-discovery work,
+interpreter fixes, policy, and soundness-register changes. Re-measure those
+numbers if the tip moves; the architectural disposition does not depend on the
+counts.
+
+The pull-request CI run at the preceding measured tip `ccc53d44`
+`https://github.com/unbalancedparentheses/concrete2/actions/runs/31010417567`
+was RED. The dedicated Rocq+Isabelle job passed, which is strong evidence that
+the experiment works; gate-hygiene and known-wrong-corpus jobs failed, so it is
+not merge-ready. A green multi-kernel job proves neither branch integration nor
+evidence authority.
+
+More importantly, the spike's evidence model predates R-0004's completion
+contract:
+
+- its `KernelReceipt` binds kernel, version, verdict, lowering agreement, and a
+  replay command, but not the R-0004 subject digest, typed dependency root,
+  theorem/artifact identity, receipt schema, or workspace/import-closure digest;
+- it can emit `proved_by_two_kernels` / `proved_by_multi_kernel` into the ledger
+  and release policy before proof freshness is authoritative;
+- obligation and lowering witnesses remain substantially keyed by textual IDs;
+- receipt/status composition lives in `Report`, risking a consumer minting the
+  semantic fact it is meant only to render; and
+- multiple kernels can agree perfectly about a stale, incomplete, or wrongly
+  generated obligation. R-0004 establishes WHAT current subject and proposition
+  a receipt binds; kernel multiplicity answers only WHO replayed it.
+
+**Extraction inventory and earliest landing point.** Every extracted change gets
+a fresh branch from current `main`, an owning task, a discriminating fixture, and
+green CI. Preserve original commit IDs in the port's commit message or inventory;
+do not preserve them by merging unrelated history.
+
+"Do not merge wholesale" must not become "silently lose most of the work."
+Before the first port, R-0448 creates a VERSIONED, MACHINE-CHECKED extraction
+manifest pinned to the measured source range (`0f92b387..728e8fa0` at this
+snapshot). The manifest is checked against the COMMIT RANGE, not only the net
+diff: work added and later reverted or replaced is still a measured finding and
+must not disappear merely because its final textual diff is empty. It accounts
+for all 99 branch-side commits (merge commits may point at their covered child
+range), all 68 net-touched paths, and every independently named capability,
+defect, fixture, negative control, mutation, and measured limitation.
+
+Each manifest row carries at least:
+
+- source commit/range and affected paths or hunks;
+- the capability, defect, experiment, or finding being preserved;
+- exactly one disposition: `port_bugfix`, `port_R0450`, `port_R0440`,
+  `rewrite_R0448`, `superseded`, or `rejected`;
+- owning roadmap task and target design/API;
+- target commit plus acceptance gate when ported; and
+- a concrete rationale plus replacement when superseded/rejected.
+
+A mixed source commit may produce several rows; a port may combine several
+source commits only when every source remains traceable. `pending` is allowed
+while extraction is active but is forbidden at archive time. Moving the spike
+tip invalidates the inventory baseline until the new commits and paths are
+classified. A gate fails on an unclassified source commit/path, a ported row with
+no target commit or gate, a superseded row with no replacement, or an archive
+attempt with any pending row.
+
+The inventory must name, at minimum, every measured family already present in
+the spike: the typed obligation IR/evaluator/transforms; total obligation
+discovery and the compiler bugs it exposed; Lean/Rocq/Isabelle drivers and tool
+packaging; verdict caching and tool versions; absent/not-asked/refused/error/
+closed distinctions; lowering and bridge agreement; kernel disagreement;
+hypothesis debt and evidence composition; trust/foundation/bridge independence;
+certificate replay, independent DRAT checking, and measured reconstruction
+ceilings; receipt/artifact experiments; release policy; demos; fixtures;
+negative and mutation controls; and documentation/research conclusions. This
+list is a minimum review checklist, not a substitute for commit/path coverage.
+It explicitly includes the post-`ccc53d44` `varTyMap` findings and fixes
+(`34dab5d9`, `728e8fa0`): binding-sensitive shift/overflow widths, the affected
+discovery/obligation paths, and the strengthened transformation-register gate.
+
+| spike material | disposition | earliest landing point |
+| --- | --- | --- |
+| Independent compiler defects found by the spike, including discovery/bounds or interpreter bugs | Extract ONE defect at a time with its own behavioral witness and mutation. No dependency on multi-prover statuses, receipts, or CLI. | During R-0004 only when it is a correctness fix that does not widen the evidence feature; otherwise its normal correctness-queue position. |
+| Typed `TermIR`, its evaluator/semantics, named transforms, and fail-closed constructor coverage | Port and review as R-0450; do not cherry-pick the surrounding report/status integration. Identity is typed, unsupported constructs stay explicit, and the diff should replace duplicate lowering rather than add a third path. | After the R-0004 completion gate, per the global sequence. |
+| Rocq/Isabelle drivers, optional prover shell, absent/refused/error cells, lowering-agreement checks, disagreement reporting, version capture, demos, and negative controls | Port on top of the R-0450 IR as EXPERIMENTAL per-kernel results. They may not issue receipts, friendly statuses, badges, or policy success. | After the relevant R-0450 IR slice is stable; they remain non-authoritative until R-0448. |
+| Independence/trust dimensions and evidence-composition ideas | Reconcile with R-0440's canonical schema and R-0004's final receipt fields. Port the dimensions, not a parallel evidence vocabulary. | After the R-0004 receipt schema exists and as part of R-0440/R-0448. |
+| Spike `KernelReceipt`, string-keyed witnesses, ledger fold, `proved_by_*` status upgrades, badges, and `require-two-kernels` release policy | DO NOT cherry-pick. Rewrite against semantic obligation identity and R-0004 `ProofEvidenceReceipt`; status is derived from bound receipts, never minted by `Report`. | R-0448 graduation only, after R-0004 + R-0450 + required R-0440 fields. |
+| Documentation, examples, Nix wiring, and gates | Port with the slice they actually test, updating claims to the final schema and CLI. Do not merge branch-wide documentation whose status statements describe the spike. | Alongside the owning focused slice. |
+
+There is therefore NO future "merge everything" step. "Get everything" means
+every piece of work and every finding receives a checked terminal disposition;
+it does not mean every experimental line enters production. The remote spike may
+be frozen/read-only while extraction proceeds. Archive (and, only if repository
+policy wants it, delete) the branch after every manifest row is terminal, every
+ported row is green on its destination branch, and the supported R-0448 feature
+is green; the archive is provenance, not a release ancestor.
+
+**When the supported multi-prover feature may activate.** All of these must hold
+together:
+
+1. R-0004's producer, complete subject digest, dependency root, versioned
+   freshness migration, replay, and receipt schema satisfy their completion gate.
+2. R-0450 gives every backend one typed obligation IR and a versioned obligation
+   digest; unsupported constructs fail closed rather than disappearing.
+3. Every kernel result binds that exact obligation digest, R-0004 subject and
+   dependency material, tool version, emitted artifact, replay command/result,
+   and workspace/import closure.
+4. R-0440 records producer/checker/trust/independence dimensions without reducing
+   them to a strength ladder or badge string.
+5. Absent tools, refusal, error, lowering disagreement, kernel disagreement,
+   stale subjects, incomplete dependencies, and trusted assumptions cannot earn
+   a friendly class or pass release policy.
+6. The focused implementation is green independently of the spike branch, and a
+   flagship row is replayable by an outsider with either supported kernel.
+
+Only then may R-0448 enable multi-kernel statuses, badges, and release policy.
+The supported feature is the result of those focused ports and rewrites, not a
+merge of `origin/spike/multi-prover-evidence`.
+
    Merge bar (the graduation note's verified list): badge-teeth negative
    case (a weakly-bounded `a * b` closes with no kernel and stays
    `unproven`), kernel-absent honesty (no `coqc` → no attestation), class
@@ -2312,6 +2436,177 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
    if the full model has not landed). On merge, TRUSTED_COMPUTING_BASE.md
    records both trust directions: agreement reduces kernel-soundness
    trust; bridge trust is untouched until realization (R-0449).
+
+**Preserved spike-only task records.** The exact spike snapshot contains the
+following 20 task IDs that were absent from `main`. They are copied here as
+durable owners so abandoning or rewriting the research branch cannot delete the
+plan. Their presence is NOT approval to merge the branch, activate a status, or
+skip R-0004/R-0440/R-0450. Before the spike is rewritten, deleted, or archived,
+preserve `728e8fa0` in an immutable repository tag or bundle; the extraction
+manifest then reconciles the full source text, fixtures, gates, and findings for
+each record against current `main`. A task already satisfied on `main` receives
+`superseded` or the real target commit in that manifest rather than being
+implemented twice. The spike intentionally has no task numbered 0457; do not
+invent one to make the numbering contiguous.
+
+### Task R-0451
+
+**Objective:** Reduce the trusted surface of `solver_trusted` with replayable
+refutation certificates: use a small SAT port as the shape probe, a realistic
+solver as the workload, emit/consume DRAT, cross-check with an independent
+checker, and mutation-test certificate rejection. This remains a separately
+named checked-certificate class, never kernel evidence.
+
+### Task R-0452
+
+**Objective:** Measure obligation density on a performance-oriented zlib inflate
+port: bit-exact oracle, malformed/adversarial corpus, persisted fuzz cases, and
+an explicit breakdown of proved versus runtime-checked bounds/cast/overflow
+obligations. Trusted pointer fast paths must be disclosed, not used to make the
+measurement pass.
+
+### Task R-0453
+
+**Objective:** Extend freestanding evidence from “no libc” to a device and crash
+model with a littlefs port. Gate upstream behavior plus power-loss injection and
+report allocation, device authority, interruption coverage, and trusted
+boundaries honestly; this is adversarial oracle evidence, not a verification
+claim.
+
+### Task R-0454
+
+**Objective:** Give prover obligations a neutral, versioned identity and digest,
+alpha-normalized and independent of any host AST. Preserve callable versus local
+call identity and exclude display names. Reconcile this with R-0004’s final
+subject/obligation receipt basis rather than introducing a second subject digest;
+it lands after R-0004 and before authoritative multi-prover results.
+
+### Task R-0455
+
+**Objective:** Replace per-prover string templates with one typed transformation
+pipeline and a soundness-register row for every goal-to-goal transform. Keep the
+permanent printer-validation boundary explicit, make tactics declarative and
+budgeted, refuse unsupported constructs, and prefer one standard-format printer
+over cloned native drivers where the fragment permits it. This is architecture
+consumed by R-0450, not report-layer integration to cherry-pick.
+
+### Task R-0456
+
+**Objective:** Port the neutral evaluator to a second host and compare it through
+adversarial conformance vectors. This is de-prioritized: it buys independent
+meta-theory, not cheaper per-function proofs, and the cross-host relation remains
+`tested_by_oracle` because no one kernel bridges two kernels.
+
+### Task R-0458
+
+**Objective:** Split evidence into independent strength, portability, replay,
+and implementation/foundation/bridge-independence coordinates. Every
+attestation carries its own keep/recheck procedure; composite multi-kernel names
+are display only. Reconcile the surviving dimensions into R-0440 and R-0448,
+without preserving a parallel spike vocabulary.
+
+### Task R-0459
+
+**Objective:** Add required non-arithmetic obligation families so relational,
+exhaustiveness, termination, determinism, or refinement claims can be demanded
+and reported missing rather than existing only as optional proof attachments.
+Each family needs total discovery, a missing-obligation negative, and an honest
+unsupported result until its logic is available.
+
+### Task R-0460
+
+**Objective:** Discharge the obligation-sufficiency register (“Register A”): for
+each runtime-safety claim, prove or otherwise classify why the generated
+obligation is sufficient for the runtime property. Rows bind the exact generator
+and fail stale when that subject changes; unsupported rows prevent a stronger
+claim rather than disappearing.
+
+### Task R-0461
+
+**Objective:** Preserve the H23 closure record: hypothesis provenance and status
+composition must distinguish established facts from assumed loop invariants and
+other proof premises, and propagate that debt into the final claim. Reconcile the
+spike’s closed-hole evidence with R-0004/R-0440’s current assumption and receipt
+axes; do not reopen or duplicate a closure already stronger on `main`.
+
+### Task R-0462
+
+**Objective:** Differentially fuzz compiled runtime behavior against the safety
+claims and obligation ledger. A runtime trap beside a “proved” or obligation-free
+claim is a persisted counterexample and stop-the-line signal; exercise the
+hypothesis and trap-semantics failures that motivated H23/H24, not only returned
+values.
+
+### Task R-0463
+
+**Objective:** Add a certificate-bearing linear-arithmetic tier with retained,
+independently replayable artifacts, explicit reconstruction ceilings, corrupt-
+certificate negatives, and an evidence class that states exactly what the
+certificate checker removes from the trusted path.
+
+### Task R-0464
+
+**Objective:** Preserve the H24 closure and make runtime-safety obligation
+generation consume the representation that actually runs: one trap-semantics
+owner and total, fail-closed generation over SSA before cleanup. Source mapping,
+phi/invariant handling, path conditions, R-0454 alpha-normalized identities, and
+re-anchored Register A rows are required; do not treat this as R-0450 lowering.
+
+### Task R-0465
+
+**Objective:** Extend `DischargeAdapter` to the assumption axis and route the
+multi-kernel fold through the same typed firewall. Assumptions union by default;
+closed/refused verdicts are mutually exclusive by type; report, policy, and
+ledger consume one folded result rather than recomputing it independently.
+
+### Task R-0466
+
+**Objective:** Measure language legibility for the consumer that writes it:
+model authoring from published docs and one-round repair from diagnostics alone.
+Pin model/prompts, report corpus sizes and per-code results rather than one badge,
+and mutation-test that removing a useful hint worsens repair. This complements,
+not replaces, the human diagnostics validation task.
+
+### Task R-0467
+
+**Objective:** Make the supported multi-kernel gate run on the commit that merges
+to `main`, with cost-aware splitting if needed, instead of depending on dispatch,
+schedule, or a remembered label. Until R-0448 activation, preserve this as CI
+ownership for the experimental job and mark any current-main replacement in the
+extraction manifest.
+
+### Task R-0468
+
+**Objective:** Make mutation, proof-replay, and fuzz gates reachable in the
+repository that actually develops the code. Repository pins may select one
+canonical scheduler, but a hole-closure condition cannot depend on a nightly
+that can never run; mutation coverage needs at least one reachable, recorded
+path.
+
+### Task R-0469
+
+**Objective:** Propagate unbounded stack through the call graph so stack-depth,
+recursion, policy, assumptions, and release bundles cannot publish a finite
+maximum for a caller that reaches recursion. The spike called this “bug 065,”
+but that number belongs to the builtin-enum-owner defect on current `main`;
+re-file this witness under a fresh bug ID before implementation and mutation-test
+the recursive-callee filter.
+
+### Task R-0470
+
+**Objective:** Own current bug 063: capability-variable inference must not read
+an unknown derived function-pointer type as an empty capability set. Cover field,
+call-result, and array-derived function pointers as well as bare-name controls,
+while keeping authority checking fail closed.
+
+### Task R-0471
+
+**Objective:** Pull forward the diagnostic-legibility defects needed by R-0466:
+query arity/kind messages that contradict their own known set, actionable retired-
+syntax diagnostics, and non-empty hints where the candidate set is already in
+hand. The spike called the query defect “bug 064,” but current `main` uses 064
+for aliased imported types; re-file it under a fresh ID and gate the whole query
+kind class rather than one token.
 
 ### Task R-0437
 
