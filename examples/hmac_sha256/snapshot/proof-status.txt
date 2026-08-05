@@ -79,11 +79,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:127
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:132
 
   `hmac_sha256.rotr` passes the predictable profile but has no registered proof.
 
- 127 |     fn rotr(x: u32, n: u32) -> u32 {
+ 132 |     fn rotr(x: u32, n: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -91,11 +91,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:132
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:137
 
   `hmac_sha256.big_sigma0` passes the predictable profile but has no registered proof.
 
- 132 |     fn big_sigma0(x: u32) -> u32 {
+ 137 |     fn big_sigma0(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -103,11 +103,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:137
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:142
 
   `hmac_sha256.big_sigma1` passes the predictable profile but has no registered proof.
 
- 137 |     fn big_sigma1(x: u32) -> u32 {
+ 142 |     fn big_sigma1(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -115,11 +115,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:142
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:147
 
   `hmac_sha256.small_sigma0` passes the predictable profile but has no registered proof.
 
- 142 |     fn small_sigma0(x: u32) -> u32 {
+ 147 |     fn small_sigma0(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -127,11 +127,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:147
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:152
 
   `hmac_sha256.small_sigma1` passes the predictable profile but has no registered proof.
 
- 147 |     fn small_sigma1(x: u32) -> u32 {
+ 152 |     fn small_sigma1(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -139,11 +139,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:164
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:169
 
   `hmac_sha256.ct_compare_32` passes the predictable profile but has no registered proof.
 
- 164 |     fn ct_compare_32(a: [u8; 32], b: [u8; 32]) -> i32 {
+ 169 |     fn ct_compare_32(a: [u8; 32], b: [u8; 32]) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -151,11 +151,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:187
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:192
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.block_to_words`.
 
- 187 |     fn block_to_words(block: [u8; 64]) -> [u32; 16] {
+ 192 |     fn block_to_words(block: [u8; 64]) -> [u32; 16] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -173,11 +173,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:204
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:209
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.sha256_schedule`.
 
- 204 |     fn sha256_schedule(w16: [u32; 16]) -> [u32; 64] {
+ 209 |     fn sha256_schedule(w16: [u32; 16]) -> [u32; 64] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -195,11 +195,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:228
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:233
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.sha256_round`.
 
- 228 |     fn sha256_round(state: [u32; 8], k: u32, w: u32) -> [u32; 8] {
+ 233 |     fn sha256_round(state: [u32; 8], k: u32, w: u32) -> [u32; 8] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -217,11 +217,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:244
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:249
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.sha256_compress`.
 
- 244 |     fn sha256_compress(state: [u32; 8], block: [u8; 64]) -> [u32; 8] {
+ 249 |     fn sha256_compress(state: [u32; 8], block: [u8; 64]) -> [u32; 8] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -239,11 +239,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:272
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:277
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.block_to_words_at`.
 
- 272 |     fn block_to_words_at(buf: [u8; 384], off: i32) -> [u32; 16] {
+ 277 |     fn block_to_words_at(buf: [u8; 384], off: i32) -> [u32; 16] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -261,11 +261,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:291
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:296
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.sha256_compress_at`.
 
- 291 |     fn sha256_compress_at(state: [u32; 8], buf: [u8; 384], off: i32) -> [u32; 8] {
+ 296 |     fn sha256_compress_at(state: [u32; 8], buf: [u8; 384], off: i32) -> [u32; 8] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -283,11 +283,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:309
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:314
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.state_to_bytes`.
 
- 309 |     fn state_to_bytes(state: [u32; 8]) -> [u8; 32] {
+ 314 |     fn state_to_bytes(state: [u32; 8]) -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -305,11 +305,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:340
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:345
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.sha256_hash`.
 
- 340 |     fn sha256_hash(data: [u8; 384], len: i32) -> [u8; 32] {
+ 345 |     fn sha256_hash(data: [u8; 384], len: i32) -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -327,11 +327,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:368
+-- proof link unbound ------------------------------------- examples/hmac_sha256/src/main.con:373
 
   proof link unbound: no stored proof-subject digest for `hmac_sha256.hmac_sha256`.
 
- 368 |     fn hmac_sha256(k: [u8; 128], k_len: i32, m: [u8; 256], m_len: i32) -> [u8; 32] {
+ 373 |     fn hmac_sha256(k: [u8; 128], k_len: i32, m: [u8; 256], m_len: i32) -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -349,11 +349,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint("...")].
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:396
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:401
 
   `hmac_sha256.verify_hmac` passes the predictable profile but has no registered proof.
 
- 396 |     fn verify_hmac(k: [u8; 128], k_len: i32, m: [u8; 256], m_len: i32,
+ 401 |     fn verify_hmac(k: [u8; 128], k_len: i32, m: [u8; 256], m_len: i32,
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -361,11 +361,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:406
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:411
 
   `hmac_sha256.abc_block` passes the predictable profile but has no registered proof.
 
- 406 |     fn abc_block() -> [u8; 64] {
+ 411 |     fn abc_block() -> [u8; 64] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -373,11 +373,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:418
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:423
 
   `hmac_sha256.rfc4231_tc1_tag` passes the predictable profile but has no registered proof.
 
- 418 |     fn rfc4231_tc1_tag() -> [u8; 32] {
+ 423 |     fn rfc4231_tc1_tag() -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -385,11 +385,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:424
+-- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:429
 
   `hmac_sha256.rfc4231_tc2_tag` passes the predictable profile but has no registered proof.
 
- 424 |     fn rfc4231_tc2_tag() -> [u8; 32] {
+ 429 |     fn rfc4231_tc2_tag() -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   current fingerprint:
@@ -397,11 +397,11 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
   hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above.
 
--- not eligible ------------------------------------------- examples/hmac_sha256/src/main.con:441
+-- not eligible ------------------------------------------- examples/hmac_sha256/src/main.con:446
 
   `hmac_sha256.main` cannot be proved: fails predictable profile (has capabilities: Console, is entry point (main)).
 
- 441 |     pub fn main() with(Console) -> i32 {
+ 446 |     pub fn main() with(Console) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   reasons: has capabilities: Console, is entry point (main)

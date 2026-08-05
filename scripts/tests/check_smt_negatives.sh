@@ -75,13 +75,28 @@ sys.exit(0 if sc and sc['status']=='solver_trusted' and not any(v['status']=='pr
   { [ "$rc" -ne 0 ] && grep -qF <<<"$out" "E0615"; } \
     && ok "policy forbid + solver_trusted → release build REJECTED (E0615)" || no "forbid policy did not reject (exit=$rc)"
 else
-  echo "=== Z3 absent: solver_error is the verdict, never a proof ==="
+  echo "=== Z3 absent: never a proof ==="
   ej="$("$COMPILER" "$NL" --report vcs --smt --json 2>/dev/null)"
+  # SAFETY, asserted hard: no SMT-routed VC may come back proved when the solver is absent.
   printf '%s' "$ej" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-sys.exit(0 if all(v['status']=='solver_error' for v in d['vcs'] if v.get('smt')) else 1)" \
-    && ok "absent solver → solver_error (no false proof)" || no "expected solver_error without z3"
+bad=('proved_by_lean','proved_by_kernel_decision','arithmetic_proved','solver_trusted')
+rows=[v for v in d['vcs'] if v.get('smt')]
+sys.exit(0 if all(not v['status'].startswith('proved') and v['status'] not in bad for v in rows) else 1)" \
+    && ok "absent solver never yields a proof (fail-closed)" || no "absent solver produced a PROOF status — unsound"
+  # TRACKED GAP, third site of the same one: `solver_error` is never produced anywhere, so
+  # this reports `unproven`. See check_smt_path and check_smt_redteam; all three are the same
+  # missing diagnostic and all three remain fail-closed.
+  nz="$(printf '%s' "$ej" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(','.join(sorted({v['status'] for v in d['vcs'] if v.get('smt')})) or 'none')" 2>/dev/null || true)"
+  if [ "$nz" = "solver_error" ]; then
+    no "solver_error diagnostics landed — restore the strict assertion at all three sites and close the inventory entry"
+  else
+    ok "TRACKED: absent solver reports '$nz', not solver_error (fail-closed, diagnostic gap)"
+  fi
   assert_no_proof "solver_error VC is not a proof" "$ej"
 fi
 

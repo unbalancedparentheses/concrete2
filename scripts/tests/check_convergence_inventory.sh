@@ -102,5 +102,17 @@ else
   no "the pinned spike SHA is absent from ROADMAP.md — later deltas must integrate as new PINNED epochs"
 fi
 
+# 11. `solver_error` is never produced. Three independent sites expected it — absent
+#     solver, garbage solver, and the negatives gate — and all three get `unproven`. Every
+#     case is FAIL-CLOSED (no false proof, asserted hard at each site), but a consumer
+#     cannot distinguish "the solver misbehaved or was missing" from "not proved", which
+#     are different facts: one is an environment defect, the other a proof-difficulty
+#     statement.
+if grep -q "TRACKED: absent solver reports" scripts/tests/check_smt_path.sh; then
+  ok "GAP OPEN: solver_error is never produced; absent/garbage solver reports unproven"
+else
+  no "the solver_error tracking leg is gone — if the diagnostic landed, restore the strict assertions at all three sites"
+fi
+
 echo "CONVERGENCE-INVENTORY: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

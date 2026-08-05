@@ -1,11 +1,105 @@
 === Source Contracts ===
 
+sha256.rotr
+  R1  requires n > 0
+     status:  assumed_at_entry (each call site checked separately)
+  R2  requires n < 32
+     status:  assumed_at_entry (each call site checked separately)
+
 cn.clean
   R1  requires 0 < x && x < 10
      status:  assumed_at_entry (each call site checked separately)
 
 
 === Call-site obligations ===
+
+sha256.bsig0
+  call rotr(x, 2)
+    requires 2 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 2)
+    requires 2 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 13)
+    requires 13 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 13)
+    requires 13 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 22)
+    requires 22 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 22)
+    requires 22 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+
+sha256.bsig1
+  call rotr(x, 6)
+    requires 6 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 6)
+    requires 6 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 11)
+    requires 11 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 11)
+    requires 11 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 25)
+    requires 25 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 25)
+    requires 25 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+
+sha256.ssig0
+  call rotr(x, 7)
+    requires 7 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 7)
+    requires 7 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 18)
+    requires 18 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 18)
+    requires 18 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+
+sha256.ssig1
+  call rotr(x, 17)
+    requires 17 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 17)
+    requires 17 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 19)
+    requires 19 > 0
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+  call rotr(x, 19)
+    requires 19 < 32
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
 
 cn.main
   call clean(3)

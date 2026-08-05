@@ -40,9 +40,16 @@ check_json "loc has file+line"              "$HMAC" \
 check_json "hypotheses/dependencies are lists" "$HMAC" \
   "all(isinstance(v['hypotheses'],list) and isinstance(v['dependencies'],list) for v in d['vcs'])"
 
+# VOCABULARY EXTENDED for the multi-prover merge (pin 80be5368). These lists are the
+# CONTROLLED vocabulary, so a new value must be added deliberately — but they were asserting
+# a v1 set that predates the spike's own additions, so they failed on values the compiler
+# legitimately emits:
+#   kinds  div_quotient_in_range, shift_amount_in_range — arithmetic-safety obligations
+#   status ineligible            — a VC that cannot be attempted, distinct from unproven
+# Measured from `--report vcs --json` on examples/hmac_sha256 rather than guessed.
 echo "=== controlled vocabularies ==="
 check_json "kind from the v1 set" "$HMAC" \
-  "set(v['kind'] for v in d['vcs']) <= {'precondition','postcondition','assert','vacuity','array_bounds','div_nonzero','no_overflow','loop_invariant_init','loop_invariant_preservation','loop_exit_implies_post','variant_nonnegative','variant_decreases'}"
+  "set(v['kind'] for v in d['vcs']) <= {'precondition','postcondition','assert','vacuity','array_bounds','div_nonzero','no_overflow','loop_invariant_init','loop_invariant_preservation','loop_exit_implies_post','variant_nonnegative','variant_decreases','div_quotient_in_range','shift_amount_in_range'}"
 check_json "arith_profile from the v1 set" "$HMAC" \
   "set(v['arith_profile'] for v in d['vcs']) <= {'constant','linear','bitvector','nonlinear','refinement','operational','unsupported'}"
 check_json "expected_discharge from the v1 set" "$HMAC" \
@@ -50,7 +57,7 @@ check_json "expected_discharge from the v1 set" "$HMAC" \
 
 echo "=== discharge outcome (kernel-checked) is folded in ==="
 check_json "status from the v1 set" "$HMAC" \
-  "set(v['status'] for v in d['vcs']) <= {'planned','proved_by_kernel_decision','proved_by_lean','arithmetic_proved','counterexample','unproven','missing'}"
+  "set(v['status'] for v in d['vcs']) <= {'planned','proved_by_kernel_decision','proved_by_lean','arithmetic_proved','counterexample','unproven','missing','ineligible'}"
 check_json "engine from the v1 set" "$HMAC" \
   "set(v['engine'] for v in d['vcs']) <= {'constant_fold','omega','bv_decide','lean',''}"
 check_json "every kernel-decision VC names an engine" "$HMAC" \

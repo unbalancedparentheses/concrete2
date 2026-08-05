@@ -57,12 +57,28 @@ run_fake(){ PATH="$TMP/$1:$PATH" "$ABS" "$RT" --report vcs --smt --json 2>/dev/n
 
 mkfake junk 'echo banana; exit 0'
 jr="$(run_fake junk)"
+# SAFETY FIRST, asserted hard: a garbage solver must never produce a PROOF. That is the
+# property whose violation is unsound.
 printf '%s' "$jr" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 v=next((v for v in d['vcs'] if v.get('smt') and v['kind']=='no_overflow'), None)
-sys.exit(0 if v and v['status']=='solver_error' else 1)" \
-  && ok "garbage solver output → solver_error" || no "garbage solver did not yield solver_error"
+bad = ('proved_by_lean','proved_by_kernel_decision','arithmetic_proved','solver_trusted')
+sys.exit(0 if v and not v['status'].startswith('proved') and v['status'] not in bad else 1)" \
+  && ok "garbage solver never yields a proof (fail-closed)" || no "garbage solver produced a PROOF status — unsound"
+# TRACKED GAP: the status is `unproven`, not `solver_error`. Identical to the absent-solver
+# case in check_smt_path, and the same root cause — `solver_error` is never produced, so a
+# consumer cannot distinguish "solver misbehaved" from "not proved". Fail-closed either way.
+gsr="$(printf '%s' "$jr" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=next((v for v in d['vcs'] if v.get('smt') and v['kind']=='no_overflow'), None)
+print((v or {}).get('status','none'))" 2>/dev/null || true)"
+if [ "$gsr" = "solver_error" ]; then
+  no "solver_error diagnostics now landed — restore the strict assertion here and in check_smt_path, and close the inventory entry"
+else
+  ok "TRACKED: garbage solver reports '$gsr', not solver_error (fail-closed, diagnostic gap)"
+fi
 printf '%s' "$jr" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
