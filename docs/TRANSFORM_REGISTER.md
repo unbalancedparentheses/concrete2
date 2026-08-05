@@ -101,9 +101,13 @@ fragment for a different reason, not yet classified.
 
 Two things this also established, both by trying and failing:Two things this also established, both by trying and failing:
 
-- **`exprToProver` cannot be locked by `rfl`** — it is a `partial def`, so the kernel cannot
-  reduce it. The same limitation as `evalIntEnv`, met while trying to write the lock that the
-  string layer drops a term. Measured at runtime instead.
+- **`exprToProver` CAN be locked by `rfl`** — after removing a `partial` keyword it never
+  needed. This bullet previously said the opposite, which was true of the code and false
+  about the code's necessity: seven functions in the report layer (including `exprToSmt`,
+  both prover lowerings and the bv renderer) recurse only on direct subterms and were marked
+  `partial` by habit. The drop the IR repairs is now a compile-time lock, not just a runtime
+  count. A provable printer still does not make print fidelity provable — the target syntax
+  is not ours — but the printer's own behaviour no longer sits outside the kernel.
 - **`hasTmod ∘ elimTmod` composes with the translation**, pinned by `rfl`: a real obligation
   expression carrying `mod` is translated and then eliminated.
 

@@ -501,8 +501,16 @@ recomputed.
   `examples/` contains none, so the corpus number is 0 for a reason about the corpus — a
   constructed fixture in the gate exercises the capability.
   **Remaining:** one `dropped by both` in `fixed_capacity`, unclassified.
-- **`exprToProver` is also a `partial def`**, found while trying to lock "the string layer
-  drops this term" by `rfl` — it cannot be. Same class as `evalIntEnv` below.
+- ~~`exprToProver` is also a `partial def`~~ **DONE 2026-08-04.** It never needed to be —
+  nor did `exprToSmt`, `exprToLeanProp`, `arithToBVW`, `exprHasNonlinMul`, `collectIntLits`
+  or `conjuncts`. All seven recurse only on direct subterms and were marked `partial` by
+  habit; removing the keyword was the entire fix, and it makes the SMT printer, both prover
+  lowerings and the bv renderer kernel-reducible. The drop the IR exists to repair is now
+  pinned by `rfl` instead of only counted at runtime.
+  **What this does NOT change:** a provable printer still does not prove the TARGET syntax
+  means what we think — that needs the target's semantics, which are not ours. Print fidelity
+  stays validated rather than proved; what improved is that the printer's own behaviour is
+  now provable.
 - ~~`evalIntEnv` is a `partial def`~~ **DONE 2026-08-04.** `evalIntEnv`/`evalBoolEnv` are now
   thin wrappers over `ofExpr` + `TermIR.eval*`, both structural, so the yardstick every
   lowering-agreement check measures against is kernel-reducible and its behaviour is pinned by
@@ -511,8 +519,9 @@ recomputed.
   gains: casts now have a reference value (previously `none`, so the instance was skipped),
   and `geq`/`gt`/`neq` are canonicalised rather than special-cased. Verified identical on the
   provers: multi-kernel 78/78.
-  **Remaining in this area:** `exprToProver` is still `partial`, so "the string layer drops
-  this term" cannot be locked by `rfl` either; it is measured at runtime instead.
+  **Remaining in this area:** the report layer still has ~17 `partial def`s (walkers and
+  collectors). They are not on the trust path, but the same question applies to each: is the
+  keyword load-bearing or habitual? Seven of seven checked so far were habitual.
 
 ### From R-0462 (artifact fuzz) — works, covers almost nothing
 

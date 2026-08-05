@@ -834,7 +834,7 @@ def renderDiv (obls : List DivObl) (provedKeys : List String) : String := Id.run
 -- sound (no underflow); anything else stays honestly `unproven`.
 
 /-- Flatten an `&&`-conjunction into its conjuncts. -/
-partial def conjuncts : Expr → List Expr
+def conjuncts : Expr → List Expr
   | .binOp _ .and_ l r => conjuncts l ++ conjuncts r
   | .paren _ e => conjuncts e
   | e => [e]
@@ -886,7 +886,7 @@ partial def exprIntervalMax (bounds : List (String × (Int × Int))) : Expr → 
 /-- Lower an arithmetic expr to a `BitVec w` term (`+`/`*` of vars and
     non-negative literals only; `-` is excluded so the unsigned model can't
     underflow). -/
-partial def arithToBVW (w : Nat) : Expr → Option String
+def arithToBVW (w : Nat) : Expr → Option String
   | .intLit _ k => if k < 0 then none else some s!"({k}#{w})"
   | .paren _ e => arithToBVW w e
   | .ident _ v => some v
@@ -974,7 +974,7 @@ emitted SMT-LIB is well-formed by construction. -/
 
 /-- Lower a contract `Expr` to an SMT-LIB (QF_NIA) s-expression. Same fragment as
     `toLeanProp`: integer literals/vars, add/sub/mul, comparisons, and/or/not. -/
-partial def exprToSmt : Expr → Option String
+def exprToSmt : Expr → Option String
   | .intLit _ v => some (if v < 0 then s!"(- {-v})" else s!"{v}")
   | .ident _ n => some n
   | .paren _ e => exprToSmt e
@@ -994,7 +994,7 @@ partial def exprToSmt : Expr → Option String
 
 /-- True when `e` contains a multiplication of two non-constant operands — the
     genuinely nonlinear shape `omega` cannot own and interval `bv_decide` may miss. -/
-partial def exprHasNonlinMul : Expr → Bool
+def exprHasNonlinMul : Expr → Bool
   | .binOp _ .mul l r => (cEvalInt l).isNone && (cEvalInt r).isNone
       || exprHasNonlinMul l || exprHasNonlinMul r
   | .binOp _ _ l r => exprHasNonlinMul l || exprHasNonlinMul r
@@ -1112,7 +1112,7 @@ structure ProverLowering where
     (not a string rewrite), so the emitted script is well-formed by construction.
     Coq and Isabelle share this: both spell unary neg `(- e)`, `not` `~`, and a
     negative literal `(-k)`; only the binary-op column and wrapper differ. -/
-partial def exprToProverU (binop : BinOp → String → String → Option String)
+def exprToProverU (binop : BinOp → String → String → Option String)
     (notSym : String) : Expr → Option String
   | .intLit _ v => some (if v < 0 then s!"({v})" else s!"{v}")
   | .ident _ n => some n
@@ -1137,7 +1137,7 @@ partial def exprToProverU (binop : BinOp → String → String → Option String
     stopped this function from also being Lean's lowering — so `exprToLeanProp` existed as a
     near-copy, and the fragment was defined twice in two functions that had to agree. It is
     now defined once and `exprToLeanProp` delegates. -/
-partial def exprToProver (binop : BinOp → String → String → Option String) : Expr → Option String :=
+def exprToProver (binop : BinOp → String → String → Option String) : Expr → Option String :=
   exprToProverU binop "~"
 
 /-- Lean's lowering of the linear fragment, for the replay theorem. Handles unary negation
@@ -1156,7 +1156,7 @@ partial def exprToProver (binop : BinOp → String → String → Option String)
     "its rendering IS the reference, so there is nothing to validate it with" — was therefore
     wrong. The real obstacle was that Lean's lowering was not expressible as a driver, so the
     machinery could not be pointed at it. That obstacle is what this removes. -/
-partial def exprToLeanProp (e : Expr) : Option String :=
+def exprToLeanProp (e : Expr) : Option String :=
   exprToProverU leanBinOp "¬" e
 
 /-! ### Bridge differential-check (feature #1)
@@ -1592,7 +1592,7 @@ def agreementInstanceCap : Nat := 24
 /-- Every integer literal occurring in an expression. Used to derive BOUNDARY probe
     values, because an off-by-one operator bug (`<=` rendered as `<`) only shows up
     at a value where the two differ — a fixed grid can miss it entirely. -/
-partial def collectIntLits : Expr → List Int
+def collectIntLits : Expr → List Int
   | .intLit _ v => [v]
   | .paren _ e => collectIntLits e
   | .unaryOp _ _ e => collectIntLits e

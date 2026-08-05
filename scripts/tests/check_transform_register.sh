@@ -195,6 +195,30 @@ else
   echo "  (skip capability fixture — compiler not built)"
 fi
 
+echo "=== the lowering path is kernel-reducible (no gratuitous `partial`) ==="
+# A `partial def` is opaque to the kernel: no theorem and no `rfl` example can say anything
+# about it. That limitation blocked three separate locks this week before anyone checked
+# whether the keyword was NEEDED. Seven functions in the report layer — including the SMT
+# printer, both prover lowerings and the bv renderer — recurse only on direct subterms and
+# were marked partial by habit. Removing the keyword was the entire fix.
+RO="Concrete/Report/ReportObligations.lean"
+for f in exprToSmt exprToProver exprToProverU exprToLeanProp arithToBVW; do
+  if grep -qE "^partial def $f\b" "$RO"; then
+    no "$f is 'partial' again — its behaviour becomes unprovable and its locks impossible"
+  else
+    ok "$f is structural (kernel-reducible)"
+  fi
+done
+# And the locks that only became possible because of it. A drop the IR exists to repair,
+# pinned at compile time rather than counted at runtime.
+LK="Concrete/Report/TermOfExpr.lean"
+grep -q "(.binOp sp .lt (.binOp sp .div (.ident sp \"a\") (.ident sp \"b\")) (.intLit sp 10)) = none := rfl" "$LK" \
+  && ok "the string layer's div-subterm DROP is pinned by rfl" \
+  || no "the drop lock is gone — the defect the IR repairs is only measured, not pinned"
+grep -q "= some \"a < 10\" := rfl" "$LK" \
+  && ok "and a term inside the fragment still renders (the drop lock is not vacuous)" \
+  || no "no positive rendering lock — 'returns none' could hold for everything"
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

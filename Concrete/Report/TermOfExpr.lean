@@ -82,12 +82,20 @@ private def eSymR : TermIR.SymEnv := fun _ _ => none
 -- appears in is exactly the case R-0455 names.
 example : ofExpr (.binOp sp .lt (.binOp sp .div (.ident sp "a") (.ident sp "b")) (.intLit sp 10))
         = some (.bin .lt (.bin .tdiv (.var "a") (.var "b")) (.lit 10)) := rfl
--- The counterpart — that `exprToProver` returns `none` here — CANNOT be an `rfl` example:
--- `exprToProver` is a `partial def`, so the kernel cannot reduce it. That is the same
--- limitation that makes `evalIntEnv` unprovable and is a large part of R-0455's motivation,
--- encountered here while trying to write the lock for it. The drop is therefore measured at
--- runtime by `droppedByStringLayer` and asserted by `check_transform_register.sh` as a COUNT,
--- which is a stronger claim than a hand-written example anyway.
+-- The counterpart, and it is a `rfl` example NOW. This comment previously said it could not
+-- be one, because `exprToProver` was a `partial def` and the kernel could not reduce it.
+-- It turned out not to need `partial` at all — nor did `exprToSmt`, `exprToLeanProp`,
+-- `arithToBVW` or three helpers; all seven recurse only on direct subterms and were marked
+-- partial by habit. Removing the keyword was the whole fix.
+--
+-- So the drop the IR exists to repair is now pinned at COMPILE TIME rather than only counted
+-- at runtime:
+example : exprToProver rocqBinOp
+    (.binOp sp .lt (.binOp sp .div (.ident sp "a") (.ident sp "b")) (.intLit sp 10)) = none := rfl
+example : exprToProver rocqBinOp (.call sp "f" [] [.ident sp "x"]) = none := rfl
+-- ...while a term inside the fragment still renders, so the lock above is not vacuous.
+example : exprToProver rocqBinOp
+    (.binOp sp .lt (.ident sp "a") (.intLit sp 10)) = some "a < 10" := rfl
 
 -- A spec-function call becomes an uninterpreted symbol rather than being dropped.
 example : ofExpr (.call sp "f" [] [.ident sp "x"]) = some (.sym "f" [.var "x"]) := rfl
