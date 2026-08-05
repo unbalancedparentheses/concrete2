@@ -2912,8 +2912,19 @@ def foldSmtResults (vcs : List VC) (results : List (String × String × List (St
 
 /-- Human-readable VC schedule (post-discharge), grouped by originating function.
     `vcs` is the output of `collectVCs` after `dischargeVCs` has folded in results. -/
-def vcsReport (vcs : List VC) : String := Id.run do
-  if vcs.isEmpty then return "=== Verification Conditions (schema v1) ===\n\n(no VCs generated)"
+def vcsReport (vcs : List VC) (unresolvedBounds : List (String × String) := []) : String := Id.run do
+  -- Array accesses that reached no obligation are named HERE rather than nowhere. The empty-VC
+  -- branch has to render them too: a function whose only access has an unresolvable size
+  -- produces zero VCs, and "(no VCs generated)" alone reads as "nothing to check".
+  let unresolvedSection : String :=
+    if unresolvedBounds.isEmpty then "" else
+      let rows := unresolvedBounds.map fun (fq, arr) => s!"\n  {fq}: {arr}[…]"
+      "\n\nARRAY ACCESSES OUTSIDE the bounds fragment — no obligation generated"
+        ++ " (conflicting or unknown array size):"
+        ++ String.join rows
+        ++ "\n  (these are NOT covered by the counts above; runtime bounds checks still apply)"
+  if vcs.isEmpty then
+    return "=== Verification Conditions (schema v1) ===\n\n(no VCs generated)" ++ unresolvedSection
   let mut out := "=== Verification Conditions (schema v1) ==="
   let fns := (vcs.map (·.fn)).eraseDups
   for fq in fns do
@@ -2944,7 +2955,7 @@ def vcsReport (vcs : List VC) : String := Id.run do
   let cex := (vcs.filter (·.status == "counterexample")).length
   let unproven := (vcs.filter (fun v => v.status == "unproven" || v.status == "missing" || v.status == "planned")).length
   out := out ++ s!"\n\nTotal: {vcs.length} VCs — {proved} proved_by_kernel_decision, {lean} proved_by_lean, {arith} arithmetic_proved, {cex} counterexample, {unproven} outstanding"
-  return out
+  return out ++ unresolvedSection
 
 /-- Compact VC-evidence summary for the audit report (the reviewer artifact):
     counts per evidence class, plus the audit-critical lines — every

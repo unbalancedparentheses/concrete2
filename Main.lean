@@ -1808,7 +1808,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       if reportJson then
         IO.println (Report.vcsJson dvcs 1)
       else
-        IO.println (Report.vcsReport dvcs)
+        IO.println (Report.vcsReport dvcs (Report.unresolvedBoundsAccesses parsed.modules))
       return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation

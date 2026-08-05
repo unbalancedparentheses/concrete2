@@ -434,12 +434,84 @@ structure BoundsObl where
   -- under an invariant whose own O1/O2 must hold; the ledger caps the status accordingly.
   hypDebt       : List String := []
 
-/-- Identifier → fixed-array size, from array-typed params and annotated lets. -/
+/-- Every array-size BINDING in a statement, recursively.
+
+    Recursive because the flat version missed any array declared inside an `if`/`while`/`for`
+    body, and inferring from an array-literal initialiser because `let a = [0; 16]` carries the
+    size in plain sight while the old map read only explicit annotations. Both were silent:
+    an unresolvable size produced no obligation and no mention of one. -/
+def arraySizesS : Stmt → List (String × Nat)
+  | .letDecl _ nm _ (some (.array _ n)) _ _ => [(nm, n)]
+  | .letDecl _ nm _ none (.arrayLit _ es) _ => [(nm, es.length)]
+  | .ifElse _ _ t el =>
+      t.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
+        ++ (el.getD []).attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
+  | .while_ _ _ b _ => b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
+  | .forLoop _ init _ step b _ =>
+      (init.attach.map (fun ⟨s, _⟩ => arraySizesS s)).getD []
+        ++ (step.attach.map (fun ⟨s, _⟩ => arraySizesS s)).getD []
+        ++ b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
+  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨s, _⟩ => arraySizesS s)
+  | _ => []
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
+
+/-- Identifier → fixed-array size — only where the size is UNAMBIGUOUS.
+
+    A name bound twice at different sizes is dropped rather than guessed. That is not
+    conservatism for its own sake: the previous version took the FIRST binding via `find?`, so
+
+        let a: [i32; 16] = [0; 16];
+        let a: [i32; 4]  = [7; 4];
+        return a[10];
+
+    generated `0 ≤ 10 ∧ 10 < 16` for an access into a FOUR-element array — and that obligation
+    is TRUE, so the report read `2 proved, 0 outstanding` for a program that traps at runtime.
+    A wrong obligation is worse than a missing one: a missing one leaves the claim unmade,
+    while this one made a false claim and had it certified.
+
+    Dropping the name turns that into no obligation, which `unresolvedBoundsAccesses` then
+    NAMES rather than passing over in silence. Resolving shadowing properly (per-scope sizes,
+    the way `scopedWalk` already threads hypotheses) would recover the coverage; refusing to
+    answer is what makes the report honest in the meantime. -/
 def arraySizeMap (f : FnDef) : List (String × Nat) :=
   let ps := f.params.filterMap fun p => match p.ty with | .array _ n => some (p.name, n) | _ => none
-  let ls := f.body.filterMap fun s => match s with
-    | .letDecl _ nm _ (some (.array _ n)) _ _ => some (nm, n) | _ => none
-  ps ++ ls
+  let ls := f.body.flatMap arraySizesS
+  let all := ps ++ ls
+  all.filter fun (nm, n) => all.all fun (nm', n') => nm' != nm || n' == n
+
+/-- Array accesses that reach NO bounds obligation, named so coverage cannot be over-read.
+
+    `N VCs, all proved` must not be readable as `every array access is checked`. This is the
+    same discipline `--report core-semantics-diff` applies to functions outside the extractable
+    fragment, applied to the layer that was quietly exempt from it.
+
+    Two causes reach here, both real gaps rather than errors:
+
+    * **conflicting sizes** — the name is bound at two different sizes, so `arraySizeMap`
+      refuses to guess (it used to guess, and guessed WRONG; see there);
+    * **no statically known size** — nothing in the function fixes a length for that name.
+
+    A third cause does not reach here and is listed in `DiscoveryComplete.lean`: an array
+    reached through a field (`b.data[i]`) is never RECORDED, so there is no name to report.
+    Closing that needs type resolution for arbitrary array expressions. -/
+def unresolvedBoundsAccesses (modules : List Module) : List (String × String) := Id.run do
+  let mut out : List (String × String) := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    let fq := pfx ++ f.name
+    let sizes := arraySizeMap f
+    for (arr, _, _) in scopedBoundsB f.loopContracts [] f.body do
+      if (sizes.find? (·.1 == arr)).isNone then
+        out := out ++ [(fq, arr)]
+  return out.eraseDups
 
 /-- Generate array-bounds obligations for every indexed access into a known
     fixed-size array. -/

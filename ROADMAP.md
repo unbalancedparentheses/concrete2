@@ -513,6 +513,22 @@ recomputed.
   because the length lookup is keyed by variable name and a field path has none. Peeling
   `.fieldAccess` would manufacture an obligation about the wrong array, so this needs type
   resolution for arbitrary array expressions.
+- **A WRONG obligation, found by the same question and more serious than the missing ones.**
+  `boundsObligations` resolved an array's length by NAME with `find?` — first match wins — so a
+  shadowed array produced a bound from the wrong binding: `a[10]` on a 4-element array
+  generated `0 ≤ 10 ∧ 10 < 16`, which the kernel PROVED. The report read `2 proved, 0
+  outstanding` for a program that traps. Every other bug in this cluster was a missing claim;
+  this was a false claim, certified. Fixed by refusing to answer when a name has conflicting
+  sizes. **Follow-up:** recover the lost coverage with per-scope sizing, threading declared
+  sizes the way `scopedWalk` already threads hypotheses.
+- **Two more silent bounds gaps, closed.** `let a = [0; 16]` (unannotated — the size sits in
+  the initialiser, but only annotations were read) and arrays declared inside an
+  `if`/`while`/`for` body (only the flat top-level statement list was scanned).
+- **The silence is now reported.** `--report vcs` prints `ARRAY ACCESSES OUTSIDE the bounds
+  fragment`, naming every access that reached no obligation, including on the zero-VC path.
+  `make test` stayed 1702/0 through ALL of these fixes — the corpus contained no parenthesised
+  access, no shadowed array, no unannotated array literal and no nested declaration, which is
+  why every regression guard here is end-to-end rather than a `rfl` lock.
 - **Register B row 3, `eliminate_algebraic`.** Different in kind — requires the
   axiomatization be conservative over the datatype theory, which is model-theoretic rather
   than a rewriting argument. Not a longer row 2.

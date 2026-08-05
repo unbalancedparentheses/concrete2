@@ -168,6 +168,49 @@ Three things worth recording about it:
 That is the argument for discovery completeness in one example: the defect was not a failed
 proof or a bad translation, and no register could see it. It was a question nobody had asked.
 
+### Then the same question found a WRONG obligation, which is worse
+
+Pulling on "which accesses actually reach an obligation?" led past discovery into the sizing
+step, where `boundsObligations` resolved an array's length by name via `find?` — first match
+wins. Shadowing therefore produced an obligation about the wrong array:
+
+```
+let a: [i32; 16] = [0; 16];
+let b: i32 = a[0];
+let a: [i32; 4]  = [7; 4];
+return a[10] + b;        // obligation generated: 0 ≤ 10 ∧ 10 < 16
+```
+
+`10 < 16` is **true**, so the kernel proved it and the report read `2 proved, 0 outstanding`
+for a program that traps at runtime. Every earlier bug in this file was a *missing* claim.
+This one was a **false claim, certified** — the failure mode the whole pipeline exists to
+prevent, sitting in the layer that generates what everything else then proves.
+
+Fixed by refusing to answer: a name bound at two different sizes is dropped from the map
+rather than guessed. That trades coverage for honesty, and the coverage is recoverable later
+(per-scope sizes, the way `scopedWalk` already threads hypotheses) whereas a certified
+falsehood is not.
+
+Two coverage gaps found in the same pass, both silent, both now closed:
+
+- `let a = [0; 16]` — an **unannotated** let. The size is in the initialiser, but the map read
+  only explicit annotations, so an entirely ordinary array had no bounds obligation.
+- an array declared **inside** an `if`/`while`/`for` body — the map scanned only the flat
+  top-level statement list.
+
+And the silence itself is now a reported thing: `--report vcs` prints
+`ARRAY ACCESSES OUTSIDE the bounds fragment`, naming each access that reached no obligation,
+including on the zero-VC path (a function whose only access is unresolvable used to print
+`(no VCs generated)`, which reads as "nothing to check"). This is the discipline
+`core-semantics-diff` already applied to unextractable functions, applied to the layer that
+was quietly exempt.
+
+**The corpus covered none of it.** `make test` was 1702/0 before and after every one of these
+fixes. No fixture used a parenthesised access, a shadowed array, an unannotated array literal,
+or an array declared in a nested block. That is why the regression guards for all of them are
+end-to-end in the gate rather than `rfl` locks: the defects lived precisely where no example
+looked, and a lock only protects code someone thought to exercise.
+
 ## Drivers as data (R-0455, same slice)
 
 `tactics` is now a **field** on `ProverLowering`, ordered for cheap-then-expensive attempts.

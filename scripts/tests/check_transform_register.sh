@@ -299,6 +299,54 @@ grep -qE "^  \| \.fieldAccess" "$RO" && grep -A6 "def arrayRootName" "$RO" | gre
   && no "arrayRootName peels .fieldAccess — the length lookup would read the WRONG array" \
   || ok "arrayRootName stops at .paren (no wrong-array obligations)"
 
+echo "=== bounds: a WRONG obligation is worse than a missing one (shadowing) ==="
+# The severe one. `arraySizeMap` used to take the FIRST binding of a name, so
+#     let a: [i32; 16] = [0; 16];  let a: [i32; 4] = [7; 4];  return a[10];
+# produced `0 <= 10 AND 10 < 16` for a FOUR-element array. That obligation is TRUE, so the
+# report read "2 proved, 0 outstanding" for a program that traps at runtime -- a false claim,
+# certified. The map now refuses to answer when a name has conflicting sizes, and the access is
+# NAMED instead of silently dropped.
+if [ -n "${TMPD:-}" ]; then
+  cat > "$TMPD/shadow.con" <<'CON'
+mod shadowbounds {
+    fn shadow() -> i32 {
+        let a: [i32; 16] = [0; 16];
+        let b: i32 = a[0];
+        let a: [i32; 4] = [7; 4];
+        return a[10] + b;
+    }
+}
+CON
+  SH="$("$BIN" "$TMPD/shadow.con" --report vcs 2>/dev/null)"
+  printf '%s' "$SH" | grep -q "10 < 16" \
+    && no "the shadowed access is STILL sized from the wrong binding (10 < 16 on a 4-element array)" \
+    || ok "no obligation is generated from the wrong binding"
+  printf '%s' "$SH" | grep -q "OUTSIDE the bounds fragment" \
+    && ok "the unresolvable access is NAMED, not silently dropped" \
+    || no "the access vanished silently — coverage can be over-read again"
+  # And the naming must survive the zero-VC path, which returns early.
+  printf '%s' "$SH" | grep -q "shadowbounds.shadow: a" \
+    && ok "naming works on the empty-VC path too" \
+    || no "a function with only unresolvable accesses reports nothing at all"
+
+  echo "=== bounds: sizes the old map could not see ==="
+  cat > "$TMPD/sizes.con" <<'CON'
+mod sizecov {
+    fn let_inferred(i: i32) -> i64 { let a = [0; 16]; return a[i]; }
+    fn nested(i: i32) -> i32 { if i > 0 { let a: [i32; 8] = [0; 8]; return a[i]; } return 0; }
+}
+CON
+  NS="$("$BIN" "$TMPD/sizes.con" --report vcs 2>/dev/null | grep -c 'array_bounds')"
+  [ "$NS" = "2" ] \
+    && ok "unannotated-let and nested-let arrays both get bounds VCs (got $NS)" \
+    || no "expected 2 array-bounds VCs, got $NS — an array size the compiler can see is being ignored"
+else
+  no "temp dir unavailable; the bounds obligation checks did not run"
+fi
+grep -q "all.filter fun (nm, n) => all.all" "$RO" \
+  && ok "arraySizeMap drops names with conflicting sizes rather than guessing" \
+  || no "the conflicting-size filter is gone — wrong-array obligations can return"
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
