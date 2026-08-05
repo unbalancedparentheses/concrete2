@@ -1765,6 +1765,10 @@ structure ProofCoreEntry where
       rebuilt. `none` only if the module carried no facts for this identity,
       which is itself a fault worth seeing rather than papering over. -/
   declFacts   : Option Proof.CheckedDeclFacts := none
+  /-- The STRUCTURAL evidence body for this identity, threaded from Elab rather than
+      rebuilt. Kept beside declFacts because the facts record cannot reference the tree
+      (EvidenceTree imports SubjectFacts), and looked up by IDENTITY, never by position. -/
+  evidenceBody : Option Proof.EvidenceBodyDraftV2 := none
   /-- `proofSubjectDigestV2` over those facts and the body fingerprint. `none`
       when the facts are absent or INCOMPLETE — an incomplete subject must not be
       representable as a digest string, or it becomes comparable as though it
@@ -2207,6 +2211,7 @@ private partial def extractModule
     -- the function nobody calls and missed the one that mints every subject
     -- digest.
     let facts? := (m.declFacts.find? fun d => d.id == cid)
+    let evBody? := (m.evidenceBodies.find? fun p => p.1 == cid).map Prod.snd
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
     let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx fp)
@@ -2234,7 +2239,8 @@ private partial def extractModule
           | rs => rs
         else []
       (accE ++ [{ qualName, bareName, callableId := cid,
-                   declFacts := facts?, subjectDigest := subjDigest, fn := f, extracted
+                   declFacts := facts?, evidenceBody := evBody?,
+                   subjectDigest := subjDigest, fn := f, extracted
                  , unsupported := unsup
                  , fingerprint := fp, params := f.params.map Prod.fst
                  , eligibility := elig, loc := elig.loc
