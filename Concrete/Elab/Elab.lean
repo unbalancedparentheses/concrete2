@@ -938,11 +938,15 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           let retTy := substSelf sig.retTy selfTy
           let params := sig.params.map fun p => { p with ty := substSelf p.ty selfTy }
           let mut cArgs : List CExpr := [cObj]
+          let mut argEvs : List Proof.EvidenceExprV2 := [cObjEv.evidence]
           for (arg, p) in args.zip params do
             let cArgEv ← elabExprEv arg (some p.ty)
             let cArg := cArgEv.core
             cArgs := cArgs ++ [cArg]
-          return ElaboratedExprV2.mk (CExpr.call (mangledMethodName n methodName) typeArgs cArgs retTy) (Proof.evUnresolvedCall)
+          return ElaboratedExprV2.mk (CExpr.call (mangledMethodName n methodName) typeArgs cArgs retTy)
+            (match env.resolveCallee (n ++ "_" ++ methodName) with
+             | some id => Proof.evCall id argEvs
+             | none    => Proof.evUnresolvedCall)
       | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
       let mangledName := mangledMethodName typeName methodName
@@ -986,11 +990,16 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             | _, _ => cObj                    -- by-value self, pass as-is
           | none => cObj
         let mut cArgs : List CExpr := [selfArg]
+        let mut argEvs : List Proof.EvidenceExprV2 := [Proof.evUnhandledExpr "self argument"]
         for (arg, pTy) in args.zip methodParams do
           let cArgEv ← elabExprEv arg (some pTy)
           let cArg := cArgEv.core
           cArgs := cArgs ++ [cArg]
-        return ElaboratedExprV2.mk (CExpr.call mangledName (objTypeArgs ++ methodArgs) cArgs retTy) (Proof.evUnresolvedCall)
+          argEvs := argEvs ++ [cArgEv.evidence]
+        return ElaboratedExprV2.mk (CExpr.call mangledName (objTypeArgs ++ methodArgs) cArgs retTy)
+          (match (← getEnv).resolveCallee mangledName with
+           | some id => Proof.evCall id argEvs
+           | none    => Proof.evUnresolvedCall)
       | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
@@ -1001,11 +1010,16 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       let paramTypes := sig.params.map fun (_, t) => substTy mapping t
       let retTy := substTy mapping sig.retTy
       let mut cArgs : List CExpr := []
+      let mut argEvs : List Proof.EvidenceExprV2 := []
       for (arg, pTy) in args.zip paramTypes do
         let cArgEv ← elabExprEv arg (some pTy)
         let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
-      return ElaboratedExprV2.mk (CExpr.call mangledName typeArgs cArgs retTy) (Proof.evUnresolvedCall)
+        argEvs := argEvs ++ [cArgEv.evidence]
+      return ElaboratedExprV2.mk (CExpr.call mangledName typeArgs cArgs retTy)
+        (match (← getEnv).resolveCallee mangledName with
+         | some id => Proof.evCall id argEvs
+         | none    => Proof.evUnresolvedCall)
     | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
