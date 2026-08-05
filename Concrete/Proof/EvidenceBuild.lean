@@ -72,6 +72,40 @@ def evUnary (op : UnaryOp) (operand : EvidenceExprV2) : EvidenceExprV2 :=
 def evBinary (op : BinOp) (lhs rhs : EvidenceExprV2) : EvidenceExprV2 :=
   .binary (binOpTag op) lhs rhs
 
+/-- Array literal in SOURCE order — measured observable: `[f(), g()]` and `[g(), f()]`
+    run their elements in the order written. Not sorted, not deduplicated: repetition
+    and order are both semantic. -/
+def evArrayLit (elemTy : TypeId) (elements : List EvidenceExprV2) : EvidenceExprV2 :=
+  .arrayLit elemTy elements
+
+def evIndex (collection index : EvidenceExprV2) : EvidenceExprV2 := .index collection index
+def evDeref (inner : EvidenceExprV2) : EvidenceExprV2 := .deref inner
+def evBorrow (isMut : Bool) (inner : EvidenceExprV2) : EvidenceExprV2 := .borrow isMut inner
+def evCast (target : TypeId) (inner : EvidenceExprV2) : EvidenceExprV2 := .cast target inner
+
+/-- `expr?`. Distinct from its operand: the propagation path is part of the meaning. -/
+def evTryProp (operand : EvidenceExprV2) (residualTy : TypeId) : EvidenceExprV2 :=
+  .tryProp operand residualTy
+
+/-- Field projection. Owner-relative identity, so `a.x` and `b.x` on different types are
+    different evidence even though the spelling matches. -/
+def evField (id : FieldId) (object : EvidenceExprV2) : EvidenceExprV2 := .field id object
+
+/-- STRUCT LITERALS ARE DELIBERATELY NOT BUILT YET.
+
+    `FieldId` keys each entry under either outcome, but the ORDER of entries is an open
+    language decision: struct-literal initializers currently evaluate in DECLARATION
+    order while every other positional construct follows SOURCE order. Building the node
+    now would bake whichever order I picked into versioned bytes before anyone decided,
+    and a wrong choice there is not a refusal — it is a body that records an evaluation
+    order the program does not have. See docs/EVIDENCE_PRODUCER_MATRIX.md.
+
+    Until then a struct literal is a typed gap, so a subject containing one is REFUSED
+    rather than described incorrectly. -/
+def evStructLitPending : EvidenceExprV2 :=
+  .gap { code := .unhandledExpr,
+         detail := "struct literal: initializer evaluation order is an open decision" }
+
 /-- Parentheses are TRANSPARENT: they emit no node. `(p)` and `p` are the same program,
     so an extra wrapper would make a purely syntactic edit move the digest. -/
 def evParen (inner : EvidenceExprV2) : EvidenceExprV2 := inner
