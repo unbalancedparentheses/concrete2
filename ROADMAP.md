@@ -188,7 +188,14 @@ distinct problems had to be fixed first, none of them visible from the conflict 
 | 2 | VC `kind`/`status` whitelists asserted a v1 set | extended to measured reality: `div_quotient_in_range`, `shift_amount_in_range`, `ineligible` |
 | 3 | three sites expected `solver_error` | never produced anywhere; all report `unproven`. Safety asserted harder, diagnostic TRACKED |
 | 4 | `assume_taint` contract snapshot drift | the spike added contracts to std's `rotr`; regenerated (1 of 14 actually changed) |
-| 5 | six report snapshots drifted | the spike modified the hmac fixture and std/sha256; regenerated (exactly 6 changed) |
+| 5 | fixed_capacity expected 29 bounds | the spike emits 5 MORE bounds obligations (fail-open closed); zero proofs lost |
+| 6 | six report snapshots drifted | the spike modified the hmac fixture and std/sha256; regenerated (exactly 6 changed) |
+
+**Three of the five were fail-opens the spike CLOSED**, with the gate asserting the old
+permissive behaviour: transitive stack-depth admission, bounds obligations on five
+previously-unchecked array accesses, and std contracts on `rotr`. In each case the correct
+action was to update the expectation, and in each case a lazier reading ("the spike broke a
+gate") would have concluded the opposite.
 
 **A merge being conflict-free says nothing about it being correct.** Every one of these
 was found by RUNNING gates, and three of them were gates asserting behaviour the spike had

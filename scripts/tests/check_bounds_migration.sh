@@ -54,8 +54,15 @@ ck "stale index after i=i+1 ⇒ guard dropped ⇒ unproven" "$ADV" \
 
 echo "=== existing corpus: status distribution exact-stable ==="
 # counts include linked-std VCs; std additions must stay all-proved (P7 fmt scalar emission)
-ck "fixed_capacity: 29 bounds, 26 proved / 3 unproven" "examples/fixed_capacity/src/main.con" \
-  "len(B)==29 and dist().get('proved_by_kernel_decision')==26 and dist().get('unproven')==3"
+# UPDATED for the multi-prover merge (pin 80be5368): 29 -> 34 bounds.
+#
+# The spike EMITS FIVE MORE bounds obligations — compute_tag#bounds0, read_u16_be#bounds0/1,
+# read_u8#bounds0, ring_contains#bounds0 — array accesses that previously carried NO
+# obligation at all. That is a fail-open closed, not a regression: verified by diffing the
+# VC id sets, ZERO proofs were lost (proved stays 26) and all five additions are new ids.
+# They are unproven, which is the honest state for an obligation nobody has discharged yet.
+ck "fixed_capacity: 34 bounds, 26 proved / 8 unproven" "examples/fixed_capacity/src/main.con" \
+  "len(B)==34 and dist().get('proved_by_kernel_decision')==26 and dist().get('unproven')==8"
 ck "runtime_safety: 3 bounds, 2 proved / 1 unproven" "examples/proof_patterns/runtime_safety/src/main.con" \
   "len(B)==3 and dist().get('proved_by_kernel_decision')==2 and dist().get('unproven')==1"
 ck "parse_validate: 19 bounds, 18 proved / 1 unproven" "examples/parse_validate/src/main.con" \
