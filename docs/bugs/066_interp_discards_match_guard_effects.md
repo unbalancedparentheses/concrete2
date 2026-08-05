@@ -71,7 +71,10 @@ env only on the success path fails three legs.
 
 **Axis 2 — leaked arm bindings.** Structurally prevented UPSTREAM, not by this fix.
 Bug 045 alpha-renames every match payload binder to a fresh Core name (`x` becomes
-`x.b0`, verified with `--emit-core`), so a leaked arm binding cannot shadow an outer
+`x.b0`, verified with `--emit-core`). The owners are concrete and executable, not
+prose: the code owner is `Elab.bindArmVar` (fresh name from `env.freshBinder`), and the
+guarding fixture is `regress_045_match_binder_shadow.con` (run_ok 42) in
+`run_tests.sh`. So a leaked arm binding cannot shadow an outer
 variable of the same spelling — the names differ. Leaking the whole arm environment on
 failure therefore SURVIVES mutation: it is not behaviorally observable.
 
