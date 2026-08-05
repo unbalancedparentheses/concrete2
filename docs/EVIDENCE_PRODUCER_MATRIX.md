@@ -123,3 +123,39 @@ information the AST does not carry. Ordinary compilation must continue when evid
 cannot resolve them; shadow validation reports `unresolvedCallee`. These are the
 cases most likely to be resolvable-for-compilation but not resolvable-for-evidence,
 which is the class `constRef` already demonstrated.
+
+## OPEN LANGUAGE DECISION: struct-literal initializer evaluation order
+
+**Measured 2026-08-04, not ratified.** `Elab` builds a struct literal by iterating
+`sd.fields` — the DECLARATION list — and looking up each initializer by name, so source
+order is discarded before Core exists.
+
+| Construct | source `f(),g()` | source `g(),f()` | follows |
+|---|---|---|---|
+| call arguments | `f g` | `g f` | source order |
+| array elements | `f g` | `g f` | source order |
+| **struct fields** | `f g` | **`f g`** | declaration order |
+
+Struct literals are the only positional construct that reorders. `{ y: g(), x: f() }`
+runs `f()` first, which observably reorders effects and traps.
+
+**Interpreter/compiled agreement is NOT evidence of intent here.** Both consume the
+order `Elab` already chose, so they are one source observed twice, not two independent
+witnesses.
+
+The decision is open:
+
+1. **Keep declaration order** — then ratify it in the language reference and gate it.
+2. **Change to source order** — then fix `Elab` and build the evidence node against the
+   new order. Layout stays declaration order regardless; layout and evaluation are
+   separate concerns.
+
+Until it is decided, the fixture is a **decision tripwire**, not a normative gate: it
+records current behaviour so a change is noticed, and deliberately does not ratify it.
+A positive gate here would silently bless the wart.
+
+`FieldId` keys the entry in either outcome, so a spelling or import alias can never
+become identity. Only the ORDER of the entries is undecided.
+
+The same discipline applies before struct-update base/override order and match-arm
+order enter versioned bytes: measure, then decide, then gate.

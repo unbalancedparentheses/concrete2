@@ -92,5 +92,37 @@ else
   no "EvidenceBuild defines its own operator tags — two tables can disagree"
 fi
 
+# DECISION TRIPWIRE, not a normative gate. Struct-literal initializers currently
+# evaluate in DECLARATION order while calls and array elements follow SOURCE order.
+# This leg records that difference so a change is noticed; it deliberately does not
+# ratify it, because gating current behaviour would bless a likely wart before the
+# language decision is made. See docs/EVIDENCE_PRODUCER_MATRIX.md.
+CC=".lake/build/bin/concrete"
+if [ -x "$CC" ]; then
+  OT="$(mktemp -d)"
+  gen() { cat > "$OT/$1.con" <<EOF
+mod ord {
+    struct Copy P { x: Int, y: Int }
+    fn f() with(Console) -> Int { print("f\n"); return 1; }
+    fn g() with(Console) -> Int { print("g\n"); return 2; }
+    pub fn main() with(Console) -> Int { let p: P = P { $2 }; return p.x; }
+}
+EOF
+  }
+  gen fwd 'x: f(), y: g()'; gen rev 'y: g(), x: f()'
+  o1="$("$CC" "$OT/fwd.con" --interp 2>/dev/null | tr -d '\n' | head -c 4)"
+  o2="$("$CC" "$OT/rev.con" --interp 2>/dev/null | tr -d '\n' | head -c 4)"
+  rm -rf "$OT"
+  if [ -z "$o1" ]; then
+    no "order tripwire produced no output — inconclusive, not agreement"
+  elif [ "$o1" = "$o2" ]; then
+    ok "TRIPWIRE: struct fields still evaluate in DECLARATION order (decision open)"
+  else
+    no "struct-literal evaluation order CHANGED to source order — the language decision was made; ratify it in the matrix, build the evidence node against it, and convert this tripwire into a gate"
+  fi
+else
+  no "compiler not built — the order tripwire could not run"
+fi
+
 echo "EVIDENCE-BUILD: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
