@@ -474,6 +474,9 @@ jobs:
       - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
         run: bash scripts/tests/check_match_guard_effects.sh
 
+      - name: "Convergence inventory (every recorded R-0004 / multi-prover gap, machine-checked)"
+        run: bash scripts/tests/check_convergence_inventory.sh
+
       - name: "Bug filing completeness (a bug needs a document, a corpus entry, and coverage)"
         run: bash scripts/tests/check_bug_filing_complete.sh
 
