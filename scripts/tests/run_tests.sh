@@ -522,7 +522,7 @@ PROBE_EOF
         if printf '%s' "$_probe_err" | grep -q "not found in bootstrap symbols map"; then
             echo ""
             echo "  WARNING: '$LLI' cannot execute this compiler's IR on this machine."
-            echo "           $(printf '%s' "$_probe_err" | head -1)"
+            echo "           $(printf '%s' "$_probe_err" | awk 'NR<=1')"
             echo "           This is an LLVM/ORC toolchain issue, NOT a compiler bug — it"
             echo "           reproduces on origin/main with byte-identical IR."
             echo "           Falling back to native clang so these tests actually run."
