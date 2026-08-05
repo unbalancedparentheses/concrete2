@@ -578,6 +578,14 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       -- complex base expression is re-read per copied field.)
       let cBase ← base.mapM (fun b => do pure (← elabExprEv b (some resultTy)).core)
       let mut cFields : List (String × CExpr) := []
+      -- Struct-literal field evidence, in the order Elab EVALUATES them, which is
+      -- DECLARATION order: this loop walks sd.fields and looks each initializer up by
+      -- name, so source order is discarded before Core exists. Measured, and recorded as
+      -- an open language decision in docs/EVIDENCE_PRODUCER_MATRIX.md with a tripwire in
+      -- check_evidence_build. Evidence must describe what the program DOES, so it follows
+      -- the actual evaluation order; if the language later evaluates in source order, the
+      -- tripwire fires and this follows.
+      let mut structFieldEvsRev : List (String × Proof.EvidenceExprV2) := []
       for sf in sd.fields do
         let fieldTy := substTy mapping sf.ty
         match fields.find? fun (fn, _) => fn == sf.name with
@@ -586,13 +594,18 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           let cExprEv ← elabExprEv expr (some fieldTy)
           let cExpr := cExprEv.core
           cFields := cFields ++ [(sf.name, cExpr)]
+          structFieldEvsRev := (sf.name, cExprEv.evidence) :: structFieldEvsRev
         | none =>
           match cBase with
           | some cb =>
             recordFieldUse sd sf.name
             cFields := cFields ++ [(sf.name, .fieldAccess cb sf.name fieldTy)]
           | none => pure ()  -- union partial init
-      return ElaboratedExprV2.mk (CExpr.structLit name typeArgs cFields resultTy) (Proof.evStructLitPending)
+      return ElaboratedExprV2.mk (CExpr.structLit name typeArgs cFields resultTy) (match sd.typeId? with
+           | some owner =>
+             .structLit owner (structFieldEvsRev.reverse.map fun fe =>
+               ({ owner := owner, field := fe.1 }, fe.2))
+           | none => Proof.evUnhandledExpr "struct literal: owner declaration has no identity")
     | none => throwElab (.unknownStructType name) (some e.getSpan)
 
   | .fieldAccess _ obj field =>

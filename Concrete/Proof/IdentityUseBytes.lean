@@ -289,7 +289,10 @@ partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
   | .binary _ l r    => exprFlatUses l ++ exprFlatUses r
   | .index c i       => exprFlatUses c ++ exprFlatUses i
   | .call _ args     => args.flatMap exprFlatUses
-  | .field id o      => [.field id] ++ exprFlatUses o
+  -- OBJECT FIRST: `q.x` evaluates q before projecting x, and the accumulator records in
+  -- that order. Emitting the field first would put the derived view out of step with the
+  -- traversal it is meant to reproduce.
+  | .field id o      => exprFlatUses o ++ [.field id]
   | .structLit t fs  => [.typeRef t] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
   | .variantLit i fs => [.variant i] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
   | .cast t x        => [.typeRef t] ++ exprFlatUses x

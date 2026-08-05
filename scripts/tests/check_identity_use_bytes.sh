@@ -221,21 +221,22 @@ else
   ok "the shadow digest is absent from SubjectFacts, so canonical cannot include it"
 fi
 
-# CONVERGENCE TRIPWIRE: the derived flat view vs the independent accumulator.
+# CONVERGENCE, now a POSITIVE gate rather than a tripwire.
 #
-# `flatUsesOf` derives the legacy flat view FROM the tree so the accumulator can be
-# deleted — but only once they AGREE. Measured today they do NOT: the tree emits gaps for
-# structLit/enumLit/fieldAccess/match, so it carries no typeRef/field/variant uses while
-# the accumulator has them from lookupStruct/lookupEnum. Deleting the accumulator now
-# would silently drop every type, field and variant identity from the subject.
-#
-# This leg asserts the CURRENT divergence on purpose. It fails when the tree starts
-# carrying those identities, which is the signal that the accumulator can go.
+# The criterion is containment, not equality — and that correction came from measurement.
+# The derived view is RICHER than the accumulator: it carries pattern FIELD identities the
+# accumulator never recorded, so `acc == der` would have failed forever on a difference that
+# means the accumulator was under-recording. What must hold is that the tree LOSES NOTHING:
+# every accumulated use appears in the derived view, in the same relative order.
 CMP="$(mktemp -d)"
 cat > "$CMP/p.lean" <<'LEAN'
 import Concrete
 open Concrete Concrete.Proof
-def cmp (src : String) : String :=
+def subseq : List BodyIdentityUse → List BodyIdentityUse → Bool
+  | [], _ => true
+  | _::_, [] => false
+  | a::as, d::ds => if a == d then subseq as ds else subseq (a::as) ds
+def chk (src : String) : String :=
   match (do
     let pa ← Pipeline.parse src
     let sm := Pipeline.buildSummary pa
@@ -247,25 +248,25 @@ def cmp (src : String) : String :=
   | .ok ms =>
     let facts := (ms.map CModule.declFacts).flatten
     let bodies := (ms.map CModule.evidenceBodies).flatten
-    let rows := facts.filterMap fun f =>
+    let bad := facts.filter fun f =>
       match bodies.find? (fun p => Prod.fst p == CheckedDeclFacts.id f) with
-      | none => some "NO-BODY"
-      | some p =>
-        let acc := ProofBodyIdentityInputsV2.uses (CheckedDeclFacts.bodyIdentityInputs f)
-        let der := flatUsesOf (Prod.snd p)
-        if acc == der then none else some "DIFF"
-    if rows.isEmpty then "AGREE" else "DIVERGE"
-#eval IO.println (cmp "mod m { struct Copy P { x: Int, y: Int } pub fn f(p: Int) -> Int { let q: P = P { x: p, y: 1 }; return q.x; } }")
+      | none => true
+      | some p => !(subseq (ProofBodyIdentityInputsV2.uses (CheckedDeclFacts.bodyIdentityInputs f))
+                           (flatUsesOf (Prod.snd p)))
+    if bad.isEmpty then "OK" else "LOSS"
+#eval IO.println (chk "mod m { struct Copy P { x: Int, y: Int } pub fn f(p: Int) -> Int { let q: P = P { x: p, y: 1 }; return q.x; } }")
+#eval IO.println (chk "mod m { enum Copy E { A { v: Int }, B { v: Int } } pub fn f(e: E) -> Int { match e { E::A { v } => { return v; }, E::B { v } => { return 0; } } } }")
+#eval IO.println (chk "mod m { fn g(a: Int, b: Int) -> Int { return a; } pub fn f(p: Int) -> Int { return g(p, 1); } }")
+#eval IO.println (chk "mod m { pub fn f(p: Int) -> Int { let mut i: Int = 0; while i < p { i = i + 1; } return i; } }")
 LEAN
-cmpout="$(lake env lean "$CMP/p.lean" 2>/dev/null | tr -d '\n' || true)"
+cmpout="$(lake env lean "$CMP/p.lean" 2>/dev/null | tr '\n' ',' || true)"
 rm -rf "$CMP"
-if [ "$cmpout" = "DIVERGE" ]; then
-  ok "TRIPWIRE: derived flat view still diverges from the accumulator (tree lacks type/field/variant identities)"
-elif [ "$cmpout" = "AGREE" ]; then
-  no "the derived view now AGREES with the accumulator — wire struct/enum/field/variant identities confirmed, so DELETE the independent accumulator and convert this tripwire"
-else
-  no "convergence probe was inconclusive ([$cmpout]) — neither AGREE nor DIVERGE"
-fi
+case "$cmpout" in
+  "") no "convergence probe produced no output — inconclusive, not agreement" ;;
+  *LOSS*) no "the derived view LOSES accumulated identities ($cmpout) — the tree is missing something the accumulator has" ;;
+  *ERR*) no "convergence probe hit a pipeline error ($cmpout)" ;;
+  *) ok "the tree loses nothing the accumulator recorded, across struct/field, enum/match, calls and loops" ;;
+esac
 
 echo "IDENTITY-USE-BYTES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
