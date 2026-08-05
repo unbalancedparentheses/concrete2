@@ -626,7 +626,10 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         recordFieldUse sd field
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
-        return ElaboratedExprV2.mk (CExpr.fieldAccess cObj field fieldTy) (Proof.evUnhandledExpr "field access: FieldId not minted here")
+        return ElaboratedExprV2.mk (CExpr.fieldAccess cObj field fieldTy)
+          (match sd.typeId? with
+           | some owner => Proof.evField { owner := owner, field := field } cObjEv.evidence
+           | none => Proof.evUnhandledExpr "field access: owner declaration has no identity")
       | none =>
         -- Newtype wrapping a struct: .0 unwraps to the inner type.
         if field == newtypeFieldName then
@@ -671,6 +674,7 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       | some ev =>
         recordVariantUse ed variant
         let mut cFields : List (String × CExpr) := []
+        let mut fieldEvsRev : List (String × Proof.EvidenceExprV2) := []
         for sf in ev.fields do
           let fieldTy := substTy mapping sf.ty
           match fields.find? fun (fn, _) => fn == sf.name with
@@ -678,10 +682,16 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
             let cExprEv ← elabExprEv expr (some fieldTy)
             let cExpr := cExprEv.core
             cFields := cFields ++ [(sf.name, cExpr)]
+            fieldEvsRev := (sf.name, cExprEv.evidence) :: fieldEvsRev
           | none => throwElab (.missingFieldInVariant sf.name enumName variant) (some e.getSpan)
         let resultTy := if effectiveTypeArgs.isEmpty then Ty.named enumName
                          else Ty.generic enumName effectiveTypeArgs
-        return ElaboratedExprV2.mk (CExpr.enumLit enumName variant effectiveTypeArgs cFields resultTy) (Proof.evUnhandledExpr "enum literal: VariantId not minted here")
+        return ElaboratedExprV2.mk (CExpr.enumLit enumName variant effectiveTypeArgs cFields resultTy)
+          (match ed.typeId? with
+           | some owner =>
+             .variantLit { owner := owner, variant := variant }
+               (fieldEvsRev.reverse.map fun fe => ({ owner := owner, field := fe.1 }, fe.2))
+           | none => Proof.evUnhandledExpr "enum literal: owner declaration has no identity")
       | none => throwElab (.unknownVariant variant enumName) (some e.getSpan)
     | none => throwElab (.unknownEnumType enumName) (some e.getSpan)
 
