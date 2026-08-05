@@ -500,8 +500,19 @@ recomputed.
   which Registers A/B/C are all structurally unable to ask. **Its antecedent is narrow**
   (`hasShift` misses a shift under a call argument, which the walker does traverse) and that
   gap is pinned by a build-enforced example so the theorem is not over-read.
-  **Remaining:** the same treatment for `collectDivisorsE`, `collectIndexUsesE` and
-  `collectArithE` — div-by-zero, bounds and overflow discovery — each inside a `mutual` block.
+  **DONE 2026-08-05 for all four families**: `collectDivisorsE`, `collectIndexUsesE` and
+  `collectArithE` followed (each `mutual` block totalised as a unit, since `partial` is
+  all-or-nothing inside one). 17 report-layer `partial def`s are now 6, none on discovery.
+- **A real bug found by writing the predicate, not by testing.** `(a)[i]` generated NO
+  array-bounds obligation — absent from `--report vcs`, not merely unproven — while `a[i]`
+  did, because discovery matched a bare `.ident`. Fixed via `arrayRootName`. The suite was
+  1702/0 before AND after: no fixture had ever used a parenthesised array access, so the
+  regression guard is end-to-end rather than a `rfl` lock. Memory safety was never affected
+  (codegen bounds-checks every access); the missing thing was the proof, and any sign of its
+  absence. **Still open, now named rather than silent:** `b.data[i]` records nothing either,
+  because the length lookup is keyed by variable name and a field path has none. Peeling
+  `.fieldAccess` would manufacture an obligation about the wrong array, so this needs type
+  resolution for arbitrary array expressions.
 - **Register B row 3, `eliminate_algebraic`.** Different in kind — requires the
   axiomatization be conservative over the datatype theory, which is model-theoretic rather
   than a rewriting argument. Not a longer row 2.

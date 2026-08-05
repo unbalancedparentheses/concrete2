@@ -137,9 +137,36 @@ Three qualifications, all load-bearing:
   as its predicate, and `∀ e, P e → Q e` reads like global completeness to anyone who checks
   the theorem's name instead of `P`. The gap is a build-enforced example rather than a remark.
 
-The other three discovery walkers (`collectDivisorsE`, `collectIndexUsesE`, `collectArithE` —
-div-by-zero, bounds, overflow) are still `partial` and each sits in a `mutual` block, where
-`partial` is all-or-nothing. Same treatment, not yet done.
+**All four families now have one** (`collectDivisorsE`, `collectIndexUsesE`, `collectArithE`
+followed; each sat in a `mutual` block, where `partial` is all-or-nothing, so the whole block
+had to be totalised before any of them could be discussed). Of the report layer's 17
+`partial def`s, 6 remain — none on the discovery path.
+
+### The bug this found
+
+Writing `hasIndex` meant answering "which array expressions does bounds discovery actually
+RECORD?", and the answer was: a bare `.ident`. So `(a)[i]` generated **no array-bounds
+obligation at all** — not an unproven VC, not a warning, absent from `--report vcs` entirely,
+while the semantically identical `a[i]` produced one. Confirmed on a real program before being
+believed, then fixed by rooting the access through `arrayRootName`.
+
+Three things worth recording about it:
+
+- **The corpus never covered it.** The full suite stayed at 1702/0 before and after the fix.
+  A `rfl` lock could not have caught what no fixture exercised, so the regression check is
+  end-to-end (compile a program, count `array_bounds` VCs) and lives in the gate.
+- **Memory safety was never at risk.** Codegen emits `__cc_bounds_check` at every access
+  regardless. What was missing is the PROOF — and, until now, any indication it was missing.
+  A release gate demanding all VCs proved would have passed this program by having nothing
+  to fail.
+- **`b.data[i]` is still not recorded, deliberately.** The length lookup is keyed by variable
+  NAME (`varTyMap`), so a field path has no name to resolve. Peeling `.fieldAccess` the way
+  `.paren` is peeled would produce an obligation about the WRONG array; a wrong obligation is
+  merely louder than a missing one, not safer. Closing it needs type resolution for arbitrary
+  array expressions, which is a real change and is now a named gap rather than a silent one.
+
+That is the argument for discovery completeness in one example: the defect was not a failed
+proof or a bad translation, and no register could see it. It was a question nobody had asked.
 
 ## Drivers as data (R-0455, same slice)
 

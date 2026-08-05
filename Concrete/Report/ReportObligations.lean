@@ -19,6 +19,39 @@ import Concrete.Report.ReportVC
 namespace Concrete
 namespace Report
 
+/-- The NAME an array access is rooted at, peeling `(…)`.
+
+    `a[i]` and `(a)[i]` denote the same access, but bounds discovery matched a BARE `.ident`
+    and so generated an obligation only for the first — no VC, no `unproven` marker, nothing
+    in the report. Found by `collectIndexUsesE_complete`: writing the completeness predicate
+    forced the question "which array expressions are actually recorded?", and the honest
+    answer was narrower than anyone had assumed.
+
+    Only `.paren` is peeled. It is meaning- AND type-preserving, so the enclosing
+    length lookup (`varTyMap`, keyed by name) stays correct. `.deref`/`.fieldAccess` are NOT
+    peeled: they change the type at which the length must be read, so treating them as the
+    same name would trade a missing obligation for a WRONG one. -/
+def arrayRootName : Expr → Option String
+  | .ident _ n => some n
+  | .paren _ x => arrayRootName x
+  | _ => none
+
+/-- Termination helper for the discovery walkers (R-0455).
+
+    An `else` branch is `Option (List Stmt)`, and the walkers recurse into `el.getD []`. The
+    membership fact `attach` supplies is about the DEFAULTED list, so the size bound has to
+    climb back out to the `Option` itself; `List.sizeOf_lt_of_mem` alone does not reach. -/
+theorem sizeOf_mem_getD {α} [SizeOf α] {o : Option (List α)} {x : α}
+    (h : x ∈ o.getD []) : sizeOf x < sizeOf o := by
+  cases o with
+  | none => simp at h
+  | some l =>
+    simp only [Option.getD_some] at h
+    have := List.sizeOf_lt_of_mem h
+    simp +arith
+    omega
+
+
 -- Runtime-safety obligations: array bounds
 -- ============================================================
 -- A runtime-error class. Every `arr[idx]` into a fixed-size array generates the
@@ -30,35 +63,59 @@ namespace Report
 
 mutual
 /-- `(arrayName, indexExpr)` for every `arr[idx]` with an identifier base. -/
-partial def collectIndexUsesE : Expr → List (String × Expr)
-  | .arrayIndex _ (.ident _ arr) idx => (arr, idx) :: collectIndexUsesE idx
-  | .arrayIndex _ a idx => collectIndexUsesE a ++ collectIndexUsesE idx
+def collectIndexUsesE : Expr → List (String × Expr)
+  | .arrayIndex _ a idx =>
+      match arrayRootName a with
+      | some arr => (arr, idx) :: collectIndexUsesE idx
+      | none => collectIndexUsesE a ++ collectIndexUsesE idx
   | .binOp _ _ l r => collectIndexUsesE l ++ collectIndexUsesE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectIndexUsesE x
-  | .arrayLit _ es => es.flatMap collectIndexUsesE
-  | .call _ _ _ args => args.flatMap collectIndexUsesE
-  | .methodCall _ o _ _ args => collectIndexUsesE o ++ args.flatMap collectIndexUsesE
-  | .staticMethodCall _ _ _ _ args => args.flatMap collectIndexUsesE
-  | .structLit _ _ _ fs base => fs.flatMap (fun (_, fe) => collectIndexUsesE fe) ++ (base.map collectIndexUsesE).getD []
-  | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, fe) => collectIndexUsesE fe)
+  | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
+  | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
+  | .methodCall _ o _ _ args => collectIndexUsesE o ++ args.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
+  | .staticMethodCall _ _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
+  | .structLit _ _ _ fs base => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectIndexUsesE fe) ++ (base.attach.map (fun ⟨e, _⟩ => collectIndexUsesE e)).getD []
+  | .enumLit _ _ _ _ fs => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectIndexUsesE fe)
   | .allocCall _ x a => collectIndexUsesE x ++ collectIndexUsesE a
   | .ifExpr _ c t el =>
-      collectIndexUsesE c ++ t.flatMap collectIndexUsesS ++ el.flatMap collectIndexUsesS
+      collectIndexUsesE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e) ++ el.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
   | .match_ _ s _ => collectIndexUsesE s
   | _ => []
-partial def collectIndexUsesS : Stmt → List (String × Expr)
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
+def collectIndexUsesS : Stmt → List (String × Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectIndexUsesE v
   | .return_ _ (some v) => collectIndexUsesE v
-  | .ifElse _ c t el => collectIndexUsesE c ++ t.flatMap collectIndexUsesS ++ (el.getD []).flatMap collectIndexUsesS
-  | .while_ _ c b _ => collectIndexUsesE c ++ b.flatMap collectIndexUsesS
+  | .ifElse _ c t el => collectIndexUsesE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e) ++ (el.getD []).attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
+  | .while_ _ c b _ => collectIndexUsesE c ++ b.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
   | .forLoop _ init c step b _ =>
-      (init.map collectIndexUsesS).getD [] ++ collectIndexUsesE c
-        ++ (step.map collectIndexUsesS).getD [] ++ b.flatMap collectIndexUsesS
+      (init.attach.map (fun ⟨e, _⟩ => collectIndexUsesS e)).getD [] ++ collectIndexUsesE c
+        ++ (step.attach.map (fun ⟨e, _⟩ => collectIndexUsesS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectIndexUsesE o ++ collectIndexUsesE v
-  | .arrayIndexAssign _ (.ident _ arr) idx v => (arr, idx) :: (collectIndexUsesE idx ++ collectIndexUsesE v)
-  | .arrayIndexAssign _ a i v => collectIndexUsesE a ++ collectIndexUsesE i ++ collectIndexUsesE v
+  | .arrayIndexAssign _ a idx v =>
+      match arrayRootName a with
+      | some arr => (arr, idx) :: (collectIndexUsesE idx ++ collectIndexUsesE v)
+      | none => collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v
   | _ => []
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
 end
 
 -- ============================================================
@@ -197,10 +254,12 @@ def boundsLeaf (scope : List Expr) : Stmt → List (String × Expr × List Expr)
   | .forLoop _ _ c _ _ _ => (collectIndexUsesE c).map fun (a, i) => (a, i, scope)
   | .fieldAssign _ o _ v | .derefAssign _ o v =>
       (collectIndexUsesE o ++ collectIndexUsesE v).map fun (a, i) => (a, i, scope)
-  | .arrayIndexAssign _ (.ident _ arr) idx v =>
-      (arr, idx, scope) :: (collectIndexUsesE idx ++ collectIndexUsesE v).map fun (a, i) => (a, i, scope)
-  | .arrayIndexAssign _ a i v =>
-      (collectIndexUsesE a ++ collectIndexUsesE i ++ collectIndexUsesE v).map fun (x, j) => (x, j, scope)
+  | .arrayIndexAssign _ a idx v =>
+      match arrayRootName a with
+      | some arr =>
+          (arr, idx, scope) :: (collectIndexUsesE idx ++ collectIndexUsesE v).map fun (x, i) => (x, i, scope)
+      | none =>
+          (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map fun (x, j) => (x, j, scope)
   | _ => []
 
 /-- Index uses paired with the hypotheses in scope at the access (Phase 3 #5 —
@@ -444,7 +503,7 @@ def renderBounds (obls : List BoundsObl) (provedKeys : List String) : String := 
 
 mutual
 /-- `(isMod, divisorExpr)` for every `/` and `%` in an expression. -/
-partial def collectDivisorsE : Expr → List (Bool × Expr × Expr)
+def collectDivisorsE : Expr → List (Bool × Expr × Expr)
   -- R-0464: the DIVIDEND travels with the divisor now. `divisor ≠ 0` needs only `r`, which
   -- is why `l` was dropped — and dropping it is what made the signed `MIN / -1` quotient
   -- overflow inexpressible at this layer rather than merely unstated.
@@ -453,29 +512,49 @@ partial def collectDivisorsE : Expr → List (Bool × Expr × Expr)
   | .binOp _ _ l r => collectDivisorsE l ++ collectDivisorsE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectDivisorsE x
-  | .arrayLit _ es => es.flatMap collectDivisorsE
+  | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
   | .arrayIndex _ a i => collectDivisorsE a ++ collectDivisorsE i
-  | .call _ _ _ args => args.flatMap collectDivisorsE
-  | .methodCall _ o _ _ args => collectDivisorsE o ++ args.flatMap collectDivisorsE
-  | .staticMethodCall _ _ _ _ args => args.flatMap collectDivisorsE
-  | .structLit _ _ _ fs base => fs.flatMap (fun (_, fe) => collectDivisorsE fe) ++ (base.map collectDivisorsE).getD []
-  | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, fe) => collectDivisorsE fe)
+  | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
+  | .methodCall _ o _ _ args => collectDivisorsE o ++ args.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
+  | .staticMethodCall _ _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
+  | .structLit _ _ _ fs base => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectDivisorsE fe) ++ (base.attach.map (fun ⟨e, _⟩ => collectDivisorsE e)).getD []
+  | .enumLit _ _ _ _ fs => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectDivisorsE fe)
   | .allocCall _ x a => collectDivisorsE x ++ collectDivisorsE a
   | .ifExpr _ c t el =>
-      collectDivisorsE c ++ t.flatMap collectDivisorsS ++ el.flatMap collectDivisorsS
+      collectDivisorsE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e) ++ el.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e)
   | .match_ _ s _ => collectDivisorsE s
   | _ => []
-partial def collectDivisorsS : Stmt → List (Bool × Expr × Expr)
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
+def collectDivisorsS : Stmt → List (Bool × Expr × Expr)
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectDivisorsE v
   | .return_ _ (some v) => collectDivisorsE v
-  | .ifElse _ c t el => collectDivisorsE c ++ t.flatMap collectDivisorsS ++ (el.getD []).flatMap collectDivisorsS
-  | .while_ _ c b _ => collectDivisorsE c ++ b.flatMap collectDivisorsS
+  | .ifElse _ c t el => collectDivisorsE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e) ++ (el.getD []).attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e)
+  | .while_ _ c b _ => collectDivisorsE c ++ b.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e)
   | .forLoop _ init c step b _ =>
-      (init.map collectDivisorsS).getD [] ++ collectDivisorsE c
-        ++ (step.map collectDivisorsS).getD [] ++ b.flatMap collectDivisorsS
+      (init.attach.map (fun ⟨e, _⟩ => collectDivisorsS e)).getD [] ++ collectDivisorsE c
+        ++ (step.attach.map (fun ⟨e, _⟩ => collectDivisorsS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectDivisorsE o ++ collectDivisorsE v
   | .arrayIndexAssign _ a i v => collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v
   | _ => []
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
 end
 
 /-- Divisor leaf: the `/`/`%` divisors in a statement's OWN expression positions
@@ -527,35 +606,55 @@ def exprIntTy (vt : List (String × Ty)) : Expr → Option Ty
 
 mutual
 /-- Every `+`/`-`/`*` binop node in an expression (the whole `a op b`). -/
-partial def collectArithE : Expr → List Expr
+def collectArithE : Expr → List Expr
   | e@(.binOp _ op l r) =>
     let here := match op with | .add | .sub | .mul => [e] | _ => []
     here ++ collectArithE l ++ collectArithE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
   | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectArithE x
-  | .arrayLit _ es => es.flatMap collectArithE
+  | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
   | .arrayIndex _ a i => collectArithE a ++ collectArithE i
-  | .call _ _ _ args => args.flatMap collectArithE
-  | .methodCall _ o _ _ args => collectArithE o ++ args.flatMap collectArithE
-  | .staticMethodCall _ _ _ _ args => args.flatMap collectArithE
-  | .structLit _ _ _ fs base => fs.flatMap (fun (_, fe) => collectArithE fe) ++ (base.map collectArithE).getD []
-  | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, fe) => collectArithE fe)
+  | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
+  | .methodCall _ o _ _ args => collectArithE o ++ args.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
+  | .staticMethodCall _ _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
+  | .structLit _ _ _ fs base => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectArithE fe) ++ (base.attach.map (fun ⟨e, _⟩ => collectArithE e)).getD []
+  | .enumLit _ _ _ _ fs => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectArithE fe)
   | .allocCall _ x a => collectArithE x ++ collectArithE a
   | .ifExpr _ c t el =>
-      collectArithE c ++ t.flatMap collectArithS ++ el.flatMap collectArithS
+      collectArithE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectArithS e) ++ el.attach.flatMap (fun ⟨e, _⟩ => collectArithS e)
   | .match_ _ s _ => collectArithE s
   | _ => []
-partial def collectArithS : Stmt → List Expr
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
+def collectArithS : Stmt → List Expr
   | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectArithE v
   | .return_ _ (some v) => collectArithE v
-  | .ifElse _ c t el => collectArithE c ++ t.flatMap collectArithS ++ (el.getD []).flatMap collectArithS
-  | .while_ _ c b _ => collectArithE c ++ b.flatMap collectArithS
+  | .ifElse _ c t el => collectArithE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectArithS e) ++ (el.getD []).attach.flatMap (fun ⟨e, _⟩ => collectArithS e)
+  | .while_ _ c b _ => collectArithE c ++ b.attach.flatMap (fun ⟨e, _⟩ => collectArithS e)
   | .forLoop _ init c step b _ =>
-      (init.map collectArithS).getD [] ++ collectArithE c
-        ++ (step.map collectArithS).getD [] ++ b.flatMap collectArithS
+      (init.attach.map (fun ⟨e, _⟩ => collectArithS e)).getD [] ++ collectArithE c
+        ++ (step.attach.map (fun ⟨e, _⟩ => collectArithS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectArithS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectArithE o ++ collectArithE v
   | .arrayIndexAssign _ a i v => collectArithE a ++ collectArithE i ++ collectArithE v
   | _ => []
+termination_by x => sizeOf x
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
 end
 
 /-- Arithmetic-op leaf: the `+`/`-`/`*` op nodes in a statement's OWN expression
@@ -725,6 +824,7 @@ decreasing_by
     first
       | omega
       | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
       | (rename_i h; subst h; simp +arith; omega)
       | (rename_i h; subst h; simp +arith)
 

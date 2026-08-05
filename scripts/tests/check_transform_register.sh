@@ -249,6 +249,56 @@ for f in exprIntTy exprIntervalMax cartesianEnvs cartesianEnvsPer; do
     || ok "$f is structural"
 done
 
+echo "=== discovery completeness covers all FOUR runtime-safety families ==="
+for t in collectShiftsE_complete collectDivisorsE_complete collectArithE_complete \
+         collectIndexUsesE_complete; do
+  grep -q "theorem $t" "$DC" \
+    && ok "$t" \
+    || no "$t is gone — that family's discovery is unconstrained again"
+done
+for f in collectDivisorsE collectIndexUsesE collectArithE; do
+  grep -qE "^partial def $f\b" "$RO" \
+    && no "$f is 'partial' again — its completeness theorem cannot be stated" \
+    || ok "$f is total"
+done
+
+echo "=== the bounds bug this work FOUND stays fixed (end-to-end, not just by rfl) ==="
+# `(a)[i]` produced NO array-bounds obligation: absent from the report, not merely unproven,
+# while `a[i]` got one. The Lean lock alone would not have caught it — the corpus contained no
+# parenthesised array access, which is why the whole suite stayed green while the bug existed.
+BIN="./.lake/build/bin/concrete"
+# The binary must actually EMBODY the current source. Without this the check happily
+# interrogates a stale build and reports OK for a fix that no longer compiles -- verifying
+# that something was done rather than that it had effect. Caught by mutating the fix and
+# watching this very assertion pass against the previous binary.
+#
+# An mtime comparison was tried first and is WRONG: lake does not relink on a cache hit, so a
+# perfectly current binary can be older than its source. Building is the only honest signal.
+if lake build >/dev/null 2>&1 && [ -x "$BIN" ]; then
+  TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
+  cat > "$TMPD/paren.con" <<'CON'
+mod parenbounds {
+    fn plain(a: [i32; 16], i: i32) -> i32 { return a[i]; }
+    fn parened(a: [i32; 16], i: i32) -> i32 { return (a)[i]; }
+}
+CON
+  NVC="$("$BIN" "$TMPD/paren.con" --report vcs 2>/dev/null | grep -c 'array_bounds')"
+  [ "$NVC" = "2" ] \
+    && ok "both a[i] and (a)[i] generate an array-bounds VC (got $NVC)" \
+    || no "expected 2 array-bounds VCs, got $NVC — a parenthesised access is silently unchecked again"
+else
+  no "build FAILED or binary missing — the end-to-end bounds check ran against nothing"
+fi
+grep -q "def arrayRootName" "$RO" \
+  && ok "arrayRootName roots an access through its parens" \
+  || no "arrayRootName is gone"
+# It must NOT over-peel: a field path has no name for the length lookup, so peeling it would
+# manufacture an obligation about the wrong array. A wrong obligation beats no obligation only
+# in the sense that it is louder; it is still unsound.
+grep -qE "^  \| \.fieldAccess" "$RO" && grep -A6 "def arrayRootName" "$RO" | grep -q "fieldAccess" \
+  && no "arrayRootName peels .fieldAccess — the length lookup would read the WRONG array" \
+  || ok "arrayRootName stops at .paren (no wrong-array obligations)"
+
 echo ""
 echo "TRANSFORM-REGISTER: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

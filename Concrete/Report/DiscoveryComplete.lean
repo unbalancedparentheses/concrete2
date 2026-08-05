@@ -63,6 +63,103 @@ theorem collectShiftsE_complete : ∀ e : Expr, hasShift e = true → collectShi
   | .ident .., h | .intLit .., h | .boolLit .., h => by simp [hasShift] at h
 termination_by e => sizeOf e
 
+/-! ## The other three runtime-safety families
+
+Same shape, same reason it is now possible: `collectDivisorsE`, `collectIndexUsesE` and
+`collectArithE` each sat in a `mutual` block where `partial` is all-or-nothing, so none of
+them could be discussed until the whole block was totalised.
+
+Together with shifts these are the four families the compiler generates obligations for. All
+four discovery walkers are now known not to lose a candidate on the arithmetic fragment. -/
+
+/-- Syntactic "contains a division or remainder". -/
+def hasDiv : Expr → Bool
+  | .binOp _ .div _ _ => true
+  | .binOp _ .mod _ _ => true
+  | .binOp _ _ l r => hasDiv l || hasDiv r
+  | .unaryOp _ _ x | .paren _ x | .cast _ x _ => hasDiv x
+  | _ => false
+
+/-- **Divide-by-zero discovery is complete** on the arithmetic fragment. -/
+theorem collectDivisorsE_complete : ∀ e : Expr, hasDiv e = true → collectDivisorsE e ≠ []
+  | .binOp _ op l r, h => by
+      cases op <;>
+        first
+          | (simp [collectDivisorsE]; done)
+          | (simp [hasDiv] at h
+             simp only [collectDivisorsE, ne_eq, List.append_eq_nil_iff, not_and]
+             intro hl
+             rcases h with h' | h'
+             · exact absurd hl (collectDivisorsE_complete l h')
+             · exact collectDivisorsE_complete r h')
+  | .unaryOp _ _ x, h | .paren _ x, h | .cast _ x _, h => by
+      simp only [hasDiv] at h; simpa [collectDivisorsE] using collectDivisorsE_complete x h
+termination_by e => sizeOf e
+
+/-- Syntactic "contains an overflow-relevant arithmetic op". -/
+def hasArith : Expr → Bool
+  | .binOp _ .add _ _ => true
+  | .binOp _ .sub _ _ => true
+  | .binOp _ .mul _ _ => true
+  | .binOp _ _ l r => hasArith l || hasArith r
+  | .unaryOp _ _ x | .paren _ x | .cast _ x _ => hasArith x
+  | _ => false
+
+/-- **Overflow discovery is complete** on the arithmetic fragment. -/
+theorem collectArithE_complete : ∀ e : Expr, hasArith e = true → collectArithE e ≠ []
+  | .binOp _ op l r, h => by
+      cases op <;>
+        first
+          | (simp [collectArithE]; done)
+          | (simp [hasArith] at h
+             simp only [collectArithE, ne_eq, List.append_eq_nil_iff, not_and,
+                        List.nil_append]
+             intro hl
+             rcases h with h' | h'
+             · exact absurd hl (collectArithE_complete l h')
+             · exact collectArithE_complete r h')
+  | .unaryOp _ _ x, h | .paren _ x, h | .cast _ x _, h => by
+      simp only [hasArith] at h; simpa [collectArithE] using collectArithE_complete x h
+termination_by e => sizeOf e
+
+/-- Syntactic "indexes an array through a named variable".
+
+    Narrower than the other three by necessity, not by choice: `collectIndexUsesE` only
+    RECORDS a bound when the indexed expression is an `.ident`, because the obligation it
+    feeds names the array. An index into a computed array value is traversed but not
+    recorded, so the predicate must not claim it. -/
+def hasIndex : Expr → Bool
+  | .arrayIndex _ a i => (arrayRootName a).isSome || hasIndex i
+  | .binOp _ _ l r => hasIndex l || hasIndex r
+  | .unaryOp _ _ x | .paren _ x | .cast _ x _ => hasIndex x
+  | _ => false
+
+/-- **Bounds discovery is complete** on the arithmetic fragment. -/
+theorem collectIndexUsesE_complete :
+    ∀ e : Expr, hasIndex e = true → collectIndexUsesE e ≠ []
+  | .arrayIndex _ a i, h => by
+      simp only [hasIndex] at h
+      simp only [collectIndexUsesE]
+      cases hr : arrayRootName a with
+      | some arr => simp
+      | none =>
+          rw [hr] at h
+          simp only [Option.isSome_none, Bool.false_or] at h
+          intro hc
+          simp only [List.append_eq_nil_iff] at hc
+          exact absurd hc.2 (collectIndexUsesE_complete i h)
+  | .binOp _ _ l r, h => by
+      simp [hasIndex] at h
+      simp only [collectIndexUsesE, ne_eq, List.append_eq_nil_iff, not_and]
+      intro hl
+      rcases h with h' | h'
+      · exact absurd hl (collectIndexUsesE_complete l h')
+      · exact collectIndexUsesE_complete r h'
+  | .unaryOp _ _ x, h | .paren _ x, h | .cast _ x _, h => by
+      simp only [hasIndex] at h
+      simpa [collectIndexUsesE] using collectIndexUsesE_complete x h
+termination_by e => sizeOf e
+
 /-! ### The boundary, stated rather than left to be discovered
 
 `hasShift` is FALSE for a shift nested inside a call argument, an array index or a struct
@@ -91,6 +188,61 @@ example : hasShift (.binOp spD .add (.ident spD "a")
 -- `≠ []` is a real discrimination rather than a property of every input.
 example : collectShiftsE (.binOp spD .add (.ident spD "a") (.intLit spD 1)) = [] := by
   simp [collectShiftsE]
+
+/-! ### The same three obligations for the other three families
+
+Each theorem gets a satisfiable antecedent (it is not vacuous), a negative case (the
+conclusion discriminates), and its own boundary. Without all three a "completeness" theorem
+can be true and worthless. -/
+
+-- DIV: satisfiable, discriminating, and the same call-argument boundary.
+example : hasDiv (.binOp spD .add (.ident spD "a")
+            (.binOp spD .div (.ident spD "x") (.ident spD "b"))) = true := by simp [hasDiv]
+example : collectDivisorsE (.binOp spD .add (.ident spD "a") (.intLit spD 1)) = [] := by
+  simp [collectDivisorsE]
+example : hasDiv (.call spD "f" [] [.binOp spD .div (.ident spD "x") (.ident spD "b")])
+        = false := by simp [hasDiv]
+
+-- OVERFLOW: note the walker records the op NODE itself, so any `+` is immediately non-empty.
+example : hasArith (.binOp spD .add (.ident spD "a") (.ident spD "b")) = true := by
+  simp [hasArith]
+example : collectArithE (.binOp spD .lt (.ident spD "a") (.intLit spD 1)) = [] := by
+  simp [collectArithE]
+example : hasArith (.call spD "f" [] [.binOp spD .add (.ident spD "a") (.ident spD "b")])
+        = false := by simp [hasArith]
+
+-- BOUNDS: satisfiable and discriminating.
+example : hasIndex (.binOp spD .add (.intLit spD 1)
+            (.arrayIndex spD (.ident spD "arr") (.ident spD "i"))) = true := by
+  simp [hasIndex, arrayRootName]
+example : collectIndexUsesE (.binOp spD .add (.ident spD "a") (.intLit spD 1)) = [] := by
+  simp [collectIndexUsesE]
+
+-- REGRESSION LOCK for the bug this file FOUND rather than assumed.
+--
+-- `(a)[i]` used to produce NO array-bounds obligation at all: not an unproven VC, not a
+-- warning — absent from the report entirely, while the semantically identical `a[i]` got
+-- one. Writing `hasIndex` is what surfaced it; the predicate could not be stated without
+-- answering "which array expressions are actually recorded?", and the answer was a bare
+-- `.ident`. Confirmed end-to-end on a real program (`--report vcs` showed 1 VC where 2 were
+-- due), then fixed by rooting the access through `arrayRootName`.
+example : collectIndexUsesE (.arrayIndex spD (.paren spD (.ident spD "arr")) (.ident spD "i"))
+        = [("arr", .ident spD "i")] := by simp [collectIndexUsesE, arrayRootName]
+example : hasIndex (.arrayIndex spD (.paren spD (.ident spD "arr")) (.ident spD "i"))
+        = true := by simp [hasIndex, arrayRootName]
+
+-- THE GAP THAT REMAINS, deliberately open rather than papered over.
+--
+-- An array reached through a FIELD (`b.data[i]`) still records nothing, and this is ordinary
+-- code, not a corner case. It is not the same oversight: the length lookup that turns a
+-- recorded access into `0 ≤ i < len` is keyed by variable NAME (`varTyMap`), so a field path
+-- has no name to look up. Peeling `.fieldAccess` the way `.paren` is peeled would produce an
+-- obligation about the WRONG array — a wrong obligation is worse than a missing one, so the
+-- fix is a real change (resolve the type of an arbitrary array expression), not a wider peel.
+-- Runtime memory safety does NOT depend on this: codegen emits `__cc_bounds_check` at every
+-- access regardless. What is missing is the PROOF, and until now also any sign it was missing.
+example : collectIndexUsesE (.arrayIndex spD (.fieldAccess spD (.ident spD "b") "data")
+            (.ident spD "i")) = [] := by simp [collectIndexUsesE, arrayRootName]
 
 end Report
 end Concrete
