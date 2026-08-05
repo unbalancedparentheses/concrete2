@@ -208,21 +208,6 @@ def evIntTyOf? : Ty → Option EvidenceIntTy
   | .u8 => some .u8    | .u16 => some .u16  | .u32 => some .u32
   | _ => none
 
-/-- An elaborated expression: Core output plus its evidence draft.
-
-    A NAMED structure rather than a tuple. Positional construction has already cost
-    this project real defects, and a tuple makes discarding the evidence half invisible
-    — `let (c, _) := ...` reads as ordinary destructuring, whereas dropping a named
-    `evidence` field is conspicuous. -/
-structure ElaboratedExprV2 where
-  core     : CExpr
-  evidence : EvidenceExprV2
-
-/-- An elaborated statement and its evidence draft. -/
-structure ElaboratedStmtV2 where
-  core     : List CStmt
-  evidence : EvidenceStmtV2
-
 /-- A declaration's evidence body, possibly incomplete. -/
 structure EvidenceBodyDraftV2 where
   statements : List EvidenceStmtV2 := []

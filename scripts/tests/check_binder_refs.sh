@@ -140,5 +140,34 @@ else
   no "no lazy-frame mechanism — a non-binding scope would shift framesOut"
 fi
 
+# ONE PRODUCER. Every semantic child edge inside the evidence-producing mutual block
+# must call elabExprEv; a Core-only projection there would silently discard the child's
+# evidence and still compile, so the count is asserted rather than trusted.
+blk="$(python3 - <<'PYEOF'
+lines=open('Concrete/Elab/Elab.lean').read().split('\n')
+s=e=None
+for i,l in enumerate(lines):
+    if l=='mutual' and s is None: s=i
+    elif l=='end' and s is not None: e=i; break
+print('\n'.join(lines[s:e]))
+PYEOF
+)"
+stale=$(printf '%s' "$blk" | grep -cE '\belabExpr[^E]' || true)
+if [ "$stale" -eq 0 ]; then
+  ok "no Core-only elabExpr projection inside the producing block"
+else
+  no "$stale Core-only elabExpr call(s) inside the producing block — child evidence would be discarded"
+fi
+
+# The pairing types must live where CExpr is genuinely in scope. Declaring them in the
+# Proof layer made Lean AUTO-BIND CExpr as an implicit type variable, so the structure
+# was polymorphic over a made-up type and its core field landed in Prop — invisible
+# until something constructed it.
+if grep -q "ElaboratedExprV2" Concrete/Proof/EvidenceTree.lean; then
+  no "the Proof layer declares ElaboratedExprV2; CExpr is not in scope there and gets auto-bound"
+else
+  ok "the pairing types live on the Elab side, where CExpr is in scope"
+fi
+
 echo "BINDER-REFS: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -1,5 +1,7 @@
 import Concrete.Frontend.AST
 import Concrete.Proof.BodyScope
+import Concrete.Proof.EvidenceTree
+import Concrete.Proof.EvidenceBuild
 import Concrete.Resolve.BuiltinSigs
 import Concrete.Elab.Core
 import Concrete.Report.Diagnostic
@@ -415,25 +417,46 @@ private partial def peekExprType (e : Expr) : ElabM Ty := do
 -- Core elaboration
 -- ============================================================
 
+/-- An elaborated expression: Core output paired with its evidence draft.
+
+    Defined HERE, not in the Proof layer. `CExpr` is not in scope in
+    `Proof/EvidenceTree.lean`, so declaring the field there made Lean AUTO-BIND `CExpr`
+    as an implicit type variable — the structure was silently polymorphic over a
+    made-up type, and its `core` field landed in `Prop`. Nothing caught it because
+    nothing constructed the structure until the producer did.
+
+    A named structure rather than a tuple: dropping a named `evidence` field is
+    conspicuous, whereas `let (c, _) := ...` reads as ordinary destructuring. -/
+structure ElaboratedExprV2 where
+  core     : CExpr
+  evidence : Proof.EvidenceExprV2
+
+/-- An elaborated statement and its evidence draft. -/
+structure ElaboratedStmtV2 where
+  core     : List CStmt
+  evidence : Proof.EvidenceStmtV2
+
 mutual
 
-partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
+partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedExprV2 := do
   match e with
   | .intLit _ v =>
     -- Same shared decision as Check (TypeJudgment): Elab stamps CExpr.ty from the
     -- judgment's `.ty`, so Check's type and Elab's stamp cannot disagree (E0228).
     -- The hint is already resolved at let/call sites (elab skips re-resolving).
-    return .intLit v (TypeJudgment.intLitType hint)
+    let ty := TypeJudgment.intLitType hint
+    return ElaboratedExprV2.mk (CExpr.intLit v ty) (Proof.evIntLit v ty)
   | .floatLit _ v =>
-    return .floatLit v (TypeJudgment.floatLitType hint)
-  | .boolLit _ b => return .boolLit b
-  | .strLit _ s => return .strLit s
-  | .charLit _ c => return .charLit c
+    let ty := TypeJudgment.floatLitType hint
+    return ElaboratedExprV2.mk (CExpr.floatLit v ty) (Proof.evFloatLit v ty)
+  | .boolLit _ b => return ElaboratedExprV2.mk (CExpr.boolLit b) (Proof.evBoolLit b)
+  | .strLit _ s => return ElaboratedExprV2.mk (CExpr.strLit s) (Proof.evStrLit s)
+  | .charLit _ c => return ElaboratedExprV2.mk (CExpr.charLit c) (Proof.evCharLit c)
 
   | .ident _ name =>
     let env ← getEnv
     match env.constants.lookup name with
-    | some ty => return .ident name ty
+    | some ty => return ElaboratedExprV2.mk (CExpr.ident name ty) (Proof.evConstRef env.proofPath name)
     | none =>
     match env.vars.lookup name with
     | some ty => do
@@ -443,12 +466,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       match env.bodyScope.resolve? name with
       | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)
       | none            => markBodyIdentityUncovered
-      return .ident (← coreNameOf name) ty
+      return ElaboratedExprV2.mk (CExpr.ident (← coreNameOf name) ty) (Proof.evBinderRef env.bodyScope name)
     | none =>
       match ← lookupFnSig name with
       | some sig =>
         let paramTys := sig.params.map Prod.snd
-        return .ident name (.fn_ paramTys sig.capSet sig.retTy)
+        return ElaboratedExprV2.mk (CExpr.ident name (.fn_ paramTys sig.capSet sig.retTy)) (Proof.evUnhandledExpr "fn value: CallableId not minted here")
       | none =>
         -- A name bound by `ghost let` is erased: reading it from runtime code is
         -- a leak, reported precisely instead of as a generic undeclared var.
@@ -456,7 +479,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           throwElab (.ghostInRuntime name) (some e.getSpan)
         throwElab (.undeclaredVariable name) (some e.getSpan)
 
-  | .paren _ inner => elabExpr inner hint
+  | .paren _ inner => elabExprEv inner hint
 
   | .binOp _ op lhs rhs =>
     -- Same operand-order judgment as Check (TypeJudgment.binOpOperandOrder): type
@@ -466,39 +489,47 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     -- flexible subtree, so `int + i32` mismatches (E0715) cannot arise. A genuine
     -- `Int` value ignores the hint and a real width mismatch still surfaces at
     -- Check/CoreCheck, exactly as before.
-    let (cLhs, cRhs) ←
+    -- The operand-order block must yield EVIDENCE as well as Core: the branch decides
+    -- which side is typed first, and both children's evidence is needed at the return.
+    let (cLhsEv, cRhsEv) ←
       match TypeJudgment.binOpOperandOrder
               (TypeJudgment.isFlexibleLit lhs) (TypeJudgment.isFlexibleLit rhs) with
       | .rhsFirst => do
-        let cRhs ← elabExpr rhs hint
-        let cLhs ← elabExpr lhs (some cRhs.ty)
-        pure (cLhs, cRhs)
+        let cRhsEv ← elabExprEv rhs hint
+        let cLhsEv ← elabExprEv lhs (some cRhsEv.core.ty)
+        pure (cLhsEv, cRhsEv)
       | .lhsFirst => do
-        let cLhs ← elabExpr lhs hint
-        let cRhs ← elabExpr rhs (some cLhs.ty)
-        pure (cLhs, cRhs)
+        let cLhsEv ← elabExprEv lhs hint
+        let cRhsEv ← elabExprEv rhs (some cLhsEv.core.ty)
+        pure (cLhsEv, cRhsEv)
+    let cLhs := cLhsEv.core
+    let cRhs := cRhsEv.core
     let resultTy := match op with
       | .eq | .neq | .lt | .gt | .leq | .geq => .bool
       | .and_ | .or_ => .bool
       | _ => cLhs.ty
-    return .binOp op cLhs cRhs resultTy
+    return ElaboratedExprV2.mk (CExpr.binOp op cLhs cRhs resultTy) (Proof.evBinary op cLhsEv.evidence cRhsEv.evidence)
 
   | .unaryOp _ op operand =>
-    let cOp ← elabExpr operand hint
+    let cOpEv ← elabExprEv operand hint
+    let cOp := cOpEv.core
     let resultTy := match op with
       | .not_ => Ty.bool
       | _ => cOp.ty
-    return .unaryOp op cOp resultTy
+    return ElaboratedExprV2.mk (CExpr.unaryOp op cOp resultTy) (Proof.evUnary op cOpEv.evidence)
 
 
   | .allocCall _ inner allocExpr =>
-    let cInner ← elabExpr inner hint
-    let cAlloc ← elabExpr allocExpr
-    return .allocCall cInner cAlloc cInner.ty
+    let cInnerEv ← elabExprEv inner hint
+    let cInner := cInnerEv.core
+    let cAllocEv ← elabExprEv allocExpr
+    let cAlloc := cAllocEv.core
+    return ElaboratedExprV2.mk (CExpr.allocCall cInner cAlloc cInner.ty) (Proof.evUnhandledExpr "allocator-specialized call")
 
 
   | .ifExpr _ cond then_ else_ =>
-    let cCond ← elabExpr cond
+    let cCondEv ← elabExprEv cond
+    let cCond := cCondEv.core
     -- Flow the if-expression's own hint into each branch so a flexible
     -- literal/binop trailing value adopts the result width (matches Check).
     let cThen ← elabStmts then_ (valueHint := hint)
@@ -515,10 +546,14 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
     let resultTy := match hint with
       | some t => t
       | none => (trailingTy cThen <|> trailingTy cElse).getD .unit
-    return .ifExpr cCond cThen cElse resultTy
+    return ElaboratedExprV2.mk (CExpr.ifExpr cCond cThen cElse resultTy) (Proof.evUnhandledExpr "if-expression: statement evidence not wired")
 
   | .call _ fnName typeArgs args =>
-    elabCall fnName typeArgs args hint (some e.getSpan)
+    -- elabCall still returns Core. Its evidence is a `call` node needing a resolved
+    -- CallableId, which is not minted there yet, so the boundary emits the typed gap
+    -- rather than a guessed identity. Converting elabCall is the next producer slice.
+    let core ← elabCall fnName typeArgs args hint (some e.getSpan)
+    return ElaboratedExprV2.mk core Proof.evUnresolvedCall
 
   | .structLit _ name typeArgs fields base =>
     match ← lookupStruct name with
@@ -530,14 +565,15 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       -- Functional update `..base`: elaborate the base once; any field not given
       -- explicitly is filled with `base.field`. (Use a variable as the base — a
       -- complex base expression is re-read per copied field.)
-      let cBase ← base.mapM (fun b => elabExpr b (some resultTy))
+      let cBase ← base.mapM (fun b => do pure (← elabExprEv b (some resultTy)).core)
       let mut cFields : List (String × CExpr) := []
       for sf in sd.fields do
         let fieldTy := substTy mapping sf.ty
         match fields.find? fun (fn, _) => fn == sf.name with
         | some (_, expr) =>
           recordFieldUse sd sf.name
-          let cExpr ← elabExpr expr (some fieldTy)
+          let cExprEv ← elabExprEv expr (some fieldTy)
+          let cExpr := cExprEv.core
           cFields := cFields ++ [(sf.name, cExpr)]
         | none =>
           match cBase with
@@ -545,11 +581,12 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             recordFieldUse sd sf.name
             cFields := cFields ++ [(sf.name, .fieldAccess cb sf.name fieldTy)]
           | none => pure ()  -- union partial init
-      return .structLit name typeArgs cFields resultTy
+      return ElaboratedExprV2.mk (CExpr.structLit name typeArgs cFields resultTy) (Proof.evStructLitPending)
     | none => throwElab (.unknownStructType name) (some e.getSpan)
 
   | .fieldAccess _ obj field =>
-    let cObj ← elabExpr obj
+    let cObjEv ← elabExprEv obj
+    let cObj := cObjEv.core
     -- 6D#3: `.field` on a heap shell derefs first (p.f ≡ (*p).f — the old
     -- `->` desugar folded into `.`), so downstream sees the plain struct.
     let cObj := match cObj.ty with
@@ -578,7 +615,7 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         recordFieldUse sd field
         let fieldTy := substTy mapping f.ty
         let fieldTy ← resolveTypeE fieldTy
-        return .fieldAccess cObj field fieldTy
+        return ElaboratedExprV2.mk (CExpr.fieldAccess cObj field fieldTy) (Proof.evUnhandledExpr "field access: FieldId not minted here")
       | none =>
         -- Newtype wrapping a struct: .0 unwraps to the inner type.
         if field == newtypeFieldName then
@@ -589,8 +626,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
             let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
             let newtypeTy : Ty := if typeArgs.isEmpty then .named structName
                                    else .generic structName typeArgs
-            return .cast (derefIfBorrowed cObj newtypeTy) innerTy
-          | none => return cObj
+            return ElaboratedExprV2.mk (CExpr.cast (derefIfBorrowed cObj newtypeTy) innerTy) (Proof.evUnhandledExpr "newtype rebrand cast")
+          | none => return ElaboratedExprV2.mk (cObj) (cObjEv.evidence)
         else throwElab (.structHasNoField structName field) (some e.getSpan)
     | none =>
       -- Newtype over a primitive (or any non-struct inner type): .0 unwraps.
@@ -604,8 +641,8 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
           let newtypeTy : Ty := if typeArgs.isEmpty then .named structName
                                  else .generic structName typeArgs
-          return .cast (derefIfBorrowed cObj newtypeTy) innerTy
-        | none => return cObj
+          return ElaboratedExprV2.mk (CExpr.cast (derefIfBorrowed cObj newtypeTy) innerTy) (Proof.evUnhandledExpr "newtype rebrand cast")
+        | none => return ElaboratedExprV2.mk (cObj) (cObjEv.evidence)
       else throwElab .fieldAccessNonStruct (some e.getSpan)
 
   | .enumLit _ enumName variant typeArgs fields =>
@@ -627,17 +664,19 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let fieldTy := substTy mapping sf.ty
           match fields.find? fun (fn, _) => fn == sf.name with
           | some (_, expr) =>
-            let cExpr ← elabExpr expr (some fieldTy)
+            let cExprEv ← elabExprEv expr (some fieldTy)
+            let cExpr := cExprEv.core
             cFields := cFields ++ [(sf.name, cExpr)]
           | none => throwElab (.missingFieldInVariant sf.name enumName variant) (some e.getSpan)
         let resultTy := if effectiveTypeArgs.isEmpty then Ty.named enumName
                          else Ty.generic enumName effectiveTypeArgs
-        return .enumLit enumName variant effectiveTypeArgs cFields resultTy
+        return ElaboratedExprV2.mk (CExpr.enumLit enumName variant effectiveTypeArgs cFields resultTy) (Proof.evUnhandledExpr "enum literal: VariantId not minted here")
       | none => throwElab (.unknownVariant variant enumName) (some e.getSpan)
     | none => throwElab (.unknownEnumType enumName) (some e.getSpan)
 
   | .match_ _ scrutinee arms =>
-    let cScrut ← elabExpr scrutinee
+    let cScrutEv ← elabExprEv scrutinee
+    let cScrut := cScrutEv.core
     let scrTy := cScrut.ty
     let innerTy := match scrTy with
       | .ref t => t | .refMut t => t | t => t
@@ -671,23 +710,26 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
               -- Bug 045: the arm carries the FRESH (alpha-renamed) name.
               let coreBinding ← bindArmVar binding bty
               typedBindings := typedBindings ++ [(coreBinding, bty)]
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.enumArm enumName armVariant typedBindings cGuard cBody]
           | .litArm _ val guard body =>
-            let cVal ← elabExpr val
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cValEv ← elabExprEv val
+            let cVal := cValEv.core
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
           | .rangeArm _ lo hi incl guard body =>
-            let cLo ← elabExpr lo (some innerTyR)
-            let cHi ← elabExpr hi (some innerTyR)
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cLoEv ← elabExprEv lo (some innerTyR)
+            let cLo := cLoEv.core
+            let cHiEv ← elabExprEv hi (some innerTyR)
+            let cHi := cHiEv.core
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
         restoreScope envBefore
@@ -700,23 +742,26 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           openScope
           match arm with
           | .litArm _ val guard body =>
-            let cVal ← elabExpr val
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cValEv ← elabExprEv val
+            let cVal := cValEv.core
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.litArm cVal cGuard cBody]
           | .varArm _ binding guard body =>
             let coreBinding ← bindArmVar binding innerTyR
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
           | .mk _ en v _ guard body =>
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.enumArm en v [] cGuard cBody]
           | .rangeArm _ lo hi incl guard body =>
-            let cLo ← elabExpr lo (some innerTyR)
-            let cHi ← elabExpr hi (some innerTyR)
-            let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+            let cLoEv ← elabExprEv lo (some innerTyR)
+            let cLo := cLoEv.core
+            let cHiEv ← elabExprEv hi (some innerTyR)
+            let cHi := cHiEv.core
+            let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
             let cBody ← elabStmts body (valueHint := hint)
             cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
         restoreScope envBefore
@@ -727,23 +772,26 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         openScope
         match arm with
         | .litArm _ val guard body =>
-          let cVal ← elabExpr val (some innerTyR)
-          let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+          let cValEv ← elabExprEv val (some innerTyR)
+          let cVal := cValEv.core
+          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
           let cBody ← elabStmts body (valueHint := hint)
           cArms := cArms ++ [.litArm cVal cGuard cBody]
         | .varArm _ binding guard body =>
           let coreBinding ← bindArmVar binding innerTyR
-          let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
           let cBody ← elabStmts body (valueHint := hint)
           cArms := cArms ++ [.varArm coreBinding innerTyR cGuard cBody]
         | .mk _ en v _ guard body =>
-          let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
           let cBody ← elabStmts body (valueHint := hint)
           cArms := cArms ++ [.enumArm en v [] cGuard cBody]
         | .rangeArm _ lo hi incl guard body =>
-          let cLo ← elabExpr lo (some innerTyR)
-          let cHi ← elabExpr hi (some innerTyR)
-          let cGuard ← guard.mapM (fun g => elabExpr g (some Ty.bool))
+          let cLoEv ← elabExprEv lo (some innerTyR)
+          let cLo := cLoEv.core
+          let cHiEv ← elabExprEv hi (some innerTyR)
+          let cHi := cHiEv.core
+          let cGuard ← guard.mapM (fun g => do pure (← elabExprEv g (some Ty.bool)).core)
           let cBody ← elabStmts body (valueHint := hint)
           cArms := cArms ++ [.rangeArm cLo cHi incl cGuard cBody]
       restoreScope envBefore
@@ -767,48 +815,56 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
         let armTys := (cArms.map (fun a => armValueTy (armBodyStmts a))).filter
           (fun t => t != .unit && t != .never)
         armTys.head?.getD .unit
-    return .match_ cScrut cArms resultTy
+    return ElaboratedExprV2.mk (CExpr.match_ cScrut cArms resultTy) (Proof.evUnhandledExpr "match: arm evidence not wired")
 
   | .borrow _ inner =>
-    let cInner ← elabExpr inner
-    return .borrow cInner (.ref cInner.ty)
+    let cInnerEv ← elabExprEv inner
+    let cInner := cInnerEv.core
+    return ElaboratedExprV2.mk (CExpr.borrow cInner (.ref cInner.ty)) (Proof.evBorrow false cInnerEv.evidence)
 
   | .borrowMut _ inner =>
-    let cInner ← elabExpr inner
-    return .borrowMut cInner (.refMut cInner.ty)
+    let cInnerEv ← elabExprEv inner
+    let cInner := cInnerEv.core
+    return ElaboratedExprV2.mk (CExpr.borrowMut cInner (.refMut cInner.ty)) (Proof.evBorrow true cInnerEv.evidence)
 
   | .deref _ inner =>
-    let cInner ← elabExpr inner
+    let cInnerEv ← elabExprEv inner
+    let cInner := cInnerEv.core
     let resultTy := match cInner.ty with
       | .ref t => t | .refMut t => t
       | .ptrMut t => t | .ptrConst t => t | .heap t => t
       | _ => .placeholder
-    return .deref cInner resultTy
+    return ElaboratedExprV2.mk (CExpr.deref cInner resultTy) (Proof.evDeref cInnerEv.evidence)
 
   | .try_ _ inner =>
-    let cInner ← elabExpr inner
+    let cInnerEv ← elabExprEv inner
+    let cInner := cInnerEv.core
     let resultTy := match cInner.ty with
       | .named _enumName => .placeholder  -- would need enum lookup for Ok field
       | .generic _ [okTy, _] => okTy
       | _ => .placeholder
-    return .try_ cInner resultTy
+    return ElaboratedExprV2.mk (CExpr.try_ cInner resultTy) (Proof.evUnhandledExpr "try: residual TypeId not minted here")
 
   | .arrayLit _ elems =>
     match elems with
     | [] => throwElab .arrayLiteralEmpty (some e.getSpan)
     | first :: rest =>
       let elemHint := match hint with | some (.array t _) => some t | _ => none
-      let cFirst ← elabExpr first elemHint
+      let cFirstEv ← elabExprEv first elemHint
+      let cFirst := cFirstEv.core
       let elemTy := cFirst.ty
       let mut cElems : List CExpr := [cFirst]
       for e in rest do
-        let cE ← elabExpr e (some elemTy)
+        let cEEv ← elabExprEv e (some elemTy)
+        let cE := cEEv.core
         cElems := cElems ++ [cE]
-      return .arrayLit cElems (.array elemTy elems.length)
+      return ElaboratedExprV2.mk (CExpr.arrayLit cElems (.array elemTy elems.length)) (Proof.evUnhandledExpr "array literal: element TypeId not minted here")
 
   | .arrayIndex _ arr index =>
-    let cArr ← elabExpr arr
-    let cIdx ← elabExpr index (some .int)
+    let cArrEv ← elabExprEv arr
+    let cArr := cArrEv.core
+    let cIdxEv ← elabExprEv index (some .int)
+    let cIdx := cIdxEv.core
     -- Indexing auto-derefs a reference/pointer to an array (`&[T;N]` etc.), so
     -- the element type resolves through one ref/ptr/heap layer (C10).
     let elemTy := match cArr.ty with
@@ -817,27 +873,29 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       | .ptrConst (.array t _) | .ptrMut (.array t _)
       | .heap (.array t _) => t
       | _ => .placeholder
-    return .arrayIndex cArr cIdx elemTy
+    return ElaboratedExprV2.mk (CExpr.arrayIndex cArr cIdx elemTy) (Proof.evIndex cArrEv.evidence cIdxEv.evidence)
 
   | .cast _ inner targetTy =>
     -- Do NOT pass any hint: the point of `as` is to convert between types.
     -- Passing targetTy would mistype literals in `(100 + m) as i32` where m is Int.
     -- Passing the outer hint could also leak i32 context into the inner expression.
-    let cInner ← elabExpr inner none
-    return .cast cInner targetTy
+    let cInnerEv ← elabExprEv inner none
+    let cInner := cInnerEv.core
+    return ElaboratedExprV2.mk (CExpr.cast cInner targetTy) (Proof.evUnhandledExpr "cast: target TypeId not minted here")
 
   | .fnRef _ fnName =>
     let env ← getEnv
     match env.allFnSigPairs.lookup fnName with
     | some sig =>
       let paramTys := sig.params.map Prod.snd
-      return .fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)
+      return ElaboratedExprV2.mk (CExpr.fnRef fnName (.fn_ paramTys sig.capSet sig.retTy)) (Proof.evUnhandledExpr "fn reference: CallableId not minted here")
     | none => throwElab (.unknownFunctionRef fnName) (some e.getSpan)
 
   | .methodCall _ obj methodName typeArgs args =>
     -- Desugar: obj.method(args) → Type_method(&obj, args) or Type_method(&mut obj, args)
     let typeArgs ← typeArgs.mapM resolveTypeE
-    let cObj ← elabExpr obj
+    let cObjEv ← elabExprEv obj
+    let cObj := cObjEv.core
     let objTy := cObj.ty
     let innerTy0 := match objTy with
       | .ref t => t | .refMut t => t | t => t
@@ -871,9 +929,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           let params := sig.params.map fun p => { p with ty := substSelf p.ty selfTy }
           let mut cArgs : List CExpr := [cObj]
           for (arg, p) in args.zip params do
-            let cArg ← elabExpr arg (some p.ty)
+            let cArgEv ← elabExprEv arg (some p.ty)
+            let cArg := cArgEv.core
             cArgs := cArgs ++ [cArg]
-          return .call (mangledMethodName n methodName) typeArgs cArgs retTy
+          return ElaboratedExprV2.mk (CExpr.call (mangledMethodName n methodName) typeArgs cArgs retTy) (Proof.evUnresolvedCall)
       | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
       let mangledName := mangledMethodName typeName methodName
@@ -918,9 +977,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
           | none => cObj
         let mut cArgs : List CExpr := [selfArg]
         for (arg, pTy) in args.zip methodParams do
-          let cArg ← elabExpr arg (some pTy)
+          let cArgEv ← elabExprEv arg (some pTy)
+          let cArg := cArgEv.core
           cArgs := cArgs ++ [cArg]
-        return .call mangledName (objTypeArgs ++ methodArgs) cArgs retTy
+        return ElaboratedExprV2.mk (CExpr.call mangledName (objTypeArgs ++ methodArgs) cArgs retTy) (Proof.evUnresolvedCall)
       | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
@@ -932,9 +992,10 @@ partial def elabExpr (e : Expr) (hint : Option Ty := none) : ElabM CExpr := do
       let retTy := substTy mapping sig.retTy
       let mut cArgs : List CExpr := []
       for (arg, pTy) in args.zip paramTypes do
-        let cArg ← elabExpr arg (some pTy)
+        let cArgEv ← elabExprEv arg (some pTy)
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
-      return .call mangledName typeArgs cArgs retTy
+      return ElaboratedExprV2.mk (CExpr.call mangledName typeArgs cArgs retTy) (Proof.evUnresolvedCall)
     | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
@@ -955,7 +1016,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   -- Intercept destroy(arg)
   if intrinsic == some .destroy then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let cArg ← elabExpr arg
+    let cArgEv ← elabExprEv arg
+    let cArg := cArgEv.core
     let typeName := match cArg.ty with
       | .named n => n | .generic n _ => n | _ => ""
     return .call (destroyFnNameFor typeName) [] [cArg] .unit
@@ -970,17 +1032,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   -- so the discarded statement needs no destructor.
   if intrinsic == some .discard then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let cArg ← elabExpr arg
+    let cArgEv ← elabExprEv arg
+    let cArg := cArgEv.core
     return .ifExpr (.boolLit true) [.expr cArg false] [] .unit
   -- Intercept alloc(val)
   if intrinsic == some .alloc then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let cArg ← elabExpr arg
+    let cArgEv ← elabExprEv arg
+    let cArg := cArgEv.core
     return .call "alloc" [] [cArg] (.heap cArg.ty)
   -- Intercept free(ptr)
   if intrinsic == some .free then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-    let cArg ← elabExpr arg
+    let cArgEv ← elabExprEv arg
+    let cArg := cArgEv.core
     let innerTy := match cArg.ty with | .heap t => t | _ => .placeholder
     return .call "free" [] [cArg] innerTy
   -- Intercept newtype constructor: keep the wrapper's name in the type so
@@ -1001,7 +1066,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
         | _ => []
     let mapping := nt.typeParams.zip effectiveTypeArgs
     let innerTy ← resolveTypeE (substTy mapping nt.innerTy)
-    let cArg ← elabExpr arg (some innerTy)
+    let cArgEv ← elabExprEv arg (some innerTy)
+    let cArg := cArgEv.core
     let resultTy := if effectiveTypeArgs.isEmpty then Ty.named fnName
                      else Ty.generic fnName effectiveTypeArgs
     return .cast cArg resultTy
@@ -1011,7 +1077,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let isUserFn ← lookupFnSig "unwrap"
     if isUserFn.isNone then
       let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       return cArg  -- newtype erasure: just return the inner value
   -- Intercept wrapping_add/sub/mul(a, b) → explicit modular CExpr.binOp.
   -- Check has already validated 2 integer operands of the same type, so the
@@ -1019,8 +1086,10 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if intrinsic == some .wrappingAdd || intrinsic == some .wrappingSub
      || intrinsic == some .wrappingMul || intrinsic == some .saturatingAdd
      || intrinsic == some .saturatingSub || intrinsic == some .saturatingMul then
-    let cA ← elabExpr (match args with | a :: _ => a | [] => Expr.intLit default 0) hint
-    let cB ← elabExpr (match args with | _ :: b :: _ => b | _ => Expr.intLit default 0) (some cA.ty)
+    let cAEv ← elabExprEv (match args with | a :: _ => a | [] => Expr.intLit default 0) hint
+    let cA := cAEv.core
+    let cBEv ← elabExprEv (match args with | _ :: b :: _ => b | _ => Expr.intLit default 0) (some cA.ty)
+    let cB := cBEv.core
     let bop := match intrinsic with
       | some .wrappingSub   => BinOp.wrappingSub
       | some .wrappingMul   => BinOp.wrappingMul
@@ -1041,35 +1110,40 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if intrinsic == some .stringPushChar then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "string_push_char" [] cArgs .unit
   -- Intercept string_append(&mut s, other)
   if intrinsic == some .stringAppend then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "string_append" [] cArgs .unit
   -- Intercept string_append_int(&mut s, n)
   if intrinsic == some .stringAppendInt then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "string_append_int" [] cArgs .unit
   -- Intercept string_append_bool(&mut s, b)
   if intrinsic == some .stringAppendBool then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "string_append_bool" [] cArgs .unit
   -- Intercept string_reserve(&mut s, cap)
   if intrinsic == some .stringReserve then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "string_reserve" [] cArgs .unit
   -- Intercept vec_push
@@ -1079,16 +1153,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let mut cArgs : List CExpr := []
     match args with
     | vecArg :: valArg :: rest =>
-      let cVec ← elabExpr vecArg
+      let cVecEv ← elabExprEv vecArg
+      let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
-      let cVal ← elabExpr valArg (some elemTy)
+      let cValEv ← elabExprEv valArg (some elemTy)
+      let cVal := cValEv.core
       cArgs := cArgs ++ [cVal]
       for arg in rest do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     | _ =>
       for arg in args do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     return .call "vec_push" [] cArgs .unit
   -- Intercept vec_get
@@ -1096,16 +1174,20 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let mut cArgs : List CExpr := []
     match args with
     | vecArg :: idxArg :: rest =>
-      let cVec ← elabExpr vecArg
+      let cVecEv ← elabExprEv vecArg
+      let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
-      let cIdx ← elabExpr idxArg (some .int)
+      let cIdxEv ← elabExprEv idxArg (some .int)
+      let cIdx := cIdxEv.core
       cArgs := cArgs ++ [cIdx]
       for arg in rest do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     | _ =>
       for arg in args do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     let elemTy := match (cArgs.head?.map CExpr.ty) with
       | some (.ref (.generic "Vec" [et])) => et
@@ -1118,32 +1200,39 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let mut cArgs : List CExpr := []
     match args with
     | vecArg :: idxArg :: valArg :: rest =>
-      let cVec ← elabExpr vecArg
+      let cVecEv ← elabExprEv vecArg
+      let cVec := cVecEv.core
       cArgs := cArgs ++ [cVec]
-      let cIdx ← elabExpr idxArg (some .int)
+      let cIdxEv ← elabExprEv idxArg (some .int)
+      let cIdx := cIdxEv.core
       cArgs := cArgs ++ [cIdx]
-      let cVal ← elabExpr valArg (some elemTy)
+      let cValEv ← elabExprEv valArg (some elemTy)
+      let cVal := cValEv.core
       cArgs := cArgs ++ [cVal]
       for arg in rest do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     | _ =>
       for arg in args do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         cArgs := cArgs ++ [cArg]
     return .call "vec_set" [] cArgs .unit
   -- Intercept vec_len
   if intrinsic == some .vecLen then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "vec_len" [] cArgs .int
   -- Intercept vec_pop
   if intrinsic == some .vecPop then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     let elemTy := match (cArgs.head?.map CExpr.ty) with
       | some (.refMut (.generic "Vec" [et])) => et
@@ -1153,7 +1242,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   if intrinsic == some .vecFree then
     let mut cArgs : List CExpr := []
     for arg in args do
-      let cArg ← elabExpr arg
+      let cArgEv ← elabExprEv arg
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call "vec_free" [] cArgs .unit
   -- Call through a fn-typed LOCAL or parameter. This is the one place that knows
@@ -1164,7 +1254,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
   | some (.fn_ paramTys _ retTy) =>
     let mut cArgs : List CExpr := []
     for (arg, pTy) in args.zip paramTys do
-      let cArg ← elabExpr arg (some pTy)
+      let cArgEv ← elabExprEv arg (some pTy)
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     return .call (.indirect fnName) [] cArgs retTy
   | _ => pure ()
@@ -1192,7 +1283,8 @@ partial def elabCall (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let retTy := substTy mapping sig.retTy
     let mut cArgs : List CExpr := []
     for (arg, pTy) in args.zip paramTypes do
-      let cArg ← elabExpr arg (some pTy)
+      let cArgEv ← elabExprEv arg (some pTy)
+      let cArg := cArgEv.core
       cArgs := cArgs ++ [cArg]
     -- Use canonical name for intrinsics (e.g., string_substr → string_slice)
     let callName := match intrinsic with
@@ -1210,7 +1302,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     -- Elaborate the RHS for validation (it may read runtime state). For a ghost
     -- let we then ERASE it: emit no Core, and record the name as ghost rather
     -- than a runtime var so any later runtime read is reported as a leak.
-    let cVal ← elabExpr value valHint
+    let cValEv ← elabExprEv value valHint
+    let cVal := cValEv.core
     let finalTy ← match ty with
       | some t => resolveTypeE t
       | none => pure cVal.ty
@@ -1223,13 +1316,15 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   | .assign _ name value =>
     match ← lookupVar name with
     | some varTy =>
-      let cVal ← elabExpr value (some varTy)
+      let cValEv ← elabExprEv value (some varTy)
+      let cVal := cValEv.core
       return [.assign (← coreNameOf name) cVal]
     | none => throwElab (.assignToUndeclaredVariable name) (some stmt.getSpan)
 
   | .return_ _ (some value) =>
     let env ← getEnv
-    let cVal ← elabExpr value (some env.currentRetTy)
+    let cValEv ← elabExprEv value (some env.currentRetTy)
+    let cVal := cValEv.core
     return [.return_ (some cVal) env.currentRetTy]
 
   | .return_ _ none =>
@@ -1243,7 +1338,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     if existingFn.isNone && (fnName == "print" || fnName == "println") then
       let mut stmts : List CStmt := []
       for arg in args do
-        let cArg ← elabExpr arg
+        let cArgEv ← elabExprEv arg
+        let cArg := cArgEv.core
         let printCall := match cArg.ty with
           | .string =>
             CStmt.expr (CExpr.call "print_string" [] [CExpr.borrow cArg (.ref .string)] .unit) false
@@ -1270,12 +1366,14 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     else if existingFn.isNone && fnName == "append" then
     match args with
     | bufArg :: rest =>
-      let cBuf ← elabExpr bufArg
+      let cBufEv ← elabExprEv bufArg
+      let cBuf := cBufEv.core
       match cBuf.ty with
       | .refMut .string =>
         let mut stmts : List CStmt := []
         for arg in rest do
-          let cArg ← elabExpr arg
+          let cArgEv ← elabExprEv arg
+          let cArg := cArgEv.core
           let call ← match cArg.ty with
             | .string =>
               pure (CStmt.expr (CExpr.call "string_append" [] [cBuf, CExpr.borrow cArg (.ref .string)] .unit) false)
@@ -1299,21 +1397,26 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
           stmts := stmts ++ [call]
         return stmts
       | _ =>
-        let cE ← elabExpr (.call _sp fnName _typeArgs args)
+        let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
+        let cE := cEEv.core
         return [.expr cE iv]
     | [] =>
-      let cE ← elabExpr (.call _sp fnName _typeArgs args)
+      let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
+      let cE := cEEv.core
       return [.expr cE iv]
     else
-      let cE ← elabExpr (.call _sp fnName _typeArgs args)
+      let cEEv ← elabExprEv (.call _sp fnName _typeArgs args)
+      let cE := cEEv.core
       return [.expr cE iv]
 
   | .expr _ e iv =>
-    let cE ← elabExpr e
+    let cEEv ← elabExprEv e
+    let cE := cEEv.core
     return [.expr cE iv]
 
   | .ifElse _ cond then_ else_ =>
-    let cCond ← elabExpr cond (some .bool)
+    let cCondEv ← elabExprEv cond (some .bool)
+    let cCond := cCondEv.core
     let cThen ← elabStmts then_
     let cElse ← match else_ with
       | some stmts => do let cs ← elabStmts stmts; pure (some cs)
@@ -1321,7 +1424,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     return [.ifElse cCond cThen cElse]
 
   | .while_ _ cond body label =>
-    let cCond ← elabExpr cond (some .bool)
+    let cCondEv ← elabExprEv cond (some .bool)
+    let cCond := cCondEv.core
     let cBody ← elabStmts body
     return [.while_ cCond cBody label []]
 
@@ -1333,7 +1437,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
       let cInit ← elabStmt initStmt
       result := result ++ cInit
     | none => pure ()
-    let cCond ← elabExpr cond (some .bool)
+    let cCondEv ← elabExprEv cond (some .bool)
+    let cCond := cCondEv.core
     let cBody ← elabStmts body
     let cStep ← match step with
       | some stepStmt => elabStmt stepStmt
@@ -1343,7 +1448,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     return result
 
   | .fieldAssign _ obj field value =>
-    let cObj ← elabExpr obj
+    let cObjEv ← elabExprEv obj
+    let cObj := cObjEv.core
     -- 6D#3: `.field =` on a heap shell derefs first (p.f = v ≡ (*p).f = v —
     -- the old `->` desugar folded into `.`).
     let cObj := match cObj.ty with
@@ -1372,28 +1478,35 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
           pure (some (substTy mapping f.ty))
         | none => pure none
       | none => pure none
-    let cVal ← elabExpr value fieldTy
+    let cValEv ← elabExprEv value fieldTy
+    let cVal := cValEv.core
     return [.fieldAssign cObj field cVal]
 
   | .derefAssign _ target value =>
-    let cTarget ← elabExpr target
+    let cTargetEv ← elabExprEv target
+    let cTarget := cTargetEv.core
     let innerTy := match cTarget.ty with
       | .ref t => t | .refMut t => t
       | .ptrMut t => t | .ptrConst t => t
       | _ => .placeholder
-    let cVal ← elabExpr value (some innerTy)
+    let cValEv ← elabExprEv value (some innerTy)
+    let cVal := cValEv.core
     return [.derefAssign cTarget cVal]
 
   | .arrayIndexAssign _ arr index value =>
-    let cArr ← elabExpr arr
-    let cIdx ← elabExpr index (some .int)
-    let cVal ← elabExpr value
+    let cArrEv ← elabExprEv arr
+    let cArr := cArrEv.core
+    let cIdxEv ← elabExprEv index (some .int)
+    let cIdx := cIdxEv.core
+    let cValEv ← elabExprEv value
+    let cVal := cValEv.core
     return [.arrayIndexAssign cArr cIdx cVal]
 
   | .break_ _ value label =>
     match value with
     | some v =>
-      let cV ← elabExpr v
+      let cVEv ← elabExprEv v
+      let cV := cVEv.core
       return [.break_ (some cV) label]
     | none => return [.break_ none label]
 
@@ -1401,7 +1514,8 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     return [.continue_ label]
 
   | .defer _ body =>
-    let cBody ← elabExpr body
+    let cBodyEv ← elabExprEv body
+    let cBody := cBodyEv.core
     return [.defer cBody]
 
   | .borrowIn _ var ref region isMut body =>
@@ -1430,7 +1544,7 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
     elabStmts ([tmpLet] ++ fieldLets)
   -- assert(e)/assume(e): proof-only, ERASED before Core (like contracts/ghost).
   -- Not elaborated — the condition may legally read ghost bindings (it is a proof
-  -- context), which elabExpr would otherwise reject as a runtime ghost leak. The
+  -- context), which elabExprEv would otherwise reject as a runtime ghost leak. The
   -- condition is type-checked in Check and scope/purity-checked in the report.
   | .assert_ _ _ | .assume_ _ _ => return []
 
@@ -1457,7 +1571,7 @@ partial def elabStmts (stmts : List Stmt) (valueHint : Option Ty := none) : Elab
       | .expr _ e true, some h, true =>
         match e with
         | .call .. => elabStmt s
-        | _ => do let cE ← elabExpr e (some h); pure [CStmt.expr cE true]
+        | _ => do let cEEv ← elabExprEv e (some h); pure [CStmt.expr cEEv.core true]
       | _, _, _ => elabStmt s
     let r := action.run envBefore |>.run
     match r with
@@ -1825,7 +1939,11 @@ partial def elabModule (m : Module) (summary : FileSummary)
     (ef.name, ef.params.map fun p => (p.name, p.ty), ef.retTy, ef.isTrusted)
   -- Build constants
   let cConstants := m.constants.map fun c =>
-    let constResult := (elabExpr c.value (some c.ty)).run initEnv |>.run
+    -- Uses elabExprEv, the single producer. Its EVIDENCE is dropped here only because
+    -- constant dependency binding does not exist yet: the constant's initializer digest
+    -- is what a `constRef` must eventually resolve to, so this is the site that will
+    -- feed it. Recorded rather than silent.
+    let constResult := ((·.core) <$> elabExprEv c.value (some c.ty)).run initEnv |>.run
     match constResult with
     | ((.ok cExpr), _) => (c.name, c.ty, cExpr)
     | ((.error _), _) => (c.name, c.ty, CExpr.intLit 0 c.ty)
