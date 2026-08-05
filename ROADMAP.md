@@ -2300,16 +2300,20 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
 
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). The spike branch may continue as an experiment, but supported-feature graduation follows R-0004, R-0450, R-0440, and the pulled-forward correctness queue; active ownership is not permission to displace known semantic defects.
 
-**Spike disposition — measured 2026-08-05 at remote tip `3c85d988`.** Do NOT
+**Spike disposition and rolling inventory — epoch 1 measured 2026-08-05 at
+`3c85d988`.** Do NOT
 merge `origin/spike/multi-prover-evidence` during R-0004, and do not merge that
 branch wholesale later. It is an extraction source and research record, not the
-integration vehicle. At this snapshot it was 104 commits ahead and 32 behind
-the R-0004 integration head, changed 71 files (`+14,334/-306`), and had six textual conflict
+integration vehicle. Epoch 1 covers merge base `0f92b387` through `3c85d988`:
+104 branch-side commits, 32 main-side commits at the time of measurement, 71
+changed files (`+14,334/-306`), and six textual conflict
 areas, including `Report.lean`, CI, this roadmap, and bug-corpus machinery. It
 also mixed the multi-prover experiment with later obligation-discovery work,
 interpreter fixes, policy, and soundness-register changes. Re-measure those
-numbers if the tip moves; the architectural disposition does not depend on the
-counts.
+numbers in a new epoch when the tip moves; the architectural disposition does
+not depend on the counts. The branch is expected to keep moving. A fast-forward
+does not make epoch 1 false or incomplete; it opens an unclassified delta after
+`3c85d988`.
 
 The pull-request CI run at the preceding measured tip `ccc53d44`
 `https://github.com/unbalancedparentheses/concrete2/actions/runs/31010417567`
@@ -2340,8 +2344,10 @@ do not preserve them by merging unrelated history.
 
 "Do not merge wholesale" must not become "silently lose most of the work."
 Before the first port, R-0448 creates a VERSIONED, MACHINE-CHECKED extraction
-manifest pinned to the measured source range (`0f92b387..3c85d988` at this
-snapshot). The manifest is checked against the COMMIT RANGE, not only the net
+manifest as an ordered sequence of inventory epochs. Epoch 1 is pinned to
+`0f92b387..3c85d988`; each later survey appends the half-open delta after the
+previous epoch tip through its newly observed tip. The manifest is checked
+against each COMMIT RANGE, not only the net
 diff: work added and later reverted or replaced is still a measured finding and
 must not disappear merely because its final textual diff is empty. It accounts
 for all 104 branch-side commits (merge commits may point at their covered child
@@ -2360,11 +2366,21 @@ Each manifest row carries at least:
 
 A mixed source commit may produce several rows; a port may combine several
 source commits only when every source remains traceable. `pending` is allowed
-while extraction is active but is forbidden at archive time. Moving the spike
-tip invalidates the inventory baseline until the new commits and paths are
-classified. A gate fails on an unclassified source commit/path, a ported row with
-no target commit or gate, a superseded row with no replacement, or an archive
-attempt with any pending row.
+while extraction is active but is forbidden at archive time. Fast-forwarding
+the spike creates a pending delta; it does NOT invalidate terminal rows in a
+completed epoch. A non-fast-forward rewrite invalidates provenance unless every
+surveyed epoch tip and the replacement lineage were preserved in an immutable
+tag or repository bundle. A gate fails on an unclassified commit/path WITHIN a
+declared epoch, a ported row with no target commit or gate, a superseded row with
+no replacement, or an archive attempt with any pending row or un-inventoried
+final delta.
+
+Inventory is synchronized at explicit boundaries, not on every R-0004 or
+roadmap push: before porting a spike slice, at R-0004 completion, before any
+non-fast-forward rewrite, and before branch archival/deletion. A port may use
+only commits already covered by a declared epoch. Thus ongoing research can
+continue without making main chase its head, while no code or finding can enter
+the supported implementation ahead of its inventory.
 
 The inventory must name, at minimum, every measured family already present in
 the spike: the typed obligation IR/evaluator/transforms; total obligation
@@ -2443,12 +2459,13 @@ merge of `origin/spike/multi-prover-evidence`.
    records both trust directions: agreement reduces kernel-soundness
    trust; bridge trust is untouched until realization (R-0449).
 
-**Preserved spike-only task records.** The exact spike snapshot contains the
+**Preserved spike-only task records.** Inventory epoch 1 contains the
 following 20 task IDs that were absent from `main`. They are copied here as
 durable owners so abandoning or rewriting the research branch cannot delete the
 plan. Their presence is NOT approval to merge the branch, activate a status, or
-skip R-0004/R-0440/R-0450. Before the spike is rewritten, deleted, or archived,
-preserve `3c85d988` in an immutable repository tag or bundle; the extraction
+skip R-0004/R-0440/R-0450. Before a non-fast-forward rewrite, deletion, or final
+archive, preserve `3c85d988` and every later surveyed epoch tip in an immutable
+repository tag or bundle; the extraction
 manifest then reconciles the full source text, fixtures, gates, and findings for
 each record against current `main`. A task already satisfied on `main` receives
 `superseded` or the real target commit in that manifest rather than being
