@@ -129,6 +129,18 @@ def evUnhandledExpr (kind : String) : EvidenceExprV2 :=
 def evUnhandledStmt (kind : String) : EvidenceStmtV2 :=
   .gap { code := .unhandledStmt, detail := kind }
 
+/-- Resolve a `break`/`continue` label to a RELATIVE loop target: 0 is the innermost
+    enclosing loop, counting outward. Never the label spelling — renaming a label must
+    not move a digest.
+
+    `none` when there is no enclosing loop, or when a named label matches none of them.
+    Both are refusals rather than a default of 0, which would silently retarget a
+    mislabelled break at the innermost loop. -/
+def evLoopTarget? (frames : List (Option String)) (label : Option String) : Option Nat :=
+  match label with
+  | none   => if frames.isEmpty then none else some 0
+  | some l => frames.findIdx? fun f => f == some l
+
 /-- Parentheses are TRANSPARENT: they emit no node. `(p)` and `p` are the same program,
     so an extra wrapper would make a purely syntactic edit move the digest. -/
 def evParen (inner : EvidenceExprV2) : EvidenceExprV2 := inner

@@ -62,6 +62,11 @@ structure ElabEnv where
   -- rule. Installed at ElabEnv CONSTRUCTION, so there is no window in which this
   -- silently answers `none` and callers emit gaps for a reason that is not real.
   resolveCallee : String → Option CallableId := fun _ => none
+  -- Enclosing loops, INNERMOST FIRST, each with its optional label. `break`/`continue`
+  -- evidence carries a RELATIVE target (0 = innermost), never a label string: renaming
+  -- a label must not move a digest. Restored by restoreScope with the rest of the
+  -- lexical state, so exiting a loop pops its frame for free.
+  loopFrames : List (Option String) := []
   -- A scope has been ENTERED but no frame materialized yet. Frames open LAZILY on
   -- the first binder, so a scope that binds nothing does not shift `framesOut` for
   -- references inside it — an empty `if` must not move a digest.
@@ -1450,7 +1455,13 @@ partial def elabStmt (stmt : Stmt) : ElabM (List CStmt) := do
   | .while_ _ cond body label =>
     let cCondEv ← elabExprEv cond (some .bool)
     let cCond := cCondEv.core
+    -- The frame covers the BODY only. A `break` in the condition would not be inside
+    -- this loop, and pushing before the condition would mis-target it.
+    let outer ← getEnv
+    setEnv { outer with loopFrames := label :: outer.loopFrames }
     let cBody ← elabStmts body
+    let inner ← getEnv
+    setEnv { inner with loopFrames := outer.loopFrames }
     return [.while_ cCond cBody label []]
 
   | .forLoop _ init cond step body label =>

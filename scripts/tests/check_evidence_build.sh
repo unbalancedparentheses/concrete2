@@ -71,6 +71,24 @@ def sc : BodyScope := ({} : BodyScope).push ["p", "q"]
   a "nesting is preserved: (p+q)*r is not p+(q*r)"
     (sh (evBinary .mul (evBinary .add (evBinderRef sc "p") (evBinderRef sc "q")) (evIntLit 3 .int))
       != sh (evBinary .add (evBinderRef sc "p") (evBinary .mul (evBinderRef sc "q") (evIntLit 3 .int))))
+  -- LOOP TARGETS are relative depths, never label spellings.
+  a "a bare break targets the innermost enclosing loop"
+    (evLoopTarget? [none] none == some 0
+      && evLoopTarget? [some "outer", none] none == some 0)
+  a "a labelled break counts outward to its own loop"
+    (evLoopTarget? [none, some "outer"] (some "outer") == some 1
+      && evLoopTarget? [some "inner", some "outer"] (some "inner") == some 0)
+  a "renaming a label does not change the resolved target"
+    (evLoopTarget? [none, some "outer"] (some "outer")
+      == evLoopTarget? [none, some "renamed"] (some "renamed"))
+  a "a break with NO enclosing loop is refused, not defaulted to 0"
+    (evLoopTarget? [] none == none)
+  a "a label matching no enclosing loop is refused"
+    (evLoopTarget? [none, some "outer"] (some "absent") == none)
+  -- Control: the resolver actually discriminates by depth.
+  a "different depths give different targets"
+    (evLoopTarget? [none, some "o"] (some "o") != evLoopTarget? [some "o", none] (some "o"))
+
   a "parentheses are transparent — no extra node"
     (sh (evParen (evBinderRef sc "p")) == sh (evBinderRef sc "p"))
 LEAN
@@ -90,6 +108,14 @@ if grep -qE "unaryOpTag|binOpTag" Concrete/Proof/EvidenceBuild.lean; then
   ok "operator tags reuse the contract encoder's owner rather than a second table"
 else
   no "EvidenceBuild defines its own operator tags — two tables can disagree"
+fi
+
+# The loop frame must cover the BODY only. Pushing before the condition would put a
+# `break` in the condition inside a loop it is not in.
+if grep -q "The frame covers the BODY only" Concrete/Elab/Elab.lean; then
+  ok "the loop frame is pushed around the body, not the condition"
+else
+  no "the loop frame's extent is unrecorded — a break in the condition could mis-target"
 fi
 
 # DECISION TRIPWIRE, not a normative gate. Struct-literal initializers currently
