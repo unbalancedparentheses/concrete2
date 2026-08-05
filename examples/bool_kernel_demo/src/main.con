@@ -1,0 +1,62 @@
+// NON-ARITHMETIC multi-kernel evidence (branch spike/non-arithmetic-multi-kernel).
+//
+// Every earlier kernel-agreement demo is linear integer arithmetic: omega / lia /
+// presburger. Those are three mature decision procedures for ONE theory. These
+// obligations are boolean, so each kernel must use a DIFFERENT procedure —
+// `destruct; reflexivity` (Rocq), `simp` (Isabelle/HOL), `decide` (Lean) — and
+// agreement between them is not three invocations of the same idea.
+//
+//   concrete src/main.con --report bool-kernel
+//
+// Two properties this tier has that the arithmetic tier does not:
+//
+//   1. Agreement with the reference evaluator is EXHAUSTIVE. A boolean goal over n
+//      variables has 2^n assignments, all checked. Arithmetic obligations can only be
+//      checked on chosen instances.
+//   2. The proofs are constructive. Concrete `bool` lowers to Rocq `bool`, not `Prop`:
+//      over `Prop`, De Morgan's `~(a /\ b) -> ~a \/ ~b` needs classical logic, and
+//      `Print Assumptions` would then report an axiom. Over `bool` it is
+//      `destruct a, b; reflexivity` and reports "Closed under the global context".
+mod boolkernel {
+    // DE MORGAN. The postcondition and the body are different expressions that must
+    // denote the same boolean function — the obligation is their equivalence.
+    #[ensures(result == !(a && b))]
+    fn nand(a: bool, b: bool) -> bool {
+        return !a || !b;
+    }
+
+    // The other direction, so the demo is not one lucky identity.
+    #[ensures(result == !(a || b))]
+    fn nor(a: bool, b: bool) -> bool {
+        return !a && !b;
+    }
+
+    // Three variables: 8 assignments, still exhaustively checked. Associativity of `&&`.
+    #[ensures(result == ((a && b) && c))]
+    fn and3(a: bool, b: bool, c: bool) -> bool {
+        return a && (b && c);
+    }
+
+    // XOR expressed two ways. `!=` on booleans is exclusive-or.
+    #[ensures(result == (a != b))]
+    fn xor(a: bool, b: bool) -> bool {
+        return (a || b) && !(a && b);
+    }
+
+    // NEGATIVE CONTROL: the postcondition is WRONG (`a || b` is not `!(a && b)`).
+    // The reference evaluator must report this FALSE before any kernel is asked —
+    // a kernel that closed it would be proving a different proposition.
+    #[ensures(result == !(a && b))]
+    fn wrong_post(a: bool, b: bool) -> bool {
+        return a || b;
+    }
+
+    // SKIPPED, and named rather than silently absent: the body is not a single
+    // `return`, so substituting it into the postcondition would need the operational
+    // step this tier does not attempt.
+    #[ensures(result == (a && b))]
+    fn multi_stmt(a: bool, b: bool) -> bool {
+        let t: bool = a && b;
+        return t;
+    }
+}

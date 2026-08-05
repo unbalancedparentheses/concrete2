@@ -6,6 +6,7 @@ import Concrete.Semantics.TermIR
 import Concrete.Report.TermTranslate
 import Concrete.Report.TermOfExpr
 import Concrete.Report.DiscoveryComplete
+import Concrete.Report.BoolKernel
 import Concrete.Semantics.Capabilities
 import Concrete.Resolve.FileSummary
 import Concrete.Resolve.BuiltinSigs

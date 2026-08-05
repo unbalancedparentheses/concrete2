@@ -1810,6 +1810,42 @@ def compileAndReport (inputPath : String) (reportType : String)
       else
         IO.println (Report.vcsReport dvcs (Report.unresolvedBoundsAccesses parsed.modules))
       return 0
+    if reportType == "bool-kernel" then
+      -- Branch spike/non-arithmetic-multi-kernel: the first NON-arithmetic obligation carried to
+      -- all three kernels. Boolean postconditions, closed by case analysis (`destruct` / `simp` /
+      -- `decide`) rather than an arithmetic decision procedure -- so agreement here is not three
+      -- invocations of the same idea. Emits each kernel's source; run them under
+      -- `nix develop .#provers`.
+      let obls := Report.boolPostObligations parsed.modules
+      let skipped := Report.boolKernelSkipped parsed.modules
+      IO.println "=== Non-arithmetic multi-kernel evidence (boolean postconditions) ==="
+      IO.println "  reference-evaluator agreement is EXHAUSTIVE here (all 2^n assignments),"
+      IO.println "  not sampled as in the arithmetic tier."
+      if obls.isEmpty then
+        IO.println ""
+        IO.println "(no boolean postcondition obligations in this file)"
+      for o in obls do
+        let ref := match o.holdsEverywhere with
+          | some true => "holds on every assignment"
+          | some false => "FALSE somewhere (a kernel closing it would be proving something else)"
+          | none => "not evaluable (no attestation possible)"
+        IO.println ""
+        IO.println s!"  [{o.key}]  reference evaluator: {ref}"
+        match o.leanGoal with
+        | some g => IO.println s!"    lean:decide goal: {g}"
+        | none => IO.println "    lean:decide outside the boolean fragment"
+        match o.rocqScript with
+        | some sc => IO.println s!"    --- rocq:destruct ---\n{sc}"
+        | none => IO.println "    rocq:destruct outside the boolean fragment"
+        match o.isabelleTheory "BoolPost" with
+        | some th => IO.println s!"    --- isabelle:auto ---\n{th}"
+        | none => IO.println "    isabelle:auto outside the boolean fragment"
+      if !skipped.isEmpty then
+        IO.println ""
+        IO.println "ALL-BOOLEAN FUNCTIONS SKIPPED (coverage stated, not implied):"
+        for (fn, why) in skipped do
+          IO.println s!"  {fn}: {why}"
+      return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
       -- layer. The SAME linear no-overflow obligations are discharged by Lean's
@@ -2730,7 +2766,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit, bool-kernel"
     return 1
 
 def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do

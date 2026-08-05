@@ -1456,8 +1456,9 @@ def evalIntEnv (env : List (String × Int)) (e : Expr) : Option Int :=
   (ofExpr e).bind (TermIR.evalInt env noSyms)
 
 /-- Boolean-valued reference evaluation of a contract expression. -/
-def evalBoolEnv (env : List (String × Int)) (e : Expr) : Option Bool :=
-  (ofExpr e).bind (TermIR.evalBool env noSyms)
+def evalBoolEnv (env : List (String × Int)) (e : Expr)
+    (benv : TermIR.BoolEnv := []) : Option Bool :=
+  (ofExpr e).bind (TermIR.evalBool env noSyms benv)
 
 /-! #### Behavioural locks on the reference evaluator — **newly possible**
 
