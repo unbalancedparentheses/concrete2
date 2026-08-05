@@ -123,6 +123,36 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
+> **RECONCILIATION NOTE (merge of spike/multi-prover-evidence @ 80be5368).** This section
+> is dated 2026-08-01 and is STALE for R-0004: it predates the evidence-producer work of
+> 2026-08-04/05. Git auto-merged the two roadmaps without a textual conflict, so nothing
+> flagged the staleness — it is recorded here rather than silently inherited.
+>
+> Superseded for R-0004 by the later dated material in this file. Landed since this
+> section was written:
+>
+> - `elabExprEv`/`elabStmtEv`/`elabCallEv` — ONE producer of Core and evidence, with all
+>   104 child edges threaded and zero Core-only projections inside the mutual block.
+> - Callee identity as an OUTPUT of resolution (single owner, installed at ElabEnv
+>   construction so there is no fail-open window).
+> - The typed evidence tree, structurally collected per function, with `matchExpr` added
+>   because Concrete's `match` is an expression.
+> - A structural serializer: distinct programs now produce distinct body bytes — operators,
+>   nesting, argument order, field selection, variant selection and arm order all
+>   discriminate, which the flat identity-use serializer could not do.
+> - Bug 066 fixed: the interpreter discarded match-guard effects, silently corrupting the
+>   differential oracle for every guarded match.
+>
+> Still open, and NOT completed by this merge: the independent `bodyIdentityUses`
+> accumulator (deletion unblocked, tree proven to lose nothing), shadow mode on structural
+> bytes, dependency binding, freshness integration, the 44-fingerprint migration, receipts,
+> and the struct-literal initializer-order language decision.
+>
+> Multi-prover results arriving with this merge are EXPERIMENTAL and non-authoritative;
+> they must not drive `proved_by_*`, badges, or release policy until R-0004's receipt and
+> status model is finished.
+
+
 Not a second task queue — a map from *what is broken* to *who owns it* to *how you know
 when it is fixed*. Added because the information existed only as prose spread across
 KNOWN_HOLES, the gate scripts and commit messages, which is how the H23 status
