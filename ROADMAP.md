@@ -857,11 +857,12 @@ digests, typed dependency roots, and replay receipts meaning what they claim.
 The immediate sequence is normative:
 
 1. R-0004 completes evidence integrity.
-2. R-0450 may land the common obligation IR immediately afterward only as
-   focused representation/semantics slices ported onto a fresh branch; the
-   accumulated `origin/spike/multi-prover-evidence` branch is research input,
-   not a merge candidate. The port may not mint authoritative evidence;
-   otherwise it yields rather than blocking the defect queue.
+2. The accumulated multi-prover work may be merged early only through R-0448's
+   pinned quarantine-integration procedure: current `main` wins semantic
+   conflicts, premature status/policy paths stay disabled, and full CI is green.
+   R-0450 may then converge the merged common obligation IR immediately after
+   R-0004. Neither the merge nor R-0450 may mint authoritative evidence;
+   otherwise this work yields rather than blocking the defect queue.
 3. R-0006, R-0007, R-0008, and R-0434 close the remaining structural
    destruction, semantic-symbol/import identity, and aggregate-layout
    verification defects.
@@ -1979,15 +1980,16 @@ not promote automated verdicts into authoritative claims before this gate.
 
 ### Task R-0450
 
-**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape). A measured implementation exists on `origin/spike/multi-prover-evidence`, but that accumulated research branch is NOT a merge candidate; port the typed IR, semantics, and drivers onto a fresh worktree in focused slices after R-0004. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
+**Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape). A measured implementation exists on `origin/spike/multi-prover-evidence`. If R-0448's pinned quarantine merge lands it before R-0004 completes, treat that code as experimental inventory in the tree, not as the final owner: converge the typed IR, semantics, and drivers in focused green slices after R-0004. Today `toLeanProp` (Lean path) and `exprToSmt` (solver path) are two hard-coded, monolithic lowerings of the same obligation expressions: two answers to one question, free to drift — and drift here means the Lean proof and the SMT check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
 
-This task's pulled-forward position is conditional: it may land representation,
-semantics, and differential gates after R-0004 only when the PORTED SLICES are
-individually green. It does not issue receipts or upgrade any verdict to
-authoritative evidence; if a focused port is not ready, R-0006 proceeds rather
-than waiting for it. Do not rebase or merge the accumulated spike merely to
-preserve its history: retain provenance in the extraction inventory described
-under R-0448, and let the supported implementation have reviewable ownership.
+This task's pulled-forward position is conditional: it may graduate
+representation, semantics, and differential gates after R-0004 only when the
+CONVERGED SLICES are individually green. Code present because of the quarantine
+merge does not issue receipts or upgrade any verdict to authoritative evidence;
+if a focused convergence slice is not ready, R-0006 proceeds rather than waiting
+for it. Preserve provenance in the inventory described under R-0448, and give
+the supported implementation reviewable ownership rather than treating merge
+ancestry as design approval.
 
    Slice 1 unifies the two existing backends only — no new provers; the diff
    should be net-negative in lowering code. Gates: constructor coverage
@@ -2301,10 +2303,11 @@ spelling or reintroduce the old ambiguous `PExpr.call` representation.
 **Objective:** Graduate multi-kernel evidence from `spike/multi-prover-evidence` to a supported feature, per `research/proof-evidence/multi-kernel-evidence-graduation.md`. The product is portable evidence — "replay our claims with the kernel you trust" — not agreement for its own sake. Status is DERIVED by composing per-kernel receipts on one obligation digest (R-0004's receipt mechanism), never emitted by a coordinator code path. The claim record carries structured per-kernel `validated_by` entries plus the independence field (`independent_of`: spec / kernel implementation / foundations / bridge); the composite badge string is display only (R-0440's no-erased-dimensions rule). The spike branch may continue as an experiment, but supported-feature graduation follows R-0004, R-0450, R-0440, and the pulled-forward correctness queue; active ownership is not permission to displace known semantic defects.
 
 **Spike disposition and rolling inventory — epoch 1 measured 2026-08-05 at
-`3c85d988`.** Do NOT
-merge `origin/spike/multi-prover-evidence` during R-0004, and do not merge that
-branch wholesale later. It is an extraction source and research record, not the
-integration vehicle. Epoch 1 covers merge base `0f92b387` through `3c85d988`:
+`3c85d988`.** Merge a PINNED spike snapshot through a quarantine integration
+branch rather than letting the branch drift indefinitely or merging its moving
+head directly. The merge preserves the accumulated implementation and research
+history on `main`; it does NOT graduate its evidence model, statuses, badges, or
+release policy. Epoch 1 covers merge base `0f92b387` through `3c85d988`:
 104 branch-side commits, 32 main-side commits at the time of measurement, 71
 changed files (`+14,334/-306`), and six textual conflict
 areas, including `Report.lean`, CI, this roadmap, and bug-corpus machinery. It
@@ -2318,9 +2321,11 @@ does not make epoch 1 false or incomplete; it opens an unclassified delta after
 The pull-request CI run at the preceding measured tip `ccc53d44`
 `https://github.com/unbalancedparentheses/concrete2/actions/runs/31010417567`
 was RED. The dedicated Rocq+Isabelle job passed, which is strong evidence that
-the experiment works; gate-hygiene and known-wrong-corpus jobs failed, so it is
-not merge-ready. A green multi-kernel job proves neither branch integration nor
-evidence authority.
+the experiment works; gate-hygiene and known-wrong-corpus jobs failed, so that
+tip cannot be merged directly. The quarantine branch must first merge current
+`main`, resolve all conflicts, repair every red required job, and run the full
+push-event suite on the exact merge candidate. A green multi-kernel job proves
+neither branch integration nor evidence authority.
 
 More importantly, the spike's evidence model predates R-0004's completion
 contract:
@@ -2337,13 +2342,50 @@ contract:
   generated obligation. R-0004 establishes WHAT current subject and proposition
   a receipt binds; kernel multiplicity answers only WHO replayed it.
 
-**Extraction inventory and earliest landing point.** Every extracted change gets
-a fresh branch from current `main`, an owning task, a discriminating fixture, and
-green CI. Preserve original commit IDs in the port's commit message or inventory;
-do not preserve them by merging unrelated history.
+**Merge inventory, quarantine, and convergence.** Pin the spike SHA before work
+begins. Create a fresh branch from current `main`, merge that exact spike SHA
+with `--no-ff`, and resolve the six known conflict areas explicitly. R-0004's
+current identity/freshness/receipt design wins every semantic conflict;
+`Report` remains a view; experimental `proved_by_*`, badge, and release-policy
+upgrades are disabled until the activation bar below. No conflict may be resolved
+by taking one whole side. The merge commit records the pinned main SHA, pinned
+spike SHA, conflict decisions, disabled paths, and exact CI run.
 
-"Do not merge wholesale" must not become "silently lose most of the work."
-Before the first port, R-0448 creates a VERSIONED, MACHINE-CHECKED extraction
+Every independent fix or feature retained by the merge still gets an owning
+task, a discriminating fixture, and green CI. Preserve original commit IDs in
+the inventory. Merge ancestry preserves the research history; the inventory
+separately answers which parts are accepted, quarantined pending convergence,
+superseded by main, or rejected.
+
+The QUARANTINE MERGE bar is deliberately weaker than feature graduation but is
+not optional:
+
+1. Pin and archive the exact spike SHA; inventory its full commit range and
+   every later delta included in the merge candidate.
+2. Merge current `main` into the integration branch first. Record every conflict
+   and its resolution; current callable/type/subject identity and R-0004 producer
+   APIs must not regress to strings or report-owned facts.
+3. Disable all authority-bearing surfaces from the spike: no `proved_by_*`
+   upgrade, composite badge, release-policy success, or receipt reuse may affect
+   a normal build while R-0004/R-0450/R-0440 remain incomplete. Raw experimental
+   kernel results must be labelled non-authoritative.
+4. Make the complete required push-event suite green on the exact merge commit,
+   including trust, known-wrong corpus, gate hygiene, compiler/runtime tests, and
+   the optional multi-kernel job when its tools are available. No red job is
+   waived because the dedicated multi-kernel leg passed.
+5. Give every independent compiler fix a behavioral witness, mutation or equally
+   discriminating negative control, bug-corpus ownership where applicable, and a
+   roadmap owner. A mixed commit with an unverified fix blocks the merge or is
+   explicitly reverted on the integration branch.
+6. Publish a machine-readable OPEN CONVERGENCE list alongside the merge. At
+   minimum it contains R-0004 subject/dependency/receipt binding, R-0450 neutral
+   obligation identity and transforms, R-0440 trust dimensions, string-keyed
+   witnesses, `Report`-owned composition, cache/tool versions, replay artifacts,
+   workspace closure, and every disabled status/policy path. The merge closes
+   none of these entries merely by making their code reachable.
+
+"Merge the branch" must not become "declare all of its claims correct."
+Before the quarantine merge, R-0448 creates a VERSIONED, MACHINE-CHECKED merge
 manifest as an ordered sequence of inventory epochs. Epoch 1 is pinned to
 `0f92b387..3c85d988`; each later survey appends the half-open delta after the
 previous epoch tip through its newly observed tip. The manifest is checked
@@ -2358,29 +2400,59 @@ Each manifest row carries at least:
 
 - source commit/range and affected paths or hunks;
 - the capability, defect, experiment, or finding being preserved;
-- exactly one disposition: `port_bugfix`, `port_R0450`, `port_R0440`,
-  `rewrite_R0448`, `superseded`, or `rejected`;
+- exactly one disposition: `keep_merged`, `converge_bugfix`,
+  `converge_R0450`, `converge_R0440`, `rewrite_R0448`,
+  `superseded`, or `rejected`;
 - owning roadmap task and target design/API;
-- target commit plus acceptance gate when ported; and
+- target commit plus acceptance gate when retained/converged; and
 - a concrete rationale plus replacement when superseded/rejected.
 
-A mixed source commit may produce several rows; a port may combine several
-source commits only when every source remains traceable. `pending` is allowed
-while extraction is active but is forbidden at archive time. Fast-forwarding
+A mixed source commit may produce several rows; a convergence change may combine
+several source commits only when every source remains traceable. `pending` is
+allowed while quarantine/convergence is active but is forbidden at archive
+time. Fast-forwarding
 the spike creates a pending delta; it does NOT invalidate terminal rows in a
 completed epoch. A non-fast-forward rewrite invalidates provenance unless every
 surveyed epoch tip and the replacement lineage were preserved in an immutable
 tag or repository bundle. A gate fails on an unclassified commit/path WITHIN a
-declared epoch, a ported row with no target commit or gate, a superseded row with
+declared epoch, a converged row with no target commit or gate, a superseded row with
 no replacement, or an archive attempt with any pending row or un-inventoried
 final delta.
 
 Inventory is synchronized at explicit boundaries, not on every R-0004 or
-roadmap push: before porting a spike slice, at R-0004 completion, before any
-non-fast-forward rewrite, and before branch archival/deletion. A port may use
-only commits already covered by a declared epoch. Thus ongoing research can
-continue without making main chase its head, while no code or finding can enter
-the supported implementation ahead of its inventory.
+roadmap push: before the quarantine merge, before integrating a later spike
+delta, at R-0004 completion, before any non-fast-forward rewrite, and before
+branch archival/deletion. The merge candidate may use only commits already
+covered by a declared epoch. Thus ongoing research can continue without making
+main chase an unpinned head, while no code or finding enters `main` ahead of its
+inventory.
+
+**Anti-drift integration contract.** Until the pinned quarantine merge lands,
+regularly merge current `origin/main` INTO
+`origin/spike/multi-prover-evidence` (or into a dedicated integration branch
+whose only parents are the pinned spike tip and current `main`), then run the
+spike's full compiler, corpus, and multi-kernel CI on that exact sync commit.
+The final direction into `main` occurs only through the reviewed quarantine
+merge above; ad-hoc merges of a moving head remain forbidden.
+
+Each inventory epoch records four hashes: the prior epoch tip, the new spike
+tip, the `main` tip integrated for the check, and the resulting sync commit,
+plus the exact CI run and unresolved conflict list. Open a new sync epoch before
+integrating any spike delta, after an R-0004 representation/receipt milestone
+that changes an interface the spike consumes, and whenever the spike is more than seven days
+or twenty `main` commits behind (whichever comes first). A gate reports that lag;
+it does not silently advance either branch. Conflicts are resolved on the spike
+or integration branch and recorded as findings; they are never resolved by
+letting experimental receipt/status code win over R-0004 in `main`.
+
+After the initial quarantine merge, later spike work enters `main` only as a
+new pinned, inventoried delta through the same integration procedure; there is
+no perpetual unreviewed merge channel. Once R-0004's authoritative receipt
+schema lands, converge the quarantined code on a supported-feature integration
+branch from current `main`, then keep syncing `main` into it until
+R-0450/R-0440/R-0448 graduate. This preserves the accumulated research work and
+keeps drift bounded while preventing premature statuses from becoming
+authoritative merely because their code is present.
 
 The inventory must name, at minimum, every measured family already present in
 the spike: the typed obligation IR/evaluator/transforms; total obligation
@@ -2399,25 +2471,26 @@ It also includes the subsequent field-rooted/nested array-bounds closure and the
 `predictable`-profile audit through `3c85d988`: non-terminating loops previously
 classified bounded, indirect recursion omitted from the call graph, finite stack
 bounds reported through recursive callees, and FFI propagation that was uniquely
-non-transitive. These are independent correctness findings to port or explicitly
-supersede, not incidental multi-kernel code.
+non-transitive. These are independent correctness findings to retain/converge or
+explicitly supersede, not incidental multi-kernel code.
 
 | spike material | disposition | earliest landing point |
 | --- | --- | --- |
-| Independent compiler defects found by the spike, including discovery/bounds or interpreter bugs | Extract ONE defect at a time with its own behavioral witness and mutation. No dependency on multi-prover statuses, receipts, or CLI. | During R-0004 only when it is a correctness fix that does not widen the evidence feature; otherwise its normal correctness-queue position. |
-| Typed `TermIR`, its evaluator/semantics, named transforms, and fail-closed constructor coverage | Port and review as R-0450; do not cherry-pick the surrounding report/status integration. Identity is typed, unsupported constructs stay explicit, and the diff should replace duplicate lowering rather than add a third path. | After the R-0004 completion gate, per the global sequence. |
-| Rocq/Isabelle drivers, optional prover shell, absent/refused/error cells, lowering-agreement checks, disagreement reporting, version capture, demos, and negative controls | Port on top of the R-0450 IR as EXPERIMENTAL per-kernel results. They may not issue receipts, friendly statuses, badges, or policy success. | After the relevant R-0450 IR slice is stable; they remain non-authoritative until R-0448. |
-| Independence/trust dimensions and evidence-composition ideas | Reconcile with R-0440's canonical schema and R-0004's final receipt fields. Port the dimensions, not a parallel evidence vocabulary. | After the R-0004 receipt schema exists and as part of R-0440/R-0448. |
-| Spike `KernelReceipt`, string-keyed witnesses, ledger fold, `proved_by_*` status upgrades, badges, and `require-two-kernels` release policy | DO NOT cherry-pick. Rewrite against semantic obligation identity and R-0004 `ProofEvidenceReceipt`; status is derived from bound receipts, never minted by `Report`. | R-0448 graduation only, after R-0004 + R-0450 + required R-0440 fields. |
-| Documentation, examples, Nix wiring, and gates | Port with the slice they actually test, updating claims to the final schema and CLI. Do not merge branch-wide documentation whose status statements describe the spike. | Alongside the owning focused slice. |
+| Independent compiler defects found by the spike, including discovery/bounds or interpreter bugs | Keep through the quarantine merge only when each has its behavioral witness and mutation; otherwise mark pending and prevent the merge. Decouple ownership from multi-prover statuses, receipts, and CLI. | Quarantine merge, with its normal correctness owner retained afterward. |
+| Typed `TermIR`, its evaluator/semantics, named transforms, and fail-closed constructor coverage | Merge as EXPERIMENTAL, then review/converge as R-0450. Identity must become typed, unsupported constructs stay explicit, and convergence replaces duplicate lowering rather than blessing a third path. | Present after quarantine merge; supported only after the R-0004 completion gate and R-0450 convergence. |
+| Rocq/Isabelle drivers, optional prover shell, absent/refused/error cells, lowering-agreement checks, disagreement reporting, version capture, demos, and negative controls | Keep as EXPERIMENTAL per-kernel results. They may run and report raw diagnostics but may not issue authoritative receipts, friendly statuses, badges, or policy success. | Quarantine merge, non-authoritative until R-0448. |
+| Independence/trust dimensions and evidence-composition ideas | Preserve in the merged tree, then reconcile with R-0440's canonical schema and R-0004's final receipt fields. Do not expose a parallel evidence vocabulary as supported API. | Quarantine merge; convergence after the R-0004 receipt schema exists. |
+| Spike `KernelReceipt`, string-keyed witnesses, ledger fold, `proved_by_*` status upgrades, badges, and `require-two-kernels` release policy | Code may be retained for reference, but every authority/policy path is disabled at merge. Rewrite against semantic obligation identity and R-0004 `ProofEvidenceReceipt`; status is derived from bound receipts, never minted by `Report`. | R-0448 activation only, after R-0004 + R-0450 + required R-0440 fields. |
+| Documentation, examples, Nix wiring, and gates | Merge only when claims are explicitly labelled experimental and paths are current. Keep runnable fixtures/gates; update them with each converged slice and reject stale status claims. | Quarantine merge and subsequent convergence slices. |
 
-There is therefore NO future "merge everything" step. "Get everything" means
-every piece of work and every finding receives a checked terminal disposition;
-it does not mean every experimental line enters production. The remote spike may
-be frozen/read-only while extraction proceeds. Archive (and, only if repository
-policy wants it, delete) the branch after every manifest row is terminal, every
-ported row is green on its destination branch, and the supported R-0448 feature
-is green; the archive is provenance, not a release ancestor.
+There IS one reviewed merge of a pinned snapshot, followed by reviewed merges of
+later pinned inventory deltas while research continues. There is no blind
+"always merge the moving head" step. "Get everything" means every piece of work
+and finding is preserved by ancestry and receives a checked disposition; it does
+not mean every experimental claim is enabled. Archive (and, only if repository
+policy wants it, delete) the research branch after every manifest row is
+terminal, every converged row is green, no final delta is un-inventoried, and the
+supported R-0448 feature is green.
 
 **When the supported multi-prover feature may activate.** All of these must hold
 together:
@@ -2434,12 +2507,13 @@ together:
 5. Absent tools, refusal, error, lowering disagreement, kernel disagreement,
    stale subjects, incomplete dependencies, and trusted assumptions cannot earn
    a friendly class or pass release policy.
-6. The focused implementation is green independently of the spike branch, and a
-   flagship row is replayable by an outsider with either supported kernel.
+6. The converged implementation is green on current `main`, independently of
+   the research branch, and a flagship row is replayable by an outsider with
+   either supported kernel.
 
 Only then may R-0448 enable multi-kernel statuses, badges, and release policy.
-The supported feature is the result of those focused ports and rewrites, not a
-merge of `origin/spike/multi-prover-evidence`.
+The supported feature is the result of post-merge convergence and authoritative
+receipts, not a consequence inferred from the branch having been merged.
 
    Merge bar (the graduation note's verified list): badge-teeth negative
    case (a weakly-bounded `a * b` closes with no kernel and stays
@@ -2462,10 +2536,11 @@ merge of `origin/spike/multi-prover-evidence`.
 **Preserved spike-only task records.** Inventory epoch 1 contains the
 following 20 task IDs that were absent from `main`. They are copied here as
 durable owners so abandoning or rewriting the research branch cannot delete the
-plan. Their presence is NOT approval to merge the branch, activate a status, or
-skip R-0004/R-0440/R-0450. Before a non-fast-forward rewrite, deletion, or final
+plan. Their presence and merge ancestry do NOT activate a status or permit
+skipping R-0004/R-0440/R-0450. The quarantine merge preserves them but does not
+mark them complete. Before a non-fast-forward rewrite, deletion, or final
 archive, preserve `3c85d988` and every later surveyed epoch tip in an immutable
-repository tag or bundle; the extraction
+repository tag or bundle; the merge/convergence
 manifest then reconciles the full source text, fixtures, gates, and findings for
 each record against current `main`. A task already satisfied on `main` receives
 `superseded` or the real target commit in that manifest rather than being
@@ -2604,7 +2679,7 @@ not replaces, the human diagnostics validation task.
 to `main`, with cost-aware splitting if needed, instead of depending on dispatch,
 schedule, or a remembered label. Until R-0448 activation, preserve this as CI
 ownership for the experimental job and mark any current-main replacement in the
-extraction manifest.
+merge/convergence manifest.
 
 ### Task R-0468
 
