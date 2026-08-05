@@ -159,11 +159,20 @@ Three things worth recording about it:
   regardless. What was missing is the PROOF — and, until now, any indication it was missing.
   A release gate demanding all VCs proved would have passed this program by having nothing
   to fail.
-- **`b.data[i]` is still not recorded, deliberately.** The length lookup is keyed by variable
-  NAME (`varTyMap`), so a field path has no name to resolve. Peeling `.fieldAccess` the way
-  `.paren` is peeled would produce an obligation about the WRONG array; a wrong obligation is
-  merely louder than a missing one, not safer. Closing it needs type resolution for arbitrary
-  array expressions, which is a real change and is now a named gap rather than a silent one.
+- **`b.data[i]` — CLOSED 2026-08-05.** Initially left open for a real reason: the length lookup
+  was keyed by variable NAME, so a field path had nothing to resolve, and peeling `.fieldAccess`
+  the way `.paren` is peeled would have produced an obligation about the WRONG array — merely
+  louder than a missing one, not safer. Once `ScopeDecls` threaded types the honest fix became
+  cheap: discovery records the array EXPRESSION rather than a name, and `arrayAccessOf` resolves
+  a length either from the scoped size map (the only route that knows literal-inferred lengths)
+  or by following the field path with `placeTy` to the declared type. `b.data[i]` now yields
+  `0 ≤ i ∧ i < 16`, and `b.data[99]` is **refuted** — an out-of-bounds access the proof layer
+  could not previously see. Recording more accesses does not mean claiming more: one whose
+  length still cannot be resolved is named, exactly as before.
+  Two consequences: nested `m[i][j]` records BOTH levels now (the outer array expression was not
+  an `.ident`, so only the inner access was ever found), and `hasIndex` lost its narrow
+  antecedent — bounds discovery completeness covers ALL array accesses, a stronger theorem than
+  the one it replaces.
 
 That is the argument for discovery completeness in one example: the defect was not a failed
 proof or a bad translation, and no register could see it. It was a question nobody had asked.
@@ -264,7 +273,10 @@ Two smaller lessons from mutating the per-scope version:
   for-init. A fixture now covers it.
 - **A third assertion pinned an argument list** rather than a property (`scopedWalkSizedB
   boundsLeaf lcs scope paramSizes body`) and reported a regression when a parameter was merely
-  renamed. It now counts shared call sites instead. A separate mutation — making a declaration visible to its
+  renamed. It now matches the CALL rather than its arguments — after breaking a SECOND time the
+  same way on the very next change, which is the more useful data point: an assertion that
+  quotes a call site verbatim keeps failing on refactors that change nothing it cares about, and
+  a false alarm costs the same to diagnose as a real one. A separate mutation — making a declaration visible to its
   own statement — is an EQUIVALENT mutant, not a survivor: a `let` initialiser cannot index the
   name being declared, so the change is unobservable.
 

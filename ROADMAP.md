@@ -509,10 +509,14 @@ recomputed.
   1702/0 before AND after: no fixture had ever used a parenthesised array access, so the
   regression guard is end-to-end rather than a `rfl` lock. Memory safety was never affected
   (codegen bounds-checks every access); the missing thing was the proof, and any sign of its
-  absence. **Still open, now named rather than silent:** `b.data[i]` records nothing either,
-  because the length lookup is keyed by variable name and a field path has none. Peeling
-  `.fieldAccess` would manufacture an obligation about the wrong array, so this needs type
-  resolution for arbitrary array expressions.
+  absence. `b.data[i]` recorded nothing either — **CLOSED 2026-08-05**: discovery now records the
+  array EXPRESSION rather than a name, and `arrayAccessOf` resolves the length either from the
+  scoped size map or by following the field path with the new `placeTy`. `b.data[i]` yields
+  `0 ≤ i ∧ i < 16`; `b.data[99]` is REFUTED — an out-of-bounds access the proof layer could not
+  see before. Nested `m[i][j]` now records both levels, and `hasIndex` lost its narrow
+  antecedent, so bounds discovery completeness covers ALL accesses. It became cheap only after
+  `ScopeDecls` threaded types; the wider-peel shortcut was refused because it would have
+  produced an obligation about the wrong array.
 - **The same defect was in TWO more families, via `varTyMap` — DONE 2026-08-05.** That was the
   identical construct for TYPES: one flat, per-function, name-keyed map. **shift** produced a
   WRONG obligation — `x << 40` on an `i8` took width 64 from a shadowed `x : i64`, generating
