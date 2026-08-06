@@ -51,7 +51,10 @@ check Concrete/Backend/EmitSSA.lean      34
 check Concrete/Resolve/Resolve.lean      8
 check Concrete/Check/Check.lean          4
 check Concrete/Check/CheckHelpers.lean   8
-check Concrete/Elab/Elab.lean            57
+# 57->58 (2026-08-06): +1 one-shot `initEv ++ [loop ...]` building the desugared
+# for-loop's evidence block. `initEv` holds at most one statement and the append runs
+# once per for-loop, not once per element of anything.
+check Concrete/Elab/Elab.lean            58
 check Concrete/Interp/Interp.lean        6
 
 echo
