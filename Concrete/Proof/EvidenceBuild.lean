@@ -75,16 +75,16 @@ def evBinary (op : BinOp) (lhs rhs : EvidenceExprV2) : EvidenceExprV2 :=
 /-- Array literal in SOURCE order — measured observable: `[f(), g()]` and `[g(), f()]`
     run their elements in the order written. Not sorted, not deduplicated: repetition
     and order are both semantic. -/
-def evArrayLit (elemTy : TypeId) (elements : List EvidenceExprV2) : EvidenceExprV2 :=
+def evArrayLit (elemTy : EvidenceTypeRef) (elements : List EvidenceExprV2) : EvidenceExprV2 :=
   .arrayLit elemTy elements
 
 def evIndex (collection index : EvidenceExprV2) : EvidenceExprV2 := .index collection index
 def evDeref (inner : EvidenceExprV2) : EvidenceExprV2 := .deref inner
 def evBorrow (isMut : Bool) (inner : EvidenceExprV2) : EvidenceExprV2 := .borrow isMut inner
-def evCast (target : TypeId) (inner : EvidenceExprV2) : EvidenceExprV2 := .cast target inner
+def evCast (target : EvidenceTypeRef) (inner : EvidenceExprV2) : EvidenceExprV2 := .cast target inner
 
 /-- `expr?`. Distinct from its operand: the propagation path is part of the meaning. -/
-def evTryProp (operand : EvidenceExprV2) (residualTy : TypeId) : EvidenceExprV2 :=
+def evTryProp (operand : EvidenceExprV2) (residualTy : EvidenceTypeRef) : EvidenceExprV2 :=
   .tryProp operand residualTy
 
 /-- Field projection. Owner-relative identity, so `a.x` and `b.x` on different types are
@@ -158,6 +158,59 @@ def evLitPattern (e : EvidenceExprV2) : EvidencePatternV2 :=
     binder and `_` as a wildcard. Names are absent; the position is the identity. -/
 def evVariantPattern (id : VariantId) (fields : List (FieldId × Bool)) : EvidencePatternV2 :=
   .variant id (fields.map fun fb => (fb.1, if fb.2 then .binder else .wildcard))
+
+/-- A surface `Ty` as an evidence type reference.
+
+    Two things it must not do, and both are why this is not `tyCanonical`:
+
+    - a NAMED type resolves through `nominal?` to a `TypeId`. Unresolvable is a gap, never
+      the spelling — `Point` in two modules must not share bytes.
+    - a TYPE VARIABLE resolves to its BINDER POSITION in `binders`. Unplaceable is a gap,
+      never position 0, which would alias every free variable to the first parameter.
+
+    `placeholder` is a gap by construction: an unresolved type reaching evidence means
+    something upstream did not finish, and it should refuse rather than encode.
+
+    Function types are a gap for now. Encoding one means encoding a capability SET, whose
+    variables are identified by position against a different binder list — a second
+    identity question that should be answered deliberately rather than folded in here. -/
+partial def evTypeRef (nominal? : String → Option TypeId) (binders : List String)
+    : Ty → EvidenceTypeRef
+  | .int => .prim .int | .uint => .prim .uint
+  | .i8 => .prim .i8 | .i16 => .prim .i16 | .i32 => .prim .i32
+  | .u8 => .prim .u8 | .u16 => .prim .u16 | .u32 => .prim .u32
+  | .bool => .prim .bool | .char => .prim .char | .unit => .prim .unit
+  | .float32 => .prim .float32 | .float64 => .prim .float64
+  | .string => .prim .string | .never => .prim .never
+  | .placeholder =>
+      .gap { code := .unresolvedType, detail := "type placeholder reached evidence" }
+  -- A name can be either a type PARAMETER in scope or a declared type. Binders are
+  -- checked first: inside `fn f<Point>(...)`, `Point` is the parameter, not the struct.
+  | .named n =>
+      match binders.findIdx? (· == n) with
+      | some i => .typeVarAt i
+      | none =>
+        match nominal? n with
+        | some id => .nominal id
+        | none => .gap { code := .unresolvedType, detail := s!"type name has no identity" }
+  | .typeVar n =>
+      match binders.findIdx? (· == n) with
+      | some i => .typeVarAt i
+      | none => .gap { code := .unresolvedType, detail := "free type variable" }
+  | .ref inner => .ref false (evTypeRef nominal? binders inner)
+  | .refMut inner => .ref true (evTypeRef nominal? binders inner)
+  | .ptrConst inner => .ptr false (evTypeRef nominal? binders inner)
+  | .ptrMut inner => .ptr true (evTypeRef nominal? binders inner)
+  | .heap inner => .heap (evTypeRef nominal? binders inner)
+  | .heapArray inner => .heapArray (evTypeRef nominal? binders inner)
+  | .array elem size => .array (evTypeRef nominal? binders elem) size
+  | .generic n args =>
+      match nominal? n with
+      | some id => .app id (args.map (evTypeRef nominal? binders))
+      | none => .gap { code := .unresolvedType, detail := s!"generic head has no identity" }
+  | .fn_ _ _ _ =>
+      .gap { code := .unresolvedType,
+             detail := "function type: capability-set identity is an open decision" }
 
 /-- Parentheses are TRANSPARENT: they emit no node. `(p)` and `p` are the same program,
     so an extra wrapper would make a purely syntactic edit move the digest. -/

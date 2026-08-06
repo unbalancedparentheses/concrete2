@@ -59,10 +59,10 @@ partial def shape : EvidenceExprV2 → String
   | .deref x       => s!"D({shape x})"
   | .borrow m x    => s!"B({m},{shape x})"
   | .index c i     => s!"X({shape c},{shape i})"
-  | .cast t x      => s!"A({t.render},{shape x})"
+  | .cast t x      => s!"A({typeRefBytes t},{shape x})"
   | .fnRef id      => s!"F({id.render})"
-  | .arrayLit t els => s!"AR({t.render},[{",".intercalate (els.map shape)}])"
-  | .tryProp x t   => s!"TRY({shape x},{t.render})"
+  | .arrayLit t els => s!"AR({typeRefBytes t},[{",".intercalate (els.map shape)}])"
+  | .tryProp x t   => s!"TRY({shape x},{typeRefBytes t})"
   | .matchExpr sc arms => s!"Q({shape sc},{arms.length})"
   -- Branch LENGTHS, not their contents: `shape` is declared before `sshape` and the two
   -- are not mutual, so this mirrors how `matchExpr` treats its arms.
@@ -103,6 +103,9 @@ def rr : EvidenceExprV2 := .binderRef 0 2
 def fid : CallableId := CallableId.ofUser "m" "f"
 def limitId : ConstId := { defModule := "m", declName := "LIMIT" }
 def tid : TypeId := TypeId.user "m" "T"
+-- Type POSITIONS now take an EvidenceTypeRef, not a bare TypeId: `TypeId` names only
+-- nominal types and cannot express `Int` or `[Int; 3]`.
+def tref : EvidenceTypeRef := .nominal tid
 
 #eval show Lean.MetaM Unit from do
   let ex ← ctorsOf ``Concrete.Proof.EvidenceExprV2
@@ -210,11 +213,11 @@ def tid : TypeId := TypeId.user "m" "T"
 
   -- THE FIVE DECIDED CASES.
   a "array element ORDER is semantic"
-    (shape (.arrayLit tid [p, q]) != shape (.arrayLit tid [q, p]))
+    (shape (.arrayLit tref [p, q]) != shape (.arrayLit tref [q, p]))
   a "array element MULTIPLICITY is semantic"
-    (shape (.arrayLit tid [p, p]) != shape (.arrayLit tid [p]))
+    (shape (.arrayLit tref [p, p]) != shape (.arrayLit tref [p]))
   a "`x?` differs from evaluating x normally"
-    (shape (.tryProp p tid) != shape p)
+    (shape (.tryProp p tref) != shape p)
   a "reordering defers changes the body"
     (sshape (.block [.deferStmt p, .deferStmt q])
       != sshape (.block [.deferStmt q, .deferStmt p]))

@@ -76,6 +76,101 @@ def intTyTag : EvidenceIntTy → String
 def floatTyTag : EvidenceFloatTy → String
   | .f32 => "f32" | .f64 => "f64"
 
+/-! ## Type references in evidence
+
+`TypeId` names a NOMINAL type and nothing else — a user struct or enum, or a builtin
+enum. That is the right vocabulary where the construct genuinely names one (a struct
+literal, a struct pattern, a field's owner), and it deliberately cannot express `Int` or
+`[Int; 3]`.
+
+Several positions need to name an ARBITRARY type: an array literal's element type, a
+cast's target, a `?`'s residual. Neither existing serializer fits. `tyCanonical` and
+`boundTyCanonical` are total and structural, but both fall back to the SOURCE SPELLING
+for a named type (`.named n => n`), so `Point` in two modules renders alike — exactly
+what `TypeId` exists to prevent. Using either here would put a spelling into versioned
+bytes.
+
+So this vocabulary is structural over primitives and composites AND nominal-by-identity
+where a name appears, on the same principle as `binderRef`: positions and identities,
+never spellings. Type variables follow it too — by binder POSITION, so renaming a type
+parameter cannot move a digest.
+
+Anything that cannot be resolved that way is a `gap`, which refuses the subject rather
+than describing it wrongly. -/
+
+/-- A primitive type, enumerated rather than tagged with a free string, so a new
+    primitive is a compile error here instead of an unclassified tag in bytes. -/
+inductive EvidencePrimTy where
+  | int | uint | i8 | i16 | i32 | u8 | u16 | u32
+  | bool | char | unit | float32 | float64 | string | never
+deriving BEq, Repr, Inhabited
+
+def primTyTag : EvidencePrimTy → String
+  | .int => "Int" | .uint => "Uint"
+  | .i8 => "i8" | .i16 => "i16" | .i32 => "i32"
+  | .u8 => "u8" | .u16 => "u16" | .u32 => "u32"
+  | .bool => "Bool" | .char => "Char" | .unit => "Unit"
+  | .float32 => "F32" | .float64 => "F64"
+  | .string => "Str" | .never => "Never"
+
+/-- A type, as resolved evidence. -/
+inductive EvidenceTypeRef where
+  | prim (ty : EvidencePrimTy)
+  /-- A nominal type BY IDENTITY. -/
+  | nominal (id : TypeId)
+  /-- A nominal type applied to arguments. Separate from `nominal` so `Vec` and
+      `Vec<Int>` cannot collide. -/
+  | app (id : TypeId) (args : List EvidenceTypeRef)
+  /-- A type parameter by its BINDER POSITION in the declaration, never its spelling. -/
+  | typeVarAt (idx : Nat)
+  | array (elem : EvidenceTypeRef) (size : Nat)
+  | ref (isMut : Bool) (inner : EvidenceTypeRef)
+  | ptr (isMut : Bool) (inner : EvidenceTypeRef)
+  | heap (inner : EvidenceTypeRef)
+  | heapArray (inner : EvidenceTypeRef)
+  | gap (reason : EvidenceGap)
+deriving Inhabited
+
+/-- Gaps anywhere inside a type. A type that could not be resolved must make the
+    SUBJECT incomplete, so these have to surface alongside expression and statement
+    gaps rather than being swallowed. -/
+partial def typeRefGaps : EvidenceTypeRef → List EvidenceGap
+  | .prim _ | .nominal _ | .typeVarAt _ => []
+  | .gap g => [g]
+  | .app _ args => args.flatMap typeRefGaps
+  | .array e _ => typeRefGaps e
+  | .ref _ i | .ptr _ i | .heap i | .heapArray i => typeRefGaps i
+
+/-- The nominal identities a type MENTIONS, in traversal order.
+
+    This is what the flat identity-use view can say about a structural type: it has no
+    vocabulary for `[Int; 3]`, so it records the nominal types reachable inside one and
+    nothing else. Primitives and type variables contribute nothing, which is honest —
+    they are not identities. -/
+partial def typeRefNominals : EvidenceTypeRef → List TypeId
+  | .prim _ | .typeVarAt _ | .gap _ => []
+  | .nominal id  => [id]
+  | .app id args => id :: args.flatMap typeRefNominals
+  | .array e _   => typeRefNominals e
+  | .ref _ i | .ptr _ i | .heap i | .heapArray i => typeRefNominals i
+
+/-- Versioned, injective bytes for a type reference. Length-prefixed like every other
+    encoding here, so no payload can be confused with structure. -/
+partial def typeRefBytes : EvidenceTypeRef → String
+  | .prim t      => "P" ++ primTyTag t ++ ";"
+  | .nominal id  => "N" ++ id.render ++ ";"
+  | .app id args => "G" ++ id.render ++ "<" ++ toString args.length ++ ":"
+                      ++ String.join (args.map typeRefBytes) ++ ">"
+  | .typeVarAt i => "V" ++ toString i ++ ";"
+  | .array e n   => "A" ++ toString n ++ ":" ++ typeRefBytes e
+  | .ref true i  => "M" ++ typeRefBytes i
+  | .ref false i => "R" ++ typeRefBytes i
+  | .ptr true i  => "m" ++ typeRefBytes i
+  | .ptr false i => "r" ++ typeRefBytes i
+  | .heap i      => "H" ++ typeRefBytes i
+  | .heapArray i => "h" ++ typeRefBytes i
+  | .gap _       => "!tgap;"
+
 mutual
 
 /-- An expression, as resolved evidence. -/
@@ -112,18 +207,18 @@ inductive EvidenceExprV2 where
   | deref (inner : EvidenceExprV2)
   | borrow (isMut : Bool) (inner : EvidenceExprV2)
   | index (collection index : EvidenceExprV2)
-  | cast (target : TypeId) (inner : EvidenceExprV2)
+  | cast (target : EvidenceTypeRef) (inner : EvidenceExprV2)
   | fnRef (id : CallableId)
   /-- An array literal: element type, and EVERY element subtree in order. Length is
       `elements.length`, derived rather than stored. Order and repetition are semantic —
       `[a, b]` is not `[b, a]`, and `[a, a]` is not `[a]`. -/
-  | arrayLit (elemTy : TypeId) (elements : List EvidenceExprV2)
+  | arrayLit (elemTy : EvidenceTypeRef) (elements : List EvidenceExprV2)
   /-- `expr?` — ERROR PROPAGATION, a distinct node from evaluating its operand.
 
       It must differ from the operand alone: `x?` short-circuits on the error path and
       `x` does not, so collapsing them would make adding or removing a `?` invisible to
       the subject. Carries the resolved residual type. -/
-  | tryProp (operand : EvidenceExprV2) (residualTy : TypeId)
+  | tryProp (operand : EvidenceExprV2) (residualTy : EvidenceTypeRef)
   /-- `match` used as an EXPRESSION.
 
       Concrete's match IS an expression — a match statement is `exprStmt (match ...)` — so
@@ -167,7 +262,7 @@ deriving Inhabited
 /-- A statement, as resolved evidence. -/
 inductive EvidenceStmtV2 where
   /-- A binding. The bound NAME is absent: it is referred to by position. -/
-  | letBind (ty : Option TypeId) (initializer : EvidenceExprV2)
+  | letBind (ty : Option EvidenceTypeRef) (initializer : EvidenceExprV2)
   | assign (place value : EvidenceExprV2)
   | ret (value : Option EvidenceExprV2)
   | branch (condition : EvidenceExprV2) (thenBody elseBody : List EvidenceStmtV2)
@@ -242,15 +337,18 @@ partial def exprGaps : EvidenceExprV2 → List EvidenceGap
   | .gap r => [r]
   | .intLit _ _ | .floatLit _ _ | .boolLit _ | .strLit _ | .charLit _
   | .binderRef _ _ | .constRef _ | .fnRef _ => []
-  | .unary _ x | .deref x | .borrow _ x | .cast _ x => exprGaps x
+  | .unary _ x | .deref x | .borrow _ x => exprGaps x
+  -- The TYPE is traversed too. Discarding it here would make `typeRefGaps` unreachable
+  -- and an unresolvable cast target would validate as a complete body.
+  | .cast t x => typeRefGaps t ++ exprGaps x
   | .binary _ l r => exprGaps l ++ exprGaps r
   | .index c i => exprGaps c ++ exprGaps i
   | .call _ args => args.flatMap exprGaps
   | .field _ o => exprGaps o
   | .structLit _ fs => fs.flatMap fun fe => exprGaps fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprGaps fe.2
-  | .arrayLit _ els => els.flatMap exprGaps
-  | .tryProp x _ => exprGaps x
+  | .arrayLit t els => typeRefGaps t ++ els.flatMap exprGaps
+  | .tryProp x t => exprGaps x ++ typeRefGaps t
   | .matchExpr sc arms => exprGaps sc ++ arms.flatMap armGaps
   | .ifExpr c t e => exprGaps c ++ t.flatMap stmtGaps ++ e.flatMap stmtGaps
 
@@ -264,7 +362,8 @@ partial def patternGaps : EvidencePatternV2 → List EvidenceGap
 partial def stmtGaps : EvidenceStmtV2 → List EvidenceGap
   | .gap r => [r]
   | .continueStmt _ => []
-  | .letBind _ e | .exprStmt e _ => exprGaps e
+  | .letBind t e => (t.map typeRefGaps).getD [] ++ exprGaps e
+  | .exprStmt e _ => exprGaps e
   | .assign p v => exprGaps p ++ exprGaps v
   | .ret v => (v.map exprGaps).getD []
   | .breakStmt _ v => (v.map exprGaps).getD []

@@ -254,18 +254,31 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    exactly that reason. The per-construct counts are a LOWER BOUND on remaining work, never
    a partition of it. Corpus now **316 of 432**.
 
-   **Array literal (43) and cast (23) are blocked on a decision, not on assembly.**
-   `arrayLit (elemTy : TypeId)` and `cast (target : TypeId)` must name types like `Int` and
-   `[Int; 3]`, and `TypeId` expresses only user structs/enums and builtin enums. Neither
-   existing serializer substitutes: `tyCanonical` and `boundTyCanonical` are total and
-   structural, but both render a named type by its SOURCE SPELLING (`.named n => n`), which
-   is precisely what `TypeId` exists to prevent. Evidence needs a rendering that is
-   structural over primitives AND nominal-by-identity. That is a new decision and should be
-   made explicitly rather than settled by whichever type happened to be in scope.
+   **Done: the type vocabulary** (array literal 43 + cast 23). DECIDED and built:
+   `EvidenceTypeRef`, structural over primitives and composites AND nominal-by-identity.
 
-   (The spelling fallback does not collide today: two modules each declaring `Point` give
-   identical `params: [(p, Point)]` but different subject AND body digests, because the body
-   identifies the field through a `TypeId`-owned `FieldId`. Measured, not assumed.)
+   `TypeId` names only nominal types and cannot express `Int` or `[Int; 3]`; `tyCanonical`
+   and `boundTyCanonical` cover primitives but render a named type by its SOURCE SPELLING
+   (`.named n => n`), which is exactly what `TypeId` exists to prevent — reusing either
+   would have put a spelling into versioned bytes. So: primitives enumerated (not free
+   tags, so a new primitive is a compile error rather than an unclassified byte), nominal
+   types by `TypeId`, and TYPE VARIABLES BY BINDER POSITION on the same rule as
+   `binderRef` — renaming `T` to `Zed` leaves the digest identical, gated.
+
+   Applied to the four positions that name an arbitrary type — `cast`, `arrayLit`,
+   `tryProp`, `letBind`. `structLit` and `structPat` keep `TypeId`, because those genuinely
+   name a nominal type.
+
+   FUNCTION TYPES are deliberately still a gap: encoding one means encoding a capability
+   SET whose variables are identified against a different binder list, which is a second
+   identity question and should be decided on its own. Zero occurrences in the corpus.
+
+   Fixed a FAIL-OPEN found while wiring this: the gap traversal discarded the type field
+   with `_`, so `typeRefGaps` was unreachable and a body with an unresolvable type
+   validated as COMPLETE. Silent, because it is not a type error. Now gated by a fn-typed
+   probe that must be refused.
+
+   Corpus **376 of 432**, with no residual `unresolvedType` gaps anywhere.
 
    **Done: the assembly rows** (field place, `self` receiver, `discard()`, if-expression).
    Each discarded information the site had already computed:
@@ -280,7 +293,7 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    - the IF-EXPRESSION got its own constructor and byte tag, separate from the statement
      `branch`. One value-bearing, one not; they must not share an encoding.
 
-   Corpus **323 of 432**.
+   Corpus **323 of 432** at this point.
 
    **`assert` (32) is NOT an assembly row** — I mis-classified it. Its predicate is
    deliberately not elaborated: it may legally read ghost bindings in a proof context,

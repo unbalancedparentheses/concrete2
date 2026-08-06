@@ -872,6 +872,40 @@ MUT_NEW+=("        (cThenEv.map (·.evidence)) ((cElseEv.map (·.evidence)).drop
 MUT_DESC+=("if-expression: else branch dropped")
 gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 
+# The EvidenceTypeRef vocabulary. Its whole reason for existing is that it is nominal by
+# IDENTITY and alpha-invariant in type variables, so those are the two things to break.
+MUT_FILE+=("Concrete/Proof/EvidenceBuild.lean")
+MUT_OLD+=("        | some id => .nominal id")
+MUT_NEW+=("        | some _ => .nominal (TypeId.user \"\" n) -- MUTATION: nominal type by spelling")
+MUT_DESC+=("evTypeRef: nominal type keyed on spelling, not identity")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+MUT_FILE+=("Concrete/Proof/EvidenceBuild.lean")
+MUT_OLD+=("  | .typeVar n =>
+      match binders.findIdx? (· == n) with
+      | some i => .typeVarAt i")
+MUT_NEW+=("  | .typeVar n =>
+      match binders.findIdx? (· == n) with
+      | some _ => .typeVarAt n.length -- MUTATION: type variable by spelling")
+MUT_DESC+=("evTypeRef: type variable keyed on spelling, not binder position")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# `.drop 9` rather than `[]`: an empty list leaves `elemEvs` unused, the linter rejects the
+# file, and the mutation scores KILLED (build) instead of exercising the gate.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("        (Proof.evArrayLit elemRef elemEvs)")
+MUT_NEW+=("        (Proof.evArrayLit elemRef (elemEvs.drop 9)) -- MUTATION: elements dropped")
+MUT_DESC+=("array literal: element evidence dropped")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# THE FAIL-OPEN. Discarding the type field makes typeRefGaps unreachable, so a body with
+# an unresolvable type validates as COMPLETE. Silent, because it is not a type error.
+MUT_FILE+=("Concrete/Proof/EvidenceTree.lean")
+MUT_OLD+=("  | .arrayLit t els => typeRefGaps t ++ els.flatMap exprGaps")
+MUT_NEW+=("  | .arrayLit _ els => els.flatMap exprGaps -- MUTATION: gaps inside a type swallowed")
+MUT_DESC+=("evidence gaps: a gap inside a TYPE does not reach the subject")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
 # REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
 # match still compiles — the case a type-checker alone cannot catch. The reflective

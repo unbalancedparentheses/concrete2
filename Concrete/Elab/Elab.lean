@@ -210,6 +210,21 @@ private def recordFieldUse (sd : StructDef) (_field : String) : ElabM Unit :=
   | some _ => pure ()
   | none => markBodyIdentityUncovered
 
+/-- The nominal-type resolver handed to `evTypeRef`: a declared type name to its
+    compiler-owned `TypeId`. Structs and enums are searched together because the surface
+    has one type namespace, and a name that resolves in neither is `none` — which the
+    builder turns into a gap rather than a spelling. -/
+private def nominalTypeId? (env : ElabEnv) (n : String) : Option TypeId :=
+  match (env.structs.find? fun sd => sd.name == n).bind StructDef.typeId? with
+  | some id => some id
+  | none => (env.enums.find? fun ed => ed.name == n).bind EnumDef.typeId?
+
+/-- A surface type as evidence, resolved against the CURRENT declaration's type
+    parameters so a type variable is a binder position and not a spelling. -/
+private def typeRefOf (ty : Ty) : ElabM Proof.EvidenceTypeRef := do
+  let env ← getEnv
+  pure (Proof.evTypeRef (nominalTypeId? env) env.currentTypeParams ty)
+
 /-- Same rule for a variant's owning enum. -/
 private def recordVariantUse (ed : EnumDef) (_variant : String) : ElabM Unit :=
   match ed.typeId? with
@@ -950,11 +965,18 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       let cFirst := cFirstEv.core
       let elemTy := cFirst.ty
       let mut cElems : List CExpr := [cFirst]
+      -- Prepended and reversed once: appending in a loop is quadratic, and the ratchet
+      -- has caught that three times in this arc already.
+      let mut elemEvsRev : List Proof.EvidenceExprV2 := [cFirstEv.evidence]
       for e in rest do
         let cEEv ← elabExprEv e (some elemTy)
         let cE := cEEv.core
         cElems := cElems ++ [cE]
-      return ElaboratedExprV2.mk (CExpr.arrayLit cElems (.array elemTy elems.length)) (Proof.evUnhandledExpr "array literal: element TypeId not minted here")
+        elemEvsRev := cEEv.evidence :: elemEvsRev
+      let elemEvs := elemEvsRev.reverse
+      let elemRef ← typeRefOf elemTy
+      return ElaboratedExprV2.mk (CExpr.arrayLit cElems (.array elemTy elems.length))
+        (Proof.evArrayLit elemRef elemEvs)
 
   | .arrayIndex _ arr index =>
     let cArrEv ← elabExprEv arr
@@ -977,7 +999,10 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
     -- Passing the outer hint could also leak i32 context into the inner expression.
     let cInnerEv ← elabExprEv inner none
     let cInner := cInnerEv.core
-    return ElaboratedExprV2.mk (CExpr.cast cInner targetTy) (Proof.evUnhandledExpr "cast: target TypeId not minted here")
+    -- The cast TARGET is the whole point of the expression: `x as i32` and `x as i64`
+    -- are different programs, and before this the two were one gap.
+    let targetRef ← typeRefOf targetTy
+    return ElaboratedExprV2.mk (CExpr.cast cInner targetTy) (Proof.evCast targetRef cInnerEv.evidence)
 
   | .fnRef _ fnName =>
     let env ← getEnv

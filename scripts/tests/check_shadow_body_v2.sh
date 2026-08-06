@@ -265,14 +265,95 @@ else
   no "an if-expression and an if-statement produced the same bytes ($ieb) — one value-bearing, one not"
 fi
 
+# --- the type vocabulary (EvidenceTypeRef) ----------------------------------------------
+# `TypeId` names only nominal types, so an array element type and a cast target had no way
+# to be written and were gaps. `tyCanonical`/`boundTyCanonical` cover primitives but render
+# a named type by its SOURCE SPELLING, so neither could be reused here. The replacement is
+# structural over primitives AND nominal-by-identity, with type variables by binder
+# position. These legs assert all three of those properties.
+
+printf 'mod m { pub fn f(p: Int) -> i32 { return p as i32; } }\n' > "$TMP/c32.con"
+printf 'mod m { pub fn f(p: Int) -> i16 { return p as i16; } }\n' > "$TMP/c16.con"
+c32="$(digest_of "$TMP/c32.con" m.f)"; c16="$(digest_of "$TMP/c16.con" m.f)"
+case "$c32" in
+  REFUSED*|ABSENT*|"") no "a cast does not digest ($c32)" ;;
+  *) if [ "$c32" != "$c16" ]; then ok "the cast TARGET type is in the digest (i32 vs i16)"
+     else no "x as i32 and x as i16 share bytes — the cast target is invisible"; fi ;;
+esac
+
+printf 'mod m { pub fn f() -> Int { let a: [Int; 2] = [1, 2]; return 0; } }\n' > "$TMP/aInt.con"
+printf 'mod m { pub fn f() -> Int { let a: [i32; 2] = [1, 2]; return 0; } }\n' > "$TMP/a32.con"
+printf 'mod m { pub fn f() -> Int { let a: [Int; 2] = [2, 1]; return 0; } }\n' > "$TMP/aOrd.con"
+ai="$(digest_of "$TMP/aInt.con" m.f)"; a32="$(digest_of "$TMP/a32.con" m.f)"; aor="$(digest_of "$TMP/aOrd.con" m.f)"
+case "$ai" in
+  REFUSED*|ABSENT*|"") no "an array literal does not digest ($ai)" ;;
+  *) if [ "$ai" != "$a32" ]; then ok "the array ELEMENT TYPE is in the digest ([Int;2] vs [i32;2])"
+     else no "[Int;2] and [i32;2] share bytes — the element type is invisible"; fi
+     if [ "$ai" != "$aor" ]; then ok "array elements are ordered, so [1,2] and [2,1] differ"
+     else no "[1,2] and [2,1] share bytes — element order or the elements themselves are lost"; fi ;;
+esac
+
+# NOMINAL BY IDENTITY, not spelling — the property that ruled out reusing tyCanonical.
+# The two bodies are textually IDENTICAL and neither reads a field, so the element type is
+# the only thing that can differ. (A `return q.x` here would make the leg pass through the
+# field READ's owner-bearing FieldId instead; that mistake cost three iterations earlier.)
+cat > "$TMP/nom.con" <<'CON'
+mod a { pub struct Copy Point { pub x: Int }
+  pub fn f(p: Point) -> Int { let arr: [Point; 1] = [p]; return 0; } }
+mod b { pub struct Copy Point { pub x: Int }
+  pub fn f(p: Point) -> Int { let arr: [Point; 1] = [p]; return 0; } }
+CON
+na="$(digest_of "$TMP/nom.con" a.f)"; nb="$(digest_of "$TMP/nom.con" b.f)"
+if [ -z "$na" ] || [ -z "$nb" ]; then
+  no "the nominal-identity probe produced no digest"
+elif [ "$na" != "$nb" ]; then
+  ok "a nominal element type is carried BY IDENTITY: same-spelled Point in two modules differs"
+else
+  no "a.Point and b.Point share bytes as an element type — the type is keyed on spelling"
+fi
+
+# ALPHA-INVARIANCE, the same rule binderRef follows: a type parameter is a POSITION.
+# Generic subjects render with an arity suffix (`m.f/1`), not a bare name.
+printf 'mod m { pub fn f<T: Copy>(x: T) -> Int { let a: [T; 1] = [x]; let y: T = a[0]; return 0; } }\n' > "$TMP/tvT.con"
+printf 'mod m { pub fn f<Zed: Copy>(x: Zed) -> Int { let a: [Zed; 1] = [x]; let y: Zed = a[0]; return 0; } }\n' > "$TMP/tvZ.con"
+tvt="$(digest_of "$TMP/tvT.con" m.f/1)"; tvz="$(digest_of "$TMP/tvZ.con" m.f/1)"
+if [ -z "$tvt" ] || [ -z "$tvz" ]; then
+  no "the type-parameter probe produced no digest — inconclusive, not invariance"
+elif [ "$tvt" = "$tvz" ]; then
+  ok "renaming a type parameter does NOT move the digest (binder position, not spelling)"
+else
+  no "renaming T to Zed moved the digest — a type variable is encoded by spelling"
+fi
+
+# A gap INSIDE A TYPE must make the subject incomplete. The gap traversal originally
+# discarded the type field with `_`, so `typeRefGaps` was unreachable and an unresolvable
+# element type validated as a COMPLETE body — fail-open, and silent, because it is not a
+# type error. A function type is the construct `evTypeRef` currently refuses (encoding one
+# means encoding a capability SET, a separate identity question), which makes it the probe
+# that keeps this reachable.
+cat > "$TMP/fnty.con" <<'CON'
+mod m {
+  fn g(x: Int) -> Int { return x + 1; }
+  pub fn f() -> Int { let h: fn(Int) -> Int = g; let arr: [fn(Int) -> Int; 1] = [h]; return 0; }
+}
+CON
+ft="$(digest_of "$TMP/fnty.con" m.f)"
+case "$ft" in
+  REFUSED*"function type"*) ok "a gap inside a TYPE refuses the subject, naming the type" ;;
+  REFUSED*)                 no "refused, but not for the type reason ($ft)" ;;
+  "")                       no "the type-gap probe produced no line" ;;
+  *)                        no "a body with an unresolvable element TYPE digested ($ft) — type gaps are being swallowed" ;;
+esac
+
 # --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
-# An array literal is unhandled by the producer — its element type needs a name that
-# `TypeId` cannot express — so this subject must be refused.
+# `assert` is unhandled: its predicate is deliberately not elaborated, because it may
+# legally read ghost bindings in a proof context. (This probe used to be an array literal,
+# which now digests.)
 cat > "$TMP/gap.con" <<'CON'
 mod m {
-  pub fn f() -> Int {
-    let a: [Int; 2] = [1, 2];
-    return a[0];
+  pub fn f(n: Int) -> Int {
+    assert(n == n);
+    return n;
   }
 }
 CON
@@ -288,13 +369,14 @@ esac
 # codes says "statements and expressions" — true and useless. The detail is what drives the
 # remaining producer work.
 case "$g" in
-  *"array literal"*) ok "the refusal names the construct, not just its gap code" ;;
-  *)                 no "the refusal does not name the unhandled construct ($g)" ;;
+  *"assert"*) ok "the refusal names the construct, not just its gap code" ;;
+  *)          no "the refusal does not name the unhandled construct ($g)" ;;
 esac
 
 # --- ratchet: corpus coverage must not regress ------------------------------------------
-# Measured 2026-08-06: 323 of 432 subjects digest, 0 absent (292 before the for-loop, 316 after
-# it, 323 once the 2a assembly rows landed).
+# Measured 2026-08-06: 376 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
+# -> 323 (assembly rows) -> 376 (the EvidenceTypeRef vocabulary closed array literal and
+# cast, and left NO residual unresolvedType gaps anywhere in the corpus).
 #
 # A GAP NODE DISCARDS ITS SUBTREE, so this number does not move by the count of refusals
 # closed. Wiring the for-loop closed 54 of them and coverage rose by 24: the other 30 bodies
@@ -345,7 +427,7 @@ else
   no "$absent subjects have NO structural body — the body is not reaching ProofCore for them"
 fi
 
-FLOOR=323
+FLOOR=376
 if [ "$digested" -ge "$FLOOR" ]; then
   ok "structural coverage $digested/$total (floor $FLOOR)"
 else

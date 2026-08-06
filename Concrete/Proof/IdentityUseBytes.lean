@@ -211,10 +211,10 @@ partial def exprBytes : EvidenceExprV2 → String
   | .deref x         => lp "D" (exprBytes x)
   | .borrow m x      => lp "B" ((if m then "m" else "i") ++ exprBytes x)
   | .index c i       => lp "X" (exprBytes c ++ exprBytes i)
-  | .cast t x        => lp "A" (t.render ++ "|" ++ exprBytes x)
-  | .arrayLit t els  => lp "R" (t.render ++ "|" ++ toString els.length ++ ":"
+  | .cast t x        => lp "A" (typeRefBytes t ++ "|" ++ exprBytes x)
+  | .arrayLit t els  => lp "R" (typeRefBytes t ++ "|" ++ toString els.length ++ ":"
                                  ++ String.join (els.map exprBytes))
-  | .tryProp x t     => lp "T" (t.render ++ "|" ++ exprBytes x)
+  | .tryProp x t     => lp "T" (typeRefBytes t ++ "|" ++ exprBytes x)
   | .matchExpr sc arms => lp "Q" (exprBytes sc ++ "|" ++ toString arms.length ++ ":"
                                    ++ String.join (arms.map armBytes))
   -- "H", its own tag: an if-EXPRESSION is not the statement `branch` (tag below) and not
@@ -242,7 +242,7 @@ partial def patternBytes : EvidencePatternV2 → String
   | .gap _           => lp "!" "pgap"
 
 partial def stmtBytes : EvidenceStmtV2 → String
-  | .letBind t e     => lp "L" ((t.map TypeId.render).getD "-" ++ "|" ++ exprBytes e)
+  | .letBind t e     => lp "L" ((t.map typeRefBytes).getD "-" ++ "|" ++ exprBytes e)
   | .assign p v      => lp "=" (exprBytes p ++ exprBytes v)
   | .ret v           => lp "E" ((v.map exprBytes).getD "-")
   | .branch c t e    => lp "?" (exprBytes c ++ "|" ++ toString t.length ++ ":"
@@ -301,9 +301,9 @@ partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
   | .field id o      => exprFlatUses o ++ [.field id]
   | .structLit t fs  => [.typeRef t] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
   | .variantLit i fs => [.variant i] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
-  | .cast t x        => [.typeRef t] ++ exprFlatUses x
-  | .arrayLit t els  => [.typeRef t] ++ els.flatMap exprFlatUses
-  | .tryProp x t     => [.typeRef t] ++ exprFlatUses x
+  | .cast t x        => (typeRefNominals t).map .typeRef ++ exprFlatUses x
+  | .arrayLit t els  => (typeRefNominals t).map .typeRef ++ els.flatMap exprFlatUses
+  | .tryProp x t     => (typeRefNominals t).map .typeRef ++ exprFlatUses x
   | .matchExpr sc arms => exprFlatUses sc ++ arms.flatMap armFlatUses
   | .ifExpr c t e => exprFlatUses c ++ t.flatMap stmtFlatUses ++ e.flatMap stmtFlatUses
 
@@ -316,7 +316,8 @@ partial def patternFlatUses : EvidencePatternV2 → List BodyIdentityUse
 
 partial def stmtFlatUses : EvidenceStmtV2 → List BodyIdentityUse
   | .gap _ | .continueStmt _ => []
-  | .letBind t e     => (t.map (fun ty => [BodyIdentityUse.typeRef ty])).getD [] ++ exprFlatUses e
+  | .letBind t e     => (t.map (fun ty => (typeRefNominals ty).map BodyIdentityUse.typeRef)).getD []
+                          ++ exprFlatUses e
   | .assign p v      => exprFlatUses p ++ exprFlatUses v
   | .ret v           => (v.map exprFlatUses).getD []
   | .breakStmt _ v   => (v.map exprFlatUses).getD []
