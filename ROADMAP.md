@@ -5,6 +5,7 @@ should happen next, in what order?** Historical phase detail lives in
 [CHANGELOG.md](CHANGELOG.md); this file keeps only active work, future-relevant
 constraints, and deferred tails with a real pull trigger.
 
+> **Start here for status:** [Status board](#status-board-2026-08-06--everything-open-ranked-with-why).
 > **Start here for direction:** [Design honesty vs Why3](#design-honesty-this-is-largely-why3s-architecture-and-one-layer-is-worse-than-why3s)
 > and [North star](#north-star-prove-every-kind-of-code-in-lean--rocq--isabelle) —
 > what "prove every kind of code in three kernels" decomposes into, what is reachable,
@@ -528,6 +529,75 @@ proved in Coq/Isabelle rather than assumed.
 This is not an argument to stop; the tiers are real and verified. It is an argument about ORDER,
 and it is recorded here because "add another rung" is the more interesting work and therefore the
 easier trap.
+
+## Status board (2026-08-06) — everything open, ranked, with why
+
+One place to look. Two entries below were open earlier the same day and are now closed; they are
+kept with their outcome because the *pattern* they belong to is the last item here.
+
+### Closed today
+
+- ~~**Spec bodies are not type-checked.**~~ **DONE.** A `spec fn … = expr` body is now checked for
+  free variables, for calling only other spec fns, AND for SORT (boolean vs integer). Gated in
+  three directions, including that the rule *constrains* rather than forbids — a spec calling
+  another spec still passes. **Limit stated in the code:** it is a sort check, not type inference,
+  so a width mismatch (`i32` vs `i64`) is still not caught. `#[requires]`/`#[ensures]` are not
+  type-checked anywhere either, so there was no machinery to reuse.
+- ~~**No negative control on the axiom inventory.**~~ **DONE for 2 of ~10 gates.**
+  `check_axiom_inventory` now builds a theorem that genuinely depends on `sorryAx` and requires
+  the classifier to flag it — mutation-tested: allowlisting `sorryAx` produces 2 failures, where
+  before that one-word edit would have left the gate green while every incomplete proof passed.
+
+### Open — highest leverage first
+
+1. **The VC generator.** Four hand-written walkers replaced by a WP calculus.
+   Design: `docs/VC_GENERATOR_DESIGN.md`. Attacks the layer that produced every discovery defect
+   this month, subsumes H19 if run over Core, and makes Register A statable as one theorem.
+2. **`old` / two-state postconditions.** Without it, specs cannot describe MUTATION at all, which
+   is why the only real contracts in the corpus are refinements of pure helpers. See the Why3
+   parity table.
+3. **~8 remaining gates without negative controls.** The week's tally: six assertions fired on
+   non-regressions, two silently tested nothing, one skipped its own section when the build broke,
+   one reported a working fix as broken via `pipefail`. Green counts overstate what is pinned, and
+   capability stacked on unverified gates is the less defensible order.
+4. **Rung 4's tier (bitwise).** Fully unblocked — model bridge proved against `BitVec 32`, shared
+   type confirmed in all three kernels. Only renderers, collection and a gate remain. **The one
+   that unlocks real corpus coverage**, since `hmac_sha256`'s meaningful property is bitwise.
+5. **`#[decreases]` (rung 8).** Converts recursion from *not eligible* to provable, and its own
+   termination obligation is linear arithmetic that existing machinery discharges. **Cost, to be
+   accepted deliberately:** the lowering-agreement check degrades from decidable to sampled.
+6. **Register A: 0 of 5 discharged, 4 half.** Half means the row is still *trusted*. This is the
+   stated goal of the prover-neutral arc and it has not moved.
+7. **H19 — the Core→obligation bridge is unproven.** Obligations come from the surface AST;
+   nothing proves they match what is compiled. Subsumed by item 1 if the generator runs over Core.
+
+### Open — smaller, each with its reason
+
+- `MIN` negation and float→int casts trap at runtime with **no obligation kind** (two rule-table
+  rows under item 1)
+- corpus coverage of the non-arithmetic tiers is **zero, deliberately** — the tautology guard
+  prevents faking it, and rung 4 is the honest route
+- rung 3 (nonlinear) is **2-of-3 kernels**: Lean has no general nonlinear procedure and Mathlib is
+  not a dependency. A dependency decision, not a technical gap
+- unannotated `let`s contribute no type, so their shift/overflow obligations are dropped
+- the FFI closure carries bare names alongside qualified ones and can over-flag (refuses rather
+  than admits — the safe direction)
+- stack depth is reported, **not gated**
+- 5 `partial def`s remain in the report layer (traversal drivers, not discovery)
+- Register B rows 2–3; the Isabelle builder collapse; R-0462 widening
+
+### The pattern worth naming, and the one process change
+
+Four times this month a capability was added and under-checked: `partial` keywords documented as
+unavoidable for weeks; `spec fn` bodies parsed but unchecked; then checked for names but not
+types; then a gate enrolled whose file-granular limit was only found by mutating it. **Every one
+was caught by USING the thing, never by reading it.**
+
+If one process change survives all of the above:
+
+> **Write the rejection test before the acceptance test.**
+
+Every hole listed here would have been caught at the moment it was opened.
 
 ## Parity with Why3, and where this can be better
 
