@@ -94,7 +94,32 @@ for c in "${EXPR_CTORS[@]}"; do
     *) OBLIGATION_COMPOUND+=("$c") ;;
   esac
 done
-covers Concrete/Report/ReportObligations.lean "obligation discovery (compound ctors)" "${OBLIGATION_COMPOUND[@]}"
+# PER-WALKER, not per-file. `covers` is file-granular, which for four sibling walkers over the
+# same grammar catches only "no walker anywhere handles X" -- deleting the `.allocCall` arm from
+# ONE of them still passed, because three others mentioned it. That is the extreme case, not the
+# case that actually occurred seven times this year. This isolates each `def` and checks it alone.
+defbody() {
+  awk -v n="$2" '
+    $0 ~ "^(partial )?def "n"[ (:]" {inb=1}
+    inb && NR>1 && /^(partial def |def |end$|mutual$)/ && $0 !~ "def "n"[ (:]" && started {exit}
+    inb {print; started=1}
+  ' "$1"
+}
+covers_def() {
+  local file="$1" fn="$2"; shift 2
+  local body missing=""
+  body="$(defbody "$file" "$fn")"
+  [ -n "$body" ] || { no "walker $fn not found in $file"; return; }
+  for c in "$@"; do
+    printf '%s' "$body" | grep -qE "\.${c}([^A-Za-z0-9_]|\$)" || missing="$missing $c"
+  done
+  [ -z "$missing" ] \
+    && ok "$fn handles all $# compound constructors" \
+    || no "$fn is MISSING:$missing  (a constructor this walker never recurses into loses every obligation beneath it)"
+}
+for W in collectDivisorsE collectIndexUsesE collectArithE collectShiftsE; do
+  covers_def Concrete/Report/ReportObligations.lean "$W" "${OBLIGATION_COMPOUND[@]}"
+done
 
 echo ""
 echo "=== core CExpr (${#CEXPR_CTORS[@]} constructors) handled by every core pass ==="
