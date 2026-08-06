@@ -1,6 +1,6 @@
 # Bug 067 — a capped obligation escapes `forbid-assume` when more kernels attest
 
-**Status:** OPEN — main is RED on this
+**Status:** FIXED 2026-08-05
 **Found:** 2026-08-05, by CI on the multi-prover merge (`04fa2426`). Not reproducible
 locally without Rocq/Isabelle installed, which is why local runs were green.
 **Severity:** authority leak. An obligation resting on an UNSOUND HYPOTHESIS passes the
@@ -35,7 +35,29 @@ spell the SAME proposition — there is no subject-digest cross-check"*. Without
 N kernels accepting N lowerings is being treated as stronger evidence than one, when the
 premise is unsound in all N.
 
-## Resolution options
+## Fixed — the cap now dominates attestation
+
+`Main.lean` computed the capped list as
+
+    if v.status == "assumed" && !v.hypDebt.isEmpty then ...
+
+so promotion to `proved_by_two_kernels` / `proved_by_multi_kernel` removed the VC from the
+list and `forbid-assume` never saw it. Keyed on the DEBT instead:
+
+    if !v.hypDebt.isEmpty then ...
+
+`hypDebt` derives from the obligation's hypotheses and the function's loop contracts alone —
+it does not move with kernel count — so the cap survives any number of attestations. That is
+what `multiKernelVerdict`'s own comment already required: *"Kernel count never overrides
+that — which is the H23 lesson expressed in the type."* The lesson was in the type; the gate
+keyed on the status instead.
+
+Verified: the H23 fixture is still rejected (E0617) locally, a clean project still passes
+(no false positive), known-wrong-corpus 13/0, contract-negatives 33/0, examples 141/0, trust
+gate 1501/0. The three-kernel path itself can only be exercised in CI, where the provers
+exist.
+
+## Resolution options (as diagnosed)
 
 1. **Cap dominates attestation.** A capped obligation stays capped regardless of how many
    kernels attest; `forbid-assume` fires on the cap, not on the badge. Preferred — the cap

@@ -1337,8 +1337,23 @@ def computePolicyQuals (policy : Concrete.ProjectPolicy) (modules : List Concret
   let st := Concrete.ObligationCore.solverTrustedIds ledger
   -- R-0461: obligations the cap demoted, with what they still owe. Projected from the SAME
   -- discharged ledger as the other three, so the gate and the reports cannot disagree.
+  -- BUG 067: keyed on the DEBT, not on the status.
+  --
+  -- This read `v.status == "assumed" && !v.hypDebt.isEmpty`. When enough kernels attest,
+  -- multiKernelVerdict promotes the status to proved_by_two_kernels/proved_by_multi_kernel,
+  -- the VC falls out of this list, and forbid-assume never sees it — so an obligation
+  -- resting on an UNPROVED HYPOTHESIS passed the release gate exactly when MORE provers were
+  -- available. Measured: green locally with no external provers, red in CI with Rocq and
+  -- Isabelle installed.
+  --
+  -- Kernel count cannot discharge a hypothesis. Each kernel closes ITS LOWERING of the same
+  -- unproved premise, so N attestations of an unsound premise is not evidence the premise
+  -- holds. hypDebt is derived from the obligation's hypotheses and the function's loop
+  -- contracts alone — it does not move with kernel count — which makes it the right key and
+  -- makes the cap dominate attestation, as multiKernelVerdict's own comment already says it
+  -- must ("Kernel count never overrides that").
   let cap := dvcs.filterMap (fun v =>
-    if v.status == "assumed" && !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
+    if !v.hypDebt.isEmpty then some (v.id, v.hypDebt) else none)
   let btk := if policy.requireTwoKernels then belowTwoKernelsOf modules dvcs else []
   return (vac, asm, st, cap, btk, externalRan)
 
