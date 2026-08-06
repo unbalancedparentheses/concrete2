@@ -906,6 +906,35 @@ MUT_NEW+=("  | .arrayLit _ els => els.flatMap exprGaps -- MUTATION: gaps inside 
 MUT_DESC+=("evidence gaps: a gap inside a TYPE does not reach the subject")
 gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 
+# Bug 068. A ghost binding is erased; hardcoding the flag makes the two lets share bytes
+# again, which is the collision the flag exists to remove.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("(Proof.EvidenceStmtV2.letBind true none cValEv.evidence)")
+MUT_NEW+=("(Proof.EvidenceStmtV2.letBind false none cValEv.evidence) -- MUTATION: ghost erasure invisible")
+MUT_DESC+=("ghost let: erasure not recorded in the binding node")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# Proof-only predicates. assert is DISCHARGED and assume is RELIED UPON, so conflating the
+# two node kinds is the mutation that matters most here — it also blinds the assumption
+# axis, which is what keeps a claim over an assuming body from being reported unqualified.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("(Proof.EvidenceStmtV2.assumeStmt (← proofPredicateEv pred))")
+MUT_NEW+=("(Proof.EvidenceStmtV2.assertStmt (← proofPredicateEv pred)) -- MUTATION: assume encoded as assert")
+MUT_DESC+=("assume encoded as assert (collides, and empties the assumption axis)")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# Discards the elaborated predicate while keeping the binding used — returning a constant
+# with `r` still bound would leave it unused and score KILLED (build).
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("  | (.ok r, after) =>
+    setEnv { saved with freshBinder := after.freshBinder }
+    pure r.evidence")
+MUT_NEW+=("  | (.ok _, after) =>
+    setEnv { saved with freshBinder := after.freshBinder }
+    pure (Proof.evBoolLit true) -- MUTATION: predicate content discarded")
+MUT_DESC+=("proof predicate: elaborated evidence replaced by a constant")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
 # REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
 # match still compiles — the case a type-checker alone cannot catch. The reflective

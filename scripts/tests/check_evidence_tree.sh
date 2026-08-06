@@ -70,7 +70,9 @@ partial def shape : EvidenceExprV2 → String
   | .gap _         => "GAP"
 
 partial def sshape : EvidenceStmtV2 → String
-  | .letBind _ e      => s!"L({shape e})"
+  -- The ghost flag is in the shape: a ghost binding is ERASED, so it is not the same
+  -- statement as a runtime one with the same initializer (bug 068).
+  | .letBind g _ e    => s!"L({if g then "g" else "r"},{shape e})"
   | .assign pl v      => s!"=({shape pl},{shape v})"
   | .ret v            => s!"R({(v.map shape).getD "-"})"
   | .branch c t e     => s!"?({shape c},[{",".intercalate (t.map sshape)}],[{",".intercalate (e.map sshape)}])"

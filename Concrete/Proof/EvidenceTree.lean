@@ -261,8 +261,14 @@ deriving Inhabited
 
 /-- A statement, as resolved evidence. -/
 inductive EvidenceStmtV2 where
-  /-- A binding. The bound NAME is absent: it is referred to by position. -/
-  | letBind (ty : Option EvidenceTypeRef) (initializer : EvidenceExprV2)
+  /-- A binding. The bound NAME is absent: it is referred to by position.
+
+      `isGhost` is in the NODE, not inferred, because it decides whether the
+      initializer RUNS: a ghost binding is erased before Core. Bug 068 — without it,
+      `ghost let g = p + 1` and `let g = p + 1` produced identical bytes, so a proof over
+      one stayed valid-looking after a change to the other. Same principle as
+      `exprStmt`'s `isValue`. -/
+  | letBind (isGhost : Bool) (ty : Option EvidenceTypeRef) (initializer : EvidenceExprV2)
   | assign (place value : EvidenceExprV2)
   | ret (value : Option EvidenceExprV2)
   | branch (condition : EvidenceExprV2) (thenBody elseBody : List EvidenceStmtV2)
@@ -362,7 +368,7 @@ partial def patternGaps : EvidencePatternV2 → List EvidenceGap
 partial def stmtGaps : EvidenceStmtV2 → List EvidenceGap
   | .gap r => [r]
   | .continueStmt _ => []
-  | .letBind t e => (t.map typeRefGaps).getD [] ++ exprGaps e
+  | .letBind _ t e => (t.map typeRefGaps).getD [] ++ exprGaps e
   | .exprStmt e _ => exprGaps e
   | .assign p v => exprGaps p ++ exprGaps v
   | .ret v => (v.map exprGaps).getD []
@@ -436,7 +442,8 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
     or a dependency would go unbound while the subject read as complete. -/
 partial def stmtConstRefs : EvidenceStmtV2 → List ConstId
   | .gap _ | .continueStmt _ => []
-  | .letBind _ e | .exprStmt e _ => exprConstRefs e
+  | .letBind _ _ e => exprConstRefs e
+  | .exprStmt e _ => exprConstRefs e
   | .assign p v => exprConstRefs p ++ exprConstRefs v
   | .ret v => (v.map exprConstRefs).getD []
   | .breakStmt _ v => (v.map exprConstRefs).getD []
@@ -472,7 +479,7 @@ mutual
 partial def stmtAssumptions : EvidenceStmtV2 → List EvidenceExprV2
   | .assumeStmt pr => [pr]
   | .gap _ | .continueStmt _ | .breakStmt _ _ => []
-  | .letBind _ _ | .exprStmt _ _ | .assign _ _ | .ret _ => []
+  | .letBind _ _ _ | .exprStmt _ _ | .assign _ _ | .ret _ => []
   | .assertStmt _ => []   -- a runtime CHECK, not an assumption: it is discharged, not assumed
   | .deferStmt _ => []
   | .branch _ t e => t.flatMap stmtAssumptions ++ e.flatMap stmtAssumptions

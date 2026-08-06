@@ -91,20 +91,24 @@ def evTryProp (operand : EvidenceExprV2) (residualTy : EvidenceTypeRef) : Eviden
     different evidence even though the spelling matches. -/
 def evField (id : FieldId) (object : EvidenceExprV2) : EvidenceExprV2 := .field id object
 
-/-- STRUCT LITERALS ARE DELIBERATELY NOT BUILT YET.
+/-! ### Struct literals: the order IS in the bytes
 
-    `FieldId` keys each entry under either outcome, but the ORDER of entries is an open
-    language decision: struct-literal initializers currently evaluate in DECLARATION
-    order while every other positional construct follows SOURCE order. Building the node
-    now would bake whichever order I picked into versioned bytes before anyone decided,
-    and a wrong choice there is not a refusal — it is a body that records an evaluation
-    order the program does not have. See docs/EVIDENCE_PRODUCER_MATRIX.md.
+This once held `evStructLitPending`, a gap whose docstring said struct literals were
+refused until their initializer evaluation order was decided. **It was never called.** The
+producer emits a real `structLit`, ordered by the DECLARATION list, so the undecided order
+has been in the shadow bytes all along — the exact outcome the refusal was written to
+prevent, guarded by a doc comment and an unused definition rather than by behaviour.
 
-    Until then a struct literal is a typed gap, so a subject containing one is REFUSED
-    rather than described incorrectly. -/
-def evStructLitPending : EvidenceExprV2 :=
-  .gap { code := .unhandledExpr,
-         detail := "struct literal: initializer evaluation order is an open decision" }
+Removed rather than wired. The node is ACCURATE to what the program does today, and
+refusing every subject containing a struct literal would discard real coverage to enforce
+a policy that was already not being enforced. What the situation actually needs is for the
+decision to be made before these bytes become authoritative, which is a precondition on
+the fingerprint migration and is asserted in `check_convergence_inventory.sh` — a place
+that can fail, unlike this comment.
+
+`FieldId` keys each entry under either outcome, so a spelling or import alias can never
+become identity. Only the ORDER of entries is undecided. See
+docs/EVIDENCE_PRODUCER_MATRIX.md. -/
 
 /-- A call to a resolved callee. Argument order is the ARGUMENT list's order, which is
     the evaluation order — measured observable for calls.

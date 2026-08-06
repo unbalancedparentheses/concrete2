@@ -242,7 +242,8 @@ partial def patternBytes : EvidencePatternV2 → String
   | .gap _           => lp "!" "pgap"
 
 partial def stmtBytes : EvidenceStmtV2 → String
-  | .letBind t e     => lp "L" ((t.map typeRefBytes).getD "-" ++ "|" ++ exprBytes e)
+  | .letBind g t e   => lp "L" ((if g then "g" else "r") ++ (t.map typeRefBytes).getD "-"
+                                  ++ "|" ++ exprBytes e)
   | .assign p v      => lp "=" (exprBytes p ++ exprBytes v)
   | .ret v           => lp "E" ((v.map exprBytes).getD "-")
   | .branch c t e    => lp "?" (exprBytes c ++ "|" ++ toString t.length ++ ":"
@@ -316,7 +317,7 @@ partial def patternFlatUses : EvidencePatternV2 → List BodyIdentityUse
 
 partial def stmtFlatUses : EvidenceStmtV2 → List BodyIdentityUse
   | .gap _ | .continueStmt _ => []
-  | .letBind t e     => (t.map (fun ty => (typeRefNominals ty).map BodyIdentityUse.typeRef)).getD []
+  | .letBind _ t e   => (t.map (fun ty => (typeRefNominals ty).map BodyIdentityUse.typeRef)).getD []
                           ++ exprFlatUses e
   | .assign p v      => exprFlatUses p ++ exprFlatUses v
   | .ret v           => (v.map exprFlatUses).getD []

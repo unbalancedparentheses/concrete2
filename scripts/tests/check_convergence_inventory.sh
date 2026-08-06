@@ -75,11 +75,42 @@ else
 fi
 
 # --- R-0004: open language decision --------------------------------------------------
-# 5. Struct-literal initializer evaluation order.
+# 5. Struct-literal initializer evaluation order. STILL UNDECIDED, and the entry now says
+#    what is actually true about it.
+#
+#    The producer was believed to REFUSE struct literals until this was decided —
+#    `EvidenceBuild.evStructLitPending` existed and its docstring said so. It was never
+#    called. The producer emits a real `structLit` ordered by the DECLARATION list, so the
+#    undecided order has been in the shadow bytes the whole time: the outcome the refusal
+#    was written to prevent, guarded by a comment instead of by behaviour.
+#
+#    The bytes are accurate to today's semantics and stay. What must not happen is the
+#    order becoming AUTHORITATIVE while undecided, so the close condition is ratification
+#    before the fingerprint migration — asserted below rather than trusted to prose.
 if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/EVIDENCE_PRODUCER_MATRIX.md; then
   ok "GAP OPEN: struct-literal initializer evaluation order is undecided"
 else
   no "the struct-literal ordering decision section is gone — it must be RATIFIED in the language reference, not deleted"
+fi
+
+# 5a. The refusal must not be reintroduced as a comment-only guard. Either the producer
+#     refuses struct literals in BEHAVIOUR, or it does not claim to.
+# Matches a DEFINITION, not any mention: the comment above the removal names the symbol to
+# explain why it went, and a bare name match flagged that prose as the thing it forbids.
+if grep -qE "^ *def evStructLitPending" Concrete/Proof/EvidenceBuild.lean; then
+  no "evStructLitPending is back — if struct literals are refused, the producer must CALL it; a definition nothing calls is a guard that does not guard"
+else
+  ok "no comment-only struct-literal refusal: the producer's behaviour and its documentation agree"
+fi
+
+# 5b. THE CLOSE CONDITION. While V1 is the authoritative domain the order is only in shadow
+#     bytes. The moment the migration starts, an unratified evaluation order would become
+#     authoritative — so these two facts must not both change without the other.
+if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/EVIDENCE_PRODUCER_MATRIX.md \
+   && grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean 2>/dev/null; then
+  no "structural bytes reached the canonical subject while the struct-literal evaluation order is still UNRATIFIED — decide the order before the migration, not after"
+else
+  ok "the undecided struct-literal order is confined to shadow bytes"
 fi
 
 # --- R-0004: freshness, migration, receipts ------------------------------------------

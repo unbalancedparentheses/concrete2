@@ -265,6 +265,21 @@ else
   no "an if-expression and an if-statement produced the same bytes ($ieb) — one value-bearing, one not"
 fi
 
+# BUG 068. A ghost binding is ERASED before Core: its initializer never runs, cannot trap,
+# and produces no runtime value. A runtime binding does all three. Both emitted the same
+# `letBind` node, so the two digested identically and a proof over one stayed valid-looking
+# after a change to the other — freshness failing through a construct nobody had probed.
+printf 'mod m { pub fn f(p: Int) -> Int { ghost let g: Int = p + 1; return p; } }\n' > "$TMP/gl.con"
+printf 'mod m { pub fn f(p: Int) -> Int {       let g: Int = p + 1; return p; } }\n' > "$TMP/rl.con"
+gl="$(digest_of "$TMP/gl.con" m.f)"; rl="$(digest_of "$TMP/rl.con" m.f)"
+if [ -z "$gl" ] || [ -z "$rl" ]; then
+  no "the ghost/runtime let probe produced no digest"
+elif [ "$gl" != "$rl" ]; then
+  ok "a ghost let and a runtime let do not share bytes (bug 068)"
+else
+  no "ghost let and runtime let share bytes — erasure is invisible to the subject (bug 068 regressed)"
+fi
+
 # --- the type vocabulary (EvidenceTypeRef) ----------------------------------------------
 # `TypeId` names only nominal types, so an array element type and a cast target had no way
 # to be written and were gaps. `tyCanonical`/`boundTyCanonical` cover primitives but render
@@ -345,19 +360,103 @@ case "$ft" in
   *)                        no "a body with an unresolvable element TYPE digested ($ft) — type gaps are being swallowed" ;;
 esac
 
-# --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
-# `assert` is unhandled: its predicate is deliberately not elaborated, because it may
-# legally read ghost bindings in a proof context. (This probe used to be an array literal,
-# which now digests.)
-cat > "$TMP/gap.con" <<'CON'
+# --- proof-only predicates: assert and assume -------------------------------------------
+# Neither was elaborated at all (39 refusals), because their predicates may legally read
+# ghost bindings that `elabExprEv` rejects. They are now elaborated for EVIDENCE ONLY, with
+# the Core discarded — a proof-only construct must not generate code.
+printf 'mod m { pub fn f(n: Int) -> Int { assert(n > 0); return n; } }\n'  > "$TMP/as0.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n > 0); return n; } }\n'  > "$TMP/am0.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n > 1); return n; } }\n'  > "$TMP/am1.con"
+as0="$(digest_of "$TMP/as0.con" m.f)"; am0="$(digest_of "$TMP/am0.con" m.f)"; am1="$(digest_of "$TMP/am1.con" m.f)"
+case "$as0" in
+  REFUSED*|ABSENT*|"") no "an assert does not digest ($as0)" ;;
+  *)                   ok "an assert predicate reaches the digest" ;;
+esac
+# ASSERT AND ASSUME MUST NEVER COLLIDE: one is discharged, the other is relied upon.
+if [ -n "$am0" ] && [ "$as0" != "$am0" ]; then
+  ok "assert and assume with the SAME predicate do not share bytes"
+else
+  no "assert(n>0) and assume(n>0) share bytes ($as0) — one is discharged, the other relied upon"
+fi
+if [ -n "$am1" ] && [ "$am0" != "$am1" ]; then
+  ok "the predicate itself is in the digest (assume n>0 vs n>1)"
+else
+  no "assume(n>0) and assume(n>1) share bytes — the predicate is not carried"
+fi
+
+# FAIL-SAFE. Nothing elaborated these before, so a throw here is a program that used to
+# build and now does not. A predicate reading a `ghost let` is legal and `elabExprEv`
+# rejects it, which makes it the probe for that boundary: it must REFUSE, not error.
+cat > "$TMP/ghostref.con" <<'CON'
 mod m {
   pub fn f(n: Int) -> Int {
-    assert(n == n);
+    ghost let g: Int = n + 1;
+    assert(g > 0);
     return n;
   }
 }
 CON
-g="$(line_of "$TMP/gap.con" bodyV2)"
+if ! "$BIN" "$TMP/ghostref.con" --report subject-facts >/dev/null 2>&1; then
+  no "an assert reading a ghost binding FAILED THE COMPILATION — elaborating proof predicates must never break a program that used to build"
+else
+  gr="$(digest_of "$TMP/ghostref.con" m.f)"
+  case "$gr" in
+    REFUSED*"ghost"*) ok "a predicate that cannot elaborate refuses the subject instead of failing the build" ;;
+    REFUSED*)         no "refused, but not for the predicate reason ($gr)" ;;
+    *)                no "a predicate reading an erased ghost binding produced a DIGEST ($gr)" ;;
+  esac
+fi
+
+# THE ASSUMPTION AXIS. `assume` must not yield an unqualified claim, so the axis has to
+# SEE it. Before the predicates were elaborated an assume emitted a gap, so the axis
+# counted zero for the only construct that feeds it — vacuous, though fail-closed, because
+# the gap refused the subject anyway.
+AX="$(mktemp -d)"
+cat > "$AX/p.lean" <<'LEAN'
+import Concrete
+open Concrete Concrete.Proof
+def bodyOf (src : String) : Option EvidenceBodyDraftV2 :=
+  match (do
+    let pa ← Pipeline.parse src
+    let sm := Pipeline.buildSummary pa
+    let r ← Pipeline.resolve pa sm
+    Pipeline.check r sm
+    let el ← Pipeline.elaborate r sm
+    pure el.coreModules : Except Diagnostics (List CModule)) with
+  | .error _ => none
+  | .ok ms => ((ms.map CModule.evidenceBodies).flatten).head?.map Prod.snd
+def n (src : String) : Nat :=
+  match bodyOf src with
+  | none => 999
+  | some b => (b.statements.flatMap stmtAssumptions).length
+#eval IO.println s!"assume={n "mod m { pub fn f(k: Int) -> Int { assume(k > 0); return k; } }"} assert={n "mod m { pub fn f(k: Int) -> Int { assert(k > 0); return k; } }"} plain={n "mod m { pub fn f(k: Int) -> Int { return k; } }"}"
+LEAN
+axout="$(lake env lean "$AX/p.lean" 2>/dev/null | tr -d '
+' || true)"
+rm -rf "$AX"
+case "$axout" in
+  "assume=1 assert=0 plain=0") ok "the assumption axis sees an assume, and does not count an assert (discharged, not assumed)" ;;
+  "")                          no "the assumption-axis probe produced no output — inconclusive" ;;
+  *)                           no "the assumption axis is wrong ($axout) — expected assume=1 assert=0 plain=0" ;;
+esac
+
+# --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
+# A function type is what `evTypeRef` still refuses, and it is the last construct in the
+# corpus with a stable refusal. (This probe has been an array literal and then an assert;
+# both now digest.)
+# Note the ARRAY. A bare `let h: fn(Int) -> Int = g` digests, because `letBind` passes
+# `none` for its declared type — the fn type never reaches evidence there. Only a position
+# that actually carries a type (here the array's element type) can produce the gap.
+cat > "$TMP/gap.con" <<'CON'
+mod m {
+  fn g(x: Int) -> Int { return x + 1; }
+  pub fn f() -> Int { let h: fn(Int) -> Int = g; let arr: [fn(Int) -> Int; 1] = [h]; return 0; }
+}
+CON
+# By IDENTITY: this probe declares a helper `m.g` as well, and `line_of` took the
+# FIRST line — the helper's, which digests fine. Same positional-selection mistake the
+# receiver leg hit earlier.
+g="$(digest_of "$TMP/gap.con" m.f)"
 case "$g" in
   REFUSED*gap*) ok "a body the producer cannot describe is refused with its reasons" ;;
   "")           no "no shadow bodyV2 line for the gap probe — inconclusive" ;;
@@ -369,14 +468,14 @@ esac
 # codes says "statements and expressions" — true and useless. The detail is what drives the
 # remaining producer work.
 case "$g" in
-  *"assert"*) ok "the refusal names the construct, not just its gap code" ;;
-  *)          no "the refusal does not name the unhandled construct ($g)" ;;
+  *"function type"*) ok "the refusal names the construct, not just its gap code" ;;
+  *)                 no "the refusal does not name the unhandled construct ($g)" ;;
 esac
 
 # --- ratchet: corpus coverage must not regress ------------------------------------------
-# Measured 2026-08-06: 376 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
-# -> 323 (assembly rows) -> 376 (the EvidenceTypeRef vocabulary closed array literal and
-# cast, and left NO residual unresolvedType gaps anywhere in the corpus).
+# Measured 2026-08-06: 411 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
+# -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates).
+# The only row left is 21 unresolvable callees.
 #
 # A GAP NODE DISCARDS ITS SUBTREE, so this number does not move by the count of refusals
 # closed. Wiring the for-loop closed 54 of them and coverage rose by 24: the other 30 bodies
@@ -427,7 +526,7 @@ else
   no "$absent subjects have NO structural body — the body is not reaching ProofCore for them"
 fi
 
-FLOOR=376
+FLOOR=411
 if [ "$digested" -ge "$FLOOR" ]; then
   ok "structural coverage $digested/$total (floor $FLOOR)"
 else

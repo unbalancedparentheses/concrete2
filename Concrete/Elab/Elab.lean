@@ -1527,9 +1527,10 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
       | none => pure cVal.ty
     if isGhost then
       addGhostVar name
-      return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.letBind none cValEv.evidence)
+      return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.letBind true none cValEv.evidence)
     addVar name finalTy
-    return ElaboratedStmtV2.mk [.letDecl name mutable finalTy cVal] (Proof.EvidenceStmtV2.letBind none cValEv.evidence)
+    return ElaboratedStmtV2.mk [.letDecl name mutable finalTy cVal]
+      (Proof.EvidenceStmtV2.letBind false none cValEv.evidence)
 
   | .assign _ name value =>
     match ← lookupVar name with
@@ -1845,12 +1846,43 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
   -- record would let a proof lean on it and still report unqualified. A gap makes the
   -- subject incomplete, which is the honest answer until the predicate is encodable in
   -- a proof context.
-  | .assert_ _ _ =>
-    return ElaboratedStmtV2.mk []
-      (Proof.evUnhandledStmt "assert: predicate not elaborated, so no evidence exists")
-  | .assume_ _ _ =>
-    return ElaboratedStmtV2.mk []
-      (Proof.evUnhandledStmt "assume: predicate not elaborated; must not yield an unqualified claim")
+  | .assert_ _ pred =>
+    return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.assertStmt (← proofPredicateEv pred))
+  | .assume_ _ pred =>
+    return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.assumeStmt (← proofPredicateEv pred))
+
+/-- A proof-only predicate, as evidence.
+
+    `assert` and `assume` are ERASED before Core and were never elaborated, so their
+    predicates reached no byte at all — 39 of the corpus's refusals. They are elaborated
+    here for EVIDENCE ONLY: the Core is discarded, because emitting it would make a
+    proof-only construct generate code.
+
+    Two properties this must have, and neither is optional:
+
+    1. IT CANNOT FAIL THE COMPILATION. Nothing elaborated these before, so any throw is a
+       program that used to build and now does not. A predicate that will not elaborate —
+       most importantly one reading a `ghost let`, which is legal here and rejected by
+       `elabExprEv` — becomes a typed GAP, refusing the subject rather than breaking the
+       build.
+    2. IT CANNOT LEAK STATE. The environment is restored afterwards, so a proof-only
+       expression cannot add runtime bindings or advance anything a later statement reads.
+       `freshBinder` is deliberately carried forward instead, on the same grounds as
+       `restoreScope`: Core names must stay unique across the whole function even when the
+       expression that minted them was thrown away.
+
+    The coverage flag is restored too. A predicate that could not be described makes the
+    subject incomplete through its GAP, which is the honest channel; letting it also flip
+    `bodyIdentityCovered` would report a second, different fault for one cause. -/
+partial def proofPredicateEv (pred : Expr) : ElabM Proof.EvidenceExprV2 := do
+  let saved ← getEnv
+  match (elabExprEv pred none).run saved with
+  | (.ok r, after) =>
+    setEnv { saved with freshBinder := after.freshBinder }
+    pure r.evidence
+  | (.error _, after) =>
+    setEnv { saved with freshBinder := after.freshBinder }
+    pure (Proof.evUnhandledExpr "proof predicate does not elaborate (e.g. reads a ghost binding)")
 
 partial def elabStmtsEv (stmts : List Stmt) (valueHint : Option Ty := none) : ElabM (List ElaboratedStmtV2) := do
   let mut result : List ElaboratedStmtV2 := []
