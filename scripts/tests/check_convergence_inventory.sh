@@ -21,12 +21,21 @@ ok() { echo "  ok   $1"; PASS=$((PASS+1)); }
 no() { echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 # --- R-0004: evidence producer -------------------------------------------------------
-# 1. Two producers of identity uses still exist. The tree is proven to lose nothing
-#    (check_identity_use_bytes), so deletion is UNBLOCKED but not done.
-if grep -qE "recordBodyIdentityUse \(" Concrete/Elab/Elab.lean; then
-  ok "GAP OPEN: the independent bodyIdentityUses accumulator still exists"
+# 1. CLOSED. The independent accumulator is deleted; the flat identity-use view is derived
+#    from the structural evidence body, so there is one producer.
+#
+#    Deleting it CHANGED the fact, it did not merely relocate it: containment was proven,
+#    not equality, and the derived view turned out to be strictly richer. It records an
+#    assignment TARGET as a use of a binder and a match pattern's FIELD identity, neither
+#    of which the accumulator ever saw. Two gates that pinned the old, lossy numbers had to
+#    be updated to assert the recovered identities (check_type_identity 7 -> 10,
+#    check_binder_refs 4 -> 5).
+#
+#    The entry stays here, inverted: the gap is closed and must STAY closed.
+if grep -q "bodyIdentityUses" Concrete/Elab/Elab.lean; then
+  no "an identity-use accumulator is back in Elab — the flat view must stay DERIVED from the structural body"
 else
-  no "the accumulator is GONE — good, but update this inventory and confirm the derived flat view replaced every consumer"
+  ok "CLOSED: one producer of identity uses; the flat view is derived from the tree"
 fi
 
 # 2. Shadow mode still reports the FLAT identity-use bytes, not the structural body.

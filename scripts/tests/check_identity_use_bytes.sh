@@ -221,22 +221,39 @@ else
   ok "the shadow digest is absent from SubjectFacts, so canonical cannot include it"
 fi
 
-# CONVERGENCE, now a POSITIVE gate rather than a tripwire.
+# CONVERGENCE, now CLOSED: there is ONE producer.
 #
-# The criterion is containment, not equality — and that correction came from measurement.
-# The derived view is RICHER than the accumulator: it carries pattern FIELD identities the
-# accumulator never recorded, so `acc == der` would have failed forever on a difference that
-# means the accumulator was under-recording. What must hold is that the tree LOSES NOTHING:
-# every accumulated use appears in the derived view, in the same relative order.
+# This was a containment check — every use the independent accumulator recorded had to
+# appear in the view derived from the tree. It passed, the accumulator was deleted, and
+# `bodyIdentityInputs.uses` is now `flatUsesOf` of the structural body.
+#
+# The containment probe MUST NOT be left in place. It compared the accumulator against the
+# derived view; with one producer it would compare the derived view against itself and
+# report agreement unconditionally — a gate that cannot fail, still printing ok.
+#
+# What replaces it are the two facts that can actually break now: the second producer must
+# stay gone, and the derivation must still carry the identities the accumulator was LOSING.
+
+if grep -q "bodyIdentityUses" Concrete/Elab/Elab.lean; then
+  no "a second producer of identity uses is back in Elab — the flat view must be DERIVED from the structural body, never accumulated beside it"
+else
+  ok "one producer: no identity-use accumulator exists in Elab"
+fi
+
+if grep -q "uses := Proof.flatUsesOf evidenceBody" Concrete/Elab/Elab.lean; then
+  ok "the flat identity-use view is derived from the structural evidence body"
+else
+  no "the flat view is no longer derived by flatUsesOf — if the derivation moved, re-point this gate at its new owner"
+fi
+
+# The two identities the accumulator never recorded. Both are ORDINARY facts about a body
+# and would be silently absent again if the derivation regressed, so they are asserted
+# behaviourally rather than by counting.
 CMP="$(mktemp -d)"
 cat > "$CMP/p.lean" <<'LEAN'
 import Concrete
 open Concrete Concrete.Proof
-def subseq : List BodyIdentityUse → List BodyIdentityUse → Bool
-  | [], _ => true
-  | _::_, [] => false
-  | a::as, d::ds => if a == d then subseq as ds else subseq (a::as) ds
-def chk (src : String) : String :=
+def usesOf (src : String) : List BodyIdentityUse :=
   match (do
     let pa ← Pipeline.parse src
     let sm := Pipeline.buildSummary pa
@@ -244,28 +261,34 @@ def chk (src : String) : String :=
     Pipeline.check r sm
     let el ← Pipeline.elaborate r sm
     pure el.coreModules : Except Diagnostics (List CModule)) with
-  | .error _ => "ERR"
-  | .ok ms =>
-    let facts := (ms.map CModule.declFacts).flatten
-    let bodies := (ms.map CModule.evidenceBodies).flatten
-    let bad := facts.filter fun f =>
-      match bodies.find? (fun p => Prod.fst p == CheckedDeclFacts.id f) with
-      | none => true
-      | some p => !(subseq (ProofBodyIdentityInputsV2.uses (CheckedDeclFacts.bodyIdentityInputs f))
-                           (flatUsesOf (Prod.snd p)))
-    if bad.isEmpty then "OK" else "LOSS"
-#eval IO.println (chk "mod m { struct Copy P { x: Int, y: Int } pub fn f(p: Int) -> Int { let q: P = P { x: p, y: 1 }; return q.x; } }")
-#eval IO.println (chk "mod m { enum Copy E { A { v: Int }, B { v: Int } } pub fn f(e: E) -> Int { match e { E::A { v } => { return v; }, E::B { v } => { return 0; } } } }")
-#eval IO.println (chk "mod m { fn g(a: Int, b: Int) -> Int { return a; } pub fn f(p: Int) -> Int { return g(p, 1); } }")
-#eval IO.println (chk "mod m { pub fn f(p: Int) -> Int { let mut i: Int = 0; while i < p { i = i + 1; } return i; } }")
+  | .error _ => []
+  | .ok ms => (((ms.map CModule.declFacts).flatten).head?.map
+                 (fun f => ProofBodyIdentityInputsV2.uses f.bodyIdentityInputs)).getD []
+
+-- An assignment TARGET is a use of a binder. The accumulator recorded only the
+-- right-hand side, so `i = i + 1` and `j = i + 1` produced the same flat view.
+def loopSrc : String :=
+  "mod m { pub fn f(p: Int) -> Int { let mut i: Int = 0; while i < p { i = i + 1; } return i; } }"
+
+-- A match pattern's FIELD identity. The accumulator recorded the variant but not the
+-- field, so renaming `v` in the enum declaration moved nothing in the flat view.
+def patSrc : String :=
+  "mod m { enum Copy E { A { v: Int }, B { v: Int } }
+     pub fn f(e: E) -> Int { match e { E::A { v } => { return v; }, E::B { v } => { return 0; } } } }"
+
+#eval IO.println (if (usesOf loopSrc).length == 5 then "PLACE-OK" else s!"PLACE-BAD {(usesOf loopSrc).length}")
+#eval IO.println (
+  let n := ((usesOf patSrc).filter
+    (· == BodyIdentityUse.field { owner := TypeId.user "m" "E", field := "v" })).length
+  if n == 2 then "PATFIELD-OK" else s!"PATFIELD-BAD {n}")
 LEAN
 cmpout="$(lake env lean "$CMP/p.lean" 2>/dev/null | tr '\n' ',' || true)"
 rm -rf "$CMP"
 case "$cmpout" in
-  "") no "convergence probe produced no output — inconclusive, not agreement" ;;
-  *LOSS*) no "the derived view LOSES accumulated identities ($cmpout) — the tree is missing something the accumulator has" ;;
-  *ERR*) no "convergence probe hit a pipeline error ($cmpout)" ;;
-  *) ok "the tree loses nothing the accumulator recorded, across struct/field, enum/match, calls and loops" ;;
+  "") no "the recovered-identity probe produced no output — inconclusive, not agreement" ;;
+  *BAD*) no "the derivation lost a recovered identity ($cmpout)" ;;
+  *PLACE-OK*PATFIELD-OK*) ok "the derived view carries the assignment place and pattern field identities the accumulator lost" ;;
+  *) no "unexpected recovered-identity probe output ($cmpout)" ;;
 esac
 
 echo "IDENTITY-USE-BYTES: PASS=$PASS FAIL=$FAIL"

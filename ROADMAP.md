@@ -190,10 +190,22 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
 
 **Remaining, in order.** Each is an entry in `check_convergence_inventory.sh`:
 
-1. Delete the independent `bodyIdentityUses` accumulator. UNBLOCKED — the tree is proven to
-   lose nothing (subsequence containment across struct/field, enum/match, calls, loops).
-   Note the criterion is CONTAINMENT, not equality: the derived view is richer, because the
-   accumulator under-recorded pattern field uses.
+1. ~~Delete the independent `bodyIdentityUses` accumulator.~~ Done. `bodyIdentityInputs.uses`
+   is now `flatUsesOf` of the structural evidence body, so there is one producer.
+
+   Worth recording that this was not a relocation. The criterion was CONTAINMENT, not
+   equality, and the derived view turned out to be strictly richer: it records an assignment
+   TARGET as a use of a binder (`i = i + 1` and `j = i + 1` had the same flat view before)
+   and a match pattern's FIELD identity (renaming `v` in the enum declaration moved nothing).
+   Two gates pinned the old lossy numbers and were updated to assert the recovered
+   identities — `check_type_identity` 7 → 10 and `check_binder_refs` 4 → 5 — and three
+   mutation entries were repointed from the accumulator to the structural builder, each
+   re-verified as KILLED (gate) rather than KILLED (build).
+
+   What survives the deletion is the COVERAGE axis, which is a different fact: an unresolved
+   identity contributes nothing to the use list, so a body missing an identity and a body
+   that never mentioned one are indistinguishable there. Only the explicit mark separates
+   them, and that is what makes the subject fail closed.
 2. Switch shadow mode to `bodyBytesV2`.
 3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
    and assumption edges, table reachability.

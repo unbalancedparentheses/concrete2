@@ -140,8 +140,14 @@ def bodyUsesAreTyped : Bool :=
             match u with
             | .binderRef _ _ => false
             | _ => true
+          -- 7 -> 10 when the flat view became DERIVED from the structural body rather
+          -- than accumulated beside it. The three added entries are the field
+          -- identities inside the three match PATTERNS, which the accumulator never
+          -- recorded: `Direction::North { speed }` referenced `speed` and the flat view
+          -- did not say so, so renaming that field in the enum declaration moved no
+          -- identity. Asserted individually below, not just counted.
           facts.bodyIdentityInputs.covered
-            && typed.length == 7
+            && typed.length == 10
             && facts.bodyIdentityInputs.uses.contains (.typeRef pointId)
             && facts.bodyIdentityInputs.uses.contains
               (.field { owner := pointId, field := "x" })
@@ -151,6 +157,12 @@ def bodyUsesAreTyped : Bool :=
               (.variant { owner := directionId, variant := "North" })
             && facts.bodyIdentityInputs.uses.contains
               (.variant { owner := directionId, variant := "South" })
+            -- THE RECOVERED FACT, asserted by MULTIPLICITY rather than membership:
+            -- `speed` is referenced three times — once by the enum literal and once by
+            -- each arm pattern. `contains` would pass on the literal alone and so could
+            -- not tell the two pattern uses from nothing at all.
+            && (facts.bodyIdentityInputs.uses.filter
+                  (· == .field { owner := directionId, field := "speed" })).length == 3
   | .ok _ => false
 
 def aliasBodySource : String :=

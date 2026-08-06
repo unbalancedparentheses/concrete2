@@ -2,6 +2,9 @@ import Concrete.Frontend.AST
 import Concrete.Proof.BodyScope
 import Concrete.Proof.EvidenceTree
 import Concrete.Proof.EvidenceBuild
+-- for `flatUsesOf`: the flat identity-use view is DERIVED from the structural body here,
+-- so elaboration has exactly one producer of it.
+import Concrete.Proof.IdentityUseBytes
 import Concrete.Resolve.BuiltinSigs
 import Concrete.Elab.Core
 import Concrete.Report.Diagnostic
@@ -82,10 +85,12 @@ structure ElabEnv where
   -- both this list and `vars` are snapshot-restored around each arm.
   renames : List (String × String) := []
   freshBinder : Nat := 0
-  /-- Parallel V2 input gathered at resolved use sites. Kept out of Core runtime
-      artifacts; `covered = false` records a normal language resolution whose
-      evidence identity could not be produced. -/
-  bodyIdentityUses : List Proof.BodyIdentityUse := []
+  /-- Did every identity in the current body resolve? `false` records a normal language
+      resolution whose EVIDENCE identity could not be produced, so the subject fails
+      closed instead of describing less than the program does.
+
+      There is no parallel list of uses beside this flag: the uses are the structural
+      evidence body, and the flat view is derived from it. -/
   bodyIdentityCovered : Bool := true
 
 abbrev ElabM := ExceptT Diagnostics (StateM ElabEnv)
@@ -175,27 +180,40 @@ def throwElab (e : ElabError) (span : Option Span := none) : ElabM α :=
 private def getEnv : ElabM ElabEnv := get
 private def setEnv (env : ElabEnv) : ElabM Unit := set env
 
-private def recordBodyIdentityUse (use : Proof.BodyIdentityUse) : ElabM Unit := do
-  let env ← getEnv
-  setEnv { env with bodyIdentityUses := use :: env.bodyIdentityUses }
+/-! ### Coverage, not collection
+
+There is ONE producer of identity uses: the structural evidence body, from which the flat
+view is derived in `elabFn`. What remains here is the COVERAGE axis — a separate fact, and
+the reason these helpers did not disappear with the accumulator.
+
+Coverage answers "did every identity in this body resolve?", which the use list cannot: an
+unresolved identity contributes NOTHING to the list, so a body missing an identity and a
+body that never mentioned one produce the same uses. Only an explicit mark distinguishes
+them, and the distinction is what makes the subject fail closed instead of quietly
+describing less than the program does. -/
 
 private def markBodyIdentityUncovered : ElabM Unit := do
   let env ← getEnv
   setEnv { env with bodyIdentityCovered := false }
 
+/-- A struct type must have a resolved `TypeId`, or the body is uncovered. The identity
+    itself reaches evidence through the structural node. -/
 private def recordStructTypeUse (sd : StructDef) : ElabM Unit :=
   match sd.typeId? with
-  | some id => recordBodyIdentityUse (.typeRef id)
+  | some _ => pure ()
   | none => markBodyIdentityUncovered
 
-private def recordFieldUse (sd : StructDef) (field : String) : ElabM Unit :=
+/-- A field's OWNER must be resolved: an owner-less field name is a spelling, and two
+    same-spelled fields on different types would share one identity. -/
+private def recordFieldUse (sd : StructDef) (_field : String) : ElabM Unit :=
   match sd.typeId? with
-  | some owner => recordBodyIdentityUse (.field { owner := owner, field := field })
+  | some _ => pure ()
   | none => markBodyIdentityUncovered
 
-private def recordVariantUse (ed : EnumDef) (variant : String) : ElabM Unit :=
+/-- Same rule for a variant's owning enum. -/
+private def recordVariantUse (ed : EnumDef) (_variant : String) : ElabM Unit :=
   match ed.typeId? with
-  | some owner => recordBodyIdentityUse (.variant { owner := owner, variant := variant })
+  | some _ => pure ()
   | none => markBodyIdentityUncovered
 
 -- ============================================================
@@ -367,12 +385,11 @@ private def coreNameOf (name : String) : ElabM String := do
     is function-flat, which is the whole reason bug 045 existed). -/
 private def restoreScope (saved : ElabEnv) : ElabM Unit := do
   let cur ← getEnv
-  -- Identity inputs are an append-only elaboration artifact, not lexical
-  -- scope. Restoring an arm/branch environment must not erase uses observed in
-  -- that arm; preserve the accumulator alongside the fresh-name counter.
+  -- Coverage is an elaboration verdict, not lexical scope: an identity that failed to
+  -- resolve inside an arm must stay unresolved after the arm closes. Restore it
+  -- alongside the fresh-name counter, or a branch could launder its own gap.
   setEnv { saved with
     freshBinder := cur.freshBinder
-    bodyIdentityUses := cur.bodyIdentityUses
     bodyIdentityCovered := cur.bodyIdentityCovered }
 
 private def addGhostVar (name : String) : ElabM Unit := do
@@ -471,12 +488,13 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
     | none =>
     match env.vars.lookup name with
     | some ty => do
-      -- A local reference is a BINDER reference: record where it resolves, never
-      -- its spelling. If the frame stack cannot place it, the body is uncovered
-      -- rather than encoded against a guessed position.
+      -- COVERAGE ONLY. The binder reference itself is emitted structurally by
+      -- `evBinderRef` on the next line; this arm no longer records a second copy of
+      -- it. If the frame stack cannot place the local, the body is uncovered rather
+      -- than encoded against a guessed position.
       match env.bodyScope.resolve? name with
-      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)
-      | none            => markBodyIdentityUncovered
+      | some _ => pure ()
+      | none   => markBodyIdentityUncovered
       return ElaboratedExprV2.mk (CExpr.ident (← coreNameOf name) ty) (Proof.evBinderRef env.bodyScope name)
     | none =>
       match ← lookupFnSig name with
@@ -1828,7 +1846,6 @@ def elabFn (f : FnDef) (implTy : Option Ty := none)
     currentTypeBounds := f.typeBounds
     currentRetTy := retTy
     currentImplType := implTy
-    bodyIdentityUses := []
     bodyIdentityCovered := true }
   -- Add parameters to scope (resolve type aliases so params don't carry unresolved alias names)
   for (pname, pty) in params do
@@ -1845,8 +1862,15 @@ def elabFn (f : FnDef) (implTy : Option Ty := none)
     { statements := cBodyEv.map (·.evidence) }
   -- Restore env
   let envAfter ← getEnv
+  -- ONE PRODUCER. The flat view is DERIVED from the structural body rather than
+  -- accumulated beside it: two producers of one fact is the defect class R-0004 exists to
+  -- close, and a side-channel accumulator drifts silently because nothing compares them.
+  --
+  -- The derived view is a SUPERSET, not a copy — measured, not assumed. It carries pattern
+  -- field identities the accumulator never recorded, which is why the containment gate
+  -- checks subsequence rather than equality.
   let bodyIdentityInputs : Proof.ProofBodyIdentityInputsV2 :=
-    { uses := envAfter.bodyIdentityUses.reverse
+    { uses := Proof.flatUsesOf evidenceBody
       covered := envAfter.bodyIdentityCovered }
   setEnv { envAfter with
     vars := env.vars
@@ -1854,7 +1878,6 @@ def elabFn (f : FnDef) (implTy : Option Ty := none)
     currentTypeBounds := env.currentTypeBounds
     currentRetTy := env.currentRetTy
     currentImplType := env.currentImplType
-    bodyIdentityUses := env.bodyIdentityUses
     bodyIdentityCovered := env.bodyIdentityCovered }
   -- Resolve type aliases in output param/return types so Core IR doesn't carry alias names
   let resolvedParams ← params.mapM fun (n, t) => do pure (n, ← resolveTypeE t)

@@ -767,11 +767,11 @@ gate_for_last "scripts/tests/check_type_identity.sh"
 # 54. A local reference is resolved but emits no node. The binder vanishes from the
 # body, which UNDER-APPROXIMATES the subject — worse than uncovered, because the
 # subject then looks complete.
+# Repointed when the accumulator was deleted: dropping the node now means dropping the
+# STRUCTURAL one, so the mutation replaces the builder call with a gap.
 MUT_FILE+=("Concrete/Elab/Elab.lean")
-MUT_OLD+=("      match env.bodyScope.resolve? name with
-      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)
-      | none            => markBodyIdentityUncovered")
-MUT_NEW+=("      pure () -- MUTATION: local reference emits no V2 node")
+MUT_OLD+=("(Proof.evBinderRef env.bodyScope name)")
+MUT_NEW+=("(Proof.evUnhandledExpr \"local\") -- MUTATION: local reference emits no V2 node")
 MUT_DESC+=("Elab V2 input: local binder references silently dropped")
 gate_for_last "scripts/tests/check_binder_refs.sh"
 
@@ -788,18 +788,22 @@ gate_for_last "scripts/tests/check_binder_refs.sh"
 # 56. The relative position is emitted with its components SWAPPED. A wrong
 # semantic position looks resolved, which is the confidently-wrong-identity failure
 # this task exists to remove.
-MUT_FILE+=("Concrete/Elab/Elab.lean")
-MUT_OLD+=("      | some (out, idx) => recordBodyIdentityUse (.binderRef out idx)")
-MUT_NEW+=("      | some (out, idx) => recordBodyIdentityUse (.binderRef idx out) -- MUTATION: swapped")
-MUT_DESC+=("Elab V2 input: binder position components swapped")
+# Repointed when the accumulator was deleted: the position is now minted once, by the
+# structural builder, so that is where the mutation has to bite.
+MUT_FILE+=("Concrete/Proof/EvidenceBuild.lean")
+MUT_OLD+=("  | some (out, idx) => .binderRef out idx")
+MUT_NEW+=("  | some (out, idx) => .binderRef idx out -- MUTATION: swapped")
+MUT_DESC+=("evBinderRef: binder position components swapped")
 gate_for_last "scripts/tests/check_binder_refs.sh"
 
 # 57. Repeated uses are DEDUPLICATED. Occurrence count and order are semantic: a
 # body reading a binder twice is not the same body as one reading it once.
-MUT_FILE+=("Concrete/Elab/Elab.lean")
-MUT_OLD+=("  setEnv { env with bodyIdentityUses := use :: env.bodyIdentityUses }")
-MUT_NEW+=("  setEnv { env with bodyIdentityUses := (use :: env.bodyIdentityUses).eraseDups } -- MUTATION: drop repetitions")
-MUT_DESC+=("Elab V2 input: repeated identity uses collapsed")
+# Repointed likewise: deduplication would now happen in the DERIVATION, not in an
+# accumulator that no longer exists.
+MUT_FILE+=("Concrete/Proof/IdentityUseBytes.lean")
+MUT_OLD+=("  b.statements.flatMap stmtFlatUses")
+MUT_NEW+=("  (b.statements.flatMap stmtFlatUses).eraseDups -- MUTATION: drop repetitions")
+MUT_DESC+=("flatUsesOf: repeated identity uses collapsed")
 gate_for_last "scripts/tests/check_binder_refs.sh"
 
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be

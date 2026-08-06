@@ -91,11 +91,19 @@ def outerFromArm : String :=
   -- CHECK 2b. A loop variable is an ordinary binder of its enclosing block, and is
   -- in scope in the loop CONDITION — a different timing answer than a let's own
   -- initializer, which is why lets alone prove nothing here.
+  -- Five references, in evaluation order: `i` and `p` in the condition, `i` as the
+  -- ASSIGNMENT PLACE, `i` in the right-hand side, `i` in the return.
+  --
+  -- Four until the flat view became derived from the structural body. The accumulator
+  -- never recorded an assignment TARGET, so `i = i + 1` and `j = i + 1` produced the
+  -- same flat view — the destination of a write was not a use of a binder. Position 2
+  -- below is that recovered reference, which is why this asserts the exact sequence
+  -- rather than a count: a count of 5 would also pass if the place were recorded and
+  -- the return dropped.
   a "a loop variable is in scope in the condition and the body"
-    ((binders loopVar).length == 4
-      && (binders loopVar).all fun u => match u with
-           | .binderRef out i => out == 0 && (i == 0 || i == 1)
-           | _ => true)
+    (binders loopVar == [BodyIdentityUse.binderRef 0 1, BodyIdentityUse.binderRef 0 0,
+                         BodyIdentityUse.binderRef 0 1, BodyIdentityUse.binderRef 0 1,
+                         BodyIdentityUse.binderRef 0 1])
 
   -- CHECK 2c. Arm patterns open their OWN frame, proved by crossing outward.
   a "an arm pattern opens a frame — an outer binder is one frame out"
@@ -131,8 +139,12 @@ if grep -q "markBodyIdentityUncovered" Concrete/Elab/Elab.lean; then
 else
   no "the local-reference path has no uncovered branch — a missing binder would vanish silently"
 fi
-if grep -q "recordBodyIdentityUse (.binderRef out idx)" Concrete/Elab/Elab.lean; then
-  ok "a placeable local emits a typed binderRef node"
+# Repointed when the accumulator was deleted. It asserted the ACCUMULATOR call, so it was
+# checking the side channel rather than the node that reaches evidence; the structural
+# builder is the one producer now, and the behavioural legs above already pin the positions
+# it mints.
+if grep -q "Proof.evBinderRef env.bodyScope name" Concrete/Elab/Elab.lean; then
+  ok "a placeable local emits a typed binderRef node via the structural builder"
 else
   no "the local-reference path does not emit a binderRef"
 fi
