@@ -5,6 +5,11 @@ should happen next, in what order?** Historical phase detail lives in
 [CHANGELOG.md](CHANGELOG.md); this file keeps only active work, future-relevant
 constraints, and deferred tails with a real pull trigger.
 
+> **Start here for direction:** [Design honesty vs Why3](#design-honesty-this-is-largely-why3s-architecture-and-one-layer-is-worse-than-why3s)
+> and [North star](#north-star-prove-every-kind-of-code-in-lean--rocq--isabelle) —
+> what "prove every kind of code in three kernels" decomposes into, what is reachable,
+> and the two limits that no amount of work removes.
+
 ## How To Read This Roadmap
 
 ### Active Work vs Historical Record
@@ -466,6 +471,54 @@ defect gets a late ID: file position is the default order, not an argument. Wher
 later-positioned task fixes a live false claim and an earlier-positioned one does not,
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
+
+## Design honesty: this is largely Why3's architecture, and one layer is worse than Why3's
+
+Worth writing down, because it reframes what is valuable to build next.
+
+### The convergence is real
+
+| Why3 | Here |
+|---|---|
+| driver files per prover | `ProverLowering` records — "the tactic is DATA, not a template" |
+| VC transformations (`eliminate_*`) | Register B rows, same names and same idea |
+| many provers per goal | the multi-kernel tiers |
+| `variant` clause for termination | the `#[decreases]` design (rung 8) |
+| theory **realizations** | **missing** — see below |
+
+Arriving independently at Why3's shape is reassuring: it is the state of the art for this problem.
+
+### Two things here are genuinely better
+
+**The reference-evaluator agreement check.** Why3 TRUSTS its drivers — if a driver prints the
+wrong thing, the prover closes the wrong goal and nothing notices. Every lowering here is checked
+against an independent evaluator instead: exhaustively for booleans, sampled for arithmetic. A
+kernel that "proved" a mis-rendered obligation does not earn the badge.
+
+**Discovery completeness.** Why3 generates VCs by weakest-precondition calculus, so "was an
+obligation emitted at all" is not a question anyone needs to ask. Here it was, and asking it found
+seven defects, two of them unsound.
+
+### One thing here is worse, and it is the layer that produced this year's bugs
+
+**Why3 generates VCs by a CALCULUS. This generates them with hand-written AST walkers, one per
+family.**
+
+That is exactly where every discovery bug came from — `(a)[i]` missed, `b.data[i]` missed,
+unannotated array sizes missed, shadowed bindings sized from the wrong declaration. A
+weakest-precondition generator makes most of those **impossible by construction**: you cannot
+forget a case when you are not enumerating cases. Four walkers were patched to fix symptoms whose
+common cause is the absence of a calculus.
+
+**Consequence for planning:** adding more tiers (rungs) grows what CAN be expressed, while the
+generator remains the part most likely to be silently wrong. A principled VC generator is
+therefore plausibly worth more than the next two rungs combined, and it subsumes H19 (the
+Core→obligation bridge) — Why3's answer to that is realizations, where the axiomatized theory is
+proved in Coq/Isabelle rather than assumed.
+
+This is not an argument to stop; the tiers are real and verified. It is an argument about ORDER,
+and it is recorded here because "add another rung" is the more interesting work and therefore the
+easier trap.
 
 ## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
 
