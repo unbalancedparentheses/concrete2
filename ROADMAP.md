@@ -123,6 +123,37 @@ has not started.
 
 ## Current Execution State (2026-08-01)
 
+### MAIN IS RED: bug 067 — capped obligations escape `forbid-assume` (2026-08-05)
+
+The multi-prover merge is on main at `04fa2426`, and CI is RED on one job. 14 of 15 jobs
+pass, including Multi-kernel evidence (Rocq + Isabelle), Proof evidence gate and the Trust
+gate. The failure is `check_known_wrong_corpus.sh`:
+
+    FAIL forbid-assume does NOT reject a capped obligation — the cap is display-only
+
+**An obligation resting on an unsound hypothesis passes the release gate when Rocq and
+Isabelle are present.** Locally, with no external provers, the same obligation reads
+`=> assumed` and `check` rejects it with E0617; in CI, with three kernels attesting, the cap
+is lost and the gate passes. Adding kernels does not make an unsound premise sound — each
+kernel closes ITS LOWERING of the same bad premise — so more attestation is removing the
+protection it should not touch.
+
+This is the concrete instance of the spike's own documented gap: no subject-digest
+cross-check, so N kernels accepting N lowerings is being treated as stronger than one.
+
+Two ways forward, both deliberate:
+
+1. **Cap dominates attestation** — a capped obligation stays capped regardless of kernel
+   count, and `forbid-assume` fires on the CAP rather than the badge. Preferred: the cap is
+   a statement about the premise, which kernel count cannot affect.
+2. **Revert the merge**, keeping R-0004 on main, until 1 lands.
+
+I did not force-push a revert: it would remove 115 commits that were deliberately merged and
+rewrite published history other worktrees may hold. That is an owner's call, not a cleanup.
+
+Filed as `docs/bugs/067`. The gate must NOT be weakened — it caught this only because CI has
+the provers, and it is doing exactly its job.
+
 ### R-0004 evidence producer — landed state (2026-08-05)
 
 Canonical inventory of what exists, so the next session does not re-derive it. The
