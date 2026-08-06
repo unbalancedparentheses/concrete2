@@ -2039,6 +2039,37 @@ def checkFn (f : FnDef) : CheckM Unit := do
   setEnv envBefore
 
 
+/-- Coarse SORT of a spec-body expression: `some true` = boolean, `some false` = integer,
+    `none` = cannot tell.
+
+    Deliberately a sort check, not type inference. `#[requires]`/`#[ensures]` expressions are not
+    type-checked anywhere either — they are erased metadata — so there is no existing machinery to
+    reuse, and wiring the full `CheckM` checker in here would be a much larger change than the
+    defect warrants.
+
+    What it catches is the failure that actually happened: `spec fn f(x: i32) -> i32 = true;` was
+    accepted, and the refinement tier then emitted `x = true` to three kernels where it fails as a
+    type error — right diagnosis, wrong layer. What it does NOT catch is a width mismatch
+    (`i32` vs `i64`), and it says so rather than implying otherwise. -/
+private partial def specBodySort (paramTys : List (String × Ty)) (specRets : List (String × Ty)) :
+    Expr → Option Bool
+  | .boolLit _ _ => some true
+  | .intLit _ _ => some false
+  | .ident _ n => (paramTys.lookup n).map (fun t => t == .bool)
+  | .paren _ e => specBodySort paramTys specRets e
+  | .unaryOp _ .not_ _ => some true
+  | .unaryOp _ _ e => specBodySort paramTys specRets e
+  | .binOp _ op l r =>
+      match op with
+      | .and_ | .or_ => some true
+      | .eq | .neq | .lt | .leq | .gt | .geq => some true
+      | .add | .sub | .mul | .div | .mod => some false
+      | _ => match specBodySort paramTys specRets l with
+             | some b => some b
+             | none => specBodySort paramTys specRets r
+  | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
+  | _ => none
+
 /-- Function names called anywhere in an expression — for validating `spec fn` bodies. -/
 private partial def specBodyCalls : Expr → List String
   | .call _ f _ args => f :: args.flatMap specBodyCalls
@@ -2180,6 +2211,17 @@ def checkModule (m : Module) (summary : FileSummary)
                   , message := s!"spec fn '{sd.name}' body references unknown name(s): {", ".intercalate free}"
                   , pass := "check", span := some sd.span
                   , hint := some "a spec body may only mention its own parameters" }]
+        else if
+            let paramTys := sd.params.map (fun p => (p.name, p.ty))
+            let specRets := m.specFns.map (fun d => (d.name, d.retTy))
+            match specBodySort paramTys specRets b with
+            | some isBool => isBool != (sd.retTy == (Ty.bool))
+            | none => false
+          then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body has the wrong sort: declared -> {tyToString sd.retTy}, but the body is {if sd.retTy == (Ty.bool) then "an integer" else "a boolean"} expression"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body must produce the declared return type" }]
         else if !unknownCalls.isEmpty then
           .error [{ severity := .error
                   , message := s!"spec fn '{sd.name}' body calls non-spec function(s): {", ".intercalate unknownCalls}"

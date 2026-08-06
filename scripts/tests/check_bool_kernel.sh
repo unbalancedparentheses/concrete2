@@ -509,6 +509,7 @@ cat > "$SPW/ok.con" <<'CON'
 mod sv3 {
     spec fn inner(x: i32) -> i32 = x + 1;
     spec fn outer(x: i32) -> i32 = inner(x) + 1;
+    spec fn pred(x: i32) -> bool = x > 0;
 }
 CON
 # Output captured FIRST, then matched. `set -o pipefail` is on, so `failing_cmd | grep -q` reports
@@ -523,6 +524,24 @@ printf '%s' "$EC_OUT" | grep -q "calls non-spec function" \
   && ok "a spec body calling executable code is REJECTED (specs must not depend on runtime)" \
   || no "a spec body may call executable functions — the spec is no longer independent"
 # And the rule must not be so strict it forbids legitimate specs: spec-to-spec calls are fine.
+# SORT: a bool body for an int spec (and the reverse) must be rejected. This was accepted until
+# 2026-08-06 -- the refinement tier then emitted `x = true` to three kernels, where it failed as a
+# type error: right diagnosis, wrong layer.
+cat > "$SPW/sort1.con" <<'CON'
+mod s1 { spec fn wrong(x: i32) -> i32 = true; }
+CON
+cat > "$SPW/sort2.con" <<'CON'
+mod s2 { spec fn wrong2(x: i32) -> bool = x + 1; }
+CON
+S1="$("$BIN" "$SPW/sort1.con" --report vcs 2>&1 || true)"
+printf '%s' "$S1" | grep -q "wrong sort" \
+  && ok "a boolean body for an integer spec is REJECTED" \
+  || no "a bool body for an int spec is accepted — the kernels see the type error instead"
+S2="$("$BIN" "$SPW/sort2.con" --report vcs 2>&1 || true)"
+printf '%s' "$S2" | grep -q "wrong sort" \
+  && ok "an integer body for a boolean spec is REJECTED (both directions)" \
+  || no "an int body for a bool spec is accepted"
+
 if "$BIN" "$SPW/ok.con" --report vcs >/dev/null 2>&1; then
   ok "a spec calling ANOTHER spec is still accepted (rule constrains, does not forbid)"
 else
