@@ -421,6 +421,20 @@ grep -q "has no definitional body" "$RW/report.txt" \
   && ok "a body-less spec is still named unreachable (uninterpreted, only Lean can discharge it)" \
   || no "an undefined spec is no longer reported — the remaining gap became invisible"
 
+# A spec that RESTATES the implementation must be detected and NOT counted. Otherwise the
+# coverage metric can be inflated by copying the body into the spec -- and that is not a
+# hypothetical: hmac_sha256's registered Lean spec for `ch` is character-for-character its
+# function body, so converting it to a definitional body would have manufactured exactly this.
+grep -q "TRIVIAL: the spec RESTATES the implementation" "$RW/report.txt" \
+  && ok "a spec that restates the implementation is flagged as trivial" \
+  || no "a tautological refinement is not detected — coverage can be inflated by copying the body"
+TRIVN="$(grep -c 'TRIVIAL: the spec RESTATES' "$RW/report.txt")"
+REACHN="$(grep -oE '[0-9]+ reached a tier' "$RW/report.txt" | grep -oE '^[0-9]+')"
+# 4 defined-spec refinements exist in the demo, one of them trivial; only 3 may be counted.
+[ "$TRIVN" = "1" ] && [ "$REACHN" = "3" ] \
+  && ok "the trivial one is EXCLUDED from the coverage count (3 reached, 1 trivial)" \
+  || no "trivial refinements are being counted as coverage (trivial=$TRIVN reached=$REACHN)"
+
 python3 - "$RW/report.txt" "$RW" <<'PYRF'
 import re, sys
 report, work = sys.argv[1], sys.argv[2]

@@ -1905,7 +1905,10 @@ def compileAndReport (inputPath : String) (reportType : String)
         IO.println "=== REFINEMENT against a defined spec ==="
         for o in refs do
           IO.println ""
-          IO.println s!"  [{o.key}]  spec: {o.specName} (defined)"
+          let triv := if o.trivial then
+                "  *** TRIVIAL: the spec RESTATES the implementation, so this obligation is `body = body` and proves nothing ***"
+              else ""
+          IO.println s!"  [{o.key}]  spec: {o.specName} (defined){triv}"
           match o.leanScript with
           | some sc => IO.println s!"    --- lean:omega (refine) ---\n{sc}"
           | none => IO.println "    lean: outside the fragment"

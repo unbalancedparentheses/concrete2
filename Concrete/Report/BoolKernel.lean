@@ -818,6 +818,15 @@ structure RefineObl where
   lhs      : Expr
   /-- The spec's body with its parameters replaced by the call's arguments. -/
   rhs      : Expr
+  /-- The spec RESTATES the implementation: after substitution the two sides are syntactically
+      identical, so the obligation is `body = body` and proves nothing.
+
+      This is not hypothetical. `hmac_sha256`'s registered spec for `ch` is
+      `(x AND y) XOR ((x XOR 0xFFFFFFFF) AND z)` — character for character the function body.
+      Giving that spec a definitional body would make its refinement obligation a tautology and
+      the coverage number would rise while nothing new was proved. Detected and reported instead,
+      because manufactured coverage is worse than an honest zero. -/
+  trivial  : Bool
 
 /-- Collect refinement obligations whose spec has a DEFINITION. A body-less spec is skipped and
     reported, since substituting nothing would silently produce a different obligation. -/
@@ -837,9 +846,11 @@ def refineObligations (modules : List Module) : List RefineObl := Id.run do
             match sd.body with
             | some sb =>
               let env := (sd.params.map (·.name)).zip args
+              let rhs := substExpr env sb
               out := out ++ [{ fnQual := pfx ++ f.name, key := s!"{pfx}{f.name}#refine{i}"
                              , specName := sn, intVars := f.params.map (·.name)
-                             , lhs := body, rhs := substExpr env sb }]
+                             , lhs := body, rhs := rhs
+                             , trivial := Concrete.fmtExpr body == Concrete.fmtExpr rhs }]
               i := i + 1
             | none => pure ()
           | none => pure ()
@@ -914,8 +925,11 @@ def coverageSummary (modules : List Module) : Nat × Nat × Nat :=
   -- Counting all refinement clauses here was wrong once the refinement tier existed: three of the
   -- four in the demo do reach a tier, and the metric still reported "0 reached, 4 refinement".
   let refinement := (refineSkipped modules).length
+  -- A TRIVIAL refinement (spec restates the implementation) is not coverage and must not be
+  -- counted as such, or the metric can be inflated by writing specs that copy the body.
   let reached := (boolPostObligations modules).length + (eufObligations modules).length
-                   + (structObligations modules).length + (refineObligations modules).length
+                   + (structObligations modules).length
+                   + ((refineObligations modules).filter (fun o => !o.trivial)).length
   (clauses, refinement, reached)
 
 

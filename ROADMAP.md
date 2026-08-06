@@ -679,10 +679,34 @@ Gated in all three kernels, with the negative control: a body that does NOT refi
 refused by each, so portability did not make refinement lax. `--report bool-kernel` also names
 refinement obligations whose spec is still body-less, so the residual gap stays visible.
 
-**What remains a capability demonstration** is coverage of the EXISTING corpus: `hmac_sha256`'s
-specs are still Lean-linked, and giving them bodies would duplicate a definition that already lives
-in Lean — which is a decision about where specs should be authored, not a technical gap. The
-mechanism for real coverage now exists; adopting it is a separate call.
+**Converting the existing corpus would MANUFACTURE coverage, not gain it — checked, not assumed.**
+`hmac_sha256`'s registered Lean spec for `ch` is:
+
+```
+chExpr = (x AND y) XOR ((x XOR 0xFFFFFFFF) AND z)      -- the spec
+         (x & y)   ^   ((x ^ 0xFFFFFFFF)   & z)        -- the function body
+```
+
+Character for character the same expression. Giving that spec a definitional body would make its
+refinement obligation `body = body`: trivially true, provable by every kernel, and proving
+**nothing** — while the coverage number rose. So the tier now DETECTS a spec that restates its
+implementation, flags it, and excludes it from the count. A metric that goes up when you copy the
+body into the spec is worse than one that reads zero, and this was one edit away from happening.
+
+The repo already knows the distinction, which is the useful signal: `ch` carries BOTH
+`#[ensures_proof(ch_refines)]` — the mechanical spec-equals-body step — and
+`#[proof_by(ch_selects_high)]`, the semantic property that actually says what `Ch` does. The
+meaningful obligation is the second one.
+
+**So genuine coverage of `hmac_sha256` needs rung 4.** `ch_selects_high` is bitwise reasoning over
+`u32`, and rung 4 is exactly the rung where the three kernels do not share a type (Rocq has no
+fixed-width word). The chain is: real corpus coverage → semantic bitwise properties → rung 4 →
+the `Z`-with-modulus model-equivalence proof. That equivalence obligation is the honest prerequisite,
+and it is Register-B-shaped rather than a lowering.
+
+**Where the new mechanism does apply:** specs whose meaning is genuinely independent of the
+implementation, which is what a spec is for. The demo shows both — real refinements that all three
+kernels prove, and a tautological one that is caught.
 
 **Cheapest path to coverage of existing code:** add contract-to-contract
 clauses (`requires -> ensures` over fields, arrays and opaque symbols) to a flagship example. Those
