@@ -262,6 +262,51 @@ grep -qE "^def profileClosures" Concrete/Report/Report.lean \
   && ok "both closures come from one place (cannot obtain one without the other)" \
   || no "profileClosures is gone — consumers can drift apart again"
 
+echo "=== 9. two properties, two names: admission vs proof eligibility ==="
+# Making admission transitive changed what "passes the predictable profile" means -- but
+# ProofCore computed its OWN version of that same-named property for proof ELIGIBILITY, and was
+# left alone on purpose. The result was two commands printing opposite claims about one function:
+#
+#   --check predictable    caller — reaches a function whose recursion cannot be ruled out
+#   --report proof-status  `caller` passes the predictable profile
+#
+# The logic was right in both places; the PHRASE was doing two jobs. They are genuinely different
+# questions, and eligibility must NOT become transitive: `caller`'s own overflow obligation is
+# provable whether or not `recurses` terminates. Overflow is a safety property, non-termination a
+# liveness one. Making eligibility transitive would refuse a provable obligation for no soundness
+# gain -- it would destroy proofs to tidy a name.
+#
+# So the durable invariant is: the two may DISAGREE, and neither may speak in the other's
+# vocabulary.
+if [ -z "${TD_LC:-}" ]; then
+  no "build failed or temp dir unavailable; the vocabulary checks did NOT run"
+else
+  cat > "$TD_LC/twoprops.con" <<'CON'
+mod twoprops {
+    fn recurses(x: i32) -> i32 {
+        if x <= 0 { return 0; }
+        return recurses(x - 1);
+    }
+    fn caller(x: i32) -> i32 { return recurses(x); }
+}
+CON
+  "$BIN_LC" "$TD_LC/twoprops.con" --check predictable >/dev/null 2>&1 \
+    && no "admission is not transitive any more — caller of a recursive fn is admitted" \
+    || ok "admission REJECTS the caller (transitive)"
+  PS="$("$BIN_LC" "$TD_LC/twoprops.con" --report proof-status 2>/dev/null)"
+  printf '%s' "$PS" | grep -q "caller\` is eligible for proof" \
+    && ok "eligibility ACCEPTS the same function (per-body, and must stay so)" \
+    || no "caller lost proof eligibility — a provable obligation is being refused"
+  # The anti-conflation lock: the proof surface must not claim the admission property.
+  printf '%s' "$PS" | grep -q "predictable profile" \
+    && no "proof-status speaks of the 'predictable profile' again — one phrase, two properties" \
+    || ok "the proof surface does not claim the admission property"
+  # And the field holds what its name says.
+  grep -q "eligibilityReasons" Concrete/Proof/ProofCore.lean \
+    && ok "the reasons field is named for what it holds (was 'profileGates')" \
+    || no "the eligibility reasons are called profile gates again"
+fi
+
 echo ""
 echo "LOOP-CONTROL: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

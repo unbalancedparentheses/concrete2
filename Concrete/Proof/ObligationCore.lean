@@ -220,7 +220,7 @@ def ofProofStatus (e : Report.ProofStatusEntry) : Obligation :=
       else s!"{base}, ASSUMING trusted boundaries: {", ".intercalate e.trustedDeps}"
     | .notProved   => "no registered proof for an eligible function"
     | .blocked     => s!"extraction blocked: {", ".intercalate e.unsupported}"
-    | .notEligible => s!"ineligible: {", ".intercalate e.profileGates}"
+    | .notEligible => s!"ineligible: {", ".intercalate e.eligibilityReasons}"
     | .trusted     => "trusted boundary (proof bypassed)"
   { id := s!"{e.qualName}#prooflink", kind := kind, fn := e.qualName,
     file := (e.loc.map (·.1)).getD "", line := (e.loc.map (·.2)).getD 0,
