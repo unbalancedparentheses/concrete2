@@ -368,8 +368,8 @@ MUT_DESC+=("Mono: generic enums detected but unmapped (E0808 backstop)")
 # resolution". It must be caught by the fn-pointer fixtures, not merely by
 # something downstream noticing an undefined symbol.
 MUT_FILE+=("Concrete/Elab/Elab.lean")
-MUT_OLD+=("    return .call (.indirect fnName) [] cArgs retTy")
-MUT_NEW+=("    return .call (.direct fnName) [] cArgs retTy -- MUTATION: indirect call resolved by name")
+MUT_OLD+=("    return ElaboratedExprV2.mk (CExpr.call (.indirect fnName) [] cArgs retTy)")
+MUT_NEW+=("    return ElaboratedExprV2.mk (CExpr.call (.direct fnName) [] cArgs retTy) -- MUTATION: indirect call resolved by name")
 MUT_DESC+=("Elab: indirect call emitted as direct (bug 050)")
 
 # 22. std map: forget the remembered tombstone (R-0003 / bug 047)
@@ -909,8 +909,8 @@ gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 # Bug 068. A ghost binding is erased; hardcoding the flag makes the two lets share bytes
 # again, which is the collision the flag exists to remove.
 MUT_FILE+=("Concrete/Elab/Elab.lean")
-MUT_OLD+=("(Proof.EvidenceStmtV2.letBind true none cValEv.evidence)")
-MUT_NEW+=("(Proof.EvidenceStmtV2.letBind false none cValEv.evidence) -- MUTATION: ghost erasure invisible")
+MUT_OLD+=("(Proof.EvidenceStmtV2.letBind true declRef cValEv.evidence)")
+MUT_NEW+=("(Proof.EvidenceStmtV2.letBind false declRef cValEv.evidence) -- MUTATION: ghost erasure invisible")
 MUT_DESC+=("ghost let: erasure not recorded in the binding node")
 gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 
@@ -1276,5 +1276,18 @@ echo "=== Results: $KILLED killed, $SURVIVED survived, $ERRORS errors ($TOTAL to
 if [[ "$SURVIVED" -gt 0 ]]; then
   echo ""
   echo "WARNING: $SURVIVED mutation(s) survived — these represent test gaps."
+  exit 1
+fi
+
+# A SKIPPED mutation is lost coverage, not a neutral event: its anchor no longer exists in
+# the source, so it exercises nothing while still being counted in the suite. This used to
+# increment ERRORS and exit 0, which meant the harness reported success over a mutation
+# that had quietly stopped testing anything. Measured 2026-08-06: 4 of 77 anchors were
+# stale, three of them found only because someone happened to be editing nearby.
+if [[ "$ERRORS" -gt 0 ]]; then
+  echo ""
+  echo "FAILED: $ERRORS mutation(s) could not be applied — their anchors have drifted from"
+  echo "the source, so they test nothing. Re-anchor them on the current code shape; do not"
+  echo "delete them, and do not leave them skipped."
   exit 1
 fi

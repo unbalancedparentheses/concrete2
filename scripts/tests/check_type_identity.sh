@@ -141,13 +141,16 @@ def bodyUsesAreTyped : Bool :=
             | .binderRef _ _ => false
             | _ => true
           -- 7 -> 10 when the flat view became DERIVED from the structural body rather
-          -- than accumulated beside it. The three added entries are the field
-          -- identities inside the three match PATTERNS, which the accumulator never
-          -- recorded: `Direction::North { speed }` referenced `speed` and the flat view
-          -- did not say so, so renaming that field in the enum declaration moved no
-          -- identity. Asserted individually below, not just counted.
+          -- than accumulated beside it: the three added entries are the field identities
+          -- inside the three match PATTERNS, which the accumulator never recorded.
+          --
+          -- 10 -> 12 when `letBind` started carrying its DECLARED type. The two added
+          -- entries are `Point` and `Direction` from `let q: Point` and
+          -- `let d: Direction` — asserted by name below, because a count alone cannot
+          -- tell a recovered identity from an accidental duplicate.
           facts.bodyIdentityInputs.covered
-            && typed.length == 10
+            && typed.length == 12
+            && (facts.bodyIdentityInputs.uses.filter (· == .typeRef directionId)).length >= 1
             && facts.bodyIdentityInputs.uses.contains (.typeRef pointId)
             && facts.bodyIdentityInputs.uses.contains
               (.field { owner := pointId, field := "x" })

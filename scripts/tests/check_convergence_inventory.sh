@@ -67,11 +67,41 @@ else
   ok "GAP OPEN: structural body bytes are reported but no verdict derives from them"
 fi
 
-# 4. constRef names a constant without binding its meaning.
+# 4. constRef names a constant without binding its MEANING.
 if grep -qE "unboundConsts : List ConstId" Concrete/Proof/EvidenceTree.lean; then
   ok "GAP OPEN: constant dependency binding is still an unmet obligation (unboundConsts)"
 else
   no "unboundConsts is gone — if ConstId now binds to an initializer digest, record it"
+fi
+
+# 4a. TRIPWIRE for what that gap COSTS. The entry above states an unmet obligation; this
+#     one states the consequence, executably.
+#
+#     A body referencing `LIMIT` records the ConstId and nothing about its value, so
+#     changing `const LIMIT: Int = 10` to `= 99` moves neither the body digest nor the
+#     subject digest. A proof about that function stays valid-looking after the constant
+#     it depends on changes — freshness failing through the dependency axis.
+#
+#     Asserts the CURRENT WRONG verdict, so it FAILS when step 3 binds ConstId to an
+#     initializer digest. That failure is the signal to convert this leg into a positive
+#     one, not to delete it.
+if [ -x .lake/build/bin/concrete ]; then
+  TD_CONST="$(mktemp -d)"
+  printf 'mod m { const LIMIT: Int = 10;\n  pub fn f(p: Int) -> Bool { return p < LIMIT; } }\n' > "$TD_CONST/a.con"
+  printf 'mod m { const LIMIT: Int = 99;\n  pub fn f(p: Int) -> Bool { return p < LIMIT; } }\n' > "$TD_CONST/b.con"
+  cdig() { .lake/build/bin/concrete "$1" --report subject-facts 2>/dev/null \
+             | grep "subject digest:" | head -1 | sed 's/^ *subject digest: //' || true; }
+  da="$(cdig "$TD_CONST/a.con")"; db="$(cdig "$TD_CONST/b.con")"
+  rm -rf "$TD_CONST"
+  if [ -z "$da" ] || [ -z "$db" ]; then
+    no "the constant-freshness tripwire produced no digest — inconclusive, not a verdict"
+  elif [ "$da" = "$db" ]; then
+    ok "TRIPWIRE: a constant's VALUE does not reach the subject digest (LIMIT 10 vs 99 collide)"
+  else
+    no "a constant's value now moves the subject digest — step 3 has landed. CONVERT this tripwire into a positive assertion and update entry 4"
+  fi
+else
+  no "no built compiler; the constant-freshness tripwire did NOT run"
 fi
 
 # --- R-0004: open language decision --------------------------------------------------

@@ -492,6 +492,9 @@ jobs:
       - name: "Shadow body V2 (R-0004 — structural body digest reaches the report and nothing authoritative; coverage ratchet)"
         run: bash scripts/tests/check_shadow_body_v2.sh
 
+      - name: "Mutation anchors (every MUT_OLD still exists in its file — the harness itself is not run in CI)"
+        run: bash scripts/tests/check_mutation_anchors.sh
+
       - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
         run: bash scripts/tests/check_binder_refs.sh
 

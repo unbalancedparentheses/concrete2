@@ -954,7 +954,11 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       | .named _enumName => .placeholder  -- would need enum lookup for Ok field
       | .generic _ [okTy, _] => okTy
       | _ => .placeholder
-    return ElaboratedExprV2.mk (CExpr.try_ cInner resultTy) (Proof.evUnhandledExpr "try: residual TypeId not minted here")
+    -- `x?` is not `x`: the propagation path is part of the meaning, and the RESIDUAL
+    -- type says what is propagated. Was a gap only because `TypeId` could not express it.
+    let residualRef ← typeRefOf resultTy
+    return ElaboratedExprV2.mk (CExpr.try_ cInner resultTy)
+      (Proof.evTryProp cInnerEv.evidence residualRef)
 
   | .arrayLit _ elems =>
     match elems with
@@ -1527,10 +1531,16 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
       | none => pure cVal.ty
     if isGhost then
       addGhostVar name
-      return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.letBind true none cValEv.evidence)
+      let declRef ← match ty with
+        | some t => do pure (some (← typeRefOf (← resolveTypeE t)))
+        | none => pure none
+      return ElaboratedStmtV2.mk [] (Proof.EvidenceStmtV2.letBind true declRef cValEv.evidence)
     addVar name finalTy
+    let declRef ← match ty with
+      | some t => do pure (some (← typeRefOf (← resolveTypeE t)))
+      | none => pure none
     return ElaboratedStmtV2.mk [.letDecl name mutable finalTy cVal]
-      (Proof.EvidenceStmtV2.letBind false none cValEv.evidence)
+      (Proof.EvidenceStmtV2.letBind false declRef cValEv.evidence)
 
   | .assign _ name value =>
     match ← lookupVar name with

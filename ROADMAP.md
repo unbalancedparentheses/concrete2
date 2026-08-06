@@ -350,6 +350,63 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
 6. Receipts.
 7. The ninth proof table (blocked on mutable-borrow extraction).
 
+**Decisions this arc queued, in the order they bind.** None is a matter of taste; each puts
+something into versioned bytes or leaves a construct undescribable.
+
+- **Struct-literal initializer evaluation order — blocking before step 5.** Declaration
+  order today, source order for every other positional construct. It was believed to be
+  refused pending a decision; the refusal was a doc comment and an uncalled function, so
+  declaration order has been in the shadow bytes all along. Harmless while shadow, wrong
+  the moment the migration makes those bytes authoritative. `check_convergence_inventory`
+  now enforces that ordering rather than trusting prose.
+- **`TraitId` — blocks the last 2 producer refusals.** A trait method on a type parameter
+  denotes no single function before monomorphization, and `TraitDef` carries only a name
+  and an optional `BuiltinTraitId`. Minting a trait identity mirrors `TypeId`.
+- **Function-type capability-set identity.** Encoding a `fn` type means encoding a
+  capability SET whose variables resolve against a different binder list. Zero corpus
+  occurrences, so it can wait — but it is why `evTypeRef` refuses function types rather
+  than guessing.
+
+### Gate and tooling health (found while building the above, not by any gate)
+
+**The mutation harness could lose coverage silently, in two independent ways.** It is what
+establishes that the other gates are load-bearing, so an inert mutation does not merely
+skip a test — it withdraws the evidence that some gate does any work.
+
+1. A stale anchor printed `SKIPPED (pattern not found in file)`, incremented `ERRORS`, and
+   the harness still **exited 0**; only `SURVIVED > 0` failed it. Fixed: `ERRORS > 0` now
+   fails.
+2. `test_mutation.sh` is not run in CI at all — it rebuilds the compiler twice per
+   mutation — so nothing was checking. Fixed by splitting off the cheap half:
+   `check_mutation_anchors.sh` verifies every `MUT_OLD` still exists in its `MUT_FILE`.
+   Pure string presence, no builds, seconds, every push. It cannot say a mutation is
+   killed; it says whether the mutation can still be applied at all, which is the property
+   that was being lost.
+
+Measured 2026-08-06: **4 of 77 anchors were stale.** Three rotted when the V2 producer
+cutover turned `return .call ...` into `return ElaboratedExprV2.mk (CExpr.call ...)`; the
+fourth when R-0455 replaced a literal Rocq proof template with an interpolated one. All
+four were found by hand, three of them only because someone happened to be editing nearby.
+
+**`push-both` reports a cancelled CI run as red.** It tests `conclusion != "success"` and
+prints *"origin is red. Stop the line."* Two runs today were CANCELLED — one superseded by
+a later push (the workflow sets `cancel-in-progress` for pushes on a ref), one killed by a
+GitHub outage resolving action downloads — and both read as breakage. A cancelled run is
+NO VERDICT and should say so: the correct response is to re-run, not to investigate a
+failure that did not happen.
+
+**Two latent evidence gaps, recorded at their sites and tracked here so they are not
+rediscovered:**
+
+- `alloc`/`free` drop their arguments, so `alloc(1)` and `alloc(2)` share evidence.
+  Unreachable today because they require the `Alloc` capability and capability-bearing
+  functions are excluded from the provable subset; a live collision the moment that is
+  relaxed.
+- **E0264**: a method call on an aliased imported type does not compile (`no method 'get'
+  on type 'Q'`). Pre-existing and unrelated to the evidence work, but it is why the
+  alias half of the imported-method identity split is written correctly and never
+  exercised.
+
 **Still unmeasured:** whether `lookupVar`'s raw binder position is stable across parameters,
 lets, loops, patterns and temporary scopes. Nothing depends on it — relative frame positions
 are used instead — and it must not enter canonical bytes until measured.
