@@ -78,14 +78,58 @@ else
   no "the flat digest now separates p+1 from p*2 ($ua vs $ub) — re-examine what identityUses means before trusting either line"
 fi
 
+# --- the desugared for-loop --------------------------------------------------------------
+# `for (init; cond; step) { body }` lowers to `init; while cond { body; step }` and the
+# evidence mirrors that LOWERING, not the surface form. Each of the four parts must move
+# the digest, or the evidence describes a loop the program does not run.
+forloop() { printf 'mod m { pub fn f(n: Int) -> Int { let mut t: Int = 0;\n  for (%s; %s; %s) { %s }\n  return t; } }\n' "$1" "$2" "$3" "$4" > "$5"; }
+
+forloop "let mut i: Int = 0" "i < n" "i = i + 1" "t = t + i;"  "$TMP/f_base.con"
+forloop "let mut i: Int = 5" "i < n" "i = i + 1" "t = t + i;"  "$TMP/f_init.con"
+forloop "let mut i: Int = 0" "i < t" "i = i + 1" "t = t + i;"  "$TMP/f_cond.con"
+forloop "let mut i: Int = 0" "i < n" "i = i + 2" "t = t + i;"  "$TMP/f_step.con"
+forloop "let mut i: Int = 0" "i < n" "i = i + 1" "t = t + 1;"  "$TMP/f_body.con"
+
+base="$(line_of "$TMP/f_base.con" bodyV2)"
+case "$base" in
+  REFUSED*|ABSENT*|"") no "a plain for-loop does not digest ($base) — the producer should describe it" ;;
+  *)                   ok "a desugared for-loop digests" ;;
+esac
+
+for part in init cond step body; do
+  v="$(line_of "$TMP/f_$part.con" bodyV2)"
+  if [ -z "$base" ] || [ -z "$v" ]; then
+    no "for-loop $part probe produced no digest — inconclusive"
+  elif [ "$v" != "$base" ]; then
+    ok "changing the for-loop $part moves the structural digest"
+  else
+    no "the for-loop $part is INVISIBLE to the structural digest — two different loops share bytes"
+  fi
+done
+
+# The loop FRAME. `break` inside a for-loop must resolve to a relative loop depth. Before
+# the evidence was wired, `forLoop` never pushed `loopFrames` — invisible only because the
+# whole construct was a gap, since a gap node discards its subtree.
+cat > "$TMP/f_break.con" <<'CON'
+mod m { pub fn f(n: Int) -> Int { let mut t: Int = 0;
+  for (let mut i: Int = 0; i < n; i = i + 1) { t = t + i; if t > 10 { break; } }
+  return t; } }
+CON
+b="$(line_of "$TMP/f_break.con" bodyV2)"
+case "$b" in
+  *"loop target"*|*"LoopTarget"*) no "a break inside a for-loop has no enclosing loop frame ($b)" ;;
+  REFUSED*|ABSENT*|"")            no "the for-loop break probe did not digest ($b)" ;;
+  *)                              ok "a break inside a for-loop resolves to its enclosing loop" ;;
+esac
+
 # --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
-# A for-loop is currently unhandled by the producer, so this subject must be refused.
+# An array literal is unhandled by the producer — its element type needs a name that
+# `TypeId` cannot express — so this subject must be refused.
 cat > "$TMP/gap.con" <<'CON'
 mod m {
-  pub fn f(n: Int) -> Int {
-    let mut t: Int = 0;
-    for (let mut i: Int = 0; i < n; i = i + 1) { t = t + i; }
-    return t;
+  pub fn f() -> Int {
+    let a: [Int; 2] = [1, 2];
+    return a[0];
   }
 }
 CON
@@ -101,12 +145,18 @@ esac
 # codes says "statements and expressions" — true and useless. The detail is what drives the
 # remaining producer work.
 case "$g" in
-  *"for-loop"*) ok "the refusal names the construct, not just its gap code" ;;
-  *)            no "the refusal does not name the unhandled construct ($g)" ;;
+  *"array literal"*) ok "the refusal names the construct, not just its gap code" ;;
+  *)                 no "the refusal does not name the unhandled construct ($g)" ;;
 esac
 
 # --- ratchet: corpus coverage must not regress ------------------------------------------
-# Measured 2026-08-05: 292 of 432 subjects digest, 0 absent.
+# Measured 2026-08-06: 316 of 432 subjects digest, 0 absent (292 before the for-loop).
+#
+# A GAP NODE DISCARDS ITS SUBTREE, so this number does not move by the count of refusals
+# closed. Wiring the for-loop closed 54 of them and coverage rose by 24: the other 30 bodies
+# contained a second unhandled construct that the for-loop gap had been hiding, and the cast
+# row went 11 -> 23 for exactly that reason. Read the per-construct counts as a lower bound
+# on remaining work, never as a partition of it.
 #
 # The corpus is NAMED and its existence asserted. The first version of this gate passed
 # `tests/valid_programs examples proofs` to find with stderr silenced; the first does not
@@ -151,7 +201,7 @@ else
   no "$absent subjects have NO structural body — the body is not reaching ProofCore for them"
 fi
 
-FLOOR=292
+FLOOR=316
 if [ "$digested" -ge "$FLOOR" ]; then
   ok "structural coverage $digested/$total (floor $FLOOR)"
 else

@@ -1609,22 +1609,45 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
 
   | .forLoop _ init cond step body label =>
     -- Desugar: for (init; cond; step) { body } → init; while cond { body; step }
+    --
+    -- The evidence MIRRORS THE LOWERING rather than the surface form: a block holding
+    -- the init, then a loop whose body is `body ++ step`. That is what the program
+    -- does, and describing the surface instead would record a loop whose body omits
+    -- the step — a body that runs code the evidence does not mention.
     let mut result : List CStmt := []
+    let mut initEv : List Proof.EvidenceStmtV2 := []
     match init with
     | some initStmt =>
       let cInitEv ← elabStmtEv initStmt
       result := result ++ cInitEv.core
+      initEv := [cInitEv.evidence]
     | none => pure ()
     let cCondEv ← elabExprEv cond (some .bool)
     let cCond := cCondEv.core
+    -- The frame covers the BODY and the STEP, matching `while_`: a `break` in the
+    -- CONDITION is not inside this loop. Without this push a `break` in a for-loop
+    -- body resolves against the enclosing loop, or against none at all — a defect
+    -- that was invisible while the whole construct was a gap, because a gap node
+    -- discards its subtree.
+    let outer ← getEnv
+    setEnv { outer with loopFrames := label :: outer.loopFrames }
     let cBodyEv ← elabStmtsEv body
     let cBody := cBodyEv.flatMap (·.core)
-    let cStep ← match step with
-      | some stepStmt => do let e ← elabStmtEv stepStmt; pure e.core
-      | none => pure []
+    let stepRes ← match step with
+      | some stepStmt => do
+        let e ← elabStmtEv stepStmt
+        pure (e.core, [e.evidence])
+      | none => pure ([], [])
+    let cStep := stepRes.1
+    let stepEv := stepRes.2
+    let inner ← getEnv
+    setEnv { inner with loopFrames := outer.loopFrames }
     let whileBody := cBody ++ cStep
     result := result ++ [.while_ cCond whileBody label cStep]
-    return ElaboratedStmtV2.mk result (Proof.evUnhandledStmt "desugared for-loop")
+    return ElaboratedStmtV2.mk result
+      (Proof.EvidenceStmtV2.block
+        (initEv ++ [Proof.EvidenceStmtV2.loop cCondEv.evidence [] none
+                      (cBodyEv.map (·.evidence) ++ stepEv)]))
 
   | .fieldAssign _ obj field value =>
     let cObjEv ← elabExprEv obj

@@ -214,7 +214,7 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    non-authoritative; the subject digest is still V1-frozen, and
    `check_shadow_body_v2.sh` asserts `bodyBytesV2` reaches nothing but the report.
 
-   First measurement of the real corpus: **292 of 432 subjects digest, 0 absent**. Every
+   First measurement of the real corpus: **292 of 432 subjects digest, 0 absent** (316 after 2a wired the for-loop). Every
    subject has a structural body threaded, so what remains is the producer declining to
    describe constructs, not the body failing to arrive. The refusals name the construct
    rather than the gap code, which turns them into the work list:
@@ -235,10 +235,40 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    The 292 is a ratchet floor, not a target. A drop means a construct that used to be
    described stopped being described.
 
-2a. Close those refusals, heaviest first. The for-loop and array-literal rows are 97 of
-   the 140 between them, and neither is a language question — both are identities the
-   producer has to mint where it currently does not. The assume row is different in kind:
-   it also feeds the assumption axis, so it must not yield an unqualified claim.
+2a. Close those refusals, heaviest first.
+
+   **Done: the desugared for-loop** (54 refusals). Its evidence mirrors the LOWERING —
+   `for (init; cond; step) { body }` becomes a `block` holding the init and a `loop` over
+   `body ++ step` — because describing the surface form instead would record a loop whose
+   body omits code the program runs. Every part was already elaborated at the site; only
+   the evidence was discarded.
+
+   Wired together with a defect it was hiding: `while_` pushes `loopFrames` around its body
+   so `break`/`continue` resolve to a relative loop depth, and `forLoop` never did. That was
+   invisible while the construct was a gap, and wiring the node alone would have converted a
+   hidden defect into an `unresolvedLoopTarget` on every `break` in a for-loop.
+
+   **A gap node discards its subtree**, which changes how the table above must be read.
+   Closing 54 refusals raised coverage by 24, not 54: the other 30 bodies contained a second
+   unhandled construct the for-loop gap had been hiding, and the cast row rose 11 → 23 for
+   exactly that reason. The per-construct counts are a LOWER BOUND on remaining work, never
+   a partition of it. Corpus now **316 of 432**.
+
+   **Array literal (43) and cast (23) are blocked on a decision, not on assembly.**
+   `arrayLit (elemTy : TypeId)` and `cast (target : TypeId)` must name types like `Int` and
+   `[Int; 3]`, and `TypeId` expresses only user structs/enums and builtin enums. Neither
+   existing serializer substitutes: `tyCanonical` and `boundTyCanonical` are total and
+   structural, but both render a named type by its SOURCE SPELLING (`.named n => n`), which
+   is precisely what `TypeId` exists to prevent. Evidence needs a rendering that is
+   structural over primitives AND nominal-by-identity. That is a new decision and should be
+   made explicitly rather than settled by whichever type happened to be in scope.
+
+   (The spelling fallback does not collide today: two modules each declaring `Point` give
+   identical `params: [(p, Point)]` but different subject AND body digests, because the body
+   identifies the field through a `TypeId`-owned `FieldId`. Measured, not assumed.)
+
+   The assume row (7) is different in kind from all of these: its predicate also feeds the
+   assumption axis, so it must not yield an unqualified claim.
 3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
    and assumption edges, table reachability.
 4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong

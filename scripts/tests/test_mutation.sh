@@ -806,6 +806,37 @@ MUT_NEW+=("  (b.statements.flatMap stmtFlatUses).eraseDups -- MUTATION: drop rep
 MUT_DESC+=("flatUsesOf: repeated identity uses collapsed")
 gate_for_last "scripts/tests/check_binder_refs.sh"
 
+# The desugared for-loop. Its evidence mirrors the LOWERING (init; while cond { body; step }),
+# so each part must be present or the evidence describes a loop the program does not run.
+#
+# `stepEv.drop 1` rather than `[]`: dropping the binding outright leaves it unused, Lean's
+# linter rejects the file, and the mutation scores KILLED (build) — which proves the
+# compiler noticed, not that the gate did.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("(cBodyEv.map (·.evidence) ++ stepEv)")
+MUT_NEW+=("(cBodyEv.map (·.evidence) ++ stepEv.drop 1) -- MUTATION: step omitted from the loop body")
+MUT_DESC+=("for-loop evidence: step omitted")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      initEv := [cInitEv.evidence]")
+MUT_NEW+=("      initEv := [] -- MUTATION: init omitted from the block")
+MUT_DESC+=("for-loop evidence: init omitted")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# The loop FRAME, not the node. Without the push a `break` in a for-loop body has no
+# enclosing loop to resolve against.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("    setEnv { outer with loopFrames := label :: outer.loopFrames }
+    let cBodyEv ← elabStmtsEv body
+    let cBody := cBodyEv.flatMap (·.core)
+    let stepRes ← match step with")
+MUT_NEW+=("    let cBodyEv ← elabStmtsEv body
+    let cBody := cBodyEv.flatMap (·.core)
+    let stepRes ← match step with -- MUTATION: no loop frame for the for-loop body")
+MUT_DESC+=("for-loop: body elaborated with no loop frame")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
 # REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
 # match still compiles — the case a type-checker alone cannot catch. The reflective
