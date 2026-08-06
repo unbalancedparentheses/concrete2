@@ -131,6 +131,98 @@ partial def vcStmt (s : Stmt) : List Requirement :=
   | _ => []
 end
 
+/-! ## `wp` over statements — the path condition, accumulated rather than threaded
+
+`scopedWalk` carries the enclosing hypotheses by hand: it appends the guard on the then-branch,
+`negateGuard c` on the else-branch, loop hypotheses in bodies, and calls `dropStaleHyps` when a
+statement reassigns a variable a hypothesis mentions.
+
+Those are the `if` and `while` rules of a weakest-precondition calculus, written out longhand. Here
+they fall out of the recursion, which is the second half of the design's claim: **one mechanism
+replaces two.**
+
+Reassignment is where this got a claim wrong, and the correction is worth keeping. `scopedWalk`
+DROPS any hypothesis mentioning a reassigned variable; WP would SUBSTITUTE
+(`wp(x := e, Q) = Q[x := e]`), which is strictly stronger — after `d = d - 1` the fact `d != 0`
+becomes `d - 1 != 0` and survives, where dropping loses it.
+
+An earlier version of this comment concluded that the calculus should therefore RETAIN the
+hypothesis, and that a divergence from the walker would be the calculus being right. That was
+wrong: substitution is stronger, but retaining WITHOUT substituting is neither — it keeps a fact
+about the old value and calls it a fact about the new one. On
+`div_scope_adversarial.stale` — `if d != 0 { d = d - 1; return n / d; }` — it proves a division
+safe that is not. The differential found it on the single fixture built for the purpose.
+
+So this slice DROPS, matching the walker. Substitution is the principled replacement and is future
+work; until it exists, dropping is the sound choice and the stronger-sounding option is a bug. -/
+
+/-- A requirement together with the path condition holding where it arises. -/
+abbrev Guarded := Requirement × List Expr
+
+mutual
+/-- Expression requirements, all under the same path condition. -/
+partial def vcExprG (gs : List Expr) (e : Expr) : List Guarded :=
+  (vcExpr e).map (fun r => (r, gs))
+
+/-- Statement traversal accumulating the path condition, exactly as WP's rules prescribe. -/
+partial def vcStmtG (gs : List Expr) (lcs : List LoopContract) (s : Stmt) : List Guarded :=
+  match s with
+  | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => vcExprG gs v
+  | .return_ _ (some v) => vcExprG gs v
+  | .assert_ _ c | .assume_ _ c => vcExprG gs c
+  | .ifElse _ c t el =>
+      -- the two WP branch rules: `c` holds in the then-branch, `¬c` in the else-branch.
+      vcExprG gs c
+        ++ vcStmtsG (gs ++ [c]) lcs t
+        ++ vcStmtsG (gs ++ (negateGuard c).toList) lcs (el.getD [])
+  | .while_ sp c b _ =>
+      vcExprG gs c ++ vcStmtsG (gs ++ loopHypsAt lcs sp.line) lcs b
+  | .forLoop sp init c step b _ =>
+      ((init.map (vcStmtG gs lcs)).getD []) ++ vcExprG gs c
+        ++ ((step.map (vcStmtG gs lcs)).getD [])
+        ++ vcStmtsG (gs ++ loopHypsAt lcs sp.line) lcs b
+  | .fieldAssign _ o _ v | .derefAssign _ o v => vcExprG gs o ++ vcExprG gs v
+  | .arrayIndexAssign _ a i v =>
+      (.indexInRange a i, gs) :: (vcExprG gs a ++ vcExprG gs i ++ vcExprG gs v)
+  | .borrowIn _ _ _ _ _ b => vcStmtsG gs lcs b
+  | .letDestructure _ _ _ _ v _ => vcExprG gs v
+  | .letStructDestructure _ _ _ v => vcExprG gs v
+  | _ => []
+
+/-- WP's SEQUENTIAL rule, and the reason a per-statement `flatMap` is not enough.
+
+    After `if c { return … }` the remaining statements run only when `¬c`, so the path condition
+    for the tail must gain `negateGuard c`. `scopedWalk` implements this as its fall-through case;
+    without it the calculus loses a hypothesis the walker has, which the differential caught on
+    `fmt.format_int` (`10 | value != 0` there, `10 |` here).
+
+    Guards accumulate left-to-right across the list — that IS `wp(s₁; s₂, Q)` unrolled. -/
+partial def vcStmtsG (gs : List Expr) (lcs : List LoopContract) : List Stmt → List Guarded
+  | [] => []
+  | s :: rest =>
+      let here := vcStmtG gs lcs s
+      -- a then-branch that always returns means the tail is reached only under ¬c
+      -- A statement that REASSIGNS a variable invalidates every hypothesis mentioning it. This
+      -- is not optional bookkeeping: on `if d != 0 { d = d - 1; return n / d; }` the guard is
+      -- about the OLD `d`, and retaining it proves a division safe that is not.
+      --
+      -- I had written the opposite into this file an hour earlier -- that keeping the hypothesis
+      -- would be "the calculus being right" -- reasoning that WP's substitution rule is stronger
+      -- than dropping. Substitution IS stronger, but I implemented neither substitution nor
+      -- dropping, and the combination is UNSOUND rather than strong. The differential caught it
+      -- on the one fixture built for exactly this (`div_scope_adversarial.stale`).
+      --
+      -- Dropping matches the walker and is sound. Substitution (`wp(x := e, Q) = Q[x := e]`) is
+      -- the principled replacement and would RETAIN the fact as `d - 1 != 0`; until it exists,
+      -- this must drop.
+      let afterAssign := dropStaleHyps gs (assignedScalarsS s)
+      let tailGs := match s with
+        | .ifElse _ c t none =>
+            if blockTerminates t then gs ++ (negateGuard c).toList else afterAssign
+        | _ => afterAssign
+      here ++ vcStmtsG tailGs lcs rest
+end
+
 /-! ### Differential against the existing walkers
 
 The walkers are the oracle: nine defects found, fixed and gated, so they are the best available
@@ -182,6 +274,19 @@ def arithHere (f : FnDef) : List String :=
 def arithThere (f : FnDef) : List String :=
   (f.body.flatMap collectArithS).map Concrete.fmtExpr
 
+/-- Div requirements WITH their path condition, from the calculus. -/
+def divGuardedHere (f : FnDef) : List String :=
+  (vcStmtsG [] f.loopContracts f.body).filterMap fun (r, gs) =>
+    match r with
+    | .divisorNonZero _ _ d =>
+        some s!"{Concrete.fmtExpr d} | {" & ".intercalate (gs.map Concrete.fmtExpr)}"
+    | _ => none
+
+/-- The same from `scopedWalk`, whose `scope` is the hand-threaded equivalent. -/
+def divGuardedThere (f : FnDef) : List String :=
+  (scopedDivB f.loopContracts [] (paramDecls f) f.body).map fun (_, _, d, scope, _) =>
+    s!"{Concrete.fmtExpr d} | {" & ".intercalate (scope.map Concrete.fmtExpr)}"
+
 /-- Per-function diff: `(qualName, family, onlyHere, onlyThere)`, empty when they agree.
 
     Multiset-shaped rather than set-shaped: a duplicated obligation is a real difference, and
@@ -192,7 +297,8 @@ def diff (modules : List Module) : List (String × String × List String × List
     let fq := pfx ++ f.name
     for (fam, here, there) in
         [("div", divisorsHere f, divisorsThere f), ("shift", shiftsHere f, shiftsThere f),
-         ("bounds", boundsHere f, boundsThere f), ("overflow", arithHere f, arithThere f)] do
+         ("bounds", boundsHere f, boundsThere f), ("overflow", arithHere f, arithThere f),
+         ("div+guards", divGuardedHere f, divGuardedThere f)] do
       let onlyHere := here.filter (fun x => (here.count x) > (there.count x))
       let onlyThere := there.filter (fun x => (there.count x) > (here.count x))
       if !onlyHere.isEmpty || !onlyThere.isEmpty then
