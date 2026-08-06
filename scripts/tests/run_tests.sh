@@ -2905,7 +2905,7 @@ check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
 
 # Not eligible
 check_report "$TESTDIR/adversarial_profile_mixed_evidence.con" proof-status \
-    "fails predictable profile" \
+    "fails the proof-eligibility gates" \
     "proof-status: ineligible function shown with reason" \
     "proof-status: ineligible function missing"
 

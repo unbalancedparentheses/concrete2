@@ -10,6 +10,77 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Obligation Discovery: Two Certified-False Claims Removed
+
+_Branch `spike/multi-prover-evidence`, 2026-08-05._
+
+Registers A, B and C all begin *after* an obligation exists. None can observe an obligation that
+was never **generated**: a missed check produces no failed proof and no `unproven` marker, just a
+green report. Making the four discovery walkers total (they were `partial`, so no theorem could
+mention them) allowed the first statements about that prior question — and writing the
+completeness predicates forced the question *"which constructs actually reach an obligation?"*,
+which found seven defects. **Two were unsound.**
+
+**A shadowed array was sized from the wrong binding:**
+
+```
+let a: [i32; 16] = [0; 16];
+let a: [i32; 4]  = [7; 4];
+return a[10];              // generated: 0 ≤ 10 ∧ 10 < 16  →  PROVED
+```
+
+`10 < 16` is true, so the kernel proved it and `--report vcs` read `2 proved, 0 outstanding` for a
+program that traps. **A shadowed variable did the same to shift widths:** `x << 40` where
+`x : i8` took width 64 from an earlier `x : i64`, giving `40 < 64` — also proved. Both are now
+correctly sized and **refuted**.
+
+Memory safety was never affected: codegen bounds-checks and traps at every access regardless.
+What was false was the *proof report* — and a release gate demanding all VCs proved would have
+passed both programs.
+
+Five further defects were missing obligations rather than wrong ones: `(a)[i]`,
+`let a = [0; 16]` (unannotated), an array declared in a nested block, `b.data[i]` (field-rooted),
+and an `#[overflow_checked]` addition under shadowing. All fixed by threading declared types and
+array lengths **per scope** instead of resolving them in a flat, function-wide, name-keyed map.
+
+**The corpus covered none of it.** `make test` was 1702/0 before and after every fix — no fixture
+used a parenthesised access, a shadowed array, an unannotated array literal, or a nested
+declaration. Every regression guard is therefore end-to-end (compile a program, count VCs) rather
+than a `rfl` lock: a lock only protects code someone thought to exercise.
+
+### Predictable Profile: Three Fail-Open Gates Closed
+
+_Branch `spike/multi-prover-evidence`, 2026-08-05._
+
+`--check predictable` advertises bounded iteration and no recursion as compiler-enforced. Three
+of its analyses reported that a property held when they could not establish it.
+
+- **Non-terminating loops were `bounded`.** The rule asked "is the condition a comparison?" and
+  "is the step list non-empty?" and tied them to nothing, so `for (…; i < n; z = z + 1)` and
+  `for (…; i < n; i = i - 1)` both passed and the report said `0 unbounded loops`.
+- **Recursion through a function pointer was invisible** — no call-graph edge, so SCC found no
+  cycle.
+- **`--report stack-depth` stated `Max stack bound: 32 bytes`** for arbitrarily deep recursion,
+  and recursive callees were filtered out of every chain so a caller of an unbounded function kept
+  a finite bound. A false number is worse than a missing one: it is quotable.
+
+**These are liveness claims, which is why no obligation could have caught them.** Every proof
+obligation rules out a bad *event*; a program that hangs or overflows the stack performs no bad
+event.
+
+Admission is now transitive across all five gates — alloc and blocking already were, via
+`E0520: requires Alloc but caller has (none)`, and a fn-pointer type carries its capset so a
+combinator cannot launder one. **Reclassification, measured:** loop classifier zero, FFI 3
+examples, recursion transitivity 14 functions across 10 examples — all true positives. Nothing
+stops compiling; these are admission and label changes.
+
+Separately, "passes the predictable profile" was naming two different properties once admission
+became transitive, and `--check predictable` and `--report proof-status` printed opposite claims
+about the same function. Proof eligibility stays **per-body** deliberately — a caller's own
+overflow obligation is provable whether or not its callee terminates — so the fix was vocabulary,
+not logic.
+
+
 ### Test Harness: `lli` Is Probed For Function, Not Just Presence
 
 _Branch `spike/multi-prover-evidence`, 2026-08-04._

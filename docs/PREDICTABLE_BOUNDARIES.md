@@ -234,6 +234,35 @@ of them kept passing the unclosed set — including the policy path — so the g
 rejects a build was the one still on the direct-callee check. `Report.profileClosures` now
 returns both closed sets together, so a consumer cannot obtain one without the other.
 
+### Two properties, deliberately different — and they must not share a phrase
+
+Making admission transitive changed what "passes the predictable profile" means. `ProofCore`
+computes its own version of that same-named property to decide **proof eligibility**, and was
+left alone on purpose. The result was two commands printing opposite claims about one function:
+
+```
+--check predictable    caller — reaches a function whose recursion cannot be ruled out
+--report proof-status   `caller` passes the predictable profile
+```
+
+The logic was right in both places. The **phrase** was doing two jobs.
+
+| | asks | shape |
+|---|---|---|
+| **Admission** (`--check predictable`) | is this function's execution predictable? | transitive — running `f` runs `g` |
+| **Proof eligibility** (`--report proof-status`) | can this body's obligations be proved? | per-body |
+
+**Eligibility must not become transitive.** `caller`'s own overflow obligation is provable
+whether or not `recurses` terminates: overflow is a safety property (a bad event that never
+happens), non-termination is a liveness one. Making eligibility transitive would refuse a
+provable obligation for no soundness gain — it would destroy proofs to tidy a name.
+
+So the fix was vocabulary, not logic: the proof surface now says "eligible for proof" /
+"fails the proof-eligibility gates". The reasons field it builds from was called `profileGates`
+while holding things like `is entry point (main)` and `has capabilities: Console` — which are not
+profile gates at all — and is now `eligibilityReasons`. A gate asserts the two surfaces may
+disagree about a function and that neither speaks in the other's vocabulary.
+
 **Still not transitive, deliberately:** `proofReport`'s extraction eligibility
 (`proofExclusionReasons`). That answers a different question — can this body be extracted to
 Gallina — and changing it would affect which proofs are attempted, so it is a separate decision

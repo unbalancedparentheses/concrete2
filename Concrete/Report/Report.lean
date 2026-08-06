@@ -955,7 +955,7 @@ structure ProofStatusEntry where
   state         : ProofState
   currentFp     : String       -- current body fingerprint
   expectedFp    : String       -- registered fingerprint (empty if no proof)
-  profileGates  : List String  -- reasons the function fails profile (empty if passes)
+  eligibilityReasons  : List String  -- reasons the function is not eligible for proof
   unsupported   : List String  -- unsupported constructs (empty unless blocked)
   specName      : String       -- spec name (from registry or derived)
   proofName     : String       -- proof/theorem name (from registry or derived)
@@ -1005,7 +1005,7 @@ private partial def collectProofStatus
       | some o => o.functionId.fingerprint
       | none => bodyFingerprint f.body
     let gates := match obl with
-      | some o => o.profileGates
+      | some o => o.eligibilityReasons
       | none => []
     let expectedFp := match obl with
       | some o => o.expectedFp
@@ -1029,7 +1029,7 @@ private partial def collectProofStatus
       | some _ => "source_linked"
       | none => if pSrc == "hardcoded" then "hardcoded" else ""
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
-    , profileGates := gates, unsupported := unsup, specName := sName, proofName := pName
+    , eligibilityReasons := gates, unsupported := unsup, specName := sName, proofName := pName
     , proofSource := pSrc, origin, coverage
     , specDriftCovered := (Concrete.Proof.specFor qualName).isSome
     , notCurrentDeps := match obl with | some o => o.notCurrentDeps | none => []
@@ -1101,14 +1101,14 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
     s!"-- dependency not current {String.ofList (List.replicate 34 '-')} {locStr}\n\n  `{e.qualName}` cannot contribute proved evidence: it reaches a dependency that is not current.{snippet}\n\n  not current:\n{depLines}\n\n  This function's own subject is FRESH — the problem is downstream. Make the\n  listed dependencies current and this claim recovers on its own.{coverageTag}{originLine}\n\n  hint: Re-verify and update those fingerprints, attach their missing proofs, or mark a boundary trusted."
   | .notProved =>
-    s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` passes the predictable profile but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
+    s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` is eligible for proof but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
   | .blocked =>
     let unsupStr := if e.unsupported.isEmpty then "unsupported constructs"
         else ", ".intercalate e.unsupported
     s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is eligible but uses unsupported constructs — extraction failed.{snippet}\n\n  unsupported: {unsupStr}\n\n  hint: Remove {unsupStr} to enable proof extraction."
   | .notEligible =>
-    let gateStr := ", ".intercalate e.profileGates
-    s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails predictable profile ({gateStr}).{snippet}\n\n  reasons: {gateStr}\n\n  hint: Address these constraints to make this function eligible for proof."
+    let gateStr := ", ".intercalate e.eligibilityReasons
+    s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails the proof-eligibility gates ({gateStr}).{snippet}\n\n  reasons: {gateStr}\n\n  hint: Address these constraints to make this function eligible for proof."
   | .trusted =>
     s!"-- trusted {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is marked trusted — proof is bypassed (trusted assumption).{snippet}"
 
@@ -1172,8 +1172,8 @@ def provableV1ConformanceReport (modules : List CModule) (locMap : FnLocMap := [
   let excludedLines := excludedEntries.map fun e =>
     let reason :=
       if e.state matches .trusted then "trusted"
-      else if e.profileGates.isEmpty then "by profile"
-      else ", ".intercalate e.profileGates
+      else if e.eligibilityReasons.isEmpty then "by profile"
+      else ", ".intercalate e.eligibilityReasons
     s!"  excluded  `{e.qualName}` — by design ({reason})"
   let chunks :=
     (if inLines.isEmpty then []
@@ -4058,7 +4058,7 @@ private def proofStatusToFact (e : ProofStatusEntry) : Val :=
     ++ (if e.specName.isEmpty then [] else [("spec", .str e.specName)])
     ++ (if e.proofName.isEmpty then [] else [("proof", .str e.proofName)])
     ++ (if e.proofSource == "none" then [] else [("source", .str e.proofSource)])
-    ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
+    ++ (if e.eligibilityReasons.isEmpty then [] else [("profile_gates", .arr (e.eligibilityReasons.map .str))])
     ++ (if e.unsupported.isEmpty then [] else [("unsupported", .arr (e.unsupported.map .str))])
     ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)]))
 
@@ -4752,7 +4752,7 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
       | .stale => "Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
       | .notProved => "Add a Lean proof for this function in Concrete/Proof.lean with the current fingerprint."
       | .blocked => "Remove unsupported constructs to enable proof extraction."
-      | .notEligible => s!"Remove {", ".intercalate e.profileGates} to make this function eligible for proof."
+      | .notEligible => s!"Remove {", ".intercalate e.eligibilityReasons} to make this function eligible for proof."
       | _ => ""
     (Val.obj ([
       ("schema_version", .num (Int.ofNat schemaVersion)),
@@ -4762,7 +4762,7 @@ def proofQuery (modules : List CModule) (locMap : FnLocMap)
       ("answer", .str stateStr),
       ("current_fingerprint", .str e.currentFp)
     ] ++ (if e.expectedFp.isEmpty then [] else [("expected_fingerprint", .str e.expectedFp)])
-      ++ (if e.profileGates.isEmpty then [] else [("profile_gates", .arr (e.profileGates.map .str))])
+      ++ (if e.eligibilityReasons.isEmpty then [] else [("profile_gates", .arr (e.eligibilityReasons.map .str))])
       ++ (if hintStr.isEmpty then [] else [("hint", .str hintStr)])
       ++ [("loc", locToJson e.loc)])).render
 
@@ -4910,8 +4910,8 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
         ("state", .str proofState),
         ("fingerprint", .str fingerprint)
       ] ++ match fnProof with
-        | some e => if e.profileGates.isEmpty then []
-          else [("profile_gates", .arr (e.profileGates.map .str))]
+        | some e => if e.eligibilityReasons.isEmpty then []
+          else [("profile_gates", .arr (e.eligibilityReasons.map .str))]
         | none => [])),
       ("allocation", allocInfo)
     ]).render
