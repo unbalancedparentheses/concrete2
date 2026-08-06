@@ -942,6 +942,7 @@ nothing for it to notice — the same blind spot mutation coverage has, one leve
 closes it is the totality lock against `allTrapConditions`, which fails when a condition in
 `IntArith` is claimed by no family. -/
 
+mutual
 def collectShiftsE : Expr → List (Expr × Expr)
   | .binOp _ .shl l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
   | .binOp _ .shr l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
@@ -959,6 +960,12 @@ def collectShiftsE : Expr → List (Expr × Expr)
         ++ (base.attach.map (fun ⟨e, _⟩ => collectShiftsE e)).getD []
   | .enumLit _ _ _ _ fs => fs.attach.flatMap (fun ⟨(_, fe), _⟩ => collectShiftsE fe)
   | .allocCall _ x a => collectShiftsE x ++ collectShiftsE a
+  -- `.ifExpr` was MISSING until 2026-08-06: a shift inside an if-EXPRESSION produced no
+  -- shift-amount obligation at all. Found by per-walker constructor coverage, not by a test --
+  -- all three sibling walkers had this case, which is why a file-granular check could not see it.
+  | .ifExpr _ c t el =>
+      collectShiftsE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
+        ++ el.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
   | .match_ _ sc _ => collectShiftsE sc
   | _ => []
 termination_by e => sizeOf e
@@ -971,6 +978,28 @@ decreasing_by
       | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
       | (rename_i h; subst h; simp +arith; omega)
       | (rename_i h; subst h; simp +arith)
+def collectShiftsS : Stmt → List (Expr × Expr)
+  | .letDecl _ _ _ _ v _ | .assign _ _ v | .expr _ v _ | .defer _ v => collectShiftsE v
+  | .return_ _ (some v) => collectShiftsE v
+  | .ifElse _ c t el => collectShiftsE c ++ t.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e) ++ (el.getD []).attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
+  | .while_ _ c b _ => collectShiftsE c ++ b.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
+  | .forLoop _ init c step b _ =>
+      (init.attach.map (fun ⟨e, _⟩ => collectShiftsS e)).getD [] ++ collectShiftsE c
+        ++ (step.attach.map (fun ⟨e, _⟩ => collectShiftsS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
+  | .fieldAssign _ o _ v | .derefAssign _ o v => collectShiftsE o ++ collectShiftsE v
+  | .arrayIndexAssign _ a i v => collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v
+  | _ => []
+termination_by e => sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+      | omega
+      | (rename_i h; have := List.sizeOf_lt_of_mem h; simp +arith at this ⊢; omega)
+      | (rename_i h; have := sizeOf_mem_getD h; simp +arith at this ⊢; omega)
+      | (rename_i h; subst h; simp +arith; omega)
+      | (rename_i h; subst h; simp +arith)
+end
 
 def shiftLeaf (scope : List Expr) (decls : ScopeDecls) :
     Stmt → List (Expr × Expr × List Expr × Option Ty) :=
