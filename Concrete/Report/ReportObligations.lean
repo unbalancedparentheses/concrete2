@@ -104,6 +104,13 @@ def collectIndexUsesS : Stmt → List (Expr × Expr)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectIndexUsesE o ++ collectIndexUsesE v
   | .arrayIndexAssign _ a idx v =>
       (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v)
+  -- Missing until 2026-08-06, as in the three sibling statement walkers: `assert_`/`assume_`
+  -- carry a condition, `borrowIn` a body, and both destructuring forms a scrutinee, so each is a
+  -- place an indexed access can hide.
+  | .assert_ _ c | .assume_ _ c => collectIndexUsesE c
+  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨x, _⟩ => collectIndexUsesS x)
+  | .letDestructure _ _ _ _ v _ => collectIndexUsesE v
+  | .letStructDestructure _ _ _ v => collectIndexUsesE v
   | _ => []
 termination_by x => sizeOf x
 decreasing_by
@@ -393,6 +400,8 @@ def boundsLeaf (structs : StructFieldEnv) (scope : List Expr) (decls : ScopeDecl
       (collectIndexUsesE o ++ collectIndexUsesE v).map mk
   | .arrayIndexAssign _ a idx v =>
       mk (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx ++ collectIndexUsesE v).map mk
+  -- as in the other three leaves: the condition of an `assert_`/`assume_` was never examined.
+  | .assert_ _ c | .assume_ _ c => (collectIndexUsesE c).map mk
   | _ => []
 
 /-- Index uses paired with the hypotheses in scope at the access (Phase 3 #5 —
@@ -697,6 +706,14 @@ def collectDivisorsS : Stmt → List (Bool × Expr × Expr)
         ++ (step.attach.map (fun ⟨e, _⟩ => collectDivisorsS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectDivisorsE o ++ collectDivisorsE v
   | .arrayIndexAssign _ a i v => collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v
+  -- These five were MISSING from all four statement walkers until 2026-08-06. An obligation
+  -- inside `assert(a / b > 0)` was lost entirely -- verified: zero div-by-zero obligations for
+  -- exactly that program. `assert_`/`assume_` carry a condition, `borrowIn` a body, and both
+  -- destructuring forms a scrutinee, so each is a place obligations can hide.
+  | .assert_ _ c | .assume_ _ c => collectDivisorsE c
+  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨x, _⟩ => collectDivisorsS x)
+  | .letDestructure _ _ _ _ v _ => collectDivisorsE v
+  | .letStructDestructure _ _ _ v => collectDivisorsE v
   | _ => []
 termination_by x => sizeOf x
 decreasing_by
@@ -747,6 +764,10 @@ def divLeaf (scope : List Expr) (decls : ScopeDecls) :
       (collectDivisorsE o ++ collectDivisorsE v).map mk
   | .arrayIndexAssign _ a i v =>
       (collectDivisorsE a ++ collectDivisorsE i ++ collectDivisorsE v).map mk
+  -- `assert_`/`assume_` carry a CONDITION, and no leaf examined it until 2026-08-06: a division
+  -- in `assert(a / b > 0)` produced no obligation at all. The statement traversal calls these
+  -- leaves, so a gap here loses the obligation even when the `…S` walker handles the case.
+  | .assert_ _ c | .assume_ _ c => (collectDivisorsE c).map mk
   | _ => []
 
 /-- Divisor uses paired with the hypotheses in scope at the `/`/`%` (Phase 3 #6 —
@@ -801,6 +822,14 @@ def collectArithS : Stmt → List Expr
         ++ (step.attach.map (fun ⟨e, _⟩ => collectArithS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectArithS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectArithE o ++ collectArithE v
   | .arrayIndexAssign _ a i v => collectArithE a ++ collectArithE i ++ collectArithE v
+  -- These five were MISSING from all four statement walkers until 2026-08-06. An obligation
+  -- inside `assert(a / b > 0)` was lost entirely -- verified: zero div-by-zero obligations for
+  -- exactly that program. `assert_`/`assume_` carry a condition, `borrowIn` a body, and both
+  -- destructuring forms a scrutinee, so each is a place obligations can hide.
+  | .assert_ _ c | .assume_ _ c => collectArithE c
+  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨x, _⟩ => collectArithS x)
+  | .letDestructure _ _ _ _ v _ => collectArithE v
+  | .letStructDestructure _ _ _ v => collectArithE v
   | _ => []
 termination_by x => sizeOf x
 decreasing_by
@@ -832,6 +861,10 @@ def arithLeaf (scope : List Expr) (decls : ScopeDecls) :
       (collectArithE o ++ collectArithE v).map mk
   | .arrayIndexAssign _ a i v =>
       (collectArithE a ++ collectArithE i ++ collectArithE v).map mk
+  -- `assert_`/`assume_` carry a CONDITION, and no leaf examined it until 2026-08-06: a division
+  -- in `assert(a / b > 0)` produced no obligation at all. The statement traversal calls these
+  -- leaves, so a gap here loses the obligation even when the `…S` walker handles the case.
+  | .assert_ _ c | .assume_ _ c => (collectArithE c).map mk
   | _ => []
 
 /-- Arithmetic-op nodes paired with the hypotheses in scope (Phase 3 #7 —
@@ -988,6 +1021,14 @@ def collectShiftsS : Stmt → List (Expr × Expr)
         ++ (step.attach.map (fun ⟨e, _⟩ => collectShiftsS e)).getD [] ++ b.attach.flatMap (fun ⟨e, _⟩ => collectShiftsS e)
   | .fieldAssign _ o _ v | .derefAssign _ o v => collectShiftsE o ++ collectShiftsE v
   | .arrayIndexAssign _ a i v => collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v
+  -- These five were MISSING from all four statement walkers until 2026-08-06. An obligation
+  -- inside `assert(a / b > 0)` was lost entirely -- verified: zero div-by-zero obligations for
+  -- exactly that program. `assert_`/`assume_` carry a condition, `borrowIn` a body, and both
+  -- destructuring forms a scrutinee, so each is a place obligations can hide.
+  | .assert_ _ c | .assume_ _ c => collectShiftsE c
+  | .borrowIn _ _ _ _ _ b => b.attach.flatMap (fun ⟨x, _⟩ => collectShiftsS x)
+  | .letDestructure _ _ _ _ v _ => collectShiftsE v
+  | .letStructDestructure _ _ _ v => collectShiftsE v
   | _ => []
 termination_by e => sizeOf e
 decreasing_by
@@ -1016,6 +1057,10 @@ def shiftLeaf (scope : List Expr) (decls : ScopeDecls) :
       (collectShiftsE o ++ collectShiftsE v).map mk
   | .arrayIndexAssign _ a i v =>
       (collectShiftsE a ++ collectShiftsE i ++ collectShiftsE v).map mk
+  -- `assert_`/`assume_` carry a CONDITION, and no leaf examined it until 2026-08-06: a division
+  -- in `assert(a / b > 0)` produced no obligation at all. The statement traversal calls these
+  -- leaves, so a gap here loses the obligation even when the `…S` walker handles the case.
+  | .assert_ _ c | .assume_ _ c => (collectShiftsE c).map mk
   | _ => []
 
 /-- One shift-amount obligation: `0 ≤ amount < bitWidth(ty)`. -/

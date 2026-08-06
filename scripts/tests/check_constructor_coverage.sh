@@ -121,6 +121,39 @@ for W in collectDivisorsE collectIndexUsesE collectArithE collectShiftsE; do
   covers_def Concrete/Report/ReportObligations.lean "$W" "${OBLIGATION_COMPOUND[@]}"
 done
 
+# STATEMENT side. The expression walkers above are half the story: each has a `…S` partner that
+# decides which STATEMENTS get descended into, and a missing case there loses every obligation
+# inside that statement kind rather than inside one expression. `collectShiftsE` had no partner at
+# all until 2026-08-06, which is exactly how its `.ifExpr` hole survived.
+mapfile -t STMT_CTORS < <(ctors_of Concrete/Frontend/AST.lean Stmt)
+[ "${#STMT_CTORS[@]}" -ge 12 ] || no "extracted only ${#STMT_CTORS[@]} Stmt constructors — parser broken?"
+# Leaves again excluded: these carry no sub-statement and no expression an obligation can hide in.
+STMT_COMPOUND=()
+for c in "${STMT_CTORS[@]}"; do
+  case "$c" in
+    break_|continue_) continue ;;
+    *) STMT_COMPOUND+=("$c") ;;
+  esac
+done
+for W in collectDivisorsS collectIndexUsesS collectArithS collectShiftsS; do
+  covers_def Concrete/Report/ReportObligations.lean "$W" "${STMT_COMPOUND[@]}"
+done
+
+# THE LEAVES, which is where the statement traversal actually looks. `scopedWalkSized` owns
+# recursion into branches and loop bodies and calls a LEAF for each statement's own expressions --
+# so a gap here loses the obligation even when the `…S` walker above handles the case. Adding the
+# `…S` coverage alone turned this gate GREEN while `assert(a / b > 0)` still produced no
+# div-by-zero obligation: a false green, created and then caught within the same hour.
+#
+# The set is smaller than STMT_COMPOUND on purpose: a leaf must handle every statement carrying
+# its OWN expression, and must NOT handle those whose sub-statements the traversal owns
+# (`borrowIn`) or which carry nothing (`break_`, `continue_`).
+LEAF_STMTS=(letDecl assign expr defer return_ ifElse while_ forLoop fieldAssign derefAssign
+            arrayIndexAssign assert_ assume_)
+for L in divLeaf boundsLeaf arithLeaf shiftLeaf; do
+  covers_def Concrete/Report/ReportObligations.lean "$L" "${LEAF_STMTS[@]}"
+done
+
 echo ""
 echo "=== core CExpr (${#CEXPR_CTORS[@]} constructors) handled by every core pass ==="
 [ "${#CEXPR_CTORS[@]}" -ge 20 ] || no "extracted only ${#CEXPR_CTORS[@]} CExpr constructors — parser broken?"
