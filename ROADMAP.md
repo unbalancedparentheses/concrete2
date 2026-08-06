@@ -614,11 +614,35 @@ common type either. Four spellings of Isabelle's bitwise operators were tried ac
 rather than `Bit_Operations`. That is a *syntax/import* question I could not settle, not a
 capability claim about Isabelle: its `HOL-Library.Word` session loads fine.
 
-**So rung 4 stands at 2 of 3 kernels plus a proved model bridge.** What remains is finding the
-correct Isabelle spelling — cheap for someone who knows it, and not worth more guessing from me
-after four attempts. The honest status is *blocked on a known-unknown*, not on a theory problem,
-which is a better position than the earlier assessment ("the model-equivalence proof is the actual
-work") suggested.
+**SOLVED (same day), by looking it up instead of guessing a fifth time.** `AND`/`OR`/`XOR` are the
+right names, but Isabelle keeps the notation in a BUNDLE — `Bit_Operations.thy` line 4186:
+`bundle bit_operations_syntax`. Without opening it, `AND` resolves to a lattice operator, which is
+exactly the `Clash of types "_ ⇒ _"` all four attempts produced. One line fixes it:
+
+```
+theory BwThy
+imports Main
+begin
+unbundle bit_operations_syntax          (* <- this *)
+lemma xor_self: "ALL x::nat. (x XOR x) = 0"  by simp
+lemma and_zero: "ALL x::nat. (x AND 0) = 0"  by simp
+end
+```
+
+Worth recording as a method note, not just a fact: four guesses cost more than one `grep` of the
+distribution's own `.thy` source, which found the bundle immediately.
+
+**So rung 4's blockers are all cleared.** The shared type exists in every kernel:
+
+| kernel | type | positive | negative control |
+|---|---|---|---|
+| Lean | `Nat` | `x ^^^ x = 0`, `x &&& 0 = 0` | `x &&& y = x` REFUSED |
+| Rocq | `N` | axiom-free via `N.lxor_nilpotent`, `N.land_0_r` | — |
+| Isabelle | `nat` (unbundled) | both by `simp` | `x AND y = x` REFUSED |
+
+Plus the model bridge above, proved in Lean against `BitVec 32`. **What remains is only the tier
+itself** — renderers for `Nat`/`N`/`nat`, obligation collection for `u32` bitwise contracts, and
+the gate — i.e. the same shape as the five tiers already landed, with no unknowns left in it.
 
 #### Rungs 6 + 7 — **DONE 2026-08-05.** The ceiling is reached
 
