@@ -1062,7 +1062,7 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
           return ElaboratedExprV2.mk (CExpr.call (mangledMethodName n methodName) typeArgs cArgs retTy)
             (match env.resolveCallee (n ++ "_" ++ methodName) with
              | some id => Proof.evCall id argEvs.reverse
-             | none    => Proof.evUnresolvedCall)
+             | none    => Proof.evTraitMethodOnTypeParam)
       | _ => throwElab .methodCallOnNonNamedType (some e.getSpan)
     else
       let mangledName := mangledMethodName typeName methodName
@@ -1126,7 +1126,7 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         return ElaboratedExprV2.mk (CExpr.call mangledName (objTypeArgs ++ methodArgs) cArgs retTy)
           (match (← getEnv).resolveCallee mangledName with
            | some id => Proof.evCall id argEvs.reverse
-           | none    => Proof.evUnresolvedCall)
+           | none    => Proof.evUnresolvedCall "method call: mangled name has no CallableId")
       | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
   | .staticMethodCall _ typeName methodName typeArgs args =>
@@ -1146,7 +1146,7 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       return ElaboratedExprV2.mk (CExpr.call mangledName typeArgs cArgs retTy)
         (match (← getEnv).resolveCallee mangledName with
          | some id => Proof.evCall id argEvs.reverse
-         | none    => Proof.evUnresolvedCall)
+         | none    => Proof.evUnresolvedCall "static method call: mangled name has no CallableId")
     | none => throwElab (.noMethodOnType methodName typeName) (some e.getSpan)
 
 /-- Elaborate a function call (regular, builtins, intercepted). -/
@@ -1470,7 +1470,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return ElaboratedExprV2.mk (CExpr.call (.indirect fnName) [] cArgs retTy)
       (match (← getEnv).resolveCallee fnName with
        | some id => Proof.evCall id argEvs.reverse
-       | none    => Proof.evUnresolvedCall)
+       | none    => Proof.evUnresolvedCall "call: name has no CallableId")
   | _ => pure ()
   -- Regular function call
   match ← lookupFnSig fnName with
@@ -1508,7 +1508,7 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
     return ElaboratedExprV2.mk (CExpr.call callName inferredTypeArgs cArgs retTy)
       (match (← getEnv).resolveCallee fnName with
        | some id => Proof.evCall id argEvs.reverse
-       | none    => Proof.evUnresolvedCall)
+       | none    => Proof.evUnresolvedCall "call: name has no CallableId")
   | none => throwElab (.undeclaredFunction fnName) span
 
 partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
@@ -2261,6 +2261,41 @@ partial def elabModule (m : Module) (summary : FileSummary)
         if s.externFnSigs.any fun (n, _) => n == sym.name then
           some (localName, CallableId.ofExtern sym.name)
         else none
+  -- IMPORTED IMPL METHODS. `importedCallIds` searches only `s.functions`, so a method on
+  -- an imported TYPE — `w.write_str(..)` where `Writer` comes from `std.io` — had no
+  -- CallableId and every call to one refused the subject. 18 of the corpus's remaining
+  -- 21 unresolvable callees were this, and none of them were a resolution defect: the
+  -- table simply never contained the entries.
+  --
+  -- Keyed by the LOCAL name, IDENTIFIED by the defining module and the ORIGINAL mangled
+  -- name — the same split `importedCallIds` already makes for functions, so a spelling
+  -- cannot become identity. Verified: `a.P_get` and `b.P_get` stay distinct for
+  -- same-spelled methods on same-spelled types in two modules.
+  --
+  -- The ALIAS half of that split is currently unreachable rather than tested: Check
+  -- rejects a method call on an aliased imported type outright (E0264, `no method on
+  -- type Q`), before and after this change alike. The split is written the correct way
+  -- round anyway, so it is right if that limitation is lifted.
+  let importedMethodCallIds : List (String × CallableId) := m.imports.flatMap fun imp =>
+    let summary? := match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+      | some (_, s) => some (s, true)
+      | none => (summaryTable.lookup imp.moduleName).map fun s => (s, false)
+    match summary? with
+    | none => []
+    | some (s, isLocalSubmodule) => imp.symbols.flatMap fun sym =>
+      let defModule := if isLocalSubmodule then thisProofPath ++ "." ++ imp.moduleName else s.name
+      let prefixOrig := sym.name ++ "_"
+      s.implMethodSigs.filterMap fun (mangled, sig) =>
+        if mangled.startsWith prefixOrig then
+          let methodName := mangled.drop prefixOrig.length
+          let localKey := sym.effectiveName ++ "_" ++ methodName
+          let declName := if isLocalSubmodule then
+              let pfx := if proofFnPrefix.isEmpty then imp.moduleName
+                         else proofFnPrefix ++ "_" ++ imp.moduleName
+              pfx ++ "_" ++ mangled
+            else mangled
+          some (localKey, CallableId.ofUser defModule declName sig.typeParams.length)
+        else none
   -- `spec fn` declarations are resolvable targets in contracts. They were in none
   -- of the tables below, so every contract mentioning one (hmac_sha256's
   -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
@@ -2281,16 +2316,21 @@ partial def elabModule (m : Module) (summary : FileSummary)
     | some id => some id
     | none => match importedCallIds.lookup name with
       | some id => some id
-      -- INTRINSICS BEFORE BUILTINS. Many names (`string_length` among them) appear
-      -- in both tables, and builtins-first classified compiler intrinsics as
-      -- `.builtin` — a wrong NAMESPACE in the identity, which is the one field
-      -- that exists to keep two same-named callables apart.
-      | none => match resolveIntrinsic name with
-        | some iid => some (CallableId.ofIntrinsic iid.canonicalName)
-        | none => match builtinFnSigs.find? fun (n, _) => n == name with
-          | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
-          | none => if m.externFns.any fun ef => ef.name == name
-                    then some (CallableId.ofExtern name) else none
+      -- AFTER imported functions, BEFORE intrinsics and builtins. A plain imported
+      -- function must keep priority over a same-named impl method, and an impl method
+      -- must not be shadowed by a builtin of the same mangled spelling.
+      | none => match importedMethodCallIds.lookup name with
+        | some id => some id
+        -- INTRINSICS BEFORE BUILTINS. Many names (`string_length` among them) appear
+        -- in both tables, and builtins-first classified compiler intrinsics as
+        -- `.builtin` — a wrong NAMESPACE in the identity, which is the one field
+        -- that exists to keep two same-named callables apart.
+        | none => match resolveIntrinsic name with
+          | some iid => some (CallableId.ofIntrinsic iid.canonicalName)
+          | none => match builtinFnSigs.find? fun (n, _) => n == name with
+            | some (_, sig) => some { CallableId.ofBuiltin name with typeParams := sig.typeParams.length }
+            | none => if m.externFns.any fun ef => ef.name == name
+                      then some (CallableId.ofExtern name) else none
   -- Constant environment for contracts: identity AND meaning, built once per
   -- module. Only the module's OWN constants: `ConstSummary` carries no initializer
   -- and no defining module, so an imported constant has neither half available and

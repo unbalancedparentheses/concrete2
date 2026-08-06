@@ -119,11 +119,34 @@ def evCall (callee : CallableId) (args : List EvidenceExprV2) : EvidenceExprV2 :
   if callee.isComplete then .call callee args
   else .gap { code := .unresolvedCallee, detail := "incomplete callee identity" }
 
-/-- A call whose callee could not be resolved to an identity at all. Separate from
-    `evCall` so the two refusal REASONS stay distinct in the gap inventory: an
-    unresolvable callee is a producer gap, an incomplete one is an identity defect. -/
-def evUnresolvedCall : EvidenceExprV2 :=
-  .gap { code := .unresolvedCallee, detail := "callee not resolvable to a CallableId" }
+/-- A call whose callee could not be resolved to an identity. Separate from `evCall` so
+    the two refusal REASONS stay distinct: an unresolvable callee is a producer gap, an
+    incomplete one is an identity defect.
+
+    `why` names the SITE. One shared message read as a lookup failure everywhere. Naming
+    them apart immediately disproved my guess about which cause dominated — I had assumed
+    pre-monomorphization polymorphism, and that was 2 of 21 while 18 were a genuine
+    missing table entry. A gap that misdescribes its own cause sends the next reader to
+    the wrong place. -/
+def evUnresolvedCall (why : String) : EvidenceExprV2 :=
+  .gap { code := .unresolvedCallee, detail := why }
+
+/-- A trait method invoked on a TYPE PARAMETER, inside a generic body.
+
+    NOT a lookup failure, and it must not be reported as one. Before monomorphization
+    `a.area()` where `a : T` denotes no single function — which `area` runs depends on the
+    `T` each instantiation supplies, and Core carries a placeholder name that Mono later
+    rewrites. There is nothing for `resolveCallee` to find.
+
+    Describing it faithfully needs a vocabulary this codebase does not have yet: the
+    identity of the TRAIT plus the method, with the receiver as a binder position.
+    `TraitDef` carries only a name and an optional `BuiltinTraitId`, so there is no
+    `TraitId` to name it with — minting one mirrors `TypeId` and is its own slice.
+    Refusing until then is the honest answer; inventing a concrete callee here would put a
+    confidently wrong identity into evidence. -/
+def evTraitMethodOnTypeParam : EvidenceExprV2 :=
+  .gap { code := .unresolvedCallee,
+         detail := "trait method on a type parameter: not one function before monomorphization" }
 
 /-- Anything the producer has no case for yet. The kind string is DIAGNOSTIC only —
     `CompleteEvidenceBodyV2` cannot carry a gap, so it never reaches bytes. -/

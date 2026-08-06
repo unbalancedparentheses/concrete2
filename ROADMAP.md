@@ -295,11 +295,48 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
 
    Corpus **323 of 432** at this point.
 
-   **`assert` (32) is NOT an assembly row** — I mis-classified it. Its predicate is
-   deliberately not elaborated: it may legally read ghost bindings in a proof context,
-   which `elabExprEv` rejects. Wiring it needs a proof-context elaboration path, which is
-   the same prerequisite as the assume row (7) — and assume additionally feeds the
-   assumption axis, so it must not yield an unqualified claim.
+   (`assert` was briefly listed as an assembly row here. It is not: its predicate is
+   deliberately unelaborated because it may legally read ghost bindings, which
+   `elabExprEv` rejects.)
+
+   **Done: proof predicates** (39). `assert`/`assume` are now elaborated for EVIDENCE ONLY
+   — the Core is discarded, because a proof-only construct must not generate code — under
+   two constraints. It cannot fail the compilation: nothing elaborated these before, so a
+   throw would turn a program that used to build into one that does not, and a predicate
+   reading a `ghost let` becomes a typed gap instead (gated with exactly that probe). And
+   it cannot leak state: the environment is restored, with `freshBinder` carried forward
+   deliberately so Core names stay unique even when the expression that minted them was
+   discarded.
+
+   The ASSUMPTION AXIS now sees an assume. Before this it counted zero for the only
+   construct that feeds it — vacuous, though fail-closed, since the gap refused the
+   subject anyway.
+
+   **Done: imported impl methods** (18 of the last 21). `importedCallIds` searched only a
+   module's FUNCTIONS, so a method on an imported type — `w.write_str()` where `Writer`
+   comes from `std.io` — had no `CallableId`. Not a resolution defect: the table never
+   held the entries. Keyed by local name, identified by defining module, so `a.P_get` and
+   `b.P_get` stay distinct (gated, mutation-verified). The alias half of that split is
+   unreachable today: Check rejects a method call on an aliased imported type (E0264),
+   before and after this change alike.
+
+   Corpus **421 of 432**.
+
+   **The 11 remaining are three distinct causes**, each named at its own site instead of
+   sharing one message that read as a lookup failure everywhere:
+
+   - **5 incomplete callee identity** — a generic callable whose type arguments are not
+     recorded. `isComplete` refuses it, and should: an identity missing its type arguments
+     looks resolved and is not.
+   - **4 method calls** whose mangled name still has no `CallableId`.
+   - **2 trait methods on a type parameter** — NOT a lookup failure. Before
+     monomorphization, `a.area()` where `a : T` denotes no single function; Core carries a
+     placeholder that Mono rewrites. Describing it needs a `TraitId`, and `TraitDef` holds
+     only a name and an optional `BuiltinTraitId` — there is no trait identity to name it
+     with. Minting one mirrors `TypeId` and is its own slice.
+
+   Naming the sites produced that breakdown and immediately disproved my guess: I had
+   assumed pre-monomorphization polymorphism dominated, and it was 2 of 21.
 
    **Also latent, recorded at the site rather than filed:** `alloc`/`free` drop their
    arguments, so `alloc(1)` and `alloc(2)` share evidence. Unreachable today — they require

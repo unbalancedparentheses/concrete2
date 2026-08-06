@@ -440,6 +440,28 @@ case "$axout" in
   *)                           no "the assumption axis is wrong ($axout) — expected assume=1 assert=0 plain=0" ;;
 esac
 
+# IMPORTED IMPL METHODS. `importedCallIds` searched only a module's FUNCTIONS, so a method
+# on an imported type had no CallableId and every call to one refused the subject — 18 of
+# the last 21 refusals, and not a resolution defect: the table never held the entries.
+#
+# Asserts identity, not just presence: same-spelled method on same-spelled types in two
+# modules must stay distinct, or an import would launder one type's method into another's.
+cat > "$TMP/imp.con" <<'CON'
+mod a { pub struct Copy P { pub v: Int } impl P { pub fn get(&self) -> Int { return self.v; } } }
+mod b { pub struct Copy P { pub v: Int } impl P { pub fn get(&self) -> Int { return self.v + 1; } } }
+mod c { import a.{P}; pub fn f(x: P) -> Int { return x.get(); } }
+mod d { import b.{P}; pub fn f(x: P) -> Int { return x.get(); } }
+CON
+ic="$(digest_of "$TMP/imp.con" c.f)"; id_="$(digest_of "$TMP/imp.con" d.f)"
+case "$ic" in
+  REFUSED*|ABSENT*|"") no "a call to an imported impl method does not digest ($ic)" ;;
+  *) if [ "$ic" != "$id_" ]; then
+       ok "imported impl methods resolve, and a.P_get is not b.P_get"
+     else
+       no "a.P.get() and b.P.get() share bytes — an imported method is identified by spelling, not defining module"
+     fi ;;
+esac
+
 # --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
 # A function type is what `evTypeRef` still refuses, and it is the last construct in the
 # corpus with a stable refusal. (This probe has been an array literal and then an assert;
@@ -473,9 +495,14 @@ case "$g" in
 esac
 
 # --- ratchet: corpus coverage must not regress ------------------------------------------
-# Measured 2026-08-06: 411 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
-# -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates).
-# The only row left is 21 unresolvable callees.
+# Measured 2026-08-06: 421 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
+# -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates)
+# -> 421 (imported impl methods reach the callee table).
+#
+# The 11 left are three distinct causes, each named at its site: 5 incomplete callee
+# identity (a generic callable whose type arguments are not recorded), 4 method calls
+# whose mangled name still has no CallableId, 2 trait methods on a type parameter (not
+# one function before monomorphization, and needing a TraitId that does not exist yet).
 #
 # A GAP NODE DISCARDS ITS SUBTREE, so this number does not move by the count of refusals
 # closed. Wiring the for-loop closed 54 of them and coverage rose by 24: the other 30 bodies
@@ -526,7 +553,7 @@ else
   no "$absent subjects have NO structural body — the body is not reaching ProofCore for them"
 fi
 
-FLOOR=411
+FLOOR=421
 if [ "$digested" -ge "$FLOOR" ]; then
   ok "structural coverage $digested/$total (floor $FLOOR)"
 else

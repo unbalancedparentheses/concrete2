@@ -935,6 +935,16 @@ MUT_NEW+=("  | (.ok _, after) =>
 MUT_DESC+=("proof predicate: elaborated evidence replaced by a constant")
 gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 
+# An imported impl method must be identified by its DEFINING module. Erasing that makes
+# a.P_get and b.P_get one identity — an import laundering one type's method into another.
+# Written as an `if` rather than `""` so `defModule` stays referenced; both the bare
+# constant and `.take 0` leave it unused and score KILLED (build).
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("          some (localKey, CallableId.ofUser defModule declName sig.typeParams.length)")
+MUT_NEW+=("          some (localKey, CallableId.ofUser (if defModule == \"\" then \"\" else \"\") declName sig.typeParams.length) -- MUTATION: defining module erased")
+MUT_DESC+=("imported impl method: identity loses its defining module")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
 # REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
 # match still compiles — the case a type-checker alone cannot catch. The reflective
