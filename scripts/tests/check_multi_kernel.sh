@@ -696,9 +696,17 @@ if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
     no "verdict-disagreement mutation skipped — $MUT2 has uncommitted changes"
   else
   trap 'git checkout -- "$MUT2" 2>/dev/null; (lake build >/dev/null 2>&1 || true)' EXIT
-  sed -i 's/"Proof. lia. Qed.",/"Proof. fail. Qed.",/' "$MUT2"
-  if ! grep -q '"Proof. fail. Qed.",' "$MUT2"; then
-    no "verdict mutation did not apply (rocqLowering proof template changed?)"
+  # Anchored on the PARAMETERISED template. R-0455 (5eb818e5) made tactics driver data,
+  # turning the literal `"Proof. lia. Qed.",` into `s!"Proof. {tactic}. Qed.",` — the sed
+  # stopped matching and this leg has tested nothing since that merge. It failed loudly
+  # rather than passing, which is the only reason it was noticed at all.
+  # `(* {tactic} *)` keeps the parameter REFERENCED. Replacing the interpolation outright
+  # leaves `tactic` unused, Lean rejects the file, and the mutation becomes a build failure
+  # — which proves the compiler noticed, not that the kernel disagreement was detected.
+  # Verified locally: without the comment the build fails; with it, it builds.
+  sed -i 's|s!"Proof. {tactic}. Qed.",|s!"Proof. fail. Qed. (* {tactic} *)",|' "$MUT2"
+  if ! grep -q 's!"Proof. fail. Qed.' "$MUT2"; then
+    no "verdict mutation did not apply (rocqScript proof template changed again — re-anchor the sed on its current shape, do not delete this leg)"
     git checkout -- "$MUT2" 2>/dev/null
   else
     rm -rf .concrete-cache
