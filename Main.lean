@@ -1821,6 +1821,13 @@ def compileAndReport (inputPath : String) (reportType : String)
       IO.println s!"  compared {nHere} calculus requirement(s) against {nThere} walker obligation(s)"
       if nHere == 0 && nThere == 0 then
         IO.println "  VACUOUS: neither side found anything here — agreement means nothing"
+      let only := Report.VCGen.calculusOnly parsed.modules
+      if !only.isEmpty then
+        IO.println s!"  CALCULUS-ONLY ({only.length}) — obligation kinds no walker can produce:"
+        for (fq, what) in only.take 8 do
+          IO.println s!"    {fq}: {what}"
+        IO.println "    (these trap at runtime today with nothing proved; reported separately so"
+        IO.println "     they cannot masquerade as a differential disagreement)"
       if d.isEmpty then
         IO.println "  AGREE on every function and family in this file"
       else

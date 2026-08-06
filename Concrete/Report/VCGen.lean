@@ -43,6 +43,12 @@ inductive Requirement where
   | indexInRange (array index : Expr)
   /-- the whole `a op b` node is in range for its type. -/
   | arithInRange (node : Expr)
+  /-- `-x` traps when `x` is the type's MIN. No obligation kind exists for this anywhere in the
+      pipeline today, and codegen traps on it — so it is a runtime abort with nothing proved. -/
+  | negNotMin (operand : Expr)
+  /-- a float→int cast traps when the value is out of the target's range. Same story: a
+      `checkedF2IHelperDefs` trap at runtime, and no obligation. -/
+  | castRepresentable (operand : Expr) (target : Ty)
 
 /-- The rule table: what THIS node requires, with no recursion in it.
 
@@ -63,6 +69,17 @@ def requires : Expr → List Requirement
   | e@(.binOp _ .sub _ _) => [.arithInRange e]
   | e@(.binOp _ .mul _ _) => [.arithInRange e]
   | .arrayIndex _ a i => [.indexInRange a i]
+  -- TWO KINDS THAT DID NOT EXIST BEFORE THIS FILE, one line each -- which is the design claim
+  -- being tested rather than asserted. Both trap in the compiled binary today with nothing
+  -- generated, so they were runtime aborts the proof layer could not see. Adding them to a
+  -- walker would have meant a fifth and sixth traversal; here they are rows.
+  -- Constant operands are excluded: `-5` cannot trap, and counting it would inflate the number
+  -- of genuinely unguarded sites. An unfiltered first measurement said 14,139 across the corpus;
+  -- most were literals. Reporting the smaller true figure matters more than the larger one.
+  | .unaryOp _ .neg (.intLit _ _) => []
+  | .unaryOp _ .neg e => [.negNotMin e]
+  | .cast _ (.intLit _ _) _ => []
+  | .cast _ e t => [.castRepresentable e t]
   | _ => []
 
 mutual
@@ -181,6 +198,22 @@ def diff (modules : List Module) : List (String × String × List String × List
       if !onlyHere.isEmpty || !onlyThere.isEmpty then
         out := out ++ [(fq, fam, onlyHere.eraseDups, onlyThere.eraseDups)]
   return out
+
+/-- Requirements the calculus finds that NO walker has a counterpart for.
+
+    Reported separately and never folded into the differential: comparing them against a walker
+    that cannot produce them would show a permanent false disagreement, and silently dropping
+    them would hide the only place the calculus is currently AHEAD. -/
+def calculusOnly (modules : List Module) : List (String × String) := Id.run do
+  let mut out := []
+  for (pfx, f) in modules.flatMap allFunctions do
+    for r in f.body.flatMap vcStmt do
+      match r with
+      | .negNotMin e => out := out ++ [(pfx ++ f.name, s!"neg-not-MIN: -({Concrete.fmtExpr e})")]
+      | .castRepresentable e t =>
+          out := out ++ [(pfx ++ f.name, s!"cast-representable: {Concrete.fmtExpr e} as {tyToString t}")]
+      | _ => pure ()
+  return out.eraseDups
 
 /-- Totals both sides found, so AGREEMENT can be distinguished from BOTH-FOUND-NOTHING.
 
