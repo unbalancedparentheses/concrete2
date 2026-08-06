@@ -103,7 +103,11 @@ partial def vcStmt (s : Stmt) : List Requirement :=
   | .forLoop _ init c step b _ =>
       (init.map vcStmt).getD [] ++ vcExpr c ++ (step.map vcStmt).getD [] ++ b.flatMap vcStmt
   | .fieldAssign _ o _ v | .derefAssign _ o v => vcExpr o ++ vcExpr v
-  | .arrayIndexAssign _ a i v => vcExpr a ++ vcExpr i ++ vcExpr v
+  -- The WRITE target needs its own bounds check. `requires` fires on `.arrayIndex`
+  -- EXPRESSIONS, i.e. reads; `a[i] = v` is a statement, so without this line the store's
+  -- bounds obligation is never emitted -- and a store is the more safety-critical direction.
+  -- Found by the differential against the walkers, not by review.
+  | .arrayIndexAssign _ a i v => .indexInRange a i :: (vcExpr a ++ vcExpr i ++ vcExpr v)
   | .borrowIn _ _ _ _ _ b => b.flatMap vcStmt
   | .letDestructure _ _ _ _ v _ => vcExpr v
   | .letStructDestructure _ _ _ v => vcExpr v
@@ -139,6 +143,28 @@ def shiftsThere (f : FnDef) : List String :=
   (f.body.flatMap collectShiftsS).map fun (l, r) =>
     s!"{Concrete.fmtExpr l}<<{Concrete.fmtExpr r}"
 
+/-- Bounds requirements, both sides. `collectIndexUsesE` records the array EXPRESSION (not a
+    name) since 2026-08-05, so the two are directly comparable without peeling parens here. -/
+def boundsHere (f : FnDef) : List String :=
+  (f.body.flatMap vcStmt).filterMap fun r =>
+    match r with
+    | .indexInRange a i => some s!"{Concrete.fmtExpr a}[{Concrete.fmtExpr i}]"
+    | _ => none
+
+def boundsThere (f : FnDef) : List String :=
+  (f.body.flatMap collectIndexUsesS).map fun (a, i) =>
+    s!"{Concrete.fmtExpr a}[{Concrete.fmtExpr i}]"
+
+/-- Overflow requirements, both sides. Both collect the whole `a op b` node for `+`/`-`/`*`. -/
+def arithHere (f : FnDef) : List String :=
+  (f.body.flatMap vcStmt).filterMap fun r =>
+    match r with
+    | .arithInRange e => some (Concrete.fmtExpr e)
+    | _ => none
+
+def arithThere (f : FnDef) : List String :=
+  (f.body.flatMap collectArithS).map Concrete.fmtExpr
+
 /-- Per-function diff: `(qualName, family, onlyHere, onlyThere)`, empty when they agree.
 
     Multiset-shaped rather than set-shaped: a duplicated obligation is a real difference, and
@@ -148,7 +174,8 @@ def diff (modules : List Module) : List (String × String × List String × List
   for (pfx, f) in modules.flatMap allFunctions do
     let fq := pfx ++ f.name
     for (fam, here, there) in
-        [("div", divisorsHere f, divisorsThere f), ("shift", shiftsHere f, shiftsThere f)] do
+        [("div", divisorsHere f, divisorsThere f), ("shift", shiftsHere f, shiftsThere f),
+         ("bounds", boundsHere f, boundsThere f), ("overflow", arithHere f, arithThere f)] do
       let onlyHere := here.filter (fun x => (here.count x) > (there.count x))
       let onlyThere := there.filter (fun x => (there.count x) > (here.count x))
       if !onlyHere.isEmpty || !onlyThere.isEmpty then
@@ -164,7 +191,9 @@ def diffTotals (modules : List Module) : Nat × Nat := Id.run do
   let mut there := 0
   for (_, f) in modules.flatMap allFunctions do
     here := here + (divisorsHere f).length + (shiftsHere f).length
+              + (boundsHere f).length + (arithHere f).length
     there := there + (divisorsThere f).length + (shiftsThere f).length
+              + (boundsThere f).length + (arithThere f).length
   return (here, there)
 
 end VCGen
