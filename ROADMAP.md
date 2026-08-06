@@ -3387,7 +3387,11 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
-### Task R-0470 — what could be provable but is not yet, by reason
+### Task R-0472 — what could be provable but is not yet, by reason
+
+Numbered R-0472 because R-0470 and R-0471 were already allocated — the first draft of this
+section collided with the existing R-0470 (capability-variable inference), caught by grepping the
+heading list rather than by anything failing.
 
 Placed after R-0004 because it is the map of where proving goes next, and grouped by the REASON
 each item is blocked — the reason determines the cost far more than the feature does.
