@@ -467,6 +467,91 @@ later-positioned task fixes a live false claim and an earlier-positioned one doe
 the false claim goes first, and the override is written here rather than left for the
 next reader to rediscover.
 
+## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
+
+The goal is worth stating precisely, because "everything" decomposes into three axes with very
+different answers — plus two limits that no amount of work removes. Written so the distance can be
+measured instead of guessed at.
+
+### Axis 1 — language constructs (what a proof is ABOUT)
+
+| Construct | Obligations today | To reach the kernels |
+|---|---|---|
+| integer arithmetic | overflow, div, shift | **done** (linear); nonlinear is 2-of-3 |
+| array indexing | bounds | **done**; arrays lower as total `index → value` |
+| booleans / conditionals | — | **done** (rung 2) |
+| structs / field access | — | **done** (rung 6) |
+| uninterpreted spec fns | — | **done** (rung 5) |
+| defined spec fns | refinement | **done** — the `spec fn … = expr` body |
+| **enums / sum types** | — | constructor injectivity + disjointness, emitted per kernel |
+| **loops** | bounds/overflow inside them | invariants as first-class obligations |
+| **recursion** | none — profile-banned | `#[decreases]`; see rung 8 |
+| **heap / references** | linear types (static) | a memory model; separation-logic shaped |
+| **generics / traits** | monomorphised away | provable per instantiation; the general statement needs polymorphic lowering |
+| **closures / fn pointers** | refused by the profile | target-set analysis, or higher-order lowering |
+| **capabilities / effects** | statically enforced | sound by construction; not obligation-shaped |
+
+### Axis 2 — property kinds (what a proof SAYS)
+
+This axis matters more than the first and is easier to overlook.
+
+| Property | Shape | Status |
+|---|---|---|
+| **Safety** ("this bad event never happens") | quantifier-free per site | the entire pipeline today |
+| **Liveness** ("this good event eventually happens") | termination, progress | only *checked* by the `predictable` profile, never proved. The three fail-open gates found in this work were all liveness claims — no obligation could have caught them |
+| **Functional correctness** | refinement against a spec | rung 5 + defined specs; reaches only single-`return` bodies |
+| **Relational / hyperproperties** (constant-time, non-interference) | two executions compared | **not expressible** as a per-site obligation at all |
+| **Resource bounds** (stack, alloc, time) | quantitative | stack reported not gated; alloc capability-gated; time untouched |
+
+### Axis 3 — evidence strength
+
+`runtime-checked` → `solver_trusted` (SMT in the TCB) → `proved_by_lean_replay` →
+`proved_by_kernel_decision` → **N independent kernels agreeing**. The last is what these tiers
+add, and only where the lowering's faithfulness can be CHECKED — see limit 2.
+
+### The two hard limits
+
+**1. Undecidability is not an engineering problem.** Nothing decides termination, and by Rice's
+theorem no non-trivial semantic property is decidable in general. That is *why* `#[decreases]`
+puts the measure on the AUTHOR: the compiler can check it, never find it. Any plan reading "prove
+everything automatically" is wrong at the root. The achievable goal is **"prove everything the
+author is willing to specify, and refuse the rest loudly."**
+
+**2. Faithfulness and strength trade against each other.** The multi-kernel claim rests on each
+kernel closing a lowering whose meaning is CHECKED against the reference evaluator — exhaustive
+for booleans (`2^n` rows), sampled for arithmetic, **undecidable** for anything quantified over
+unbounded structure. So the stronger the property, the weaker the guarantee that three kernels
+proved the *same* proposition. Rung 8 buys induction and pays in exactly this coin; it must be a
+stated decision, never a side effect.
+
+And the third, already documented: **print fidelity is not provable.** That an emitted string
+denotes the intended obligation needs a formal semantics of the target's surface syntax, which is
+not ours. Validated, never proved — no rung changes that.
+
+### So what "every kind of code" can honestly mean
+
+Not "everything proved automatically" — unreachable, and claiming it would be the overclaim this
+document keeps correcting. It means:
+
+1. every construct can APPEAR in an obligation (axis 1 — finish enums, loops, recursion, heap);
+2. every property the author states can be ATTEMPTED (axis 2 — liveness and relational are the
+   genuinely missing shapes);
+3. whatever is not covered is **NAMED** rather than silently absent — `OUTSIDE the bounds
+   fragment`, `no definitional body`, `abstraction inconclusive`, the coverage counter.
+
+Point 3 is what makes the other two honest, and it is the cheapest to keep.
+
+### Nearest-term ordering
+
+1. **finish the measurement base** — ~8 gates still lack negative controls; capability stacked on
+   unverified gates is the less defensible order;
+2. **rung 4's tier** — unblocked, mechanical, the only route to real corpus coverage;
+3. **enums** — the last quantifier-free construct missing; same shape as rung 6;
+4. **`#[decreases]` + rung 8** — unlocks recursion AND liveness, the biggest jump on axis 2, at
+   the faithfulness cost above;
+5. **loop invariants as obligations** — the other half of liveness;
+6. **heap / separation** — largest remaining item on axis 1; needs a design before any code.
+
 ## Branch `spike/non-arithmetic-multi-kernel` (depends on `spike/multi-prover-evidence`)
 
 ### Landed: rung 2 — boolean postconditions in all three kernels
