@@ -553,9 +553,11 @@ kept with their outcome because the *pattern* they belong to is the last item he
 1. **The VC generator.** Four hand-written walkers replaced by a WP calculus.
    Design: `docs/VC_GENERATOR_DESIGN.md`. Attacks the layer that produced every discovery defect
    this month, subsumes H19 if run over Core, and makes Register A statable as one theorem.
-2. **`old` / two-state postconditions.** Without it, specs cannot describe MUTATION at all, which
-   is why the only real contracts in the corpus are refinements of pure helpers. See the Why3
-   parity table.
+2. **`old` / two-state postconditions.** Not a feature among features — **a ceiling on what can
+   be written at all.** Without it no specification can describe MUTATION, so the corpus's only
+   real contracts being refinements of *pure* helpers is not what authors chose, it is the only
+   thing the language permits. That evidence sat in plain sight for most of this work and was read
+   as a coincidence. See the Why3 parity table.
 3. **~8 remaining gates without negative controls.** The week's tally: six assertions fired on
    non-regressions, two silently tested nothing, one skipped its own section when the build broke,
    one reported a working fix as broken via `pipefail`. Green counts overstate what is pinned, and
@@ -667,24 +669,30 @@ than proved** — H19 says nothing connects surface-AST obligations to the compi
 precisely why the VC generator should run over Core.
 
 A fourth, with no Why3 analogue: **discovery completeness** — proving the obligation is generated
-at all. Why3 does not need it, because a WP calculus cannot forget a case. Once the generator
-lands, this register becomes a redundancy check rather than a necessity, and that is the right
-outcome.
+at all.
+
+**Scheduled for demotion, and marked so deliberately.** Why3 does not need this register because a
+WP calculus cannot forget a case. That means discovery completeness is *compensating for a design
+flaw*, not adding a guarantee Why3 lacks — so once the generator lands it should be re-labelled a
+redundancy check, not defended as permanent scaffolding. Recording the expected demotion now,
+because a register that quietly outlives its cause is how a metric turns into a ritual.
 
 ### Ordering to reach parity
 
 1. **VC generator** (design written) — closes the largest structural gap and subsumes H19.
-2. **`old` / two-state postconditions** — unblocks specifying mutation; without it specs stay pure.
-3. **`#[decreases]`** — unlocks recursion and liveness at once.
-4. **loop invariants** — the other half of liveness; WP forces the question anyway.
-5. **enums + pattern matching in specs** — last quantifier-free construct.
-6. **spec standard library** (int, array, list, map) — the thing that makes specs writable rather
-   than merely possible. Nothing exists today.
+2. **`old` / two-state postconditions** — a ceiling, not a feature: without it specs cannot
+   describe mutation at all.
+3. **spec standard library** (int, array, list, map) — **moved up from sixth.** A calculus with
+   nothing to say about lists does not get used; much of Why3's practical value is its theory
+   library, not its WP engine. Nothing exists here today, so even after items 1–2 land there is
+   little to *say*. It was ranked sixth by how interesting it is to build, which is the wrong axis.
+4. **`#[decreases]`** — unlocks recursion and liveness at once.
+5. **loop invariants** — the other half of liveness; WP forces the question anyway.
+6. **enums + pattern matching in specs** — last quantifier-free construct.
 7. **realizations** — prove the axiomatized theories in the kernels rather than assuming them.
 8. **heap / separation** — largest remaining, needs design before code.
 
-Items 1–3 are where the leverage is. Item 6 is the one most likely to be underestimated: Why3's
-usefulness comes substantially from its theory library, not its calculus.
+Items 1–3 are where the leverage is.
 
 ## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
 
