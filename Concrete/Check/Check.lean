@@ -2039,6 +2039,15 @@ def checkFn (f : FnDef) : CheckM Unit := do
   setEnv envBefore
 
 
+/-- Function names called anywhere in an expression — for validating `spec fn` bodies. -/
+private partial def specBodyCalls : Expr → List String
+  | .call _ f _ args => f :: args.flatMap specBodyCalls
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBodyCalls e
+  | .binOp _ _ l r => specBodyCalls l ++ specBodyCalls r
+  | .fieldAccess _ o _ => specBodyCalls o
+  | .arrayIndex _ a i => specBodyCalls a ++ specBodyCalls i
+  | _ => []
+
 def checkModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {}) : Except Diagnostics Unit :=
   -- Use pre-built summaries from FileSummary
@@ -2143,6 +2152,41 @@ def checkModule (m : Module) (summary : FileSummary)
         .error [{ severity := .error, message := CheckError.message (.reservedName f.name), pass := "check", span := some f.span, hint := none }]
       else .ok ()
   match reservedNameCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- A `spec fn` with a DEFINITIONAL body must have that body checked. The body-less form has
+  -- nothing to check, so nothing did -- and when bodies were added, a spec could reference an
+  -- undeclared variable or a nonexistent function and be accepted silently. The refinement tier
+  -- would then render that nonsense into three kernels, where it fails as an unbound identifier:
+  -- loud, but at the wrong layer and long after the mistake.
+  --
+  -- Two rules, both from what a spec IS: pure and total. Its body may mention only its own
+  -- parameters, and may call only other spec functions (a call to an executable function would
+  -- make the spec depend on runtime behaviour, which is the thing specs exist to be independent
+  -- of).
+  let specNames := m.specFns.map (·.name)
+  let specBodyCheck := m.specFns.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc sd =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      match sd.body with
+      | none => .ok ()
+      | some b =>
+        let paramNames := sd.params.map (·.name)
+        let free := (collectFreeVarsExpr b paramNames).eraseDups
+        let unknownCalls := (specBodyCalls b).filter (fun c => !specNames.contains c)
+        if !free.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body references unknown name(s): {", ".intercalate free}"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body may only mention its own parameters" }]
+        else if !unknownCalls.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body calls non-spec function(s): {", ".intercalate unknownCalls}"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body may only call other `spec fn`s — calling executable code would make the spec depend on runtime behaviour" }]
+        else .ok ()
+  match specBodyCheck with
   | .error e => .error e
   | .ok () =>
   -- Built-in Destroy trait (needed for expression-level trait method resolution)

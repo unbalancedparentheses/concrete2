@@ -887,6 +887,15 @@ is consistent enough to be a rule rather than an anecdote.
    pinned so `∀ e, P e → Q e` is not read as global completeness when `P` is narrow.
 8. **A false number is worse than a missing one**, because it is quotable. `--report stack-depth`
    stated `Max stack bound: 32 bytes` for arbitrarily deep recursion.
+9. **`set -o pipefail` breaks `failing_cmd | grep -q`.** The pipeline reports failure even when
+   grep MATCHES, because the producer exited non-zero — and a compiler rejecting a bad program
+   exits non-zero by design. Two assertions checking that a bad program IS rejected therefore
+   reported a working fix as broken. Capture output into a variable first, then match it.
+10. **A metric that cannot move is decorative — and one that can be gamed is worse.** A coverage
+   count still read "0 reached" after a new tier started covering obligations, because it had not
+   been updated. Separately, a coverage number that RISES when you copy the implementation into
+   the spec is worse than one that honestly reads zero: assert that the number moves, and exclude
+   tautologies from it.
 
 ### Merge mechanics
 

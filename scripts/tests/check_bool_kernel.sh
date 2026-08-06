@@ -489,6 +489,46 @@ else
 fi
 fi
 
+echo "=== a spec BODY is checked, not just parsed ==="
+# I added definitional bodies to `spec fn` and did not check them. A body referencing an
+# undeclared variable and calling a nonexistent function was accepted SILENTLY -- the refinement
+# tier would then render that nonsense into three kernels, where it fails as an unbound
+# identifier: loud, but at the wrong layer and long after the mistake. Two rules, both from what
+# a spec is (pure and total): only its own parameters, only calls to other spec fns.
+SPW="$WORK/spec"; mkdir -p "$SPW"
+cat > "$SPW/freevar.con" <<'CON'
+mod sv { spec fn bogus(x: i32) -> i32 = undefined_var + x; }
+CON
+cat > "$SPW/execcall.con" <<'CON'
+mod sv2 {
+    fn runtime_fn(x: i32) -> i32 { return x; }
+    spec fn calls_exec(x: i32) -> i32 = runtime_fn(x);
+}
+CON
+cat > "$SPW/ok.con" <<'CON'
+mod sv3 {
+    spec fn inner(x: i32) -> i32 = x + 1;
+    spec fn outer(x: i32) -> i32 = inner(x) + 1;
+}
+CON
+# Output captured FIRST, then matched. `set -o pipefail` is on, so `failing_cmd | grep -q` reports
+# failure even when grep MATCHES -- and a rejected program makes the compiler exit non-zero, so
+# both of these assertions silently took the wrong branch and reported the fix as broken.
+FV_OUT="$("$BIN" "$SPW/freevar.con" --report vcs 2>&1 || true)"
+printf '%s' "$FV_OUT" | grep -q "references unknown name" \
+  && ok "a spec body referencing an undeclared name is REJECTED" \
+  || no "a spec body may reference undeclared names — nonsense reaches the kernels"
+EC_OUT="$("$BIN" "$SPW/execcall.con" --report vcs 2>&1 || true)"
+printf '%s' "$EC_OUT" | grep -q "calls non-spec function" \
+  && ok "a spec body calling executable code is REJECTED (specs must not depend on runtime)" \
+  || no "a spec body may call executable functions — the spec is no longer independent"
+# And the rule must not be so strict it forbids legitimate specs: spec-to-spec calls are fine.
+if "$BIN" "$SPW/ok.con" --report vcs >/dev/null 2>&1; then
+  ok "a spec calling ANOTHER spec is still accepted (rule constrains, does not forbid)"
+else
+  no "spec-to-spec calls are rejected — the check is too strict to be usable"
+fi
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]
