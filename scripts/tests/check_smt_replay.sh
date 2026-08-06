@@ -63,6 +63,30 @@ ok = ok and not any(v['status']=='proved_by_lean_replay' for v in d['vcs'])
 ok = ok and sc['smt'].get('lean_replay') is not None
 sys.exit(0 if ok else 1)" \
     && ok "scale stays solver_trusted under --replay; nothing falsely upgraded; artifact present" || no "replay altered the class incorrectly"
+
+  # NON-VACUITY. "Nothing was falsely upgraded" is satisfied just as well by replay
+  # never running: zero VCs, an empty `vcs` list, or a `--replay` flag that silently
+  # did nothing all produce the same green. The assertion above therefore needs a
+  # witness that the machinery was exercised at all.
+  #
+  # HONEST LIMIT: this is a guard against a failure mode the current fixture does not
+  # exhibit. Deleting the SMT-evidence requirement does NOT make it fail here, because
+  # this demo's VCs do carry SMT evidence -- so the mutation is EQUIVALENT on this
+  # input rather than killed. It would bite if the demo changed, or if `--smt` stopped
+  # attaching evidence. Recorded rather than claimed as mutation-verified.
+  printf '%s' "$rj" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+vcs=d.get('vcs',[])
+# there must BE VCs, and at least one must carry SMT evidence -- otherwise the
+# no-false-upgrade check ranged over nothing.
+if not vcs:
+    sys.exit(1)
+if not any(v.get('smt') for v in vcs):
+    sys.exit(2)
+sys.exit(0)" \
+    && ok "the no-false-upgrade check is non-vacuous (VCs exist and carry SMT evidence)" \
+    || no "no VCs carry SMT evidence — 'nothing was upgraded' passed over an empty set"
 else
   echo "  skip --smt --replay end-to-end (z3 not on PATH)"
 fi
