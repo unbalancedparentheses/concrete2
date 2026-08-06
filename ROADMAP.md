@@ -432,6 +432,64 @@ contradiction survived. [docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) remains the a
 on hole status; this table is a reference to it and
 `scripts/tests/check_hole_status_consistency.sh` fails if the two disagree.
 
+## Product north star: compositional, transferable evidence
+
+The canonical product direction is
+[docs/VERIFICATION_CHARTER.md](docs/VERIFICATION_CHARTER.md): important behavior
+is specified at boundaries, composed across calls and packages, carried in
+independently re-checkable artifacts, and assigned explicit evidence. Anything
+outside the supported verification surface is named rather than silently
+omitted.
+
+This combines three pieces that must not be sequenced as rival strategies:
+
+1. **Compositional contracts are the content.** Concrete already ships much of
+   the local surface—requirements, ensures clauses, call-site obligations, loop
+   invariant/variant obligations, ghost code, proof attachment, and evidence
+   classes. The delta is call- and package-closed reasoning, old-state/frame
+   semantics, wider data and state models, termination, resources, relational
+   contracts, and publishing.
+2. **Portable artifacts are the product.** A consumer who does not trust or use
+   Concrete can inspect the exact claim and replay its evidence with an accepted
+   kernel. Package upgrades can then be gated on behavioral-contract weakening,
+   authority/trust widening, resource budgets, and proof-coverage regression.
+3. **Faithfulness joins them.** Independent kernels do not repair a shared
+   mistranslation. Every graduated contract family therefore advances its
+   structured IR, lowering validation or proof, artifact schema, and replay path
+   together. Multi-kernel evidence is not postponed to a final rung, nor is
+   kernel count used as a substitute for bridge assurance.
+
+Progress is measured by meaningful real-program behavior covered through that
+whole path, not by construct count or prover count alone. Routine obligations
+should require as few annotations as sound inference permits, but automatic
+specification discovery is not a completeness claim. Strict coverage is also a
+policy choice: support module/property-specific requirements and explicit hole
+budgets so incremental adopters can ship without turning named debt into green.
+
+### Delivery order implied by the charter
+
+This direction does not replace the execution queue below. It supplies the
+ordering rule for work entering that queue:
+
+1. fail-visible coverage accounting and negative controls;
+2. a typed verification IR with executable semantics and practical differential
+   validation, strengthened by proofs incrementally rather than blocking all
+   downstream delivery;
+3. compositional function contracts—callee postconditions, call-site
+   preconditions, old state, frame conditions, and ghost state;
+4. total correctness—complete the existing operational loop-preservation path,
+   then variants and recursive decreases; this proves termination, not general
+   temporal liveness;
+5. enums, structured state, and a declared memory model;
+6. resource contracts and graduated release policies;
+7. a separate paired-execution path for constant-time and non-interference;
+8. proof-aware package interfaces and standalone consumer-side replay.
+
+Each slice must exercise a real workload and ship its evidence artifact and
+honest bridge status with it. Avoid demonstration contracts whose specification
+merely restates the implementation, and avoid using quantified flagship examples
+whose prover-library cost obscures the smaller capability actually being built.
+
 ### The next 20 tasks, in execution order
 
 **This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,

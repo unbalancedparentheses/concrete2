@@ -6,6 +6,13 @@ This page states what Concrete claims today, what it does not claim yet, and wha
 
 For the five claim classes (enforced, proved, reported, trusted assumption, backend/target assumption), see [CLAIM_TAXONOMY.md](CLAIM_TAXONOMY.md).
 
+## Product direction versus current claims
+
+Concrete's long-term direction is recorded in the
+[verification charter](VERIFICATION_CHARTER.md). The charter is a design and
+roadmap constraint, not evidence that its target capabilities ship. This page
+remains the authoritative statement of what Concrete supports today.
+
 ---
 
 ## 1. Compiler-Enforced Guarantees (safe code)

@@ -24,10 +24,15 @@ closures, no trait objects, no macros, and whole-program monomorphization, code
 values come from a closed set of named functions—**the whole program is
 statically enumerable**, even when a function-pointer target is selected at
 runtime. That gives per-function facts a tractable path toward whole-program
-facts. The thesis in one line — **systems control plus evidence
-accounting**: a no-GC systems core plus an evidence ledger a reviewer can
-actually inspect, one that never collapses proofs, tests, solver results, runtime
-checks, and assumptions into a single green badge.
+facts. The thesis in one line — **systems control plus compositional,
+transferable evidence**: a no-GC systems core where public behavior, authority,
+resources, failure modes, and assumptions can cross function and package
+boundaries as machine-checkable contracts. The evidence ledger never collapses
+proofs, tests, solver results, runtime checks, and assumptions into a single
+green badge. Its direction includes independently replayable evidence that a
+consumer can check with a kernel they choose. See the
+[verification charter](docs/VERIFICATION_CHARTER.md); it is product direction,
+not a claim that all of this surface ships today.
 
 ## At a Glance
 
@@ -46,6 +51,9 @@ checks, and assumptions into a single green badge.
   preconditions become visible obligations or checks.
 - **Evidence, not one badge:** proofs, tests, solver results, runtime checks, and
   trusted boundaries are reported as *distinct* classes.
+- **Compositional contracts — direction:** public functions and packages export
+  behavioral contracts that callers can rely on without inspecting private
+  implementations; unsupported and unproved portions remain explicit.
 
 ## A Small Example
 

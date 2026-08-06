@@ -21,7 +21,7 @@ If an idea improves ergonomics while making the compiler harder to explain, it i
 
 ## Feature Admission Checklist
 
-Every proposed feature must pass all ten checks. Failing any one is grounds for rejection.
+Every proposed feature must pass all twelve checks. Failing any one is grounds for rejection.
 
 ### 1. Can it be explained as a simple invariant?
 
@@ -63,6 +63,19 @@ Prefer rules that elaborate into simpler core forms. Reject rules that require s
 
 Concrete is not trying to maximize shorthand. If the gain is mainly convenience for writing code faster, that is not enough.
 
+### 11. Can its meaningful behavior cross a contract boundary?
+
+A feature must say how its safety, functional behavior, effects, failure modes,
+and resource consequences appear in summaries and obligations. A feature that
+works operationally but disappears from public contracts creates an
+unverifiable island.
+
+### 12. Can unsupported coverage fail visibly?
+
+Every new construct must define its verification lowering, a conservative
+abstraction, or a precise unsupported-fragment diagnostic. Silence is not an
+admissible fallback. Policy may permit named holes, but it may not erase them.
+
 ## Quick Decision Rule
 
 **Adopt** ideas that are: explicit, local, phase-separated, summary-friendly, easy to lower away.
@@ -83,13 +96,16 @@ Zig, Austral, SPARK, and Odin are often most useful because they say "no" in str
 
 The highest-leverage improvements for Concrete are:
 
-1. Summary-based frontend (declaration-level cross-file info)
-2. Core as semantic authority (earlier, not just after elaboration)
-3. ABI/layout subsystem clarity
-4. Audit-focused tooling and compiler outputs
-5. Small but excellent standard library
-6. Explicit project/build model
-7. Proof-driven narrowing
+1. Typed, compositional contracts
+2. Exhaustive and fail-visible verification-coverage accounting
+3. Core and the verification IR as semantic authorities
+4. Independently replayable evidence artifacts and proof-aware interfaces
+5. Summary-based frontend (declaration-level cross-file info)
+6. ABI/layout subsystem clarity
+7. Audit-focused tooling, explainability, and compiler outputs
+8. Small but excellent standard library
+9. Explicit project/build model
+10. Proof-driven narrowing
 
 These are high leverage because they improve compiler structure, user trust, auditability, proof tractability, and future tooling options simultaneously.
 
@@ -99,5 +115,9 @@ These are high leverage because they improve compiler structure, user trust, aud
 - Tooling visibility before convenience syntax
 - ABI/layout credibility before feature expansion
 - Proof-friendly boundaries before richer abstractions
+- Faithfulness and artifact replay alongside each graduated contract family
+
+The [verification charter](VERIFICATION_CHARTER.md) defines the product-level
+direction these admission rules protect.
 
 Concrete gets stronger by becoming sharper, not merely bigger.
