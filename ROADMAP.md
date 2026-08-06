@@ -206,7 +206,39 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    identity contributes nothing to the use list, so a body missing an identity and a body
    that never mentioned one are indistinguishable there. Only the explicit mark separates
    them, and that is what makes the subject fail closed.
-2. Switch shadow mode to `bodyBytesV2`.
+2. ~~Switch shadow mode to `bodyBytesV2`.~~ Done — as an ADDITIONAL line, not a
+   replacement. `--report subject-facts` prints both `shadow identityUses` and
+   `shadow bodyV2`, because they answer different questions: the flat digest merges
+   `p + 1`, `p * 2` and `p - 9`, the structural one separates them, and dropping the flat
+   line would remove the comparison the shadow period exists for. Both stay
+   non-authoritative; the subject digest is still V1-frozen, and
+   `check_shadow_body_v2.sh` asserts `bodyBytesV2` reaches nothing but the report.
+
+   First measurement of the real corpus: **292 of 432 subjects digest, 0 absent**. Every
+   subject has a structural body threaded, so what remains is the producer declining to
+   describe constructs, not the body failing to arrive. The refusals name the construct
+   rather than the gap code, which turns them into the work list:
+
+   | count | construct |
+   |---|---|
+   | 54 | desugared for-loop |
+   | 43 | array literal: element `TypeId` not minted here |
+   | 32 | assert: predicate not elaborated |
+   | 20 | callee not resolvable to a `CallableId` |
+   | 11 | cast: target `TypeId` not minted here |
+   | 7 | assume: predicate not elaborated |
+   | 6 | self argument |
+   | 4 | if-expression: statement evidence not wired |
+   | 4 | `discard()`: desugared to a no-op if |
+   | 2 | field place: `FieldId` not minted here |
+
+   The 292 is a ratchet floor, not a target. A drop means a construct that used to be
+   described stopped being described.
+
+2a. Close those refusals, heaviest first. The for-loop and array-literal rows are 97 of
+   the 140 between them, and neither is a language question — both are identities the
+   producer has to mint where it currently does not. The assume row is different in kind:
+   it also feeds the assumption axis, so it must not yield an unqualified claim.
 3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
    and assumption edges, table reachability.
 4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong

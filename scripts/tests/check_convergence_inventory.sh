@@ -38,18 +38,33 @@ else
   ok "CLOSED: one producer of identity uses; the flat view is derived from the tree"
 fi
 
-# 2. Shadow mode still reports the FLAT identity-use bytes, not the structural body.
-if grep -qE "Proof\.shadowIdentityUseDigest " Concrete/Report/Report.lean; then
-  ok "GAP OPEN: shadow mode still reports flat identity-use bytes, not bodyBytesV2"
+# 2. CLOSED. Shadow mode reports the structural body too. BOTH lines are printed, and both
+#    are meant to stay: they answer different questions. `identityUses` digests the flat
+#    list of identity references, where `p + 1`, `p * 2` and `p - 9` collide; `bodyV2`
+#    digests the structural body, where they do not. Dropping the flat line would remove
+#    the comparison the shadow period exists for.
+if grep -q "shadow bodyV2" Concrete/Report/Report.lean; then
+  ok "CLOSED: shadow mode reports the structural body digest (gated by check_shadow_body_v2)"
 else
-  no "shadow mode no longer uses the flat digest — if it now serializes the structural body, record that and re-point this entry"
+  no "the structural shadow line is gone from the report — the comparison it enables is how V2 is observed before it is trusted"
+fi
+if grep -qE "Proof\.shadowIdentityUseDigest " Concrete/Report/Report.lean; then
+  ok "the flat identity-use line is still reported alongside it, so the two can be compared"
+else
+  no "the flat shadow line was removed — without it there is nothing to compare the structural digest against"
 fi
 
-# 3. Nothing consumes the structural body for a VERDICT yet.
-if grep -q "bodyBytesV2" Concrete/Report/Report.lean 2>/dev/null; then
-  no "Report now references bodyBytesV2 — structural bytes are reaching output; update the inventory and check whether any STATUS depends on them"
+# 3. STILL OPEN, and now the entry that matters most. Structural bytes reach OUTPUT (the
+#    shadow report line) but must reach no VERDICT: the authoritative subject digest stays
+#    V1-frozen through the shadow period.
+#
+#    Checked by containment rather than by absence, since absence stopped being true when
+#    entry 2 closed. The exact owner set is asserted in check_shadow_body_v2.sh; here we
+#    assert only that no STATUS depends on them.
+if grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean Concrete/Proof/ProofCore.lean Main.lean 2>/dev/null; then
+  no "bodyBytesV2 reached SubjectFacts, ProofCore or Main — a status may now depend on structural bytes while V1 is still the frozen authoritative domain"
 else
-  ok "GAP OPEN: no consumer derives a verdict from the structural body bytes"
+  ok "GAP OPEN: structural body bytes are reported but no verdict derives from them"
 fi
 
 # 4. constRef names a constant without binding its meaning.

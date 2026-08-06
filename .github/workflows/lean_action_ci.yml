@@ -489,6 +489,9 @@ jobs:
       - name: "Identity-use bytes (R-0004 — flat typed-use serialization; NOT the body canonical form)"
         run: bash scripts/tests/check_identity_use_bytes.sh
 
+      - name: "Shadow body V2 (R-0004 — structural body digest reaches the report and nothing authoritative; coverage ratchet)"
+        run: bash scripts/tests/check_shadow_body_v2.sh
+
       - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
         run: bash scripts/tests/check_binder_refs.sh
 

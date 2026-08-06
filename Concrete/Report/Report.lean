@@ -1700,6 +1700,27 @@ private def renderSourceBodyDigest (pexpr : Proof.PExpr) : String :=
   let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))
   s!"some \{ value := \"{v}\" }"
 
+/-- The structural-body shadow line. Three outcomes, kept distinct because collapsing
+    them would hide which one occurred: no body was threaded at all, a body was threaded
+    but has gaps, or a complete body digested.
+
+    The gap reasons are RENDERED, not counted. "3 gaps" says a subject was refused;
+    naming the codes says which constructs the producer still cannot describe, which is
+    the list that drives the remaining work. -/
+private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
+  | none => "ABSENT (no structural body threaded)"
+  | some d =>
+    match Proof.validate d with
+    | .ok complete => shortHash (Proof.bodyBytesV2 complete)
+    | .error gaps =>
+      -- DETAILS, not codes. The nine codes are stable and few, so a tally of them says
+      -- only "statements and expressions" — true and useless. The detail names the
+      -- construct, and that list IS the remaining producer work.
+      -- Joined with " | ", not ", ": at least one detail contains a comma, so a
+      -- comma-joined list cannot be split back into the constructs it names.
+      let details := (gaps.map (·.detail)).eraseDups
+      s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1729,7 +1750,17 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- SHADOW. Reported so V1 and V2 can be compared on the real corpus before
         -- either is trusted, and deliberately NOT part of `dig` above: the
         -- authoritative digest stays V1-frozen while this is observed.
-        , s!"  shadow identityUses: {(Proof.shadowIdentityUseDigest fx.bodyIdentityInputs shortHash).getD "REFUSED (uncovered)"}"
+        --
+        -- Two lines, because they answer different questions and the flat one was
+        -- being read as though it answered both. `identityUses` digests the flat list
+        -- of identity references; measured on the corpus, `p + 1`, `p * 2` and `p - 9`
+        -- all hash the same there, so it is a reference inventory and NOT a body
+        -- representation. `bodyV2` digests the structural body, where they differ.
+        , s!"  shadow identityUses: {(Proof.shadowIdentityUseDigest fx.bodyIdentityInputs shortHash).getD "REFUSED (uncovered)"}\n"
+        -- A body with any gap is REFUSED with its reasons rather than digested: the
+        -- type makes that unrepresentable, and printing a digest over a partial body
+        -- would offer something comparable that describes less than the program.
+        , s!"  shadow bodyV2: {shadowBodyV2Line e.evidenceBody}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
