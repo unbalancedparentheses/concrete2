@@ -2,7 +2,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:57
 
-  `fixed_capacity.ok_result` passes the predictable profile but has no registered proof.
+  `fixed_capacity.ok_result` is eligible for proof but has no registered proof.
 
  57 |     fn ok_result(msg_type: i32, seq: i32, plen: i32) -> ValidateResult {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -14,7 +14,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:61
 
-  `fixed_capacity.err_result` passes the predictable profile but has no registered proof.
+  `fixed_capacity.err_result` is eligible for proof but has no registered proof.
 
  61 |     fn err_result(code: i32) -> ValidateResult {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -26,7 +26,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:70
 
-  `fixed_capacity.validate_version` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_version` is eligible for proof but has no registered proof.
 
  70 |     fn validate_version(v: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -38,7 +38,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:75
 
-  `fixed_capacity.validate_msg_type` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_msg_type` is eligible for proof but has no registered proof.
 
  75 |     fn validate_msg_type(t: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -50,7 +50,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:82
 
-  `fixed_capacity.validate_payload_len` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_payload_len` is eligible for proof but has no registered proof.
 
  82 |     fn validate_payload_len(plen: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -62,7 +62,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:89
 
-  `fixed_capacity.validate_total_len` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_total_len` is eligible for proof but has no registered proof.
 
  89 |     fn validate_total_len(total_len: i32, header_size: i32, payload_len: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -74,7 +74,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:94
 
-  `fixed_capacity.validate_tag` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_tag` is eligible for proof but has no registered proof.
 
  94 |     fn validate_tag(computed: i32, expected: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -86,7 +86,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:103
 
-  `fixed_capacity.read_u8` passes the predictable profile but has no registered proof.
+  `fixed_capacity.read_u8` is eligible for proof but has no registered proof.
 
  103 |     fn read_u8(buf: MsgBuf, offset: i32) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -98,7 +98,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:107
 
-  `fixed_capacity.read_u16_be` passes the predictable profile but has no registered proof.
+  `fixed_capacity.read_u16_be` is eligible for proof but has no registered proof.
 
  107 |     fn read_u16_be(buf: MsgBuf, offset: i32) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -170,7 +170,7 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:171
 
-  `fixed_capacity.validate_message` passes the predictable profile but has no registered proof.
+  `fixed_capacity.validate_message` is eligible for proof but has no registered proof.
 
  171 |     fn validate_message(buf: MsgBuf, ring: RingBuf) -> ValidateResult {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -210,7 +210,7 @@
 
 -- not eligible ------------------------------------------- examples/fixed_capacity/src/main.con:266
 
-  `fixed_capacity.report` cannot be proved: fails predictable profile (has capabilities: Console).
+  `fixed_capacity.report` cannot be proved: fails the proof-eligibility gates (has capabilities: Console).
 
  266 |     fn report(label: Int, r: ValidateResult) with(Console) {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -221,7 +221,7 @@
 
 -- not eligible ------------------------------------------- examples/fixed_capacity/src/main.con:286
 
-  `fixed_capacity.main` cannot be proved: fails predictable profile (has capabilities: Console, is entry point (main)).
+  `fixed_capacity.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Console, is entry point (main)).
 
  286 |     pub fn main() with(Console) -> Int {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

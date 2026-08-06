@@ -25,7 +25,7 @@ error: proof link for 'constant_time_tag.ct_compare' has no stored proof subject
 
 -- not eligible ------------------------------------------- examples/constant_time_tag/src/main.con:67
 
-  `constant_time_tag.main` cannot be proved: fails predictable profile (has capabilities: Console, is entry point (main)).
+  `constant_time_tag.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Console, is entry point (main)).
 
  67 |     pub fn main() with(Console) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

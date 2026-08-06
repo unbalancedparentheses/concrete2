@@ -35,7 +35,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:68
 
-  `hmac_sha256.sha256_k` passes the predictable profile but has no registered proof.
+  `hmac_sha256.sha256_k` is eligible for proof but has no registered proof.
 
  68 |     fn sha256_k() -> [u32; 64] {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -69,7 +69,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:115
 
-  `hmac_sha256.maj` passes the predictable profile but has no registered proof.
+  `hmac_sha256.maj` is eligible for proof but has no registered proof.
 
  115 |     fn maj(x: u32, y: u32, z: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -81,7 +81,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:132
 
-  `hmac_sha256.rotr` passes the predictable profile but has no registered proof.
+  `hmac_sha256.rotr` is eligible for proof but has no registered proof.
 
  132 |     fn rotr(x: u32, n: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -93,7 +93,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:137
 
-  `hmac_sha256.big_sigma0` passes the predictable profile but has no registered proof.
+  `hmac_sha256.big_sigma0` is eligible for proof but has no registered proof.
 
  137 |     fn big_sigma0(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -105,7 +105,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:142
 
-  `hmac_sha256.big_sigma1` passes the predictable profile but has no registered proof.
+  `hmac_sha256.big_sigma1` is eligible for proof but has no registered proof.
 
  142 |     fn big_sigma1(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -117,7 +117,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:147
 
-  `hmac_sha256.small_sigma0` passes the predictable profile but has no registered proof.
+  `hmac_sha256.small_sigma0` is eligible for proof but has no registered proof.
 
  147 |     fn small_sigma0(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -129,7 +129,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:152
 
-  `hmac_sha256.small_sigma1` passes the predictable profile but has no registered proof.
+  `hmac_sha256.small_sigma1` is eligible for proof but has no registered proof.
 
  152 |     fn small_sigma1(x: u32) -> u32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -141,7 +141,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:169
 
-  `hmac_sha256.ct_compare_32` passes the predictable profile but has no registered proof.
+  `hmac_sha256.ct_compare_32` is eligible for proof but has no registered proof.
 
  169 |     fn ct_compare_32(a: [u8; 32], b: [u8; 32]) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -351,7 +351,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:401
 
-  `hmac_sha256.verify_hmac` passes the predictable profile but has no registered proof.
+  `hmac_sha256.verify_hmac` is eligible for proof but has no registered proof.
 
  401 |     fn verify_hmac(k: [u8; 128], k_len: i32, m: [u8; 256], m_len: i32,
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -363,7 +363,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:411
 
-  `hmac_sha256.abc_block` passes the predictable profile but has no registered proof.
+  `hmac_sha256.abc_block` is eligible for proof but has no registered proof.
 
  411 |     fn abc_block() -> [u8; 64] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -375,7 +375,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:423
 
-  `hmac_sha256.rfc4231_tc1_tag` passes the predictable profile but has no registered proof.
+  `hmac_sha256.rfc4231_tc1_tag` is eligible for proof but has no registered proof.
 
  423 |     fn rfc4231_tc1_tag() -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -387,7 +387,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- no proof ----------------------------------------------- examples/hmac_sha256/src/main.con:429
 
-  `hmac_sha256.rfc4231_tc2_tag` passes the predictable profile but has no registered proof.
+  `hmac_sha256.rfc4231_tc2_tag` is eligible for proof but has no registered proof.
 
  429 |     fn rfc4231_tc2_tag() -> [u8; 32] {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -399,7 +399,7 @@ error: proof link for 'hmac_sha256.hmac_sha256' has no stored proof subject — 
 
 -- not eligible ------------------------------------------- examples/hmac_sha256/src/main.con:446
 
-  `hmac_sha256.main` cannot be proved: fails predictable profile (has capabilities: Console, is entry point (main)).
+  `hmac_sha256.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Console, is entry point (main)).
 
  446 |     pub fn main() with(Console) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

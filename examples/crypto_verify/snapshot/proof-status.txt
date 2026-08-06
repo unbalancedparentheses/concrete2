@@ -62,7 +62,7 @@
 
 -- not eligible ------------------------------------------- examples/crypto_verify/src/main.con:79
 
-  `main.main` cannot be proved: fails predictable profile (is entry point (main)).
+  `main.main` cannot be proved: fails the proof-eligibility gates (is entry point (main)).
 
  79 | fn main() -> i32 {
     | ^^^^^^^^^^^^^^^^^^

@@ -21,7 +21,7 @@ error: spec drift for 'constant_time_tag.ct_compare' — registered spec 'Concre
 
 -- not eligible ------------------------------------------- examples/evidence_classes/stale_proof/src/main.con:22
 
-  `main.main` cannot be proved: fails predictable profile (has capabilities: Alloc, Console, Env, File, Network, Process, Random, Time, is entry point (main), allocation, blocking I/O).
+  `main.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Alloc, Console, Env, File, Network, Process, Random, Time, is entry point (main), allocation, blocking I/O).
 
  22 | pub fn main() with(Std) -> Int { return 0; }
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
