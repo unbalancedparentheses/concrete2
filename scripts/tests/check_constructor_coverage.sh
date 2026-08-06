@@ -64,6 +64,37 @@ echo "=== surface Expr (${#EXPR_CTORS[@]} constructors) handled by every fronten
 covers Concrete/Check/Check.lean     "checker (Check)"     "${EXPR_CTORS[@]}"
 covers Concrete/Elab/Elab.lean       "elaborator (Elab)"   "${EXPR_CTORS[@]}"
 covers Concrete/Frontend/Format.lean "formatter (Format)"  "${EXPR_CTORS[@]}"
+# OBLIGATION DISCOVERY. Enrolled 2026-08-06.
+#
+# HONEST LIMIT, measured rather than assumed: `covers` is FILE-granular, so this catches "no
+# walker anywhere handles constructor X" and NOT "walker #2 forgot X while walker #3 still has
+# it". Verified by mutation -- deleting the `.allocCall` arm from `collectDivisorsE` does not
+# fail this gate, because three sibling walkers still mention `.allocCall`.
+#
+# So it guards the extreme case, not the case that actually occurred. Recording that because a
+# gate described as preventing a bug class, which only prevents its worst version, is how a green
+# number starts meaning less than it appears to. Per-walker coverage needs a checker that parses
+# each `def` separately -- worth doing, and not what this is.
+#
+# It should have been enrolled from the start regardless: the walkers
+# that decide whether a runtime-safety obligation is EMITTED live here, and a constructor no
+# walker handles is an obligation that is never generated -- no failed proof, no `unproven`
+# marker, just a green report. Seven such defects were found by hand this year (`(a)[i]`,
+# `b.data[i]`, unannotated array sizes, nested declarations, shadowed bindings); every one was a
+# case some walker did not cover. This gate is the mechanical version of that search.
+# Leaves are EXCLUDED, and the distinction is the whole point. A `boolLit`/`strLit`/`fnRef`
+# contains no subexpression, so a catch-all returning `[]` is CORRECT for it -- demanding an
+# explicit arm would be noise. What must never be missed is a COMPOUND constructor: one holding a
+# sub-expression the walker has to recurse into, because forgetting one silently loses every
+# obligation underneath it.
+OBLIGATION_COMPOUND=()
+for c in "${EXPR_CTORS[@]}"; do
+  case "$c" in
+    boolLit|charLit|floatLit|strLit|intLit|ident|fnRef) continue ;;
+    *) OBLIGATION_COMPOUND+=("$c") ;;
+  esac
+done
+covers Concrete/Report/ReportObligations.lean "obligation discovery (compound ctors)" "${OBLIGATION_COMPOUND[@]}"
 
 echo ""
 echo "=== core CExpr (${#CEXPR_CTORS[@]} constructors) handled by every core pass ==="
