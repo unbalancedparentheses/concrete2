@@ -82,9 +82,11 @@ fi
 #     subject digest. A proof about that function stays valid-looking after the constant
 #     it depends on changes — freshness failing through the dependency axis.
 #
-#     Asserts the CURRENT WRONG verdict, so it FAILS when step 3 binds ConstId to an
-#     initializer digest. That failure is the signal to convert this leg into a positive
-#     one, not to delete it.
+#     Asserts the CURRENT verdict, and note WHICH digest: `subjectDigest` is
+#     `proofSubjectDigestV2` and already drives freshness — it is not the frozen V1 body
+#     fingerprint. So step 3 must NOT move it. Dependency material lands in shadow first,
+#     is measured against the corpus, and only becomes authoritative at the step-5
+#     migration; moving this digest earlier strands the stored proof links.
 if [ -x .lake/build/bin/concrete ]; then
   TD_CONST="$(mktemp -d)"
   printf 'mod m { const LIMIT: Int = 10;\n  pub fn f(p: Int) -> Bool { return p < LIMIT; } }\n' > "$TD_CONST/a.con"
@@ -98,7 +100,7 @@ if [ -x .lake/build/bin/concrete ]; then
   elif [ "$da" = "$db" ]; then
     ok "TRIPWIRE: a constant's VALUE does not reach the subject digest (LIMIT 10 vs 99 collide)"
   else
-    no "a constant's value now moves the subject digest — step 3 has landed. CONVERT this tripwire into a positive assertion and update entry 4"
+    no "a constant's value now moves the SUBJECT DIGEST. That digest drives freshness verdicts, so moving it invalidates every stored proof link — which is what the step-5 migration exists to sequence. If dependency binding has landed, it must first appear as a SHADOW line (like bodyBytesV2) reaching no verdict, and this tripwire converts to assert THAT. If the subject digest moved before the migration, revert and re-land it in shadow."
   fi
 else
   no "no built compiler; the constant-freshness tripwire did NOT run"

@@ -1721,6 +1721,47 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
       let details := (gaps.map (·.detail)).eraseDups
       s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
 
+/-- The dependency shadow line: which constants a body REACHES, and whether each is bound
+    to a meaning.
+
+    A `constRef` names a constant and says nothing about its value, so a proof over a body
+    reading `LIMIT` stays valid-looking when `LIMIT` changes from 10 to 99. This line
+    digests the initializer encodings of exactly the constants the body references, in
+    identity order, so the digest moves when any of their values does.
+
+    ORDERED BY IDENTITY, not by encounter: the same body reaching the same constants must
+    produce the same material regardless of the order it happens to mention them, or a
+    statement reordering that changes nothing would move the dependency digest.
+
+    REFUSED when a referenced constant has no binding. An imported constant has neither a
+    defining module nor an initializer available here, and digesting the ones that happen
+    to be bound would report a complete dependency root over an incomplete one.
+
+    SHADOW, like `bodyV2`: `subjectDigest` already drives freshness verdicts, so making a
+    constant's value move it before the step-5 migration would strand every stored proof
+    link. -/
+private def shadowDepsLine (body? : Option Proof.EvidenceBodyDraftV2)
+    (bindings : List (ConstId × String)) : String :=
+  match body? with
+  | none => "ABSENT (no structural body threaded)"
+  | some body =>
+    let referenced := (body.statements.flatMap Proof.stmtConstRefs).eraseDups
+    if referenced.isEmpty then "none (body references no constants)"
+    else
+      let sorted := referenced.map (·.render) |>.mergeSort (· ≤ ·)
+      let resolved := sorted.map fun r =>
+        match bindings.find? (fun b => b.1.render == r) with
+        | some (_, enc) => some (r, enc)
+        | none => none
+      match resolved.find? (·.isNone) with
+      | some _ =>
+        let unbound := (sorted.zip resolved).filterMap fun (r, o) => if o.isNone then some r else none
+        s!"REFUSED ({unbound.length} unbound: {", ".intercalate unbound})"
+      | none =>
+        let payload := String.join (resolved.filterMap id |>.map fun (r, enc) =>
+          "c:" ++ toString r.length ++ ":" ++ r ++ "=" ++ toString enc.length ++ ":" ++ enc)
+        s!"{shortHash ("depsV1:n" ++ toString sorted.length ++ ":" ++ payload)} ({sorted.length} const)"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1760,7 +1801,11 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- A body with any gap is REFUSED with its reasons rather than digested: the
         -- type makes that unrepresentable, and printing a digest over a partial body
         -- would offer something comparable that describes less than the program.
-        , s!"  shadow bodyV2: {shadowBodyV2Line e.evidenceBody}"
+        , s!"  shadow bodyV2: {shadowBodyV2Line e.evidenceBody}\n"
+        -- The DEPENDENCY axis, separate from the body axis. A body can be completely
+        -- described and still rest on a constant whose meaning is unrecorded; reporting
+        -- them on one line would let a complete body imply a complete subject.
+        , s!"  shadow deps: {shadowDepsLine e.evidenceBody e.constBindings}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 

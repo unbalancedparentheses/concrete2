@@ -494,6 +494,62 @@ case "$g" in
   *)                 no "the refusal does not name the unhandled construct ($g)" ;;
 esac
 
+# --- the DEPENDENCY axis (step 3, shadow) ------------------------------------------------
+# A `constRef` names a constant and says nothing about its value, so a proof over a body
+# reading LIMIT stayed valid-looking when LIMIT changed from 10 to 99. `shadow deps`
+# digests the initializer encodings of exactly the constants a body reaches.
+#
+# THE TWO HALVES MUST BOTH HOLD. The dependency digest has to MOVE with the value, and the
+# SUBJECT digest has to STAY — the latter already drives freshness verdicts, so moving it
+# before the step-5 migration would strand every stored proof link. A change that satisfied
+# only the first half would be the wrong fix shipped early.
+deps_of() {
+  "$BIN" "$1" --report subject-facts 2>/dev/null \
+    | awk -v w="v1:user:$2" '$0==w{i=1;next} /^v1:user:/{i=0} i&&/shadow deps:/{sub(/^ *shadow deps: /,"");print;exit}' || true
+}
+subj_of() {
+  "$BIN" "$1" --report subject-facts 2>/dev/null \
+    | awk -v w="v1:user:$2" '$0==w{i=1;next} /^v1:user:/{i=0} i&&/subject digest:/{sub(/^ *subject digest: /,"");print;exit}' || true
+}
+printf 'mod m { const LIMIT: Int = 10;\n  pub fn f(p: Int) -> Bool { return p < LIMIT; } }\n' > "$TMP/d10.con"
+printf 'mod m { const LIMIT: Int = 99;\n  pub fn f(p: Int) -> Bool { return p < LIMIT; } }\n' > "$TMP/d99.con"
+printf 'mod m { pub fn f(p: Int) -> Bool { return p < 10; } }\n' > "$TMP/dnone.con"
+
+d10="$(deps_of "$TMP/d10.con" m.f)"; d99="$(deps_of "$TMP/d99.con" m.f)"
+s10="$(subj_of "$TMP/d10.con" m.f)"; s99="$(subj_of "$TMP/d99.con" m.f)"
+dnone="$(deps_of "$TMP/dnone.con" m.f)"
+
+case "$d10" in
+  ""|ABSENT*|REFUSED*) no "a body reading a module constant has no dependency digest ($d10)" ;;
+  *) if [ "$d10" != "$d99" ]; then
+       ok "the dependency digest MOVES when a constant's value changes (10 vs 99)"
+     else
+       no "LIMIT=10 and LIMIT=99 produce the same dependency digest — the constant's MEANING is not bound"
+     fi ;;
+esac
+
+if [ -n "$s10" ] && [ "$s10" = "$s99" ]; then
+  ok "the SUBJECT digest does not move — dependency material stays shadow until the migration"
+else
+  no "the subject digest moved with a constant's value ($s10 vs $s99). It drives freshness verdicts, so this strands every stored proof link; dependency material must stay shadow until step 5"
+fi
+
+case "$dnone" in
+  none*) ok "a body referencing no constants says so, distinctly from a bound-but-empty digest" ;;
+  *)     no "a body with no constant references reported '$dnone'" ;;
+esac
+
+# NOT GATED, and why: the REFUSED path (a referenced constant with no binding) is
+# unreachable today because constants cannot be imported — `import lib.{LIMIT}` fails with
+# "'LIMIT' is not public in module 'lib'" regardless of `pub`. The branch is written the
+# correct way round (refuse rather than digest a partial dependency root) and will become
+# reachable if constants gain an import path. Same shape as the E0264 alias limitation.
+#
+# The CORPUS barely exercises this axis: 431 of 432 subjects reference no constant at all,
+# because only 2 example files declare one. That is a real measurement, not a producer
+# blindness — verified by counting `const` declarations — but it means these constructed
+# probes, not corpus coverage, are what tests dependency binding.
+
 # --- ratchet: corpus coverage must not regress ------------------------------------------
 # Measured 2026-08-06: 421 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
 # -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates)

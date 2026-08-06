@@ -205,6 +205,19 @@ structure CModule where
       by position: a positional pairing with declFacts would be a second fact that can
       drift out of alignment. -/
   evidenceBodies : List (CallableId × Proof.EvidenceBodyDraftV2) := []
+  /-- DEPENDENCY MATERIAL for constants: each module constant's identity paired with a
+      canonical encoding of its INITIALIZER.
+
+      Threaded from Elab rather than rebuilt downstream, for the same reason
+      `evidenceBodies` is: the encoding already exists there (the contract encoder produced
+      it), and recomputing it from `constants`' Core expression would be a second producer
+      of one fact.
+
+      A body's `constRef` names a constant and says nothing about its value, so without
+      this a proof stays valid-looking when `const LIMIT = 10` becomes `= 99`. This is the
+      material that closes it; it is SHADOW until the step-5 migration, because the subject
+      digest already drives freshness verdicts. -/
+  constBindings : List (ConstId × String) := []
   structs : List CStructDef
   enums : List CEnumDef
   functions : List CFnDef

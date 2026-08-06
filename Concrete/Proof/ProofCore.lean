@@ -1889,6 +1889,14 @@ structure ProofCoreEntry where
       rebuilt. Kept beside declFacts because the facts record cannot reference the tree
       (EvidenceTree imports SubjectFacts), and looked up by IDENTITY, never by position. -/
   evidenceBody : Option Proof.EvidenceBodyDraftV2 := none
+  /-- The DEPENDENCY MATERIAL this entry can see: every constant the enclosing module
+      binds, with a canonical encoding of its initializer. Carried per entry because the
+      dependency axis is a property of the SUBJECT, and the subject is a declaration.
+
+      Module-wide rather than pre-filtered to what this body references: filtering is the
+      consumer's job, and pre-filtering here would make "referenced but unbound"
+      indistinguishable from "not referenced". -/
+  constBindings : List (ConstId × String) := []
   /-- `proofSubjectDigestV2` over those facts and the body fingerprint. `none`
       when the facts are absent or INCOMPLETE — an incomplete subject must not be
       representable as a digest string, or it becomes comparable as though it
@@ -2360,6 +2368,7 @@ private partial def extractModule
         else []
       (accE ++ [{ qualName, bareName, callableId := cid,
                    declFacts := facts?, evidenceBody := evBody?,
+                   constBindings := m.constBindings,
                    subjectDigest := subjDigest, fn := f, extracted
                  , unsupported := unsup
                  , fingerprint := fp, params := f.params.map Prod.fst

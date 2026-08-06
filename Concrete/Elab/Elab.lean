@@ -2562,6 +2562,9 @@ partial def elabModule (m : Module) (summary : FileSummary)
   .ok {
     name := m.name
     declFacts := declFacts
+    -- Reuses constEnv, which already holds (name, ConstId, canonical initializer
+    -- encoding). Dropping the name: identity is the key, and a spelling must not be.
+    constBindings := constEnv.map fun (_, cid, enc) => (cid, enc)
     evidenceBodies := fnResults.map fun ((f, implTy), _cfn, _bii, evidenceBody) =>
       (CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length,
        evidenceBody)
