@@ -131,6 +131,11 @@ inductive EvidenceExprV2 where
       function containing a match has an incomplete subject. Arm ORDER is semantic: the
       first matching arm wins. -/
   | matchExpr (scrutinee : EvidenceExprV2) (arms : List EvidenceArmV2)
+  /-- An if-EXPRESSION. Distinct from `EvidenceStmtV2.branch`, which is the statement
+      form: this one yields a value, and the two are not interchangeable. Each branch is
+      a statement list because that is what the surface allows, and the value is the
+      trailing expression of whichever branch runs. -/
+  | ifExpr (cond : EvidenceExprV2) (thenB elseB : List EvidenceStmtV2)
   /-- FAIL CLOSED — draft only. -/
   | gap (reason : EvidenceGap)
 deriving Inhabited
@@ -247,6 +252,7 @@ partial def exprGaps : EvidenceExprV2 → List EvidenceGap
   | .arrayLit _ els => els.flatMap exprGaps
   | .tryProp x _ => exprGaps x
   | .matchExpr sc arms => exprGaps sc ++ arms.flatMap armGaps
+  | .ifExpr c t e => exprGaps c ++ t.flatMap stmtGaps ++ e.flatMap stmtGaps
 
 partial def patternGaps : EvidencePatternV2 → List EvidenceGap
   | .gap r => [r]
@@ -322,6 +328,7 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .arrayLit _ els => els.flatMap exprConstRefs
   | .tryProp x _ => exprConstRefs x
   | .matchExpr sc arms => exprConstRefs sc ++ arms.flatMap armConstRefs
+  | .ifExpr c t e => exprConstRefs c ++ t.flatMap stmtConstRefs ++ e.flatMap stmtConstRefs
 
 
 

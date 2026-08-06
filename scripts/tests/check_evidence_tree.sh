@@ -64,6 +64,9 @@ partial def shape : EvidenceExprV2 → String
   | .arrayLit t els => s!"AR({t.render},[{",".intercalate (els.map shape)}])"
   | .tryProp x t   => s!"TRY({shape x},{t.render})"
   | .matchExpr sc arms => s!"Q({shape sc},{arms.length})"
+  -- Branch LENGTHS, not their contents: `shape` is declared before `sshape` and the two
+  -- are not mutual, so this mirrors how `matchExpr` treats its arms.
+  | .ifExpr c t e  => s!"H({shape c},{t.length},{e.length})"
   | .gap _         => "GAP"
 
 partial def sshape : EvidenceStmtV2 → String

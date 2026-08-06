@@ -837,6 +837,41 @@ MUT_NEW+=("    let cBodyEv ← elabStmtsEv body
 MUT_DESC+=("for-loop: body elaborated with no loop frame")
 gate_for_last "scripts/tests/check_shadow_body_v2.sh"
 
+# The 2a assembly pass. Each of these was a gap that discarded information the site had
+# already computed, so each mutation restores the loss it used to have.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some owner => Proof.evField { owner := owner, field := field } cObjPlaceEv")
+MUT_NEW+=("      | some _ => Proof.evField { owner := TypeId.user \"\" \"\", field := field } cObjPlaceEv -- MUTATION: place owner constant")
+MUT_DESC+=("field place: owning type replaced by a constant")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some owner => Proof.evField { owner := owner, field := field } cObjPlaceEv")
+MUT_NEW+=("      | some owner => Proof.evField { owner := owner, field := \"\" } cObjPlaceEv -- MUTATION: place field name blanked")
+MUT_DESC+=("field place: written field name blanked")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("(Proof.evCall (CallableId.ofIntrinsic \"discard\") [cArgEv.evidence])")
+MUT_NEW+=("(Proof.evCall (CallableId.ofIntrinsic \"discard\") []) -- MUTATION: discarded expression dropped")
+MUT_DESC+=("discard(): argument dropped from the intrinsic call")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("        let mut argEvs : List Proof.EvidenceExprV2 := [selfEv]")
+MUT_NEW+=("        let mut argEvs : List Proof.EvidenceExprV2 := [selfEv].drop 1 -- MUTATION: receiver dropped")
+MUT_DESC+=("method call: self receiver dropped from the argument list")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
+# Parenthesised so it PARSES. Written `(cElseEv.map (·.evidence)).drop 1` without the outer
+# parens it is a syntax error, and the mutation scores KILLED (build) — the compiler
+# noticing, not the gate.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("        (cThenEv.map (·.evidence)) (cElseEv.map (·.evidence)))")
+MUT_NEW+=("        (cThenEv.map (·.evidence)) ((cElseEv.map (·.evidence)).drop 1)) -- MUTATION: else branch dropped")
+MUT_DESC+=("if-expression: else branch dropped")
+gate_for_last "scripts/tests/check_shadow_body_v2.sh"
+
 # 58. An unclassified node constructor. Adding one to BodyIdentityUse must be
 # REJECTED, and this mutation adds a fallback arm at the same time so the exhaustive
 # match still compiles — the case a type-checker alone cannot catch. The reflective

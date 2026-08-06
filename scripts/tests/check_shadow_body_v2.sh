@@ -122,6 +122,149 @@ case "$b" in
   *)                              ok "a break inside a for-loop resolves to its enclosing loop" ;;
 esac
 
+# --- constructs wired in the 2a assembly pass -------------------------------------------
+# Each was a gap that discarded information the site had already computed. The legs below
+# assert the information is now DISTINGUISHING, not merely present.
+
+# Some probes declare helper functions or an impl method, which are subjects too, so the
+# digest must be selected by CALLABLE IDENTITY. Neither `head -1` nor `tail -1` works:
+# subjects are not emitted in declaration order (`m.f` precedes `m.P_get` even though the
+# impl is written first), and picking by position silently compared the wrong subject —
+# this leg passed by hand and failed in the gate for exactly that reason.
+#
+# Reads the `shadow bodyV2` line inside the block introduced by `v1:user:<id>`.
+digest_of() {
+  "$BIN" "$1" --report subject-facts 2>/dev/null \
+    | awk -v want="v1:user:$2" '
+        $0 == want { inblock = 1; next }
+        /^v1:user:/ { inblock = 0 }
+        inblock && /shadow bodyV2:/ { sub(/^ *shadow bodyV2: /, ""); print; exit }
+      ' || true
+}
+
+# FIELD PLACE. The written field's OWNER is part of the place: two structs with a
+# same-spelled field are different writes. Previously the place was a gap, so every field
+# assignment in the corpus was described identically.
+# The bodies must differ ONLY in the write's OWNER — which took two corrections, both found
+# by mutating the owner to a constant and watching the leg still pass:
+#
+#   1. ending `return x.v` let the field READ (its own owner-bearing FieldId) carry the
+#      difference;
+#   2. taking `(a: A, b: B)` and using one or the other made the initializers read
+#      different BINDER POSITIONS.
+#
+# Both probes therefore take a single parameter at position 0 and never read the field
+# back, leaving the write's owner as the only thing that differs. Parameter types differ
+# between the two programs, but parameters are not part of the BODY digest.
+cat > "$TMP/fp_a.con" <<'CON'
+mod m { pub struct Copy A { pub v: Int } pub struct Copy B { pub v: Int }
+  pub fn f(a: A) -> Int { let mut x: A = a; x.v = 1; return 0; } }
+CON
+cat > "$TMP/fp_b.con" <<'CON'
+mod m { pub struct Copy A { pub v: Int } pub struct Copy B { pub v: Int }
+  pub fn f(b: B) -> Int { let mut x: B = b; x.v = 1; return 0; } }
+CON
+fpa="$(digest_of "$TMP/fp_a.con" m.f)"; fpb="$(digest_of "$TMP/fp_b.con" m.f)"
+case "$fpa" in
+  REFUSED*|ABSENT*|"") no "a field assignment does not digest ($fpa)" ;;
+  *) if [ "$fpa" != "$fpb" ]; then
+       ok "the field place carries its owning type, so A.v and B.v are different writes"
+     else
+       no "writing A.v and B.v produce the SAME bytes — the place is keyed on spelling, not owner"
+     fi ;;
+esac
+
+# The field NAME, separately from its owner. A mutation that blanked the name SURVIVED the
+# owner leg above — both writes kept distinct owners, so they still differed — which is why
+# the two halves of a FieldId need two probes rather than one.
+cat > "$TMP/fp_v.con" <<'CON'
+mod m { pub struct Copy A { pub v: Int, pub w: Int }
+  pub fn f(a: A) -> Int { let mut x: A = a; x.v = 1; return x.v; } }
+CON
+cat > "$TMP/fp_w.con" <<'CON'
+mod m { pub struct Copy A { pub v: Int, pub w: Int }
+  pub fn f(a: A) -> Int { let mut x: A = a; x.w = 1; return x.v; } }
+CON
+fpv="$(digest_of "$TMP/fp_v.con" m.f)"; fpw="$(digest_of "$TMP/fp_w.con" m.f)"
+if [ -z "$fpv" ] || [ -z "$fpw" ]; then
+  no "the field-name probe produced no digest"
+elif [ "$fpv" != "$fpw" ]; then
+  ok "the field place carries which field is written, so x.v = 1 and x.w = 1 differ"
+else
+  no "writing x.v and x.w produce the SAME bytes — the field name is not in the place"
+fi
+
+# DISCARD. Described as the intrinsic call it is, WITH its argument: `discard(e)` runs `e`.
+cat > "$TMP/dsc_a.con" <<'CON'
+mod m { pub fn f(p: Int) -> Int { discard(p + 1); return 0; } }
+CON
+cat > "$TMP/dsc_b.con" <<'CON'
+mod m { pub fn f(p: Int) -> Int { discard(p * 2); return 0; } }
+CON
+da="$(digest_of "$TMP/dsc_a.con" m.f)"; db="$(digest_of "$TMP/dsc_b.con" m.f)"
+case "$da" in
+  REFUSED*|ABSENT*|"") no "discard() does not digest ($da)" ;;
+  *) if [ "$da" != "$db" ]; then
+       ok "discard() carries its argument, so discarding different expressions differs"
+     else
+       no "discard(p+1) and discard(p*2) share bytes — the argument is not carried"
+     fi ;;
+esac
+
+# METHOD RECEIVER. The self argument was a gap, so every method call on a given callee was
+# described identically regardless of what it was called on.
+cat > "$TMP/mc_a.con" <<'CON'
+mod m { pub struct Copy P { pub v: Int }
+  impl P { pub fn get(&self) -> Int { return self.v; } }
+  pub fn f(a: P, b: P) -> Int { return a.get(); } }
+CON
+cat > "$TMP/mc_b.con" <<'CON'
+mod m { pub struct Copy P { pub v: Int }
+  impl P { pub fn get(&self) -> Int { return self.v; } }
+  pub fn f(a: P, b: P) -> Int { return b.get(); } }
+CON
+ma="$(digest_of "$TMP/mc_a.con" m.f)"; mb="$(digest_of "$TMP/mc_b.con" m.f)"
+case "$ma" in
+  REFUSED*|ABSENT*|"") no "a method call does not digest ($ma)" ;;
+  *) if [ "$ma" != "$mb" ]; then
+       ok "the method receiver is part of the call, so a.get() and b.get() differ"
+     else
+       no "a.get() and b.get() share bytes — the receiver is not in the evidence"
+     fi ;;
+esac
+
+# IF-EXPRESSION. Its own constructor and its own byte tag, separate from the statement
+# `branch`. Each part must move the digest.
+ifexpr() { printf 'mod m { pub fn f(p: Int) -> Int { let x: Int = if %s { %s } else { %s }; return x; } }\n' "$1" "$2" "$3" > "$4"; }
+ifexpr "p > 0" "1" "2" "$TMP/ie_base.con"
+ifexpr "p > 7" "1" "2" "$TMP/ie_cond.con"
+ifexpr "p > 0" "9" "2" "$TMP/ie_then.con"
+ifexpr "p > 0" "1" "9" "$TMP/ie_else.con"
+ieb="$(digest_of "$TMP/ie_base.con" m.f)"
+case "$ieb" in
+  REFUSED*|ABSENT*|"") no "an if-expression does not digest ($ieb)" ;;
+  *)                   ok "an if-expression digests" ;;
+esac
+for part in cond then else; do
+  v="$(digest_of "$TMP/ie_$part.con" m.f)"
+  if [ -z "$ieb" ] || [ -z "$v" ]; then no "if-expression $part probe produced no digest"
+  elif [ "$v" != "$ieb" ]; then ok "changing the if-expression $part moves the digest"
+  else no "the if-expression $part is INVISIBLE to the digest"; fi
+done
+
+# The if-EXPRESSION and the if-STATEMENT must not share bytes. These are different
+# programs, so a difference is expected — the leg exists to catch the two node kinds being
+# given one encoding, which would make it an accident that they differ at all.
+cat > "$TMP/ie_stmt.con" <<'CON'
+mod m { pub fn f(p: Int) -> Int { let mut x: Int = 2; if p > 0 { x = 1; } else { x = 2; } return x; } }
+CON
+ist="$(digest_of "$TMP/ie_stmt.con" m.f)"
+if [ -n "$ist" ] && [ "$ist" != "$ieb" ]; then
+  ok "the if-expression and the if-statement do not share an encoding"
+else
+  no "an if-expression and an if-statement produced the same bytes ($ieb) — one value-bearing, one not"
+fi
+
 # --- refusal: a body with gaps prints its REASONS, never a digest -----------------------
 # An array literal is unhandled by the producer — its element type needs a name that
 # `TypeId` cannot express — so this subject must be refused.
@@ -150,7 +293,8 @@ case "$g" in
 esac
 
 # --- ratchet: corpus coverage must not regress ------------------------------------------
-# Measured 2026-08-06: 316 of 432 subjects digest, 0 absent (292 before the for-loop).
+# Measured 2026-08-06: 323 of 432 subjects digest, 0 absent (292 before the for-loop, 316 after
+# it, 323 once the 2a assembly rows landed).
 #
 # A GAP NODE DISCARDS ITS SUBTREE, so this number does not move by the count of refusals
 # closed. Wiring the for-loop closed 54 of them and coverage rose by 24: the other 30 bodies
@@ -201,7 +345,7 @@ else
   no "$absent subjects have NO structural body — the body is not reaching ProofCore for them"
 fi
 
-FLOOR=316
+FLOOR=323
 if [ "$digested" -ge "$FLOOR" ]; then
   ok "structural coverage $digested/$total (floor $FLOOR)"
 else

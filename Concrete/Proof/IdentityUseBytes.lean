@@ -217,6 +217,12 @@ partial def exprBytes : EvidenceExprV2 → String
   | .tryProp x t     => lp "T" (t.render ++ "|" ++ exprBytes x)
   | .matchExpr sc arms => lp "Q" (exprBytes sc ++ "|" ++ toString arms.length ++ ":"
                                    ++ String.join (arms.map armBytes))
+  -- "H", its own tag: an if-EXPRESSION is not the statement `branch` (tag below) and not
+  -- a two-armed match. Sharing a tag with either would merge constructs whose value
+  -- semantics differ.
+  | .ifExpr c t e => lp "H" (exprBytes c ++ "|" ++ toString t.length ++ ":"
+      ++ String.join (t.map stmtBytes) ++ "|" ++ toString e.length ++ ":"
+      ++ String.join (e.map stmtBytes))
   -- A gap must never be serialized: CompleteEvidenceBodyV2 cannot contain one, so this
   -- arm exists only for totality and emits a form no complete body can produce.
   | .gap _           => lp "!" "gap"
@@ -299,6 +305,7 @@ partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
   | .arrayLit t els  => [.typeRef t] ++ els.flatMap exprFlatUses
   | .tryProp x t     => [.typeRef t] ++ exprFlatUses x
   | .matchExpr sc arms => exprFlatUses sc ++ arms.flatMap armFlatUses
+  | .ifExpr c t e => exprFlatUses c ++ t.flatMap stmtFlatUses ++ e.flatMap stmtFlatUses
 
 partial def patternFlatUses : EvidencePatternV2 → List BodyIdentityUse
   | .wildcard | .binder | .gap _ => []

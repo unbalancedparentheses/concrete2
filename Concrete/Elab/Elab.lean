@@ -579,7 +579,13 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
     let resultTy := match hint with
       | some t => t
       | none => (trailingTy cThen <|> trailingTy cElse).getD .unit
-    return ElaboratedExprV2.mk (CExpr.ifExpr cCond cThen cElse resultTy) (Proof.evUnhandledExpr "if-expression: statement evidence not wired")
+    -- Both branches in full, as STATEMENT lists. The value is the trailing expression
+    -- of whichever branch runs, and `exprStmt`'s isValue flag already records which
+    -- statement that is — so the branches need no separate value slot, and a branch
+    -- that diverges or ends in `;` correctly contributes none.
+    return ElaboratedExprV2.mk (CExpr.ifExpr cCond cThen cElse resultTy)
+      (Proof.EvidenceExprV2.ifExpr cCondEv.evidence
+        (cThenEv.map (·.evidence)) (cElseEv.map (·.evidence)))
 
   | .call _ fnName typeArgs args =>
     elabCallEv fnName typeArgs args hint (some e.getSpan)
@@ -1063,19 +1069,30 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
         let retTy := substTy mapping sig.retTy
         -- Wrap object with borrow/borrowMut if method expects a reference self
         -- and the object is not already a reference
-        let selfArg := match sig.params.head? with
+        -- ONE match decides both the Core receiver and its evidence. Written as two
+        -- matches they drift: the Core would borrow while the evidence recorded a
+        -- by-value receiver, and `&self` and `self` are different calls.
+        --
+        -- `false` means no wrapper is applied, so the evidence is the receiver's own.
+        let selfShape : Option Bool := match sig.params.head? with
           | some (_, selfTy) =>
-            let resolvedSelfTy := substTy mapping selfTy
-            match resolvedSelfTy, objTy with
-            | .ref _, .ref _ => cObj          -- already a ref, pass as-is
-            | .ref _, .refMut _ => cObj       -- already a ref, pass as-is
-            | .refMut _, .refMut _ => cObj    -- already a mut ref, pass as-is
-            | .ref _, _ => CExpr.borrow cObj (.ref objTy)
-            | .refMut _, _ => CExpr.borrowMut cObj (.refMut objTy)
-            | _, _ => cObj                    -- by-value self, pass as-is
-          | none => cObj
+            match substTy mapping selfTy, objTy with
+            | .ref _, .ref _ => none          -- already a ref, pass as-is
+            | .ref _, .refMut _ => none       -- already a ref, pass as-is
+            | .refMut _, .refMut _ => none    -- already a mut ref, pass as-is
+            | .ref _, _ => some false         -- borrow
+            | .refMut _, _ => some true       -- borrowMut
+            | _, _ => none                    -- by-value self, pass as-is
+          | none => none
+        let selfArg := match selfShape with
+          | some false => CExpr.borrow cObj (.ref objTy)
+          | some true  => CExpr.borrowMut cObj (.refMut objTy)
+          | none       => cObj
+        let selfEv := match selfShape with
+          | some isMut => Proof.evBorrow isMut cObjEv.evidence
+          | none       => cObjEv.evidence
         let mut cArgs : List CExpr := [selfArg]
-        let mut argEvs : List Proof.EvidenceExprV2 := [Proof.evUnhandledExpr "self argument"]
+        let mut argEvs : List Proof.EvidenceExprV2 := [selfEv]
         for (arg, pTy) in args.zip methodParams do
           let cArgEv ← elabExprEv arg (some pTy)
           let cArg := cArgEv.core
@@ -1145,13 +1162,24 @@ partial def elabCallEv (fnName : String) (typeArgs : List Ty) (args : List Expr)
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArgEv ← elabExprEv arg
     let cArg := cArgEv.core
+    -- Described as the INTRINSIC CALL it is, not as the `if true { arg; }` it lowers
+    -- to. The desugaring is a lowering detail with no expression-level node, and
+    -- describing the surface intent keeps `discard(e)` distinct from a real branch.
+    --
+    -- The ARGUMENT is carried. `discard(f())` and `discard(g())` run different code,
+    -- and an intrinsic call recorded with an empty argument list would merge them.
     return ElaboratedExprV2.mk (CExpr.ifExpr (.boolLit true) [.expr cArg false] [] .unit)
-      (Proof.evUnhandledExpr "discard(): desugared to a no-op if")
+      (Proof.evCall (CallableId.ofIntrinsic "discard") [cArgEv.evidence])
   -- Intercept alloc(val)
   if intrinsic == some .alloc then
     let arg := match args with | a :: _ => a | [] => Expr.intLit default 0
     let cArgEv ← elabExprEv arg
     let cArg := cArgEv.core
+    -- The argument is NOT carried, unlike `discard` above. `alloc(1)` and `alloc(2)`
+    -- therefore share evidence. Unreachable today: `alloc` requires the `Alloc`
+    -- capability and any capability-bearing function is excluded from the provable
+    -- subset, so no eligible subject can contain this node. If that exclusion is ever
+    -- relaxed, carry `cArgEv.evidence` here before it becomes a live collision.
     return ElaboratedExprV2.mk (CExpr.call "alloc" [] [cArg] (.heap cArg.ty))
       (Proof.evCall (CallableId.ofIntrinsic "alloc") [])
   -- Intercept free(ptr)
@@ -1654,6 +1682,15 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
     let cObj := cObjEv.core
     -- 6D#3: `.field =` on a heap shell derefs first (p.f = v ≡ (*p).f = v —
     -- the old `->` desugar folded into `.`).
+    --
+    -- The evidence tracks the deref, because the place is what the program writes
+    -- through: `p.f = v` on a heap shell writes through a dereference and `q.f = v` on
+    -- a plain struct does not. Describing both as a bare field projection would give
+    -- one encoding to two different writes.
+    let derefed := match cObj.ty with
+      | .heap _ | .heapArray _ | .ref (.heap _) | .refMut (.heap _) => true
+      | _ => false
+    let cObjPlaceEv := if derefed then Proof.evDeref cObjEv.evidence else cObjEv.evidence
     let cObj := match cObj.ty with
       | .heap t | .heapArray t => CExpr.deref cObj t
       | .ref (.heap t) | .refMut (.heap t) => CExpr.deref cObj t
@@ -1670,20 +1707,30 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
       | .generic n a => (n, a)
       | _ => ("", [])
     let env ← getEnv
-    let fieldTy ←
-      match env.structs.find? fun s => s.name == sName with
-      | some sd =>
-        match sd.fields.find? fun f => f.name == field with
-        | some f =>
-          recordFieldUse sd field
-          let mapping := sd.typeParams.zip tArgs
-          pure (some (substTy mapping f.ty))
-        | none => pure none
-      | none => pure none
+    -- Resolve the field's TYPE and its IDENTITY in one pass. Two lookups keyed on the
+    -- same name is how the owner and the type drift apart; the identity is an output of
+    -- this resolution, not a second search for it.
+    let mut fieldTy : Option Ty := none
+    let mut fieldOwner : Option TypeId := none
+    match env.structs.find? fun s => s.name == sName with
+    | some sd =>
+      match sd.fields.find? fun f => f.name == field with
+      | some f =>
+        recordFieldUse sd field
+        let mapping := sd.typeParams.zip tArgs
+        fieldTy := some (substTy mapping f.ty)
+        fieldOwner := sd.typeId?
+      | none => pure ()
+    | none => pure ()
     let cValEv ← elabExprEv value fieldTy
     let cVal := cValEv.core
+    -- An owner-less field is REFUSED, not encoded under its spelling: two same-spelled
+    -- fields on different types would otherwise share one identity in the place.
+    let placeEv := match fieldOwner with
+      | some owner => Proof.evField { owner := owner, field := field } cObjPlaceEv
+      | none => Proof.evUnhandledExpr "field place: owning type has no TypeId"
     return ElaboratedStmtV2.mk [.fieldAssign cObj field cVal]
-      (Proof.EvidenceStmtV2.assign (Proof.evUnhandledExpr "field place: FieldId not minted here") cValEv.evidence)
+      (Proof.EvidenceStmtV2.assign placeEv cValEv.evidence)
 
   | .derefAssign _ target value =>
     let cTargetEv ← elabExprEv target

@@ -267,8 +267,31 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    identical `params: [(p, Point)]` but different subject AND body digests, because the body
    identifies the field through a `TypeId`-owned `FieldId`. Measured, not assumed.)
 
-   The assume row (7) is different in kind from all of these: its predicate also feeds the
+   **Done: the assembly rows** (field place, `self` receiver, `discard()`, if-expression).
+   Each discarded information the site had already computed:
+
+   - the field ASSIGNMENT place had no `FieldId`, so every field write in the corpus was
+     described identically. It now carries owner and field name, and tracks the heap-shell
+     deref, because writing through a dereference is not the same write.
+   - the METHOD RECEIVER was a gap in the named-type branch while the trait-bound branch
+     beside it already threaded `cObjEv.evidence`. One match now yields both the Core
+     receiver and its evidence, so the borrow cannot drift from what is recorded.
+   - `discard(e)` is described as the intrinsic call it is, WITH its argument.
+   - the IF-EXPRESSION got its own constructor and byte tag, separate from the statement
+     `branch`. One value-bearing, one not; they must not share an encoding.
+
+   Corpus **323 of 432**.
+
+   **`assert` (32) is NOT an assembly row** — I mis-classified it. Its predicate is
+   deliberately not elaborated: it may legally read ghost bindings in a proof context,
+   which `elabExprEv` rejects. Wiring it needs a proof-context elaboration path, which is
+   the same prerequisite as the assume row (7) — and assume additionally feeds the
    assumption axis, so it must not yield an unqualified claim.
+
+   **Also latent, recorded at the site rather than filed:** `alloc`/`free` drop their
+   arguments, so `alloc(1)` and `alloc(2)` share evidence. Unreachable today — they require
+   the `Alloc` capability and capability-bearing functions are excluded from the provable
+   subset — but it becomes a live collision the moment that exclusion is relaxed.
 3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
    and assumption edges, table reachability.
 4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong
