@@ -43,6 +43,9 @@ The `book/` subdirectory is for tutorial-style and user-facing structured docume
 ## How To Read The Docs
 
 - Read [../README.md](../README.md) first for project overview, current status, and build/test instructions.
+- Read [VC_GENERATOR_DESIGN.md](VC_GENERATOR_DESIGN.md) for the planned replacement of the four
+  hand-written obligation walkers with a weakest-precondition calculus — the layer that produced
+  every discovery defect found this year.
 - Read [../ROADMAP.md](../ROADMAP.md) for active and future work. Start with its two
   orientation sections: **"Design honesty: this is largely Why3's architecture"** (what this
   design shares with the state of the art, what is better here, and the one layer that is worse)

@@ -510,6 +510,15 @@ weakest-precondition generator makes most of those **impossible by construction*
 forget a case when you are not enumerating cases. Four walkers were patched to fix symptoms whose
 common cause is the absence of a calculus.
 
+**The design is written: [docs/VC_GENERATOR_DESIGN.md](docs/VC_GENERATOR_DESIGN.md).** One
+traversal plus a per-constructor rule table replaces four walkers; the `if`/`while` rules subsume
+`scopedWalk`'s hand-threaded guards, and the transformer's environment is the `ScopeDecls` work
+already done. It recommends running over **Core rather than the surface AST**, which is the one
+change that attacks H19 structurally. Migration is differential against the existing walkers —
+they are a usable oracle now that their seven defects are fixed and gated, and every diff is a
+finding either way. It also makes Register A statable as ONE theorem ("if every obligation from
+`wp(body, True)` holds, the body cannot trap") instead of five half-discharged rows.
+
 **Consequence for planning:** adding more tiers (rungs) grows what CAN be expressed, while the
 generator remains the part most likely to be silently wrong. A principled VC generator is
 therefore plausibly worth more than the next two rungs combined, and it subsumes H19 (the
@@ -604,6 +613,9 @@ Point 3 is what makes the other two honest, and it is the cheapest to keep.
    the faithfulness cost above;
 5. **loop invariants as obligations** — the other half of liveness;
 6. **heap / separation** — largest remaining item on axis 1; needs a design before any code.
+
+**Ahead of items 2–6:** the VC generator (design linked above). Steps 1–2 of its sequencing are
+small and reversible; the commitment point is moving generation to Core.
 
 ## Branch `spike/non-arithmetic-multi-kernel` (depends on `spike/multi-prover-evidence`)
 
