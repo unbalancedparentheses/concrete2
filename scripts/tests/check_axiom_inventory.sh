@@ -114,6 +114,53 @@ done
   && ok "docs/AXIOMS.md documents the kernel-axiom allowlist" \
   || no "docs/AXIOMS.md missing/out of sync with the allowlist ($ALLOWLIST)"
 
+# ---------------------------------------------------------------------------
+# NEGATIVE CONTROL: does the detection actually catch anything?
+#
+# Everything above asserts that NO registered proof escapes the allowlist. That
+# passes just as happily if the detection is broken -- an empty theorem list, a
+# `#print axioms` that silently produced nothing, an allowlist that accidentally
+# swallowed `sorryAx`. "No violations found" and "the finder is broken" look
+# identical from the outside, and this gate guards the single most important claim
+# in the repo: that a `sorry` cannot be presented as evidence.
+#
+# So: build a theorem that genuinely depends on `sorryAx`, run the SAME pipeline
+# over it, and require that it is flagged.
+echo "=== negative control: a sorry-backed theorem must be CAUGHT ==="
+NC="$TMP/nc"; mkdir -p "$NC"
+cat > "$NC/Bad.lean" <<'LEAN'
+theorem nc_incomplete : ∀ n : Nat, n + 0 = n := by sorry
+#print axioms nc_incomplete
+LEAN
+# `lake env lean` prints the axioms to stdout; capture separately from the exit
+# status, because a file containing `sorry` exits non-zero (warning) and
+# `set -o pipefail` would otherwise turn a MATCH into a failure.
+NC_OUT="$( lake env lean "$NC/Bad.lean" 2>&1 || true )"
+NC_AXIOMS="$( printf '%s' "$NC_OUT" | sed -n 's/^.*depends on axioms: \[\(.*\)\]$/\1/p' | tr -d ',' )"
+if [ -z "$NC_AXIOMS" ]; then
+  no "the control produced NO axiom line — `#print axioms` parsing is broken, so the gate above proves nothing"
+else
+  # Run the real classification over it: sorryAx is neither allowlisted nor a
+  # native-trust axiom, so it must land in VIOLATIONS.
+  NC_VIOL=""
+  for a in $NC_AXIOMS; do
+    case " $ALLOWLIST " in *" $a "*) continue ;; esac
+    case " $NATIVE_AXIOMS " in *" $a "*) continue ;; esac
+    NC_VIOL="$NC_VIOL $a"
+  done
+  case "$NC_VIOL" in
+    *sorryAx*) ok "a sorry-backed theorem is classified as a violation (detection has teeth)" ;;
+    "")        no "sorryAx was NOT flagged — the allowlist or classifier is swallowing it" ;;
+    *)         no "the control was flagged, but not for sorryAx:$NC_VIOL" ;;
+  esac
+  # And the allowlist must never contain it, which is the one-line way this gate
+  # could be silently disabled.
+  case " $ALLOWLIST " in
+    *" sorryAx "*) no "sorryAx is IN the allowlist — every incomplete proof would pass" ;;
+    *)             ok "sorryAx is not allowlisted" ;;
+  esac
+fi
+
 echo ""
 echo "AXIOM-INVENTORY: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
