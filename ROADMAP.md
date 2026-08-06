@@ -578,6 +578,48 @@ that the model is equivalent to fixed-width semantics — a Register-B-style tra
 obligation, not merely a lowering. **That equivalence proof is the actual work of rung 4**, and
 `bv_decide`'s native checker (H20) caps the evidence quality of the Lean column regardless.
 
+#### Rung 4 — probed properly (2026-08-06): the MODEL BRIDGE exists, the shared type does not
+
+Two separable questions, and they came out differently.
+
+**1. The model bridge is real and cheap — Lean proves it.** The worry was that a `Z`/`Nat` model of
+`u32` bitwise operations might not correspond to fixed-width semantics, making a three-kernel proof
+about the model say nothing about the program. Lean settles it directly against its native
+`BitVec 32`:
+
+```
+theorem and_model (x y : BitVec 32) : (x &&& y).toNat = x.toNat &&& y.toNat := by simp
+theorem or_model  (x y : BitVec 32) : (x ||| y).toNat = x.toNat ||| y.toNat := by simp
+theorem xor_model (x y : BitVec 32) : (x ^^^ y).toNat = x.toNat ^^^ y.toNat := by simp
+theorem and_range (x y : BitVec 32) : (x.toNat &&& y.toNat) < 2 ^ 32 := …
+```
+
+All four prove; `#print axioms` reports only `propext` and `Quot.sound`. So the chain
+*property-over-naturals* + *model-equivalence* ⟹ *property-for-u32* is available, and the second
+half is proved ONCE per operation rather than per obligation. This is the part I expected to be
+the hard piece of rung 4, and it is not.
+
+**2. The shared type is the actual blocker, measured across four attempts.** `u32` is unsigned, so
+naturals are the natural common model:
+
+| kernel | type | result |
+|---|---|---|
+| Lean | `Nat` | `x ^^^ x = 0`, `x &&& 0 = 0` — **prove** |
+| Rocq | `N` | `N.lxor_nilpotent`, `N.land_0_r` — **prove, axiom-free** |
+| Isabelle | `nat` | **unresolved.** `x AND 0 = 0` fails with `Clash of types "_ ⇒ _" and "nat"` |
+
+Neither `Int` (Lean) nor `int` (Isabelle) has bitwise operations at all, so integers are not the
+common type either. Four spellings of Isabelle's bitwise operators were tried across `8 word` and
+`nat` — all failed with a type-inference clash suggesting `AND`/`XOR` resolve to lattice operators
+rather than `Bit_Operations`. That is a *syntax/import* question I could not settle, not a
+capability claim about Isabelle: its `HOL-Library.Word` session loads fine.
+
+**So rung 4 stands at 2 of 3 kernels plus a proved model bridge.** What remains is finding the
+correct Isabelle spelling — cheap for someone who knows it, and not worth more guessing from me
+after four attempts. The honest status is *blocked on a known-unknown*, not on a theory problem,
+which is a better position than the earlier assessment ("the model-equivalence proof is the actual
+work") suggested.
+
 #### Rungs 6 + 7 — **DONE 2026-08-05.** The ceiling is reached
 
 Struct declarations are now emitted alongside the goal (`Record` / `record` / `structure`) and
