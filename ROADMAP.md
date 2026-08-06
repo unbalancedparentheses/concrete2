@@ -3230,6 +3230,73 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
+### Task R-0470 — what could be provable but is not yet, by reason
+
+Placed after R-0004 because it is the map of where proving goes next, and grouped by the REASON
+each item is blocked — the reason determines the cost far more than the feature does.
+
+#### Trivially close: the obligation kind simply does not exist
+
+```
+let x: i8 = -128;  return -x;      // traps at runtime. No obligation generated.
+let f: f64 = 1e300; return f as i32;  // traps. No obligation generated.
+```
+
+Both trap in the compiled binary, both are expressible in all three kernels today, and nobody
+wrote the rule. Under `docs/VC_GENERATOR_DESIGN.md` these are **two table rows**. That the current
+four-walker design made them expensive enough to skip is itself an argument for that design.
+
+#### Blocked by one rung, already unblocked
+
+Bitwise reasoning — `(x & y) ^ (~x & z)`, i.e. SHA-256's `Ch`. The model bridge is proved in Lean
+against `BitVec 32`, the shared type is confirmed in all three (`Nat`/`N`/`nat`, the last needing
+`unbundle bit_operations_syntax`); only the tier is unbuilt. **This is the one that unlocks real
+corpus coverage**, because `hmac_sha256`'s meaningful property is exactly this shape.
+
+#### Blocked by one missing rung: enums
+
+Any property mentioning which variant a sum type holds. Needs constructor injectivity and
+disjointness emitted per kernel — the same shape as the struct rung already built, and the last
+quantifier-free construct missing.
+
+#### Blocked by the recursion ban
+
+```
+fn sum(n: i32) -> i32 { if n <= 0 { return 0; } return n + sum(n - 1); }
+```
+
+Not provable, not even *eligible* — recursion is banned from the profile. With `#[decreases(n)]`
+it becomes provable, and its termination obligation is **linear arithmetic**, which the existing
+three-kernel machinery already discharges.
+
+Everything downstream is gated on this: a sort is ordered, a parser terminates, an output is a
+permutation of its input. All need induction; induction needs recursion admitted.
+
+#### Blocked by a missing design
+
+- **Loop-carried properties.** Bounds *inside* a loop are proved today; "this sum equals the total
+  of `a[0..n]`" is not expressible, because there are no invariants. WP forces this question
+  rather than answering it.
+- **Heap and pointers** — needs a memory model, separation-logic shaped. Largest single item.
+- **Constant-time / non-interference** — "runtime does not depend on `secret`" is a RELATIONAL
+  property comparing two executions, and cannot be a per-site obligation at all. Handled today as
+  a capability discipline, not a proof. Genuinely different machinery.
+
+#### Never automatic
+
+Termination in general (halting problem — hence author-supplied measures), and **print fidelity**:
+that emitted Rocq text *denotes* the intended obligation needs a formal semantics of Rocq's
+surface syntax, which is not ours. Validated, never proved.
+
+#### Shape of the list
+
+The nearest wins — `MIN` negation, casts, bitwise, enums — are small and mechanical. The big jump
+is `#[decreases]`, because it converts an entire category from "not eligible" to "provable", and
+it is cheaper than it sounds since its own obligation is linear arithmetic. The genuinely hard
+ones are heap and relational properties, and both need design before code, as the VC generator
+did.
+
+
 ### Task R-0466
 
 **Objective:** Measure whether the language is legible to the consumer that
