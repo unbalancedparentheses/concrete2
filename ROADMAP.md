@@ -529,6 +529,93 @@ This is not an argument to stop; the tiers are real and verified. It is an argum
 and it is recorded here because "add another rung" is the more interesting work and therefore the
 easier trap.
 
+## Parity with Why3, and where this can be better
+
+A full inventory rather than a wishlist: what Why3 has, what exists here, and the three places
+this design is already ahead. Written because "as good as Why3" needs a checklist to be a goal
+instead of a slogan.
+
+### What Why3 has, and where this stands
+
+| Why3 capability | Here | To close |
+|---|---|---|
+| WP calculus for VC generation | ✗ four hand-written walkers | `docs/VC_GENERATOR_DESIGN.md` |
+| driver files per prover | ✓ `ProverLowering` | — |
+| transformation library (~100) | ~1 discharged row (`eliminate_tmod`) | Register B rows 2–3, then breadth |
+| `requires` / `ensures` | ✓ | — |
+| `variant` (termination measure) | ✗ | `#[decreases]`, rung 8 |
+| `invariant` (loop) | ✗ | loop invariants as obligations |
+| `old(x)` / two-state postconditions | ✗ | **essential and missing** — see below |
+| ghost code | partial (`spec fn`, erased) | ghost *variables* and ghost state |
+| algebraic datatypes in specs | ✗ | the enum rung |
+| pattern matching in specs | ✗ | follows enums |
+| exceptions / error paths | ✗ | Concrete uses `Result`; specs cannot mention it yet |
+| mutable records & arrays in specs | reads only | needs `old` + a memory model |
+| theory/module system, cloning | ✗ | a spec stdlib with refinement |
+| standard theories (int, list, map, set, bitvector) | ✗ | a spec stdlib — nothing exists |
+| counterexamples from models | ✓ `counterexample` status with source-mapped values | — |
+| proof sessions / replay | ✓ fingerprints, staleness, `--replay` | — |
+| **realizations** (theories proved in Coq/Isabelle) | ✗ | H19 is the same gap wearing a different name |
+| extraction to OCaml/C | ✓ compiles to LLVM — see below | — |
+
+### The single biggest missing feature: `old`
+
+Nothing here can state a postcondition that RELATES the state before a call to the state after it.
+
+```
+#[ensures(len(v) == old(len(v)) + 1)]     // not expressible today
+fn push(v: &mut Vec<i32>, x: i32)
+```
+
+Every specification of a mutating operation needs this, so its absence quietly restricts specs to
+pure functions — which is why the corpus's only real contracts are refinement of pure helpers.
+It is a prerequisite for mutable records, arrays-as-state, and most of a spec stdlib. **It should
+rank alongside `#[decreases]`, not below it.**
+
+### Three places this is already ahead of Why3
+
+Not incidental — each is a deliberate consequence of targeting a compiler rather than a spec
+language, and each should be defended when the parity items above get built.
+
+**1. Drivers are VALIDATED, not trusted.** Why3 trusts its drivers: if a driver prints the wrong
+thing, the prover closes the wrong goal and nothing notices. Every lowering here is checked
+against an independent reference evaluator — exhaustively for booleans (`2^n` rows), sampled for
+arithmetic. A kernel that closes a mis-rendered obligation does not earn the badge. As transformations
+and drivers multiply, this is the property that keeps the count meaningful.
+
+**2. Evidence is a taxonomy, not a boolean.** Why3 reports "proved by Alt-Ergo". Here:
+`runtime-checked → solver_trusted (SMT in the TCB) → proved_by_lean_replay (certificate
+reconstructed) → proved_by_kernel_decision → N independent kernels agreeing`, with axiom-freedom
+gated via `Print Assumptions` and a documented native-code exception list. That distinction is the
+difference between "a tool said yes" and "a kernel checked it, and here is which kernel and what
+it trusted".
+
+**3. Obligations are about the code that RUNS.** Why3 verifies WhyML and extracts to OCaml/C;
+the extracted program is a translation of the verified one. Here the same source is compiled to
+LLVM, so the obligations concern the artifact itself. That advantage is currently **claimed rather
+than proved** — H19 says nothing connects surface-AST obligations to the compiled form — which is
+precisely why the VC generator should run over Core.
+
+A fourth, with no Why3 analogue: **discovery completeness** — proving the obligation is generated
+at all. Why3 does not need it, because a WP calculus cannot forget a case. Once the generator
+lands, this register becomes a redundancy check rather than a necessity, and that is the right
+outcome.
+
+### Ordering to reach parity
+
+1. **VC generator** (design written) — closes the largest structural gap and subsumes H19.
+2. **`old` / two-state postconditions** — unblocks specifying mutation; without it specs stay pure.
+3. **`#[decreases]`** — unlocks recursion and liveness at once.
+4. **loop invariants** — the other half of liveness; WP forces the question anyway.
+5. **enums + pattern matching in specs** — last quantifier-free construct.
+6. **spec standard library** (int, array, list, map) — the thing that makes specs writable rather
+   than merely possible. Nothing exists today.
+7. **realizations** — prove the axiomatized theories in the kernels rather than assuming them.
+8. **heap / separation** — largest remaining, needs design before code.
+
+Items 1–3 are where the leverage is. Item 6 is the one most likely to be underestimated: Why3's
+usefulness comes substantially from its theory library, not its calculus.
+
 ## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
 
 The goal is worth stating precisely, because "everything" decomposes into three axes with very
