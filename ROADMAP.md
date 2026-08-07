@@ -342,8 +342,72 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    arguments, so `alloc(1)` and `alloc(2)` share evidence. Unreachable today — they require
    the `Alloc` capability and capability-bearing functions are excluded from the provable
    subset — but it becomes a live collision the moment that exclusion is relaxed.
-3. Dependency binding: `ConstId` → initializer digest, callable contract/body edges, trusted
-   and assumption edges, table reachability.
+3. Dependency binding. Three shadow axes now exist, deliberately separate because they
+   answer different questions and collapsing any two would let one imply another:
+   `bodyV2` (does the subject DESCRIBE the body), `deps` (is what it reaches BOUND), and
+   `assumes` (what would a claim be RESTING ON).
+
+   **Done: `ConstId` → initializer digest.** A `constRef` named a constant and said nothing
+   about its value, so changing `const LIMIT: Int = 10` to `= 99` moved neither the body
+   digest nor the subject digest — a proof stayed valid-looking after the constant it
+   depends on changed. `shadow deps` digests the initializer encodings of exactly the
+   constants a body reaches, ordered by identity so statement reordering cannot move it.
+   Note the corpus barely exercises this: 431 of 432 subjects reference no constant,
+   because only two example files declare one. Constructed probes, not corpus coverage,
+   are what test this axis.
+
+   **Done: the assumption axis.** `SubjectQualificationV2` and `stmtAssumptions` had ZERO
+   consumers. They could not have worked before the predicate work landed either: until
+   `assert`/`assume` predicates were elaborated, an assume emitted a gap and the axis
+   counted zero for the only construct that feeds it — vacuous rather than wrong, but it
+   would have reported "nothing assumed" the moment the gap closed, which is the unsafe
+   direction. 7 of 432 subjects are qualified, including `contract_negatives/assume_taint`.
+
+   **SHADOW IS NOT A STAGING DETAIL, IT IS THE SEQUENCING CONSTRAINT.** `subjectDigest` is
+   `proofSubjectDigestV2` — not the frozen V1 body fingerprint — and it already drives
+   freshness verdicts. Binding anything new into it before the step-5 migration moves
+   existing subject digests and strands every stored proof link. So each axis lands as a
+   report line reaching no verdict, and the gates assert BOTH halves: the new material must
+   move with what it describes, AND the subject digest must not. A change satisfying only
+   the first half is the right fix shipped at the wrong time.
+
+3a. **Remaining: the DepNode graph and the deterministic root.**
+
+   `DependencyRoot` is built and has ZERO PRODUCERS — `DepNode`, typed edges, fail-closed
+   error cases, validated material, trust propagation, none of it called. That is the third
+   instance of one shape this arc: `SubjectCompletenessV2.of`, `SubjectQualificationV2` and
+   now `DependencyRoot` were all designed, landed, and never wired. Worth treating as a
+   review question rather than a coincidence — design work that ships without a consumer
+   looks complete and is not.
+
+   **Edges must come from the EVIDENCE BODY, not `buildCallGraph`.** The landed containment
+   closure walks a graph keyed on qualified NAME STRINGS; `DepNode`'s own comment calls that
+   "the defect class R-0004 exists to close appearing inside the dependency material
+   itself". The evidence body already carries a `CallableId` on every `call` and `fnRef`
+   node, minted by the resolver, so deriving edges from it is identity-native and keeps one
+   producer instead of re-deriving a graph from names beside the one that exists.
+
+   Measured before assuming the worst: two modules each declaring `P::get` give `a.P_get`
+   and `b.P_get`, so qualNames carry the module path and the weakness is about RENAME
+   STABILITY, not live conflation. Latent, not exploitable today.
+
+   Decisions taken in building the edge set, recorded because each could reasonably have
+   gone the other way:
+
+   - `fnRef` IS an edge. Taking a function as a value is a dependency on it — behaviour
+     changes when that function's body changes, whether it is called here or handed
+     elsewhere. Omitting it would make higher-order programs look dependency-free.
+   - Self-edges are KEPT. A recursive function does depend on itself; whether that counts
+     as self-blame is POLICY (the containment pass excludes `self`), and baking policy into
+     the material hides it from consumers that need the real graph.
+   - Ordered by canonical identity, so the edge set is a function of the body alone.
+
+   Still to do: the edge KIND derivation (contract / body / trusted / missing, driven by
+   callee proof status), assumption propagation through the closure the way `carriesTrust`
+   propagates trust, and table reachability binding the whole canonical table rather than a
+   guessed subset. The root itself is slice 6 — the landed closure says so: "Slice 6
+   replaces this with a deterministic SCC/Merkle root; until then a conservative closure is
+   what the roadmap asks for."
 4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong
    proof status rather than rework.
 5. The 44-fingerprint migration and kernel replay.
@@ -368,6 +432,14 @@ something into versioned bytes or leaves a construct undescribable.
   than guessing.
 
 ### Gate and tooling health (found while building the above, not by any gate)
+
+**Pre-push gate runtime is growing and should be watched.** The evidence gates compile the
+example corpus repeatedly; a publish now spends ~25-30 minutes in pre-push gates before it
+even reaches CI, and the worktree cannot be edited during that window. The response so far
+is to BATCH several slices per publish rather than thin the gate set — the gates are what
+caught the real problems in this arc, so the cost is the wait, not the checking. If it
+keeps growing, split the corpus-wide RATCHET (which needs the whole corpus) from the
+property legs (which need three files), and run only the latter pre-push.
 
 **The mutation harness could lose coverage silently, in two independent ways.** It is what
 establishes that the other gates are load-bearing, so an inert mutation does not merely

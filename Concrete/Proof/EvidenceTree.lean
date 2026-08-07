@@ -416,6 +416,76 @@ def draftGaps (d : EvidenceBodyDraftV2) : List EvidenceGap :=
     digest bytes" is a type error rather than a rule someone must remember. -/
 def CompleteEvidenceBodyV2 := { d : EvidenceBodyDraftV2 // draftGaps d = [] }
 
+/-! ### Callees a body depends on
+
+Exhaustive with no wildcard, for the same reason every other traversal here is: a new
+expression form must state whether it can reach a callable, or a dependency silently
+leaves the graph.
+
+`fnRef` counts. Taking a function as a VALUE is a dependency on it — the program's
+behaviour changes when that function's body changes, whether the reference is called here
+or handed elsewhere. Omitting it would make a higher-order program look dependency-free.
+
+Self-edges are KEPT. A recursive function does depend on itself, and whether that counts
+as self-blame is a question for the consumer: the landed containment pass excludes `self`
+so recursion is not reported as its own stale dependency, which is a POLICY over the
+graph, not a property of it. Dropping the edge here would bake that policy into the
+material where a different consumer could not see it. -/
+mutual
+
+partial def exprCallees : EvidenceExprV2 → List CallableId
+  | .call callee args => callee :: args.flatMap exprCallees
+  | .fnRef id => [id]
+  | .intLit _ _ | .floatLit _ _ | .boolLit _ | .strLit _ | .charLit _
+  | .binderRef _ _ | .constRef _ | .gap _ => []
+  | .unary _ x | .deref x | .borrow _ x | .cast _ x => exprCallees x
+  | .binary _ l r => exprCallees l ++ exprCallees r
+  | .index c i => exprCallees c ++ exprCallees i
+  | .field _ o => exprCallees o
+  | .structLit _ fs => fs.flatMap (fun fe => exprCallees fe.2)
+  | .variantLit _ fs => fs.flatMap (fun fe => exprCallees fe.2)
+  | .arrayLit _ els => els.flatMap exprCallees
+  | .tryProp x _ => exprCallees x
+  | .matchExpr sc arms => exprCallees sc ++ arms.flatMap armCallees
+  | .ifExpr c t e => exprCallees c ++ t.flatMap stmtCallees ++ e.flatMap stmtCallees
+
+partial def patternCallees : EvidencePatternV2 → List CallableId
+  | .wildcard | .binder | .gap _ => []
+  | .intLit _ _ | .boolLit _ | .strLit _ | .charLit _ => []
+  | .variant _ fs => fs.flatMap (fun fp => patternCallees fp.2)
+  | .structPat _ fs => fs.flatMap (fun fp => patternCallees fp.2)
+  | .range lo hi _ => exprCallees lo ++ exprCallees hi
+
+partial def stmtCallees : EvidenceStmtV2 → List CallableId
+  | .gap _ | .continueStmt _ => []
+  | .letBind _ _ e => exprCallees e
+  | .assign p v => exprCallees p ++ exprCallees v
+  | .ret v => (v.map exprCallees).getD []
+  | .breakStmt _ v => (v.map exprCallees).getD []
+  | .exprStmt e _ => exprCallees e
+  | .deferStmt a => exprCallees a
+  | .assertStmt pr | .assumeStmt pr => exprCallees pr
+  | .branch c t e => exprCallees c ++ t.flatMap stmtCallees ++ e.flatMap stmtCallees
+  | .match_ sc arms => exprCallees sc ++ arms.flatMap armCallees
+  | .loop c inv var b => exprCallees c ++ inv.flatMap exprCallees
+                          ++ (var.map exprCallees).getD [] ++ b.flatMap stmtCallees
+  | .block sts => sts.flatMap stmtCallees
+
+partial def armCallees : EvidenceArmV2 → List CallableId
+  | .gap _ => []
+  | .arm pat guard body =>
+      patternCallees pat ++ (guard.map exprCallees).getD [] ++ body.flatMap stmtCallees
+
+end
+
+/-- Callees a body reaches DIRECTLY, deduplicated and ordered by canonical identity.
+
+    Ordered so the material is a function of the body alone: the same body reaching the
+    same callables must produce the same edge set regardless of the order it happens to
+    mention them, or reordering two statements would move the dependency material. -/
+def bodyCallees (b : EvidenceBodyDraftV2) : List CallableId :=
+  (b.statements.flatMap stmtCallees).eraseDups.mergeSort (fun x y => x.render ≤ y.render)
+
 mutual
 /-- Constants a body references. Collected so subject completeness can be checked
     against dependency material. -/

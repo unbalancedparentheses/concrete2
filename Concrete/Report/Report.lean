@@ -1787,6 +1787,30 @@ private def shadowAssumesLine (body? : Option Proof.EvidenceBodyDraftV2) : Strin
       s!"{shortHash ("assumesV1:n" ++ toString q.assumptionCount ++ ":" ++ payload)} " ++
         s!"({q.assumptionCount} assumed — a claim over this body CANNOT be reported unqualified)"
 
+/-- The dependency EDGE SET: which callables this body reaches directly.
+
+    The material `DependencyRoot` consumes and has never been given — `DepNode`, its typed
+    edges and its fail-closed root have had zero producers.
+
+    Derived from the EVIDENCE BODY, not from `buildCallGraph`. That graph keys on qualified
+    NAME STRINGS, which `DepNode`'s own comment calls the defect class R-0004 exists to
+    close appearing inside the dependency material itself. Every `call` and `fnRef` node
+    already carries a resolver-minted `CallableId`, so taking edges from there is
+    identity-native and keeps one producer.
+
+    The EDGE KIND (contract / body / trusted / missing) is deliberately absent for now: it
+    depends on each callee's proof status, and inventing one here would put an unearned
+    classification into material a root will later be built from. Listing the reached
+    identities is the honest half. -/
+private def shadowEdgesLine (body? : Option Proof.EvidenceBodyDraftV2) : String :=
+  match body? with
+  | none => "ABSENT (no structural body threaded)"
+  | some body =>
+    let cs := Proof.bodyCallees body
+    if cs.isEmpty then "none (body reaches no callable)"
+    else s!"{shortHash ("edgesV1:n" ++ toString cs.length ++ ":" ++ String.join (cs.map (·.render)))}" ++
+         s!" ({cs.length}: {", ".intercalate (cs.map (·.render))})"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1836,7 +1860,8 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- it would be RESTING ON. A subject can be complete and fully bound and still
         -- carry assumptions, and reporting fewer than three lines would let one imply
         -- another.
-        , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}"
+        , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}\n"
+        , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 

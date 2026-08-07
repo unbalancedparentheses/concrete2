@@ -602,6 +602,71 @@ case "$q6" in
   *)            no "a body with no assume reported '$q6'" ;;
 esac
 
+# --- the DEPENDENCY EDGE SET (DepNode material, shadow) ----------------------------------
+# `DependencyRoot` has had ZERO producers. This is the material it consumes, and it comes
+# from the EVIDENCE BODY rather than `buildCallGraph`: that graph keys on qualified NAME
+# STRINGS, which DepNode's own comment calls the defect class R-0004 exists to close
+# appearing inside the dependency material itself. Every `call` and `fnRef` node already
+# carries a resolver-minted CallableId.
+edges_of() {
+  "$BIN" "$1" --report subject-facts 2>/dev/null \
+    | awk -v w="v1:user:$2" '$0==w{i=1;next} /^v1:user:/{i=0} i&&/shadow edges:/{sub(/^ *shadow edges: /,"");print;exit}' || true
+}
+two_fns='mod m { fn g(x: Int) -> Int { return x + 1; } fn h(x: Int) -> Int { return x + 2; }'
+printf '%s\n  pub fn f(p: Int) -> Int { return g(p); } }\n'          "$two_fns" > "$TMP/eg.con"
+printf '%s\n  pub fn f(p: Int) -> Int { return h(p); } }\n'          "$two_fns" > "$TMP/eh.con"
+printf '%s\n  pub fn f(p: Int) -> Int { return g(p) + h(p); } }\n'   "$two_fns" > "$TMP/egh.con"
+printf 'mod m { pub fn f(p: Int) -> Int { return p + 1; } }\n'         > "$TMP/enone.con"
+printf '%s\n  pub fn f(p: Int) -> Int { let k: fn(Int) -> Int = g; return k(p); } }\n' "$two_fns" > "$TMP/efg.con"
+printf '%s\n  pub fn f(p: Int) -> Int { let k: fn(Int) -> Int = h; return k(p); } }\n' "$two_fns" > "$TMP/efh.con"
+printf 'mod m { fn g(x: Int) -> Int { return x + 1; } pub fn f(zzz: Int) -> Int { let yyy: Int = zzz; return g(yyy); } }\n' > "$TMP/eren.con"
+printf 'mod m { fn g(x: Int) -> Int { return x + 1; } pub fn f(p: Int) -> Int { let q: Int = p; return g(q); } }\n'         > "$TMP/eorig.con"
+
+eg="$(edges_of "$TMP/eg.con" m.f)"; eh="$(edges_of "$TMP/eh.con" m.f)"
+egh="$(edges_of "$TMP/egh.con" m.f)"; enone="$(edges_of "$TMP/enone.con" m.f)"
+efg="$(edges_of "$TMP/efg.con" m.f)"; efh="$(edges_of "$TMP/efh.con" m.f)"
+eren="$(edges_of "$TMP/eren.con" m.f)"; eorig="$(edges_of "$TMP/eorig.con" m.f)"
+
+case "$eg" in
+  ""|ABSENT*|none*) no "a body calling a function has no edge set ($eg)" ;;
+  *)                ok "a call produces a dependency edge, by identity" ;;
+esac
+if [ -n "$eh" ] && [ "$eg" != "$eh" ]; then
+  ok "calling a DIFFERENT function changes the edge set"
+else
+  no "calling g and calling h produce the same edge set — the callee identity is not carried"
+fi
+case "$egh" in
+  *"m.g"*"m.h"*) ok "both callees appear when a body reaches two" ;;
+  *)             no "a body calling g and h did not list both ($egh)" ;;
+esac
+case "$enone" in
+  none*) ok "a body reaching no callable says so" ;;
+  *)     no "a body with no calls reported '$enone'" ;;
+esac
+
+# `fnRef` IS an edge. Taking a function as a VALUE is a dependency on it: behaviour changes
+# when that function's body changes, whether it is called here or handed elsewhere. Without
+# this a higher-order program looks dependency-free.
+if [ -n "$efg" ] && [ -n "$efh" ] && [ "$efg" != "$efh" ]; then
+  ok "a function used as a VALUE is an edge (fn ptr to g vs h differ)"
+else
+  no "assigning g or h to a fn-typed local produced the same edge set — fnRef is not an edge, so higher-order dependencies vanish"
+fi
+
+# Identity, not spelling: renaming binders must not move the material.
+if [ -n "$eren" ] && [ "$eren" = "$eorig" ]; then
+  ok "renaming locals does not move the edge set"
+else
+  no "renaming binders moved the dependency edge set ($eorig vs $eren)"
+fi
+
+# NOT GATED: self-edges. The traversal keeps them — a recursive function does depend on
+# itself, and excluding `self` is the containment pass's POLICY, not a property of the
+# material. It cannot be observed here because recursion excludes a function from the
+# provable subset entirely ("profile: recursion (direct)"), so a recursive function is
+# never a subject and has no report line.
+
 # --- ratchet: corpus coverage must not regress ------------------------------------------
 # Measured 2026-08-06: 421 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
 # -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates)
