@@ -1869,6 +1869,41 @@ private def inheritedAssumptions (entries : List Concrete.ProofCoreEntry)
     else if inherited == 0 then "none inherited (every reachable callee assumes nothing)"
     else s!"{inherited} inherited from callees — a claim here rests on them too"
 
+/-- Edge KINDS for the callees a body reaches, as far as this layer can answer.
+
+    `DependencyEdge` is four-way and only three are answerable in the compiler:
+
+      * `trusted`  — the callee is a declared trust boundary. Known from `CFnDef.isTrusted`.
+      * `missing`  — the callee has no ProofCore entry: extern, builtin, or outside this
+                     compilation. Nothing validated, and nothing CAN be validated from
+                     here, which is what `missing` means.
+      * `contract` / `body` — NOT derivable here. `DependencyEdges.classifyTheorem` reads a
+                     linked theorem's ELABORATED TYPE and runs in `MetaM`, which exists only
+                     while Lean is elaborating. A known, untrusted callee is `unclassified`.
+
+    Saying `unclassified` instead of guessing `body` is the fail-closed choice. `body` is
+    the conservative EDGE — any change to the callee stales the caller — but asserting it
+    would claim a proof EXISTS and depends on the implementation, when the truth is that
+    this layer cannot see whether any proof exists. A wrong kind in dependency material is
+    worse than an absent one: a root gets built on it. -/
+private def shadowEdgeKinds (entries : List Concrete.ProofCoreEntry)
+    (body? : Option Proof.EvidenceBodyDraftV2) : String :=
+  match body? with
+  | none => "ABSENT (no structural body threaded)"
+  | some body =>
+    let cs := Proof.bodyCallees body
+    if cs.isEmpty then "none (body reaches no callable)"
+    else
+      let kindOf := fun (id : CallableId) =>
+        match entries.find? (fun x => x.callableId.render == id.render) with
+        | none => "missing"
+        | some e => if e.fn.isTrusted then "trusted" else "unclassified"
+      let parts := cs.map (fun id => s!"{id.render}={kindOf id}")
+      let missingN := (cs.filter (fun id => kindOf id == "missing")).length
+      let trustedN := (cs.filter (fun id => kindOf id == "trusted")).length
+      s!"{", ".intercalate parts}" ++
+        s!" [{missingN} missing, {trustedN} trusted, {cs.length - missingN - trustedN} need the Lean classifier]"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1920,7 +1955,8 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- another.
         , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}\n"
         , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}\n"
-        , s!"  shadow inherited: {inheritedAssumptions pc.entries e}"
+        , s!"  shadow inherited: {inheritedAssumptions pc.entries e}\n"
+        , s!"  shadow edgeKinds: {shadowEdgeKinds pc.entries e.evidenceBody}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
