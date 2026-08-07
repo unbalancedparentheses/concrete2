@@ -490,6 +490,21 @@ honest bridge status with it. Avoid demonstration contracts whose specification
 merely restates the implementation, and avoid using quantified flagship examples
 whose prover-library cost obscures the smaller capability actually being built.
 
+Three adoption tracks run across those slices rather than waiting behind them:
+
+- **one-module adoption:** a supported C ABI path for introducing one
+  evidence-bearing Concrete component into an existing C or Rust build;
+- **one forcing domain:** carry a narrow constant-time/secret-flow or similarly
+  consequential claim through contracts, bridge status, artifact replay, and
+  package policy without overstating machine-level guarantees;
+- **one feedback surface:** CLI, CI, agent, and LSP explanations over the same
+  evidence facts, including actionable reasons for every proof or coverage gap.
+
+The package milestone is complete only when an independent standalone checker,
+not the producing compiler's report renderer, can validate the versioned
+artifact and a dependency upgrade can be rejected for a policy-relevant
+behavioral regression.
+
 ### The next 20 tasks, in execution order
 
 **This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,

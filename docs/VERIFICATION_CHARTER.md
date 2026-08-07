@@ -56,6 +56,26 @@ work is to make these pieces compositional, complete over declared fragments,
 portable across package boundaries, and independently replayable—not to replace
 them with a second contract system.
 
+The user-facing promise is:
+
+> Every exported function states the behavior its consumers may rely on. The
+> compiler proves, enforces, checks, or explicitly classifies that statement,
+> and every unverified part is visible at the call site, package boundary, and
+> CI policy.
+
+Every build should be able to summarize coverage by property rather than emit a
+single verdict. The eventual shape is:
+
+```text
+Function       Functional   Memory   Termination   Resources   Evidence
+parse_header   proved       proved   proved        stack<=512  Lean+Rocq
+sort           proved       proved   proved        unknown     Lean
+encrypt        proved       proved   proved        bounded     relational: missing
+```
+
+The rows and statuses must be derived from the same structured evidence used by
+policy and package artifacts, never reconstructed by the display layer.
+
 ## Product invariants
 
 1. **No silent coverage loss.** Every relevant construct is lowered,
@@ -74,6 +94,43 @@ them with a second contract system.
    module, boundary, property family, and explicit hole budget. Strict profiles
    may deny all holes; adoption profiles may permit named debt. Neither may hide
    or relabel it.
+
+A strict boundary may therefore say:
+
+```toml
+[verification.release]
+functional = "proved"
+memory = "proved-or-runtime-checked"
+termination = "proved"
+stack = "bounded"
+coverage_holes = "deny"
+```
+
+An adoption profile may scope those requirements to selected modules or public
+functions and allow a finite, named hole budget. Relaxing policy changes the
+release requirement; it never upgrades the underlying evidence class.
+
+## Architectural direction
+
+The intended flow is:
+
+```text
+Concrete source
+      |
+   typed Core
+      |  checked or validated VC generation
+Verification IR
+   /    |     \
+Lean  Rocq  Isabelle
+      |
+versioned evidence artifact + standalone consumer-side checker
+```
+
+The Verification IR is small, typed, and has executable semantics. Structured
+terms survive until per-kernel rendering. Rigor is concentrated on the
+source-to-Core and Core-to-obligation boundaries: differential validation is
+useful evidence today, while formal semantics, bridge lemmas, and verified
+translation strengthen individual rows over time.
 
 ## Evidence is a vector, not a ladder
 
@@ -115,3 +172,26 @@ functional correctness. Relational properties such as constant-time behavior
 need paired-execution semantics rather than being forced into ordinary per-site
 obligations.
 
+## Adoption multipliers
+
+Verification capability alone does not make the evidence transferable or the
+language adoptable. The product direction therefore includes:
+
+1. **Incremental adoption.** A team can introduce one evidence-bearing Concrete
+   module through a supported C ABI without rewriting its C or Rust system. The
+   contract and replay artifact travel with that module.
+2. **A forcing domain.** At least one narrow, consequential workload must carry
+   the whole story end to end. Constant-time or secret-flow verification is a
+   strong candidate because it forces relational semantics and honest
+   machine-timing assumptions; the selected claim must remain narrower than the
+   evidence actually supports.
+3. **The feedback loop.** Proof and coverage diagnostics must explain how to
+   repair a missing precondition, invariant, frame fact, measure, or unsupported
+   fragment. CLI, CI, agent, and LSP views consume the same facts so interactive
+   convenience cannot disagree with release policy.
+4. **Low-annotation routine proofs.** The compiler should infer and discharge
+   routine safety facts by default and ask for annotations where specifications
+   carry genuine intent. Refusals must be as legible and actionable as proofs.
+5. **Behavioral compatibility.** Package interfaces make contract weakening,
+   authority expansion, new assumptions, and lost coverage reviewable changes—
+   a semantic compatibility layer alongside ordinary API and ABI compatibility.
