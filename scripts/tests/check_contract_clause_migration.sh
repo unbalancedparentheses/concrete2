@@ -38,15 +38,30 @@ def anyk(k): return any(v['kind']==k for v in V)
 sys.exit(0 if ($expr) else 1)
 " 2>/dev/null && ok "$label" || no "$label"; }
 
-echo "=== malformed clause → invalid_contract_expression (ineligible) ==="
-ck "invalid #[requires] surfaces as ineligible diagnostic" \
-  "$CN/invalid_contract_expression/src/main.con" \
-  "has('cn.bad#req_diag1') and kind('cn.bad#req_diag1')=='invalid_contract_expression' and st('cn.bad#req_diag1')=='ineligible'"
+# THE SURFACING MECHANISM CHANGED (2026-08-07). These two clauses used to compile and be
+# carried as INELIGIBLE VC diagnostics; contract TYPE CHECKING now rejects them at check
+# time, so the program never reaches VC generation and there is no VC to inspect.
+#
+# The legs are rewritten to the new mechanism rather than deleted, because the property
+# they defend is unchanged and still worth defending: AN INVALID OR IMPURE CLAUSE MUST
+# SURFACE, never be silently accepted. Rejection at check time satisfies that more strongly
+# than an ineligible VC did — it is earlier, and it cannot be overlooked in a ledger.
+#
+# What IS lost is the ledger's record of these two cases; that trade is recorded below.
+rejects(){ local label="$1" file="$2" pat="$3"
+  local out; out="$("$COMPILER" "$file" 2>&1)"
+  if [ -n "$out" ] && printf '%s' "$out" | grep -q "$pat"; then ok "$label"
+  else no "$label (expected a check error matching: $pat)"; fi; }
 
-echo "=== impure clause → impure_contract_call (ineligible) ==="
-ck "impure #[ensures] surfaces as impure_contract_call" \
+echo "=== malformed clause → rejected at check time ==="
+rejects "invalid #[requires] is rejected, naming the unknown identifier" \
+  "$CN/invalid_contract_expression/src/main.con" \
+  "contract on 'bad': unknown identifier 'nonexistent'"
+
+echo "=== impure clause → rejected at check time ==="
+rejects "impure #[ensures] is rejected, naming the impure call and the rule" \
   "$CN/spec_ghost_totality/src/main.con" \
-  "has('cn.bad#ens_diag1') and kind('cn.bad#ens_diag1')=='impure_contract_call' and st('cn.bad#ens_diag1')=='ineligible'"
+  "contract on 'bad': impure call 'tick' — spec/ghost must be pure and total"
 
 echo "=== one-direction proof → partial (ledger no longer overclaims proved_by_lean) ==="
 ck "weakened postcondition is partial, not proved_by_lean" \
@@ -58,13 +73,19 @@ ck "invalid_invariant emits NO invalid/impure diagnostic (it is an O2 failure)" 
   "$CN/invalid_invariant/src/main.con" \
   "not anyk('invalid_contract_expression') and not anyk('impure_contract_call') and st('cn.bad@10#O2')=='unproven'"
 
-echo "=== the diagnostics are in the unified ledger view too ==="
-"$COMPILER" "$CN/invalid_contract_expression/src/main.con" --report obligation-ledger --json 2>/dev/null \
-  | python3 -c "
-import json,sys
-d=json.load(sys.stdin); byid={o['id']:o for o in d['obligations']}
-sys.exit(0 if ('cn.bad#req_diag1' in byid and byid['cn.bad#req_diag1']['kind']=='invalid_contract_expression') else 1)
-" 2>/dev/null && ok "obligation-ledger carries the clause diagnostic" || no "diagnostic missing from obligation-ledger"
+# THE LEDGER NO LONGER CARRIES THESE, and that is a consequence worth stating rather than
+# quietly dropping the leg. A program rejected at check time produces no obligations, so
+# there is nothing for the ledger to hold. The diagnostic is not lost — it is a hard error
+# — but a consumer reading only the ledger will no longer see that this function HAD a
+# malformed clause; it will see no entry for the function at all.
+#
+# Asserted in that direction: the ledger must REFUSE rather than report a clean function,
+# which is the failure that would matter (a malformed contract reading as absent).
+if "$COMPILER" "$CN/invalid_contract_expression/src/main.con" --report obligation-ledger --json >/dev/null 2>&1; then
+  no "a program with a malformed contract produced an obligation ledger — it must be rejected before obligations exist, or a bad clause reads as an absent one"
+else
+  ok "a malformed clause is rejected before the ledger exists, rather than reported as a clean function"
+fi
 
 echo ""
 echo "CONTRACT-CLAUSE-MIGRATION: PASS=$PASS  FAIL=$FAIL"

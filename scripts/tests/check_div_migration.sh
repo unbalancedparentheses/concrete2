@@ -79,8 +79,33 @@ ck "hmac_sha256: 38 div VCs, all proved" "examples/hmac_sha256/src/main.con" \
   "len(DZ)==38 and dist().get('proved_by_kernel_decision')==38 and not dist().get('unproven')"
 ck "precondition_callsite: ratio#div0 proved" "examples/contract_negatives/precondition_callsite/src/main.con" \
   "vc('cn.ratio#div0')['status']=='proved_by_kernel_decision'"
-ck "range_block_count: 2 div VCs proved" "examples/smt/teaching/range_block_count.con" \
-  "len(DZ)==2 and dist().get('proved_by_kernel_decision')==2"
+# 2 -> 8 (2026-08-07, spike/multi-kernel-theories). The branch added SAFETY obligations
+# per division — `div_nonzero` and `div_quotient_in_range` — on top of the value lowering
+# that already existed, so two functions with two divisions each now yield 8.
+#
+# CHECKED, not re-baselined: `signed_div` is this file's NEGATIVE CONTROL, and four of the
+# eight are its. That looked like the guard failing, because its header says the division
+# "is NOT lowered to a VC". It is not: its two conclusions are `2 ≠ 0` and
+# `¬(x = -2147483648 ∧ 2 = -1)` — divide-by-zero and MIN/-1 overflow, both true under
+# truncation AND floor semantics. The assert `x / 2 <= 50`, which is the part that would
+# be mis-proved, is still not lowered. The value guard is intact; only safety obligations
+# were added.
+#
+# The negative control is asserted below rather than left to that reasoning.
+# DZ counts `div_nonzero` ONLY (see the harness above), so the number here is 4 — two
+# functions with two divisions each. The four `div_quotient_in_range` VCs are asserted
+# separately below rather than folded into this count, because conflating two kinds in one
+# number is how a kind can vanish without the total moving.
+ck "range_block_count: 4 div_nonzero VCs proved (2 fns x 2 divisions)" "examples/smt/teaching/range_block_count.con" \
+  "len(DZ)==4 and dist().get('proved_by_kernel_decision')==4"
+ck "range_block_count: 4 div_quotient_in_range VCs proved" "examples/smt/teaching/range_block_count.con" \
+  "len([v for v in d['vcs'] if v['kind']=='div_quotient_in_range'])==4 and all(v['status']=='proved_by_kernel_decision' for v in d['vcs'] if v['kind']=='div_quotient_in_range')"
+# THE GUARD ITSELF. signed_div's possibly-negative dividend must never produce a VC about
+# the division's VALUE — only the two semantics-independent safety ones. If a value VC
+# appears here it would be proved under Lean's floor division while the program truncates,
+# which is the mis-proof this example exists to prevent.
+ck "signed_div: only safety VCs, no value VC (negative-dividend guard)" "examples/smt/teaching/range_block_count.con" \
+  "set(v['kind'] for v in d['vcs'] if v['id'].startswith('blocks.signed_div')) == {'div_nonzero','div_quotient_in_range'}"
 
 echo ""
 echo "DIV-MIGRATION: PASS=$PASS  FAIL=$FAIL"
