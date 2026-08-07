@@ -4148,7 +4148,9 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
-### Task R-0473 — typed contract records, and contract type checking that earns the name
+### Task R-0473
+
+**typed contract records, and contract type checking that earns the name**
 
 **Objective:** Replace the seven consumers' independent re-reading of raw `List Expr` contract
 metadata with one checked, typed contract record, and close the H27 gaps that make the current
@@ -4185,7 +4187,9 @@ which is materially weaker than "the corpus is compatible".
 
 **Depends on:** nothing. **Blocks:** R-0474.
 
-### Task R-0474 — lexical binding identities and capture-safe substitution
+### Task R-0474
+
+**lexical binding identities and capture-safe substitution**
 
 **Objective:** Retire by-name substitution as proof infrastructure, and graduate H25 and H27's
 shadowing restriction.
@@ -4221,7 +4225,9 @@ diagnostic fires, and nothing records *which* binding the contract means.
 **Depends on:** R-0473. **Blocks:** `old(...)`, frame/`modifies` conditions, reliable loop-state
 reasoning, call-site contract instantiation, and quantified predicates with binders.
 
-### Task R-0475 — decouple fixture snapshots from the stdlib
+### Task R-0475
+
+**decouple fixture snapshots from the stdlib**
 
 **Objective:** Stop a standard-library contract edit from silently invalidating a negative
 fixture's golden file, and stop the resulting failure from pointing at the wrong place.
@@ -4278,7 +4284,9 @@ dropping dependency contracts from the report would LOSE safety-relevant informa
 undischarged obligation inside stdlib code still affects the user's program. The right shape is
 separate labelled sections, not a filter.
 
-### Task R-0472 — what could be provable but is not yet, by reason
+### Task R-0472
+
+**what could be provable but is not yet, by reason**
 
 Numbered R-0472 because R-0470 and R-0471 were already allocated — the first draft of this
 section collided with the existing R-0470 (capability-variable inference), caught by grepping the
