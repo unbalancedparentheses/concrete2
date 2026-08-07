@@ -495,6 +495,9 @@ jobs:
       - name: "Mutation anchors (every MUT_OLD still exists in its file — the harness itself is not run in CI)"
         run: bash scripts/tests/check_mutation_anchors.sh
 
+      - name: "Wired definitions (evidence-layer code with no consumer is a fact nobody checks)"
+        run: bash scripts/tests/check_wired_definitions.sh
+
       - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
         run: bash scripts/tests/check_binder_refs.sh
 

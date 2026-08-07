@@ -1811,6 +1811,64 @@ private def shadowEdgesLine (body? : Option Proof.EvidenceBodyDraftV2) : String 
     else s!"{shortHash ("edgesV1:n" ++ toString cs.length ++ ":" ++ String.join (cs.map (·.render)))}" ++
          s!" ({cs.length}: {", ".intercalate (cs.map (·.render))})"
 
+/-- INHERITED assumptions: what a claim rests on once the callees are taken into account.
+
+    An assumption in a callee qualifies the CALLER's claim just as much as one written
+    locally — if `f` calls `g` and `g` assumes `n > 0`, a proof about `f` rests on that
+    assumption whether or not `f` mentions it. Reporting only local assumptions would let a
+    caller look unqualified while depending on something assumed one hop away, which is the
+    same shape as the trust that `DependencyRoot` already propagates.
+
+    Walks the CallableId edge set, not the name-keyed call graph, so the closure is
+    identity-native.
+
+    FUEL-BOUNDED, and the bound is the entry count: each step either marks a new node or
+    drops one, so a recursive or mutually-recursive chain terminates instead of diverging.
+    Exhausting the fuel is reported as INCOMPLETE rather than treated as "nothing more
+    found" — a closure that stopped early has not proven the absence of assumptions.
+
+    AN UNKNOWN CALLEE MAKES THE ANSWER INCOMPLETE. A callee with no entry — an extern, a
+    builtin, a function outside this ProofCore — has an unknowable assumption set, and
+    treating it as assumption-free is the unsafe direction: it reports "nothing assumed"
+    about a body that might rest on anything. Named, not silently skipped. -/
+private def inheritedAssumptions (entries : List Concrete.ProofCoreEntry)
+    (start : Concrete.ProofCoreEntry) : String :=
+  match start.evidenceBody with
+  | none => "ABSENT (no structural body threaded)"
+  | some _ =>
+    let findEntry := fun (id : CallableId) =>
+      entries.find? fun x => x.callableId.render == id.render
+    let rec go (fuel : Nat) (frontier : List CallableId) (seen : List String)
+               (acc : Nat) (unknown : List String) : (Nat × List String × Bool) :=
+      match fuel, frontier with
+      | 0, _ => (acc, unknown, false)          -- fuel exhausted: INCOMPLETE, not "done"
+      | _, [] => (acc, unknown, true)
+      | fuel + 1, id :: rest =>
+        let r := id.render
+        if seen.contains r then go fuel rest seen acc unknown
+        else
+          match findEntry id with
+          | none => go fuel rest (r :: seen) acc (r :: unknown)
+          | some e =>
+            match e.evidenceBody with
+            | none => go fuel rest (r :: seen) acc (r :: unknown)
+            | some b =>
+              let q := Proof.SubjectQualificationV2.of b
+              go fuel (rest ++ Proof.bodyCallees b) (r :: seen)
+                 (acc + q.assumptionCount) unknown
+    -- Start from the CALLEES: the subject's own assumptions are reported on its own line,
+    -- and counting them here too would double them.
+    let startCallees := (start.evidenceBody.map Proof.bodyCallees).getD []
+    let fuel := entries.length * entries.length + entries.length + 1
+    let (inherited, unknown, complete) := go fuel startCallees [] 0 []
+    let u := unknown.eraseDups
+    if !complete then
+      s!"INCOMPLETE (closure exhausted its bound before settling)"
+    else if !u.isEmpty then
+      s!"INCOMPLETE ({inherited} from known callees; {u.length} callee(s) unknowable: {", ".intercalate (u.take 3)})"
+    else if inherited == 0 then "none inherited (every reachable callee assumes nothing)"
+    else s!"{inherited} inherited from callees — a claim here rests on them too"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1861,7 +1919,8 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- carry assumptions, and reporting fewer than three lines would let one imply
         -- another.
         , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}\n"
-        , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}"
+        , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}\n"
+        , s!"  shadow inherited: {inheritedAssumptions pc.entries e}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 

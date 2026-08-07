@@ -433,6 +433,44 @@ something into versioned bytes or leaves a construct undescribable.
 
 ### Gate and tooling health (found while building the above, not by any gate)
 
+**Instruments added 2026-08-07, each in response to a defect this arc produced.**
+
+- `check_wired_definitions.sh` — a ratchet on evidence-layer definitions with no consumer
+  outside their own file. THREE pieces shipped designed-landed-never-wired
+  (`SubjectCompletenessV2.of`, `SubjectQualificationV2`, `DependencyRoot`) and every one was
+  found by accident. Here that is not dead weight, it is A FACT NOBODY CHECKS: the axis
+  exists, the subject looks like it has one, and no verdict consults it. A ratchet rather
+  than a prohibition because same-file-only use is often legitimate (mutual-recursion
+  members, field types), and a gate that flagged those would be argued with until disabled.
+  Baseline 23; the direction is what matters. Verified to fire.
+
+  Its first version measured ITSELF — its header names the definitions it counts, so they
+  read as consumed by its own prose. Excluded, and the baseline moved 21 → 23 once it
+  stopped.
+
+- Mutation-coverage floors per evidence gate, inside `check_mutation_anchors.sh`. "Every
+  leg is mutation-verified" is a discipline nobody can enforce by reading, and it was
+  applied inconsistently here: several legs passed for the wrong reason and three gates
+  could not fail at all. The floor cannot prove a specific leg is covered; it stops a gate
+  accumulating assertions while its mutation count stays flat.
+
+- `scripts/tests/lib/subject_facts.sh` — ONE reader for `--report subject-facts`, selecting
+  by callable identity. Every gate had its own awk, and selection went wrong twice in one
+  day because `head -1`/`tail -1` pick by POSITION while subjects are not emitted in
+  declaration order — a probe's helper got compared instead of its subject. Until the
+  report emits something machine-readable this is the seam: one parser to fix when the
+  format moves, rather than one per gate.
+
+  **The report has become the machine API by accident.** Five `shadow *` lines are now
+  scraped by gates. The shared reader contains the damage; a structured emission is the
+  real fix and is not done.
+
+- `push-both` no longer calls a CANCELLED run red. It tested `conclusion != "success"` and
+  printed "origin is red. Stop the line." Two cancellations on 2026-08-06 were
+  environmental — one run superseded by a later push, one killed by a GitHub outage
+  resolving action downloads — and in both cases nothing was compiled. No verdict is not a
+  failure; it still exits non-zero, but it now says re-run instead of debug.
+
 **Pre-push gate runtime is growing and should be watched.** The evidence gates compile the
 example corpus repeatedly; a publish now spends ~25-30 minutes in pre-push gates before it
 even reaches CI, and the worktree cannot be edited during that window. The response so far

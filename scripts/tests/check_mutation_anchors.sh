@@ -60,6 +60,32 @@ for i, f, why in stale:
     print(f"  FAIL mutation #{i} cannot be applied to {f}")
     print(f"       anchor: {why}")
 
+# MUTATION COVERAGE PER GATE. "Every leg is mutation-verified" is a discipline nobody can
+# enforce by reading, and I applied it inconsistently across this arc — several legs turned
+# out to pass for the wrong reason, and three gates could not fail at all. This is the
+# mechanical approximation: the gates that carry the evidence claims must each be the
+# target of a minimum number of mutations. It cannot prove a specific leg is covered; it
+# does stop a gate accumulating legs while its mutation count stays flat.
+FLOORS = {
+    'scripts/tests/check_shadow_body_v2.sh': 12,
+    'scripts/tests/check_binder_refs.sh': 3,
+}
+gates = re.findall(r'gate_for_last "([^"]+)"', src)
+from collections import Counter
+counts = Counter(gates)
+for gate, floor in sorted(FLOORS.items()):
+    got = counts.get(gate, 0)
+    if got < floor:
+        print(f"  FAIL {gate} is the target of only {got} mutation(s), floor {floor}")
+        print("       A gate accumulating legs without mutations is accumulating assertions")
+        print("       nobody has shown can fail. Add mutations, or lower the floor and say why.")
+        fail += 1
+    else:
+        print(f"  ok   {gate}: {got} mutations (floor {floor})")
+
+if fail:
+    sys.exit(1)
+
 if stale:
     print()
     print(f"  {len(stale)} of {len(files)} mutations are inert. Re-anchor each on the current")

@@ -149,11 +149,29 @@ if [ "$CI_WAIT" -eq 1 ]; then
     fi
     sleep "$CI_INTERVAL"
   done
-  if [ "$conclusion" != "success" ]; then
-    echo "push-both: CI for ${LOCAL:0:8} concluded '$conclusion' — mirror NOT touched." >&2
-    echo "push-both: $PRIMARY is red. Stop the line and fix it before publishing." >&2
-    exit 1
-  fi
+  # A CANCELLED run is NO VERDICT, not a red one, and saying "red" sends the reader to
+  # investigate a failure that did not happen. Both cancellations seen on 2026-08-06 were
+  # environmental: one run superseded by a later push (the workflow sets
+  # `cancel-in-progress` for pushes on a ref), one killed by a GitHub outage resolving
+  # action downloads. Every job showed `cancelled`; nothing was compiled.
+  #
+  # Still exits non-zero — no verdict is not permission to publish the mirror — but it says
+  # what happened and what to do, which is RE-RUN rather than debug.
+  case "$conclusion" in
+    success) : ;;
+    cancelled|skipped|"")
+      echo "push-both: CI for ${LOCAL:0:8} was '${conclusion:-absent}' — NO VERDICT, not a failure." >&2
+      echo "push-both: a run is cancelled when a later push supersedes it, or when the" >&2
+      echo "           runner cannot start (action-download outages look like this). Nothing" >&2
+      echo "           was compiled, so this says nothing about the commit." >&2
+      echo "push-both: re-run it — 'gh run rerun \$(gh run list --commit ${LOCAL} --limit 1 --json databaseId -q .[0].databaseId)'" >&2
+      echo "push-both: mirror NOT touched." >&2
+      exit 1 ;;
+    *)
+      echo "push-both: CI for ${LOCAL:0:8} concluded '$conclusion' — mirror NOT touched." >&2
+      echo "push-both: $PRIMARY is red. Stop the line and fix it before publishing." >&2
+      exit 1 ;;
+  esac
   echo "push-both: CI green on ${LOCAL:0:8}"
 else
   echo "push-both: --no-ci-wait — publishing to $MIRROR WITHOUT remote CI confirmation." >&2
