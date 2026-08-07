@@ -318,6 +318,13 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    construct that feeds it — vacuous, though fail-closed, since the gap refused the
    subject anyway.
 
+   **Bug 068, found while scoping the predicate work and not by any gate.** A `ghost let`
+   and a runtime `let` produced IDENTICAL body evidence. A ghost binding is ERASED before
+   Core — its initializer never runs and cannot trap — so those are different programs, and
+   a proof over one stayed valid-looking after a change to the other. `EvidenceStmtV2.letBind`
+   now carries `isGhost`, on the same principle as `exprStmt`'s `isValue`: the distinction
+   that decides whether code RUNS belongs in the bytes. Gated and mutation-killed.
+
    **Done: imported impl methods** (18 of the last 21). `importedCallIds` searched only a
    module's FUNCTIONS, so a method on an imported type — `w.write_str()` where `Writer`
    comes from `std.io` — had no `CallableId`. Not a resolution defect: the table never
@@ -539,6 +546,47 @@ without relinking when output is unchanged, so a touched source looks newer than
 that is in fact current — the guard fired permanently and its own advice could not clear
 it. Delegating to lake costs ~130ms and makes a stale reading impossible rather than merely
 reported.
+
+**CI ran on `main` only, so branches were never checked (fixed 2026-08-07).**
+`.github/workflows/lean_action_ci.yml` triggered on `push: branches: [main]`, and branches
+here are pushed directly rather than through PRs. `spike/multi-kernel-theories` therefore
+had ZERO CI runs across its entire life and reached merge carrying FOUR independent gate
+failures — `check_roadmap_linear` (four task headings breaking the bare-ID convention, so
+eight references read as dangling), `check_div_migration`, `check_contract_clause_migration`,
+and `check_hole_status_consistency` (a tripwire's conditional message scanned as a status
+claim). All four were found days later by a pre-push run on the MERGE, by someone who had
+not written them, alongside five examples with no manifest entry.
+
+`.github/workflows/branch_health.yml` now runs the FAST SURFACE GATES on any non-main push
+— 14 seconds after a build, sharing CI's build cache key. Of the four, `check_docs_drift`
+(which calls `check_roadmap_linear`) is in that set and would have fired on the branch's
+first push. Full CI per branch was rejected deliberately: 70+ minutes is a cost that gets
+switched off, and a check people disable is worse than one that never existed. It is
+explicitly NOT a merge gate and says so in its header — a check that overclaims is one
+people learn to ignore.
+
+UNTESTED AS OF `fb87cc7c`: every push that day went to main, so the workflow has never
+fired. Its first real exercise is the next branch push.
+
+**Prefer asserting a PROPERTY over a COUNT wherever a property is expressible.** Three
+gates failed this session because behaviour legitimately IMPROVED — div VCs 2→4 (safety
+obligations added), uncovered subjects 1→0 (contract type-checking closed the cause), typed
+uses 7→10→12 (the derived view got richer). Each needed a human to judge
+regression-versus-improvement, which is the ratchet working but is also friction that
+invites re-baselining without reading.
+
+Where a property exists it survives the improvement and still catches the regression. The
+worked example is `signed_div`: its count was re-baselined, but a leg was added requiring
+its VC kinds to be exactly `{div_nonzero, div_quotient_in_range}`, so a VALUE VC appearing
+there fails no matter how many safety VCs get added later.
+
+Related discipline, from a near-miss the same day: **read the actual obligation, not the
+comment above it.** Four proved VCs appeared on a negative control whose header said its
+division "is NOT lowered to a VC", and it looked exactly like a soundness regression. It
+was not — the conclusions were `2 ≠ 0` and `¬(x = MIN ∧ 2 = -1)`, both semantics-
+independent, and the value lowering was still absent. A header describes what was true when
+it was written; new obligation kinds appearing under an old comment are outside its scope,
+not violating it.
 
 **Pre-push gate runtime is growing and should be watched.** The evidence gates compile the
 example corpus repeatedly; a publish now spends ~25-30 minutes in pre-push gates before it
