@@ -368,7 +368,18 @@ grep -qF <<<"$OAOUT" "error[check]" \
 # written to REPORT rather than fail, and to flip when the gap closes -- a known limit that
 # nobody re-measures becomes a false impression.
 gap() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
-  if grep -qF <<<"$o" "error[check]"; then echo "  ok   H27 GAP CLOSED: $1 — tighten this assertion"; PASS=$((PASS+1));
+  # The echo below is a CONDITIONAL runtime message — emitted only in the branch where the
+  # compiler rejected the program, i.e. only once the gap no longer exists. It asserts
+  # nothing about the hole's current status.
+  #
+  # check_hole_status_consistency scans source text and cannot see the enclosing `if`, so it
+  # read the tripwire as a document contradicting KNOWN_HOLES. The line carries that gate's
+  # sanctioned inline marker rather than being reworded: the wording is exactly right for
+  # the moment it prints, and weakening it to satisfy a regex would blunt the signal.
+  #
+  # This comment avoids repeating the hole id next to a status word, because that is the
+  # pattern the scanner matches — the first version of this note tripped the gate itself.
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   H27 GAP CLOSED: $1 — tighten this assertion"; PASS=$((PASS+1)); # HOLE-STATUS-OK: conditional runtime message, not a status claim
   else echo "  ok   H27 known gap (not type checking): $1"; PASS=$((PASS+1)); fi; }
 gap "operand width is unchecked"          '    #[requires(x < 9999999999)]'
 gap "bool as arithmetic operand"          '    #[requires((x > 0) + 1 > 0)]'
