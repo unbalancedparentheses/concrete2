@@ -2396,10 +2396,21 @@ def checkModule (m : Module) (summary : FileSummary)
           (f.requires ++ f.ensures ++ loopExprs).flatMap specBodyCalls |>.eraseDups
         let shadowedParams := (f.params.map (·.name)).filter fun pn =>
           localNames.contains pn && contractNames.contains pn
-        -- PURITY. **Invariant:** a contract expression's meaning must not depend on runtime
-        -- effects. A capability-requiring function performs I/O, so `#[ensures(result == tick())]`
-        -- states a postcondition whose truth depends on when it is evaluated and what the outside
-        -- world did — which is not a proposition about the program at all.
+        -- EFFECTFUL-CALL CONTAINMENT. Named narrowly on purpose: this is NOT purity or totality
+        -- checking, and calling it that would overstate it. A capability-requiring function
+        -- performs I/O, so `#[ensures(result == tick())]` states a postcondition whose truth
+        -- depends on when it is evaluated and what the outside world did — not a proposition
+        -- about the program. That case is now rejected.
+        --
+        -- What "capability-free" does NOT establish, each measured against the compiler rather
+        -- than reasoned about (see H27):
+        --   * `fn d(n) { return 100 / n; }` — can TRAP; admitted in a contract today;
+        --   * a self-recursive function — may DIVERGE; admitted;
+        --   * a `#[trusted]` function — admitted, and its body is outside the checked language.
+        -- So the boundary enforced here is "no declared effects", and the boundary that would be
+        -- correct is "resolves to a spec fn, or to an executable function with an explicit,
+        -- checked logical interpretation". The latter notion does not exist yet; inventing a
+        -- weaker one and naming it purity is how a gap becomes invisible.
         --
         -- `--report contracts` already detected this ("impure call 'tick' — spec/ghost must be
         -- pure and total") and could not reject it, so the call still reached the obligation. Same
@@ -2415,8 +2426,16 @@ def checkModule (m : Module) (summary : FileSummary)
         -- `result` is typed by the function's return type; a contract mentioning it is otherwise
         -- indistinguishable from one that does not.
         let sortTys := ("result", f.retTy) :: paramTys
-        -- Invariants join the proposition check; VARIANTS deliberately do not -- a variant is a
-        -- decreasing integer measure, so the sort requirement is the opposite one.
+        -- A VARIANT must be an integer MEASURE, so it gets the opposite sort rule from everything
+        -- else here: a boolean variant is meaningless (`#[variant(i < n)]` does not decrease, it
+        -- flips), and it was accepted because the proposition check simply skipped variants
+        -- instead of holding them to their own rule. Absence of a rule read as absence of a
+        -- requirement.
+        let wrongVariant := f.loopContracts.filterMap (fun lc => lc.variant) |>.filter fun e =>
+          match specBodySort sortTys specRets e with
+          | some isBool => isBool
+          | none => false
+        -- Invariants join the proposition check; variants are excluded from it and checked above.
         let wrongSort := (f.requires ++ f.ensures ++ f.loopContracts.flatMap (·.invariants)).filter fun e =>
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
@@ -2425,7 +2444,7 @@ def checkModule (m : Module) (summary : FileSummary)
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}': impure call '{impureCalls.headD ""}' — spec/ghost must be pure and total"
                   , pass := "check", span := some f.span
-                  , hint := some "a contract may call `spec fn`s and pure functions; a capability-requiring function performs I/O, so the contract's meaning would depend on runtime effects" }]
+                  , hint := some "a contract may call `spec fn`s and capability-free functions; a capability-requiring function performs I/O, so the contract's meaning would depend on runtime effects" }]
         else if !shadowedParams.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' names parameter(s) shadowed by a local: {", ".intercalate shadowedParams}"
@@ -2440,6 +2459,11 @@ def checkModule (m : Module) (summary : FileSummary)
                   , message := s!"contract on '{f.name}': {", ".intercalate (free.map (fun n => s!"unknown identifier '{n}'"))}"
                   , pass := "check", span := some f.span
                   , hint := some "a contract may mention parameters, constants, `result` (in `ensures`), and locals (in loop invariants)" }]
+        else if !wrongVariant.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}': `variant` is a boolean, not a decreasing measure"
+                  , pass := "check", span := some f.span
+                  , hint := some "a `#[variant]` must be an integer expression that strictly decreases each iteration (e.g. `n - i`), not a condition" }]
         else if !wrongSort.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' is an integer expression, not a proposition"

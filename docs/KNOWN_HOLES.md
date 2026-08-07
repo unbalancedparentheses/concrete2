@@ -52,16 +52,39 @@ So the honest claim is "1 rejection out of 963 files that reach contract checkin
 1248". The 263 + 3 unmeasured files are the reason a second sweep is worth running once those
 files parse and check.
 
-| not checked | example that is accepted |
-|---|---|
-| operand type compatibility | `#[requires(x < 9999999999)]` on an `i32` parameter |
-| bool used as an arithmetic operand | `#[requires((x > 0) + 1 > 0)]` |
-| a `#[variant]` being a well-founded measure | `#[variant(i < n)]` — a boolean, not a measure |
-| ~~impure (capability-requiring) calls~~ | **CLOSED 2026-08-07** — rejected at check time |
-| `result`'s type | scope is enforced (`ensures`-only), the type is not |
-| precise loop-binder scope | see below |
+**Explicitly numbered, because the denominator drifted once** — a status note said "five gaps
+remain" above a list of six. The count is 6 total, 2 closed, **4 open**:
 
-**Impure calls, closed — and the lesson from closing it.** A capability-requiring function
+| # | gap | status |
+|---|---|---|
+| 1 | operand type compatibility | OPEN — `#[requires(x < 9999999999)]` on an `i32` is accepted |
+| 2 | bool as an arithmetic operand | OPEN — `#[requires((x > 0) + 1 > 0)]` is accepted |
+| 3 | `result`'s type | OPEN — its scope is enforced (`ensures`-only), its type is not |
+| 4 | precise loop-binder scope | OPEN — see below |
+| 5 | a `#[variant]` being a well-founded measure | CLOSED 2026-08-07 |
+| 6 | effectful calls in a contract | CLOSED 2026-08-07 — see the boundary caveat below |
+
+Gaps 1-4 share one root cause: each needs the per-function environment. Widths and operand
+domains need the types of locals, `result`'s type needs the signature at the annotation site, and
+scope needs the bindings live at the loop. Gaps 5 and 6 closed cheaply precisely because they
+needed none of it.
+
+**Gap 6 closed CAPABILITY-REQUIRING calls, which is narrower than purity or totality.** The
+distinction matters because the diagnostic reuses the report's older wording, "spec/ghost must be
+pure and total", and that sentence claims more than the check delivers. Measured, not assumed —
+each of these is admitted in a contract today:
+
+* `fn d(n: i32) -> i32 { return 100 / n; }` — can **trap**;
+* a self-recursive function — may **diverge**;
+* a `#[trusted]` function — admitted, and its body is outside the checked language.
+
+So the enforced boundary is "no declared effects". The boundary that would be correct is
+"resolves to a `spec fn`, or to an executable function with an explicit, checked logical
+interpretation" — and that second notion does not exist in the compiler yet. Recording the
+difference rather than letting the diagnostic's wording stand as the specification: inventing a
+weaker rule and naming it purity is how a gap becomes invisible. Tracked in R-0473.
+
+**The lesson from closing gap 6.** A capability-requiring function
 performs I/O, so `#[ensures(result == tick())]` states a postcondition whose truth depends on when
 it is evaluated and what the outside world did; that is not a proposition about the program.
 `--report contracts` already detected it and could not reject it, so the call still reached the

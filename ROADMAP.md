@@ -4215,17 +4215,76 @@ Name-and-sort validation now runs (`Concrete/Check/Check.lean`) and is deliberat
 type checking. H27 records what remains accepted, each measured against the compiler and each
 pinned by a gate assertion written to flip when the gap closes:
 
+* ~~a boolean `#[variant]`~~ — **CLOSED 2026-08-07**. It was accepted because the proposition
+  check *skipped* variants rather than holding them to their own rule; absence of a rule read as
+  absence of a requirement. `i < n` does not decrease, it flips;
+* ~~a contract calling an IMPURE (capability-requiring) function~~ — **CLOSED 2026-08-07**. Its
+  meaning would depend on runtime effects, so it is not a proposition. Pure executable calls stay
+  legal — purity is the property that matters, not spec-only;
 * operand type compatibility — `#[requires(x < 9999999999)]` on an `i32`;
 * a bool as an arithmetic operand — `#[requires((x > 0) + 1 > 0)]`;
-* `#[variant(i < n)]` — a boolean where a well-founded measure belongs;
-* a contract calling an EXECUTABLE function;
 * `result`'s type (its scope is enforced; its type is not);
 * precise loop-binder scope — the bound set is every name bound anywhere in the function, so a
   name bound only *after* the loop is admitted and reaches the VC.
 
-The last one is the tell that this belongs in a typed record rather than in the checker's
-module-level pass: real scoping needs the per-function environment, and faking it there would be
-the same shape of mistake as the walkers keeping their own weaker copy of the trap rules (R-0464).
+**The four that remain share one root cause, and it is the argument for doing this properly.**
+Each needs the per-function environment: widths and operand domains need the types of locals,
+`result`'s type needs the signature at the annotation site, and scope needs the bindings live at
+the loop rather than "bound somewhere in the function". The two that closed did not need it, which
+is exactly why they closed cheaply — and why the remaining four should not be attacked the same
+way. Faking an environment in this module-level pass would be the same shape of mistake as the
+walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
+question that already has an authoritative one.
+
+**Acceptance boundary, from review and worth restating because it is easy to satisfy the letter
+of this task and miss it:** the record must retain resolved identities and types. Rejecting the
+six fixtures while still storing the original name-based AST expression would let VC generation
+reconstruct exactly the unsafe information the record exists to eliminate — and R-0474 would
+inherit the problem intact.
+
+**Dependency correction (2026-08-07).** The plan as first written was circular: this task's record
+"must carry resolved identities", while binding identities were assigned to R-0474. A record
+cannot honestly retain identities that do not exist yet, and storing names now with a promise to
+swap them later is exactly the failure the boundary above forbids — the names would be in the
+record, and every consumer built against it.
+
+So **the identity substrate begins here**, even though capture-safe substitution stays in R-0474:
+
+1. introduce the internal lexical `BindingId`;
+2. assign it to parameters, locals, ghost bindings, loop variables, and `result`;
+3. resolve contract identifiers to a `BindingId` or a `CallableId`;
+4. build `CheckedContract` over resolved, typed expressions;
+5. *(R-0474)* implement identity-based substitution;
+6. *(R-0474)* delete name-based substitution once the evaluation-law gate passes.
+
+The resolved reference must be a SUM, not a string with a companion type table — a string field
+is how the name survives in practice:
+
+```
+ResolvedContractRef
+  = local     BindingId
+  | parameter BindingId
+  | ghost     BindingId
+  | result    BindingId
+  | constant  ConstId
+  | spec      CallableId
+```
+
+`BindingId` here stays the *internal lexical* identity from `docs/BINDING_IDENTITY_DESIGN.md` —
+assigned during elaboration, regenerated every build, never serialized. It must not be conflated
+with stable evidence identity, which has to survive harmless source edits.
+
+**Boundary caveat on the closed gap 6.** It rejects capability-requiring calls, which is narrower
+than purity or totality: a capability-free function that traps, diverges, or is `#[trusted]` is
+still admitted (all three measured). The rule that would be right — "resolves to a spec fn, or to
+an executable function with an explicit, checked logical interpretation" — needs that second
+notion to exist, and it does not. It belongs with the typed record.
+
+**Diagnostic accumulation, narrowly.** The corpus denominator problem does not justify a
+compiler-wide error-accumulation refactor before typed contracts. Enough: contract validation
+collects all contract diagnostics for a declaration, runs once resolution and type information
+exist, and lets one invalid contract not mask its siblings. Runtime-body errors may stay
+first-error-wins. Reports must not be emitted from invalid typed records.
 
 **Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
 first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —

@@ -48,9 +48,14 @@ assert_contains(){ local l="$1" n="$2"; shift 2; local o; o="$("$@" 2>&1)"
   if grep -qF <<<"$o" -- "$n"; then echo "  ok   $l"; PASS=$((PASS+1));
   else echo "  FAIL $l — missing '$n'"; printf '%s\n' "$o"|sed 's/^/      /'|head -6; FAIL=$((FAIL+1)); fi; }
 # assert_absent <label> <needle> <cmd...>
+# An absence assertion over EMPTY output proves nothing: if the command produced no report at all
+# — the file was rejected before the report ran, the binary crashed — then every needle is absent
+# and the check passes. That is how a positive control in this very gate went green while proving
+# nothing (see H27). Empty output is therefore a failure, not a pass.
 assert_absent(){ local l="$1" n="$2"; shift 2; local o; o="$("$@" 2>&1)"
+  if [ -z "$o" ]; then echo "  FAIL $l — VACUOUS: command produced no output, so absence proves nothing"; FAIL=$((FAIL+1)); return; fi
   if grep -qF <<<"$o" -- "$n"; then echo "  FAIL $l — unexpected '$n'"; FAIL=$((FAIL+1));
-  else echo "  ok   $l"; fi; }
+  else echo "  ok   $l"; PASS=$((PASS+1)); fi; }
 # assert_json <label> <pyexpr> <cmd...>
 assert_json(){ local l="$1" e="$2"; shift 2; local o; o="$("$@" 2>/dev/null)"
   if printf '%s' "$o" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ($e) else 1)" 2>/dev/null; then echo "  ok   $l"; PASS=$((PASS+1));
@@ -275,6 +280,12 @@ cti_accept "an invariant over a local and a param is accepted" '        #[invari
 # A variant is an integer measure, so it must NOT be held to the proposition rule.
 cti_accept "an integer #[variant] is accepted (measures are not propositions)" '        #[invariant(0 <= i)]
         #[variant(n - i)]'
+# ...and a BOOLEAN variant is rejected, which is the other half of that rule. It was accepted
+# because the proposition check simply skipped variants rather than holding them to their own
+# requirement — absence of a rule reading as absence of a requirement. `i < n` does not decrease,
+# it flips.
+cti_reject "a boolean #[variant] is rejected (does not decrease)" '        #[invariant(0 <= i)]
+        #[variant(i < n)]'
 
 # TWO DISTINCT PROPERTIES, asserted separately. Rejecting the source is not the same claim as
 # producing no obligation from it: a pass that reports the error but still emits records leaves an
