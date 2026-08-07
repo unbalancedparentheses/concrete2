@@ -54,10 +54,12 @@ layer, so the next proof is "large but systematic," not speculative.
   `st N`, the loop evaluates to `cont` in the final env `st N`. This is the
   lemma SHA-256's packing / schedule / compression loops are proved with.
 
-Critically, a source-level `#[invariant(...)]` (when contracts land — see
-below) compiles to **exactly the hypotheses of `eval_while_count`**. The
-discharge engine for loop contracts already exists; the syntax that feeds it
-does not yet.
+Source-level contracts and loop obligations now exist. Their arithmetic shapes
+align with the hypotheses used by `eval_while_count`, but full operational
+preservation and automatic composition remain narrower than the reusable Lean
+lemma layer. See [VERIFICATION_STATUS.md](VERIFICATION_STATUS.md) for the
+current boundary; this document describes discharge infrastructure, not syntax
+availability.
 
 ## The discharge ladder (cheapest trust first)
 
@@ -148,14 +150,17 @@ contract system must generate.
    (the `32−n` shift amounts and `rotr` calls), the 48-round schedule, the
    64-round compression, and the `hash`/`hmac` composition — reuse this same
    machinery.)*
-5. **Attribute contracts + `ghost`** — `#[requires]`, `#[ensures]`,
-   `#[invariant]`, `#[decreases]` (attribute form, LL(1)-safe), now designed
-   against an obligation shape we have actually discharged.
-6. **VC generator** — contracts lower to the obligations from steps 3–4.
-7. **Discharge routing + classification** — route each VC to Lean / `bv_decide`
-   / SMT / runtime / assumed; surface the class in `concrete audit`.
-8. **Gradual mode, then external SMT** — runtime checks for unproved
-   obligations; external solver as the `solver_trusted` tier.
+5. **Attribute contracts + ghost values — shipped local surface.**
+   `#[requires]`, `#[ensures]`, loop invariants/variants, ghost values, and
+   their obligation/report paths exist. Recursive `#[decreases]`, two-state
+   `old`, and frame conditions remain planned.
+6. **VC generation — shipped families, consolidation active.** Existing
+   families lower contracts and runtime-safety sites through several walkers;
+   one typed calculus and Core-level faithfulness remain roadmap work.
+7. **Discharge routing + classification — shipped.** Lean, `bv_decide`, SMT,
+   runtime, and assumption outcomes remain distinct in the evidence ledger.
+8. **Gradual and external-SMT paths — shipped subsets.** Unsupported shapes and
+   trust boundaries remain explicit rather than silently earning proof status.
 
 Reason for the ordering: if contract syntax lands before
 `block_to_words_refines_spec`, we risk freezing syntax and VC shapes around a

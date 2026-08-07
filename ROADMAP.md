@@ -599,6 +599,35 @@ not the producing compiler's report renderer, can validate the versioned
 artifact and a dependency upgrade can be rejected for a policy-relevant
 behavioral regression.
 
+### Verification-document convergence required by every graduation
+
+[docs/VERIFICATION_STATUS.md](docs/VERIFICATION_STATUS.md) is the canonical
+cross-axis capability map. `CLAIMS_TODAY` owns exact public guarantees,
+`KNOWN_HOLES` owns defect status, the verification charter owns direction, and
+this ROADMAP owns ordering and acceptance criteria. A feature is not graduated
+when only its implementation lands: the same change must update the capability
+matrix, claim boundary, known-hole disposition, and shipped/experimental label.
+
+Missing documentation infrastructure, now explicit roadmap work:
+
+1. extend documentation drift checks so a closed hole cannot remain a live
+   overriding caveat in `CLAIMS_TODAY`;
+2. reject shipped syntax described as absent or planned in canonical proof docs;
+3. require every verification-status row to name its proof subject, evidence
+   class, support state, and important boundary;
+4. require experimental branch capabilities to remain labeled experimental
+   until code, negative controls, policy, and documentation land together;
+5. generate the stable portions of the capability matrix from compiler
+   vocabularies and evidence registries once those schemas can express all
+   dimensions without losing information;
+6. reconcile the multi-kernel and VC-calculus branch documents against the
+   charter before either branch merges, including termination versus general
+   liveness and evidence-vector terminology.
+
+Until these checks are automated, `make test-docs-drift` plus review of
+`VERIFICATION_STATUS`, `CLAIMS_TODAY`, and `KNOWN_HOLES` is a required
+graduation gate.
+
 ### The next 20 tasks, in execution order
 
 **This overrides file position.** The roadmap groups tasks by PHASE — a topical grouping,

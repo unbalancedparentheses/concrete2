@@ -12,6 +12,8 @@ Concrete's long-term direction is recorded in the
 [verification charter](VERIFICATION_CHARTER.md). The charter is a design and
 roadmap constraint, not evidence that its target capabilities ship. This page
 remains the authoritative statement of what Concrete supports today.
+The cross-axis capability map is
+[VERIFICATION_STATUS.md](VERIFICATION_STATUS.md).
 
 ---
 
@@ -167,29 +169,19 @@ What these do **not** mean:
 Each attestation is recorded as a receipt carrying the exact tool version, so a stored
 claim can be re-audited or invalidated when a prover release is found buggy.
 
-> **SECOND CAVEAT — H24, reproduced 2026-07-31.** A `proved` runtime-safety obligation
-> does not mean the operation cannot trap, because obligation generation states its own
-> trap conditions instead of deriving them from `IntArith`, and they are weaker.
-> Concretely: a division obligation covers `divisor ≠ 0` but **not** signed `MIN / -1`, so
-> `a / b` reports `proved_by_kernel_decision` and aborts on `(i32::MIN, -1)`; and
-> **shifts generate no obligation at all**, so an over-width shift aborts with nothing
-> having been claimed about it. See `examples/trap_semantics_gap/`, owned by R-0464.
->
-> Note that `--report bridge-check` does **not** catch this and reports
-> `ok — proved; 9 inputs checked, no counterexample` on the aborting function: it checks
-> the obligation against an evaluator of the same obligation, which tests lowering
-> fidelity, not sufficiency. Until R-0464, read `proved` on a division as "the divisor is
-> nonzero", not "this division cannot trap".
+**Closed soundness incidents retained as regression guards.** H24 formerly let a
+division obligation omit signed `MIN / -1` and generated no invalid-shift family;
+R-0464 closed it by deriving the complete trap-condition families from the
+single arithmetic semantics. H23 formerly let an unproved loop invariant
+launder into a proved dependent obligation; R-0461 added hypothesis provenance,
+status composition, and release enforcement. Their fixtures remain in
+`examples/trap_semantics_gap/` and `examples/unsound_hypothesis/`. See
+[KNOWN_HOLES.md](KNOWN_HOLES.md) for the fixes and current open boundaries.
 
-> **CAVEAT THAT OVERRIDES THIS WHOLE SECTION — H23, reproduced 2026-07-31.** A
-> runtime-safety obligation inside a loop may assume that loop's `#[invariant]` without
-> the invariant's preservation VC being discharged, and no status composition relates
-> them. A guaranteed out-of-bounds access therefore reports
-> `proved_by_multi_kernel (3: lean, rocq, isabelle)`, and `require-two-kernels` builds it
-> with exit 0. See `examples/unsound_hypothesis/`. Until R-0461 lands, treat every
-> `proved` runtime-safety obligation on a function **containing a loop** as conditional on
-> that loop's O1/O2, and verify them by hand in `--report vcs`. Obligations in
-> loop-free functions are unaffected.
+The broader H19 gap remains open: these repaired rules and all participating
+kernels still depend on a shared Core-to-obligation bridge without a general
+soundness proof. Per-obligation evidence records
+`independent_of.bridge = "no"` rather than hiding that boundary.
 
 **Scope of what actually carries a badge today (measured 2026-07-31).** Every obligation
 family the compiler generates is arithmetic, so the badge lands where linear arithmetic

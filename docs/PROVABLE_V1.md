@@ -190,7 +190,7 @@ These examples are not proof-complete. Their proof coverage is classified in
 - machine-level constant-time behavior is proved
 - all proof-eligible functions are proved
 - all proved functions have full functional specifications
-- source contracts exist yet
+- source contracts automatically provide complete compositional verification
 - runtime-error obligations are systematically generated yet
 - borrow/reference semantics are in the proof model
 

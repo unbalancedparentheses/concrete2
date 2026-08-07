@@ -34,6 +34,9 @@ consumer can check with a kernel they choose. See the
 [verification charter](docs/VERIFICATION_CHARTER.md); it is product direction,
 not a claim that all of this surface ships today.
 
+For the current shipped/experimental/missing capability matrix, see
+[Verification Status](docs/VERIFICATION_STATUS.md).
+
 ## At a Glance
 
 - **Simple syntax:** the grammar is LL(1) and checked as part of the project.

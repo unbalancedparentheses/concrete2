@@ -10,6 +10,33 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Verification Capability Map And Documentation Boundaries
+
+_Branch `main`, 2026-08-07._
+
+Added `docs/VERIFICATION_STATUS.md` as the canonical cross-axis answer to what Concrete can
+prove or enforce, what remains unsupported, and what exists only on experimental branches. The
+map separates language constructs, property classes, proof subjects, evidence mechanisms,
+composition scope, and support state, so a statement such as “arrays are supported” no longer
+quietly conflates language support, ProofCore extraction, bounds VCs, heap specifications, and
+multi-kernel replay.
+
+Corrected three stale present-tense accounts at the same time:
+
+- `CLAIMS_TODAY.md` no longer presents closed H23/H24 incidents as live caveats overriding
+  current proof results; it records their retained regression fixtures and names H19 as the
+  broader open bridge boundary.
+- `PROVABLE_V1.md` no longer claims source contracts do not exist; the non-claim is now the
+  missing automatic, complete compositional verification those contracts do not yet provide.
+- `PROOF_LADDER.md` now labels contracts, generated VC families, discharge routing, and gradual
+  paths by their shipped boundaries instead of describing contract syntax as future work.
+
+The ROADMAP now makes documentation convergence part of feature graduation: capability matrix,
+public claim, known-hole disposition, and shipped/experimental label must land together. It also
+records the missing automation—closed holes must not remain live warnings, shipped syntax must
+not remain described as absent, and experimental branch results must not become `main` claims
+before their code, negative controls, policy, and documentation graduate together.
+
 ### Obligation Discovery: Two Certified-False Claims Removed
 
 _Branch `spike/multi-prover-evidence`, 2026-08-05._
