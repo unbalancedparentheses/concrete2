@@ -3468,10 +3468,54 @@ walkers keeping their own weaker copy of the trap rules (R-0464): a second, weak
 question that already has an authoritative one.
 
 **Acceptance boundary, from review and worth restating because it is easy to satisfy the letter
-of this task and miss it:** the record must retain resolved identities and types. Rejecting these
+of this task and miss it:** the record must retain resolved identities and types. Rejecting the
 six fixtures while still storing the original name-based AST expression would let VC generation
 reconstruct exactly the unsafe information the record exists to eliminate — and R-0474 would
 inherit the problem intact.
+
+**Dependency correction (2026-08-07).** The plan as first written was circular: this task's record
+"must carry resolved identities", while binding identities were assigned to R-0474. A record
+cannot honestly retain identities that do not exist yet, and storing names now with a promise to
+swap them later is exactly the failure the boundary above forbids — the names would be in the
+record, and every consumer built against it.
+
+So **the identity substrate begins here**, even though capture-safe substitution stays in R-0474:
+
+1. introduce the internal lexical `BindingId`;
+2. assign it to parameters, locals, ghost bindings, loop variables, and `result`;
+3. resolve contract identifiers to a `BindingId` or a `CallableId`;
+4. build `CheckedContract` over resolved, typed expressions;
+5. *(R-0474)* implement identity-based substitution;
+6. *(R-0474)* delete name-based substitution once the evaluation-law gate passes.
+
+The resolved reference must be a SUM, not a string with a companion type table — a string field
+is how the name survives in practice:
+
+```
+ResolvedContractRef
+  = local     BindingId
+  | parameter BindingId
+  | ghost     BindingId
+  | result    BindingId
+  | constant  ConstId
+  | spec      CallableId
+```
+
+`BindingId` here stays the *internal lexical* identity from `docs/BINDING_IDENTITY_DESIGN.md` —
+assigned during elaboration, regenerated every build, never serialized. It must not be conflated
+with stable evidence identity, which has to survive harmless source edits.
+
+**Boundary caveat on the closed gap 6.** It rejects capability-requiring calls, which is narrower
+than purity or totality: a capability-free function that traps, diverges, or is `#[trusted]` is
+still admitted (all three measured). The rule that would be right — "resolves to a spec fn, or to
+an executable function with an explicit, checked logical interpretation" — needs that second
+notion to exist, and it does not. It belongs with the typed record.
+
+**Diagnostic accumulation, narrowly.** The corpus denominator problem does not justify a
+compiler-wide error-accumulation refactor before typed contracts. Enough: contract validation
+collects all contract diagnostics for a declaration, runs once resolution and type information
+exist, and lets one invalid contract not mask its siblings. Runtime-body errors may stay
+first-error-wins. Reports must not be emitted from invalid typed records.
 
 **Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
 first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —
