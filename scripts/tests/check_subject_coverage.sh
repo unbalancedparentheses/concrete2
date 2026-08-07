@@ -34,7 +34,12 @@ no() { echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # test tree: tests/programs/ holds deliberate uncovered probes whose whole purpose
 # is to be uncovered, and mixing them in would hide a real regression in the noise.
 EXPECT_COVERED=419
-EXPECT_UNCOVERED=1
+# 1 -> 0 on 2026-08-07: the last uncovered case (invalid_contract_expression) stopped
+# being one when contract type-checking landed and rejected it before subject
+# construction. See the cause notes below. ZERO is now the assertion — every declaration
+# the corpus reaches produces a covered subject — which is a stronger claim than the count
+# it replaces, and it fails on any RISE.
+EXPECT_UNCOVERED=0
 
 # The uncovered set, by cause. Both causes are OPEN work, tracked here because a
 # bare count would not say what closing them requires.
@@ -50,10 +55,21 @@ EXPECT_UNCOVERED=1
 #            name them without going uncovered. Both ghost programs are covered as
 #            of this change; the cause is retained here as a record of what the
 #            count used to include.
-#   invalid — a deliberate negative example; uncovered is the correct verdict.
+#   invalid — a deliberate negative example; uncovered WAS the correct verdict.
+#
+#             CAUSE CLOSED 2026-08-07 by the spike/multi-kernel-theories merge. Contracts
+#             are now TYPE-CHECKED, so `invalid_contract_expression` is rejected during
+#             check ("contract on 'bad': unknown identifier 'nonexistent'") and never
+#             becomes a subject at all. A program that does not reach subject construction
+#             cannot be uncovered; the fixture still earns its keep as a contract negative,
+#             it just stopped being a COVERAGE case.
+#
+#             This gate failed on the DROP rather than passing quietly, which is the whole
+#             point of asserting an exact count: a cause closing has to be recorded
+#             deliberately, or the inventory drifts from why the number is what it is.
 EXPECT_CONST=""   # cause closed for local constants; see the note above
 EXPECT_GHOST=""   # cause closed; see the note above
-EXPECT_INVALID="examples/contract_negatives/invalid_contract_expression/src/main.con"
+EXPECT_INVALID="" # cause closed by contract type-checking; see the note above
 
 covered=0; uncovered=0; offenders=""
 while IFS= read -r f; do

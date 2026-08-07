@@ -246,3 +246,11 @@ examples/vc_suite/rate_limiter.con skip
 examples/vc_suite/ring_buffer_indices.con skip
 examples/verify/src/main.con project-build
 examples/vm/main.con skip
+examples/refine_kernel_demo/src/main.con skip
+# `skip`: driven by check_bool_kernel.sh, and it defines no `main`, so a standalone
+# compile cannot succeed. Added on the spike/multi-kernel-theories merge — the branch
+# introduced the example without a manifest line, which check_examples caught.
+examples/bool_kernel_demo/src/main.con skip
+examples/datatype_kernel_demo/src/main.con skip
+examples/euf_kernel_demo/src/main.con skip
+examples/contract_positive/pure_contract_calls/src/main.con skip
