@@ -52,7 +52,32 @@ snap_one(){ local class="$1" kind="$2" src="$3"
   if [ "$UPDATE" = "1" ]; then cp "$actual" "$golden"; echo "  UPD  $class ($kind)"; UPD=$((UPD+1)); return; fi
   if [ ! -f "$golden" ]; then echo "  FAIL $class — no golden snapshot (run UPDATE_PHASE1_SNAPSHOTS=1)"; FAIL=$((FAIL+1)); return; fi
   if cmp -s "$golden" "$actual"; then echo "  ok   $class ($kind) snapshot"; PASS=$((PASS+1));
-  else echo "  FAIL $class — snapshot drift"; diff -u "$golden" "$actual" | head -20 | sed 's/^/    /'; FAIL=$((FAIL+1)); fi; }
+  else
+    # ATTRIBUTE THE DRIFT BEFORE PRINTING IT. A fixture with a Concrete.toml compiles as a
+    # PROJECT, so `--report contracts` includes the standard library's contracts, and the golden
+    # file transitively depends on every contract in the stdlib. Any stdlib contract edit
+    # invalidates it — and the failure then points at the fixture, which is not where anything
+    # changed. That mis-attribution cost real time once (H26): the drift was traced to the wrong
+    # commit because the message said "assume_taint" and the cause was a change to
+    # std/src/sha256.con three commits earlier.
+    #
+    # So: split the differing lines by whether they belong to a module the fixture DEFINES.
+    local ownmods difflines fixturelines
+    ownmods="$(grep -oE '^[[:space:]]*(pub )?mod [a-zA-Z0-9_]+' "$src" 2>/dev/null | awk '{print $NF}' | sort -u)"
+    difflines="$(diff "$golden" "$actual" | grep -E '^[<>]' || true)"
+    fixturelines=0
+    if [ -n "$ownmods" ]; then
+      # A report entry is `module.function`; count differing lines naming a module we define.
+      fixturelines="$(printf '%s\n' "$difflines" | grep -cE "\b($(printf '%s' "$ownmods" | paste -sd'|'))\." || true)"
+    fi
+    echo "  FAIL $class — snapshot drift"
+    if [ -f "$(dirname "$(dirname "$src")")/Concrete.toml" ] && [ "$fixturelines" = "0" ]; then
+      echo "    LIKELY NOT A FIXTURE REGRESSION: this fixture has a Concrete.toml, so it builds as"
+      echo "    a project and its snapshot includes STDLIB contracts. No differing line names a"
+      echo "    module this fixture defines ($(printf '%s' "$ownmods" | paste -sd,)), so look for a"
+      echo "    recent change under std/ before looking at the fixture. See H26 / R-0475."
+    fi
+    diff -u "$golden" "$actual" | head -20 | sed 's/^/    /'; FAIL=$((FAIL+1)); fi; }
 
 echo "=== per-class report snapshots ==="
 for row in "${CLASSES[@]}"; do IFS='|' read -r class kind src <<< "$row"; snap_one "$class" "$kind" "$src"; done
