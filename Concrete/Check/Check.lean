@@ -2362,6 +2362,27 @@ def checkModule (m : Module) (summary : FileSummary)
         let loopExprs := f.loopContracts.flatMap (fun lc => lc.invariants ++ lc.variant.toList)
         let freeL := loopExprs.flatMap (badName boundLoop)
         let free := (freeR ++ freeE ++ freeL).eraseDups
+        -- SHADOWING is the gap unknown-name rejection cannot close, and it is the one place where
+        -- "every name resolved" is not the same as "the contract means what it says".
+        --
+        -- A local may shadow a parameter (measured, not assumed). In
+        --     #[ensures(result == x)]
+        --     fn f(x: i32) -> i32 { let x: i32 = 99; return x; }
+        -- every name resolves, no diagnostic fires, and nothing in the pipeline records WHICH `x`
+        -- the contract means. A contract talks about the function's interface, so the parameter is
+        -- the only defensible reading -- but the obligation carries the bare name `x`, and the
+        -- reading is therefore established nowhere.
+        --
+        -- Contained the same way as H25, and for the same reason: the ambiguity is not currently
+        -- exploitable (the postcondition is not discharged), and relying on that is relying on a
+        -- downstream stage's incompleteness rather than on a rule here. Rejecting is cheap, and it
+        -- keeps the refinement tier from beginning to discharge these while the meaning is
+        -- undecided. The restriction lifts when contract expressions carry binding identities
+        -- rather than names.
+        let contractNames :=
+          (f.requires ++ f.ensures ++ loopExprs).flatMap (fun e => collectFreeVarsExpr e []) |>.eraseDups
+        let shadowedParams := (f.params.map (·.name)).filter fun pn =>
+          localNames.contains pn && contractNames.contains pn
         -- Sort reuses `specBodySort`, so a contract and a spec body are held to one standard.
         -- `result` is typed by the function's return type; a contract mentioning it is otherwise
         -- indistinguishable from one that does not.
@@ -2372,7 +2393,12 @@ def checkModule (m : Module) (summary : FileSummary)
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
           | none => false
-        if !free.isEmpty then
+        if !shadowedParams.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}' names parameter(s) shadowed by a local: {", ".intercalate shadowedParams}"
+                  , pass := "check", span := some f.span
+                  , hint := some "TEMPORARY: the contract carries the bare name, so which binding it means is recorded nowhere. Rename the local until contract expressions carry binding identities." }]
+        else if !free.isEmpty then
           .error [{ severity := .error
                     -- Wording matches `validateContractExpr` in ReportVC deliberately. That pass
                     -- already reported this exact defect under `--report contracts`; it just could

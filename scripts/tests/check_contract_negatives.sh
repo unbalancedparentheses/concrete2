@@ -293,9 +293,38 @@ SHOUT="$("$COMPILER" "$CTMP/shadow.con" --report vcs 2>&1 || true)"
 # The contract means the PARAMETER. Nothing in the pipeline records which `x` that is, so the
 # guarantee today is only that the postcondition is not discharged. Pinning that keeps the
 # refinement tier from quietly starting to discharge it while the ambiguity is unresolved (H25).
-grep -qE <<<"$SHOUT" "ensures0.*|status: *missing" \
-  && { echo "  ok   a contract naming a SHADOWED param is not discharged (H25 ambiguity unresolved)"; PASS=$((PASS+1)); } \
-  || { echo "  FAIL a shadowed-param contract is being discharged despite unresolved binding identity"; FAIL=$((FAIL+1)); }
+# Now REJECTED rather than merely undischarged. The earlier assertion pinned "no evidence is
+# issued from it", which relied on the postcondition path being incomplete — the same
+# safety-by-accident shape as H25. Rejecting establishes it here instead.
+grep -qF <<<"$SHOUT" "shadowed by a local" \
+  && { echo "  ok   a contract naming a SHADOWED param is rejected (which binding it means is recorded nowhere)"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL a shadowed-param contract is accepted despite unresolved binding identity"; FAIL=$((FAIL+1)); }
+
+# Two over-rejection controls, because this restriction is easy to widen by accident. Shadowing
+# is legal in the language; only shadowing of a name a CONTRACT mentions is ambiguous.
+cat > "$CTMP/shadow_ok.con" <<'EOF'
+mod so {
+    #[ensures(result == x)]
+    fn f(x: i32) -> i32 {
+        let y: i32 = 99;
+        return x + y - y;
+    }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/shadow_ok.con" --report vcs 2>&1 || true)" "error[check]" \
+  && { echo "  FAIL a contract with NO shadowing was rejected"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   a contract over an unshadowed param is accepted"; PASS=$((PASS+1)); }
+cat > "$CTMP/shadow_nocontract.con" <<'EOF'
+mod sn {
+    fn f(x: i32) -> i32 {
+        let x: i32 = 99;
+        return x;
+    }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/shadow_nocontract.con" --report vcs 2>&1 || true)" "error[check]" \
+  && { echo "  FAIL shadowing was rejected in a function with NO contract — the language rule changed"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   shadowing without a contract is still legal (restriction is scoped to contracts)"; PASS=$((PASS+1)); }
 
 # The loop-contract scope check is OVER-APPROXIMATE by construction: the bound set is every name
 # bound anywhere in the function, not the names in scope at the loop. This pins that limit as a

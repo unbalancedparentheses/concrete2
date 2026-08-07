@@ -83,52 +83,57 @@ fn f(x: i32) -> i32 { let x: i32 = 99; return x; }
 ```
 
 every name resolves, no diagnostic fires, and nothing in the pipeline records *which* `x` the
-contract means. Today the postcondition is simply not discharged, and a gate pins that, so the
-refinement tier cannot quietly begin discharging it while the ambiguity stands. The real fix is
+contract means.
+
+**Contained**: a contract naming a parameter that a local shadows is now rejected at check time.
+The earlier pin asserted only that the postcondition was not discharged — which relied on the
+postcondition path being incomplete, the same safety-by-accident shape as H25. Rejecting
+establishes the property where the contract is admitted instead of inheriting it from a later
+stage's narrowness.
+
+The restriction is scoped: shadowing itself stays legal, and only shadowing of a name a contract
+mentions is rejected. Two over-rejection controls hold that line (an unshadowed contract is
+accepted; shadowing in a function with no contract is accepted), and the corpus was swept before
+turning it on. The real fix is
 [H25](#h25-refinement-substitution-is-by-name-not-by-binding-identity--open-contained)'s stable
 binding identities — the two holes share a root cause: contract expressions carry names, not
 identities.
 
-### H26. `assume_taint` contracts snapshot drifted and nobody noticed — OPEN (pre-existing)
+### H26. A negative fixture's golden file is coupled to the entire stdlib — CLOSED 2026-08-07
 
-`check_phase1_contracts.sh` fails one assertion on `spike/multi-kernel-theories`:
-`--report contracts` on `examples/contract_negatives/assume_taint` now lists `sha256.rotr`'s
-preconditions under **Source Contracts**, and the committed snapshot does not.
+`check_phase1_contracts.sh` failed one assertion: `--report contracts` on
+`examples/contract_negatives/assume_taint` listed `sha256.rotr`'s preconditions under **Source
+Contracts** and the committed snapshot did not. The fixture is a 13-line module defining no
+`sha256`, which is what made it worth refusing to bless.
 
-Attributed rather than assumed: reverting `Concrete/Check/Check.lean` to its pre-change state and
-rebuilding leaves the drift in place, so it is not caused by contract checking. `git log` puts the
-change in `3df41abf` (the multi-kernel spike), which landed without regenerating the snapshot.
+**Cause.** `assume_taint` is one of only 3 of the 21 contract-negative fixtures that carry a
+`Concrete.toml` — it needs one for its `forbid-assume` policy. That makes it a *project*, so it
+compiles against the stdlib, and `--report contracts` reports the stdlib's contracts too. Commit
+`a3ba761b` (R-0464, closing H24) added `#[requires(n > 0)]` / `#[requires(n < 32)]` to
+`std/src/sha256.con`. `a3ba761b` is newer than `a16a1138`, where the snapshot was last written, so
+the golden file was stale from the moment the stdlib gained those contracts.
 
-**Not blessed deliberately.** `assume_taint`'s fixture is a 13-line module that defines no
-`sha256` at all, so it is not obvious why that function's contracts appear in *its* report — the
-snapshot already carried stdlib rows elsewhere, so the report is project-wide by design, but the
-move into Source Contracts specifically is unexplained. Running `UPDATE_PHASE1_SNAPSHOTS=1` would
-turn the gate green in one command and is exactly the wrong move: accepting a diff you cannot
-explain is how a real regression gets a golden file. The neighbouring
-`invalid_contract_expression` snapshot WAS updated, because that drift is understood — the fixture
-is now rejected at check time, so the report never runs.
+Verified before updating rather than after: the diff is **94 lines added, 0 removed**, no line
+mentioning the fixture's own `cn.*` module changed, and every addition is a `sha256.*` entry. The
+fixture's behaviour is untouched; only stdlib content appeared. Snapshot regenerated on that
+basis.
 
-Fix requires deciding what `--report contracts` is scoped to. Until then the gate is honestly red
-at 29/1 rather than dishonestly green at 30/0, and **this branch should not merge until it is
-understood** — a red gate that travels into main as "known" stops being read.
+**The real finding is the coupling, not the drift.** A negative fixture's golden file transitively
+depends on every contract in the standard library. Any stdlib change that adds or edits a contract
+silently invalidates it, and the failure presents as a *fixture* regression — pointing at
+`assume_taint`, which is not where anything changed. That is why my first attribution was wrong: I
+traced it to `3df41abf` (the multi-kernel spike) by `git log` on the report module, and only
+finding the actual cause required noticing which fixtures have a `Concrete.toml` at all. It will
+recur on the next stdlib contract edit.
 
-Reproducer, recorded so "pre-existing red" stays checkable rather than becoming folklore:
+Worth fixing properly: either scope the contracts snapshot to the fixture's own modules, or make
+the diff report "N stdlib entries changed" separately from fixture content, so the next occurrence
+names the stdlib instead of the fixture. Tracked as R-0475.
 
-```
-git checkout 61a489b3 -- Concrete/Check/Check.lean   # baseline: before contract validation
-lake build
-diff <(./.lake/build/bin/concrete \
-        examples/contract_negatives/assume_taint/src/main.con --report contracts 2>&1) \
-     scripts/tests/phase1_snapshots/assume_taint.contracts.txt
-git checkout HEAD -- Concrete/Check/Check.lean && lake build
-```
-
-The diff is present at the baseline, which is what rules this work out as the cause.
-
-Investigation points, none yet eliminated: report collection aggregating functions from another
-module; project/module discovery leaking across fixtures; cached or global compiler state; the
-snapshot command running against the wrong project root; branch ancestry already carrying a
-contaminated golden; or the harness reusing an output path.
+**Process note.** Refusing `UPDATE_PHASE1_SNAPSHOTS=1` while the diff was unexplained was correct
+and cost about twenty minutes. Running it would have produced a green gate, a committed golden
+file containing content nobody had accounted for, and no record that a negative fixture depends on
+the stdlib.
 
 ### H25. Refinement substitution is by NAME, not by binding identity — OPEN (contained)
 

@@ -535,14 +535,48 @@ easier trap.
 One place to look. Two entries below were open earlier the same day and are now closed; they are
 kept with their outcome because the *pattern* they belong to is the last item here.
 
+### Closed 2026-08-07 (`spike/multi-kernel-theories`)
+
+- ~~**`#[requires]`/`#[ensures]` are not validated anywhere.**~~ **DONE, and named honestly.**
+  An unbound name reached the HYPOTHESES of every obligation in the function, including ones
+  reported `proved_by_kernel_decision`. Fails closed (unprovable at the call site) but surfaced in
+  the wrong function. Now rejected at check time, extended to loop invariants and variants —
+  where an unbound name was universally quantified into the initiation obligation, turning a
+  missing binding into an arbitrary theorem variable. **Called name-and-sort validation, not type
+  checking**: H27 lists six things still accepted, each measured and each pinned by a gate written
+  to flip when the gap closes. See R-0473.
+- ~~**Refinement substitution can capture.**~~ **CONTAINED, not fixed.** `substExpr` replaces by
+  name; a binder in a spec body has the binding substituted away. No unsound evidence escaped —
+  and the reason is the finding: the corrupted obligation reported `outside the fragment` only
+  because `renderTerm` has no `.ifExpr` case. **Renderer incompleteness is not a valid
+  precondition for transformation soundness.** Binder-bearing bodies and contracts naming a
+  shadowed parameter are now rejected, both temporary and both saying so. H25, H27, R-0474.
+- ~~**Gates run whatever binary is on disk.**~~ **DONE, 145 gates.** Four times in one session a
+  branch switch without a rebuild produced plausible evidence about a compiler that no longer
+  existed — once a shipped feature looked unimplemented, once three "parse errors" were nearly
+  written up as a finding. The first fix compared mtimes and measurement killed it: `lake build`
+  succeeds *without relinking* when output is unchanged. Delegating freshness to lake costs 130ms.
+
+### Open — added 2026-08-07
+
+0. ~~**H26 blocks merging.**~~ **RESOLVED 2026-08-07.** The fixture is one of 3 of 21 that carry a
+   `Concrete.toml`, so it builds as a project against the stdlib; `a3ba761b` added contracts to
+   `std/src/sha256.con` after the golden was written. Diff verified as 94 additions, 0 removals,
+   nothing touching the fixture's own module, then regenerated. The structural coupling — a
+   negative fixture's golden depending on every stdlib contract — is R-0475.
+0b. **263 of 1248 corpus files are UNMEASURED** for contract validation, because checking stops at
+   the first error. The defensible claim is "no unexpected rejection among the 963 files that
+   reached it" — not "the corpus is compatible". A diagnostic-accumulation mode closes it (R-0473).
+
 ### Closed today
 
 - ~~**Spec bodies are not type-checked.**~~ **DONE.** A `spec fn … = expr` body is now checked for
   free variables, for calling only other spec fns, AND for SORT (boolean vs integer). Gated in
   three directions, including that the rule *constrains* rather than forbids — a spec calling
   another spec still passes. **Limit stated in the code:** it is a sort check, not type inference,
-  so a width mismatch (`i32` vs `i64`) is still not caught. `#[requires]`/`#[ensures]` are not
-  type-checked anywhere either, so there was no machinery to reuse.
+  so a width mismatch (`i32` vs `i64`) is still not caught. `#[requires]`/`#[ensures]` were not
+  validated anywhere either, so there was no machinery to reuse — **superseded 2026-08-07**: they
+  are now name-and-sort validated (see the entry above), reusing this sort check.
 - ~~**No negative control on the axiom inventory.**~~ **DONE for 2 of ~10 gates.**
   `check_axiom_inventory` now builds a theorem that genuinely depends on `sorryAx` and requires
   the classifier to flag it — mutation-tested: allowlisting `sorryAx` produces 2 failures, where
@@ -3394,6 +3428,102 @@ experimental and non-authoritative. R-0450 may land its versioned common IR
 without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
+
+### Task R-0473 — typed contract records, and contract type checking that earns the name
+
+**Objective:** Replace the seven consumers' independent re-reading of raw `List Expr` contract
+metadata with one checked, typed contract record, and close the H27 gaps that make the current
+validation name-and-sort only.
+
+Contracts were erased metadata that no pass validated. `#[requires(nosuchvar > 0)]` was accepted
+and `nosuchvar` reached the HYPOTHESES of every obligation in the function, including ones
+reported `proved_by_kernel_decision`. That failed closed — a hypothesis over a fresh universally
+quantified variable is unprovable at the call site — but the failure surfaced in a *different*
+function than the typo, and a precondition nobody can establish read exactly like one nobody had
+established yet.
+
+Name-and-sort validation now runs (`Concrete/Check/Check.lean`) and is deliberately not called
+type checking. H27 records what remains accepted, each measured against the compiler and each
+pinned by a gate assertion written to flip when the gap closes:
+
+* operand type compatibility — `#[requires(x < 9999999999)]` on an `i32`;
+* a bool as an arithmetic operand — `#[requires((x > 0) + 1 > 0)]`;
+* `#[variant(i < n)]` — a boolean where a well-founded measure belongs;
+* a contract calling an EXECUTABLE function;
+* `result`'s type (its scope is enforced; its type is not);
+* precise loop-binder scope — the bound set is every name bound anywhere in the function, so a
+  name bound only *after* the loop is admitted and reaches the VC.
+
+The last one is the tell that this belongs in a typed record rather than in the checker's
+module-level pass: real scoping needs the per-function environment, and faking it there would be
+the same shape of mistake as the walkers keeping their own weaker copy of the trap rules (R-0464).
+
+**Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
+first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —
+a contract defect can sit behind an unrelated earlier error. Until that mode exists, the
+defensible claim is "no unexpected rejection among the 963 files that reached contract checking",
+which is materially weaker than "the corpus is compatible".
+
+**Depends on:** nothing. **Blocks:** R-0474.
+
+### Task R-0474 — lexical binding identities and capture-safe substitution
+
+**Objective:** Retire by-name substitution as proof infrastructure, and graduate H25 and H27's
+shadowing restriction.
+
+`refineObligations` instantiates a spec body by substituting parameters via `substExpr`, which
+replaces by NAME with no capture avoidance. A binder in the body has the binding substituted away.
+No unsound evidence escaped — the corrupted obligation reports `outside the fragment` because
+`renderTerm` has no `.ifExpr` case — and *that is the finding*: soundness rested on an unrelated
+downstream renderer's narrowness, and adding `.ifExpr` (an obvious extension the refinement tier
+invites) would have made the corruption live with no test failing.
+
+**The invariant:** refinement substitution may act only on expressions whose free-variable
+identities are distinguished from all locally bound identities.
+
+**Graduation condition:** substitution over identities, with the evaluation law
+`eval(subst(Q, x, e), rho) = eval(Q, rho[x |-> eval(e, rho)])` proved or exhaustively gated over
+the supported fragment.
+
+Scope is fixed in `docs/BINDING_IDENTITY_DESIGN.md` before any editing, because this refactor
+becomes invasive quietly. The load-bearing decision there is to keep **two** notions apart rather
+than build one identifier for both: a *lexical binding ID* (internal, unique within one elaborated
+function, regenerated every build, never serialized) and a *stable evidence identity* (canonical
+across harmless edits, appearing in artifacts and fingerprints). Their requirements contradict,
+and a lexical ID reaching stored evidence is a defect — a rebuild would read as a different
+program. Only the lexical ID is in scope here. Monomorphization and inlining are explicitly out of
+scope, with the point named at which the answer becomes mandatory.
+
+**Currently contained, both temporary and both saying so in their diagnostics:** binder-bearing
+spec bodies are rejected, and contracts naming a parameter shadowed by a local are rejected.
+Shadowing is the gap unknown-name rejection cannot close by construction — every name resolves, no
+diagnostic fires, and nothing records *which* binding the contract means.
+
+**Depends on:** R-0473. **Blocks:** `old(...)`, frame/`modifies` conditions, reliable loop-state
+reasoning, call-site contract instantiation, and quantified predicates with binders.
+
+### Task R-0475 — decouple fixture snapshots from the stdlib
+
+**Objective:** Stop a standard-library contract edit from silently invalidating a negative
+fixture's golden file, and stop the resulting failure from pointing at the wrong place.
+
+The H26 investigation resolved the immediate drift: `assume_taint` is one of 3 of 21
+contract-negative fixtures carrying a `Concrete.toml`, so it compiles as a *project* against the
+stdlib, and `a3ba761b` (R-0464) added contracts to `std/src/sha256.con` after the snapshot was
+last written. The diff was 94 additions, 0 removals, nothing touching the fixture's own module —
+verified before regenerating.
+
+The defect that remains is structural: **a negative fixture's golden file transitively depends on
+every contract in the standard library.** The next stdlib contract edit drifts it again, and the
+failure presents as a regression in `assume_taint`, which is not where anything changed. The first
+attribution in this investigation was wrong for exactly that reason.
+
+Two workable fixes: scope the contracts snapshot to the fixture's own modules, or report "N stdlib
+entries changed" as a separate line from fixture content so the next occurrence names the stdlib.
+The second is cheaper and keeps stdlib coverage visible.
+
+**Also in scope:** the other 2 project-mode fixtures have the same coupling and have not been
+checked for latent drift.
 
 ### Task R-0472 — what could be provable but is not yet, by reason
 
