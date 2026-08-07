@@ -261,5 +261,85 @@ cti_accept "an invariant over a local and a param is accepted" '        #[invari
 cti_accept "an integer #[variant] is accepted (measures are not propositions)" '        #[invariant(0 <= i)]
         #[variant(n - i)]'
 
+# TWO DISTINCT PROPERTIES, asserted separately. Rejecting the source is not the same claim as
+# producing no obligation from it: a pass that reports the error but still emits records leaves an
+# invented binder inside the obligation store, where a later consumer can pick it up. The second
+# assertion is what makes "no arbitrary theorem variable was created" checkable rather than
+# inferred from the first.
+cti "        #[invariant(0 <= i && i <= bogusname)]"
+INVOUT="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$INVOUT" "unknown identifier 'bogusname'" \
+  && { echo "  ok   (1/2) the source program is rejected, naming the identifier"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL (1/2) rejection did not name 'bogusname'"; FAIL=$((FAIL+1)); }
+grep -qF <<<"$INVOUT" "bogusname" && grep -qE <<<"$INVOUT" "conclusion|hypotheses" \
+  && { echo "  FAIL (2/2) an obligation record still carries the invented binder"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   (2/2) no obligation record contains the invented binder"; PASS=$((PASS+1)); }
+
+# SHADOWING, which unknown-name rejection cannot catch by construction: once the identifier
+# exists in two scopes every name resolves, so no diagnostic fires and resolution can silently
+# pick the wrong valid binding. Shadowing IS expressible here -- a local may shadow a parameter,
+# measured, not assumed -- so this is a live gap and not a hypothetical one.
+cat > "$CTMP/shadow.con" <<'EOF'
+mod sh {
+    #[requires(x > 0)]
+    #[ensures(result == x)]
+    fn f(x: i32) -> i32 {
+        let x: i32 = 99;
+        return x;
+    }
+}
+EOF
+SHOUT="$("$COMPILER" "$CTMP/shadow.con" --report vcs 2>&1 || true)"
+# The contract means the PARAMETER. Nothing in the pipeline records which `x` that is, so the
+# guarantee today is only that the postcondition is not discharged. Pinning that keeps the
+# refinement tier from quietly starting to discharge it while the ambiguity is unresolved (H25).
+grep -qE <<<"$SHOUT" "ensures0.*|status: *missing" \
+  && { echo "  ok   a contract naming a SHADOWED param is not discharged (H25 ambiguity unresolved)"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL a shadowed-param contract is being discharged despite unresolved binding identity"; FAIL=$((FAIL+1)); }
+
+# The loop-contract scope check is OVER-APPROXIMATE by construction: the bound set is every name
+# bound anywhere in the function, not the names in scope at the loop. This pins that limit as a
+# known, measured behaviour rather than leaving it as a comment nobody re-checks. When real
+# scoping arrives with the typed contract record, this assertion should flip to a rejection.
+cat > "$CTMP/overapprox.con" <<'EOF'
+mod oa {
+    fn f(n: i32) -> i32 {
+        let mut i: i32 = 0;
+        #[invariant(0 <= i && i <= later)]
+        while i < n {
+            i = i + 1;
+        }
+        let later: i32 = 5;
+        return i + later;
+    }
+}
+EOF
+OAOUT="$("$COMPILER" "$CTMP/overapprox.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$OAOUT" "error[check]" \
+  && { echo "  ok   KNOWN-LIMIT FLIPPED: loop scope is now precise — tighten this assertion"; PASS=$((PASS+1)); } \
+  || { echo "  ok   known limit: a name bound only AFTER the loop is still admitted (over-approximate scope)"; PASS=$((PASS+1)); }
+
+# WHAT THIS VALIDATION DOES NOT DO (H27). These pin the boundary as measured behaviour, so the
+# gate says out loud that contracts are name-and-sort validated rather than type checked. Each is
+# written to REPORT rather than fail, and to flip when the gap closes -- a known limit that
+# nobody re-measures becomes a false impression.
+gap() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   H27 GAP CLOSED: $1 — tighten this assertion"; PASS=$((PASS+1));
+  else echo "  ok   H27 known gap (not type checking): $1"; PASS=$((PASS+1)); fi; }
+gap "operand width is unchecked"          '    #[requires(x < 9999999999)]'
+gap "bool as arithmetic operand"          '    #[requires((x > 0) + 1 > 0)]'
+cat > "$CTMP/impure.con" <<'EOF'
+mod im {
+    fn g(y: i32) -> i32 { return y; }
+
+    #[requires(g(x) > 0)]
+    fn f(x: i32) -> i32 { return x; }
+}
+EOF
+IMOUT="$("$COMPILER" "$CTMP/impure.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$IMOUT" "error[check]" \
+  && { echo "  ok   H27 GAP CLOSED: executable call in a contract — tighten this assertion"; PASS=$((PASS+1)); } \
+  || { echo "  ok   H27 known gap: a contract may call an EXECUTABLE fn"; PASS=$((PASS+1)); }
+
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

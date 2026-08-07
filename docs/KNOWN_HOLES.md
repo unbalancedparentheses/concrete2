@@ -28,6 +28,67 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H27. Contract validation is name-and-sort only, not type checking — OPEN
+
+`Concrete/Check/Check.lean` rejects contracts that name identifiers which do not exist, and
+applies a coarse boolean/integer sort check. That closes the observed defect (an unbound name
+reaching VC hypotheses) but is **not** type checking, and calling it that would overstate it.
+
+Measured as accepted today, each verified against the compiler rather than inferred:
+
+Corpus coverage when the validation was turned on, reported as a ledger rather than a bare
+"1 rejection" — the denominator is the part that says how much the number is worth:
+
+| class | count | note |
+|---|---|---|
+| files discovered | 1248 | `find examples tests -name '*.con'` |
+| clean (reached checking, accepted) | 962 | the measured denominator |
+| **newly rejected** | **1** | `invalid_contract_expression`, which documents itself as invalid |
+| pre-existing other error | 263 | **effect unmeasured** — checking stops at the first error, so a contract defect can sit behind an earlier one |
+| pre-existing parse error | 19 | never reach the check |
+| timeout at 10s | 3 | unmeasured |
+
+So the honest claim is "1 rejection out of 963 files that reach contract checking", not "1 out of
+1248". The 263 + 3 unmeasured files are the reason a second sweep is worth running once those
+files parse and check.
+
+| not checked | example that is accepted |
+|---|---|
+| operand type compatibility | `#[requires(x < 9999999999)]` on an `i32` parameter |
+| bool used as an arithmetic operand | `#[requires((x > 0) + 1 > 0)]` |
+| a `#[variant]` being a well-founded measure | `#[variant(i < n)]` — a boolean, not a measure |
+| runtime/effectful calls in a contract | `#[requires(g(x) > 0)]` where `g` is an executable fn |
+| `result`'s type | scope is enforced (`ensures`-only), the type is not |
+| precise loop-binder scope | see below |
+
+**Loop scope is over-approximate by construction.** The bound set for an `#[invariant]` is every
+name bound anywhere in the function, not the names in scope at the loop, so
+
+```
+#[invariant(0 <= i && i <= later)]
+while i < n { i = i + 1; }
+let later: i32 = 5;
+```
+
+is admitted and `later` reaches the VC. This accepts too much and never too little, so it cannot
+cause a false rejection; it simply fails to catch a name used before its binding. A gate
+assertion pins the behaviour and is written to flip when scope becomes precise.
+
+**Shadowing is the gap unknown-name rejection cannot close.** A local may shadow a parameter
+(measured), so in
+
+```
+#[ensures(result == x)]
+fn f(x: i32) -> i32 { let x: i32 = 99; return x; }
+```
+
+every name resolves, no diagnostic fires, and nothing in the pipeline records *which* `x` the
+contract means. Today the postcondition is simply not discharged, and a gate pins that, so the
+refinement tier cannot quietly begin discharging it while the ambiguity stands. The real fix is
+[H25](#h25-refinement-substitution-is-by-name-not-by-binding-identity--open-contained)'s stable
+binding identities — the two holes share a root cause: contract expressions carry names, not
+identities.
+
 ### H26. `assume_taint` contracts snapshot drifted and nobody noticed — OPEN (pre-existing)
 
 `check_phase1_contracts.sh` fails one assertion on `spike/multi-kernel-theories`:
@@ -48,7 +109,26 @@ explain is how a real regression gets a golden file. The neighbouring
 is now rejected at check time, so the report never runs.
 
 Fix requires deciding what `--report contracts` is scoped to. Until then the gate is honestly red
-at 29/1 rather than dishonestly green at 30/0.
+at 29/1 rather than dishonestly green at 30/0, and **this branch should not merge until it is
+understood** — a red gate that travels into main as "known" stops being read.
+
+Reproducer, recorded so "pre-existing red" stays checkable rather than becoming folklore:
+
+```
+git checkout 61a489b3 -- Concrete/Check/Check.lean   # baseline: before contract validation
+lake build
+diff <(./.lake/build/bin/concrete \
+        examples/contract_negatives/assume_taint/src/main.con --report contracts 2>&1) \
+     scripts/tests/phase1_snapshots/assume_taint.contracts.txt
+git checkout HEAD -- Concrete/Check/Check.lean && lake build
+```
+
+The diff is present at the baseline, which is what rules this work out as the cause.
+
+Investigation points, none yet eliminated: report collection aggregating functions from another
+module; project/module discovery leaking across fixtures; cached or global compiler state; the
+snapshot command running against the wrong project root; branch ancestry already carrying a
+contaminated golden; or the harness reusing an output path.
 
 ### H25. Refinement substitution is by NAME, not by binding identity — OPEN (contained)
 

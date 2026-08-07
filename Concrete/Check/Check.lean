@@ -2301,7 +2301,20 @@ def checkModule (m : Module) (summary : FileSummary)
   match specBodyCheck with
   | .error e => .error e
   | .ok () =>
-  -- CONTRACTS ARE CHECKED. `#[requires]`/`#[ensures]` were not, anywhere -- they are erased
+  -- CONTRACT NAME-AND-SORT VALIDATION. Called that rather than "contract type checking", which
+  -- would overstate it: what runs here is unknown-name rejection plus a COARSE sort check, and
+  -- the following are measured as NOT checked (see H27) --
+  --   * operand type compatibility (`x < 9999999999` against an i32 is accepted);
+  --   * spec-function argument and return types;
+  --   * `result`'s type (its SCOPE is enforced, its type is not);
+  --   * that a `#[variant]` is a well-founded measure (a boolean variant is accepted);
+  --   * exclusion of runtime/effectful calls from a contract;
+  --   * precise loop-binder scope (the bound set is over-approximate; see below).
+  -- Real type checking needs the per-function environment and belongs with the typed contract
+  -- record, not here. Naming this honestly is the difference between a known gap and a false
+  -- impression that contracts are typed.
+  --
+  -- `#[requires]`/`#[ensures]` were not validated at all, anywhere -- they are erased
   -- metadata, so no pass had reason to look at them, and each of the seven consumers took the
   -- raw `List Expr` on faith. Measured before writing this: `#[requires(nosuchvar > 0)]` is
   -- accepted, and `nosuchvar` then appears as a free variable in the HYPOTHESES of every
