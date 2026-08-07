@@ -437,6 +437,54 @@ something into versioned bytes or leaves a construct undescribable.
   occurrences, so it can wait — but it is why `evTypeRef` refuses function types rather
   than guessing.
 
+### R-0004 state as of 2026-08-07 (`d156a7f6`, CI green)
+
+Written for someone picking this up cold. `d156a7f6` is the first complete CI verdict since
+`b133b04c`; everything between was cancelled by superseding pushes, so this is the point to
+trust.
+
+**Where it is.** Slice 4 of 7. Steps 1, 2 and 2a are done — producer coverage **421 of 432
+subjects**, 0 absent. Step 3 is done as far as the compiler can take it.
+
+**Four shadow axes exist, and they are deliberately four**, because each answers a question
+the others cannot and collapsing any two lets one imply another:
+
+| line | question |
+|---|---|
+| `shadow bodyV2` | does the subject DESCRIBE the body? |
+| `shadow deps` | is what it reaches BOUND to a meaning? |
+| `shadow assumes` / `inherited` | what would a claim be RESTING ON, locally and through callees? |
+| `shadow edges` / `edgeKinds` | what does it REACH, and how? |
+
+All four are SHADOW, and that is a sequencing constraint rather than a staging convenience:
+`subjectDigest` is `proofSubjectDigestV2`, not the frozen V1 body fingerprint, and it
+already drives freshness verdicts. Anything reaching it before the step-5 migration moves
+existing subject digests and strands every stored proof link. Each gate asserts BOTH halves
+— the new material must move with what it describes, AND the subject digest must not.
+
+**The 11 producer refusals that remain** are three distinct causes, each named at its site:
+5 incomplete callee identity (a generic callable whose type arguments are unrecorded), 4
+method calls whose mangled name has no `CallableId`, 2 trait methods on a type parameter.
+None blocks the completion gate, which accepts "fail-closed uncovered".
+
+**TWO DECISIONS ARE OWED, and only the first is blocking.**
+
+1. **Struct-literal initializer evaluation order — blocks step 5.** Declaration order is
+   already in the shadow bytes; the migration is what makes them authoritative. Either
+   ratify declaration order in the language reference and gate it, or change `Elab` to
+   source order and rebuild. Each is roughly an afternoon. It is a language-semantics call.
+2. **Slice 7 and the ninth proof table.** That table is blocked on mutable-borrow
+   extraction, which lives outside R-0004. Ship slice 7 without it, or hold R-0004 open.
+
+`TraitId` is NOT a blocker despite appearing in the refusal list — see above.
+
+**A structural constraint on slice 6, worth knowing before designing its root.** The
+deterministic dependency root CANNOT be completed purely in the compiler.
+`DependencyEdges.classifyTheorem` decides contract-vs-body by reading a linked theorem's
+ELABORATED TYPE and runs in `MetaM`, which exists only while Lean is elaborating. The
+compiler can honestly produce `trusted`, `missing` and `unclassified`; the remaining split
+has to come from the Lean side. This is not a plumbing gap that more threading would close.
+
 ### Gate and tooling health (found while building the above, not by any gate)
 
 **Instruments added 2026-08-07, each in response to a defect this arc produced.**
