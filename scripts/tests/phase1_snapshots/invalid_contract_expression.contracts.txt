@@ -1,7 +1,5 @@
-=== Source Contracts ===
-
-cn.bad
-  R1  requires 0 < nonexistent
-     status:  invalid_contract_expression
-     reason:  unknown identifier 'nonexistent'
-
+examples/contract_negatives/invalid_contract_expression/src/main.con:10:5: error[check]: contract on 'bad': unknown identifier 'nonexistent'
+ 10 |     fn bad(x: i32) -> i32 { return x; }
+    |     ^
+  hint: a contract may mention parameters, constants, `result` (in `ensures`), and locals (in loop invariants)
+  = while checking module 'cn'

@@ -2332,12 +2332,30 @@ def checkModule (m : Module) (summary : FileSummary)
           (collectFreeVarsExpr e bound).eraseDups
         let freeR := f.requires.flatMap (badName boundReq)
         let freeE := f.ensures.flatMap (badName boundEns)
-        let free := (freeR ++ freeE).eraseDups
+        -- LOOP CONTRACTS. An unbound name in an `#[invariant]` is worse-looking than in a
+        -- `requires`: it is universally quantified into the initiation obligation, which then
+        -- reads `forall (bogusname : Int), 0 <= 0 /\ 0 <= bogusname`. That is false, so the loop
+        -- fails closed -- but only by luck of where the name landed, and the report shows a loop
+        -- whose invariant cannot be established rather than a typo.
+        --
+        -- OVER-APPROXIMATE SCOPE, said plainly: the bound set is every name bound ANYWHERE in the
+        -- function body, not the names in scope at the loop. So a local declared in an unrelated
+        -- branch is wrongly admitted here. That accepts too much, never too little, and it
+        -- catches the defect that actually occurs (a name that exists nowhere). Enforcing real
+        -- scoping needs the per-function environment, which this module-level pass does not have;
+        -- it belongs with the typed contract record rather than being faked here.
+        let localNames := f.body.flatMap specBindersStmt
+        let boundLoop := boundReq ++ localNames
+        let loopExprs := f.loopContracts.flatMap (fun lc => lc.invariants ++ lc.variant.toList)
+        let freeL := loopExprs.flatMap (badName boundLoop)
+        let free := (freeR ++ freeE ++ freeL).eraseDups
         -- Sort reuses `specBodySort`, so a contract and a spec body are held to one standard.
         -- `result` is typed by the function's return type; a contract mentioning it is otherwise
         -- indistinguishable from one that does not.
         let sortTys := ("result", f.retTy) :: paramTys
-        let wrongSort := (f.requires ++ f.ensures).filter fun e =>
+        -- Invariants join the proposition check; VARIANTS deliberately do not -- a variant is a
+        -- decreasing integer measure, so the sort requirement is the opposite one.
+        let wrongSort := (f.requires ++ f.ensures ++ f.loopContracts.flatMap (·.invariants)).filter fun e =>
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
           | none => false
@@ -2349,7 +2367,7 @@ def checkModule (m : Module) (summary : FileSummary)
                     -- for one defect would read as two different problems.
                   , message := s!"contract on '{f.name}': {", ".intercalate (free.map (fun n => s!"unknown identifier '{n}'"))}"
                   , pass := "check", span := some f.span
-                  , hint := some "a contract may mention parameters, constants, and (in `ensures`) `result`" }]
+                  , hint := some "a contract may mention parameters, constants, `result` (in `ensures`), and locals (in loop invariants)" }]
         else if !wrongSort.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' is an integer expression, not a proposition"

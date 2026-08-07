@@ -243,5 +243,23 @@ ct_accept "'result' in #[ensures] is accepted"                    '    #[ensures
 ct_accept "a parameter is accepted"                               '    #[requires(x > 0)]'
 ct_accept "a module constant is accepted"                         '    #[requires(x < LIM)]'
 
+# Loop contracts are checked too. An unbound name in an `#[invariant]` is universally quantified
+# into the INITIATION obligation, which then reads `forall (bogus : Int), 0 <= 0 /\ 0 <= bogus`
+# -- false, so the loop fails closed, but by luck of where the name landed rather than by rule.
+cti() { printf 'mod t {\n    fn f(n: i32) -> i32 {\n        let mut i: i32 = 0;\n%s\n        while i < n {\n            i = i + 1;\n        }\n        return i;\n    }\n}\n' "$1" > "$CTMP/i.con"; }
+cti_reject() { cti "$2"; local o; o="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   $1"; PASS=$((PASS+1));
+  else echo "  FAIL $1 — accepted"; FAIL=$((FAIL+1)); fi; }
+cti_accept() { cti "$2"; local o; o="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  FAIL $1 — rejected: $(grep -oE 'error\[check\]: .*' <<<"$o" | head -1)"; FAIL=$((FAIL+1));
+  else echo "  ok   $1"; PASS=$((PASS+1)); fi; }
+cti_reject "unknown name in #[invariant] is rejected"  '        #[invariant(0 <= i && i <= bogusname)]'
+cti_reject "an integer #[invariant] is not a proposition" '        #[invariant(i + 1)]'
+# Over-rejection control: a loop invariant MUST be able to mention the loop local and the params.
+cti_accept "an invariant over a local and a param is accepted" '        #[invariant(0 <= i && i <= n)]'
+# A variant is an integer measure, so it must NOT be held to the proposition rule.
+cti_accept "an integer #[variant] is accepted (measures are not propositions)" '        #[invariant(0 <= i)]
+        #[variant(n - i)]'
+
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

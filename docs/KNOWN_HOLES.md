@@ -28,6 +28,28 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H26. `assume_taint` contracts snapshot drifted and nobody noticed — OPEN (pre-existing)
+
+`check_phase1_contracts.sh` fails one assertion on `spike/multi-kernel-theories`:
+`--report contracts` on `examples/contract_negatives/assume_taint` now lists `sha256.rotr`'s
+preconditions under **Source Contracts**, and the committed snapshot does not.
+
+Attributed rather than assumed: reverting `Concrete/Check/Check.lean` to its pre-change state and
+rebuilding leaves the drift in place, so it is not caused by contract checking. `git log` puts the
+change in `3df41abf` (the multi-kernel spike), which landed without regenerating the snapshot.
+
+**Not blessed deliberately.** `assume_taint`'s fixture is a 13-line module that defines no
+`sha256` at all, so it is not obvious why that function's contracts appear in *its* report — the
+snapshot already carried stdlib rows elsewhere, so the report is project-wide by design, but the
+move into Source Contracts specifically is unexplained. Running `UPDATE_PHASE1_SNAPSHOTS=1` would
+turn the gate green in one command and is exactly the wrong move: accepting a diff you cannot
+explain is how a real regression gets a golden file. The neighbouring
+`invalid_contract_expression` snapshot WAS updated, because that drift is understood — the fixture
+is now rejected at check time, so the report never runs.
+
+Fix requires deciding what `--report contracts` is scoped to. Until then the gate is honestly red
+at 29/1 rather than dishonestly green at 30/0.
+
 ### H25. Refinement substitution is by NAME, not by binding identity — OPEN (contained)
 
 **Invariant that must hold:** refinement substitution may act only on expressions whose
