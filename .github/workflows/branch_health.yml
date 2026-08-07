@@ -1,0 +1,66 @@
+name: Branch health
+
+# WHY THIS EXISTS.
+#
+# CI runs on `push` to `main` ONLY. A branch could therefore accumulate red gates
+# indefinitely with nothing noticing, and one did: `spike/multi-kernel-theories` had ZERO CI
+# runs across its whole life and arrived at merge with three separate gate failures —
+# check_roadmap_linear (four task headings that broke the ID convention, so eight references
+# to them read as dangling), check_div_migration, and check_contract_clause_migration. All
+# three were found by a pre-push run on the MERGE, days after they were introduced, by
+# someone who had not written them.
+#
+# WHY NOT JUST RUN FULL CI ON EVERY BRANCH. It takes 70+ minutes and its heaviest job alone
+# is ~70. That cost is why nobody would leave it on, and a check people switch off is worse
+# than one that never existed.
+#
+# So this runs the FAST SURFACE GATES only — measured at 14 seconds after a build. Of the
+# three failures above, docs-drift is in this set and would have fired on the branch's FIRST
+# push. The other two are mid-cost and stay in full CI; catching one of three immediately,
+# for the price of a build, is the trade.
+#
+# WHAT THIS IS NOT. It is not a merge gate and does not claim a branch is good. It says the
+# cheap, always-true invariants still hold — docs conventions, diagnostic-code completeness,
+# the quadratic-append ratchet, the import firewall, constructor coverage. A green run here
+# means nothing about whether the branch's own tests pass.
+
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+# Same policy as CI: a later push to the same branch supersedes this run. A superseded run
+# is NO VERDICT, not a failure — worth remembering, because reading `cancelled` as red cost
+# two false alarms on main in one day.
+concurrency:
+  group: branch-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-gates:
+    name: Fast surface gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same cache key as CI's build job, so a branch push usually reuses main's artifacts
+      # rather than paying a cold build.
+      - name: Cache Lean build
+        uses: actions/cache@v4
+        with:
+          path: .lake/build
+          key: ${{ runner.os }}-lakebuild-${{ hashFiles('Concrete/**', 'Main.lean', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json') }}
+
+      - name: Install Lean (via lean-action)
+        uses: leanprover/lean-action@v1
+        with:
+          build-args: "--log-level=warning"
+
+      # The gates need a compiler that matches the source; several run it. `lib/fresh.sh`
+      # enforces that per-gate, but building here keeps the failure legible — a build error
+      # should read as a build error, not as eleven gates failing at once.
+      - name: Build
+        run: lake build
+
+      - name: Fast surface gates
+        run: bash scripts/tests/run_fast_surface_gates.sh
