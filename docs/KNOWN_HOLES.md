@@ -57,9 +57,29 @@ files parse and check.
 | operand type compatibility | `#[requires(x < 9999999999)]` on an `i32` parameter |
 | bool used as an arithmetic operand | `#[requires((x > 0) + 1 > 0)]` |
 | a `#[variant]` being a well-founded measure | `#[variant(i < n)]` — a boolean, not a measure |
-| runtime/effectful calls in a contract | `#[requires(g(x) > 0)]` where `g` is an executable fn |
+| ~~impure (capability-requiring) calls~~ | **CLOSED 2026-08-07** — rejected at check time |
 | `result`'s type | scope is enforced (`ensures`-only), the type is not |
 | precise loop-binder scope | see below |
+
+**Impure calls, closed — and the lesson from closing it.** A capability-requiring function
+performs I/O, so `#[ensures(result == tick())]` states a postcondition whose truth depends on when
+it is evaluated and what the outside world did; that is not a proposition about the program.
+`--report contracts` already detected it and could not reject it, so the call still reached the
+obligation — the same reported-but-not-rejected shape as the unbound-name defect. Now a check
+error, with the wording kept identical so it reads as one rule. Calls to PURE executable functions
+stay legal: purity is the property that matters, not spec-only, and a positive control asserts it.
+
+Promoting it **made an existing positive control vacuous**, which is the part worth remembering.
+`spec_ghost_totality` mixes the impure negative and the pure-helper positive in one file. Once the
+negative became a check error the whole file was rejected, its report went empty, and the
+assertion "no `impure call` inside the `cn.good` block" passed *because there was no `cn.good`
+block*. A green control proving nothing.
+
+Two fixes, and the general one matters more: `assert_block_absent` now fails if its anchor is
+missing at all, so any absence assertion in this gate must first show the thing it is inspecting
+exists; and the positive control moved to `examples/contract_positive/pure_contract_calls`, where
+nothing else can fail first. **A positive control must not share a file with a negative that can
+become fatal** — first-error-wins turns the negative into a mask.
 
 **Loop scope is over-approximate by construction.** The bound set for an `#[invariant]` is every
 name bound anywhere in the function, not the names in scope at the loop, so

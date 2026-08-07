@@ -90,12 +90,27 @@ assert_contains "impure (effectful) call in contract rejected" \
   "impure call 'tick' — spec/ghost must be pure and total" \
   "$COMPILER" "$SGT" --report contracts
 # positive control: a contract calling a PURE helper is NOT over-rejected.
+# An "absent" assertion is vacuous whenever the block it searches is itself missing, and that is
+# not hypothetical: promoting the impure-call defect from a report line to a check error made this
+# very control pass by finding nothing. The whole fixture was rejected, its report was empty, and
+# "no 'impure call' in the cn.good block" was true because there was no cn.good block.
+#
+# So require the anchor to EXIST before concluding anything from its contents.
 assert_block_absent() { local l="$1" anchor="$2" needle="$3" file="$4"
-  local out; out="$("$COMPILER" "$file" --report contracts 2>/dev/null \
+  local rep; rep="$("$COMPILER" "$file" --report contracts 2>/dev/null)"
+  if ! grep -qF <<<"$rep" -- "$anchor"; then
+    echo "  FAIL $l — VACUOUS: anchor '$anchor' is not in the report, so this control proves nothing"
+    FAIL=$((FAIL+1)); return
+  fi
+  local out; out="$(printf '%s\n' "$rep" \
     | awk -v a="$anchor" 'index($0,a){f=1} f{print} f&&/^$/{exit}')"
   if grep -qF <<<"$out" -- "$needle"; then echo "  FAIL $l — unexpected '$needle'"; FAIL=$((FAIL+1));
-  else echo "  ok   $l"; fi; }
-assert_block_absent "pure-helper contract not over-rejected" "cn.good" "impure call" "$SGT"
+  else echo "  ok   $l"; PASS=$((PASS+1)); fi; }
+# Points at a standalone positive fixture: the old target mixes this control with an impure-call
+# negative, and that file is now rejected wholesale, which is what made the control vacuous.
+PCC="examples/contract_positive/pure_contract_calls/src/main.con"
+assert_block_absent "pure-helper contract not over-rejected" "pc.good" "impure call" "$PCC"
+assert_block_absent "spec-fn contract not over-rejected" "pc.good2" "impure call" "$PCC"
 
 echo "=== vacuous_contract (unsatisfiable preconditions / invariant) ==="
 VAC="$CN/vacuous_contract/src/main.con"
@@ -365,10 +380,24 @@ mod im {
     fn f(x: i32) -> i32 { return x; }
 }
 EOF
+# A PURE executable call stays legal — purity is the property that matters, not spec-only.
 IMOUT="$("$COMPILER" "$CTMP/impure.con" --report vcs 2>&1 || true)"
 grep -qF <<<"$IMOUT" "error[check]" \
-  && { echo "  ok   H27 GAP CLOSED: executable call in a contract — tighten this assertion"; PASS=$((PASS+1)); } \
-  || { echo "  ok   H27 known gap: a contract may call an EXECUTABLE fn"; PASS=$((PASS+1)); }
+  && { echo "  FAIL a contract calling a PURE executable fn was rejected (over-rejection)"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   a contract calling a PURE executable fn is accepted"; PASS=$((PASS+1)); }
+# ...while an IMPURE (capability-requiring) call is now rejected at CHECK time, not merely
+# reported. Its meaning would depend on runtime effects, so it is not a proposition at all.
+cat > "$CTMP/impure2.con" <<'EOF'
+mod im2 {
+    fn tick() with(Console) -> i32 { return 0; }
+
+    #[ensures(result == tick())]
+    fn bad(x: i32) -> i32 { return x; }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/impure2.con" --report vcs 2>&1 || true)" "impure call 'tick'" \
+  && { echo "  ok   an IMPURE call in a contract is rejected at check time"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL an impure call in a contract is still only reported, not rejected"; FAIL=$((FAIL+1)); }
 
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

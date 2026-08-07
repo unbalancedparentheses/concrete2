@@ -2070,6 +2070,16 @@ private partial def specBodySort (paramTys : List (String × Ty)) (specRets : Li
   | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
   | _ => none
 
+/-- Capability-requiring (impure) function names, bare and qualified. Mirrors `impureFnNames` in
+    ReportVC; duplicated rather than imported because Check must not depend on Report, and the two
+    are held together by a shared gate assertion rather than by a shared definition. -/
+private partial def impureFnsIn (pfx : String) (m : Module) : List String :=
+  let q (n : String) := if pfx.isEmpty then n else pfx ++ "." ++ n
+  let here := m.functions.filterMap (fun fd =>
+    if fd.capSet.isEmpty then none else some [fd.name, q fd.name])
+  let subPfx := if pfx.isEmpty then m.name else pfx ++ "." ++ m.name
+  here.flatten ++ m.submodules.flatMap (impureFnsIn subPfx)
+
 -- Every name BOUND anywhere inside a spec body, innermost included.
 
 --  Returns the names rather than a `Bool` so the diagnostic can point at the binding that
@@ -2330,6 +2340,7 @@ def checkModule (m : Module) (summary : FileSummary)
   -- that exist, and it must be a proposition rather than a number.
   let contractCheck :=
     let constNames := constantsMap.map (·.1)
+    let impureFns := (impureFnsIn "" m).eraseDups
     let specRets := m.specFns.map (fun d => (d.name, d.retTy))
     let allContractFns := m.functions ++ m.implBlocks.flatMap (·.methods)
     allContractFns.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc f =>
@@ -2381,8 +2392,25 @@ def checkModule (m : Module) (summary : FileSummary)
         -- rather than names.
         let contractNames :=
           (f.requires ++ f.ensures ++ loopExprs).flatMap (fun e => collectFreeVarsExpr e []) |>.eraseDups
+        let contractCallNames :=
+          (f.requires ++ f.ensures ++ loopExprs).flatMap specBodyCalls |>.eraseDups
         let shadowedParams := (f.params.map (·.name)).filter fun pn =>
           localNames.contains pn && contractNames.contains pn
+        -- PURITY. **Invariant:** a contract expression's meaning must not depend on runtime
+        -- effects. A capability-requiring function performs I/O, so `#[ensures(result == tick())]`
+        -- states a postcondition whose truth depends on when it is evaluated and what the outside
+        -- world did — which is not a proposition about the program at all.
+        --
+        -- `--report contracts` already detected this ("impure call 'tick' — spec/ghost must be
+        -- pure and total") and could not reject it, so the call still reached the obligation. Same
+        -- reported-but-not-rejected shape as the unbound-name defect, promoted the same way, with
+        -- the wording kept identical so it reads as one rule rather than two.
+        --
+        -- Scoped to IMPURE calls deliberately: a contract calling a PURE helper is legal and
+        -- covered by a positive control in `check_contract_negatives.sh`. Requiring spec-only
+        -- calls (the rule for spec BODIES) would break real contracts; purity is the property
+        -- that actually matters here.
+        let impureCalls := contractCallNames.filter impureFns.contains
         -- Sort reuses `specBodySort`, so a contract and a spec body are held to one standard.
         -- `result` is typed by the function's return type; a contract mentioning it is otherwise
         -- indistinguishable from one that does not.
@@ -2393,7 +2421,12 @@ def checkModule (m : Module) (summary : FileSummary)
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
           | none => false
-        if !shadowedParams.isEmpty then
+        if !impureCalls.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}': impure call '{impureCalls.headD ""}' — spec/ghost must be pure and total"
+                  , pass := "check", span := some f.span
+                  , hint := some "a contract may call `spec fn`s and pure functions; a capability-requiring function performs I/O, so the contract's meaning would depend on runtime effects" }]
+        else if !shadowedParams.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' names parameter(s) shadowed by a local: {", ".intercalate shadowedParams}"
                   , pass := "check", span := some f.span
