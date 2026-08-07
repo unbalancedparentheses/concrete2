@@ -1825,6 +1825,34 @@ def compileAndReport (inputPath : String) (reportType : String)
       else
         IO.println (Report.vcsReport dvcs (Report.unresolvedBoundsAccesses parsed.modules))
       return 0
+    if reportType == "vcgen-diff" then
+      -- SHADOW differential: the WP-style calculus (`Concrete/Report/VCGen.lean`) against the
+      -- hand-written walkers, which are the oracle now that their nine defects are fixed and
+      -- gated. Nothing consumes the calculus yet; this exists so that switching over is evidence-
+      -- driven rather than a leap.
+      let d := Report.VCGen.diff parsed.modules
+      IO.println "=== VC-generator differential (calculus vs hand-written walkers) ==="
+      let (nHere, nThere) := Report.VCGen.diffTotals parsed.modules
+      IO.println s!"  compared {nHere} calculus requirement(s) against {nThere} walker obligation(s)"
+      if nHere == 0 && nThere == 0 then
+        IO.println "  VACUOUS: neither side found anything here — agreement means nothing"
+      let only := Report.VCGen.calculusOnly parsed.modules
+      if !only.isEmpty then
+        IO.println s!"  CALCULUS-ONLY ({only.length}) — obligation kinds no walker can produce:"
+        for (fq, what) in only.take 8 do
+          IO.println s!"    {fq}: {what}"
+        IO.println "    (these trap at runtime today with nothing proved; reported separately so"
+        IO.println "     they cannot masquerade as a differential disagreement)"
+      if d.isEmpty then
+        IO.println "  AGREE on every function and family in this file"
+      else
+        for (fq, fam, onlyHere, onlyThere) in d do
+          IO.println s!"  {fq} [{fam}]"
+          if !onlyHere.isEmpty then
+            IO.println s!"    only the CALCULUS found: {", ".intercalate onlyHere}"
+          if !onlyThere.isEmpty then
+            IO.println s!"    only the WALKER found:   {", ".intercalate onlyThere}"
+      return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
       -- layer. The SAME linear no-overflow obligations are discharged by Lean's
@@ -2745,7 +2773,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit, vcgen-diff"
     return 1
 
 def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do

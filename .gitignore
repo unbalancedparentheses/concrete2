@@ -140,3 +140,6 @@ tests/programs/adversarial_policy_deny_pass/adversarial_policy_deny_pass
 tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .mutation.lock/
 .mutbak
+
+# Agent worktrees: transient checkouts, never part of a commit.
+.claude/worktrees/
