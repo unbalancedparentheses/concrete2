@@ -1825,6 +1825,148 @@ def compileAndReport (inputPath : String) (reportType : String)
       else
         IO.println (Report.vcsReport dvcs (Report.unresolvedBoundsAccesses parsed.modules))
       return 0
+    if reportType == "vcgen-diff" then
+      -- SHADOW differential: the WP-style calculus (`Concrete/Report/VCGen.lean`) against the
+      -- hand-written walkers, which are the oracle now that their nine defects are fixed and
+      -- gated. Nothing consumes the calculus yet; this exists so that switching over is evidence-
+      -- driven rather than a leap.
+      let d := Report.VCGen.diff parsed.modules
+      IO.println "=== VC-generator differential (calculus vs hand-written walkers) ==="
+      let (nHere, nThere) := Report.VCGen.diffTotals parsed.modules
+      IO.println s!"  compared {nHere} calculus requirement(s) against {nThere} walker obligation(s)"
+      if nHere == 0 && nThere == 0 then
+        IO.println "  VACUOUS: neither side found anything here — agreement means nothing"
+      let only := Report.VCGen.calculusOnly parsed.modules
+      if !only.isEmpty then
+        IO.println s!"  CALCULUS-ONLY ({only.length}) — obligation kinds no walker can produce:"
+        for (fq, what) in only.take 8 do
+          IO.println s!"    {fq}: {what}"
+        IO.println "    (these trap at runtime today with nothing proved; reported separately so"
+        IO.println "     they cannot masquerade as a differential disagreement)"
+      if d.isEmpty then
+        IO.println "  AGREE on every function and family in this file"
+      else
+        for (fq, fam, onlyHere, onlyThere) in d do
+          IO.println s!"  {fq} [{fam}]"
+          if !onlyHere.isEmpty then
+            IO.println s!"    only the CALCULUS found: {", ".intercalate onlyHere}"
+          if !onlyThere.isEmpty then
+            IO.println s!"    only the WALKER found:   {", ".intercalate onlyThere}"
+      return 0
+    if reportType == "bool-kernel" then
+      -- Branch spike/non-arithmetic-multi-kernel: the first NON-arithmetic obligation carried to
+      -- all three kernels. Boolean postconditions, closed by case analysis (`destruct` / `simp` /
+      -- `decide`) rather than an arithmetic decision procedure -- so agreement here is not three
+      -- invocations of the same idea. Emits each kernel's source; run them under
+      -- `nix develop .#provers`.
+      let obls := Report.boolPostObligations parsed.modules
+      let skipped := Report.boolKernelSkipped parsed.modules
+      let (nClauses, nRefine, nReached) := Report.coverageSummary parsed.modules
+      IO.println s!"  COVERAGE: {nClauses} contract clause(s) in the parsed program (IMPORTS INCLUDED — not just this file), {nReached} reached a tier, {nRefine} are refinement obligations (`result == spec(…)`) that need the spec's DEFINITION and cannot be discharged with an opaque symbol."
+      IO.println "=== Non-arithmetic multi-kernel evidence (boolean postconditions) ==="
+      IO.println "  reference-evaluator agreement is EXHAUSTIVE here (all 2^n assignments),"
+      IO.println "  not sampled as in the arithmetic tier."
+      if obls.isEmpty then
+        IO.println ""
+        IO.println "(no boolean postcondition obligations in this file)"
+      for o in obls do
+        let ref := match o.holdsEverywhere with
+          | some true => "holds on every assignment"
+          | some false => "FALSE somewhere (a kernel closing it would be proving something else)"
+          | none => "not evaluable (no attestation possible)"
+        IO.println ""
+        IO.println s!"  [{o.key}]  reference evaluator: {ref}"
+        match o.leanGoal with
+        | some g => IO.println s!"    lean:decide goal: {g}"
+        | none => IO.println "    lean:decide outside the boolean fragment"
+        match o.rocqScript with
+        | some sc => IO.println s!"    --- rocq:destruct ---\n{sc}"
+        | none => IO.println "    rocq:destruct outside the boolean fragment"
+        match o.isabelleTheory "BoolPost" with
+        | some th => IO.println s!"    --- isabelle:auto ---\n{th}"
+        | none => IO.println "    isabelle:auto outside the boolean fragment"
+      if !skipped.isEmpty then
+        IO.println ""
+        IO.println "ALL-BOOLEAN FUNCTIONS SKIPPED (coverage stated, not implied):"
+        for (fn, why) in skipped do
+          IO.println s!"  {fn}: {why}"
+      -- Rung 5: uninterpreted functions. The symbol is a QUANTIFIED function variable in every
+      -- kernel, never a Parameter or axiom, so `Print Assumptions` stays clean.
+      let eufs := Report.eufObligations parsed.modules
+      if !eufs.isEmpty then
+        IO.println ""
+        IO.println "=== EUF: uninterpreted spec functions (rung 5) ==="
+        IO.println "  the reference check here is propositional abstraction: SOUND but"
+        IO.println "  INCOMPLETE — a congruence-valid goal is not a propositional tautology."
+        for o in eufs do
+          let verdict := match o.abstractionVerdict with
+            | some () => "tautology under abstraction — valid for EVERY interpretation"
+            | none => "inconclusive (abstraction cannot refute: it forgets f is a function)"
+          IO.println ""
+          IO.println s!"  [{o.key}]  symbols: {", ".intercalate (o.symbols.map (·.1))}"
+          IO.println s!"    abstraction: {verdict}"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:by_cases ---\n{sc}"
+          | none => IO.println "    lean: outside the EUF fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:congruence ---\n{sc}"
+          | none => IO.println "    rocq: outside the EUF fragment"
+          match o.isabelleTheory "EufGoal" with
+          | some th => IO.println s!"    --- isabelle:auto (euf) ---\n{th}"
+          | none => IO.println "    isabelle: outside the EUF fragment"
+      -- Rungs 6+7: struct declarations are EMITTED with the goal (nothing told a prover a
+      -- Concrete struct existed before), and arrays are total index -> value functions, which is
+      -- sound because the bounds family proves every index in range.
+      let sts := Report.structObligations parsed.modules
+      if !sts.isEmpty then
+        IO.println ""
+        IO.println "=== DATATYPES + ARRAYS: struct fields and array reads (rungs 6+7) ==="
+        for o in sts do
+          let verdict := match o.abstractionVerdict with
+            | some () => "tautology under abstraction — valid for EVERY interpretation"
+            | none => "inconclusive (abstraction can confirm, never refute)"
+          IO.println ""
+          IO.println s!"  [{o.key}]  structs: {", ".intercalate (o.structs.map (·.1))}  arrays: {", ".intercalate o.arrays}"
+          IO.println s!"    abstraction: {verdict}"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:by_cases (struct) ---\n{sc}"
+          | none => IO.println "    lean: outside the fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:record ---\n{sc}"
+          | none => IO.println "    rocq: outside the fragment"
+          match o.isabelleTheory "StructGoal" with
+          | some th => IO.println s!"    --- isabelle:record ---\n{th}"
+          | none => IO.println "    isabelle: outside the fragment"
+      -- REFINEMENT against a DEFINED spec. This is the coverage fix: a body-less `spec fn` is
+      -- uninterpreted, so `result == spec(args)` is unprovable outside Lean, where the spec's
+      -- meaning lives. With a definitional body the obligation is an equation between two
+      -- expressions of THIS language and every kernel can see it.
+      let refs := Report.refineObligations parsed.modules
+      let refSkip := Report.refineSkipped parsed.modules
+      if !refs.isEmpty || !refSkip.isEmpty then
+        IO.println ""
+        IO.println "=== REFINEMENT against a defined spec ==="
+        for o in refs do
+          IO.println ""
+          let triv := if o.trivial then
+                "  *** TRIVIAL: the spec RESTATES the implementation, so this obligation is `body = body` and proves nothing ***"
+              else ""
+          IO.println s!"  [{o.key}]  spec: {o.specName} (defined){triv}"
+          match o.leanScript with
+          | some sc => IO.println s!"    --- lean:omega (refine) ---\n{sc}"
+          | none => IO.println "    lean: outside the fragment"
+          match o.rocqScript with
+          | some sc => IO.println s!"    --- rocq:lia (refine) ---\n{sc}"
+          | none => IO.println "    rocq: outside the fragment"
+          match o.isabelleTheory "Refines" with
+          | some th => IO.println s!"    --- isabelle:simp (refine) ---\n{th}"
+          | none => IO.println "    isabelle: outside the fragment"
+        if !refSkip.isEmpty then
+          IO.println ""
+          IO.println "REFINEMENT OBLIGATIONS NOT REACHABLE (coverage stated, not implied):"
+          for (fn, why) in refSkip do
+            IO.println s!"  {fn}: {why}"
+      return 0
     if reportType == "multi-kernel" then
       -- Spike (branch spike/multi-prover-evidence): the prover-neutral obligation
       -- layer. The SAME linear no-overflow obligations are discharged by Lean's
@@ -2745,7 +2887,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       | .ok mono =>
         IO.println (Report.monoReport validCore.coreModules mono.coreModules)
         return 0
-    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit"
+    IO.eprintln s!"Unknown report type: {reportType}. Use: caps, unsafe, layout, interface, alloc, mono, authority, proof, eligibility, proof-status, obligations, extraction, proof-diagnostics, proof-deps, proof-bundle, lean-stubs, check-proofs, traceability, diagnostics-json, schema, diagnostic-codes, effects, recursion, fingerprints, consistency, vcs, obligation-ledger, backend-contracts, verify, audit, bool-kernel, vcgen-diff"
     return 1
 
 def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do

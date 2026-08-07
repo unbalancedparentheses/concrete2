@@ -7,6 +7,8 @@
 # `Result` was visible to one pass and not the other. A structural check alone
 # would have passed the moment the code moved, without testing that.
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 [ -x ".lake/build/bin/concrete" ] || { echo "error: build first" >&2; exit 2; }

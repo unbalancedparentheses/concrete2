@@ -23,6 +23,8 @@
 # DIRECTION: this number must not grow. New evidence-layer code arrives with a consumer, or
 # it does not arrive.
 set -Eeuo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 fatal() { local rc=$?; echo "FATAL: check_wired_definitions stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2; exit "$rc"; }

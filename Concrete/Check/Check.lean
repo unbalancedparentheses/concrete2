@@ -2039,6 +2039,109 @@ def checkFn (f : FnDef) : CheckM Unit := do
   setEnv envBefore
 
 
+/-- Coarse SORT of a spec-body expression: `some true` = boolean, `some false` = integer,
+    `none` = cannot tell.
+
+    Deliberately a sort check, not type inference. `#[requires]`/`#[ensures]` expressions are not
+    type-checked anywhere either — they are erased metadata — so there is no existing machinery to
+    reuse, and wiring the full `CheckM` checker in here would be a much larger change than the
+    defect warrants.
+
+    What it catches is the failure that actually happened: `spec fn f(x: i32) -> i32 = true;` was
+    accepted, and the refinement tier then emitted `x = true` to three kernels where it fails as a
+    type error — right diagnosis, wrong layer. What it does NOT catch is a width mismatch
+    (`i32` vs `i64`), and it says so rather than implying otherwise. -/
+private partial def specBodySort (paramTys : List (String × Ty)) (specRets : List (String × Ty)) :
+    Expr → Option Bool
+  | .boolLit _ _ => some true
+  | .intLit _ _ => some false
+  | .ident _ n => (paramTys.lookup n).map (fun t => t == .bool)
+  | .paren _ e => specBodySort paramTys specRets e
+  | .unaryOp _ .not_ _ => some true
+  | .unaryOp _ _ e => specBodySort paramTys specRets e
+  | .binOp _ op l r =>
+      match op with
+      | .and_ | .or_ => some true
+      | .eq | .neq | .lt | .leq | .gt | .geq => some true
+      | .add | .sub | .mul | .div | .mod => some false
+      | _ => match specBodySort paramTys specRets l with
+             | some b => some b
+             | none => specBodySort paramTys specRets r
+  | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
+  | _ => none
+
+/-- Capability-requiring (impure) function names, bare and qualified. Mirrors `impureFnNames` in
+    ReportVC; duplicated rather than imported because Check must not depend on Report, and the two
+    are held together by a shared gate assertion rather than by a shared definition. -/
+private partial def impureFnsIn (pfx : String) (m : Module) : List String :=
+  let q (n : String) := if pfx.isEmpty then n else pfx ++ "." ++ n
+  let here := m.functions.filterMap (fun fd =>
+    if fd.capSet.isEmpty then none else some [fd.name, q fd.name])
+  let subPfx := if pfx.isEmpty then m.name else pfx ++ "." ++ m.name
+  here.flatten ++ m.submodules.flatMap (impureFnsIn subPfx)
+
+-- Every name BOUND anywhere inside a spec body, innermost included.
+
+--  Returns the names rather than a `Bool` so the diagnostic can point at the binding that
+--  caused the rejection; a bare "contains a binder" sends the author looking. See the soundness
+--  note at the use site.
+
+--  Two properties this must have, and an earlier version had neither:
+
+--  * It recurses through STATEMENT containers, not only expressions. An if-expression's branches
+--    are `List Stmt`, so a `let` nested three blocks deep is the likely regression, and a
+--    shallow check would pass it.
+--  * It reports only ACTUAL bindings. Rejecting every if-expression was over-containment: a
+--    binder-free `if x > 0 { 1 } else { 2 }` is perfectly safe for by-name substitution, and
+--    banning it would have thrown out the whole conditional fragment to contain a defect that
+--    only shadowing can trigger.
+mutual
+private partial def specBinders : Expr → List String
+  | .ifExpr _ c t e => specBinders c ++ (t ++ e).flatMap specBindersStmt
+  | .match_ _ sc arms => specBinders sc ++ arms.flatMap specBindersArm
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBinders e
+  | .binOp _ _ l r => specBinders l ++ specBinders r
+  | .call _ _ _ args => args.flatMap specBinders
+  | .fieldAccess _ o _ => specBinders o
+  | .arrayIndex _ a i => specBinders a ++ specBinders i
+  | _ => []
+
+private partial def specBindersArm : MatchArm → List String
+  | .mk _ _ _ bs g b => bs ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .varArm _ n g b => n :: (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .litArm _ v g b => specBinders v ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .rangeArm _ lo hi _ g b =>
+      specBinders lo ++ specBinders hi ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+
+private partial def specBindersStmt : Stmt → List String
+  | .letDecl _ n _ _ v _ => n :: specBinders v
+  | .letDestructure _ _ _ bs v eb => bs ++ specBinders v ++ (eb.map (·.flatMap specBindersStmt)).getD []
+  | .letStructDestructure _ _ bs v => bs ++ specBinders v
+  | .borrowIn _ _ r _ _ b => r :: b.flatMap specBindersStmt
+  | .forLoop _ init c st b _ =>
+      (init.map specBindersStmt).getD [] ++ specBinders c
+        ++ (st.map specBindersStmt).getD [] ++ b.flatMap specBindersStmt
+  | .ifElse _ c t e => specBinders c ++ t.flatMap specBindersStmt ++ (e.map (·.flatMap specBindersStmt)).getD []
+  | .while_ _ c b _ => specBinders c ++ b.flatMap specBindersStmt
+  | .expr _ e _ | .assert_ _ e | .assume_ _ e | .defer _ e => specBinders e
+  | .assign _ _ v => specBinders v
+  | .return_ _ v => (v.map specBinders).getD []
+  | .break_ _ v _ => (v.map specBinders).getD []
+  | .fieldAssign _ o _ v => specBinders o ++ specBinders v
+  | .derefAssign _ t v => specBinders t ++ specBinders v
+  | .arrayIndexAssign _ a i v => specBinders a ++ specBinders i ++ specBinders v
+  | .continue_ _ _ => []
+end
+
+/-- Function names called anywhere in an expression — for validating `spec fn` bodies. -/
+private partial def specBodyCalls : Expr → List String
+  | .call _ f _ args => f :: args.flatMap specBodyCalls
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBodyCalls e
+  | .binOp _ _ l r => specBodyCalls l ++ specBodyCalls r
+  | .fieldAccess _ o _ => specBodyCalls o
+  | .arrayIndex _ a i => specBodyCalls a ++ specBodyCalls i
+  | _ => []
+
 def checkModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {}) : Except Diagnostics Unit :=
   -- Use pre-built summaries from FileSummary
@@ -2143,6 +2246,207 @@ def checkModule (m : Module) (summary : FileSummary)
         .error [{ severity := .error, message := CheckError.message (.reservedName f.name), pass := "check", span := some f.span, hint := none }]
       else .ok ()
   match reservedNameCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- A `spec fn` with a DEFINITIONAL body must have that body checked. The body-less form has
+  -- nothing to check, so nothing did -- and when bodies were added, a spec could reference an
+  -- undeclared variable or a nonexistent function and be accepted silently. The refinement tier
+  -- would then render that nonsense into three kernels, where it fails as an unbound identifier:
+  -- loud, but at the wrong layer and long after the mistake.
+  --
+  -- Two rules, both from what a spec IS: pure and total. Its body may mention only its own
+  -- parameters, and may call only other spec functions (a call to an executable function would
+  -- make the spec depend on runtime behaviour, which is the thing specs exist to be independent
+  -- of).
+  let specNames := m.specFns.map (·.name)
+  let specBodyCheck := m.specFns.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc sd =>
+    match acc with
+    | .error e => .error e
+    | .ok () =>
+      match sd.body with
+      | none => .ok ()
+      | some b =>
+        let paramNames := sd.params.map (·.name)
+        let free := (collectFreeVarsExpr b paramNames).eraseDups
+        let unknownCalls := (specBodyCalls b).filter (fun c => !specNames.contains c)
+        -- BINDER-FREE, and this is a soundness requirement rather than a simplification.
+        -- `refineObligations` substitutes the spec's parameters with the call's arguments using
+        -- `substExpr`, which replaces by NAME with no capture avoidance. A body such as
+        --     spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+        -- would have its inner, let-bound `x` substituted too, corrupting the obligation.
+        --
+        -- Today that produces no wrong evidence only because `renderTerm` cannot render an
+        -- if-expression, so the obligation reports "outside the fragment" and no kernel sees it.
+        -- That is safety by ACCIDENT: it rests on the renderer's narrowness, and the first person
+        -- to add `.ifExpr` to `renderTerm` -- an obvious extension -- makes the corruption live.
+        -- Rejecting binders here makes the property checked rather than incidental.
+        let binders := (specBinders b).eraseDups
+        if !binders.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body binds name(s): {", ".intercalate binders}; spec bodies must be binder-free"
+                  , pass := "check", span := some sd.span
+                  , hint := some "TEMPORARY: parameter substitution is by name and would capture a shadowing binding. The restriction lifts once substitution is capture-avoiding — until then keep the body free of `let`, match patterns, and loops." }]
+        else if !free.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body references unknown name(s): {", ".intercalate free}"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body may only mention its own parameters" }]
+        else if
+            let paramTys := sd.params.map (fun p => (p.name, p.ty))
+            let specRets := m.specFns.map (fun d => (d.name, d.retTy))
+            match specBodySort paramTys specRets b with
+            | some isBool => isBool != (sd.retTy == (Ty.bool))
+            | none => false
+          then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body has the wrong sort: declared -> {tyToString sd.retTy}, but the body is {if sd.retTy == (Ty.bool) then "an integer" else "a boolean"} expression"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body must produce the declared return type" }]
+        else if !unknownCalls.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body calls non-spec function(s): {", ".intercalate unknownCalls}"
+                  , pass := "check", span := some sd.span
+                  , hint := some "a spec body may only call other `spec fn`s — calling executable code would make the spec depend on runtime behaviour" }]
+        else .ok ()
+  match specBodyCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- CONTRACT NAME-AND-SORT VALIDATION. Called that rather than "contract type checking", which
+  -- would overstate it: what runs here is unknown-name rejection plus a COARSE sort check, and
+  -- the following are measured as NOT checked (see H27) --
+  --   * operand type compatibility (`x < 9999999999` against an i32 is accepted);
+  --   * spec-function argument and return types;
+  --   * `result`'s type (its SCOPE is enforced, its type is not);
+  --   * that a `#[variant]` is a well-founded measure (a boolean variant is accepted);
+  --   * exclusion of runtime/effectful calls from a contract;
+  --   * precise loop-binder scope (the bound set is over-approximate; see below).
+  -- Real type checking needs the per-function environment and belongs with the typed contract
+  -- record, not here. Naming this honestly is the difference between a known gap and a false
+  -- impression that contracts are typed.
+  --
+  -- `#[requires]`/`#[ensures]` were not validated at all, anywhere -- they are erased
+  -- metadata, so no pass had reason to look at them, and each of the seven consumers took the
+  -- raw `List Expr` on faith. Measured before writing this: `#[requires(nosuchvar > 0)]` is
+  -- accepted, and `nosuchvar` then appears as a free variable in the HYPOTHESES of every
+  -- obligation in the function, including ones reported `proved_by_kernel_decision`.
+  --
+  -- That particular case is not unsound -- a hypothesis over a fresh universally quantified
+  -- variable is discharged at the call site, where it is unprovable, so it fails closed. The
+  -- defect is that the failure surfaces as an unprovable call-site obligation somewhere else
+  -- rather than as a typo where the typo is, and that a precondition nobody can establish reads
+  -- in the report exactly like one nobody has established YET.
+  --
+  -- The rules are the spec-body rules, for the same reasons: a contract may mention only names
+  -- that exist, and it must be a proposition rather than a number.
+  let contractCheck :=
+    let constNames := constantsMap.map (·.1)
+    let impureFns := (impureFnsIn "" m).eraseDups
+    let specRets := m.specFns.map (fun d => (d.name, d.retTy))
+    let allContractFns := m.functions ++ m.implBlocks.flatMap (·.methods)
+    allContractFns.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc f =>
+      match acc with
+      | .error e => .error e
+      | .ok () =>
+        let paramTys := f.params.map (fun p => (p.name, p.ty))
+        -- `result` is bound in an `ensures` and nowhere else; that asymmetry is the whole
+        -- reason the two clause lists cannot share one bound-name set.
+        let boundReq := (f.params.map (·.name)) ++ constNames
+        let boundEns := "result" :: boundReq
+        let badName (bound : List String) (e : Expr) : List String :=
+          (collectFreeVarsExpr e bound).eraseDups
+        let freeR := f.requires.flatMap (badName boundReq)
+        let freeE := f.ensures.flatMap (badName boundEns)
+        -- LOOP CONTRACTS. An unbound name in an `#[invariant]` is worse-looking than in a
+        -- `requires`: it is universally quantified into the initiation obligation, which then
+        -- reads `forall (bogusname : Int), 0 <= 0 /\ 0 <= bogusname`. That is false, so the loop
+        -- fails closed -- but only by luck of where the name landed, and the report shows a loop
+        -- whose invariant cannot be established rather than a typo.
+        --
+        -- OVER-APPROXIMATE SCOPE, said plainly: the bound set is every name bound ANYWHERE in the
+        -- function body, not the names in scope at the loop. So a local declared in an unrelated
+        -- branch is wrongly admitted here. That accepts too much, never too little, and it
+        -- catches the defect that actually occurs (a name that exists nowhere). Enforcing real
+        -- scoping needs the per-function environment, which this module-level pass does not have;
+        -- it belongs with the typed contract record rather than being faked here.
+        let localNames := f.body.flatMap specBindersStmt
+        let boundLoop := boundReq ++ localNames
+        let loopExprs := f.loopContracts.flatMap (fun lc => lc.invariants ++ lc.variant.toList)
+        let freeL := loopExprs.flatMap (badName boundLoop)
+        let free := (freeR ++ freeE ++ freeL).eraseDups
+        -- SHADOWING is the gap unknown-name rejection cannot close, and it is the one place where
+        -- "every name resolved" is not the same as "the contract means what it says".
+        --
+        -- A local may shadow a parameter (measured, not assumed). In
+        --     #[ensures(result == x)]
+        --     fn f(x: i32) -> i32 { let x: i32 = 99; return x; }
+        -- every name resolves, no diagnostic fires, and nothing in the pipeline records WHICH `x`
+        -- the contract means. A contract talks about the function's interface, so the parameter is
+        -- the only defensible reading -- but the obligation carries the bare name `x`, and the
+        -- reading is therefore established nowhere.
+        --
+        -- Contained the same way as H25, and for the same reason: the ambiguity is not currently
+        -- exploitable (the postcondition is not discharged), and relying on that is relying on a
+        -- downstream stage's incompleteness rather than on a rule here. Rejecting is cheap, and it
+        -- keeps the refinement tier from beginning to discharge these while the meaning is
+        -- undecided. The restriction lifts when contract expressions carry binding identities
+        -- rather than names.
+        let contractNames :=
+          (f.requires ++ f.ensures ++ loopExprs).flatMap (fun e => collectFreeVarsExpr e []) |>.eraseDups
+        let contractCallNames :=
+          (f.requires ++ f.ensures ++ loopExprs).flatMap specBodyCalls |>.eraseDups
+        let shadowedParams := (f.params.map (·.name)).filter fun pn =>
+          localNames.contains pn && contractNames.contains pn
+        -- PURITY. **Invariant:** a contract expression's meaning must not depend on runtime
+        -- effects. A capability-requiring function performs I/O, so `#[ensures(result == tick())]`
+        -- states a postcondition whose truth depends on when it is evaluated and what the outside
+        -- world did — which is not a proposition about the program at all.
+        --
+        -- `--report contracts` already detected this ("impure call 'tick' — spec/ghost must be
+        -- pure and total") and could not reject it, so the call still reached the obligation. Same
+        -- reported-but-not-rejected shape as the unbound-name defect, promoted the same way, with
+        -- the wording kept identical so it reads as one rule rather than two.
+        --
+        -- Scoped to IMPURE calls deliberately: a contract calling a PURE helper is legal and
+        -- covered by a positive control in `check_contract_negatives.sh`. Requiring spec-only
+        -- calls (the rule for spec BODIES) would break real contracts; purity is the property
+        -- that actually matters here.
+        let impureCalls := contractCallNames.filter impureFns.contains
+        -- Sort reuses `specBodySort`, so a contract and a spec body are held to one standard.
+        -- `result` is typed by the function's return type; a contract mentioning it is otherwise
+        -- indistinguishable from one that does not.
+        let sortTys := ("result", f.retTy) :: paramTys
+        -- Invariants join the proposition check; VARIANTS deliberately do not -- a variant is a
+        -- decreasing integer measure, so the sort requirement is the opposite one.
+        let wrongSort := (f.requires ++ f.ensures ++ f.loopContracts.flatMap (·.invariants)).filter fun e =>
+          match specBodySort sortTys specRets e with
+          | some isBool => !isBool
+          | none => false
+        if !impureCalls.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}': impure call '{impureCalls.headD ""}' — spec/ghost must be pure and total"
+                  , pass := "check", span := some f.span
+                  , hint := some "a contract may call `spec fn`s and pure functions; a capability-requiring function performs I/O, so the contract's meaning would depend on runtime effects" }]
+        else if !shadowedParams.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}' names parameter(s) shadowed by a local: {", ".intercalate shadowedParams}"
+                  , pass := "check", span := some f.span
+                  , hint := some "TEMPORARY: the contract carries the bare name, so which binding it means is recorded nowhere. Rename the local until contract expressions carry binding identities." }]
+        else if !free.isEmpty then
+          .error [{ severity := .error
+                    -- Wording matches `validateContractExpr` in ReportVC deliberately. That pass
+                    -- already reported this exact defect under `--report contracts`; it just could
+                    -- not REJECT it, so the name still reached the VC hypotheses. Two vocabularies
+                    -- for one defect would read as two different problems.
+                  , message := s!"contract on '{f.name}': {", ".intercalate (free.map (fun n => s!"unknown identifier '{n}'"))}"
+                  , pass := "check", span := some f.span
+                  , hint := some "a contract may mention parameters, constants, `result` (in `ensures`), and locals (in loop invariants)" }]
+        else if !wrongSort.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}' is an integer expression, not a proposition"
+                  , pass := "check", span := some f.span
+                  , hint := some "a `requires`/`ensures` clause must be a boolean condition" }]
+        else .ok ()
+  match contractCheck with
   | .error e => .error e
   | .ok () =>
   -- Built-in Destroy trait (needed for expression-level trait method resolution)

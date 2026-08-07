@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 # R-0001 / bug 051 — per-instantiation generic-enum monomorphization gate.
 #
 # The defect: a user generic enum kept ONE declaration for every instantiation.

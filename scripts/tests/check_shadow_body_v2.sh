@@ -13,6 +13,8 @@
 # that it stays that way: structural bytes reaching a STATUS is the thing that must not
 # happen by accident.
 set -Eeuo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 fatal() { local rc=$?; echo "FATAL: check_shadow_body_v2 stopped at line ${BASH_LINENO[0]} (exit $rc)" >&2; exit "$rc"; }

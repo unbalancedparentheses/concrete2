@@ -1,0 +1,52 @@
+// REFINEMENT against a DEFINED spec, in Rocq, Isabelle/HOL and Lean.
+//
+//   concrete src/main.con --report bool-kernel
+//
+// THE PROBLEM THIS FIXES, measured: the non-arithmetic tiers reach ZERO of this
+// repo's real contracts. The corpus's contracts are refinement obligations
+// (`result == spec(args)`), and a body-less `spec fn` is an uninterpreted symbol —
+// so "this body equals that spec" is unprovable by construction. `hmac_sha256`
+// discharges its versions by linking to a Lean proof where the spec HAS a
+// definition, which means Rocq and Isabelle can never see the spec at all.
+//
+// A `spec fn` may now carry a definitional body in Concrete itself. The obligation
+// then becomes an equation between two expressions of this language, and every
+// kernel can prove it. The spec's meaning stops being a name pointing into one prover.
+mod refinedemo {
+    // DEFINED spec: its meaning is right here, not in Lean.
+    spec fn double_spec(x: i32) -> i32 = x + x;
+    spec fn shift_spec(x: i32) -> i32 = x + x + x;
+
+    // The body computes it differently. The obligation `2 * x == x + x` is a real
+    // equation, closed by lia / simp / omega.
+    #[ensures(result == double_spec(x))]
+    fn double(x: i32) -> i32 { return 2 * x; }
+
+    // Three-way, still linear.
+    #[ensures(result == shift_spec(x))]
+    fn triple(x: i32) -> i32 { return 3 * x; }
+
+    // NEGATIVE CONTROL: the body does NOT refine the spec (2*x is not x+x+x).
+    // Every kernel must refuse it — refinement being portable does not make it lax.
+    #[ensures(result == shift_spec(x))]
+    fn bad_refine(x: i32) -> i32 { return 2 * x; }
+
+    // TAUTOLOGY GUARD. This spec RESTATES the implementation, so its refinement obligation
+    // is `body == body` — trivially true and proving nothing. It is detected and excluded from
+    // the coverage count, because a metric that rises when you copy the body into the spec is
+    // worse than one that reads zero.
+    //
+    // Not hypothetical: `hmac_sha256`'s registered Lean spec for `ch` is character-for-character
+    // its function body, so converting that spec to a definitional body would have manufactured
+    // exactly this. What makes `ch` meaningfully specified is a SEPARATE semantic property
+    // (`ch_selects_high`), which is bitwise and needs rung 4.
+    spec fn copy_spec(x: i32) -> i32 = 2 * x;
+    #[ensures(result == copy_spec(x))]
+    fn tautological(x: i32) -> i32 { return 2 * x; }
+
+    // COVERAGE, stated: an UNDEFINED spec is still uninterpreted, so this obligation
+    // is named as unreachable rather than silently skipped.
+    spec fn opaque_spec(x: i32) -> i32;
+    #[ensures(result == opaque_spec(x))]
+    fn uses_opaque(x: i32) -> i32 { return x; }
+}

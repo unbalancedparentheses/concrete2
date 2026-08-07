@@ -14,6 +14,8 @@
 # fixed regression cases, subnormal/overflow edges, and 8000 LCG cases.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 [ -x "$ROOT_DIR/.lake/build/bin/concrete" ] || { echo "error: build first" >&2; exit 2; }

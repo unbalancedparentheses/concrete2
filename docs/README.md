@@ -43,7 +43,14 @@ The `book/` subdirectory is for tutorial-style and user-facing structured docume
 ## How To Read The Docs
 
 - Read [../README.md](../README.md) first for project overview, current status, and build/test instructions.
-- Read [../ROADMAP.md](../ROADMAP.md) for active and future work.
+- Read [VC_GENERATOR_DESIGN.md](VC_GENERATOR_DESIGN.md) for the planned replacement of the four
+  hand-written obligation walkers with a weakest-precondition calculus — the layer that produced
+  every discovery defect found this year.
+- Read [../ROADMAP.md](../ROADMAP.md) for active and future work. Start with its two
+  orientation sections: **"Design honesty: this is largely Why3's architecture"** (what this
+  design shares with the state of the art, what is better here, and the one layer that is worse)
+  and **"North star"** (what "prove every kind of code in Lean + Rocq + Isabelle" decomposes
+  into, and the two limits no amount of work removes).
 - Read [../CHANGELOG.md](../CHANGELOG.md) for completed milestones.
 - Read [../research/thesis-validation/core-thesis.md](../research/thesis-validation/core-thesis.md) and [../research/thesis-validation/objective-matrix.md](../research/thesis-validation/objective-matrix.md) if you want the current long-term thesis and the flagship validation examples.
 - Read [PASSES.md](PASSES.md) early if you want to understand where compiler responsibility lives today.

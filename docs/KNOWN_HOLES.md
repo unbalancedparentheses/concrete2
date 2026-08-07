@@ -28,6 +28,186 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H27. Contract validation is name-and-sort only, not type checking — OPEN
+
+`Concrete/Check/Check.lean` rejects contracts that name identifiers which do not exist, and
+applies a coarse boolean/integer sort check. That closes the observed defect (an unbound name
+reaching VC hypotheses) but is **not** type checking, and calling it that would overstate it.
+
+Measured as accepted today, each verified against the compiler rather than inferred:
+
+Corpus coverage when the validation was turned on, reported as a ledger rather than a bare
+"1 rejection" — the denominator is the part that says how much the number is worth:
+
+| class | count | note |
+|---|---|---|
+| files discovered | 1248 | `find examples tests -name '*.con'` |
+| clean (reached checking, accepted) | 962 | the measured denominator |
+| **newly rejected** | **1** | `invalid_contract_expression`, which documents itself as invalid |
+| pre-existing other error | 263 | **effect unmeasured** — checking stops at the first error, so a contract defect can sit behind an earlier one |
+| pre-existing parse error | 19 | never reach the check |
+| timeout at 10s | 3 | unmeasured |
+
+So the honest claim is "1 rejection out of 963 files that reach contract checking", not "1 out of
+1248". The 263 + 3 unmeasured files are the reason a second sweep is worth running once those
+files parse and check.
+
+| not checked | example that is accepted |
+|---|---|
+| operand type compatibility | `#[requires(x < 9999999999)]` on an `i32` parameter |
+| bool used as an arithmetic operand | `#[requires((x > 0) + 1 > 0)]` |
+| a `#[variant]` being a well-founded measure | `#[variant(i < n)]` — a boolean, not a measure |
+| ~~impure (capability-requiring) calls~~ | **CLOSED 2026-08-07** — rejected at check time |
+| `result`'s type | scope is enforced (`ensures`-only), the type is not |
+| precise loop-binder scope | see below |
+
+**Impure calls, closed — and the lesson from closing it.** A capability-requiring function
+performs I/O, so `#[ensures(result == tick())]` states a postcondition whose truth depends on when
+it is evaluated and what the outside world did; that is not a proposition about the program.
+`--report contracts` already detected it and could not reject it, so the call still reached the
+obligation — the same reported-but-not-rejected shape as the unbound-name defect. Now a check
+error, with the wording kept identical so it reads as one rule. Calls to PURE executable functions
+stay legal: purity is the property that matters, not spec-only, and a positive control asserts it.
+
+Promoting it **made an existing positive control vacuous**, which is the part worth remembering.
+`spec_ghost_totality` mixes the impure negative and the pure-helper positive in one file. Once the
+negative became a check error the whole file was rejected, its report went empty, and the
+assertion "no `impure call` inside the `cn.good` block" passed *because there was no `cn.good`
+block*. A green control proving nothing.
+
+Two fixes, and the general one matters more: `assert_block_absent` now fails if its anchor is
+missing at all, so any absence assertion in this gate must first show the thing it is inspecting
+exists; and the positive control moved to `examples/contract_positive/pure_contract_calls`, where
+nothing else can fail first. **A positive control must not share a file with a negative that can
+become fatal** — first-error-wins turns the negative into a mask.
+
+**Loop scope is over-approximate by construction.** The bound set for an `#[invariant]` is every
+name bound anywhere in the function, not the names in scope at the loop, so
+
+```
+#[invariant(0 <= i && i <= later)]
+while i < n { i = i + 1; }
+let later: i32 = 5;
+```
+
+is admitted and `later` reaches the VC. This accepts too much and never too little, so it cannot
+cause a false rejection; it simply fails to catch a name used before its binding. A gate
+assertion pins the behaviour and is written to flip when scope becomes precise.
+
+**Shadowing is the gap unknown-name rejection cannot close.** A local may shadow a parameter
+(measured), so in
+
+```
+#[ensures(result == x)]
+fn f(x: i32) -> i32 { let x: i32 = 99; return x; }
+```
+
+every name resolves, no diagnostic fires, and nothing in the pipeline records *which* `x` the
+contract means.
+
+**Contained**: a contract naming a parameter that a local shadows is now rejected at check time.
+The earlier pin asserted only that the postcondition was not discharged — which relied on the
+postcondition path being incomplete, the same safety-by-accident shape as H25. Rejecting
+establishes the property where the contract is admitted instead of inheriting it from a later
+stage's narrowness.
+
+The restriction is scoped: shadowing itself stays legal, and only shadowing of a name a contract
+mentions is rejected. Two over-rejection controls hold that line (an unshadowed contract is
+accepted; shadowing in a function with no contract is accepted), and the corpus was swept before
+turning it on. The real fix is
+[H25](#h25-refinement-substitution-is-by-name-not-by-binding-identity--open-contained)'s stable
+binding identities — the two holes share a root cause: contract expressions carry names, not
+identities.
+
+### H26. A negative fixture's golden file is coupled to the entire stdlib — CLOSED 2026-08-07
+
+`check_phase1_contracts.sh` failed one assertion: `--report contracts` on
+`examples/contract_negatives/assume_taint` listed `sha256.rotr`'s preconditions under **Source
+Contracts** and the committed snapshot did not. The fixture is a 13-line module defining no
+`sha256`, which is what made it worth refusing to bless.
+
+**Cause.** `assume_taint` is one of only 3 of the 21 contract-negative fixtures that carry a
+`Concrete.toml` — it needs one for its `forbid-assume` policy. That makes it a *project*, so it
+compiles against the stdlib, and `--report contracts` reports the stdlib's contracts too. Commit
+`a3ba761b` (R-0464, closing H24) added `#[requires(n > 0)]` / `#[requires(n < 32)]` to
+`std/src/sha256.con`. `a3ba761b` is newer than `a16a1138`, where the snapshot was last written, so
+the golden file was stale from the moment the stdlib gained those contracts.
+
+Verified before updating rather than after: the diff is **94 lines added, 0 removed**, no line
+mentioning the fixture's own `cn.*` module changed, and every addition is a `sha256.*` entry. The
+fixture's behaviour is untouched; only stdlib content appeared. Snapshot regenerated on that
+basis.
+
+**The real finding is the coupling, not the drift.** A negative fixture's golden file transitively
+depends on every contract in the standard library. Any stdlib change that adds or edits a contract
+silently invalidates it, and the failure presents as a *fixture* regression — pointing at
+`assume_taint`, which is not where anything changed. That is why my first attribution was wrong: I
+traced it to `3df41abf` (the multi-kernel spike) by `git log` on the report module, and only
+finding the actual cause required noticing which fixtures have a `Concrete.toml` at all. It will
+recur on the next stdlib contract edit.
+
+Worth fixing properly: either scope the contracts snapshot to the fixture's own modules, or make
+the diff report "N stdlib entries changed" separately from fixture content, so the next occurrence
+names the stdlib instead of the fixture. The second landed in `1c310a07`; the first is R-0475.
+
+**Exposure audited, and it is one snapshot, not a class.** Of 13 snapshotted fixtures exactly one
+is project-mode; the other 12 are single-file and cannot see stdlib contracts. The other 2
+project-mode contract fixtures are exercised only by targeted-assertion gates with no golden files
+(all four pass), and the 3 other golden gates touching project-mode examples compare program
+output — formatted source, HTTP bytes, a response body — not reports. The natural assumption that
+sibling fixtures shared the defect was checked and was wrong.
+
+**Process note.** Refusing `UPDATE_PHASE1_SNAPSHOTS=1` while the diff was unexplained was correct
+and cost about twenty minutes. Running it would have produced a green gate, a committed golden
+file containing content nobody had accounted for, and no record that a negative fixture depends on
+the stdlib.
+
+### H25. Refinement substitution is by NAME, not by binding identity — OPEN (contained)
+
+**Invariant that must hold:** refinement substitution may act only on expressions whose
+free-variable identities are distinguished from all locally bound identities.
+
+`refineObligations` instantiates a `spec fn` body at a call site by substituting parameters with
+the call's arguments via `substExpr`, which replaces by name with no capture avoidance. A spec
+body that binds a name therefore has the binding substituted away:
+
+```
+spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+```
+
+At `s(y)` the inner, let-bound `x` is replaced too, producing a corrupted obligation.
+
+**No unsound evidence escaped, and the reason is the point.** The obligation is collected but
+reports `outside the fragment`, because `renderTerm` has no case for `.ifExpr`, so no kernel ever
+receives the corrupted goal. That is safety by *accident*: it rests entirely on the renderer's
+narrowness and on nothing about substitution. Adding `.ifExpr` to `renderTerm` — an obvious
+extension, and one the refinement tier invites — would have turned a latent corruption into
+issued proof evidence, with no test failing.
+
+The general lesson is worth more than the specific bug: **renderer incompleteness is not a valid
+precondition for transformation soundness.** Each transformation must establish its own admission
+contract before later stages consume it, rather than inheriting one from what a downstream stage
+happens to reject.
+
+**Current containment:** enforced conservatively by rejecting locally binding specification
+bodies, at check time, in `Concrete/Check/Check.lean`. The binder scan is structural and recurses
+through statement containers and match arms, so a `let` nested in a branch is caught; it reports
+only *actual* bindings, so the binder-free conditional fragment stays admitted. Three assertions
+in `check_bool_kernel.sh` hold the line: a binder is rejected, no refinement obligation is issued
+from it, and a binder-free conditional is still accepted (the over-containment control).
+
+**Graduation condition:** replace the restriction with identity-based, capture-avoiding
+substitution over stable binding identities, and prove or exhaustively gate the evaluation law
+
+```
+eval(subst(Q, x, e), rho) = eval(Q, rho[x |-> eval(e, rho)])
+```
+
+over the supported specification fragment. Until then the refinement tier must not issue proof
+evidence from unsafe substitution. This is also a prerequisite for `old(...)`, frame/`modifies`
+conditions, reliable loop-state reasoning, call-site contract instantiation, and quantified
+predicates with binders.
+
 ### H24. Obligation generation keeps its own weaker copy of the trap rules — CLOSED 2026-08-03 (R-0464)
 
 `Concrete.Semantics.IntArith` is the single-source trap semantics: it makes `trap` a

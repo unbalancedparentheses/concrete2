@@ -5,6 +5,12 @@ should happen next, in what order?** Historical phase detail lives in
 [CHANGELOG.md](CHANGELOG.md); this file keeps only active work, future-relevant
 constraints, and deferred tails with a real pull trigger.
 
+> **Start here for status:** [Status board](#status-board-2026-08-06--everything-open-ranked-with-why).
+> **Start here for direction:** [Design honesty vs Why3](#design-honesty-this-is-largely-why3s-architecture-and-one-layer-is-worse-than-why3s)
+> and [North star](#north-star-prove-every-kind-of-code-in-lean--rocq--isabelle) —
+> what "prove every kind of code in three kernels" decomposes into, what is reachable,
+> and the two limits that no amount of work removes.
+
 ## How To Read This Roadmap
 
 ### Active Work vs Historical Record
@@ -470,6 +476,21 @@ something into versioned bytes or leaves a construct undescribable.
   environmental — one run superseded by a later push, one killed by a GitHub outage
   resolving action downloads — and in both cases nothing was compiled. No verdict is not a
   failure; it still exits non-zero, but it now says re-run instead of debug.
+
+**Freshness guard adopted across the R-0004 gates (2026-08-07).** The
+`spike/multi-kernel-theories` merge brought `scripts/tests/lib/fresh.sh`, which 145 gates
+already sourced — but none of the seven evidence gates did, because they were written on
+main before the guard existed and its sweep never saw them. They are the gates where the
+trap actually bit: twice in one session I restored a mutated source, re-ran a gate without
+rebuilding, and read the previous binary's verdict as the current one. Once that looked
+like a real failure and was nearly written up as one.
+
+Its mechanism is worth knowing before anyone "improves" it: it BUILDS rather than compares
+timestamps. An earlier mtime version had to be abandoned because `lake build` completes
+without relinking when output is unchanged, so a touched source looks newer than a binary
+that is in fact current — the guard fired permanently and its own advice could not clear
+it. Delegating to lake costs ~130ms and makes a stale reading impossible rather than merely
+reported.
 
 **Pre-push gate runtime is growing and should be watched.** The evidence gates compile the
 example corpus repeatedly; a publish now spends ~25-30 minutes in pre-push gates before it
@@ -1141,6 +1162,854 @@ is consistent enough to be a rule rather than an anecdote.
    pinned so `∀ e, P e → Q e` is not read as global completeness when `P` is narrow.
 8. **A false number is worse than a missing one**, because it is quotable. `--report stack-depth`
    stated `Max stack bound: 32 bytes` for arbitrarily deep recursion.
+## Design honesty: this is largely Why3's architecture, and one layer is worse than Why3's
+
+Worth writing down, because it reframes what is valuable to build next.
+
+### The convergence is real
+
+| Why3 | Here |
+|---|---|
+| driver files per prover | `ProverLowering` records — "the tactic is DATA, not a template" |
+| VC transformations (`eliminate_*`) | Register B rows, same names and same idea |
+| many provers per goal | the multi-kernel tiers |
+| `variant` clause for termination | the `#[decreases]` design (rung 8) |
+| theory **realizations** | **missing** — see below |
+
+Arriving independently at Why3's shape is reassuring: it is the state of the art for this problem.
+
+### Two things here are genuinely better
+
+**The reference-evaluator agreement check.** Why3 TRUSTS its drivers — if a driver prints the
+wrong thing, the prover closes the wrong goal and nothing notices. Every lowering here is checked
+against an independent evaluator instead: exhaustively for booleans, sampled for arithmetic. A
+kernel that "proved" a mis-rendered obligation does not earn the badge.
+
+**Discovery completeness.** Why3 generates VCs by weakest-precondition calculus, so "was an
+obligation emitted at all" is not a question anyone needs to ask. Here it was, and asking it found
+seven defects, two of them unsound.
+
+### One thing here is worse, and it is the layer that produced this year's bugs
+
+**Why3 generates VCs by a CALCULUS. This generates them with hand-written AST walkers, one per
+family.**
+
+That is exactly where every discovery bug came from — `(a)[i]` missed, `b.data[i]` missed,
+unannotated array sizes missed, shadowed bindings sized from the wrong declaration. A
+weakest-precondition generator makes most of those **impossible by construction**: you cannot
+forget a case when you are not enumerating cases. Four walkers were patched to fix symptoms whose
+common cause is the absence of a calculus.
+
+**The design is written: [docs/VC_GENERATOR_DESIGN.md](docs/VC_GENERATOR_DESIGN.md).** One
+traversal plus a per-constructor rule table replaces four walkers; the `if`/`while` rules subsume
+`scopedWalk`'s hand-threaded guards, and the transformer's environment is the `ScopeDecls` work
+already done. It recommends running over **Core rather than the surface AST**, which is the one
+change that attacks H19 structurally. Migration is differential against the existing walkers —
+they are a usable oracle now that their seven defects are fixed and gated, and every diff is a
+finding either way. It also makes Register A statable as ONE theorem ("if every obligation from
+`wp(body, True)` holds, the body cannot trap") instead of five half-discharged rows.
+
+**Consequence for planning:** adding more tiers (rungs) grows what CAN be expressed, while the
+generator remains the part most likely to be silently wrong. A principled VC generator is
+therefore plausibly worth more than the next two rungs combined, and it subsumes H19 (the
+Core→obligation bridge) — Why3's answer to that is realizations, where the axiomatized theory is
+proved in Coq/Isabelle rather than assumed.
+
+This is not an argument to stop; the tiers are real and verified. It is an argument about ORDER,
+and it is recorded here because "add another rung" is the more interesting work and therefore the
+easier trap.
+
+## Status board (2026-08-06) — everything open, ranked, with why
+
+One place to look. Two entries below were open earlier the same day and are now closed; they are
+kept with their outcome because the *pattern* they belong to is the last item here.
+
+### Closed 2026-08-07 (`spike/multi-kernel-theories`)
+
+- ~~**`#[requires]`/`#[ensures]` are not validated anywhere.**~~ **DONE, and named honestly.**
+  An unbound name reached the HYPOTHESES of every obligation in the function, including ones
+  reported `proved_by_kernel_decision`. Fails closed (unprovable at the call site) but surfaced in
+  the wrong function. Now rejected at check time, extended to loop invariants and variants —
+  where an unbound name was universally quantified into the initiation obligation, turning a
+  missing binding into an arbitrary theorem variable. **Called name-and-sort validation, not type
+  checking**: H27 lists six things still accepted, each measured and each pinned by a gate written
+  to flip when the gap closes. See R-0473.
+- ~~**Refinement substitution can capture.**~~ **CONTAINED, not fixed.** `substExpr` replaces by
+  name; a binder in a spec body has the binding substituted away. No unsound evidence escaped —
+  and the reason is the finding: the corrupted obligation reported `outside the fragment` only
+  because `renderTerm` has no `.ifExpr` case. **Renderer incompleteness is not a valid
+  precondition for transformation soundness.** Binder-bearing bodies and contracts naming a
+  shadowed parameter are now rejected, both temporary and both saying so. H25, H27, R-0474.
+- ~~**Gates run whatever binary is on disk.**~~ **DONE, 145 gates.** Four times in one session a
+  branch switch without a rebuild produced plausible evidence about a compiler that no longer
+  existed — once a shipped feature looked unimplemented, once three "parse errors" were nearly
+  written up as a finding. The first fix compared mtimes and measurement killed it: `lake build`
+  succeeds *without relinking* when output is unchanged. Delegating freshness to lake costs 130ms.
+
+### Open — added 2026-08-07
+
+0. ~~**H26 blocks merging.**~~ **RESOLVED 2026-08-07.** The fixture is one of 3 of 21 that carry a
+   `Concrete.toml`, so it builds as a project against the stdlib; `a3ba761b` added contracts to
+   `std/src/sha256.con` after the golden was written. Diff verified as 94 additions, 0 removals,
+   nothing touching the fixture's own module, then regenerated. The structural coupling — a
+   negative fixture's golden depending on every stdlib contract — is R-0475.
+0b. **263 of 1248 corpus files are UNMEASURED** for contract validation, because checking stops at
+   the first error. The defensible claim is "no unexpected rejection among the 963 files that
+   reached it" — not "the corpus is compatible". A diagnostic-accumulation mode closes it (R-0473).
+
+### Closed today
+
+- ~~**Spec bodies are not type-checked.**~~ **DONE.** A `spec fn … = expr` body is now checked for
+  free variables, for calling only other spec fns, AND for SORT (boolean vs integer). Gated in
+  three directions, including that the rule *constrains* rather than forbids — a spec calling
+  another spec still passes. **Limit stated in the code:** it is a sort check, not type inference,
+  so a width mismatch (`i32` vs `i64`) is still not caught. `#[requires]`/`#[ensures]` were not
+  validated anywhere either, so there was no machinery to reuse — **superseded 2026-08-07**: they
+  are now name-and-sort validated (see the entry above), reusing this sort check.
+- ~~**No negative control on the axiom inventory.**~~ **DONE for 2 of ~10 gates.**
+  `check_axiom_inventory` now builds a theorem that genuinely depends on `sorryAx` and requires
+  the classifier to flag it — mutation-tested: allowlisting `sorryAx` produces 2 failures, where
+  before that one-word edit would have left the gate green while every incomplete proof passed.
+
+### Open — highest leverage first
+
+1. **The VC generator.** Four hand-written walkers replaced by a WP calculus.
+   Design: `docs/VC_GENERATOR_DESIGN.md`. Attacks the layer that produced every discovery defect
+   this month, subsumes H19 if run over Core, and makes Register A statable as one theorem.
+2. **`old` / two-state postconditions.** Not a feature among features — **a ceiling on what can
+   be written at all.** Without it no specification can describe MUTATION, so the corpus's only
+   real contracts being refinements of *pure* helpers is not what authors chose, it is the only
+   thing the language permits. That evidence sat in plain sight for most of this work and was read
+   as a coincidence. See the Why3 parity table.
+3. **~8 remaining gates without negative controls.** The week's tally: six assertions fired on
+   non-regressions, two silently tested nothing, one skipped its own section when the build broke,
+   one reported a working fix as broken via `pipefail`. Green counts overstate what is pinned, and
+   capability stacked on unverified gates is the less defensible order.
+4. **Rung 4's tier (bitwise).** Fully unblocked — model bridge proved against `BitVec 32`, shared
+   type confirmed in all three kernels. Only renderers, collection and a gate remain. **The one
+   that unlocks real corpus coverage**, since `hmac_sha256`'s meaningful property is bitwise.
+5. **`#[decreases]` (rung 8).** Converts recursion from *not eligible* to provable, and its own
+   termination obligation is linear arithmetic that existing machinery discharges. **Cost, to be
+   accepted deliberately:** the lowering-agreement check degrades from decidable to sampled.
+6. **Register A: 0 of 5 discharged, 4 half.** Half means the row is still *trusted*. This is the
+   stated goal of the prover-neutral arc and it has not moved.
+7. **H19 — the Core→obligation bridge is unproven.** Obligations come from the surface AST;
+   nothing proves they match what is compiled. Subsumed by item 1 if the generator runs over Core.
+
+### Open — smaller, each with its reason
+
+- `MIN` negation and float→int casts trap at runtime with **no obligation kind** (two rule-table
+  rows under item 1)
+- corpus coverage of the non-arithmetic tiers is **zero, deliberately** — the tautology guard
+  prevents faking it, and rung 4 is the honest route
+- rung 3 (nonlinear) is **2-of-3 kernels**: Lean has no general nonlinear procedure and Mathlib is
+  not a dependency. A dependency decision, not a technical gap
+- unannotated `let`s contribute no type, so their shift/overflow obligations are dropped
+- the FFI closure carries bare names alongside qualified ones and can over-flag (refuses rather
+  than admits — the safe direction)
+- stack depth is reported, **not gated**
+- 5 `partial def`s remain in the report layer (traversal drivers, not discovery)
+- Register B rows 2–3; the Isabelle builder collapse; R-0462 widening
+
+### The pattern worth naming, and the one process change
+
+Four times this month a capability was added and under-checked: `partial` keywords documented as
+unavoidable for weeks; `spec fn` bodies parsed but unchecked; then checked for names but not
+types; then a gate enrolled whose file-granular limit was only found by mutating it. **Every one
+was caught by USING the thing, never by reading it.**
+
+If one process change survives all of the above:
+
+> **Write the rejection test before the acceptance test.**
+
+Every hole listed here would have been caught at the moment it was opened.
+
+## Parity with Why3, and where this can be better
+
+A full inventory rather than a wishlist: what Why3 has, what exists here, and the three places
+this design is already ahead. Written because "as good as Why3" needs a checklist to be a goal
+instead of a slogan.
+
+### What Why3 has, and where this stands
+
+| Why3 capability | Here | To close |
+|---|---|---|
+| WP calculus for VC generation | ✗ four hand-written walkers | `docs/VC_GENERATOR_DESIGN.md` |
+| driver files per prover | ✓ `ProverLowering` | — |
+| transformation library (~100) | ~1 discharged row (`eliminate_tmod`) | Register B rows 2–3, then breadth |
+| `requires` / `ensures` | ✓ | — |
+| `variant` (termination measure) | ✗ | `#[decreases]`, rung 8 |
+| `invariant` (loop) | ✗ | loop invariants as obligations |
+| `old(x)` / two-state postconditions | ✗ | **essential and missing** — see below |
+| ghost code | partial (`spec fn`, erased) | ghost *variables* and ghost state |
+| algebraic datatypes in specs | ✗ | the enum rung |
+| pattern matching in specs | ✗ | follows enums |
+| exceptions / error paths | ✗ | Concrete uses `Result`; specs cannot mention it yet |
+| mutable records & arrays in specs | reads only | needs `old` + a memory model |
+| theory/module system, cloning | ✗ | a spec stdlib with refinement |
+| standard theories (int, list, map, set, bitvector) | ✗ | a spec stdlib — nothing exists |
+| counterexamples from models | ✓ `counterexample` status with source-mapped values | — |
+| proof sessions / replay | ✓ fingerprints, staleness, `--replay` | — |
+| **realizations** (theories proved in Coq/Isabelle) | ✗ | H19 is the same gap wearing a different name |
+| extraction to OCaml/C | ✓ compiles to LLVM — see below | — |
+
+### The single biggest missing feature: `old`
+
+Nothing here can state a postcondition that RELATES the state before a call to the state after it.
+
+```
+#[ensures(len(v) == old(len(v)) + 1)]     // not expressible today
+fn push(v: &mut Vec<i32>, x: i32)
+```
+
+Every specification of a mutating operation needs this, so its absence quietly restricts specs to
+pure functions — which is why the corpus's only real contracts are refinement of pure helpers.
+It is a prerequisite for mutable records, arrays-as-state, and most of a spec stdlib. **It should
+rank alongside `#[decreases]`, not below it.**
+
+### Three places this is already ahead of Why3
+
+Not incidental — each is a deliberate consequence of targeting a compiler rather than a spec
+language, and each should be defended when the parity items above get built.
+
+**1. Drivers are VALIDATED, not trusted.** Why3 trusts its drivers: if a driver prints the wrong
+thing, the prover closes the wrong goal and nothing notices. Every lowering here is checked
+against an independent reference evaluator — exhaustively for booleans (`2^n` rows), sampled for
+arithmetic. A kernel that closes a mis-rendered obligation does not earn the badge. As transformations
+and drivers multiply, this is the property that keeps the count meaningful.
+
+**2. Evidence is a taxonomy, not a boolean.** Why3 reports "proved by Alt-Ergo". Here:
+`runtime-checked → solver_trusted (SMT in the TCB) → proved_by_lean_replay (certificate
+reconstructed) → proved_by_kernel_decision → N independent kernels agreeing`, with axiom-freedom
+gated via `Print Assumptions` and a documented native-code exception list. That distinction is the
+difference between "a tool said yes" and "a kernel checked it, and here is which kernel and what
+it trusted".
+
+**3. Obligations are about the code that RUNS.** Why3 verifies WhyML and extracts to OCaml/C;
+the extracted program is a translation of the verified one. Here the same source is compiled to
+LLVM, so the obligations concern the artifact itself. That advantage is currently **claimed rather
+than proved** — H19 says nothing connects surface-AST obligations to the compiled form — which is
+precisely why the VC generator should run over Core.
+
+A fourth, with no Why3 analogue: **discovery completeness** — proving the obligation is generated
+at all.
+
+**Scheduled for demotion, and marked so deliberately.** Why3 does not need this register because a
+WP calculus cannot forget a case. That means discovery completeness is *compensating for a design
+flaw*, not adding a guarantee Why3 lacks — so once the generator lands it should be re-labelled a
+redundancy check, not defended as permanent scaffolding. Recording the expected demotion now,
+because a register that quietly outlives its cause is how a metric turns into a ritual.
+
+### Ordering to reach parity
+
+1. **VC generator** (design written) — closes the largest structural gap and subsumes H19.
+2. **`old` / two-state postconditions** — a ceiling, not a feature: without it specs cannot
+   describe mutation at all.
+3. **spec standard library** (int, array, list, map) — **moved up from sixth.** A calculus with
+   nothing to say about lists does not get used; much of Why3's practical value is its theory
+   library, not its WP engine. Nothing exists here today, so even after items 1–2 land there is
+   little to *say*. It was ranked sixth by how interesting it is to build, which is the wrong axis.
+4. **`#[decreases]`** — unlocks recursion and liveness at once.
+5. **loop invariants** — the other half of liveness; WP forces the question anyway.
+6. **enums + pattern matching in specs** — last quantifier-free construct.
+7. **realizations** — prove the axiomatized theories in the kernels rather than assuming them.
+8. **heap / separation** — largest remaining, needs design before code.
+
+Items 1–3 are where the leverage is.
+
+## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
+
+The goal is worth stating precisely, because "everything" decomposes into three axes with very
+different answers — plus two limits that no amount of work removes. Written so the distance can be
+measured instead of guessed at.
+
+### Axis 1 — language constructs (what a proof is ABOUT)
+
+| Construct | Obligations today | To reach the kernels |
+|---|---|---|
+| integer arithmetic | overflow, div, shift | **done** (linear); nonlinear is 2-of-3 |
+| array indexing | bounds | **done**; arrays lower as total `index → value` |
+| booleans / conditionals | — | **done** (rung 2) |
+| structs / field access | — | **done** (rung 6) |
+| uninterpreted spec fns | — | **done** (rung 5) |
+| defined spec fns | refinement | **done** — the `spec fn … = expr` body |
+| **enums / sum types** | — | constructor injectivity + disjointness, emitted per kernel |
+| **loops** | bounds/overflow inside them | invariants as first-class obligations |
+| **recursion** | none — profile-banned | `#[decreases]`; see rung 8 |
+| **heap / references** | linear types (static) | a memory model; separation-logic shaped |
+| **generics / traits** | monomorphised away | provable per instantiation; the general statement needs polymorphic lowering |
+| **closures / fn pointers** | refused by the profile | target-set analysis, or higher-order lowering |
+| **capabilities / effects** | statically enforced | sound by construction; not obligation-shaped |
+
+### Axis 2 — property kinds (what a proof SAYS)
+
+This axis matters more than the first and is easier to overlook.
+
+| Property | Shape | Status |
+|---|---|---|
+| **Safety** ("this bad event never happens") | quantifier-free per site | the entire pipeline today |
+| **Liveness** ("this good event eventually happens") | termination, progress | only *checked* by the `predictable` profile, never proved. The three fail-open gates found in this work were all liveness claims — no obligation could have caught them |
+| **Functional correctness** | refinement against a spec | rung 5 + defined specs; reaches only single-`return` bodies |
+| **Relational / hyperproperties** (constant-time, non-interference) | two executions compared | **not expressible** as a per-site obligation at all |
+| **Resource bounds** (stack, alloc, time) | quantitative | stack reported not gated; alloc capability-gated; time untouched |
+
+### Axis 3 — evidence strength
+
+`runtime-checked` → `solver_trusted` (SMT in the TCB) → `proved_by_lean_replay` →
+`proved_by_kernel_decision` → **N independent kernels agreeing**. The last is what these tiers
+add, and only where the lowering's faithfulness can be CHECKED — see limit 2.
+
+### The two hard limits
+
+**1. Undecidability is not an engineering problem.** Nothing decides termination, and by Rice's
+theorem no non-trivial semantic property is decidable in general. That is *why* `#[decreases]`
+puts the measure on the AUTHOR: the compiler can check it, never find it. Any plan reading "prove
+everything automatically" is wrong at the root. The achievable goal is **"prove everything the
+author is willing to specify, and refuse the rest loudly."**
+
+**2. Faithfulness and strength trade against each other.** The multi-kernel claim rests on each
+kernel closing a lowering whose meaning is CHECKED against the reference evaluator — exhaustive
+for booleans (`2^n` rows), sampled for arithmetic, **undecidable** for anything quantified over
+unbounded structure. So the stronger the property, the weaker the guarantee that three kernels
+proved the *same* proposition. Rung 8 buys induction and pays in exactly this coin; it must be a
+stated decision, never a side effect.
+
+And the third, already documented: **print fidelity is not provable.** That an emitted string
+denotes the intended obligation needs a formal semantics of the target's surface syntax, which is
+not ours. Validated, never proved — no rung changes that.
+
+### So what "every kind of code" can honestly mean
+
+Not "everything proved automatically" — unreachable, and claiming it would be the overclaim this
+document keeps correcting. It means:
+
+1. every construct can APPEAR in an obligation (axis 1 — finish enums, loops, recursion, heap);
+2. every property the author states can be ATTEMPTED (axis 2 — liveness and relational are the
+   genuinely missing shapes);
+3. whatever is not covered is **NAMED** rather than silently absent — `OUTSIDE the bounds
+   fragment`, `no definitional body`, `abstraction inconclusive`, the coverage counter.
+
+Point 3 is what makes the other two honest, and it is the cheapest to keep.
+
+### Nearest-term ordering
+
+1. **finish the measurement base** — ~8 gates still lack negative controls; capability stacked on
+   unverified gates is the less defensible order;
+2. **rung 4's tier** — unblocked, mechanical, the only route to real corpus coverage;
+3. **enums** — the last quantifier-free construct missing; same shape as rung 6;
+4. **`#[decreases]` + rung 8** — unlocks recursion AND liveness, the biggest jump on axis 2, at
+   the faithfulness cost above;
+5. **loop invariants as obligations** — the other half of liveness;
+6. **heap / separation** — largest remaining item on axis 1; needs a design before any code.
+
+**Ahead of items 2–6:** the VC generator (design linked above). Steps 1–2 of its sequencing are
+small and reversible; the commitment point is moving generation to Core.
+
+## Branch `spike/non-arithmetic-multi-kernel` (depends on `spike/multi-prover-evidence`)
+
+### Landed: rung 2 — boolean postconditions in all three kernels
+
+`--report bool-kernel`, gate `check_bool_kernel.sh` (14/0/0 with real provers). Obligations from
+`#[ensures(result == <boolexpr>)]` on a single-`return` body, closed by `destruct; reflexivity`
+(Rocq), `auto` (Isabelle/HOL), `decide` (Lean) — three *different* procedures, none arithmetic.
+
+Two properties the arithmetic tier does not have:
+
+- **agreement is EXHAUSTIVE**, not sampled: `2^n` assignments, all checked, so "this lowering
+  means the same proposition" is decided. Required making `evalBool` handle `.var` at all.
+- **the Rocq proofs are constructive**, `Print Assumptions` = "Closed under the global context".
+  Concrete `bool` → Rocq `bool`, NOT `Prop`: over `Prop` De Morgan needs classical logic, so the
+  lowering would put an axiom into an attestation. The kernels agree on `bool` and would not on
+  `Prop` — a portability fact only a non-arithmetic obligation surfaces.
+
+### The complexity ladder, and what each rung needs
+
+Obligations here are **closed, quantifier-free formulas per function**, lowered to text and closed
+by one tactic call. That shape is what makes rungs 1–7 reachable and rung 8 a redesign.
+
+| Rung | Needs | Status |
+|---|---|---|
+| 1. Linear arithmetic | `omega`/`lia`/`presburger` | done (base branch) |
+| 2. Propositional | boolean sorts, case analysis | **done, this branch** |
+| 3. Nonlinear arithmetic | `nia`/`polyrith` | partial: `rocqNiaLowering`; H21 blocks SMT replay |
+| 4. Bitvectors | `bv_decide`, Rocq/Isabelle Word libs | Lean only; H20 — native checker |
+| 5. Uninterpreted functions (EUF) | quantified function variables | **done, this branch** |
+| 6. Algebraic datatypes | datatype *declarations* per prover | **done, this branch** |
+| 7. Arrays | total `index -> value` model | **done, this branch** |
+| 8. Induction over recursion | measure + induction scripts | see below |
+| 9. Full functional correctness | 6+7+8 | needs 8 |
+
+### Landed: rung 5 — uninterpreted functions (EUF)
+
+A `spec fn` is body-less, pure and **erased**, so it cannot appear in executable code at all
+(`E0101`) — uninterpreted symbols live only in contracts. These obligations are therefore
+`requires -> ensures`, not a substituted body, which is also how the rest of the pipeline states
+a VC.
+
+**The symbol is a quantified function variable, never a declaration.** `Parameter f : Z -> Z` or a
+Lean `axiom` would enter the trusted base and `Print Assumptions` would report it. Quantifying
+proves the goal for EVERY interpretation and stays axiom-free — all four Rocq lemmas report
+"Closed under the global context", gated.
+
+**What degrades, and this is the first rung where it does.** The boolean tier's agreement check is
+exhaustive; EUF has infinitely many interpretations, so there is no table to enumerate. What
+replaces it is **propositional abstraction** — each distinct comparison becomes a boolean atom and
+the goal is checked as a propositional tautology. Sound in ONE direction only: a tautology implies
+validity; a falsifying assignment implies **nothing**, because the abstraction forgets that `f` is
+a function. `m = t -> f m = f t` is EUF-valid and abstraction-falsifiable.
+
+An earlier version of this returned a third verdict — "FALSE, no kernel should close it" — which
+labelled **congruence**, the defining property of an uninterpreted function, as something no kernel
+should prove. There are only two honest verdicts here: tautology (valid), or inconclusive. Gated,
+because it is an easy mistake to reintroduce.
+
+Three per-kernel facts the implementation had to discover by running the generated scripts:
+
+- **Rocq needs decidable case analysis, not just `congruence`.** `~(A /\ B) -> ~A \/ ~B` is
+  classically valid and Rocq's `tauto` is intuitionistic. Importing `Classical` would close it and
+  put an axiom in the attestation; `destruct (Z.eq_dec …)` closes it constructively because `Z`
+  equality is decidable.
+- **Lean needs the same**, for the same reason, and needs NAMED binders: `intros` produces
+  inaccessible names (`f✝`) so the atoms cannot be referenced in `by_cases` afterwards.
+- **Lean's proofs are not strictly axiom-free**: `#print axioms` reports `propext` (from
+  `simp_all`), while Rocq reports nothing. `propext` is a standard Lean axiom, not classical
+  choice — but the two kernels are not equally clean here, and saying they are would be wrong.
+
+**Next rungs, in order:** 6+7 together (datatypes + arrays). The most complex thing reachable WITHOUT rung 8 is those combined in
+one obligation — a structural property over a datatype with an array field and an uninterpreted
+spec function, quantifier-free, case-analysed in three kernels. Real instances already in the
+repo: `crypto_verify`'s `verify_tag(msg, tag) ↔ compute_tag(msg) = tag` with `compute_tag`
+uninterpreted (EUF + booleans), and `elf_header`'s `validate_header` (struct fields + array
+indexing).
+
+### Rungs 3, 4, 6, 7 — measured feasibility (probed 2026-08-05, real tools)
+
+Each was probed against the actual toolchain rather than assumed. Two turn out to be blocked in
+ways worth knowing before anyone budgets for them.
+
+#### Rung 3 — nonlinear arithmetic: **2 of 3 kernels, and that is a ceiling**
+
+| kernel | result |
+|---|---|
+| Rocq | `nia` closes `0 ≤ a → 0 ≤ b → 0 ≤ a*b`, **axiom-free**; refuses `0 ≤ a → 0 ≤ a*b` with "Cannot find witness" — teeth confirmed |
+| Isabelle | `by (simp add: mult_nonneg_nonneg)` closes it |
+| Lean | **no general nonlinear procedure.** `nlinarith` is an unknown tactic, and Mathlib is **not a dependency of this project at all** |
+
+Lean core can only apply a hand-picked lemma per shape (`Int.mul_nonneg` for that one goal), which
+does not generalise. So a nonlinear tier can attest at most **two** independent kernels unless
+Mathlib is added — and adding Mathlib is a large dependency decision, not a tactic choice.
+
+Combined with H21 (nonlinear SMT results cannot be certificate-replayed), nonlinear is the weakest
+rung on evidence quality overall: fewest kernels AND no certificate path.
+
+#### Rung 4 — bitvectors: **the three kernels do not share a type**
+
+| kernel | result |
+|---|---|
+| Lean | `bv_decide` works with `import Std.Tactic.BVDecide`. H20: its checker runs as native code |
+| Rocq | stdlib has only `Z`-level bitwise (`Z.land`, axiom-free). **No fixed-width word type.** A faithful 8-bit model needs an external library (bbv / coq-bits — absent) or `Z`-with-modulus |
+| Isabelle | `HOL-Library.Word` **loads fine** (session must be `= "HOL-Library"`, not `HOL`), but builds in ~1:27 wall / 8:09 CPU — too slow for a per-run gate without a prebuilt heap. Two attempts at the word bitwise-operator spelling failed with `Type unification failed: clash of "_ ⇒ _" and "_ word"`; that is a syntax question, not a capability one, and was left unresolved rather than guessed at |
+
+This is the one rung where the kernels would not be proving the same thing. Modelling Rocq's side
+as `Z`-with-modulus makes the three lowerings *different theories*, so the tier would need a proof
+that the model is equivalent to fixed-width semantics — a Register-B-style transformation
+obligation, not merely a lowering. **That equivalence proof is the actual work of rung 4**, and
+`bv_decide`'s native checker (H20) caps the evidence quality of the Lean column regardless.
+
+#### Rung 4 — probed properly (2026-08-06): the MODEL BRIDGE exists, the shared type does not
+
+Two separable questions, and they came out differently.
+
+**1. The model bridge is real and cheap — Lean proves it.** The worry was that a `Z`/`Nat` model of
+`u32` bitwise operations might not correspond to fixed-width semantics, making a three-kernel proof
+about the model say nothing about the program. Lean settles it directly against its native
+`BitVec 32`:
+
+```
+theorem and_model (x y : BitVec 32) : (x &&& y).toNat = x.toNat &&& y.toNat := by simp
+theorem or_model  (x y : BitVec 32) : (x ||| y).toNat = x.toNat ||| y.toNat := by simp
+theorem xor_model (x y : BitVec 32) : (x ^^^ y).toNat = x.toNat ^^^ y.toNat := by simp
+theorem and_range (x y : BitVec 32) : (x.toNat &&& y.toNat) < 2 ^ 32 := …
+```
+
+All four prove; `#print axioms` reports only `propext` and `Quot.sound`. So the chain
+*property-over-naturals* + *model-equivalence* ⟹ *property-for-u32* is available, and the second
+half is proved ONCE per operation rather than per obligation. This is the part I expected to be
+the hard piece of rung 4, and it is not.
+
+**2. The shared type is the actual blocker, measured across four attempts.** `u32` is unsigned, so
+naturals are the natural common model:
+
+| kernel | type | result |
+|---|---|---|
+| Lean | `Nat` | `x ^^^ x = 0`, `x &&& 0 = 0` — **prove** |
+| Rocq | `N` | `N.lxor_nilpotent`, `N.land_0_r` — **prove, axiom-free** |
+| Isabelle | `nat` | **unresolved.** `x AND 0 = 0` fails with `Clash of types "_ ⇒ _" and "nat"` |
+
+Neither `Int` (Lean) nor `int` (Isabelle) has bitwise operations at all, so integers are not the
+common type either. Four spellings of Isabelle's bitwise operators were tried across `8 word` and
+`nat` — all failed with a type-inference clash suggesting `AND`/`XOR` resolve to lattice operators
+rather than `Bit_Operations`. That is a *syntax/import* question I could not settle, not a
+capability claim about Isabelle: its `HOL-Library.Word` session loads fine.
+
+**SOLVED (same day), by looking it up instead of guessing a fifth time.** `AND`/`OR`/`XOR` are the
+right names, but Isabelle keeps the notation in a BUNDLE — `Bit_Operations.thy` line 4186:
+`bundle bit_operations_syntax`. Without opening it, `AND` resolves to a lattice operator, which is
+exactly the `Clash of types "_ ⇒ _"` all four attempts produced. One line fixes it:
+
+```
+theory BwThy
+imports Main
+begin
+unbundle bit_operations_syntax          (* <- this *)
+lemma xor_self: "ALL x::nat. (x XOR x) = 0"  by simp
+lemma and_zero: "ALL x::nat. (x AND 0) = 0"  by simp
+end
+```
+
+Worth recording as a method note, not just a fact: four guesses cost more than one `grep` of the
+distribution's own `.thy` source, which found the bundle immediately.
+
+**So rung 4's blockers are all cleared.** The shared type exists in every kernel:
+
+| kernel | type | positive | negative control |
+|---|---|---|---|
+| Lean | `Nat` | `x ^^^ x = 0`, `x &&& 0 = 0` | `x &&& y = x` REFUSED |
+| Rocq | `N` | axiom-free via `N.lxor_nilpotent`, `N.land_0_r` | — |
+| Isabelle | `nat` (unbundled) | both by `simp` | `x AND y = x` REFUSED |
+
+Plus the model bridge above, proved in Lean against `BitVec 32`. **What remains is only the tier
+itself** — renderers for `Nat`/`N`/`nat`, obligation collection for `u32` bitwise contracts, and
+the gate — i.e. the same shape as the five tiers already landed, with no unknowns left in it.
+
+#### Rungs 6 + 7 — **DONE 2026-08-05.** The ceiling is reached
+
+Struct declarations are now emitted alongside the goal (`Record` / `record` / `structure`) and
+arrays are modelled as total `index -> value` functions. `--report bool-kernel`, gated at 38/0/0
+with real Rocq 9.0.1 and Isabelle2025-2.
+
+**Four theories, three kernels, no arithmetic and no induction** — booleans, EUF, datatypes and
+arrays in one report, with a negative control per tier refused by every kernel. That combination
+is what the ladder called the ceiling of this architecture.
+
+Two things that made it cheaper than expected:
+
+- **Arrays needed no theory.** The bounds family already proves every index in range, so a
+  fixed-size array is a *total* function and there is no partiality story — usually the hard part
+  of an array encoding. Rung 7 was a renderer case, not a theory.
+- **Rocq's `Record` adds nothing to the trusted base**: all four goals still report
+  "Closed under the global context", gated.
+
+The one genuine three-way syntax split is **field projection**: Rocq and Isabelle put the field
+first (`magic h`), Lean puts it last (`h.magic`). Everything else about the proposition is shared.
+
+##### Original assessment, kept for the reasoning
+
+- `CoreExtract` emits Gallina `Definition`s but **zero** `Inductive`/`Record` declarations
+  (grepped). Nothing currently tells any prover that a Concrete struct or enum exists.
+- Needs: per-kernel declaration emission (`Inductive` / `datatype` / `inductive`), and the
+  constructor injectivity + disjointness facts made available to the tactics.
+- **Arrays are easier than they look here:** Concrete's arrays are fixed-size and the bounds family
+  already proves every index in range, so a total `index → value` function model is sound — there
+  is no partiality story to build, which is usually the hard part of array theories.
+- This remains the stated ceiling: rungs 5 + 6 + 7 in one obligation (EUF + datatypes + arrays,
+  quantifier-free, case-analysed in three kernels).
+
+**Order followed:** 6 + 7 landed (see above — the ceiling). Rungs 3 and 4 are deliberately NOT
+implemented, and the reasons are different:
+
+- **Rung 3 was not built because a 2-of-3 tier would misrepresent the branch's claim.** The whole
+  point of these tiers is that N *independent* kernels agree; a nonlinear tier with Lean absent is
+  materially weaker, and labelling it "multi-kernel" would overstate it. It is cheap to add if
+  2-of-3 is acceptable — the Rocq and Isabelle tactics are both verified working above — but that
+  is a call about what the evidence is allowed to claim, not a technical gap.
+- **Rung 4 was not built because the three kernels do not share a type**, so the tier would owe a
+  proof that a `Z`-with-modulus model is equivalent to fixed-width semantics. That is a
+  Register-B-style transformation obligation and the actual content of the rung; the lowering is
+  the easy half. `bv_decide`'s native checker (H20) also caps the Lean column's evidence quality
+  regardless of how the model question is settled.
+
+### CAPABILITY vs COVERAGE — the rungs have zero instances in the existing corpus
+
+Measured after landing rungs 2/5/6/7, and it corrects two claims I had written into this document
+without checking them.
+
+**`crypto_verify` and `elf_header` are NOT instances of anything.** I named them as the real
+instances of the ceiling. They have **zero** `#[requires]`/`#[ensures]` clauses — nothing for any
+tier to prove. The claim was made from the shape of the code, not from its contracts.
+
+**`hmac_sha256` has 6 contract clauses, and none of them are reachable by these tiers either.**
+(My first count said 14 — a grep for `#[requires|#[ensures` that also matched `#[ensures_proof(`.
+The AST-derived count is 6. Both of my grep-based numbers in this section were wrong, in opposite
+directions, which is why the report now derives the number from the AST instead.) They
+look like exactly what rung 5 should handle:
+
+```
+spec fn ch_spec(x: u32, y: u32, z: u32) -> u32;
+#[ensures(result == ch_spec(x, y, z))]
+#[ensures_proof(Examples.HmacSha256.Proofs.ch_refines)]
+fn ch(x: u32, y: u32, z: u32) -> u32 { return (x & y) ^ ((x ^ 0xFFFFFFFF) & z); }
+```
+
+But this is a **refinement** obligation, not an EUF one, and the difference is decisive: with
+`ch_spec` uninterpreted it is **unprovable** — nothing licenses the claim that an opaque function
+equals that expression. The repo discharges it by linking to a registered Lean proof where the
+spec HAS a definition (`Concrete.Proof.chExpr`). So excluding `result` clauses from the EUF tier
+was correct, and it is also why the tier finds nothing here.
+
+**What this means, stated plainly:** rungs 2, 5, 6 and 7 are real, verified CAPABILITY —
+38 gate assertions across three kernels with negative controls each — and they have **no coverage
+of the existing corpus**. Every instance is a purpose-built demo. The rungs are what the pipeline
+*could* prove non-arithmetically, not what it currently does.
+
+**The blocker was structural — and is now FIXED at the language level rather than bridged.**
+Concrete's `spec fn` was always body-less, so a spec's meaning lived in Lean and never in Concrete
+source. The obvious fix was a Lean-definition → Gallina/HOL bridge: translate a Lean definition
+into two more provers. That would have been large, fragile (it means parsing Lean), and would have
+left the spec language permanently Lean-shaped.
+
+**A `spec fn` may now carry a definitional body instead:**
+
+```
+spec fn double_spec(x: i32) -> i32 = x + x;
+```
+
+A refinement obligation is then an equation between two expressions of *this* language
+(`2 * x = x + x`), which every kernel can already see — no bridge, no Lean parsing. Parser change is
+additive: the body-less form still parses identically and keeps its uninterpreted meaning, so
+nothing existing shifts (`make test` unchanged at 1703/0).
+
+Gated in all three kernels, with the negative control: a body that does NOT refine its spec is
+refused by each, so portability did not make refinement lax. `--report bool-kernel` also names
+refinement obligations whose spec is still body-less, so the residual gap stays visible.
+
+**Converting the existing corpus would MANUFACTURE coverage, not gain it — checked, not assumed.**
+`hmac_sha256`'s registered Lean spec for `ch` is:
+
+```
+chExpr = (x AND y) XOR ((x XOR 0xFFFFFFFF) AND z)      -- the spec
+         (x & y)   ^   ((x ^ 0xFFFFFFFF)   & z)        -- the function body
+```
+
+Character for character the same expression. Giving that spec a definitional body would make its
+refinement obligation `body = body`: trivially true, provable by every kernel, and proving
+**nothing** — while the coverage number rose. So the tier now DETECTS a spec that restates its
+implementation, flags it, and excludes it from the count. A metric that goes up when you copy the
+body into the spec is worse than one that reads zero, and this was one edit away from happening.
+
+The repo already knows the distinction, which is the useful signal: `ch` carries BOTH
+`#[ensures_proof(ch_refines)]` — the mechanical spec-equals-body step — and
+`#[proof_by(ch_selects_high)]`, the semantic property that actually says what `Ch` does. The
+meaningful obligation is the second one.
+
+**So genuine coverage of `hmac_sha256` needs rung 4.** `ch_selects_high` is bitwise reasoning over
+`u32`, and rung 4 is exactly the rung where the three kernels do not share a type (Rocq has no
+fixed-width word). The chain is: real corpus coverage → semantic bitwise properties → rung 4 →
+the `Z`-with-modulus model-equivalence proof. That equivalence obligation is the honest prerequisite,
+and it is Register-B-shaped rather than a lowering.
+
+**Where the new mechanism does apply:** specs whose meaning is genuinely independent of the
+implementation, which is what a spec is for. The demo shows both — real refinements that all three
+kernels prove, and a tautological one that is caught.
+
+**Cheapest path to coverage of existing code:** add contract-to-contract
+clauses (`requires -> ensures` over fields, arrays and opaque symbols) to a flagship example. Those
+are exactly what the tiers prove, and `elf_header`'s header-validation invariants are naturally of
+that shape — but they would be contracts written FOR the tier, which is coverage of a kind worth
+labelling as such.
+
+### Lifting the recursion ban — how, and what it costs
+
+The ban does **two unrelated jobs**, and separating them is the whole design:
+
+1. **execution predictability** — bounded stack, what `--check predictable` is for;
+2. **proof tractability** — `assessEligibility` also excludes recursive functions.
+
+For (2) termination is not optional: **a non-terminating function cannot be defined in Gallina at
+all**, and Lean needs `termination_by`/structural. Isabelle admits partiality but every theorem
+then carries domain conditions. So the ban is forced by the target logics, not chosen.
+
+The mechanism is standard — an author-supplied measure:
+
+```
+#[decreases(n)]
+fn count(n: Int) -> Int { if n <= 0 { return 0; } return count(n - 1); }
+```
+
+**The key observation: the termination obligation is LINEAR ARITHMETIC** — `n > 0 → n - 1 < n` —
+so `omega`/`lia`/`presburger` close it today. Termination becomes another obligation family
+alongside overflow and bounds, reusing the multi-kernel machinery for the hard part. Extraction
+then emits `Fixpoint`/`Program Fixpoint`, `function … termination`, `termination_by`.
+
+For (1), a proved measure gives termination but **not a stack bound**; bounding the measure's
+initial value at every call site (`n ≤ 64`) bounds depth. Also arithmetic, also dischargeable.
+
+Work items, roughly in order: `#[decreases]` syntax → termination obligation family → per-kernel
+extraction of recursive definitions → induction-capable proof scripts (`render` already returns a
+whole source file, so it can emit `induction n; simp` as easily as `lia`).
+
+**The one real cost, and it should be a deliberate decision rather than a side effect:** the
+agreement check degrades. For an inductive property over unbounded inputs you cannot decide that
+a lowering means the same proposition — only sample it. The multi-kernel claim rests on that check,
+so rung 8 trades *faithfulness of the lowering* for *strength of the verification*:
+
+| | verification | lowering faithfulness |
+|---|---|---|
+| decidable goals (rungs 1–7) | weaker — no induction | **complete** (booleans: exhaustive) |
+| inductive goals (rung 8) | **stronger** | sampled — undecidable |
+
+**Stays refused regardless:** recursion through a function pointer cannot be measured locally, and
+`--check predictable` now rejects it. Mutual recursion needs a combined measure across the cycle.
+`--report stack-depth` would need the measure's bound, and if that bound is symbolic the byte
+figure becomes conditional — worth care, since a false byte count was removed from it this week.
+
+## PRE-MERGE STATE of `spike/multi-prover-evidence` (recorded 2026-08-05)
+
+Written for a merge performed on a different machine. Everything below is either a
+**behaviour change a reviewer should expect**, or **work not done**.
+
+### Behaviour changes that reclassify existing code
+
+These change reports and profile admission. None is a type error; nothing stops compiling. Each
+was measured against the corpus before landing, and the measured number is given.
+
+| Change | Effect | Measured impact |
+|---|---|---|
+| Loop classifier is fail-closed | a loop is `bounded` only if a condition variable is stepped toward the bound by a constant | **zero** — all 31 previously-`bounded` loops use `i = i + 1` |
+| Indirect calls refused by the profile | a body calling through a fn pointer cannot be certified acyclic | 1 test golden |
+| FFI admission is transitive | reaching an extern through another function crosses FFI | 3 examples (`http`, `integrity`, `verify`), all true positives |
+| Recursion admission is transitive | a caller of a recursive function is not predictable | **14 functions in 10 examples**, all true positives; 4 goldens |
+| Stack-depth unboundedness propagates | no byte-exact bound where recursion cannot be ruled out | `Max stack bound` is now `0 bytes (none)` on affected programs |
+| Bounds/shift sizing is per-scope | shadowed arrays and variables are sized from the binding in effect | 4 goldens; **two certified-false claims removed** |
+| Proof-surface wording | "passes the predictable profile" → "is eligible for proof" | 1 test golden, 4 book transcripts |
+
+**The two that were unsound, for the changelog:** a shadowed array gave `a[10] → 10 < 16` on a
+4-element array (kernel-**proved**), and a shadowed variable gave `x << 40 → 40 < 64` on an `i8`
+(kernel-**proved**). Both are now refuted. Memory safety was never affected — codegen
+bounds-checks and traps regardless — but the proof REPORT was false.
+
+### Not done — ranked
+
+1. **Div/shift/overflow do not name their gaps.** Bounds prints
+   `ARRAY ACCESSES OUTSIDE the bounds fragment`; the other three families drop an obligation
+   silently when a type cannot be resolved. `#[overflow_checked]` on a function with an
+   unannotated `let` yields `(no VCs generated)` and no explanation. Cheap: the reporting hook
+   exists, this is the last inconsistency in that cluster.
+2. **~10 soundness gates have no negative controls.** This session's tally: **six** of my own
+   gate assertions fired on non-regressions, **two** silently tested nothing (one interrogated a
+   stale binary, one skipped its whole section when the build broke). Green counts overstate what
+   is pinned. Highest-value non-feature work on this list.
+3. **Register A: 0 of 5 rows discharged, 4 half.** A half-discharged row is still a *trusted*
+   row. This is the branch's stated goal and it did not move this week.
+4. **H19 — the Core→obligation bridge is unproven.** Obligations are computed from the surface
+   AST; nothing proves they correspond to what is compiled. This week's defect class one layer
+   down. A project, not a task.
+5. **Register B rows 2 and 3.** Row 2 (`eliminate_div_mod`) needs `DecidableEq` on `Term` plus
+   signed `|r| < |b|` with no Mathlib. Row 3 is model-theoretic, not a longer row 2.
+6. **A non-arithmetic multi-prover example** (requested 2026-08-05). Every kernel-agreement
+   demo today is linear integer arithmetic. A datatype/structure example across Lean + Rocq +
+   Isabelle would exercise the one-printer-many-tools claim where it is weakest. Note the known
+   ceiling: SMT datatype goals are provable but **not** Alethe-certifiable, so such an example
+   would be kernel-proved rather than certificate-replayed.
+
+### Not done — smaller, each with a reason
+
+- **`MIN` negation and float→int cast** trap at runtime but have no obligation kind at all.
+- **Unannotated `let`s contribute no type**, so shift/overflow obligations for them are dropped.
+  Deliberate: inferring a type here risks disagreeing with the checker, and a wrong type is the
+  defect that was just fixed. Needs the checker's real types threaded in.
+- **The FFI closure carries bare names alongside qualified ones**, because the call graph resolves
+  callees and the effects report does not. A same-named function in another module can be
+  over-flagged (which refuses rather than admits — the safe side). Resolving callees properly
+  removes it.
+- **`proofReport`'s extraction eligibility is still direct**, not transitive. Different question
+  (can this body reach Gallina), and changing it would alter which proofs are attempted.
+- **Stack depth is reported, not gated** — `PREDICTABLE_BOUNDARIES.md` says so explicitly.
+- **5 `partial def`s** remain in the report layer (traversal drivers, not discovery).
+- **Isabelle builder collapse** needs the batch/single split.
+- **R-0462 widening**: capability holders, struct params, non-integer returns.
+- **One unclassified `dropped by both`** in `fixed_capacity`.
+
+### Known holes still open (from `docs/KNOWN_HOLES.md`)
+
+- **H19 — the Core→obligation bridge is unproven.** Listed above; repeated here because it is the
+  largest single gap in the trust story.
+- **H20 — `bv_decide`'s certificate check runs as native code.** The bitvector decision procedure
+  is trusted at the level of its checker binary, not the Lean kernel.
+- **H21 — nonlinear SMT results cannot be certificate-replayed** (upstream limitation). A
+  nonlinear goal closed by an SMT solver stays `solver_trusted`; only linear goals reach
+  `proved_by_lean_replay`.
+
+Related ceiling, measured and documented rather than assumed: **SMT datatype goals are provable
+but not Alethe-certifiable.** cvc5 proves a ground datatype goal and cannot emit a replayable
+certificate for it, so non-arithmetic obligations are kernel-proved rather than
+certificate-replayed. This is what a non-arithmetic multi-prover example (item 6 above) would run
+into, and it is a property of the tooling, not of this repo.
+
+### Register status, plainly
+
+- **Register A** (obligation sufficiency): 0 of 5 discharged, 4 half-discharged. Half means the
+  row is still *trusted*.
+- **Register B** (transformation soundness): 1 of 3 rows discharged (`eliminate_tmod`).
+- **Register C** (evidence composition): gated (59 assertions) rather than expressed as a row
+  table; no per-row discharge tracking exists for it yet, which is itself a gap.
+- **Discovery completeness** (added 2026-08-05): 4 of 4 runtime-safety families. This register did
+  not exist before and answers the question the other three structurally cannot — whether an
+  obligation is generated at all.
+
+### The composition test is opt-in
+
+`check_multi_kernel.sh`'s final section — a disagreeing lowering must not earn the two-kernel
+badge or pass the release gate — is **skipped unless `MULTI_KERNEL_MUTATE=1`**, because it mutates
+tracked source and needs two rebuilds. It therefore does NOT run in the normal 78/78 pass. Any
+claim that composition is gated should say "when that variable is set".
+
+### Writing gates that actually bite — checklist earned the hard way
+
+Recorded because this session produced eight concrete failures of gate quality, and the pattern
+is consistent enough to be a rule rather than an anecdote.
+
+1. **Assert the property, not the code.** Six assertions of mine fired on non-regressions. Every
+   one quoted something syntactic — an argument list, a call site verbatim, a mechanism ("the
+   access is NAMED") — and broke when the code improved. Twice the *same* assertion broke twice.
+2. **A check that greps one error class treats every other failure as success.** A sweep reported
+   GREEN from a loop whose exit condition looked only for termination errors, so
+   `cannot mix partial and non-partial definitions` read as a pass.
+3. **Never interrogate a binary you did not just build.** An end-to-end assertion passed while the
+   fix was reverted, because the mutated source failed to compile and `lake` left the old
+   executable in place. An mtime comparison is also wrong — `lake` does not relink on a cache hit.
+   Build inside the gate and fail if the build fails.
+4. **A section guarded on a temp dir skips itself when the build breaks.** Guard on failure, not on
+   the presence of a variable an unbuildable tree never sets.
+5. **Mutations must COMPILE to count.** A mutation rejected by the unused-variable lint looks
+   killed and tests nothing. Classify those INVALID; do not report them as kills.
+6. **Distinguish an equivalent mutant from a survivor.** Making a declaration visible to its own
+   statement is unobservable (a `let` initialiser cannot index the name being declared) — that is
+   INVALID, not a gate weakness.
+7. **A completeness theorem needs three things**, or it is true and worthless: a satisfiable
+   antecedent (non-vacuity), a negative case (the conclusion discriminates), and its boundary
+   pinned so `∀ e, P e → Q e` is not read as global completeness when `P` is narrow.
+8. **A false number is worse than a missing one**, because it is quotable. `--report stack-depth`
+   stated `Max stack bound: 32 bytes` for arbitrarily deep recursion.
+9. **`set -o pipefail` breaks `failing_cmd | grep -q`.** The pipeline reports failure even when
+   grep MATCHES, because the producer exited non-zero — and a compiler rejecting a bad program
+   exits non-zero by design. Two assertions checking that a bad program IS rejected therefore
+   reported a working fix as broken. Capture output into a variable first, then match it.
+10. **A metric that cannot move is decorative — and one that can be gamed is worse.** A coverage
+   count still read "0 reached" after a new tier started covering obligations, because it had not
+   been updated. Separately, a coverage number that RISES when you copy the implementation into
+   the spec is worse than one that honestly reads zero: assert that the number moves, and exclude
+   tautologies from it.
+
+### Merge mechanics
+
+- Branch was **191 commits ahead of `main`, 1 behind** at the time of writing.
+- **The `lli` failure is environmental, not ours.** LLVM 21.1.8 cannot JIT on some hosts; 49
+  tests fail locally on an affected machine. `run_tests.sh` probes `lli` functionally and falls
+  back to clang. If the merging machine shows ~49 failures in that shape, check this first.
+- Two of this week's clusters are **independent of the multi-prover spike** — the
+  bounds/shift/overflow sizing fixes and the predictable-profile fixes. If the whole branch is
+  too large to land at once, those are separable and carry the unsoundness fixes.
 
 ## Outstanding work recorded 2026-08-04
 
@@ -3278,6 +4147,207 @@ experimental and non-authoritative. R-0450 may land its versioned common IR
 without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
+
+### Task R-0473 — typed contract records, and contract type checking that earns the name
+
+**Objective:** Replace the seven consumers' independent re-reading of raw `List Expr` contract
+metadata with one checked, typed contract record, and close the H27 gaps that make the current
+validation name-and-sort only.
+
+Contracts were erased metadata that no pass validated. `#[requires(nosuchvar > 0)]` was accepted
+and `nosuchvar` reached the HYPOTHESES of every obligation in the function, including ones
+reported `proved_by_kernel_decision`. That failed closed — a hypothesis over a fresh universally
+quantified variable is unprovable at the call site — but the failure surfaced in a *different*
+function than the typo, and a precondition nobody can establish read exactly like one nobody had
+established yet.
+
+Name-and-sort validation now runs (`Concrete/Check/Check.lean`) and is deliberately not called
+type checking. H27 records what remains accepted, each measured against the compiler and each
+pinned by a gate assertion written to flip when the gap closes:
+
+* operand type compatibility — `#[requires(x < 9999999999)]` on an `i32`;
+* a bool as an arithmetic operand — `#[requires((x > 0) + 1 > 0)]`;
+* `#[variant(i < n)]` — a boolean where a well-founded measure belongs;
+* a contract calling an EXECUTABLE function;
+* `result`'s type (its scope is enforced; its type is not);
+* precise loop-binder scope — the bound set is every name bound anywhere in the function, so a
+  name bound only *after* the loop is admitted and reaches the VC.
+
+The last one is the tell that this belongs in a typed record rather than in the checker's
+module-level pass: real scoping needs the per-function environment, and faking it there would be
+the same shape of mistake as the walkers keeping their own weaker copy of the trap rules (R-0464).
+
+**Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
+first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —
+a contract defect can sit behind an unrelated earlier error. Until that mode exists, the
+defensible claim is "no unexpected rejection among the 963 files that reached contract checking",
+which is materially weaker than "the corpus is compatible".
+
+**Depends on:** nothing. **Blocks:** R-0474.
+
+### Task R-0474 — lexical binding identities and capture-safe substitution
+
+**Objective:** Retire by-name substitution as proof infrastructure, and graduate H25 and H27's
+shadowing restriction.
+
+`refineObligations` instantiates a spec body by substituting parameters via `substExpr`, which
+replaces by NAME with no capture avoidance. A binder in the body has the binding substituted away.
+No unsound evidence escaped — the corrupted obligation reports `outside the fragment` because
+`renderTerm` has no `.ifExpr` case — and *that is the finding*: soundness rested on an unrelated
+downstream renderer's narrowness, and adding `.ifExpr` (an obvious extension the refinement tier
+invites) would have made the corruption live with no test failing.
+
+**The invariant:** refinement substitution may act only on expressions whose free-variable
+identities are distinguished from all locally bound identities.
+
+**Graduation condition:** substitution over identities, with the evaluation law
+`eval(subst(Q, x, e), rho) = eval(Q, rho[x |-> eval(e, rho)])` proved or exhaustively gated over
+the supported fragment.
+
+Scope is fixed in `docs/BINDING_IDENTITY_DESIGN.md` before any editing, because this refactor
+becomes invasive quietly. The load-bearing decision there is to keep **two** notions apart rather
+than build one identifier for both: a *lexical binding ID* (internal, unique within one elaborated
+function, regenerated every build, never serialized) and a *stable evidence identity* (canonical
+across harmless edits, appearing in artifacts and fingerprints). Their requirements contradict,
+and a lexical ID reaching stored evidence is a defect — a rebuild would read as a different
+program. Only the lexical ID is in scope here. Monomorphization and inlining are explicitly out of
+scope, with the point named at which the answer becomes mandatory.
+
+**Currently contained, both temporary and both saying so in their diagnostics:** binder-bearing
+spec bodies are rejected, and contracts naming a parameter shadowed by a local are rejected.
+Shadowing is the gap unknown-name rejection cannot close by construction — every name resolves, no
+diagnostic fires, and nothing records *which* binding the contract means.
+
+**Depends on:** R-0473. **Blocks:** `old(...)`, frame/`modifies` conditions, reliable loop-state
+reasoning, call-site contract instantiation, and quantified predicates with binders.
+
+### Task R-0475 — decouple fixture snapshots from the stdlib
+
+**Objective:** Stop a standard-library contract edit from silently invalidating a negative
+fixture's golden file, and stop the resulting failure from pointing at the wrong place.
+
+The H26 investigation resolved the immediate drift: `assume_taint` is one of 3 of 21
+contract-negative fixtures carrying a `Concrete.toml`, so it compiles as a *project* against the
+stdlib, and `a3ba761b` (R-0464) added contracts to `std/src/sha256.con` after the snapshot was
+last written. The diff was 94 additions, 0 removals, nothing touching the fixture's own module —
+verified before regenerating.
+
+The defect that remains is structural: **a negative fixture's golden file transitively depends on
+every contract in the standard library.** The next stdlib contract edit drifts it again, and the
+failure presents as a regression in `assume_taint`, which is not where anything changed. The first
+attribution in this investigation was wrong for exactly that reason.
+
+Two workable fixes: scope the contracts snapshot to the fixture's own modules, or report "N stdlib
+entries changed" as a separate line from fixture content so the next occurrence names the stdlib.
+The second is cheaper and keeps stdlib coverage visible.
+
+**Exposure audited 2026-08-07, and it is exactly one snapshot.** The audit is recorded because
+"the other project-mode fixtures probably have this too" was the natural assumption and it was
+wrong:
+
+* 49 examples carry a `Concrete.toml` and therefore build against the stdlib;
+* `scripts/tests/phase1_snapshots` is the only golden directory, and of its 13 snapshotted
+  fixtures exactly **one** — `assume_taint` — is project-mode. The other 12 are single-file and
+  cannot see stdlib contracts at all;
+* the other 2 project-mode contract fixtures (`assume_scope_adversarial`, `obligation_redteam`)
+  are used only by gates making targeted assertions, with zero references to `cmp`/`diff`/golden
+  files, so a stdlib addition cannot perturb them. All four such gates pass (8/0, 21/0, 9/0, 16/0);
+* the 3 remaining golden-comparing gates that touch project-mode examples (`check_concrete_fmt`,
+  `check_httpget_differential`, `check_tcpserve`) compare *program* output — formatted source,
+  HTTP bytes, a server response body — not a report, so contracts are not in their basis.
+
+So the coupling had one instance, it is the one H26 found, and the attribution diagnostic added in
+`1c310a07` covers the case where a future fixture gains a `Concrete.toml`.
+
+**Durable fix landed** (`31710d4e`): the contracts comparison is scoped to modules the fixture
+defines, so a project-mode golden cannot depend on the stdlib. Comparison only — the report is
+unchanged, so nothing a user sees is lost. `assume_taint`'s golden went 153 -> 32 lines with zero
+stdlib entries. The invariant ("a project-mode golden contains no entry from a module it does not
+define") is asserted on every run rather than registered as a mutation, because that harness
+proves a gate goes RED when a rule is disabled and this property is a gate staying GREEN under a
+change that is none of its business. Verified both ways: the H26 mutation no longer moves the
+golden, and appending a `sha256.` entry makes the assertion fail.
+
+**What remains, and why it was not done here.** The *compiler-side* improvement is to label the
+report's sections by origin — "Source Contracts (this project)" versus "(dependencies)" — so the
+structure carries the distinction instead of the test harness reconstructing it. That needs module
+origin plumbed through parsing: `buildFnLocMap` stamps ONE file across all modules, so nothing
+downstream can currently tell a project module from a stdlib one. Worth doing, and deliberately
+not bundled into a snapshot fix. Note the design constraint discovered while scoping this: simply
+dropping dependency contracts from the report would LOSE safety-relevant information, because an
+undischarged obligation inside stdlib code still affects the user's program. The right shape is
+separate labelled sections, not a filter.
+
+### Task R-0472 — what could be provable but is not yet, by reason
+
+Numbered R-0472 because R-0470 and R-0471 were already allocated — the first draft of this
+section collided with the existing R-0470 (capability-variable inference), caught by grepping the
+heading list rather than by anything failing.
+
+Placed after R-0004 because it is the map of where proving goes next, and grouped by the REASON
+each item is blocked — the reason determines the cost far more than the feature does.
+
+#### Trivially close: the obligation kind simply does not exist
+
+```
+let x: i8 = -128;  return -x;      // traps at runtime. No obligation generated.
+let f: f64 = 1e300; return f as i32;  // traps. No obligation generated.
+```
+
+Both trap in the compiled binary, both are expressible in all three kernels today, and nobody
+wrote the rule. Under `docs/VC_GENERATOR_DESIGN.md` these are **two table rows**. That the current
+four-walker design made them expensive enough to skip is itself an argument for that design.
+
+#### Blocked by one rung, already unblocked
+
+Bitwise reasoning — `(x & y) ^ (~x & z)`, i.e. SHA-256's `Ch`. The model bridge is proved in Lean
+against `BitVec 32`, the shared type is confirmed in all three (`Nat`/`N`/`nat`, the last needing
+`unbundle bit_operations_syntax`); only the tier is unbuilt. **This is the one that unlocks real
+corpus coverage**, because `hmac_sha256`'s meaningful property is exactly this shape.
+
+#### Blocked by one missing rung: enums
+
+Any property mentioning which variant a sum type holds. Needs constructor injectivity and
+disjointness emitted per kernel — the same shape as the struct rung already built, and the last
+quantifier-free construct missing.
+
+#### Blocked by the recursion ban
+
+```
+fn sum(n: i32) -> i32 { if n <= 0 { return 0; } return n + sum(n - 1); }
+```
+
+Not provable, not even *eligible* — recursion is banned from the profile. With `#[decreases(n)]`
+it becomes provable, and its termination obligation is **linear arithmetic**, which the existing
+three-kernel machinery already discharges.
+
+Everything downstream is gated on this: a sort is ordered, a parser terminates, an output is a
+permutation of its input. All need induction; induction needs recursion admitted.
+
+#### Blocked by a missing design
+
+- **Loop-carried properties.** Bounds *inside* a loop are proved today; "this sum equals the total
+  of `a[0..n]`" is not expressible, because there are no invariants. WP forces this question
+  rather than answering it.
+- **Heap and pointers** — needs a memory model, separation-logic shaped. Largest single item.
+- **Constant-time / non-interference** — "runtime does not depend on `secret`" is a RELATIONAL
+  property comparing two executions, and cannot be a per-site obligation at all. Handled today as
+  a capability discipline, not a proof. Genuinely different machinery.
+
+#### Never automatic
+
+Termination in general (halting problem — hence author-supplied measures), and **print fidelity**:
+that emitted Rocq text *denotes* the intended obligation needs a formal semantics of Rocq's
+surface syntax, which is not ours. Validated, never proved.
+
+#### Shape of the list
+
+The nearest wins — `MIN` negation, casts, bitwise, enums — are small and mechanical. The big jump
+is `#[decreases]`, because it converts an entire category from "not eligible" to "provable", and
+it is cheaper than it sounds since its own obligation is linear arithmetic. The genuinely hard
+ones are heap and relational properties, and both need design before code, as the VC generator
+did.
+
 
 ### Task R-0466
 

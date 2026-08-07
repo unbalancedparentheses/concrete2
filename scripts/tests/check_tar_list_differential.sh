@@ -4,6 +4,8 @@
 # directories, and >100-char paths (ustar prefix field), and keep its 13t
 # exit codes. tar is required (present on macOS + ubuntu CI).
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 C="$ROOT_DIR/.lake/build/bin/concrete"

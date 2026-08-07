@@ -10,6 +10,8 @@
 #   3. A construct that cannot be given a semantic identity must mark the subject
 #      UNCOVERED, never silently emit nothing.
 set -Eeuo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 

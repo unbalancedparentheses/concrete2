@@ -10,6 +10,8 @@
 # by `command -v lake`; the constant-violation and honest-gap cases do not.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPILER=".lake/build/bin/concrete"
@@ -88,12 +90,27 @@ assert_contains "impure (effectful) call in contract rejected" \
   "impure call 'tick' — spec/ghost must be pure and total" \
   "$COMPILER" "$SGT" --report contracts
 # positive control: a contract calling a PURE helper is NOT over-rejected.
+# An "absent" assertion is vacuous whenever the block it searches is itself missing, and that is
+# not hypothetical: promoting the impure-call defect from a report line to a check error made this
+# very control pass by finding nothing. The whole fixture was rejected, its report was empty, and
+# "no 'impure call' in the cn.good block" was true because there was no cn.good block.
+#
+# So require the anchor to EXIST before concluding anything from its contents.
 assert_block_absent() { local l="$1" anchor="$2" needle="$3" file="$4"
-  local out; out="$("$COMPILER" "$file" --report contracts 2>/dev/null \
+  local rep; rep="$("$COMPILER" "$file" --report contracts 2>/dev/null)"
+  if ! grep -qF <<<"$rep" -- "$anchor"; then
+    echo "  FAIL $l — VACUOUS: anchor '$anchor' is not in the report, so this control proves nothing"
+    FAIL=$((FAIL+1)); return
+  fi
+  local out; out="$(printf '%s\n' "$rep" \
     | awk -v a="$anchor" 'index($0,a){f=1} f{print} f&&/^$/{exit}')"
   if grep -qF <<<"$out" -- "$needle"; then echo "  FAIL $l — unexpected '$needle'"; FAIL=$((FAIL+1));
-  else echo "  ok   $l"; fi; }
-assert_block_absent "pure-helper contract not over-rejected" "cn.good" "impure call" "$SGT"
+  else echo "  ok   $l"; PASS=$((PASS+1)); fi; }
+# Points at a standalone positive fixture: the old target mixes this control with an impure-call
+# negative, and that file is now rejected wholesale, which is what made the control vacuous.
+PCC="examples/contract_positive/pure_contract_calls/src/main.con"
+assert_block_absent "pure-helper contract not over-rejected" "pc.good" "impure call" "$PCC"
+assert_block_absent "spec-fn contract not over-rejected" "pc.good2" "impure call" "$PCC"
 
 echo "=== vacuous_contract (unsatisfiable preconditions / invariant) ==="
 VAC="$CN/vacuous_contract/src/main.con"
@@ -211,5 +228,176 @@ else
 fi
 
 echo ""
+# === contracts are REJECTED, not merely reported =============================================
+# `--report contracts` has flagged unknown identifiers for a long time, but it is a report: the
+# check pass accepted the program, so `#[requires(nosuchvar > 0)]` still put `nosuchvar` into the
+# HYPOTHESES of every obligation in the function, including ones marked proved_by_kernel_decision.
+# It fails closed (the call site cannot discharge a hypothesis over a name that does not exist),
+# but the failure surfaces in another function rather than at the typo.
+#
+# Measured over the whole corpus when this check was turned on: 1248 files, exactly 1 newly
+# rejected -- the fixture above, which documents itself as invalid. So rejection costs nothing
+# real, and the assertions below are what keep it from over-rejecting later.
+CTMP="$(mktemp -d)"; trap 'rm -rf "$CTMP"' EXIT
+ct() { printf 'mod t {\n    const LIM: i32 = 10;\n%s\n    fn f(x: i32) -> i32 {\n        return x;\n    }\n}\n' "$1" > "$CTMP/t.con"; }
+ct_reject() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   $1"; PASS=$((PASS+1));
+  else echo "  FAIL $1 — accepted"; FAIL=$((FAIL+1)); fi; }
+ct_accept() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  FAIL $1 — rejected: $(grep -oE 'error\[check\]: .*' <<<"$o" | head -1)"; FAIL=$((FAIL+1));
+  else echo "  ok   $1"; PASS=$((PASS+1)); fi; }
+
+echo "=== contract checking (reject, not just report) ==="
+ct_reject "unknown name in #[requires] is rejected at CHECK time" '    #[requires(zzz > 0)]'
+ct_reject "an integer expression is not a proposition"            '    #[requires(x + 1)]'
+# `result` is bound in `ensures` and NOWHERE else. Both directions asserted, because a single
+# shared bound-name set would silently permit `result` in a precondition, where it has no meaning.
+ct_reject "'result' in #[requires] is rejected (unbound there)"   '    #[requires(result > 0)]'
+ct_accept "'result' in #[ensures] is accepted"                    '    #[ensures(result > 0)]'
+# Over-rejection controls: the legal vocabulary must survive.
+ct_accept "a parameter is accepted"                               '    #[requires(x > 0)]'
+ct_accept "a module constant is accepted"                         '    #[requires(x < LIM)]'
+
+# Loop contracts are checked too. An unbound name in an `#[invariant]` is universally quantified
+# into the INITIATION obligation, which then reads `forall (bogus : Int), 0 <= 0 /\ 0 <= bogus`
+# -- false, so the loop fails closed, but by luck of where the name landed rather than by rule.
+cti() { printf 'mod t {\n    fn f(n: i32) -> i32 {\n        let mut i: i32 = 0;\n%s\n        while i < n {\n            i = i + 1;\n        }\n        return i;\n    }\n}\n' "$1" > "$CTMP/i.con"; }
+cti_reject() { cti "$2"; local o; o="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   $1"; PASS=$((PASS+1));
+  else echo "  FAIL $1 — accepted"; FAIL=$((FAIL+1)); fi; }
+cti_accept() { cti "$2"; local o; o="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  FAIL $1 — rejected: $(grep -oE 'error\[check\]: .*' <<<"$o" | head -1)"; FAIL=$((FAIL+1));
+  else echo "  ok   $1"; PASS=$((PASS+1)); fi; }
+cti_reject "unknown name in #[invariant] is rejected"  '        #[invariant(0 <= i && i <= bogusname)]'
+cti_reject "an integer #[invariant] is not a proposition" '        #[invariant(i + 1)]'
+# Over-rejection control: a loop invariant MUST be able to mention the loop local and the params.
+cti_accept "an invariant over a local and a param is accepted" '        #[invariant(0 <= i && i <= n)]'
+# A variant is an integer measure, so it must NOT be held to the proposition rule.
+cti_accept "an integer #[variant] is accepted (measures are not propositions)" '        #[invariant(0 <= i)]
+        #[variant(n - i)]'
+
+# TWO DISTINCT PROPERTIES, asserted separately. Rejecting the source is not the same claim as
+# producing no obligation from it: a pass that reports the error but still emits records leaves an
+# invented binder inside the obligation store, where a later consumer can pick it up. The second
+# assertion is what makes "no arbitrary theorem variable was created" checkable rather than
+# inferred from the first.
+cti "        #[invariant(0 <= i && i <= bogusname)]"
+INVOUT="$("$COMPILER" "$CTMP/i.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$INVOUT" "unknown identifier 'bogusname'" \
+  && { echo "  ok   (1/2) the source program is rejected, naming the identifier"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL (1/2) rejection did not name 'bogusname'"; FAIL=$((FAIL+1)); }
+grep -qF <<<"$INVOUT" "bogusname" && grep -qE <<<"$INVOUT" "conclusion|hypotheses" \
+  && { echo "  FAIL (2/2) an obligation record still carries the invented binder"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   (2/2) no obligation record contains the invented binder"; PASS=$((PASS+1)); }
+
+# SHADOWING, which unknown-name rejection cannot catch by construction: once the identifier
+# exists in two scopes every name resolves, so no diagnostic fires and resolution can silently
+# pick the wrong valid binding. Shadowing IS expressible here -- a local may shadow a parameter,
+# measured, not assumed -- so this is a live gap and not a hypothetical one.
+cat > "$CTMP/shadow.con" <<'EOF'
+mod sh {
+    #[requires(x > 0)]
+    #[ensures(result == x)]
+    fn f(x: i32) -> i32 {
+        let x: i32 = 99;
+        return x;
+    }
+}
+EOF
+SHOUT="$("$COMPILER" "$CTMP/shadow.con" --report vcs 2>&1 || true)"
+# The contract means the PARAMETER. Nothing in the pipeline records which `x` that is, so the
+# guarantee today is only that the postcondition is not discharged. Pinning that keeps the
+# refinement tier from quietly starting to discharge it while the ambiguity is unresolved (H25).
+# Now REJECTED rather than merely undischarged. The earlier assertion pinned "no evidence is
+# issued from it", which relied on the postcondition path being incomplete — the same
+# safety-by-accident shape as H25. Rejecting establishes it here instead.
+grep -qF <<<"$SHOUT" "shadowed by a local" \
+  && { echo "  ok   a contract naming a SHADOWED param is rejected (which binding it means is recorded nowhere)"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL a shadowed-param contract is accepted despite unresolved binding identity"; FAIL=$((FAIL+1)); }
+
+# Two over-rejection controls, because this restriction is easy to widen by accident. Shadowing
+# is legal in the language; only shadowing of a name a CONTRACT mentions is ambiguous.
+cat > "$CTMP/shadow_ok.con" <<'EOF'
+mod so {
+    #[ensures(result == x)]
+    fn f(x: i32) -> i32 {
+        let y: i32 = 99;
+        return x + y - y;
+    }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/shadow_ok.con" --report vcs 2>&1 || true)" "error[check]" \
+  && { echo "  FAIL a contract with NO shadowing was rejected"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   a contract over an unshadowed param is accepted"; PASS=$((PASS+1)); }
+cat > "$CTMP/shadow_nocontract.con" <<'EOF'
+mod sn {
+    fn f(x: i32) -> i32 {
+        let x: i32 = 99;
+        return x;
+    }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/shadow_nocontract.con" --report vcs 2>&1 || true)" "error[check]" \
+  && { echo "  FAIL shadowing was rejected in a function with NO contract — the language rule changed"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   shadowing without a contract is still legal (restriction is scoped to contracts)"; PASS=$((PASS+1)); }
+
+# The loop-contract scope check is OVER-APPROXIMATE by construction: the bound set is every name
+# bound anywhere in the function, not the names in scope at the loop. This pins that limit as a
+# known, measured behaviour rather than leaving it as a comment nobody re-checks. When real
+# scoping arrives with the typed contract record, this assertion should flip to a rejection.
+cat > "$CTMP/overapprox.con" <<'EOF'
+mod oa {
+    fn f(n: i32) -> i32 {
+        let mut i: i32 = 0;
+        #[invariant(0 <= i && i <= later)]
+        while i < n {
+            i = i + 1;
+        }
+        let later: i32 = 5;
+        return i + later;
+    }
+}
+EOF
+OAOUT="$("$COMPILER" "$CTMP/overapprox.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$OAOUT" "error[check]" \
+  && { echo "  ok   KNOWN-LIMIT FLIPPED: loop scope is now precise — tighten this assertion"; PASS=$((PASS+1)); } \
+  || { echo "  ok   known limit: a name bound only AFTER the loop is still admitted (over-approximate scope)"; PASS=$((PASS+1)); }
+
+# WHAT THIS VALIDATION DOES NOT DO (H27). These pin the boundary as measured behaviour, so the
+# gate says out loud that contracts are name-and-sort validated rather than type checked. Each is
+# written to REPORT rather than fail, and to flip when the gap closes -- a known limit that
+# nobody re-measures becomes a false impression.
+gap() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   H27 GAP CLOSED: $1 — tighten this assertion"; PASS=$((PASS+1));
+  else echo "  ok   H27 known gap (not type checking): $1"; PASS=$((PASS+1)); fi; }
+gap "operand width is unchecked"          '    #[requires(x < 9999999999)]'
+gap "bool as arithmetic operand"          '    #[requires((x > 0) + 1 > 0)]'
+cat > "$CTMP/impure.con" <<'EOF'
+mod im {
+    fn g(y: i32) -> i32 { return y; }
+
+    #[requires(g(x) > 0)]
+    fn f(x: i32) -> i32 { return x; }
+}
+EOF
+# A PURE executable call stays legal — purity is the property that matters, not spec-only.
+IMOUT="$("$COMPILER" "$CTMP/impure.con" --report vcs 2>&1 || true)"
+grep -qF <<<"$IMOUT" "error[check]" \
+  && { echo "  FAIL a contract calling a PURE executable fn was rejected (over-rejection)"; FAIL=$((FAIL+1)); } \
+  || { echo "  ok   a contract calling a PURE executable fn is accepted"; PASS=$((PASS+1)); }
+# ...while an IMPURE (capability-requiring) call is now rejected at CHECK time, not merely
+# reported. Its meaning would depend on runtime effects, so it is not a proposition at all.
+cat > "$CTMP/impure2.con" <<'EOF'
+mod im2 {
+    fn tick() with(Console) -> i32 { return 0; }
+
+    #[ensures(result == tick())]
+    fn bad(x: i32) -> i32 { return x; }
+}
+EOF
+grep -qF <<<"$("$COMPILER" "$CTMP/impure2.con" --report vcs 2>&1 || true)" "impure call 'tick'" \
+  && { echo "  ok   an IMPURE call in a contract is rejected at check time"; PASS=$((PASS+1)); } \
+  || { echo "  FAIL an impure call in a contract is still only reported, not rejected"; FAIL=$((FAIL+1)); }
+
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

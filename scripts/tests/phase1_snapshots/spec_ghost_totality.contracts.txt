@@ -1,12 +1,5 @@
-=== Source Contracts ===
-spec fn cn.ideal(n: i32) -> i32
-
-cn.bad
-  O1  ensures result == tick()
-     status:  invalid_contract_expression
-     reason:  impure call 'tick' — spec/ghost must be pure and total (no capabilities)
-
-cn.good
-  O1  ensures result == dbl(x)
-     status:  missing (no in-source proof link for this function)
-
+examples/contract_negatives/spec_ghost_totality/src/main.con:17:5: error[check]: contract on 'bad': impure call 'tick' — spec/ghost must be pure and total
+ 17 |     fn bad(x: i32) -> i32 { return x; }
+    |     ^
+  hint: a contract may call `spec fn`s and pure functions; a capability-requiring function performs I/O, so the contract's meaning would depend on runtime effects
+  = while checking module 'cn'

@@ -134,6 +134,16 @@ codebase keeps finding.
     means and what makes the quantification in the theorems below load-bearing. -/
 abbrev SymEnv := String → List Int → Option Int
 
+/-- Boolean variable bindings.
+
+    `evalBool` used to return `none` for `.var _`, so a boolean VARIABLE was not evaluable at
+    all. That is fine while every obligation is arithmetic — a bool-sorted variable never
+    appears — and fatal the moment a non-arithmetic obligation exists, because the
+    lowering-agreement check measures every rendering against this evaluator. Without bool
+    bindings, a boolean goal could be lowered to Rocq/Isabelle/Lean and NOTHING could confirm
+    the three lowerings mean the same proposition. -/
+abbrev BoolEnv := List (String × Bool)
+
 mutual
   /-- Integer-sorted evaluation. -/
   def evalInt (env : List (String × Int)) (se : SymEnv) : Term → Option Int
@@ -172,29 +182,39 @@ mutual
 end
 
 /-- Boolean-sorted evaluation. -/
-def evalBool (env : List (String × Int)) (se : SymEnv) : Term → Option Bool
+def evalBool (env : List (String × Int)) (se : SymEnv) (benv : BoolEnv) :
+    Term → Option Bool
   | .blit b => some b
   | .lit _ => none
-  | .var _ => none
+  -- A bool-sorted variable, looked up in the BOOLEAN environment. `none` when unbound, which
+  -- keeps an unbound variable un-evaluable rather than defaulting it to `false` — a default
+  -- here would make an agreement check pass by assuming a value nobody supplied.
+  | .var n => benv.lookup n
   | .sym _ _ => none
-  | .un .not_ a => (evalBool env se a).map (! ·)
+  | .un .not_ a => (evalBool env se benv a).map (! ·)
   | .un _ _ => none
   | .cast _ _ _ => none
   | .bin op l r =>
     match op with
-    | .and_ => do let a ← evalBool env se l; let b ← evalBool env se r; some (a && b)
-    | .or_  => do let a ← evalBool env se l; let b ← evalBool env se r; some (a || b)
+    | .and_ => do let a ← evalBool env se benv l; let b ← evalBool env se benv r; some (a && b)
+    | .or_  => do let a ← evalBool env se benv l; let b ← evalBool env se benv r; some (a || b)
     | .le => do let a ← evalInt env se l; let b ← evalInt env se r; some (decide (a ≤ b))
     | .lt => do let a ← evalInt env se l; let b ← evalInt env se r; some (decide (a < b))
-    | .eq => do let a ← evalInt env se l; let b ← evalInt env se r; some (decide (a = b))
+    -- `eq` on two BOOLEAN operands is boolean equivalence, tried first; falling back to integer
+    -- equality keeps every existing arithmetic obligation behaving exactly as before.
+    | .eq =>
+      match evalBool env se benv l, evalBool env se benv r with
+      | some a, some b => some (a == b)
+      | _, _ => do let a ← evalInt env se l; let b ← evalInt env se r; some (decide (a = b))
     | _ => none
 
 /-- A goal HOLDS in an environment when every hypothesis evaluates to `true` and the
     conclusion does too. A hypothesis that does not evaluate makes the goal not-hold, which
     is the conservative direction: an unevaluable hypothesis must not license a conclusion. -/
-def Goal.holds (g : Goal) (env : List (String × Int)) (se : SymEnv) : Bool :=
-  g.hyps.all (fun h => evalBool env se h == some true)
-    && (evalBool env se g.concl == some true)
+def Goal.holds (g : Goal) (env : List (String × Int)) (se : SymEnv) (benv : BoolEnv := []) :
+    Bool :=
+  g.hyps.all (fun h => evalBool env se benv h == some true)
+    && (evalBool env se benv g.concl == some true)
 
 /-! ## Register B row 1 — `eliminate_div_mod`
 
@@ -231,8 +251,9 @@ end
 
 /-- A goal read as an IMPLICATION: if every hypothesis holds, the conclusion holds. This is
     what a prover is asked, and it is the shape a soundness direction is stated over. -/
-def Goal.entails (g : Goal) (env : List (String × Int)) (se : SymEnv) : Prop :=
-  (∀ h ∈ g.hyps, evalBool env se h = some true) → evalBool env se g.concl = some true
+def Goal.entails (g : Goal) (env : List (String × Int)) (se : SymEnv)
+    (benv : BoolEnv := []) : Prop :=
+  (∀ h ∈ g.hyps, evalBool env se benv h = some true) → evalBool env se benv g.concl = some true
 
 /-! ### Register B row 1 — `eliminate_tmod`
 
@@ -347,32 +368,37 @@ mutual
 end
 
 /-- Boolean side of the same row. -/
-theorem evalBool_elimTmod (env : List (String × Int)) (se : SymEnv) :
-    ∀ t, evalBool env se (elimTmod t) = evalBool env se t := by
+theorem evalBool_elimTmod (env : List (String × Int)) (se : SymEnv) (benv : BoolEnv) :
+    ∀ t, evalBool env se benv (elimTmod t) = evalBool env se benv t := by
   intro t
   match t with
   | .lit _ | .blit _ | .var _ | .sym _ _ => rfl
   | .cast _ _ _ => rfl
   | .un op a =>
     match op with
-    | .not_ => simp only [elimTmod, evalBool, evalBool_elimTmod env se a]
+    | .not_ => simp only [elimTmod, evalBool, evalBool_elimTmod env se benv a]
     | .add | .sub | .mul | .tdiv | .tmod | .le | .lt | .eq | .and_ | .or_ => rfl
   | .bin op l r =>
     match op with
     | .and_ | .or_ =>
-      simp only [elimTmod, evalBool, evalBool_elimTmod env se l, evalBool_elimTmod env se r]
-    | .le | .lt | .eq =>
+      simp only [elimTmod, evalBool, evalBool_elimTmod env se benv l, evalBool_elimTmod env se benv r]
+    | .le | .lt =>
       simp only [elimTmod, evalBool, evalInt_elimTmod env se l, evalInt_elimTmod env se r]
+    -- `.eq` now dispatches on whether both sides are BOOLEAN, so meaning preservation needs
+    -- both rewrites: the boolean branch and the integer fallback.
+    | .eq =>
+      simp only [elimTmod, evalBool, evalBool_elimTmod env se benv l,
+        evalBool_elimTmod env se benv r, evalInt_elimTmod env se l, evalInt_elimTmod env se r]
     | .add | .sub | .mul | .tdiv | .tmod | .not_ =>
       simp only [elimTmod, evalBool]
 
 /-- **The Register B obligation, in the form the register states it:
     `transformed goal implies input goal`.** Immediate from meaning preservation, and worth
     writing separately because that is the sentence the row owes. -/
-theorem elimTmod_sound {g : Goal} {env : List (String × Int)} {se : SymEnv}
-    (h : g.elimTmod.entails env se) : g.entails env se := by
+theorem elimTmod_sound {g : Goal} {env : List (String × Int)} {se : SymEnv} {benv : BoolEnv}
+    (h : g.elimTmod.entails env se benv) : g.entails env se benv := by
   intro hg
-  have : evalBool env se (elimTmod g.concl) = some true := by
+  have : evalBool env se benv (elimTmod g.concl) = some true := by
     apply h
     intro f hf
     simp only [Goal.elimTmod, List.mem_map] at hf

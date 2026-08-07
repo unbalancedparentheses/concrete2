@@ -6,6 +6,8 @@
 #
 # This gate deliberately does NOT export the knob — it tests the new default.
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 
 cd "$(dirname "$0")/../.."
 COMPILER=".lake/build/bin/concrete"

@@ -11,6 +11,8 @@
 # declaration appears) and equally when it silently IMPROVES, because a drop must
 # come with a deliberate update naming which cause was closed.
 set -Eeuo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 

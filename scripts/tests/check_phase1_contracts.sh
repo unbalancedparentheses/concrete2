@@ -15,6 +15,8 @@
 # Concrete/Proof/ProofSoundness.lean (R-22..R-28) for the soundness justification.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPILER=".lake/build/bin/concrete"
@@ -44,13 +46,112 @@ CLASSES=(
   "valid_complex_contract_scope|contracts|examples/contract_positive/valid_complex_contract_scope/src/main.con"
 )
 
+# Keep only the report entries belonging to modules the fixture DEFINES.
+#
+# A fixture with a Concrete.toml builds as a project, so `--report contracts` includes the
+# standard library's contracts and the golden file ends up depending on every contract in std/.
+# The attribution message below explains such a drift after it happens; this removes the
+# dependency so it does not happen. Entries for other modules are dropped from the COMPARISON
+# only — the report itself still shows them, so no coverage is lost from what a user sees.
+#
+# The report is entry-structured: `===` section headers, then qualified `module.fn` entries at
+# column 0, each followed by indented detail. Keep a header always; keep an entry block iff its
+# module is one of ours.
+scope_to_own_modules(){ local ownmods="$1"
+  awk -v own="$ownmods" '
+    BEGIN { n = split(own, a, " "); for (i = 1; i <= n; i++) keepmod[a[i]] = 1; keep = 1 }
+    /^===/                       { keep = 1; print; next }
+    /^[A-Za-z_][A-Za-z0-9_]*\./ { split($0, p, "."); keep = (p[1] in keepmod) }
+    keep { print }
+  '; }
+
 snap_one(){ local class="$1" kind="$2" src="$3"
   local golden="$SNAP_DIR/$class.$kind.txt" actual="$TMP/$class.$kind.txt"
-  "$COMPILER" "$src" --report "$kind" > "$actual" 2>&1
+  # Scope is in the FILENAME, not only in a comment. A golden named `.contracts.txt` reads as a
+  # snapshot of the whole report; this one covers the fixture's own modules only, and someone
+  # will eventually diff it against a full report and conclude the report lost content.
+  local ownmods
+  ownmods="$(grep -oE '^[[:space:]]*(pub )?mod [a-zA-Z0-9_]+' "$src" 2>/dev/null | awk '{print $NF}' | sort -u | paste -sd' ')"
+  local isproject=0
+  [ -f "$(dirname "$(dirname "$src")")/Concrete.toml" ] && isproject=1
+  if [ "$kind" = "contracts" ] && [ "$isproject" = "1" ] && [ -n "$ownmods" ]; then
+    golden="$SNAP_DIR/$class.$kind.own-modules.txt"
+    "$COMPILER" "$src" --report "$kind" 2>&1 | scope_to_own_modules "$ownmods" > "$actual"
+    # DEPENDENCY VISIBILITY. Scoping the comparison must not become scoping the REPORT: an
+    # undischarged obligation inside stdlib code still affects this program, so it has to stay
+    # visible even though it is not compared. Without this, the two could drift into agreement by
+    # the report quietly losing dependency content — local stability masking a real regression.
+    local fullrep depcount
+    fullrep="$("$COMPILER" "$src" --report "$kind" 2>&1)"
+    depcount="$(printf '%s\n' "$fullrep" | grep -cE "^[A-Za-z_][A-Za-z0-9_]*\." || true)"
+    local owncount
+    owncount="$(printf '%s\n' "$fullrep" | grep -cE "^($(printf '%s' "$ownmods" | tr ' ' '|'))\." || true)"
+    if [ "$depcount" -gt "$owncount" ]; then
+      echo "  ok   $class full report still shows dependency obligations ($((depcount - owncount)) entries beyond this fixture)"; PASS=$((PASS+1))
+    else
+      echo "  FAIL $class full report shows NO dependency obligations — scoping the comparison"
+      echo "       has become scoping the report; stdlib obligations affecting this program are"
+      echo "       now invisible. The golden is meant to be narrow, the REPORT is not."
+      FAIL=$((FAIL+1))
+    fi
+  else
+    "$COMPILER" "$src" --report "$kind" > "$actual" 2>&1
+  fi
   if [ "$UPDATE" = "1" ]; then cp "$actual" "$golden"; echo "  UPD  $class ($kind)"; UPD=$((UPD+1)); return; fi
   if [ ! -f "$golden" ]; then echo "  FAIL $class — no golden snapshot (run UPDATE_PHASE1_SNAPSHOTS=1)"; FAIL=$((FAIL+1)); return; fi
   if cmp -s "$golden" "$actual"; then echo "  ok   $class ($kind) snapshot"; PASS=$((PASS+1));
-  else echo "  FAIL $class — snapshot drift"; diff -u "$golden" "$actual" | head -20 | sed 's/^/    /'; FAIL=$((FAIL+1)); fi; }
+  else
+    # ATTRIBUTE THE DRIFT BEFORE PRINTING IT. A fixture with a Concrete.toml compiles as a
+    # PROJECT, so `--report contracts` includes the standard library's contracts, and the golden
+    # file transitively depends on every contract in the stdlib. Any stdlib contract edit
+    # invalidates it — and the failure then points at the fixture, which is not where anything
+    # changed. That mis-attribution cost real time once (H26): the drift was traced to the wrong
+    # commit because the message said "assume_taint" and the cause was a change to
+    # std/src/sha256.con three commits earlier.
+    #
+    # So: split the differing lines by whether they belong to a module the fixture DEFINES.
+    local difflines fixturelines
+    difflines="$(diff "$golden" "$actual" | grep -E '^[<>]' || true)"
+    fixturelines=0
+    if [ -n "$ownmods" ]; then
+      # A report entry is `module.function`; count differing lines naming a module we define.
+      fixturelines="$(printf '%s\n' "$difflines" | grep -cE "\b($(printf '%s' "$ownmods" | tr ' ' '|'))\." || true)"
+    fi
+    echo "  FAIL $class — snapshot drift"
+    if [ "$isproject" = "1" ] && [ "$fixturelines" = "0" ]; then
+      echo "    LIKELY NOT A FIXTURE REGRESSION: this fixture has a Concrete.toml, so it builds as"
+      echo "    a project and its snapshot includes STDLIB contracts. No differing line names a"
+      echo "    module this fixture defines ($ownmods), so look for a"
+      echo "    recent change under std/ before looking at the fixture. See H26 / R-0475."
+    fi
+    diff -u "$golden" "$actual" | head -20 | sed 's/^/    /'; FAIL=$((FAIL+1)); fi; }
+
+# THE INVARIANT, asserted directly rather than simulated. `scope_to_own_modules` exists so a
+# project-mode fixture's golden cannot depend on the standard library. Checking that property on
+# every run is stronger than a registered mutation: a mutation proves the gate reacts to one
+# specific cause, while this proves the golden contains nothing it should not, whatever the cause.
+#
+# (The mutation was also run by hand once, and is what H26 was: adding a third `#[requires]` to
+# `rotr` in std/src/sha256.con — no rebuild needed, std is `.con` source — moved the old 153-line
+# golden and leaves the scoped 32-line one untouched.)
+echo "=== snapshot scoping (a fixture golden must not depend on the stdlib) ==="
+for row in "${CLASSES[@]}"; do
+  IFS='|' read -r class kind src <<< "$row"
+  [ "$kind" = "contracts" ] || continue
+  eval "src=\"$src\""
+  [ -f "$(dirname "$(dirname "$src")")/Concrete.toml" ] || continue
+  own="$(grep -oE '^[[:space:]]*(pub )?mod [a-zA-Z0-9_]+' "$src" 2>/dev/null | awk '{print $NF}' | sort -u | tr '\n' '|' | sed 's/|$//')"
+  foreign="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*\.' "$SNAP_DIR/$class.$kind.own-modules.txt" 2>/dev/null | grep -vE "^($own)\." | sort -u || true)"
+  if [ -n "$foreign" ]; then
+    echo "  FAIL $class golden contains entries from modules it does not define:"
+    printf '%s\n' "$foreign" | head -5 | sed 's/^/      /'
+    echo "      A stdlib change will silently drift this golden (H26). See scope_to_own_modules."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ok   $class ($kind) golden contains only its own modules — stdlib-independent"
+    PASS=$((PASS+1))
+  fi
+done
 
 echo "=== per-class report snapshots ==="
 for row in "${CLASSES[@]}"; do IFS='|' read -r class kind src <<< "$row"; snap_one "$class" "$kind" "$src"; done

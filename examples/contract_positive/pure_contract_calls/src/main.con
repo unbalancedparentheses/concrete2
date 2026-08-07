@@ -1,0 +1,21 @@
+// contract POSITIVE: a contract may call a pure function and a `spec fn`.
+//
+// Split out of contract_negatives/spec_ghost_totality, which mixes this control with an
+// impure-call negative in one file. Once the impure call became a CHECK error rather than a
+// report line, that file was rejected wholesale, its report went empty, and the "not
+// over-rejected" assertion passed because it found nothing — a vacuous control.
+//
+// A positive control has to live where nothing else can fail first.
+mod pc {
+    // pure: no capabilities, so a contract may call it.
+    fn dbl(n: i32) -> i32 { return n * 2; }
+
+    // an uninterpreted spec function.
+    spec fn ideal(n: i32) -> i32;
+
+    #[ensures(result == dbl(x))]
+    fn good(x: i32) -> i32 { return x + x; }
+
+    #[ensures(result == ideal(y))]
+    fn good2(y: i32) -> i32 { return y; }
+}

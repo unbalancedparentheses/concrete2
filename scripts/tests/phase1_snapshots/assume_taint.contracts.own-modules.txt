@@ -1,0 +1,32 @@
+=== Source Contracts ===
+
+cn.clean
+  R1  requires 0 < x && x < 10
+     status:  assumed_at_entry (each call site checked separately)
+
+
+=== Call-site obligations ===
+
+cn.main
+  call clean(3)
+    requires 0 < 3 && 3 < 10
+    status:  proved_by_kernel_decision
+    engine:  constant_fold (precondition constant-folds true)
+
+
+=== assert / assume ===
+
+cn.trusts
+  ⚠ TAINTED — depends on assume(...): evidence is `assumed` (trust), NOT a clean proof
+  assume (x > 0)
+     status:  assumed (trust, not proof — audit-visible; release policy may forbid)
+
+cn.clean
+  assert (x < 16)
+     status:  proved_by_kernel_decision (omega)
+
+
+=== Runtime-safety obligations (array bounds) ===
+
+=== Runtime-safety obligations (division: non-zero divisor) ===
+
