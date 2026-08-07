@@ -548,6 +548,30 @@ else
   no "spec-to-spec calls are rejected — the check is too strict to be usable"
 fi
 
+# --- CAPTURE CONTAINMENT ------------------------------------------------------
+# `refineObligations` substitutes spec parameters by NAME (`substExpr`), with no capture
+# avoidance. A spec body that BINDS a name can therefore have the binding substituted away:
+#     spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+# instantiated at `s(y)` would yield `if y > 0 { let x = 100; y } else { y }` — a corrupted
+# obligation. Today no wrong goal reaches a kernel only because `renderTerm` cannot render an
+# if-expression, so the obligation reports "outside the fragment". That is safety by ACCIDENT:
+# it holds on the renderer's narrowness, and adding `.ifExpr` to `renderTerm` makes it live.
+#
+# The check rejects binder-bearing bodies, and these two assertions are what keep it honest.
+cat > "$SPW/capture.con" <<'EOF'
+mod cap {
+    spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+
+    #[ensures(result == s(y))]
+    fn f(y: i32) -> i32 {
+        return y;
+    }
+}
+EOF
+CAP="$("$BIN" "$SPW/capture.con" --report bool-kernel 2>&1 || true)"
+printf '%s' "$CAP" | grep -q "binder"   && ok "a spec body that BINDS a name is rejected (substitution is capture-unsafe)"   || no "a binder-bearing spec body is accepted — substExpr can corrupt the obligation"
+printf '%s' "$CAP" | grep -qE "refine[0-9]"   && no "the corrupted obligation still reaches the refinement tier"   || ok "...and no refinement obligation is issued from it"
+
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"
 [ "$FAIL" -eq 0 ]

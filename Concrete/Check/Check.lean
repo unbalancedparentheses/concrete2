@@ -2070,6 +2070,18 @@ private partial def specBodySort (paramTys : List (String × Ty)) (specRets : Li
   | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
   | _ => none
 
+/-- Does a spec body contain a construct that BINDS a name? See the soundness note at the use
+    site: substitution is by name, so a binder can be captured. -/
+private partial def specBodyHasBinder : Expr → Bool
+  | .ifExpr _ _ _ _ => true
+  | .match_ _ _ _ => true
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBodyHasBinder e
+  | .binOp _ _ l r => specBodyHasBinder l || specBodyHasBinder r
+  | .call _ _ _ args => args.any specBodyHasBinder
+  | .fieldAccess _ o _ => specBodyHasBinder o
+  | .arrayIndex _ a i => specBodyHasBinder a || specBodyHasBinder i
+  | _ => false
+
 /-- Function names called anywhere in an expression — for validating `spec fn` bodies. -/
 private partial def specBodyCalls : Expr → List String
   | .call _ f _ args => f :: args.flatMap specBodyCalls
@@ -2206,7 +2218,24 @@ def checkModule (m : Module) (summary : FileSummary)
         let paramNames := sd.params.map (·.name)
         let free := (collectFreeVarsExpr b paramNames).eraseDups
         let unknownCalls := (specBodyCalls b).filter (fun c => !specNames.contains c)
-        if !free.isEmpty then
+        -- BINDER-FREE, and this is a soundness requirement rather than a simplification.
+        -- `refineObligations` substitutes the spec's parameters with the call's arguments using
+        -- `substExpr`, which replaces by NAME with no capture avoidance. A body such as
+        --     spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+        -- would have its inner, let-bound `x` substituted too, corrupting the obligation.
+        --
+        -- Today that produces no wrong evidence only because `renderTerm` cannot render an
+        -- if-expression, so the obligation reports "outside the fragment" and no kernel sees it.
+        -- That is safety by ACCIDENT: it rests on the renderer's narrowness, and the first person
+        -- to add `.ifExpr` to `renderTerm` -- an obvious extension -- makes the corruption live.
+        -- Rejecting binders here makes the property checked rather than incidental.
+        let hasBinder := specBodyHasBinder b
+        if hasBinder then
+          .error [{ severity := .error
+                  , message := s!"spec fn '{sd.name}' body contains a binder (if-expression or match); spec bodies must be binder-free"
+                  , pass := "check", span := some sd.span
+                  , hint := some "parameter substitution is by name and would capture a shadowing binding — keep the body a plain expression" }]
+        else if !free.isEmpty then
           .error [{ severity := .error
                   , message := s!"spec fn '{sd.name}' body references unknown name(s): {", ".intercalate free}"
                   , pass := "check", span := some sd.span
