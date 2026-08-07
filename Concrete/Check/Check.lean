@@ -2415,8 +2415,16 @@ def checkModule (m : Module) (summary : FileSummary)
         -- `result` is typed by the function's return type; a contract mentioning it is otherwise
         -- indistinguishable from one that does not.
         let sortTys := ("result", f.retTy) :: paramTys
-        -- Invariants join the proposition check; VARIANTS deliberately do not -- a variant is a
-        -- decreasing integer measure, so the sort requirement is the opposite one.
+        -- A VARIANT must be an integer MEASURE, so it gets the opposite sort rule from everything
+        -- else here: a boolean variant is meaningless (`#[variant(i < n)]` does not decrease, it
+        -- flips), and it was accepted because the proposition check simply skipped variants
+        -- instead of holding them to their own rule. Absence of a rule read as absence of a
+        -- requirement.
+        let wrongVariant := f.loopContracts.filterMap (fun lc => lc.variant) |>.filter fun e =>
+          match specBodySort sortTys specRets e with
+          | some isBool => isBool
+          | none => false
+        -- Invariants join the proposition check; variants are excluded from it and checked above.
         let wrongSort := (f.requires ++ f.ensures ++ f.loopContracts.flatMap (·.invariants)).filter fun e =>
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
@@ -2440,6 +2448,11 @@ def checkModule (m : Module) (summary : FileSummary)
                   , message := s!"contract on '{f.name}': {", ".intercalate (free.map (fun n => s!"unknown identifier '{n}'"))}"
                   , pass := "check", span := some f.span
                   , hint := some "a contract may mention parameters, constants, `result` (in `ensures`), and locals (in loop invariants)" }]
+        else if !wrongVariant.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}': `variant` is a boolean, not a decreasing measure"
+                  , pass := "check", span := some f.span
+                  , hint := some "a `#[variant]` must be an integer expression that strictly decreases each iteration (e.g. `n - i`), not a condition" }]
         else if !wrongSort.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' is an integer expression, not a proposition"

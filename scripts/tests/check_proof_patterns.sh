@@ -33,7 +33,11 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 assert_contains(){ local l="$1" n="$2"; shift 2; local o; o="$("$@" 2>&1)"
   if grep -qF <<<"$o" -- "$n"; then ok "$l"; else no "$l — missing '$n'"; printf '%s\n' "$o"|sed 's/^/      /'|head -8; fi; }
 # assert_absent <label> <needle> <cmd...>
+# Empty output makes an absence assertion vacuous — every needle is absent when there is nothing
+# to search. Treated as a failure for the reason recorded in H27: a positive control in
+# check_contract_negatives.sh passed for exactly this reason while proving nothing.
 assert_absent(){ local l="$1" n="$2"; shift 2; local o; o="$("$@" 2>&1)"
+  if [ -z "$o" ]; then no "$l — VACUOUS: command produced no output, so absence proves nothing"; return; fi
   if grep -qF <<<"$o" -- "$n"; then no "$l — unexpected '$n'"; else ok "$l"; fi; }
 # assert_json <label> <pyexpr> <cmd...>
 assert_json(){ local l="$1" e="$2"; shift 2; local o; o="$("$@" 2>/dev/null)"

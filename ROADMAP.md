@@ -3446,17 +3446,32 @@ Name-and-sort validation now runs (`Concrete/Check/Check.lean`) and is deliberat
 type checking. H27 records what remains accepted, each measured against the compiler and each
 pinned by a gate assertion written to flip when the gap closes:
 
+* ~~a boolean `#[variant]`~~ — **CLOSED 2026-08-07**. It was accepted because the proposition
+  check *skipped* variants rather than holding them to their own rule; absence of a rule read as
+  absence of a requirement. `i < n` does not decrease, it flips;
+* ~~a contract calling an IMPURE (capability-requiring) function~~ — **CLOSED 2026-08-07**. Its
+  meaning would depend on runtime effects, so it is not a proposition. Pure executable calls stay
+  legal — purity is the property that matters, not spec-only;
 * operand type compatibility — `#[requires(x < 9999999999)]` on an `i32`;
 * a bool as an arithmetic operand — `#[requires((x > 0) + 1 > 0)]`;
-* `#[variant(i < n)]` — a boolean where a well-founded measure belongs;
-* a contract calling an EXECUTABLE function;
 * `result`'s type (its scope is enforced; its type is not);
 * precise loop-binder scope — the bound set is every name bound anywhere in the function, so a
   name bound only *after* the loop is admitted and reaches the VC.
 
-The last one is the tell that this belongs in a typed record rather than in the checker's
-module-level pass: real scoping needs the per-function environment, and faking it there would be
-the same shape of mistake as the walkers keeping their own weaker copy of the trap rules (R-0464).
+**The four that remain share one root cause, and it is the argument for doing this properly.**
+Each needs the per-function environment: widths and operand domains need the types of locals,
+`result`'s type needs the signature at the annotation site, and scope needs the bindings live at
+the loop rather than "bound somewhere in the function". The two that closed did not need it, which
+is exactly why they closed cheaply — and why the remaining four should not be attacked the same
+way. Faking an environment in this module-level pass would be the same shape of mistake as the
+walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
+question that already has an authoritative one.
+
+**Acceptance boundary, from review and worth restating because it is easy to satisfy the letter
+of this task and miss it:** the record must retain resolved identities and types. Rejecting these
+six fixtures while still storing the original name-based AST expression would let VC generation
+reconstruct exactly the unsafe information the record exists to eliminate — and R-0474 would
+inherit the problem intact.
 
 **Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
 first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —

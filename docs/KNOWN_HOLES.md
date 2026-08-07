@@ -56,7 +56,7 @@ files parse and check.
 |---|---|
 | operand type compatibility | `#[requires(x < 9999999999)]` on an `i32` parameter |
 | bool used as an arithmetic operand | `#[requires((x > 0) + 1 > 0)]` |
-| a `#[variant]` being a well-founded measure | `#[variant(i < n)]` — a boolean, not a measure |
+| ~~a `#[variant]` being a well-founded measure~~ | **CLOSED 2026-08-07** — a boolean variant is rejected |
 | ~~impure (capability-requiring) calls~~ | **CLOSED 2026-08-07** — rejected at check time |
 | `result`'s type | scope is enforced (`ensures`-only), the type is not |
 | precise loop-binder scope | see below |
