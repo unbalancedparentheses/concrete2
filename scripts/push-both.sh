@@ -20,8 +20,21 @@
 # broken code, and a fast-forward cannot retract it. Waiting is cheap and rare;
 # unpublishing is neither.
 #
-# `--no-ci-wait` exists for when that judgement does not apply, but it has to be
-# passed deliberately and it says what it skipped.
+# THAT REASONING EXPIRED (2026-08-07, owner's instruction: "stop waiting on CI in
+# push-both", "we don't really need the CI to say things are fine, we can check later and
+# keep going"). Two things changed under it:
+#
+#   * THERE IS NO MIRROR. `MIRROR` has defaulted to empty since 2026-07-31, and the mirror
+#     push was the only thing the wait gated. It has been holding the exclusive lock for up
+#     to 70 minutes to protect a publication target that does not exist.
+#   * MOST RUNS NEVER REACH A VERDICT ANYWAY. The workflow sets `cancel-in-progress` for
+#     pushes on a ref, so when two people push to main the earlier run is cancelled. Three
+#     of the last four waits ended in `cancelled` — 70 minutes of held lock for no answer.
+#
+# So the wait is now OPT-IN (`--ci-wait`). What is lost is real and named: nothing stops
+# main going red unnoticed. The compensating control is the existing CI-health ritual —
+# check `gh run list --workflow CI` after pushing and treat red as stop-the-line. The run
+# URL is printed below so that check is one click, not an investigation.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -61,7 +74,7 @@ PRIMARY="${PRIMARY:-origin}"
 MIRROR="${MIRROR:-}"
 BRANCH="${BRANCH:-main}"
 LOCAL="$(git rev-parse HEAD)"
-CI_WAIT=1
+CI_WAIT=0
 CI_WORKFLOW="${CI_WORKFLOW:-CI}"
 # Bounded so this cannot hang a session forever; on timeout the mirror is left
 # alone, which is the fail-closed direction.
@@ -77,7 +90,8 @@ CI_INTERVAL="${CI_INTERVAL:-30}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --no-ci-wait) CI_WAIT=0; shift ;;
+    --no-ci-wait) CI_WAIT=0; shift ;;          # retained: scripts may still pass it
+    --ci-wait)    CI_WAIT=1; shift ;;          # opt in to blocking on the verdict
     *) echo "push-both: unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -174,7 +188,13 @@ if [ "$CI_WAIT" -eq 1 ]; then
   esac
   echo "push-both: CI green on ${LOCAL:0:8}"
 else
-  echo "push-both: --no-ci-wait — publishing to $MIRROR WITHOUT remote CI confirmation." >&2
+  # Not waiting is the default now. Say so, and hand over the exact commands to check the
+  # verdict later — an unwatched run is only acceptable if checking it is trivial.
+  echo "push-both: not waiting for CI (default since 2026-08-07; --ci-wait to block)."
+  echo "push-both: check it when convenient —"
+  echo "    gh run list --workflow $CI_WORKFLOW --commit $LOCAL --event push --limit 1 \\"
+  echo "      --json status,conclusion,url -q '.[0]|\"\\(.status) \\(.conclusion) \\(.url)\"'"
+  echo "push-both: a 'cancelled' verdict is NO VERDICT — a later push superseded the run."
 fi
 
 # The mirror gets exactly the primary's tip. Gates are skipped because they
