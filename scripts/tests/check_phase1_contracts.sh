@@ -67,12 +67,33 @@ scope_to_own_modules(){ local ownmods="$1"
 
 snap_one(){ local class="$1" kind="$2" src="$3"
   local golden="$SNAP_DIR/$class.$kind.txt" actual="$TMP/$class.$kind.txt"
+  # Scope is in the FILENAME, not only in a comment. A golden named `.contracts.txt` reads as a
+  # snapshot of the whole report; this one covers the fixture's own modules only, and someone
+  # will eventually diff it against a full report and conclude the report lost content.
   local ownmods
   ownmods="$(grep -oE '^[[:space:]]*(pub )?mod [a-zA-Z0-9_]+' "$src" 2>/dev/null | awk '{print $NF}' | sort -u | paste -sd' ')"
   local isproject=0
   [ -f "$(dirname "$(dirname "$src")")/Concrete.toml" ] && isproject=1
   if [ "$kind" = "contracts" ] && [ "$isproject" = "1" ] && [ -n "$ownmods" ]; then
+    golden="$SNAP_DIR/$class.$kind.own-modules.txt"
     "$COMPILER" "$src" --report "$kind" 2>&1 | scope_to_own_modules "$ownmods" > "$actual"
+    # DEPENDENCY VISIBILITY. Scoping the comparison must not become scoping the REPORT: an
+    # undischarged obligation inside stdlib code still affects this program, so it has to stay
+    # visible even though it is not compared. Without this, the two could drift into agreement by
+    # the report quietly losing dependency content — local stability masking a real regression.
+    local fullrep depcount
+    fullrep="$("$COMPILER" "$src" --report "$kind" 2>&1)"
+    depcount="$(printf '%s\n' "$fullrep" | grep -cE "^[A-Za-z_][A-Za-z0-9_]*\." || true)"
+    local owncount
+    owncount="$(printf '%s\n' "$fullrep" | grep -cE "^($(printf '%s' "$ownmods" | tr ' ' '|'))\." || true)"
+    if [ "$depcount" -gt "$owncount" ]; then
+      echo "  ok   $class full report still shows dependency obligations ($((depcount - owncount)) entries beyond this fixture)"; PASS=$((PASS+1))
+    else
+      echo "  FAIL $class full report shows NO dependency obligations — scoping the comparison"
+      echo "       has become scoping the report; stdlib obligations affecting this program are"
+      echo "       now invisible. The golden is meant to be narrow, the REPORT is not."
+      FAIL=$((FAIL+1))
+    fi
   else
     "$COMPILER" "$src" --report "$kind" > "$actual" 2>&1
   fi
@@ -120,7 +141,7 @@ for row in "${CLASSES[@]}"; do
   eval "src=\"$src\""
   [ -f "$(dirname "$(dirname "$src")")/Concrete.toml" ] || continue
   own="$(grep -oE '^[[:space:]]*(pub )?mod [a-zA-Z0-9_]+' "$src" 2>/dev/null | awk '{print $NF}' | sort -u | tr '\n' '|' | sed 's/|$//')"
-  foreign="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*\.' "$SNAP_DIR/$class.$kind.txt" 2>/dev/null | grep -vE "^($own)\." | sort -u || true)"
+  foreign="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*\.' "$SNAP_DIR/$class.$kind.own-modules.txt" 2>/dev/null | grep -vE "^($own)\." | sort -u || true)"
   if [ -n "$foreign" ]; then
     echo "  FAIL $class golden contains entries from modules it does not define:"
     printf '%s\n' "$foreign" | head -5 | sed 's/^/      /'
