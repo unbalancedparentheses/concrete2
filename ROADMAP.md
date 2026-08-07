@@ -3522,8 +3522,25 @@ Two workable fixes: scope the contracts snapshot to the fixture's own modules, o
 entries changed" as a separate line from fixture content so the next occurrence names the stdlib.
 The second is cheaper and keeps stdlib coverage visible.
 
-**Also in scope:** the other 2 project-mode fixtures have the same coupling and have not been
-checked for latent drift.
+**Exposure audited 2026-08-07, and it is exactly one snapshot.** The audit is recorded because
+"the other project-mode fixtures probably have this too" was the natural assumption and it was
+wrong:
+
+* 49 examples carry a `Concrete.toml` and therefore build against the stdlib;
+* `scripts/tests/phase1_snapshots` is the only golden directory, and of its 13 snapshotted
+  fixtures exactly **one** — `assume_taint` — is project-mode. The other 12 are single-file and
+  cannot see stdlib contracts at all;
+* the other 2 project-mode contract fixtures (`assume_scope_adversarial`, `obligation_redteam`)
+  are used only by gates making targeted assertions, with zero references to `cmp`/`diff`/golden
+  files, so a stdlib addition cannot perturb them. All four such gates pass (8/0, 21/0, 9/0, 16/0);
+* the 3 remaining golden-comparing gates that touch project-mode examples (`check_concrete_fmt`,
+  `check_httpget_differential`, `check_tcpserve`) compare *program* output — formatted source,
+  HTTP bytes, a server response body — not a report, so contracts are not in their basis.
+
+So the coupling had one instance, it is the one H26 found, and the attribution diagnostic added in
+`1c310a07` covers the case where a future fixture gains a `Concrete.toml`. What remains for this
+task is the durable fix — scoping a contracts snapshot to the fixture's own modules — which stops
+the drift happening rather than explaining it after the fact.
 
 ### Task R-0472 — what could be provable but is not yet, by reason
 

@@ -128,7 +128,14 @@ recur on the next stdlib contract edit.
 
 Worth fixing properly: either scope the contracts snapshot to the fixture's own modules, or make
 the diff report "N stdlib entries changed" separately from fixture content, so the next occurrence
-names the stdlib instead of the fixture. Tracked as R-0475.
+names the stdlib instead of the fixture. The second landed in `1c310a07`; the first is R-0475.
+
+**Exposure audited, and it is one snapshot, not a class.** Of 13 snapshotted fixtures exactly one
+is project-mode; the other 12 are single-file and cannot see stdlib contracts. The other 2
+project-mode contract fixtures are exercised only by targeted-assertion gates with no golden files
+(all four pass), and the 3 other golden gates touching project-mode examples compare program
+output — formatted source, HTTP bytes, a response body — not reports. The natural assumption that
+sibling fixtures shared the defect was checked and was wrong.
 
 **Process note.** Refusing `UPDATE_PHASE1_SNAPSHOTS=1` while the diff was unexplained was correct
 and cost about twenty minutes. Running it would have produced a green gate, a committed golden
