@@ -10,6 +10,8 @@
 # by `command -v lake`; the constant-violation and honest-gap cases do not.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPILER=".lake/build/bin/concrete"
@@ -211,5 +213,35 @@ else
 fi
 
 echo ""
+# === contracts are REJECTED, not merely reported =============================================
+# `--report contracts` has flagged unknown identifiers for a long time, but it is a report: the
+# check pass accepted the program, so `#[requires(nosuchvar > 0)]` still put `nosuchvar` into the
+# HYPOTHESES of every obligation in the function, including ones marked proved_by_kernel_decision.
+# It fails closed (the call site cannot discharge a hypothesis over a name that does not exist),
+# but the failure surfaces in another function rather than at the typo.
+#
+# Measured over the whole corpus when this check was turned on: 1248 files, exactly 1 newly
+# rejected -- the fixture above, which documents itself as invalid. So rejection costs nothing
+# real, and the assertions below are what keep it from over-rejecting later.
+CTMP="$(mktemp -d)"; trap 'rm -rf "$CTMP"' EXIT
+ct() { printf 'mod t {\n    const LIM: i32 = 10;\n%s\n    fn f(x: i32) -> i32 {\n        return x;\n    }\n}\n' "$1" > "$CTMP/t.con"; }
+ct_reject() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  ok   $1"; PASS=$((PASS+1));
+  else echo "  FAIL $1 — accepted"; FAIL=$((FAIL+1)); fi; }
+ct_accept() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || true)"
+  if grep -qF <<<"$o" "error[check]"; then echo "  FAIL $1 — rejected: $(grep -oE 'error\[check\]: .*' <<<"$o" | head -1)"; FAIL=$((FAIL+1));
+  else echo "  ok   $1"; PASS=$((PASS+1)); fi; }
+
+echo "=== contract checking (reject, not just report) ==="
+ct_reject "unknown name in #[requires] is rejected at CHECK time" '    #[requires(zzz > 0)]'
+ct_reject "an integer expression is not a proposition"            '    #[requires(x + 1)]'
+# `result` is bound in `ensures` and NOWHERE else. Both directions asserted, because a single
+# shared bound-name set would silently permit `result` in a precondition, where it has no meaning.
+ct_reject "'result' in #[requires] is rejected (unbound there)"   '    #[requires(result > 0)]'
+ct_accept "'result' in #[ensures] is accepted"                    '    #[ensures(result > 0)]'
+# Over-rejection controls: the legal vocabulary must survive.
+ct_accept "a parameter is accepted"                               '    #[requires(x > 0)]'
+ct_accept "a module constant is accepted"                         '    #[requires(x < LIM)]'
+
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

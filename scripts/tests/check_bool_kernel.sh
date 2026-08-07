@@ -569,8 +569,51 @@ mod cap {
 }
 EOF
 CAP="$("$BIN" "$SPW/capture.con" --report bool-kernel 2>&1 || true)"
-printf '%s' "$CAP" | grep -q "binder"   && ok "a spec body that BINDS a name is rejected (substitution is capture-unsafe)"   || no "a binder-bearing spec body is accepted — substExpr can corrupt the obligation"
-printf '%s' "$CAP" | grep -qE "refine[0-9]"   && no "the corrupted obligation still reaches the refinement tier"   || ok "...and no refinement obligation is issued from it"
+printf '%s' "$CAP" | grep -q "binds name" \
+  && ok "a spec body that BINDS a name is rejected (substitution is capture-unsafe)" \
+  || no "a binder-bearing spec body is accepted — substExpr can corrupt the obligation"
+printf '%s' "$CAP" | grep -qE "refine[0-9]" \
+  && no "the corrupted obligation still reaches the refinement tier" \
+  || ok "...and no refinement obligation is issued from it"
+
+# A SHALLOW binder check is the likely regression: an if-expression's branches are `List Stmt`,
+# so a `let` buried in a nested branch is exactly what a top-level-only check would miss.
+cat > "$SPW/capture_deep.con" <<'EOF'
+mod capd {
+    spec fn s(x: i32) -> i32 = if x > 0 { if x > 1 { if x > 2 { let x: i32 = 9; x } else { x } } else { x } } else { x };
+
+    #[ensures(result == s(y))]
+    fn f(y: i32) -> i32 {
+        return y;
+    }
+}
+EOF
+# Output captured BEFORE grep, deliberately: the binary exits nonzero when it reports an error,
+# and under `set -o pipefail` a direct `"$BIN" ... | grep -q` is nonzero even when grep MATCHES.
+# That reports a working check as broken.
+DEEP="$("$BIN" "$SPW/capture_deep.con" --report bool-kernel 2>&1 || true)"
+printf '%s' "$DEEP" | grep -q "binds name" \
+  && ok "a binder nested three branches deep is caught (the check recurses into statements)" \
+  || no "a deeply nested binder escapes — the binder check is shallow"
+
+# NEGATIVE CONTROL, and the reason it is not optional: an earlier version of this check rejected
+# every if-expression, binder or not. That contains the defect by banning the entire conditional
+# fragment, which is over-containment -- by-name substitution is perfectly safe when nothing is
+# bound. Without this assertion the check can silently regress to that state and still look green.
+cat > "$SPW/nobind.con" <<'EOF'
+mod nb {
+    spec fn s(x: i32) -> i32 = if x > 0 { 1 } else { 2 };
+
+    #[ensures(result == s(y))]
+    fn f(y: i32) -> i32 {
+        return y;
+    }
+}
+EOF
+NB="$("$BIN" "$SPW/nobind.con" --report bool-kernel 2>&1 || true)"
+printf '%s' "$NB" | grep -q "error\[" \
+  && no "a BINDER-FREE conditional is rejected — containment ate the useful fragment" \
+  || ok "a binder-free conditional is still admitted (containment is targeted, not blanket)"
 
 echo ""
 echo "BOOL-KERNEL: PASS=$PASS  FAIL=$FAIL  INCONC=$INCONC"

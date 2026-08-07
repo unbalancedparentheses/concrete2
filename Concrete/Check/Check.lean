@@ -2070,17 +2070,58 @@ private partial def specBodySort (paramTys : List (String × Ty)) (specRets : Li
   | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
   | _ => none
 
-/-- Does a spec body contain a construct that BINDS a name? See the soundness note at the use
-    site: substitution is by name, so a binder can be captured. -/
-private partial def specBodyHasBinder : Expr → Bool
-  | .ifExpr _ _ _ _ => true
-  | .match_ _ _ _ => true
-  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBodyHasBinder e
-  | .binOp _ _ l r => specBodyHasBinder l || specBodyHasBinder r
-  | .call _ _ _ args => args.any specBodyHasBinder
-  | .fieldAccess _ o _ => specBodyHasBinder o
-  | .arrayIndex _ a i => specBodyHasBinder a || specBodyHasBinder i
-  | _ => false
+-- Every name BOUND anywhere inside a spec body, innermost included.
+
+--  Returns the names rather than a `Bool` so the diagnostic can point at the binding that
+--  caused the rejection; a bare "contains a binder" sends the author looking. See the soundness
+--  note at the use site.
+
+--  Two properties this must have, and an earlier version had neither:
+
+--  * It recurses through STATEMENT containers, not only expressions. An if-expression's branches
+--    are `List Stmt`, so a `let` nested three blocks deep is the likely regression, and a
+--    shallow check would pass it.
+--  * It reports only ACTUAL bindings. Rejecting every if-expression was over-containment: a
+--    binder-free `if x > 0 { 1 } else { 2 }` is perfectly safe for by-name substitution, and
+--    banning it would have thrown out the whole conditional fragment to contain a defect that
+--    only shadowing can trigger.
+mutual
+private partial def specBinders : Expr → List String
+  | .ifExpr _ c t e => specBinders c ++ (t ++ e).flatMap specBindersStmt
+  | .match_ _ sc arms => specBinders sc ++ arms.flatMap specBindersArm
+  | .paren _ e | .unaryOp _ _ e | .cast _ e _ => specBinders e
+  | .binOp _ _ l r => specBinders l ++ specBinders r
+  | .call _ _ _ args => args.flatMap specBinders
+  | .fieldAccess _ o _ => specBinders o
+  | .arrayIndex _ a i => specBinders a ++ specBinders i
+  | _ => []
+
+private partial def specBindersArm : MatchArm → List String
+  | .mk _ _ _ bs g b => bs ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .varArm _ n g b => n :: (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .litArm _ v g b => specBinders v ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+  | .rangeArm _ lo hi _ g b =>
+      specBinders lo ++ specBinders hi ++ (g.map specBinders).getD [] ++ b.flatMap specBindersStmt
+
+private partial def specBindersStmt : Stmt → List String
+  | .letDecl _ n _ _ v _ => n :: specBinders v
+  | .letDestructure _ _ _ bs v eb => bs ++ specBinders v ++ (eb.map (·.flatMap specBindersStmt)).getD []
+  | .letStructDestructure _ _ bs v => bs ++ specBinders v
+  | .borrowIn _ _ r _ _ b => r :: b.flatMap specBindersStmt
+  | .forLoop _ init c st b _ =>
+      (init.map specBindersStmt).getD [] ++ specBinders c
+        ++ (st.map specBindersStmt).getD [] ++ b.flatMap specBindersStmt
+  | .ifElse _ c t e => specBinders c ++ t.flatMap specBindersStmt ++ (e.map (·.flatMap specBindersStmt)).getD []
+  | .while_ _ c b _ => specBinders c ++ b.flatMap specBindersStmt
+  | .expr _ e _ | .assert_ _ e | .assume_ _ e | .defer _ e => specBinders e
+  | .assign _ _ v => specBinders v
+  | .return_ _ v => (v.map specBinders).getD []
+  | .break_ _ v _ => (v.map specBinders).getD []
+  | .fieldAssign _ o _ v => specBinders o ++ specBinders v
+  | .derefAssign _ t v => specBinders t ++ specBinders v
+  | .arrayIndexAssign _ a i v => specBinders a ++ specBinders i ++ specBinders v
+  | .continue_ _ _ => []
+end
 
 /-- Function names called anywhere in an expression — for validating `spec fn` bodies. -/
 private partial def specBodyCalls : Expr → List String
@@ -2229,12 +2270,12 @@ def checkModule (m : Module) (summary : FileSummary)
         -- That is safety by ACCIDENT: it rests on the renderer's narrowness, and the first person
         -- to add `.ifExpr` to `renderTerm` -- an obvious extension -- makes the corruption live.
         -- Rejecting binders here makes the property checked rather than incidental.
-        let hasBinder := specBodyHasBinder b
-        if hasBinder then
+        let binders := (specBinders b).eraseDups
+        if !binders.isEmpty then
           .error [{ severity := .error
-                  , message := s!"spec fn '{sd.name}' body contains a binder (if-expression or match); spec bodies must be binder-free"
+                  , message := s!"spec fn '{sd.name}' body binds name(s): {", ".intercalate binders}; spec bodies must be binder-free"
                   , pass := "check", span := some sd.span
-                  , hint := some "parameter substitution is by name and would capture a shadowing binding — keep the body a plain expression" }]
+                  , hint := some "TEMPORARY: parameter substitution is by name and would capture a shadowing binding. The restriction lifts once substitution is capture-avoiding — until then keep the body free of `let`, match patterns, and loops." }]
         else if !free.isEmpty then
           .error [{ severity := .error
                   , message := s!"spec fn '{sd.name}' body references unknown name(s): {", ".intercalate free}"
@@ -2258,6 +2299,64 @@ def checkModule (m : Module) (summary : FileSummary)
                   , hint := some "a spec body may only call other `spec fn`s — calling executable code would make the spec depend on runtime behaviour" }]
         else .ok ()
   match specBodyCheck with
+  | .error e => .error e
+  | .ok () =>
+  -- CONTRACTS ARE CHECKED. `#[requires]`/`#[ensures]` were not, anywhere -- they are erased
+  -- metadata, so no pass had reason to look at them, and each of the seven consumers took the
+  -- raw `List Expr` on faith. Measured before writing this: `#[requires(nosuchvar > 0)]` is
+  -- accepted, and `nosuchvar` then appears as a free variable in the HYPOTHESES of every
+  -- obligation in the function, including ones reported `proved_by_kernel_decision`.
+  --
+  -- That particular case is not unsound -- a hypothesis over a fresh universally quantified
+  -- variable is discharged at the call site, where it is unprovable, so it fails closed. The
+  -- defect is that the failure surfaces as an unprovable call-site obligation somewhere else
+  -- rather than as a typo where the typo is, and that a precondition nobody can establish reads
+  -- in the report exactly like one nobody has established YET.
+  --
+  -- The rules are the spec-body rules, for the same reasons: a contract may mention only names
+  -- that exist, and it must be a proposition rather than a number.
+  let contractCheck :=
+    let constNames := constantsMap.map (·.1)
+    let specRets := m.specFns.map (fun d => (d.name, d.retTy))
+    let allContractFns := m.functions ++ m.implBlocks.flatMap (·.methods)
+    allContractFns.foldl (init := (Except.ok () : Except Diagnostics Unit)) fun acc f =>
+      match acc with
+      | .error e => .error e
+      | .ok () =>
+        let paramTys := f.params.map (fun p => (p.name, p.ty))
+        -- `result` is bound in an `ensures` and nowhere else; that asymmetry is the whole
+        -- reason the two clause lists cannot share one bound-name set.
+        let boundReq := (f.params.map (·.name)) ++ constNames
+        let boundEns := "result" :: boundReq
+        let badName (bound : List String) (e : Expr) : List String :=
+          (collectFreeVarsExpr e bound).eraseDups
+        let freeR := f.requires.flatMap (badName boundReq)
+        let freeE := f.ensures.flatMap (badName boundEns)
+        let free := (freeR ++ freeE).eraseDups
+        -- Sort reuses `specBodySort`, so a contract and a spec body are held to one standard.
+        -- `result` is typed by the function's return type; a contract mentioning it is otherwise
+        -- indistinguishable from one that does not.
+        let sortTys := ("result", f.retTy) :: paramTys
+        let wrongSort := (f.requires ++ f.ensures).filter fun e =>
+          match specBodySort sortTys specRets e with
+          | some isBool => !isBool
+          | none => false
+        if !free.isEmpty then
+          .error [{ severity := .error
+                    -- Wording matches `validateContractExpr` in ReportVC deliberately. That pass
+                    -- already reported this exact defect under `--report contracts`; it just could
+                    -- not REJECT it, so the name still reached the VC hypotheses. Two vocabularies
+                    -- for one defect would read as two different problems.
+                  , message := s!"contract on '{f.name}': {", ".intercalate (free.map (fun n => s!"unknown identifier '{n}'"))}"
+                  , pass := "check", span := some f.span
+                  , hint := some "a contract may mention parameters, constants, and (in `ensures`) `result`" }]
+        else if !wrongSort.isEmpty then
+          .error [{ severity := .error
+                  , message := s!"contract on '{f.name}' is an integer expression, not a proposition"
+                  , pass := "check", span := some f.span
+                  , hint := some "a `requires`/`ensures` clause must be a boolean condition" }]
+        else .ok ()
+  match contractCheck with
   | .error e => .error e
   | .ok () =>
   -- Built-in Destroy trait (needed for expression-level trait method resolution)

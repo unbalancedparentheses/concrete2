@@ -28,6 +28,52 @@ freshness (bugs 058–060 / R-0004), and ProofCore callable identity (bug 061 /
 R-0442). R-0010 will replace the legacy skip-based audit with mechanically
 checked per-bug states.
 
+### H25. Refinement substitution is by NAME, not by binding identity — OPEN (contained)
+
+**Invariant that must hold:** refinement substitution may act only on expressions whose
+free-variable identities are distinguished from all locally bound identities.
+
+`refineObligations` instantiates a `spec fn` body at a call site by substituting parameters with
+the call's arguments via `substExpr`, which replaces by name with no capture avoidance. A spec
+body that binds a name therefore has the binding substituted away:
+
+```
+spec fn s(x: i32) -> i32 = if x > 0 { let x: i32 = 100; x } else { x };
+```
+
+At `s(y)` the inner, let-bound `x` is replaced too, producing a corrupted obligation.
+
+**No unsound evidence escaped, and the reason is the point.** The obligation is collected but
+reports `outside the fragment`, because `renderTerm` has no case for `.ifExpr`, so no kernel ever
+receives the corrupted goal. That is safety by *accident*: it rests entirely on the renderer's
+narrowness and on nothing about substitution. Adding `.ifExpr` to `renderTerm` — an obvious
+extension, and one the refinement tier invites — would have turned a latent corruption into
+issued proof evidence, with no test failing.
+
+The general lesson is worth more than the specific bug: **renderer incompleteness is not a valid
+precondition for transformation soundness.** Each transformation must establish its own admission
+contract before later stages consume it, rather than inheriting one from what a downstream stage
+happens to reject.
+
+**Current containment:** enforced conservatively by rejecting locally binding specification
+bodies, at check time, in `Concrete/Check/Check.lean`. The binder scan is structural and recurses
+through statement containers and match arms, so a `let` nested in a branch is caught; it reports
+only *actual* bindings, so the binder-free conditional fragment stays admitted. Three assertions
+in `check_bool_kernel.sh` hold the line: a binder is rejected, no refinement obligation is issued
+from it, and a binder-free conditional is still accepted (the over-containment control).
+
+**Graduation condition:** replace the restriction with identity-based, capture-avoiding
+substitution over stable binding identities, and prove or exhaustively gate the evaluation law
+
+```
+eval(subst(Q, x, e), rho) = eval(Q, rho[x |-> eval(e, rho)])
+```
+
+over the supported specification fragment. Until then the refinement tier must not issue proof
+evidence from unsafe substitution. This is also a prerequisite for `old(...)`, frame/`modifies`
+conditions, reliable loop-state reasoning, call-site contract instantiation, and quantified
+predicates with binders.
+
 ### H24. Obligation generation keeps its own weaker copy of the trap rules — CLOSED 2026-08-03 (R-0464)
 
 `Concrete.Semantics.IntArith` is the single-source trap semantics: it makes `trap` a
