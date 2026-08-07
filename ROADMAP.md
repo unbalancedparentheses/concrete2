@@ -3538,9 +3538,26 @@ wrong:
   HTTP bytes, a server response body — not a report, so contracts are not in their basis.
 
 So the coupling had one instance, it is the one H26 found, and the attribution diagnostic added in
-`1c310a07` covers the case where a future fixture gains a `Concrete.toml`. What remains for this
-task is the durable fix — scoping a contracts snapshot to the fixture's own modules — which stops
-the drift happening rather than explaining it after the fact.
+`1c310a07` covers the case where a future fixture gains a `Concrete.toml`.
+
+**Durable fix landed** (`31710d4e`): the contracts comparison is scoped to modules the fixture
+defines, so a project-mode golden cannot depend on the stdlib. Comparison only — the report is
+unchanged, so nothing a user sees is lost. `assume_taint`'s golden went 153 -> 32 lines with zero
+stdlib entries. The invariant ("a project-mode golden contains no entry from a module it does not
+define") is asserted on every run rather than registered as a mutation, because that harness
+proves a gate goes RED when a rule is disabled and this property is a gate staying GREEN under a
+change that is none of its business. Verified both ways: the H26 mutation no longer moves the
+golden, and appending a `sha256.` entry makes the assertion fail.
+
+**What remains, and why it was not done here.** The *compiler-side* improvement is to label the
+report's sections by origin — "Source Contracts (this project)" versus "(dependencies)" — so the
+structure carries the distinction instead of the test harness reconstructing it. That needs module
+origin plumbed through parsing: `buildFnLocMap` stamps ONE file across all modules, so nothing
+downstream can currently tell a project module from a stdlib one. Worth doing, and deliberately
+not bundled into a snapshot fix. Note the design constraint discovered while scoping this: simply
+dropping dependency contracts from the report would LOSE safety-relevant information, because an
+undischarged obligation inside stdlib code still affects the user's program. The right shape is
+separate labelled sections, not a filter.
 
 ### Task R-0472 — what could be provable but is not yet, by reason
 
