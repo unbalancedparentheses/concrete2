@@ -550,6 +550,58 @@ esac
 # blindness — verified by counting `const` declarations — but it means these constructed
 # probes, not corpus coverage, are what tests dependency binding.
 
+# --- the ASSUMPTION axis (checker assumptions, shadow) -----------------------------------
+# The verification charter requires a result to record its checker assumptions, and item 5
+# of its contract is "accepted as an explicit assumption". An assumption does not make a
+# body incomplete — it QUALIFIES any claim about it, which is why this is a third line and
+# not folded into completeness. A body full of `assume` can be perfectly complete; what
+# must not happen is a proof over it surfacing as unqualified.
+asm_of() {
+  "$BIN" "$1" --report subject-facts 2>/dev/null \
+    | awk -v w="v1:user:$2" '$0==w{i=1;next} /^v1:user:/{i=0} i&&/shadow assumes:/{sub(/^ *shadow assumes: /,"");print;exit}' || true
+}
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n > 0); return n; } }\n' > "$TMP/q1.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n > 1); return n; } }\n' > "$TMP/q2.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n > 0); assume(n < 9); return n; } }\n' > "$TMP/q3.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assume(n < 9); assume(n > 0); return n; } }\n' > "$TMP/q4.con"
+printf 'mod m { pub fn f(n: Int) -> Int { assert(n > 0); return n; } }\n' > "$TMP/q5.con"
+printf 'mod m { pub fn f(n: Int) -> Int { return n; } }\n'               > "$TMP/q6.con"
+
+q1="$(asm_of "$TMP/q1.con" m.f)"; q2="$(asm_of "$TMP/q2.con" m.f)"
+q3="$(asm_of "$TMP/q3.con" m.f)"; q4="$(asm_of "$TMP/q4.con" m.f)"
+q5="$(asm_of "$TMP/q5.con" m.f)"; q6="$(asm_of "$TMP/q6.con" m.f)"
+
+case "$q1" in
+  ""|ABSENT*)      no "an assuming body has no assumption line ($q1)" ;;
+  unqualified*)    no "a body containing assume() reports UNQUALIFIED — a proof over it would hide what it rests on" ;;
+  *)               ok "an assuming body is marked qualified, with a digest of what it assumes" ;;
+esac
+
+if [ -n "$q2" ] && [ "$q1" != "$q2" ]; then
+  ok "the assumption PREDICATE is in the digest (n>0 vs n>1)"
+else
+  no "assume(n>0) and assume(n>1) share an assumption digest — the content is not carried"
+fi
+
+# ORDER and MULTIPLICITY. Two assumes are not one, and swapping them changes the body, so
+# this is a sequence and not a set.
+if [ -n "$q3" ] && [ -n "$q4" ] && [ "$q3" != "$q4" ]; then
+  ok "assumption order is semantic: swapping two assumes changes the digest"
+else
+  no "reordering two assumes left the assumption digest unchanged — it is being treated as a set"
+fi
+
+# ASSERT IS DISCHARGED, NOT ASSUMED. Conflating them would let a proof lean on something
+# it was supposed to prove.
+case "$q5" in
+  unqualified*) ok "assert does not qualify a claim — it is discharged, not assumed" ;;
+  *)            no "a body with only an assert reports assumptions ($q5)" ;;
+esac
+case "$q6" in
+  unqualified*) ok "a body assuming nothing says so positively" ;;
+  *)            no "a body with no assume reported '$q6'" ;;
+esac
+
 # --- ratchet: corpus coverage must not regress ------------------------------------------
 # Measured 2026-08-06: 421 of 432 subjects digest, 0 absent. Trail: 292 -> 316 (for-loop)
 # -> 323 (assembly rows) -> 376 (EvidenceTypeRef) -> 411 (assert/assume predicates)

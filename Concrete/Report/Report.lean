@@ -1762,6 +1762,31 @@ private def shadowDepsLine (body? : Option Proof.EvidenceBodyDraftV2)
           "c:" ++ toString r.length ++ ":" ++ r ++ "=" ++ toString enc.length ++ ":" ++ enc)
         s!"{shortHash ("depsV1:n" ++ toString sorted.length ++ ":" ++ payload)} ({sorted.length} const)"
 
+/-- The assumption shadow line: what a claim over this body would be RELYING ON.
+
+    An assumption does not make a body incomplete — it QUALIFIES any claim about it. A body
+    full of `assume` can be perfectly complete and perfectly serialized; what must not
+    happen is a proof over it surfacing as unqualified. That is why this is a third line
+    rather than folded into completeness: they are different questions with different
+    remedies.
+
+    The predicates are digested in SOURCE ORDER, with multiplicity kept. Two `assume`s are
+    not one, and reordering them changes the body — so this is not a set.
+
+    `unqualified` is stated positively rather than left as an empty digest, because "no
+    assumptions" is the fact a consumer actually needs, and an empty-string digest would be
+    indistinguishable from a failure to compute one. -/
+private def shadowAssumesLine (body? : Option Proof.EvidenceBodyDraftV2) : String :=
+  match body? with
+  | none => "ABSENT (no structural body threaded)"
+  | some body =>
+    let q := Proof.SubjectQualificationV2.of body
+    if q.isUnqualified then "unqualified (nothing assumed)"
+    else
+      let payload := String.join (q.assumptions.map Proof.exprBytes)
+      s!"{shortHash ("assumesV1:n" ++ toString q.assumptionCount ++ ":" ++ payload)} " ++
+        s!"({q.assumptionCount} assumed — a claim over this body CANNOT be reported unqualified)"
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
@@ -1805,7 +1830,13 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- The DEPENDENCY axis, separate from the body axis. A body can be completely
         -- described and still rest on a constant whose meaning is unrecorded; reporting
         -- them on one line would let a complete body imply a complete subject.
-        , s!"  shadow deps: {shadowDepsLine e.evidenceBody e.constBindings}"
+        , s!"  shadow deps: {shadowDepsLine e.evidenceBody e.constBindings}\n"
+        -- The third axis. Completeness asks whether the subject DESCRIBES the body;
+        -- dependency asks whether what it reaches is BOUND; this asks what a claim over
+        -- it would be RESTING ON. A subject can be complete and fully bound and still
+        -- carry assumptions, and reporting fewer than three lines would let one imply
+        -- another.
+        , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
