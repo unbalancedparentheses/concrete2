@@ -4,6 +4,8 @@
 # escape. Verified soundness holes: NonZeroU32(0) bypass, and cross-module
 # Bytes field read/write/literal forgery.
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; cd "$ROOT_DIR"
 C="$ROOT_DIR/.lake/build/bin/concrete"; [ -x "$C" ] || { echo "build first" >&2; exit 2; }
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT

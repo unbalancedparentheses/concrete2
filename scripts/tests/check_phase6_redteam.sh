@@ -20,6 +20,8 @@
 # oracle (interp == compiled), and a ProofCore/fingerprint assertion.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 C="$ROOT_DIR/.lake/build/bin/concrete"

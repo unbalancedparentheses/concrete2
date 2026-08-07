@@ -17,6 +17,8 @@
 # boundary — runnable in CI with a fake solver (no real Z3 needed).
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPILER="$ROOT_DIR/.lake/build/bin/concrete"

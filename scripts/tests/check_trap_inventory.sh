@@ -22,6 +22,8 @@
 # alive would pass a trap gate while quietly costing every discarded operation.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 COMPILER="${COMPILER:-.lake/build/bin/concrete}"

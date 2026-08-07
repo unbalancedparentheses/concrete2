@@ -10,6 +10,8 @@
 #     overflow (Stage 2.3) — wrapping_* is the explicit way to opt into wrap.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 C="$ROOT_DIR/.lake/build/bin/concrete"

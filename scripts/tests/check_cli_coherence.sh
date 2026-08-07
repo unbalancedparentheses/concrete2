@@ -8,6 +8,8 @@
 # names every public command group.
 
 set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 C="$ROOT_DIR/.lake/build/bin/concrete"
 [ -x "$C" ] || { echo "error: build first" >&2; exit 2; }
