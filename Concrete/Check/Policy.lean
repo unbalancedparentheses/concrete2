@@ -175,6 +175,11 @@ private def enforceRequireProofs (pc : ProofCore) : Diagnostics :=
     | .missing => some (mkDiag
         s!"'{o.functionId.qualName}' is proof-eligible but unproved"
         "add a Lean proof or change [policy] require-proofs")
+    -- Same policy treatment as `stale` — neither may satisfy require-proofs —
+    -- with a hint that does not assert a body change that has not been shown.
+    | .needsRecheck => some (mkDiag
+        s!"'{o.functionId.qualName}' has a proof link recorded under an earlier digest schema"
+        "re-verify and record the new v2 #[proof_fingerprint], or change [policy] require-proofs")
     | .stale => some (mkDiag
         s!"'{o.functionId.qualName}' has a stale proof (fingerprint changed)"
         "update the proof to match the current function body")

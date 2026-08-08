@@ -931,6 +931,12 @@ inductive ProofState where
   /-- Link present, no stored proof-subject digest — nothing to be fresh
       against. Distinct from `stale`, which asserts a body change. -/
   | unbound
+  /-- Link present with a digest stored under an EARLIER SCHEMA. Kept distinct
+      from `unbound` rather than folded into it: `unbound` means no subject was
+      ever recorded, this means one was and it answers a weaker question. The
+      repair differs — re-verify and re-record, versus pin for the first time —
+      and collapsing the two would hide which of those the author owes. -/
+  | needsRecheck
   /-- This function's own subject is fresh, but something it reaches is not
       current, so the claim contributes no proved evidence. Distinct from `stale`
       and `unbound`, which are both statements about THIS body. -/
@@ -940,6 +946,7 @@ inductive ProofState where
     ObligationStatus.canonical to prevent cross-surface drift. -/
 def ProofState.canonical : ProofState → String
   | .unbound        => "unbound"
+  | .needsRecheck   => "needs_recheck"
   | .depsNotCurrent => "deps_not_current"
   | .proved     => "proved"
   | .stale      => "stale"
@@ -977,6 +984,7 @@ structure ProofStatusEntry where
 /-- Convert ProofCore ObligationStatus to Report-side ProofState. -/
 private def obligationStatusToProofState : Concrete.ObligationStatus → ProofState
   | .unbound => .unbound
+  | .needsRecheck => .needsRecheck
   | .depsNotCurrent => .depsNotCurrent
   | .proved => .proved
   | .stale => .stale
@@ -1092,6 +1100,18 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     let coverageTag := if e.coverage.isEmpty then "" else s!"\n\n  coverage: {e.coverage}"
     let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
     s!"-- proof link unbound {String.ofList (List.replicate 37 '-')} {locStr}\n\n  proof link unbound: no stored proof-subject digest for `{e.qualName}`.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  Not proved, and not stale: the body has not been shown to change, it has\n  never been pinned. With no stored subject the freshness check would compare\n  this body against itself.{coverageTag}{originLine}{specLine}\n\n  hint: Re-verify the proof against the current body, then record the result as #[proof_fingerprint(\"...\")]."
+  | .needsRecheck =>
+    -- Says what the stored value CANNOT decide, rather than asserting a change.
+    -- The v1 digest hashed Core statements; v2 covers identity, typed signature,
+    -- generics, capabilities and contracts. A v1 value answers a strictly weaker
+    -- question, so no comparison against it establishes v2 freshness — and
+    -- rendering that as "the body changed" would invent a fact.
+    let specLine :=
+      if e.specDriftCovered then "\n\n  spec: drift-checked (Concrete.Proof.specs)"
+      else s!"\n\n  spec: NOT drift-covered — no Concrete.Proof.specs entry keyed '{e.qualName}'"
+    let coverageTag := if e.coverage.isEmpty then "" else s!"\n\n  coverage: {e.coverage}"
+    let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
+    s!"-- proof needs re-check {String.ofList (List.replicate 36 '-')} {locStr}\n\n  `{e.qualName}` has a stored proof-subject digest from an EARLIER SCHEMA.{snippet}\n\n  current subject digest:\n    {e.currentFp}\n\n  Not proved, and not stale. The stored value is a v1 (body-only) digest: it\n  covers no signature, capability or contract, so it cannot answer whether the\n  v2 subject is unchanged. The format changed; the program may not have.{coverageTag}{originLine}{specLine}\n\n  hint: Re-verify against the current subject and record the new v2 value as #[proof_fingerprint(\"v2:...\")]."
   | .depsNotCurrent =>
     -- Name the dependencies. "A dependency is not current" without saying which
     -- is unactionable, and the defining feature of this status is that the fix is
@@ -4080,6 +4100,7 @@ private def collectTraceEntries
         | .proved => "proved"
         | .stale => "stale"
         | .unbound => "unbound"
+        | .needsRecheck => "needs_recheck"
         -- Not "proved": that is the entire point of the status. Traceability
         -- must not launder a contained claim into evidence.
         | .depsNotCurrent => "deps_not_current"

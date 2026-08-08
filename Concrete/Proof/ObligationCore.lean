@@ -199,6 +199,11 @@ def ofProofStatus (e : Report.ProofStatusEntry) : Obligation :=
     -- moved" from "there is no subject", because only the second means the
     -- claim was never checkable.
     | .unbound     => ("unbound_proof_link", "unbound")
+    -- Its own ledger kind again, for the same reason `unbound` has one: a
+    -- release gate must distinguish "recorded under an older schema" from both
+    -- "the subject moved" and "no subject exists". All three are non-evidence,
+    -- and each has a different repair.
+    | .needsRecheck => ("proof_needs_recheck", "needs_recheck")
     -- A distinct ledger kind, and deliberately NOT "proved_by_lean": the whole
     -- purpose of the status is that this claim contributes no proved evidence.
     -- A release gate reading the ledger must see the containment, not a pass.
@@ -211,6 +216,7 @@ def ofProofStatus (e : Report.ProofStatusEntry) : Obligation :=
   let concl := match e.state with
     | .stale       => s!"proof fingerprint {e.expectedFp} ≠ current {e.currentFp}"
     | .unbound     => "proof link unbound: no stored proof-subject digest"
+    | .needsRecheck => s!"stored digest {e.expectedFp} is v1 (body-only); current schema is v2 — not comparable"
     | .depsNotCurrent =>
       if e.notCurrentDeps.isEmpty then "reaches a dependency that is not current"
       else s!"reaches non-current dependencies: {", ".intercalate e.notCurrentDeps}"
