@@ -217,7 +217,8 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    `shadow bodyV2`, because they answer different questions: the flat digest merges
    `p + 1`, `p * 2` and `p - 9`, the structural one separates them, and dropping the flat
    line would remove the comparison the shadow period exists for. Both stay
-   non-authoritative; the subject digest is still V1-frozen, and
+   non-authoritative; the AUTHORITATIVE comparison is still V1-frozen (deliberately, until
+   step 7 — the V2 digest exists and is observed in shadow; see the headline status above), and
    `check_shadow_body_v2.sh` asserts `bodyBytesV2` reaches nothing but the report.
 
    First measurement of the real corpus: **292 of 432 subjects digest, 0 absent** (316 after 2a wired the for-loop). Every
@@ -893,7 +894,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. The step-5 language decision is resolved: struct-literal initializers evaluate in source order (`7cf3662f`). Current critical path: gate shadow freshness, integrate the dependency root, define receipts, then replay/migrate. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. The step-5 language decision is resolved and the shadow freshness comparison is landed and gated. Current critical path: integrate the dependency root, define receipts, then replay/migrate. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -3207,6 +3208,57 @@ Proof automation remains behind honest semantics and the external-user trial.
 
 **Objective:** Fix proof-subject freshness and fail closed.
 
+> **HEADLINE STATUS — 2026-08-08. This supersedes every older state summary in this section.**
+> Prose further down was written while the work was in flight and is kept for its reasoning, not
+> its status. In particular, wording describing the subject digest as "still V1-frozen" is about
+> the AUTHORITATIVE comparison — which is deliberately unflipped until step 7 — and must not be
+> read as "the V2 digest does not exist". It does.
+>
+> **Roughly 60-70% implemented; 3 of 7 slices fully closed.** What remains is four substantial
+> integration/migration packages, not design exploration.
+>
+> | slice | state |
+> |---|---|
+> | 1-3 | **complete** |
+> | 4 | mostly built — 8 of 9 proof tables migrated |
+> | 5 | V2 semantic subject digest implemented; comparison wired **in shadow** (`683d2dcf`), both halves gated |
+> | 6 | dependency graph/material exists, **not authoritative** |
+> | 7 | receipt issuance and corpus migration **not started** |
+>
+> **The four remaining packages**, in critical-path order:
+>
+> 1. **Finish slice 4** — enforce never-under-approximate dependency access; define the versioned
+>    `ProofEvidenceReceipt` envelope; bind deterministic workspace, imports, toolchain and schema
+>    identities; migrate the ninth proof table (blocked by mutable-borrow extraction in ProofCore,
+>    which is outside R-0004).
+> 2. **Activate slice 5 safely** — extend the shadow proof beyond signature and contract edits to
+>    capability and generic edits; keep the live verdict unchanged until migration; then replace
+>    all 53 legacy fingerprints, accepting that 19 currently-`proved` links correctly become
+>    `needs_recheck` until replayed.
+> 3. **Integrate slice 6** — feed the typed `DepNode` graph into the deterministic dependency-root
+>    builder; combine compiler-produced edges with Lean-side theorem classification; handle direct,
+>    transitive and recursive dependencies; bind dynamic table access to the WHOLE table rather
+>    than a guessed subset; make ProofCore and Report consume the root; propagate trust and
+>    assumptions into the final evidence status. **Highest-risk remaining step.**
+> 4. **Complete slice 7** — replay every repository proof; issue receipts only after successful
+>    kernel replay; produce a dry-run migration manifest for every stored proof link; make V2
+>    fingerprints authoritative; convert old schemas to `needs_recheck`; publish the first
+>    eligibility-denominated proof-coverage baseline; verify clean-machine and
+>    repository-root/project-root reproducibility.
+>
+> **Estimate, stated so nobody plans against a wrong one.** To "architecture implemented in
+> shadow": about 2 major packages. To "authoritative and honestly closed": about 4, plus extensive
+> mutation gates, plus the mutable-borrow prerequisite. In calendar terms this is several focused
+> weeks, not days — slice 6 and the receipt/corpus migration dominate. **Without mutable-borrow
+> extraction, R-0004 stays 6-of-7 even if everything else lands**, by the decision recorded below.
+>
+> No decision is outstanding. Both owed decisions were made 2026-08-08 (struct-literal evaluation
+> order → source order, implemented; slice 7 → hold open). The `MetaM` constraint in steps 4 and 6
+> is the only remaining part that is not ordinary compiler work: `classifyTheorem` reads a
+> theorem's elaborated type and lives where Lean is elaborating, so the compiler can honestly
+> produce `trusted`/`missing`/`unclassified` and the contract-vs-body split has to come from the
+> Lean side. That needs a design for the hand-back, not more threading.
+
 Treat the following as one evidence-integrity defect class:
 
 - a source `#[proof_by]` without `#[proof_fingerprint]` currently compares a
@@ -3233,7 +3285,7 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
 | 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
 | 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries) migrated** | Enforce never-under-approximate table access; define the versioned receipt envelope and deterministic workspace/import/toolchain identities. The ninth table is blocked on mutable-borrow ProofCore extraction. |
-| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — V2 digest and `needs_recheck` disposition landed; shadow freshness comparison in flight** | Gate the shadow comparison and prove signature, generic, capability, and contract edits move it. Keep the live verdict unchanged until slice 7 accounts for all **53** legacy fingerprints; the **19** currently-proved links correctly become `needs_recheck` until replayed. |
+| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — V2 digest, `needs_recheck`, and the gated shadow freshness comparison landed** | Keep the live verdict unchanged until slice 7 accounts for all **53** legacy fingerprints; the **19** currently-proved links correctly become `needs_recheck` until replayed. The shadow gate already proves signature and contract edits move V2 while the live V1 verdict does not; retain equivalent controls for the remaining semantic dimensions through migration. |
 | 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, and standalone fail-closed root exist in shadow** | Integrate the compiler and Lean-side classifications; enforce exact/static versus whole-table/dynamic reachability; make ProofCore, reports, statuses, and later receipts consume the validated root; gate direct, transitive, and recursive cases. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 
@@ -3246,8 +3298,7 @@ highest-risk work. This is several focused weeks of work rather than a final
 cleanup pass, and the external mutable-borrow extraction prerequisite prevents
 formal closure even if slices 4–6 otherwise finish.
 
-**Critical path.** Finish and gate the shadow subject-freshness comparison →
-integrate deterministic dependency roots → define and validate the receipt
+**Critical path.** Integrate deterministic dependency roots → define and validate the receipt
 envelope → publish the complete shadow/migration manifest → replay and migrate
 the corpus → land mutable-borrow extraction and migrate the ninth table. Do not
 turn any shadow fact into a friendly authoritative verdict out of order.
