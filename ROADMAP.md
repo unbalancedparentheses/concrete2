@@ -474,7 +474,30 @@ existing subject digests and strands every stored proof link. Each gate asserts 
 method calls whose mangled name has no `CallableId`, 2 trait methods on a type parameter.
 None blocks the completion gate, which accepts "fail-closed uncovered".
 
-**TWO DECISIONS ARE OWED, and only the first is blocking.**
+**BOTH OWED DECISIONS ARE NOW MADE (2026-08-08).**
+
+1. **Struct-literal initializer evaluation order → SOURCE ORDER.** Initializers evaluate
+   left-to-right as written; `P { y: f(), x: g() }` runs `f()` before `g()`. Today `Elab` walks
+   `sd.fields` and looks each initializer up by name, so declaration order wins and source order
+   is discarded before Core exists — this changes that.
+
+   The deciding argument is sequencing, not taste. Step 5 migrates the shadow bytes and makes them
+   authoritative; changing evaluation order AFTER that migration means paying the fingerprint
+   rebuild twice. Whichever order was chosen, it had to be chosen before step 5 — and if there was
+   any chance of wanting source order later, doing it now is strictly cheaper.
+
+   On the merits: written order and run order differing is a permanent readability trap, and it is
+   observable exactly where it hurts most — when an initializer traps or has effects, which is
+   precisely what the obligation system reasons about. Matching the order a reader sees is worth
+   an afternoon and one rebuild.
+
+2. **Slice 7 → HOLD R-0004 OPEN** until mutable-borrow extraction lands. The ninth proof table
+   needs it, and it lives outside R-0004. R-0004 stays at 6-of-7 rather than closing with a named
+   gap. The cost is a long-running task in flight on work it does not own; the reason to accept
+   that is that "7 of 7, with an asterisk" reads as done to everyone who did not write the
+   asterisk.
+
+**Original framing, kept because it records what was blocking and why:**
 
 1. **Struct-literal initializer evaluation order — blocks step 5.** Declaration order is
    already in the shadow bytes; the migration is what makes them authoritative. Either

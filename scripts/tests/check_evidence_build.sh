@@ -122,7 +122,11 @@ fi
 # evaluate in DECLARATION order while calls and array elements follow SOURCE order.
 # This leg records that difference so a change is noticed; it deliberately does not
 # ratify it, because gating current behaviour would bless a likely wart before the
-# language decision is made. See docs/EVIDENCE_PRODUCER_MATRIX.md.
+# RATIFIED 2026-08-08: initializers evaluate in SOURCE order, so this is a gate rather than the
+# tripwire it began as. Both directions are pinned — writing `x` first must run `f` first, and
+# writing `y` first must run `g` first — because asserting only one direction would pass under a
+# rule that always evaluates the textually-first field regardless of the literal.
+# See docs/EVIDENCE_PRODUCER_MATRIX.md.
 CC=".lake/build/bin/concrete"
 if [ -x "$CC" ]; then
   OT="$(mktemp -d)"
@@ -139,12 +143,15 @@ EOF
   o1="$("$CC" "$OT/fwd.con" --interp 2>/dev/null | tr -d '\n' | head -c 4)"
   o2="$("$CC" "$OT/rev.con" --interp 2>/dev/null | tr -d '\n' | head -c 4)"
   rm -rf "$OT"
-  if [ -z "$o1" ]; then
-    no "order tripwire produced no output — inconclusive, not agreement"
+  if [ -z "$o1" ] || [ -z "$o2" ]; then
+    no "order probe produced no output — inconclusive, not agreement"
   elif [ "$o1" = "$o2" ]; then
-    ok "TRIPWIRE: struct fields still evaluate in DECLARATION order (decision open)"
+    no "struct fields evaluate in DECLARATION order — the language ratified SOURCE order on 2026-08-08; written order must decide which initializer runs first"
+  elif [ "${o1#fg}" != "$o1" ] && [ "${o2#gf}" != "$o2" ]; then
+    # prefix match: the captured text also carries main's return value after the two prints
+    ok "struct fields evaluate in SOURCE order — written order decides (ratified 2026-08-08)"
   else
-    no "struct-literal evaluation order CHANGED to source order — the language decision was made; ratify it in the matrix, build the evidence node against it, and convert this tripwire into a gate"
+    no "struct-literal order probe gave an unexpected pair (fwd=$o1 rev=$o2); expected fwd to start 'fg' and rev 'gf' under source order"
   fi
 else
   no "compiler not built — the order tripwire could not run"

@@ -45,21 +45,13 @@ private def sortMatchArms (arms : List CMatchArm) : List CMatchArm :=
   specific ++ wild
 
 -- ============================================================
--- Struct field reordering
--- ============================================================
-
-/-- Reorder struct literal fields to match definition order. -/
-private def reorderFields (defFields : List (String × Ty))
-    (litFields : List (String × CExpr)) : List (String × CExpr) :=
-  defFields.filterMap fun (name, _) =>
-    litFields.find? fun (fn, _) => fn == name
-
--- ============================================================
 -- Core expression/statement canonicalization
 -- ============================================================
 
-private def lookupStructFields (structs : List CStructDef) (name : String) : Option (List (String × Ty)) :=
-  (structs.find? fun s => s.name == name).map (·.fields)
+-- `reorderFields`/`lookupStructFields` lived here and are deleted, not kept "in case": they
+-- reordered struct-literal fields into definition order, which under the 2026-08-08 source-order
+-- decision would change which initializer runs first. Dead normalization code is worse than none
+-- — the next person reads it as the intended behaviour.
 
 mutual
 partial def canonExpr (structs : List CStructDef) : CExpr → CExpr
@@ -74,11 +66,16 @@ partial def canonExpr (structs : List CStructDef) : CExpr → CExpr
   | .call fn targs args ty =>
     .call fn (targs.map canonTy) (args.map (canonExpr structs)) (canonTy ty)
   | .structLit name targs fields ty =>
-    let fields' := fields.map fun (n, e) => (n, canonExpr structs e)
-    let ordered := match lookupStructFields structs name with
-      | some defFields => reorderFields defFields fields'
-      | none => fields'
-    .structLit name (targs.map canonTy) ordered (canonTy ty)
+    -- Field order is NOT canonicalized (language decision, 2026-08-08: initializers evaluate in
+    -- SOURCE order). This pass used to reorder the list to definition order, and the list order
+    -- is what `Interp.evalFields` evaluates in — so the reorder silently changed which
+    -- initializer ran first. Under source-order semantics two literals differing only in written
+    -- order are different programs whenever an initializer traps or has effects, and a
+    -- normalization that erases an observable distinction is not a normalization.
+    --
+    -- LAYOUT is unaffected: it derives from the struct DEFINITION, never from a literal's field
+    -- order, and every consumer looks fields up by name.
+    .structLit name (targs.map canonTy) (fields.map fun (n, e) => (n, canonExpr structs e)) (canonTy ty)
   | .fieldAccess obj f ty => .fieldAccess (canonExpr structs obj) f (canonTy ty)
   | .enumLit en v targs fields ty =>
     .enumLit en v (targs.map canonTy) (fields.map fun (n, e) => (n, canonExpr structs e)) (canonTy ty)

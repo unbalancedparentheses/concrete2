@@ -617,24 +617,32 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       -- complex base expression is re-read per copied field.)
       let cBase ← base.mapM (fun b => do pure (← elabExprEv b (some resultTy)).core)
       let mut cFields : List (String × CExpr) := []
-      -- Struct-literal field evidence, in the order Elab EVALUATES them, which is
-      -- DECLARATION order: this loop walks sd.fields and looks each initializer up by
-      -- name, so source order is discarded before Core exists. Measured, and recorded as
-      -- an open language decision in docs/EVIDENCE_PRODUCER_MATRIX.md with a tripwire in
-      -- check_evidence_build. Evidence must describe what the program DOES, so it follows
-      -- the actual evaluation order; if the language later evaluates in source order, the
-      -- tripwire fires and this follows.
+      -- SOURCE ORDER (language decision, 2026-08-08). Initializers evaluate left-to-right as
+      -- WRITTEN, so this walks the literal's own field list rather than `sd.fields`.
+      --
+      -- The list order IS the evaluation order: `Interp.evalFields` folds the list left to
+      -- right, so emitting source order here is what makes `P { y: f(), x: g() }` run `f()`
+      -- first. `CoreCanonicalize` previously reordered this list back to declaration order and
+      -- no longer does — a normalization that erases an observable distinction is not a
+      -- normalization, and under source-order semantics two literals differing only in written
+      -- order ARE different programs whenever an initializer traps or has effects.
+      --
+      -- Fields omitted from the literal (filled from `..base`) are appended afterwards in
+      -- declaration order: they have no written position to preserve, and `base` was already
+      -- evaluated once above, so their relative order is unobservable.
       let mut structFieldEvsRev : List (String × Proof.EvidenceExprV2) := []
-      for sf in sd.fields do
-        let fieldTy := substTy mapping sf.ty
-        match fields.find? fun (fn, _) => fn == sf.name with
-        | some (_, expr) =>
+      for (fname, expr) in fields do
+        match sd.fields.find? fun sf => sf.name == fname with
+        | some sf =>
+          let fieldTy := substTy mapping sf.ty
           recordFieldUse sd sf.name
           let cExprEv ← elabExprEv expr (some fieldTy)
-          let cExpr := cExprEv.core
-          cFields := cFields ++ [(sf.name, cExpr)]
+          cFields := cFields ++ [(sf.name, cExprEv.core)]
           structFieldEvsRev := (sf.name, cExprEv.evidence) :: structFieldEvsRev
-        | none =>
+        | none => pure ()  -- unknown field: reported by the checker, not here
+      for sf in sd.fields do
+        if !(fields.any fun (fn, _) => fn == sf.name) then
+          let fieldTy := substTy mapping sf.ty
           match cBase with
           | some cb =>
             recordFieldUse sd sf.name
