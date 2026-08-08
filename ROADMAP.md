@@ -428,7 +428,13 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
      carry an identity — "evidence requires identity for the WHOLE table, not most of it" —
      and one legacy entry disqualifies the table from minting a receipt. `canonicalEntries`
      and `hasDuplicateIds` are there too. This half is done and fail-closed.
-   * *Reachability* binding does NOT exist. Nothing digests the table a body reaches:
+   * *Reachability* binding **LANDED 2026-08-08** (`tableValueDigest` + `EdgeEvidence.tableDigests`
+     + `tablesFullyBound`, gated 6 ways in `check_dependency_edges.sh`, 36 -> 42). It digests the
+     table constant's DEFINING VALUE — whole by construction, since there is no subset to select
+     from — and REFUSES for a valueless or unavailable constant rather than digesting a part.
+     What remains of this item is the CONSUMER side: `classifyTheorem` now carries the digests,
+     and the receipt envelope (slice 4) must reject a `body` edge whose `tablesFullyBound` is
+     false. Original finding, kept because it is why the item read as one thing:
      `tableDigest`/`tableReach`/`tableBytes` return nothing across the tree. So a proof over
      a body that indexes a table is currently bound to the table's IDENTITY discipline but
      not to its CONTENTS, and a change to an entry the body does not appear to touch moves

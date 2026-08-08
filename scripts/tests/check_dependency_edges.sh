@@ -246,6 +246,61 @@ else
   ok "TRIPWIRE: no report consumes dependency roots yet"
 fi
 
+# === WHOLE-TABLE BINDING (slice 4: never under-approximate table access) =====================
+# A `body` edge naming a table is not yet a dependency ON that table. The NAME does not move
+# when an entry's definition changes, so a proof about `fns` stayed valid-looking after any
+# edit inside `fns`. `tableValueDigest` binds the constant's defining VALUE — whole by
+# construction, because there is no subset to select from — and a dynamic index means the
+# apparent subset would have been an under-approximation, which fails OPEN.
+echo "=== whole-table binding ==="
+
+probe "a table's digest MOVES when its contents change" "MOVED" '
+def tA : FnTable := FnTable.ofGlobals (fun n => if n == "f" then none else none)
+def tB : FnTable := FnTable.ofGlobals (fun n => if n == "g" then none else none)
+#eval show MetaM Unit from do
+  let a ← tableValueDigest `tA
+  let b ← tableValueDigest `tB
+  IO.println (if a.isSome && b.isSome && a != b then "MOVED" else "SAME")'
+
+# Fail-closed. A constant with no value — axiom, opaque, unavailable import — must REFUSE
+# rather than digest to something. A digest over "the part we could see" is indistinguishable
+# from one over the whole table, which is how a partial dependency becomes an invisible one.
+probe "a valueless/unknown constant REFUSES rather than digesting" "REFUSED" '
+#eval show MetaM Unit from do
+  let d ← tableValueDigest `No.Such.Table
+  IO.println (if d.isNone then "REFUSED" else "DIGESTED")'
+
+# The digest must be a FUNCTION of the constant, or a receipt could not be replayed.
+probe "the same table digests identically twice (deterministic)" "STABLE" '
+def tS : FnTable := FnTable.ofGlobals (fun _ => none)
+#eval show MetaM Unit from do
+  let a ← tableValueDigest `tS
+  let b ← tableValueDigest `tS
+  IO.println (if a.isSome && a == b then "STABLE" else "UNSTABLE")'
+
+# `tablesFullyBound` is the gate a receipt must consult: a `body` edge that names a table it
+# could not bind announces a dependency whose changes it cannot detect, which reads exactly
+# like a dependency that never changes.
+probe "evidence naming an unbindable table is NOT fully bound" "NOTBOUND" '
+#eval show MetaM Unit from do
+  let e : EdgeEvidence := { edge := .body, tables := [`No.Such.Table]
+                          , tableDigests := [(`No.Such.Table, none)], quantifiesOverTable := false }
+  IO.println (if e.tablesFullyBound then "BOUND" else "NOTBOUND")'
+
+probe "...and evidence with every table bound IS fully bound (control)" "BOUND" '
+#eval show MetaM Unit from do
+  let e : EdgeEvidence := { edge := .body, tables := [`X]
+                          , tableDigests := [(`X, some "abc")], quantifiesOverTable := false }
+  IO.println (if e.tablesFullyBound then "BOUND" else "NOTBOUND")'
+
+# A count mismatch must also fail: fewer digests than names is the silent shape of a partial
+# binding, and length-equality is what makes "fully" mean every one of them.
+probe "fewer digests than named tables is NOT fully bound" "NOTBOUND" '
+#eval show MetaM Unit from do
+  let e : EdgeEvidence := { edge := .body, tables := [`X, `Y]
+                          , tableDigests := [(`X, some "abc")], quantifiesOverTable := false }
+  IO.println (if e.tablesFullyBound then "BOUND" else "NOTBOUND")'
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"

@@ -1,5 +1,6 @@
 import Lean
 import Concrete.Proof.DependencyEdge
+import Concrete.Proof.ProofCore
 
 /-! # Deriving a dependency edge from a theorem (R-0004 step 6)
 
@@ -63,6 +64,37 @@ def tableConstsIn (e : Lean.Expr) : MetaM (List Name) := do
     | none    => pure ()
   return out.eraseDups
 
+/-- A digest binding the WHOLE of a table constant, or `none` if it cannot be bound.
+
+    **The under-approximation this exists to prevent.** A `body` edge records which tables a
+    theorem names. That is not enough to stale it: the NAME does not move when an entry's
+    definition changes, so a proof about `fns` stayed valid-looking after any edit inside
+    `fns`. Binding only the entries a static index appears to touch would be worse than
+    useless — a dynamic index can reach any entry, so the apparent subset is an
+    under-approximation, and an under-approximated dependency fails OPEN.
+
+    So this digests the constant's DEFINING VALUE, not a selection from it. Whole-by-
+    construction: there is no subset to guess, and any change anywhere in the table moves it.
+
+    `none` when the constant has no value — an axiom, an opaque, or an unavailable import.
+    Refusing is the fail-closed direction and matches `shadowDepsLine`, which refuses rather
+    than digesting a partial constant set. A digest over "the parts we could see" is
+    indistinguishable from one over the whole thing, which is exactly how a partial
+    dependency becomes an invisible one.
+
+    LIMIT, stated because it bounds what a receipt may claim: the digest is over the
+    elaborated value's structural rendering, so it is deterministic within a toolchain and
+    not across toolchains. That is sufficient here only because toolchain identity is bound
+    separately in the receipt envelope (slice 4); if that binding is ever dropped, this
+    becomes a cross-machine reproducibility hole rather than a stable key. -/
+def tableValueDigest (n : Name) : MetaM (Option String) := do
+  match (← try pure (some (← getConstInfo n)) catch _ => pure none) with
+  | none => return none
+  | some ci =>
+    match ci.value? with
+    | none => return none
+    | some v => return some (Concrete.shortHash ("tableV1:" ++ toString n ++ ":" ++ toString v))
+
 /-- The result of reading a theorem's type: which edge it implies, and the
     concrete tables it names (empty for a `contract` edge).
 
@@ -72,11 +104,22 @@ def tableConstsIn (e : Lean.Expr) : MetaM (List Name) := do
 structure EdgeEvidence where
   edge   : DependencyEdge
   tables : List Name
+  /-- Whole-table digests for `tables`, in the same order, each paired with its name.
+      `none` in the second component means the table could not be bound and the evidence
+      is INCOMPLETE — see `tablesFullyBound`. Carried alongside the names rather than
+      replacing them so a consumer can report which table failed, not just that one did. -/
+  tableDigests : List (Name × Option String) := []
   /-- True when the type quantifies over some `FnTable`. Kept alongside `edge` so
       a caller can see the two facts that produced the verdict rather than having
       to trust it. -/
   quantifiesOverTable : Bool
 deriving Repr, Inhabited
+
+/-- Every named table is bound to a digest. A `body` edge whose evidence is not fully
+    bound must not mint a receipt: it names a dependency it cannot detect a change in,
+    which reads exactly like a dependency that never changes. -/
+def EdgeEvidence.tablesFullyBound (e : EdgeEvidence) : Bool :=
+  e.tableDigests.length == e.tables.length && e.tableDigests.all (·.2.isSome)
 
 /-- Derive the edge a theorem implies, or `none` if it depends on no table.
 
@@ -101,7 +144,13 @@ def classifyTheorem (n : Name) : MetaM (Option EdgeEvidence) := do
     -- if it ALSO quantifies over some other table. Answering `contract` there
     -- would be the fail-open direction.
     if !named.isEmpty then
-      return some { edge := .body, tables := named, quantifiesOverTable := bound }
+      -- Bind each named table WHOLE, here rather than at the consumer: the classifier is
+      -- the only place that knows which constants are tables, and a consumer re-deriving
+      -- that would be a second, weaker answer to a question already answered.
+      let mut digs : List (Name × Option String) := []
+      for t in named do digs := digs ++ [(t, ← tableValueDigest t)]
+      return some { edge := .body, tables := named, tableDigests := digs
+                  , quantifiesOverTable := bound }
     return some { edge := .contract, tables := [], quantifiesOverTable := true }
 
 end Concrete.Proof
