@@ -5,7 +5,7 @@ should happen next, in what order?** Historical phase detail lives in
 [CHANGELOG.md](CHANGELOG.md); this file keeps only active work, future-relevant
 constraints, and deferred tails with a real pull trigger.
 
-> **Start here for status:** [Status board](#status-board-2026-08-06--everything-open-ranked-with-why).
+> **Start here for status:** [Status board](#status-board-2026-08-08--everything-open-ranked-with-why).
 > **Start here for direction:** [Design honesty vs Why3](#design-honesty-this-is-largely-why3s-architecture-and-one-layer-is-worse-than-why3s)
 > and [North star](#north-star-prove-every-kind-of-code-in-lean--rocq--isabelle) —
 > what "prove every kind of code in three kernels" decomposes into, what is reachable,
@@ -870,7 +870,11 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope |
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. **One owed decision blocks step 5**: struct-literal initializer evaluation order — ratify declaration order in the language reference, or change `Elab` to source order. A language-semantics call, ~an afternoon either way |
+| 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
+| 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
+| 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
+| 2d | **R-0475** | `ModuleOrigin` at project-graph entry, so a report can separate project from dependency obligations. The snapshot half is done; this is the compiler half |
 | — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
 | 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
 | 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
@@ -1315,7 +1319,28 @@ This is not an argument to stop; the tiers are real and verified. It is an argum
 and it is recorded here because "add another rung" is the more interesting work and therefore the
 easier trap.
 
-## Status board (2026-08-06) — everything open, ranked, with why
+## Status board (2026-08-08) — everything open, ranked, with why
+
+### Merged to main 2026-08-08
+
+The contract-input hardening series is on `main` (`e656b0af`), verified on the merged tree rather
+than on either side alone:
+
+* **corpus re-measured after the merge** — 1249 discovered, 962 clean, **2 newly rejected**, 263
+  pre-existing other errors (effect UNMEASURED, checking stops at the first error), 19 parse
+  errors, 3 timeouts. Both rejections are negative fixtures that exist to demonstrate exactly the
+  defect they trip. Main's 73 commits added no program that contract validation breaks. The
+  defensible claim is "no unexpected rejection among the 964 files that REACH contract checking",
+  not "the corpus is compatible";
+* gates on the 19 files both sides changed are green: phase1-contracts 32/0, contract-negatives
+  57/0, gate-vacuity 3/0, loop-control 28/0, bounds-migration 8/0, subject-facts 70/0,
+  type-identity 20/0, vc-schema 23/0, subject-coverage 7/0, smt-negatives 9/0, smt-path 17/0;
+* **`check_bool_kernel.sh` is 62/0/0 under `nix develop .#provers`, not 42/0/8.** The 8 were only
+  `coqc`/`isabelle` missing from the shell. Quoting the bare number understates the multi-kernel
+  evidence by hiding every Rocq and Isabelle assertion — it was reported that way for most of a
+  session before anyone ran the provers shell.
+
+
 
 One place to look. Two entries below were open earlier the same day and are now closed; they are
 kept with their outcome because the *pattern* they belong to is the last item here.
@@ -4244,6 +4269,42 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
+### Task R-0476
+
+**Objective:** drain two ratchets to zero, so neither becomes a permanent debt marker that
+everyone learns to read past.
+
+**23 universal assertions have no non-emptiness witness.** `all(P(x) for x in coll)` is true when
+`coll` is empty, so each passes when its collection is empty — proving nothing while reporting a
+pass. `check_gate_vacuity.sh` counts them and fails if the count RISES, which stops the population
+growing but drains none of it. A ratchet with no drain task is a debt marker, and debt markers
+stop being read.
+
+The fix per assertion is small (a `len(...) > 0` conjunct, or an explicit witness), so this is
+volume rather than difficulty. Lower `BASELINE_UNIVERSAL` with each batch; the gate prints a NOTE
+whenever the count drops below the baseline, so the ratchet tightens as a side effect of the work
+rather than needing a separate step.
+
+This matters more than its size suggests. The class is not hypothetical: a positive control in
+`check_contract_negatives.sh` went green while proving nothing, because the fixture it inspected
+was rejected wholesale and its report was empty. Two absence helpers had the same defect. Each of
+these 23 is a place the same thing can happen silently.
+
+**Shapes the gate does NOT yet count**, listed so their absence is not read as their
+non-existence: `sed`/`awk` block extraction over a missing block; `grep` pipelines accepting empty
+input; command substitutions hiding a failed producer; section checks where a fatal earlier
+diagnostic removes the section. `assert_block_absent` distinguishes a missing anchor from
+forbidden content but not a malformed or unterminated block — left deliberately, because no report
+shape was found that reproduces it, and an untested branch inside an assertion helper is worse
+than a known gap.
+
+**Centralise the freshness build.** `require_fresh_binary` runs `lake build` at the top of each of
+145 gates. A no-op build is ~130ms, so a full suite pays roughly 19 seconds of redundant builds.
+Correct but wasteful: the runner should build ONCE and hand the binary to N gates, with each gate
+KEEPING its guard for standalone execution. Deleting the per-gate guard would remove the
+protection exactly where it earned its place — running one gate directly while iterating is how
+four stale-binary incidents happened in a single session.
+
 ### Task R-0473
 
 **typed contract records, and contract type checking that earns the name**
@@ -4432,8 +4493,19 @@ golden, and appending a `sha256.` entry makes the assertion fail.
 **What remains, and why it was not done here.** The *compiler-side* improvement is to label the
 report's sections by origin — "Source Contracts (this project)" versus "(dependencies)" — so the
 structure carries the distinction instead of the test harness reconstructing it. That needs module
-origin plumbed through parsing: `buildFnLocMap` stamps ONE file across all modules, so nothing
-downstream can currently tell a project module from a stdlib one. Worth doing, and deliberately
+origin recorded where modules ENTER THE PROJECT GRAPH — not, as first written here, plumbed
+through the parser. Whether a module is project-owned or dependency-owned is project-resolution
+knowledge; the parser's job is spans and paths, and teaching it package policy would put a
+resolution decision in the wrong pass. The shape is
+
+```
+ModuleOrigin { package/project identity; module identity; source path;
+               local | dependency | stdlib | generated }
+```
+
+classified at project assembly and carried through Core into obligation records. What is missing
+today is any distinction at all: `buildFnLocMap` stamps ONE file across all modules, so nothing
+downstream can tell a project module from a stdlib one. Worth doing, and deliberately
 not bundled into a snapshot fix. Note the design constraint discovered while scoping this: simply
 dropping dependency contracts from the report would LOSE safety-relevant information, because an
 undischarged obligation inside stdlib code still affects the user's program. The right shape is
