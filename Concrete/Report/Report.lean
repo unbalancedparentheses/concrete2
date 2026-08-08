@@ -1741,6 +1741,53 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
       let details := (gaps.map (·.detail)).eraseDups
       s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
 
+/-- The subject-FRESHNESS shadow line: what the v2 comparison WOULD say, computed but not
+    acted on.
+
+    The live verdict still compares the body-only fingerprint. Switching it makes all 53
+    stored `#[proof_fingerprint]` values non-comparable at once — they are v1 — turning 19
+    currently-`proved` links into `needs_recheck` in a single commit. That verdict is
+    correct, but issuing it IS the migration, and migration is step 7, gated on the FINAL
+    digest. So this observes what would happen while the authoritative path stays put,
+    which is the same shadow discipline the other four axes are under.
+
+    Four outcomes, kept distinct for the reason the other lines are:
+
+      NO-SUBJECT       the entry has no v2 digest — facts absent or incomplete. Cannot be
+                       compared, and must not read as agreement.
+      UNPINNED         no stored fingerprint. Nothing to compare against; not a mismatch.
+      WOULD-RECHECK    a fingerprint is stored WITHOUT the `v2:` prefix, so it is a v1
+                       value by construction. It answers a weaker question and cannot
+                       establish v2 freshness — this is the `needs_recheck` case.
+      WOULD-MATCH /    a v2 value is stored and does or does not equal the current digest.
+      WOULD-DIFFER     Only these two are an actual comparison.
+
+    The `v2:` prefix is the discriminator, and it is what makes the v1 case DECIDABLE
+    rather than guessed: both digests are 16 hex characters, so nothing about the value's
+    shape distinguishes them. -/
+private def storedFpFor (pc : Concrete.ProofCore) (qualName : String) : String :=
+  -- The stored `#[proof_fingerprint]` lives on the obligation's spec attachment, not on the
+  -- entry: `ProofCoreEntry` describes the SUBJECT, and what a proof was pinned against is a
+  -- property of the claim. Missing attachment and missing hash are both "" here, and
+  -- `shadowSubjectFreshnessLine` renders that as UNPINNED rather than as a mismatch.
+  match pc.obligations.find? (fun o => o.functionId.qualName == qualName) with
+  | some o => match o.spec with
+    | some a => a.expectedHash.getD ""
+    | none => ""
+  | none => ""
+
+private def shadowSubjectFreshnessLine
+    (subjectDigest : Option String) (storedFp : String) : String :=
+  match subjectDigest with
+  | none => "NO-SUBJECT (facts absent or incomplete — not comparable)"
+  | some d =>
+    let cur := "v2:" ++ shortHash d
+    if storedFp.isEmpty then s!"UNPINNED (current would be {cur})"
+    else if !("v2:".isPrefixOf storedFp) then
+      s!"WOULD-RECHECK (stored is v1, not comparable; current would be {cur})"
+    else if storedFp == cur then s!"WOULD-MATCH ({cur})"
+    else s!"WOULD-DIFFER (stored {storedFp}, current {cur})"
+
 /-- The dependency shadow line: which constants a body REACHES, and whether each is bound
     to a meaning.
 
@@ -1976,7 +2023,14 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}\n"
         , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}\n"
         , s!"  shadow inherited: {inheritedAssumptions pc.entries e}\n"
-        , s!"  shadow edgeKinds: {shadowEdgeKinds pc.entries e.evidenceBody}"
+        , s!"  shadow edgeKinds: {shadowEdgeKinds pc.entries e.evidenceBody}\n"
+        -- The FIFTH axis, and the one step 5 turns on. The four above describe the
+        -- subject; this one says what COMPARING it would decide. Separate because a
+        -- complete, bound, assumption-free subject can still be pinned against a v1
+        -- value — completeness of the subject and comparability of the claim are
+        -- different questions, and one line for both would let the first imply the
+        -- second.
+        , s!"  shadow subjectFreshness: {shadowSubjectFreshnessLine e.subjectDigest (storedFpFor pc e.qualName)}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 

@@ -893,11 +893,11 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. **One owed decision blocks step 5**: struct-literal initializer evaluation order — ratify declaration order in the language reference, or change `Elab` to source order. A language-semantics call, ~an afternoon either way |
+| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. The step-5 language decision is resolved: struct-literal initializers evaluate in source order (`7cf3662f`). Current critical path: gate shadow freshness, integrate the dependency root, define receipts, then replay/migrate. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
-| 2f | **R-0478** | 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Both cheap; both keep producing defects |
+| — | **R-0478** | **OPPORTUNISTIC — no queue position, pick up whenever.** 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Neither blocks anything; both keep producing defects, so the right time is whenever someone is already in the file. The `substExpr` rename should happen BEFORE R-0474 retires the unsound one |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
 | 2d | **R-0475** | `ModuleOrigin` at project-graph entry, so a report can separate project from dependency obligations. The snapshot half is done; this is the compiler half |
 | — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
@@ -3222,17 +3222,35 @@ Treat the following as one evidence-integrity defect class:
   reported multi-function witness and control (provisionally called bug 062);
   the number becomes stable only when its document and executable control land.
 
-Land this task in seven explicit slices:
+Land this task in seven explicit slices. **This is the authoritative current-state
+summary; dated investigation notes later in the task explain how the state was
+reached but do not override this table.** `ACTIVE` means useful implementation
+has landed while the slice's user-visible outcome remains incomplete.
 
-| slice | outcome | status |
-| --- | --- | --- |
-| 1 | executable witnesses | LANDED |
-| 2 | missing-fingerprint containment | LANDED |
-| 3 | dependency containment | LANDED |
-| 4 | replay/table foundation and receipt-envelope plumbing | ACTIVE |
-| 5 | complete semantic `ProofSubjectDigest` | ACTIVE |
-| 6 | deterministic transitive dependency material/root | ACTIVE |
-| 7 | receipt issuance, honest corpus migration, and coverage baseline | PENDING |
+| slice | outcome | current state | what remains before the slice exits |
+| --- | --- | --- | --- |
+| 1 | executable witnesses | **LANDED** | Preserve the positive controls and convert each defect tripwire when its owning slice closes. |
+| 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
+| 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
+| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries) migrated** | Enforce never-under-approximate table access; define the versioned receipt envelope and deterministic workspace/import/toolchain identities. The ninth table is blocked on mutable-borrow ProofCore extraction. |
+| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — V2 digest and `needs_recheck` disposition landed; shadow freshness comparison in flight** | Gate the shadow comparison and prove signature, generic, capability, and contract edits move it. Keep the live verdict unchanged until slice 7 accounts for all **53** legacy fingerprints; the **19** currently-proved links correctly become `needs_recheck` until replayed. |
+| 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, and standalone fail-closed root exist in shadow** | Integrate the compiler and Lean-side classifications; enforce exact/static versus whole-table/dynamic reachability; make ProofCore, reports, statuses, and later receipts consume the validated root; gate direct, transitive, and recursive cases. |
+| 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
+
+**Completion estimate as of 2026-08-08.** The representation and shadow
+foundation is roughly two-thirds built, but only slices 1–3 are closed. Four
+integration/migration packages remain: finish the receipt foundation, activate
+semantic freshness safely, integrate the dependency root end to end, and replay
+and migrate the corpus. Slice 6 and the receipt/corpus migration are the
+highest-risk work. This is several focused weeks of work rather than a final
+cleanup pass, and the external mutable-borrow extraction prerequisite prevents
+formal closure even if slices 4–6 otherwise finish.
+
+**Critical path.** Finish and gate the shadow subject-freshness comparison →
+integrate deterministic dependency roots → define and validate the receipt
+envelope → publish the complete shadow/migration manifest → replay and migrate
+the corpus → land mutable-borrow extraction and migrate the ninth table. Do not
+turn any shadow fact into a friendly authoritative verdict out of order.
 
 #### Binder frames: position and meaning are separate obligations
 
@@ -3842,17 +3860,13 @@ it must not be reported as done from the presence of its intermediate data.
    subject. This is intentionally simpler to audit than a Merkle-DAG-on-SCC at
    the current corpus size; incremental sharing is a measured future
    optimization, not part of R-0004's soundness claim.
-**Detailed slice state, corrected 2026-08-01.** An earlier summary claimed slices 1-4
-complete; that was wrong and is recorded here so the next reader starts from the
-actual state rather than the claim:
-
-| slice | state |
-| --- | --- |
-| 1-3 | done |
-| 4 | ACTIVE — 8/9 tables; never-under-approximate enforcement and receipt-envelope plumbing remain |
-| 5 | ACTIVE — facts exist and are threaded, but the BODY component is still the legacy fingerprint and freshness is unwired |
-| 6 | ACTIVE — a standalone, fail-closed, typed dependency root exists; nothing in ProofCore or Report consumes it |
-| 7 | untouched |
+**Historical state note (2026-08-01; superseded).** This point recorded slices
+1–3 done, slice 4 at 8-of-9 tables, a standalone dependency root with no
+consumer, and no slice-7 migration. The old summary said slice 5 still lacked a
+semantic body component; that is no longer current: `proofSubjectDigestV2` now
+exists and is minted per entry. Use the authoritative table at the start of
+R-0004 for current status. This note remains only to preserve the investigation
+sequence behind the V2 body design below.
 
 **V2 body representation — design constraints, before any code.** The facts are
 already alpha-invariant (parameters render as types by position); it is
@@ -4455,6 +4469,10 @@ it. This is why the identity substrate moved into R-0473 rather than waiting for
 `ResolvedContractRef` is a sum rather than a string with a companion type table.
 
 ### Task R-0478
+
+**Scheduling: opportunistic.** No queue position and nothing blocks on it. Do either half when
+already working in the affected file; the `substExpr` rename is the one with a deadline, since it
+must land before R-0474 retires the unsound function or that commit becomes ambiguous.
 
 **Objective:** two refactors that are cheap individually and keep producing defects because they
 are not done — recorded together because both are "the same thing exists in N places and nothing

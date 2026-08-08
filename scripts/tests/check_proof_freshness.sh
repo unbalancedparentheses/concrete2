@@ -103,6 +103,70 @@ grep -q "proof link unbound: no stored proof-subject digest" <<<"$OUT" \
 restore li loop_invariant
 
 echo
+# === SHADOW: what the v2 subject digest WOULD decide (R-0004 step 5) ========================
+# The live verdict compares the body-only fingerprint; the v2 digest covers identity, full
+# typed signature, generics, capabilities and contracts. Switching the comparison would turn
+# 19 currently-proved links into needs_recheck at once, because all 53 stored fingerprints are
+# v1 — that is the step-7 migration, not this slice. So the digest is OBSERVED here while the
+# authoritative path stays put, which is the same discipline the other four shadow axes are under.
+#
+# BOTH HALVES ARE ASSERTED, and that is the point of a shadow leg. Half one: the shadow value
+# moves when signature or contracts move — otherwise the migration would be pointless. Half two:
+# the live verdict does NOT move — otherwise this is no longer shadow and 19 proofs just changed
+# status without the migration.
+shadow_digest() {
+  "$COMPILER" "$1/src/main.con" --report subject-facts 2>/dev/null \
+    | grep -oE 'current would be v2:[0-9a-f]+' | head -1 | sed 's/current would be //'
+}
+echo "=== SHADOW(step 5): the v2 subject digest sees what the live fingerprint cannot ==="
+BASE_D="$(shadow_digest "$LI")"
+BASE_V="$(verdict "$LI")"
+if [ -z "$BASE_D" ]; then
+  no "SHADOW: no v2 digest emitted for the baseline — the leg below would prove nothing"
+else
+  ok "SHADOW: baseline emits a v2 subject digest ($BASE_D)"
+fi
+
+# 059 under the v2 digest: the same whole-signature change the tripwire below shows is invisible.
+edit "$LI/src/main.con" 'fn count_up() -> i32 {'                        'fn count_up() -> u32 {'
+edit "$LI/src/main.con" 'let mut acc: i32 = 0;'                         'let mut acc: u32 = 0;'
+edit "$LI/src/main.con" 'for (let mut i: i32 = 0; i < 8; i = i + 1) {'  'for (let mut i: u32 = 0; i < 8; i = i + 1) {'
+SIG_D="$(shadow_digest "$LI")"; SIG_V="$(verdict "$LI")"
+[ -n "$SIG_D" ] && [ "$SIG_D" != "$BASE_D" ] \
+  && ok "SHADOW(059): a whole-signature change MOVES the v2 digest ($BASE_D -> $SIG_D)" \
+  || no "SHADOW(059): the v2 digest did not move on a signature change — it does not cover types"
+[ "$SIG_V" = "$BASE_V" ] \
+  && ok "SHADOW(059): ...and the LIVE verdict is unchanged ('$SIG_V') — still shadow" \
+  || no "SHADOW(059): the live verdict moved to '$SIG_V' — this is no longer shadow; the step-7 migration has begun by accident"
+restore li loop_invariant
+
+# 060 under the v2 digest: a TRUE and a FALSE postcondition must not digest alike.
+edit "$LI/src/main.con" '    #[proof_coverage(invariant)]
+' '    #[proof_coverage(invariant)]
+    #[ensures(result == 999)]
+'
+FALSE_D="$(shadow_digest "$LI")"; FALSE_LV="$(verdict "$LI")"
+restore li loop_invariant
+edit "$LI/src/main.con" '    #[proof_coverage(invariant)]
+' '    #[proof_coverage(invariant)]
+    #[ensures(result == 28)]
+'
+TRUE_D="$(shadow_digest "$LI")"
+restore li loop_invariant
+if [ -n "$FALSE_D" ] && [ -n "$TRUE_D" ] && [ "$FALSE_D" != "$TRUE_D" ]; then
+  ok "SHADOW(060): a TRUE and a FALSE #[ensures] give DIFFERENT v2 digests — contracts are covered"
+else
+  no "SHADOW(060): a true and a false postcondition digest alike ('$FALSE_D' vs '$TRUE_D') — contracts are outside the v2 digest"
+fi
+[ -n "$FALSE_D" ] && [ "$FALSE_D" != "$BASE_D" ] \
+  && ok "SHADOW(060): ...and adding a contract at all moves it off the baseline" \
+  || no "SHADOW(060): adding an #[ensures] left the digest at the baseline value"
+[ "$FALSE_LV" = "$BASE_V" ] \
+  && ok "SHADOW(060): ...and the LIVE verdict is unchanged ('$FALSE_LV') — still shadow" \
+  || no "SHADOW(060): the live verdict moved to '$FALSE_LV' — no longer shadow"
+
+echo
+
 echo "=== bug 059 — GAP OPEN: the digest omits declared types ==="
 # Return type, accumulator and loop counter all change i32 -> u32. Every
 # STATEMENT is textually identical, so a body-only hash sees nothing — but the
