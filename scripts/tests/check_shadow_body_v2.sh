@@ -336,8 +336,12 @@ printf 'mod m { pub fn f<Zed: Copy>(x: Zed) -> Int { let a: [Zed; 1] = [x]; let 
 tvt="$(digest_of "$TMP/tvT.con" m.f/1)"; tvz="$(digest_of "$TMP/tvZ.con" m.f/1)"
 if [ -z "$tvt" ] || [ -z "$tvz" ]; then
   no "the type-parameter probe produced no digest — inconclusive, not invariance"
-elif [ "$tvt" = "$tvz" ]; then
-  ok "renaming a type parameter does NOT move the digest (binder position, not spelling)"
+elif ! diff -q "$TMP/tvT.con" "$TMP/tvZ.con" >/dev/null 2>&1 && [ "$tvt" = "$tvz" ]; then
+  # THE CONTROL, not decoration. "renaming does NOT move the digest" is TRUE when no rename
+  # happened, so an edit that made the two probes identical would turn this into a
+  # permanent pass. check_binder_refs carries the same control ("the rename probe genuinely
+  # changed the program"); this gate was written later and lacked it.
+  ok "renaming a type parameter does NOT move the digest (binder position, not spelling), and the probes genuinely differ"
 else
   no "renaming T to Zed moved the digest — a type variable is encoded by spelling"
 fi
@@ -657,8 +661,10 @@ else
 fi
 
 # Identity, not spelling: renaming binders must not move the material.
-if [ -n "$eren" ] && [ "$eren" = "$eorig" ]; then
-  ok "renaming locals does not move the edge set"
+if ! diff -q "$TMP/eren.con" "$TMP/eorig.con" >/dev/null 2>&1 && [ -n "$eren" ] && [ "$eren" = "$eorig" ]; then
+  # Same control: the two probes must actually be different programs, or "renaming changes
+  # nothing" is a statement about nothing.
+  ok "renaming locals does not move the edge set, and the probes genuinely differ"
 else
   no "renaming binders moved the dependency edge set ($eorig vs $eren)"
 fi
