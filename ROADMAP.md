@@ -3802,6 +3802,30 @@ it must not be reported as done from the presence of its intermediate data.
    is already emitted from Report and that is defensible only because it is
    explicitly NOT receipt-eligible.
 
+   **STATE 2026-08-08.** The digest itself is DONE — `proofSubjectDigestV2` exists, covers
+   identity/signature/generics/capabilities/contracts, returns `none` for an incomplete subject,
+   and is already minted per entry as `ProofCoreEntry.subjectDigest`. The status the comparison
+   needs is now landed too: `needsRecheck`, threaded through every surface (`3936709e`).
+
+   **What remains is one sequencing decision, and it is NOT a coding question.** Switching
+   `deriveObligationStatus` to compare the v2 digest makes all **53** stored
+   `#[proof_fingerprint]` values non-comparable at once — they are v1, computed from the body
+   hash — which turns the corpus's **19 currently-proved links** into `needs_recheck` in a single
+   commit.
+
+   That verdict is CORRECT: those links were never checked against a signature or a contract, so
+   `proved` overstates what was verified. But issuing it is the *migration*, and migration is
+   step 7 ("issue receipts and migrate honestly"), explicitly gated on the FINAL digest. Doing it
+   here would either strand 19 proofs mid-slice or invite re-recording fingerprints against a
+   digest that step 6 may still move.
+
+   **So the comparison lands in SHADOW, like the other four axes, and for the same reason.** Emit
+   what the v2 comparison WOULD say alongside the current verdict; assert both halves (the shadow
+   verdict moves when signature or contracts move, AND the live verdict does not); flip it in
+   step 7 together with re-recording the 53 values as `v2:`-prefixed. The `v2:` prefix is the
+   discriminator — a stored value without it is v1 by construction, which is what makes
+   `needsRecheck` decidable rather than guessed.
+
    Closing bugs 059 and 060 means wiring the digest into the FRESHNESS COMPARISON,
    not merely emitting it. Their tripwires in `check_proof_freshness.sh` still pass
    — a whole-signature `i32 -> u32` change and a TRUE-vs-FALSE `#[ensures]` are
