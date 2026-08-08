@@ -4269,6 +4269,109 @@ without issuing receipts; R-0440 consumes the receipt dimensions; R-0448 is
 blocked by R-0004, R-0450, and the required R-0440 fields; and R-0169/R-0170 may
 not promote automated verdicts into authoritative claims before this gate.
 
+### Multi-kernel: where the ladder actually stands (2026-08-08)
+
+Consolidated because the answer was previously spread across six places in this file, and
+"what can the multi-kernel path prove today?" could not be answered without reading all of them.
+
+**Implemented, each with a demo emitting real Lean + Rocq + Isabelle:**
+
+| tier | rung | demo |
+|---|---|---|
+| boolean postconditions | 2 | `examples/bool_kernel_demo` |
+| EUF — uninterpreted spec functions | 5 | `examples/euf_kernel_demo` |
+| datatypes + arrays — struct fields, array reads | 6+7 | `examples/datatype_kernel_demo` |
+| refinement against a defined spec | — | `examples/refine_kernel_demo` |
+
+`check_bool_kernel.sh` is **62/0/0 under `nix develop .#provers`**. Bare it reports 42/0/8, where
+the 8 are absent `coqc`/`isabelle` — quoting that number hides every Rocq and Isabelle assertion
+and understates the evidence. Always state which shell produced the figure.
+
+**Missing, in the order they bite:**
+
+1. **The refinement tier is narrower than it looks, and that is H25.** Its substitution is by NAME,
+   so binder-bearing spec bodies are REJECTED to prevent capture. A spec body containing a `let`,
+   a match, or a conditional binding cannot use this tier at all. Extending the tier before R-0474
+   means building on a substitution scheduled for replacement.
+2. **`old(...)` is a ceiling, not a feature.** Without it no specification can describe MUTATION,
+   so every tier above proves things about pure functions only. That the corpus's real contracts
+   are all refinements of pure helpers is not what authors chose — it is the only thing the
+   language permits.
+3. **rung 3 (nonlinear)** — 2-of-3 kernels at best; Lean has no general nonlinear procedure and
+   Mathlib is not available here. H21, upstream.
+4. **rung 4 (bitvectors)** — H20, `bv_decide`'s certificate check runs as native code.
+5. **rung 8 (induction / `#[decreases]`)** — nothing exists; it is what converts recursion from
+   *not eligible* to provable.
+6. **rung 9 (full functional correctness)** — nothing exists.
+
+Rungs 8 and 9 are where "prove every kind of code" actually lives. Everything shipped so far is
+below them.
+
+**Register C has no row table**, and that is a governance gap rather than a missing feature.
+`docs/VC_BRIDGE_REGISTER.md` enumerates rows for the Core→obligation lowering; evidence
+COMPOSITION — what "N independent kernels agree" licenses, and what it does not — exists as prose
+and nowhere as an exhaustive inventory. So the composition rules cannot be reviewed for gaps the
+way Register A's rows can. Register A remains **0 of 5 families discharged**; Register B has 1 of
+3 rows.
+
+### Test-harness principles (2026-08-08) — rules, not tasks
+
+Extracted from a review of the contract-validation work, and written here rather than in a commit
+message because they are reusable and were each paid for once. R-0476 is the task that drains the
+backlog they describe; these are the rules that stop it refilling.
+
+**1. Every universal assertion needs a non-emptiness witness.** The hazard is a theorem, not a
+style preference:
+
+> all properties hold over the empty collection
+
+`all(P(x) for x in coll)` is TRUE when `coll` is empty. So is "the forbidden string does not
+appear in this output" when there is no output. Both report a pass having checked nothing. Unless
+emptiness is the intended case, a universal assertion must be paired with a witness that its
+collection is inhabited.
+
+**2. A helper that asserts something about a SELECTED BLOCK must first prove the block exists.**
+Empty selection must never mean success. `assert_block_absent` should distinguish three distinct
+failures, which are not the same event:
+
+1. missing anchor — the thing being inspected is not there;
+2. malformed or unterminated block — it is there but cannot be parsed;
+3. forbidden content present — the actual property failed.
+
+Implemented today: 1 and 3. Case 2 is deliberately not implemented, because no report shape was
+found that reproduces it, and an untested branch inside an assertion helper is worse than a named
+gap. Recorded so the omission is a decision rather than an oversight.
+
+**3. A fatal negative must not share a fixture with an unrelated positive.** Several positives may
+live together, and several *accumulating* diagnostics may live together — but a negative that
+becomes fatal erases the positive's subject, and the positive then passes for want of anything to
+inspect. This is not hypothetical: promoting the impure-call defect from a report line to a check
+error made `spec_ghost_totality`'s pure-helper control pass BECAUSE the file was rejected
+wholesale and its report was empty. The control was green and proved nothing. The positive now
+lives in `examples/contract_positive/pure_contract_calls`, where nothing else can fail first.
+
+**4. Audit the shape, not the instance.** When one of these is found, the same shape is usually
+live elsewhere. Fixing `assert_block_absent` left the identical defect in two `assert_absent`
+helpers and in 23 universal JSON assertions. The places to look: `sed`/`awk` block extraction,
+`grep` pipelines accepting empty input, assertions using `! grep`, command substitutions hiding a
+failed producer, section checks where an earlier fatal diagnostic removed the section, and JSON
+filters where an empty list makes `all(...)` true.
+
+**5. Never describe a check as more than it enforces.** The impure-call check rejects
+capability-requiring calls and reuses a diagnostic saying "spec/ghost must be pure and total" —
+which claims more than it does. Capability-free does not mean valid in a proposition: such a
+function may still trap, diverge, allocate through a badly summarised path, depend on runtime
+state the contract semantics do not model, call trusted or foreign code, or have no total logical
+interpretation. The rule that would be correct — *contract calls must resolve to admitted spec fn
+declarations, or to executable functions with an explicit, checked logical interpretation* — needs
+a notion that does not exist yet. Until it does, this is containment of EFFECTFUL calls and is
+described that way (H27, R-0473).
+
+**6. Resolved typed records must never be built on names.** Storing a name now with a promise to
+replace it by an identity later puts the name in the record and in every consumer built against
+it. This is why the identity substrate moved into R-0473 rather than waiting for R-0474, and why
+`ResolvedContractRef` is a sum rather than a string with a companion type table.
+
 ### Task R-0476
 
 **Objective:** drain two ratchets to zero, so neither becomes a permanent debt marker that
