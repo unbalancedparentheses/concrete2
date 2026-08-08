@@ -897,6 +897,7 @@ system.
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
+| 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
 | 2d | **R-0475** | `ModuleOrigin` at project-graph entry, so a report can separate project from dependency obligations. The snapshot half is done; this is the compiler half |
 | — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
 | 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
@@ -4406,10 +4407,46 @@ declarations, or to executable functions with an explicit, checked logical inter
 a notion that does not exist yet. Until it does, this is containment of EFFECTFUL calls and is
 described that way (H27, R-0473).
 
-**6. Resolved typed records must never be built on names.** Storing a name now with a promise to
+**6. A failed search is not evidence of absence.** I reported "Register C has no row table" after
+grepping `docs/VC_BRIDGE_REGISTER.md` and finding nothing. Register C's rows were never in that
+file — C1-C4 are compile-time theorems in `Concrete/Report/Evidence.lean`, the module they
+constrain, which is the better place for them. The claim reached this roadmap and two status
+summaries before an external audit caught it. Before recording an absence, establish where the
+thing WOULD be if it existed; a grep that returns nothing has told you about the file you
+grepped, and nothing else.
+
+**7. Resolved typed records must never be built on names.** Storing a name now with a promise to
 replace it by an identity later puts the name in the record and in every consumer built against
 it. This is why the identity substrate moved into R-0473 rather than waiting for R-0474, and why
 `ResolvedContractRef` is a sum rather than a string with a companion type table.
+
+### Task R-0477
+
+**Objective:** bring `vcgen/calculus` back onto current `main`, or retire it — it is tracked
+nowhere in this file, which is how a branch quietly becomes a fork.
+
+Four commits sit off `main`, based at `b97dfdf0`, which `main` has since passed by 80 commits:
+
+* `66c56883` enroll obligation discovery in constructor coverage, with its measured limit;
+* `d17be8a1` per-walker constructor coverage — found an eighth discovery defect immediately;
+* `43e15a6c` obligations inside `assert`/`assume` were lost entirely, plus a false green made
+  en route;
+* `eaa3cf9b` split the VC calculus onto its own branch, off `main`, with no language change.
+
+**Its earlier differential result must not be assumed to still hold.** That run reported the
+calculus agreeing with the walkers on 41,807 obligations across 902 files with zero
+disagreements — measured against a tree that predates contract validation, the source-order
+language decision, and the evidence merges. Re-run the structured differential and the
+merged-tree gates before treating that number as current.
+
+**The hand-written walkers remain authoritative.** The differential has caught 3 defects in the
+calculus and 0 in the walkers, which is exactly why the walkers are the oracle rather than the
+thing being replaced. That does not change until a family graduates with its own negative
+controls and a Register A row.
+
+Sequencing: AFTER R-0473/R-0474, not before. Rebasing onto a foundation that is about to change
+means rebasing twice, and the calculus is the natural consumer of resolved typed contract records
+rather than of the AST it reads today.
 
 ### Task R-0476
 
@@ -4432,7 +4469,15 @@ This matters more than its size suggests. The class is not hypothetical: a posit
 was rejected wholesale and its report was empty. Two absence helpers had the same defect. Each of
 these 23 is a place the same thing can happen silently.
 
-**Shapes the gate does NOT yet count**, listed so their absence is not read as their
+**A third shape was added 2026-08-08, after an audit found a live instance**: unintended command
+substitution inside a diagnostic string. `check_transform_register.sh` had backticks around
+`partial` in an `echo`, so every run executed it, printed `partial: command not found`, and still
+reported PASS=80 FAIL=0 — these scripts do not use `set -e`, so nothing counted the failure. The
+vacuity shapes could not see it: the ASSERTIONS genuinely passed, and what was unclean was the
+HARNESS. A harness that runs stray commands can also swallow the output an assertion depends on.
+Six gates put backticks in diagnostic strings; five escape them, so this was the only live one.
+
+**Shapes the gate STILL does not count**, listed so their absence is not read as their
 non-existence: `sed`/`awk` block extraction over a missing block; `grep` pipelines accepting empty
 input; command substitutions hiding a failed producer; section checks where a fatal earlier
 diagnostic removes the section. `assert_block_absent` distinguishes a missing anchor from
