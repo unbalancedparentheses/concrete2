@@ -195,7 +195,7 @@ else
   echo "  (skip capability fixture — compiler not built)"
 fi
 
-echo "=== the lowering path is kernel-reducible (no gratuitous `partial`) ==="
+echo '=== the lowering path is kernel-reducible (no gratuitous `partial`) ==='
 # A `partial def` is opaque to the kernel: no theorem and no `rfl` example can say anything
 # about it. That limitation blocked three separate locks this week before anyone checked
 # whether the keyword was NEEDED. Seven functions in the report layer — including the SMT

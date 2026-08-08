@@ -49,7 +49,28 @@ Corpus coverage when the validation was turned on, reported as a ledger rather t
 | timeout at 10s | 3 | unmeasured |
 
 So the honest claim is "1 rejection out of 963 files that reach contract checking", not "1 out of
-1248". The 263 + 3 unmeasured files are the reason a second sweep is worth running once those
+1248".
+
+**RE-MEASURED ON MERGED MAIN 2026-08-08, and this is the current denominator** — the table above
+is the pre-merge measurement, kept because the ratio held and that is itself the finding:
+
+| class | merged-tree | pre-merge |
+|---|---|---|
+| files discovered | 1249 | 1248 |
+| clean (reached checking, accepted) | 962 | 962 |
+| newly rejected | **2** | 1 |
+| pre-existing other error (UNMEASURED) | 263 | 263 |
+| parse error | 19 | 19 |
+| timeout | 3 | 3 |
+
+Both rejections are negative fixtures that exist to demonstrate the defect they trip
+(`invalid_contract_expression`, `spec_ghost_totality` — the second became a rejection when
+effectful contract calls were promoted to a check error). Main's 73 commits added no program that
+contract validation breaks. **Current claim: no unexpected rejection among the 964 files that
+REACH contract checking; 285 remain unmeasured** (263 masked by an earlier error, 19 parse
+failures, 3 timeouts).
+
+The 263 + 3 unmeasured files are the reason a second sweep is worth running once those
 files parse and check.
 
 **Explicitly numbered, because the denominator drifted once** — a status note said "five gaps

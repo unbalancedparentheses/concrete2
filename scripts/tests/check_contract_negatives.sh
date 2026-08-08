@@ -240,7 +240,11 @@ echo ""
 # It fails closed (the call site cannot discharge a hypothesis over a name that does not exist),
 # but the failure surfaces in another function rather than at the typo.
 #
-# Measured over the whole corpus when this check was turned on: 1248 files, exactly 1 newly
+# Measured on merged main 2026-08-08: 1249 files, 2 newly rejected — both negative fixtures that
+# exist to demonstrate the defect they trip. (Pre-merge it was 1248 files / 1 rejection; the
+# second appeared when effectful contract calls became a check error.) 285 files are UNMEASURED:
+# checking stops at the first error, so a contract defect can hide behind an unrelated one.
+# Historical note, kept because the ratio held across the merge: 1248 files, exactly 1 newly
 # rejected -- the fixture above, which documents itself as invalid. So rejection costs nothing
 # real, and the assertions below are what keep it from over-rejecting later.
 CTMP="$(mktemp -d)"; trap 'rm -rf "$CTMP"' EXIT

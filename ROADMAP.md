@@ -1245,7 +1245,10 @@ into, and it is a property of the tooling, not of this repo.
 - **Register A** (obligation sufficiency): 0 of 5 discharged, 4 half-discharged. Half means the
   row is still *trusted*.
 - **Register B** (transformation soundness): 1 of 3 rows discharged (`eliminate_tmod`).
-- **Register C** (evidence composition): gated (59 assertions) rather than expressed as a row
+- **Register C** (evidence composition): **DISCHARGED by compile-time rows** — C1-C4 are theorems
+  in `Concrete/Report/Evidence.lean` ("a green build is the proof"), with 59 structural/wiring
+  assertions in `check_evidence_algebra.sh` on top, no `sorry`/`admit`/`native_decide`. Earlier
+  text here said it was "gated rather than expressed as a row
   table; no per-row discharge tracking exists for it yet, which is itself a gap.
 - **Discovery completeness** (added 2026-08-05): 4 of 4 runtime-safety families. This register did
   not exist before and answers the question the other three structurally cannot — whether an
@@ -1397,8 +1400,9 @@ kept with their outcome because the *pattern* they belong to is the last item he
    `std/src/sha256.con` after the golden was written. Diff verified as 94 additions, 0 removals,
    nothing touching the fixture's own module, then regenerated. The structural coupling — a
    negative fixture's golden depending on every stdlib contract — is R-0475.
-0b. **263 of 1248 corpus files are UNMEASURED** for contract validation, because checking stops at
-   the first error. The defensible claim is "no unexpected rejection among the 963 files that
+0b. **285 of 1249 corpus files are UNMEASURED** for contract validation (263 masked by an earlier
+   error, 19 parse failures, 3 timeouts), because checking stops at the first error. Re-measured
+   on merged main 2026-08-08. The defensible claim is "no unexpected rejection among the 964 that
    reached it" — not "the corpus is compatible". A diagnostic-accumulation mode closes it (R-0473).
 
 ### Closed today
@@ -2095,7 +2099,10 @@ into, and it is a property of the tooling, not of this repo.
 - **Register A** (obligation sufficiency): 0 of 5 discharged, 4 half-discharged. Half means the
   row is still *trusted*.
 - **Register B** (transformation soundness): 1 of 3 rows discharged (`eliminate_tmod`).
-- **Register C** (evidence composition): gated (59 assertions) rather than expressed as a row
+- **Register C** (evidence composition): **DISCHARGED by compile-time rows** — C1-C4 are theorems
+  in `Concrete/Report/Evidence.lean` ("a green build is the proof"), with 59 structural/wiring
+  assertions in `check_evidence_algebra.sh` on top, no `sorry`/`admit`/`native_decide`. Earlier
+  text here said it was "gated rather than expressed as a row
   table; no per-row discharge tracking exists for it yet, which is itself a gap.
 - **Discovery completeness** (added 2026-08-05): 4 of 4 runtime-safety families. This register did
   not exist before and answers the question the other three structurally cannot — whether an
@@ -4330,12 +4337,21 @@ and understates the evidence. Always state which shell produced the figure.
 Rungs 8 and 9 are where "prove every kind of code" actually lives. Everything shipped so far is
 below them.
 
-**Register C has no row table**, and that is a governance gap rather than a missing feature.
-`docs/VC_BRIDGE_REGISTER.md` enumerates rows for the Core→obligation lowering; evidence
-COMPOSITION — what "N independent kernels agree" licenses, and what it does not — exists as prose
-and nowhere as an exhaustive inventory. So the composition rules cannot be reviewed for gaps the
-way Register A's rows can. Register A remains **0 of 5 families discharged**; Register B has 1 of
-3 rows.
+**Register C IS discharged, by compile-time rows — an earlier claim here that it "has no row
+table" was wrong and is corrected.** C1-C4 live in `Concrete/Report/Evidence.lean` as theorems
+(C1 assumption-set union, C2 proved-iff-every-part-proved, C3 non-empty assumptions never present
+as a proof class — H23 as a theorem, C4 discharge is the only shrinking operation), with 59
+structural assertions in `check_evidence_algebra.sh` and no `sorry`/`admit`/`native_decide`.
+
+The error is worth recording because of how it was made: I grepped `docs/VC_BRIDGE_REGISTER.md`,
+found no Register C rows, and reported absence. Register C's rows were never in that file — they
+are in the module they constrain, which is the better place for them. **A failed search is not
+evidence of absence**, and this is the same mistake pattern the rest of this document warns about,
+committed while documenting it.
+
+Register A is the register that remains open in the semantic sense: **0 of 5 families fully
+discharged, 4 of 5 half-discharged**. Register B has 1 of 3 rows. C is not pending in the way A
+is, and grouping the three as equally-open understates what has been paid for.
 
 ### Test-harness principles (2026-08-08) — rules, not tasks
 
@@ -4522,9 +4538,9 @@ exist, and lets one invalid contract not mask its siblings. Runtime-body errors 
 first-error-wins. Reports must not be emitted from invalid typed records.
 
 **Also in scope:** a diagnostic-accumulation or contract-only analysis mode. Checking stops at the
-first error, so for 263 of 1248 corpus files the effect of contract validation is *unmeasured* —
+first error, so for 285 of 1249 corpus files the effect of contract validation is *unmeasured* —
 a contract defect can sit behind an unrelated earlier error. Until that mode exists, the
-defensible claim is "no unexpected rejection among the 963 files that reached contract checking",
+defensible claim is "no unexpected rejection among the 964 files that reached contract checking",
 which is materially weaker than "the corpus is compatible".
 
 **Depends on:** nothing. **Blocks:** R-0474.

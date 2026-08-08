@@ -84,8 +84,14 @@ independently verified.
 
 Broader non-arithmetic theory tiers—booleans, structures, arrays as logical
 values, uninterpreted functions, and defined-spec refinement across kernels—are
-experimental branch work until merged and graduated. They are not `main`
-capabilities merely because a spike demonstrates them.
+**merged to `main` (2026-08-08) and experimental**, not graduated. `check_bool_kernel.sh`
+runs them on `main` and reports 62/0/0 under `nix develop .#provers` (42/0/8 in a
+shell without Rocq and Isabelle, where the 8 are absent provers rather than passes).
+
+Merged is not graduated, and the distinction is the point: these tiers do not
+drive `proved_by_*` badges or release policy. The refinement tier in particular is
+narrower than it appears — its substitution is by name, so binder-bearing spec
+bodies are rejected outright (H25).
 
 ### Compiler enforcement
 
@@ -144,15 +150,37 @@ warnings that override every proof result.
 
 ## Experimental and active development
 
-Development branches may contain work not available on `main`. As of the review
-date, active directions include:
+Development branches may contain work not available on `main`. Reviewed
+2026-08-08, and split by what is actually true of each item — "active
+development" read as "not on `main`" for two things that had already merged:
 
-- broader multi-kernel theory fragments;
-- contract checking and containment for name-based substitution;
-- a separate weakest-precondition/requirement-calculus branch;
+**Merged and enforced on `main`:**
+
+- contract name-and-sort validation, and the containments around name-based
+  substitution (binder-bearing spec bodies and shadowed contract parameters are
+  rejected; H25 remains contained, not fixed).
+
+**Merged and experimental on `main`** — present and running, not graduated, and
+not driving badges or release policy:
+
+- broader multi-kernel theory fragments (booleans, EUF, datatypes/arrays,
+  defined-spec refinement).
+
+**Separate branch, not on `main`:**
+
+- the weakest-precondition/requirement-calculus work (`vcgen/calculus`), which
+  predates substantial `main` changes and needs rebasing plus a re-run of the
+  structured differential before its earlier agreement result can be trusted
+  again. The hand-written walkers remain authoritative.
+
+**Planned, not implemented:**
+
 - structured rather than display-string differential comparison;
-- stable binding identities and capture-safe substitution;
-- remaining negative-control and corpus-coverage measurements.
+- stable binding identities and capture-safe substitution (`BindingId`,
+  `CheckedContract` are design only — R-0473/R-0474);
+- remaining negative-control and corpus-coverage measurements, including the
+  285 of 1249 corpus files whose contract-validation result is unmeasured
+  because checking stops at the first error.
 
 Experimental results must remain labeled experimental until their code,
 negative controls, documentation, known-hole status, and release policy land

@@ -71,7 +71,34 @@ else
   no "absence helper(s) accept empty input:$badhelpers"
 fi
 
-# --- shape 3: this gate must itself be able to fail ---------------------------------------------
+# --- shape 3: unintended command substitution inside diagnostic strings -----------------------
+# A gate can run a FAILING SHELL COMMAND and still report PASS. `check_transform_register.sh`
+# contained
+#     echo "=== ... (no gratuitous `partial`) ==="
+# whose backticks executed `partial` as a command. The run printed "partial: command not found"
+# and still ended TRANSFORM-REGISTER: PASS=80 FAIL=0, because these scripts do not use `set -e`
+# and an unintended failure is counted by nothing.
+#
+# The vacuity ratchet above cannot see this class: the assertions genuinely passed. What was
+# unclean was the HARNESS, and a harness that executes stray commands can also silently swallow
+# the output an assertion depends on. Backticks inside a double-quoted string are the greppable
+# form; the escaped variant (\`) is correct and common, so only unescaped ones count.
+echo "=== unintended command substitution in diagnostic strings ==="
+badsubst=""
+for f in scripts/tests/check_*.sh; do
+  [ "$(basename "$f")" = "check_gate_vacuity.sh" ] && continue
+  # a double-quoted echo containing a backtick NOT preceded by a backslash
+  if grep -qE 'echo "[^"]*[^\\]`[^"]*`' "$f"; then
+    badsubst="$badsubst $(basename "$f")"
+  fi
+done
+if [ -z "$badsubst" ]; then
+  ok "no gate runs a command from inside a diagnostic string"
+else
+  no "unescaped backticks execute commands in:$badsubst (use single quotes, or escape as \\\`)"
+fi
+
+# --- shape 4: this gate must itself be able to fail ---------------------------------------------
 # A ratchet whose counter is broken silently reports success forever, which is the very defect
 # being ratcheted. Prove the counter responds to a known-bad input.
 echo "=== the ratchet can fail ==="
