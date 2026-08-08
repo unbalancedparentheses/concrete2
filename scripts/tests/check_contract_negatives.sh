@@ -425,5 +425,26 @@ grep -qF <<<"$("$COMPILER" "$CTMP/impure2.con" --report vcs 2>&1 || true)" "impu
   && { echo "  ok   an IMPURE call in a contract is rejected at check time"; PASS=$((PASS+1)); } \
   || { echo "  FAIL an impure call in a contract is still only reported, not rejected"; FAIL=$((FAIL+1)); }
 
+# TWO DEFINITIONS OF "IMPURE", HELD TOGETHER. `Check.impureFnsIn` and
+# `ReportVC.impureFnNames` both mean "capability-requiring", and they are separate functions
+# because Check must not depend on Report. Nothing made them agree — a comment in Check.lean
+# claimed a gate assertion held them together, and the gate did not exist. Written now rather
+# than the claim deleted, because the drift is real: if one starts treating (say) `#[trusted]`
+# or an extern as impure and the other does not, a contract is rejected by one surface and
+# accepted by the other, and which one you believe depends on which report you ran.
+#
+# Source-level, deliberately: the behavioural path cannot compare them, because Check rejects
+# the program before Report ever runs. What is asserted is that both derive impurity from the
+# SAME criterion — a non-empty capability set — so a change to one is visible as a divergence.
+CRIT_CHECK="$(grep -c 'capSet.isEmpty' Concrete/Check/Check.lean || true)"
+CRIT_REPORT="$(grep -c 'capSet.isEmpty' Concrete/Report/ReportVC.lean || true)"
+if [ "$CRIT_CHECK" -ge 1 ] && [ "$CRIT_REPORT" -ge 1 ]; then
+  echo "  ok   Check and ReportVC derive 'impure' from the same criterion (capSet)"; PASS=$((PASS+1))
+else
+  echo "  FAIL impurity criterion diverged — Check:$CRIT_CHECK ReportVC:$CRIT_REPORT occurrences of capSet.isEmpty"
+  echo "       one surface would reject a contract the other accepts"
+  FAIL=$((FAIL+1))
+fi
+
 echo "CONTRACT-NEGATIVES: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

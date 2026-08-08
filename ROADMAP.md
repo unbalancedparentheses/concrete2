@@ -897,6 +897,7 @@ system.
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
+| 2f | **R-0478** | 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Both cheap; both keep producing defects |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
 | 2d | **R-0475** | `ModuleOrigin` at project-graph entry, so a report can separate project from dependency obligations. The snapshot half is done; this is the compiler half |
 | — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
@@ -4439,10 +4440,50 @@ summaries before an external audit caught it. Before recording an absence, estab
 thing WOULD be if it existed; a grep that returns nothing has told you about the file you
 grepped, and nothing else.
 
-**7. Resolved typed records must never be built on names.** Storing a name now with a promise to
+**7. A comment that claims a gate exists must be checked like any other claim.** While writing
+`Check.impureFnsIn` I wrote that it and `ReportVC.impureFnNames` "are held together by a shared
+gate assertion". No such assertion existed. The comment was load-bearing — it is the reason a
+reader would accept the duplication — and it was false from the moment it was written. A claim
+about the test suite, made inside the code the suite is supposed to constrain, is exactly as
+checkable as a claim about behaviour, and nothing was checking it. The gate now exists
+(`check_contract_negatives.sh`), which is the right repair: make the sentence true rather than
+delete it.
+
+**8. Resolved typed records must never be built on names.** Storing a name now with a promise to
 replace it by an identity later puts the name in the record and in every consumer built against
 it. This is why the identity substrate moved into R-0473 rather than waiting for R-0474, and why
 `ResolvedContractRef` is a sum rather than a string with a companion type table.
+
+### Task R-0478
+
+**Objective:** two refactors that are cheap individually and keep producing defects because they
+are not done — recorded together because both are "the same thing exists in N places and nothing
+holds them together".
+
+**1. Gate-harness duplication: 163 of 183 gates define their own `ok()`.** A shared library
+exists (`scripts/tests/lib/selfprint.sh`) and 28 gates use it. The rest carry private copies of
+`ok`/`no`/`assert_contains`/`assert_absent`/`assert_json`, which is why the vacuity fix had to be
+applied to two `assert_absent` definitions separately — and why a third copy could be sitting
+somewhere unfound. `check_gate_vacuity.sh` can only scan for *shapes* precisely because there is
+no single definition to fix.
+
+Consolidating is mechanical but must not be a flag-day rewrite: move the helpers into the shared
+lib with identical semantics, migrate gates in batches, and keep each batch's before/after
+PASS/FAIL counts identical. A gate whose count changes during a "mechanical" migration is a gate
+whose assertions were not what its author thought.
+
+**2. `substExpr` names two unrelated operations.** `Concrete/IR/Mono.lean:43` substitutes TYPES
+(`sub : Ty → Ty` over `CExpr`, private); `Concrete/Report/BoolKernel.lean:800` substitutes
+EXPRESSIONS by name (`env : List (String × Expr)`, public, and the H25 capture hazard). During
+the H25 investigation the first thing needed was establishing which one the containment applied
+to — a grep for `substExpr` returns both, and only one is unsound. Rename the type one to
+`substTyInExpr` (or the expression one to `instantiateSpecBody`) before R-0474 replaces the
+second, so the commit that retires name-based substitution cannot be read as touching the other.
+
+**Why these are one task:** both are cases where the codebase relies on a reader noticing that two
+similarly-named or similarly-shaped things are different. That is the same failure mode as the
+comment claiming a gate that did not exist — the structure asserts a relationship nothing
+enforces.
 
 ### Task R-0477
 

@@ -2072,7 +2072,9 @@ private partial def specBodySort (paramTys : List (String × Ty)) (specRets : Li
 
 /-- Capability-requiring (impure) function names, bare and qualified. Mirrors `impureFnNames` in
     ReportVC; duplicated rather than imported because Check must not depend on Report, and the two
-    are held together by a shared gate assertion rather than by a shared definition. -/
+    are held together by an assertion in `check_contract_negatives.sh` that both derive impurity
+    from the same criterion (a non-empty capability set) rather than by a shared definition. The
+    behavioural path cannot compare them: Check rejects the program before Report runs. -/
 private partial def impureFnsIn (pfx : String) (m : Module) : List String :=
   let q (n : String) := if pfx.isEmpty then n else pfx ++ "." ++ n
   let here := m.functions.filterMap (fun fd =>
