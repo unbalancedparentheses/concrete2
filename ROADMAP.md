@@ -419,7 +419,27 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    Still to do: the edge KIND derivation (contract / body / trusted / missing, driven by
    callee proof status), assumption propagation through the closure the way `carriesTrust`
    propagates trust, and table reachability binding the whole canonical table rather than a
-   guessed subset. The root itself is slice 6 — the landed closure says so: "Slice 6
+   guessed subset.
+
+   **Scouted 2026-08-08, so the next person does not re-derive it.** The whole-table
+   requirement is HALF built, and the two halves are easy to confuse:
+
+   * *Identity* over the whole table exists. `FnTable.allIdentified` requires every entry to
+     carry an identity — "evidence requires identity for the WHOLE table, not most of it" —
+     and one legacy entry disqualifies the table from minting a receipt. `canonicalEntries`
+     and `hasDuplicateIds` are there too. This half is done and fail-closed.
+   * *Reachability* binding does NOT exist. Nothing digests the table a body reaches:
+     `tableDigest`/`tableReach`/`tableBytes` return nothing across the tree. So a proof over
+     a body that indexes a table is currently bound to the table's IDENTITY discipline but
+     not to its CONTENTS, and a change to an entry the body does not appear to touch moves
+     no dependency material.
+
+   The missing piece is specifically (a) which tables a body reaches, then (b) a digest over
+   each reached table's FULL `canonicalEntries` — not the entries a static index suggests,
+   because a dynamic index can reach any of them and binding the apparent subset is the
+   under-approximation this item is named after. `shadowDepsLine` is the model to follow: it
+   already REFUSES rather than digesting a partial constant set, which is the same
+   fail-closed shape this needs. The root itself is slice 6 — the landed closure says so: "Slice 6
    replaces this with a deterministic SCC/Merkle root; until then a conservative closure is
    what the roadmap asks for."
 4. Freshness integration — closes bugs 059/060. First point where a mistake costs a wrong
