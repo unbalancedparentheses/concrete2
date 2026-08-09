@@ -4,6 +4,7 @@ import Concrete.Proof.Proof
 import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.DependencyRoot
+import Concrete.Proof.ClassificationTable
 
 namespace Concrete
 
@@ -2148,10 +2149,22 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
     if x.eligibility.isTrusted then some x.qualName else none
   pc.entries.map fun e =>
     let callees := (graph.find? (fun g => g.1 == e.qualName)).map (·.2) |>.getD []
+    -- THE CALLER'S OWN THEOREM types its outgoing edges. `classifyTheorem` answers about a
+    -- theorem: a `body` theorem depends on exact callee implementations, a `contract` theorem
+    -- holds for any table meeting its hypotheses. That is a property of the PROOF, so it applies
+    -- to every dependency that proof relies on.
+    --
+    -- No proof link means no classification, which is `unclassified` rather than a default. A
+    -- trusted callee still overrides: a declared boundary is a compiler fact and does not depend
+    -- on how the caller was proved.
+    let thm := (pc.obligations.find? (fun o => o.functionId.qualName == e.qualName))
+                 |>.bind (·.spec) |>.map (·.proofName) |>.getD ""
+    let callerEdge := if thm.isEmpty then Proof.DependencyEdge.unclassified
+                      else Proof.classifiedEdgeOf thm
     let edges := callees.filterMap fun cn =>
       match idOf cn with
       | some cid => some (if trustedNames.contains cn then Proof.DependencyEdge.trusted
-                          else Proof.DependencyEdge.unclassified, cid)
+                          else callerEdge, cid)
       | none => none
     { id := e.callableId, digest := e.subjectDigest, edges := edges }
 

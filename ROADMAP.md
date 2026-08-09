@@ -5125,6 +5125,22 @@ consumer away from the `proved` decision path:
    verdict. `missing` degrading a verdict is honest — something really is unvalidated.
    `unclassified` degrading one is the compiler blaming a program for the compiler's own state.
 
+   **Hand-back RUN 2026-08-09 and wired** (`scripts/gen/classifications.lean` ->
+   `Concrete/Proof/ClassificationTable.lean`, consumed by `dependencyNodesOf`). Refusals dropped
+   **11 -> 7** and roots rose 53 -> 57: the classifier answers `body` for every theorem it sees,
+   so real classifications do land.
+
+   **The remaining 7 expose a gap in the GENERATOR, not in the classifier.** `main.verify_message`
+   is `proved` AND its root refuses, which is exactly the case that must not exist before step 6.
+   Its theorem is absent from the table because the generator enumerates
+   `Proof.provedFunctions` — the hardcoded list — and misses proofs linked from SOURCE via
+   `#[proof_by]`/the registry. The table is therefore complete for one of the two ways a proof
+   can be attached.
+
+   Fix: enumerate the theorem set from the registry as well as `provedFunctions`, regenerate, and
+   re-check. Only when NO proved subject has a refusing root may step 6 connect — that is the
+   precise, checkable form of the precondition below.
+
    **So step 6 waits for the hand-back to RUN over the real proof corpus**, producing genuine
    `contract`/`body` classifications, not merely for the merge machinery to exist (steps 1-3,
    done). Once real classifications land, the remaining refusals will be `missing` — and those
