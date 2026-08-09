@@ -3262,16 +3262,19 @@ Proof automation remains behind honest semantics and the external-user trial.
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | mostly built — 8 of 9 proof tables migrated |
-> | 5 | V2 semantic subject digest implemented; comparison wired **in shadow** (`683d2dcf`), both halves gated |
+> | 5 | declaration-facts V2 digest + legacy body hash implemented; comparison wired **in shadow** (`683d2dcf`), both halves gated; final semantic subject still incomplete |
 > | 6 | dependency graph/material exists, **not authoritative** |
 > | 7 | receipt issuance and corpus migration **not started** |
 >
 > **The four remaining packages**, in critical-path order:
 >
 > 1. **Finish slice 4** — ~~never-under-approximate dependency access~~ **DONE 2026-08-08**
->    (`tableValueDigest`, whole-by-construction, fail-closed); ~~define the versioned
->    `ProofEvidenceReceipt` envelope~~ **DONE** (`Concrete/Proof/Receipt.lean`, unbindable
->    evidence unrepresentable, 9 gate legs). REMAINS: *produce* the deterministic workspace,
+>    (`tableValueDigest`, whole-by-construction, fail-closed); the validated receipt CORE TYPE is
+>    **DONE** (`Concrete/Proof/Receipt.lean`: private constructor, no `Inhabited`, correspondence,
+>    duplicate and empty-value refusals, normalized bindings, edge-aware currency and one typed
+>    schema-first disposition). Do not shorten this to "the receipt is done": no
+>    production consumer, serialization, replay result or complete envelope exists. REMAINS:
+>    *produce* the deterministic workspace,
 >    imports and toolchain identities — the envelope requires them and refuses empty ones, but
 >    nothing computes them yet; and migrate the ninth proof table (blocked by mutable-borrow
 >    extraction in ProofCore, outside R-0004).
@@ -3287,20 +3290,50 @@ Proof automation remains behind honest semantics and the external-user trial.
 >    visited two constants differently would report drift that did not happen. Sorting hides
 >    order and NOT a swap — exchanging two tables' digests changes which name carries which
 >    value, gated in both directions.
-> 2. **Activate slice 5 safely** — extend the shadow proof beyond signature and contract edits to
->    capability and generic edits; keep the live verdict unchanged until migration; then replace
->    all 53 legacy fingerprints, accepting that 19 currently-`proved` links correctly become
->    `needs_recheck` until replayed.
+> 2. **Finish the subject, then activate slice 5 safely.** `proofSubjectDigestV2` currently
+>    combines declaration facts (identity/signature/generics/capabilities/contracts) with the
+>    LEGACY `bodyFingerprint`. It still does NOT bind the structural typed V2 body, selected
+>    specification identity, claim scope/coverage, dependency root, or trust/assumption
+>    qualification. Extend the shadow proof beyond signature and contract edits to capability,
+>    generic, selected-spec, claim-scope and alpha-renaming controls; keep the live verdict
+>    unchanged until migration.
 > 3. **Integrate slice 6** — feed the typed `DepNode` graph into the deterministic dependency-root
 >    builder; combine compiler-produced edges with Lean-side theorem classification; handle direct,
 >    transitive and recursive dependencies; bind dynamic table access to the WHOLE table rather
 >    than a guessed subset; make ProofCore and Report consume the root; propagate trust and
->    assumptions into the final evidence status. **Highest-risk remaining step.**
+>    assumptions into the final evidence status. **Highest-risk remaining step. Slice 6 is NOT
+>    complete merely because `DependencyRoot` computes a root:** it exits only when ProofCore,
+>    Report and status composition consume validated roots and no old name-keyed/advisory path can
+>    emit `proved`.
 > 4. **Complete slice 7** — replay every repository proof; issue receipts only after successful
 >    kernel replay; produce a dry-run migration manifest for every stored proof link; make V2
 >    fingerprints authoritative; convert old schemas to `needs_recheck`; publish the first
 >    eligibility-denominated proof-coverage baseline; verify clean-machine and
 >    repository-root/project-root reproducibility.
+>
+> **Migration denominator — one number, one owner.** The executable
+> `check_v1_fingerprint_golden.sh` inventory is authoritative today: **44 stored legacy links over
+> 77 extracted functions in the eight migration examples**. A raw repository grep currently sees
+> 67 annotations because it includes stdlib, adversarial/negative fixtures, tests and a drifted
+> source copy. The earlier headline number 53 has no executable denominator and is retired. If
+> the migration corpus changes, change the generated manifest and its gate in the same commit;
+> never update prose alone.
+>
+> **Receipt graduation requirements.** The current type binds schema, subject, edge kind and
+> normalized table identity/digest pairs plus caller-supplied environment strings, and exposes one
+> edge-aware, schema-first typed disposition. The final
+> receipt additionally binds the deterministic dependency root, theorem identity and theorem
+> artifact digest, replay command/protocol and successful result, trust/assumption qualification,
+> and versioned canonical serialization with validated decoding. Produce toolchain/workspace/import
+> identities rather than accepting display paths. The production consumer must use the one typed
+> disposition (`current` / `needs_recheck` / `not_current`) rather than reconstructing its own
+> Boolean sequence.
+>
+> **Receipt mutation bar.** Behavioural probes are not enough. Register mutations that re-open
+> the constructor or `Inhabited`, drop empty-subject or table-correspondence checks, duplicate or
+> omit a binding, ignore edge kind or dependency root, drop each environment identity, accept a
+> receipt without successful replay, or skip schema comparison. Each must be killed by the
+> production consumer gate, not only by a helper-level probe.
 >
 > **Estimate, stated so nobody plans against a wrong one.** To "architecture implemented in
 > shadow": about 2 major packages. To "authoritative and honestly closed": about 4, plus extensive
@@ -3314,6 +3347,13 @@ Proof automation remains behind honest semantics and the external-user trial.
 > theorem's elaborated type and lives where Lean is elaborating, so the compiler can honestly
 > produce `trusted`/`missing`/`unclassified` and the contract-vs-body split has to come from the
 > Lean side. That needs a design for the hand-back, not more threading.
+
+> **Audit instrumentation note.** The hostile receipt gate's ``"`default` ..."`` label executed
+> shell command substitution and printed `default: command not found`. The companion fix quotes the
+> label safely and widens `check_gate_vacuity.sh` from `echo`-only matching to every double-quoted
+> shell string, ratcheting the 17 pre-existing files. Still required: enroll receipt changes in the
+> mutation harness; the dependency/receipt result contains behavioural controls, not registered
+> production-consumer weakening mutations.
 
 Treat the following as one evidence-integrity defect class:
 
@@ -3340,9 +3380,9 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 1 | executable witnesses | **LANDED** | Preserve the positive controls and convert each defect tripwire when its owning slice closes. |
 | 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
 | 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
-| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries) migrated** | Enforce never-under-approximate table access; define the versioned receipt envelope and deterministic workspace/import/toolchain identities. The ninth table is blocked on mutable-borrow ProofCore extraction. |
-| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — V2 digest, `needs_recheck`, and the gated shadow freshness comparison landed** | Keep the live verdict unchanged until slice 7 accounts for all **53** legacy fingerprints; the **19** currently-proved links correctly become `needs_recheck` until replayed. The shadow gate already proves signature and contract edits move V2 while the live V1 verdict does not; retain equivalent controls for the remaining semantic dimensions through migration. |
-| 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, and standalone fail-closed root exist in shadow** | Integrate the compiler and Lean-side classifications; enforce exact/static versus whole-table/dynamic reachability; make ProofCore, reports, statuses, and later receipts consume the validated root; gate direct, transitive, and recursive cases. |
+| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries), whole-table binding, and validated receipt core type landed** | Produce deterministic workspace/import/toolchain identities; complete receipt fields, canonical serialization and validated decoding; connect a production consumer. The ninth table is blocked on mutable-borrow ProofCore extraction. |
+| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — declaration-facts digest, `needs_recheck`, and gated shadow comparison landed** | Replace the legacy body-hash component with the structural typed V2 body and bind selected spec and claim scope; add the remaining semantic/invariance controls. Keep the live verdict unchanged until slice 7 accounts for the authoritative **44-link** migration corpus and replays each link. |
+| 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, whole-table binding, and standalone fail-closed root exist in shadow** | Integrate compiler and Lean-side classifications; make ProofCore, reports and status composition consume validated roots; prove no old name-keyed/advisory route can issue `proved`; gate direct, transitive and recursive production cases. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 
 **Completion estimate as of 2026-08-08.** The representation and shadow
@@ -3895,10 +3935,13 @@ it must not be reported as done from the presence of its intermediate data.
    machine-specific. The receipt's `workspace` field must be a digest of the
    workspace/import closure, not a path.
 
-   What remains in this slice: define a versioned `ProofEvidenceReceipt`
-   envelope and deterministic workspace/import/toolchain identities. This
-   slice may establish replay and serialization plumbing, but it cannot upgrade
-   a legacy body hash to a complete proof claim.
+   **Current remainder after `477a1726`/`ebc6f1c7`/`b99a8f99`.** The validated receipt core
+   type exists and closes construction, empty-value, correspondence, duplicate and ordering
+   bypasses. It is not the complete envelope and has no production consumer. Still required:
+   deterministic workspace/import/toolchain identity producers; dependency root, theorem/artifact,
+   replay-result and qualification fields; canonical serialization plus validated decoding; and a
+   single comparison disposition that cannot forget schema or edge-kind checks. This slice may
+   establish replay plumbing, but it cannot upgrade a legacy body hash to a complete proof claim.
 5. **Semantic subject digest.** Replace body-only freshness with a versioned
    canonical `ProofSubjectDigest` covering qualified semantic identity, full
    typed signature and generic constraints, capabilities, normalized typed
@@ -3928,16 +3971,21 @@ it must not be reported as done from the presence of its intermediate data.
    is already emitted from Report and that is defensible only because it is
    explicitly NOT receipt-eligible.
 
-   **STATE 2026-08-08.** The digest itself is DONE — `proofSubjectDigestV2` exists, covers
-   identity/signature/generics/capabilities/contracts, returns `none` for an incomplete subject,
-   and is already minted per entry as `ProofCoreEntry.subjectDigest`. The status the comparison
-   needs is now landed too: `needsRecheck`, threaded through every surface (`3936709e`).
+   **STATE 2026-08-08, corrected by the end-to-end audit.** The DECLARATION-FACTS portion is
+   done: `proofSubjectDigestV2` covers identity/signature/generics/capabilities/contracts, returns
+   `none` for incomplete facts, and is minted per entry as `ProofCoreEntry.subjectDigest`.
+   `needsRecheck` is threaded through every surface (`3936709e`). The FINAL semantic subject is
+   not done: the function still combines those facts with the legacy `bodyFingerprint`, while
+   the structural typed V2 body remains shadow-only; selected specification identity and claim
+   scope are also absent. Dependency root and qualification belong to the receipt/evidence
+   composition rather than being silently implied by this digest.
 
    **What remains is one sequencing decision, and it is NOT a coding question.** Switching
-   `deriveObligationStatus` to compare the v2 digest makes all **53** stored
-   `#[proof_fingerprint]` values non-comparable at once — they are v1, computed from the body
-   hash — which turns the corpus's **19 currently-proved links** into `needs_recheck` in a single
-   commit.
+   `deriveObligationStatus` to compare the v2 digest makes the authoritative migration corpus's
+   **44** stored `#[proof_fingerprint]` values non-comparable at once — they are v1, computed
+   from the body hash. The earlier number 53 had no executable denominator and is retired; the
+   V1 golden and dry-run manifest own this count. Measure the currently-`proved` subset from that
+   same manifest rather than preserving the earlier prose count 19 without a matching inventory.
 
    That verdict is CORRECT: those links were never checked against a signature or a contract, so
    `proved` overstates what was verified. But issuing it is the *migration*, and migration is
@@ -3948,7 +3996,7 @@ it must not be reported as done from the presence of its intermediate data.
    **So the comparison lands in SHADOW, like the other four axes, and for the same reason.** Emit
    what the v2 comparison WOULD say alongside the current verdict; assert both halves (the shadow
    verdict moves when signature or contracts move, AND the live verdict does not); flip it in
-   step 7 together with re-recording the 53 values as `v2:`-prefixed. The `v2:` prefix is the
+   step 7 together with replaying and re-recording the 44 manifest rows as `v2:`-prefixed. The `v2:` prefix is the
    discriminator — a stored value without it is v1 by construction, which is what makes
    `needsRecheck` decidable rather than guessed.
 
@@ -4405,6 +4453,12 @@ proving no old body-only or advisory-`staleDeps` path can emit
 std fingerprints in their already-landed commit; do not mix that repair with
 these new evidence gates.
 
+For the receipt specifically, register weakening mutations for constructor privacy and absence of
+`Inhabited`, empty subject/environment identities, table identity correspondence and duplicates,
+edge kind, dependency root, theorem/artifact identity, successful replay, qualification and schema
+comparison. A helper-level `mint?` probe is necessary and insufficient: the mutation counts only
+when the production status consumer fails.
+
 **R-0004 completion gate.** This task closes only when all of the following are
 true together:
 
@@ -4424,6 +4478,9 @@ true together:
 - every friendly `proved_by_lean` claim has a current complete subject, a
   current dependency root, and a successful replay receipt with theorem,
   toolchain, schema, and workspace/import-closure identity;
+- the receipt has versioned canonical serialization and validated decoding, compares its edge kind
+  and every bound field through one typed disposition, and cannot be directly constructed,
+  defaulted, decoded or deserialized into a partial current-looking value;
 - legacy body fingerprints and old receipt schemas become `needs_recheck` and
   cannot upgrade themselves by copying a newly computed hash;
 - shadow-mode comparison has zero unexplained V1/V2 disagreements, every
@@ -4436,6 +4493,27 @@ true together:
   and
 - the first eligibility-denominated proof-coverage baseline is published with
   stable discharge-route and blocker classifications.
+
+**Completion-gate audit — 2026-08-08.** Green helper gates do not imply these end-to-end
+conditions are green; several current tests are deliberate tripwires proving the live gap remains.
+
+| completion condition | audited state |
+|---|---|
+| bugs 058/059/060/062 | **PARTIAL** — 058 contained, 062 closed; 059/060 still leave the live V1 verdict `proved` while only shadow V2 moves |
+| generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
+| final semantic subject and invariance | **PARTIAL** — declaration facts covered; structural V2 body, selected spec and claim scope absent from the authoritative digest; remaining alpha/invariance controls owed |
+| exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
+| typed deterministic dependencies | **PARTIAL** — graph/root/whole-table material tested; ProofCore and Report have no root consumer |
+| friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core type only; no real environment identities, replay issuance, storage or status consumer |
+| legacy/schema migration | **NOT STARTED** — `needs_recheck` vocabulary exists; 44-row manifest/replay migration absent |
+| complete shadow manifest | **NOT STARTED** — per-subject shadow lines exist, but no exact migration manifest or zero-unexplained verdict |
+| repository replay into receipts | **NOT STARTED** |
+| reproducibility and weakening mutations | **PARTIAL** — cwd parity and deterministic helper material gated; clean-machine receipt replay and receipt production-consumer mutations absent |
+| eligibility-denominated coverage baseline | **NOT STARTED** |
+
+This table is the acceptance view. The roughly-70% headline describes implementation foundation,
+not the fraction of completion-gate rows already closed; do not convert one percentage into the
+other.
 
 **Proof-feature dependency fence.** Until this completion gate holds, no task
 may graduate a new automatically discharged, multi-kernel, certificate-backed,

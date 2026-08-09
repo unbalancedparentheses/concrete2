@@ -83,19 +83,27 @@ fi
 # unclean was the HARNESS, and a harness that executes stray commands can also silently swallow
 # the output an assertion depends on. Backticks inside a double-quoted string are the greppable
 # form; the escaped variant (\`) is correct and common, so only unescaped ones count.
-echo "=== unintended command substitution in diagnostic strings ==="
-badsubst=""
+# WIDENED 2026-08-08, because the narrow version MISSED a live instance. It scanned `echo "…"`
+# only, and the defect arrived as `expect_no_compile "…"` — the ratchet guarded one syntactic
+# form rather than the hazard, which is the shape of mistake it exists to catch.
+#
+# Now: an unescaped backtick inside ANY double-quoted shell string. Most existing hits are on
+# FAILURE paths (`no "… \`foo\` …"`), so they fire only when an assertion already failed —
+# latent rather than harmless, since they corrupt output exactly when it matters most. They are
+# ratcheted rather than fixed in bulk: the count may fall, never rise.
+BASELINE_SUBST=17
+echo "=== unintended command substitution in shell strings ==="
+substcount=0
 for f in scripts/tests/check_*.sh; do
   [ "$(basename "$f")" = "check_gate_vacuity.sh" ] && continue
-  # a double-quoted echo containing a backtick NOT preceded by a backslash
-  if grep -qE 'echo "[^"]*[^\\]`[^"]*`' "$f"; then
-    badsubst="$badsubst $(basename "$f")"
-  fi
+  if grep -qE '"[^"]*[^\\]`[^"]*`' "$f"; then substcount=$((substcount+1)); fi
 done
-if [ -z "$badsubst" ]; then
-  ok "no gate runs a command from inside a diagnostic string"
+echo "  gates with an unescaped backtick in a double-quoted string: $substcount (baseline $BASELINE_SUBST)"
+if [ "$substcount" -le "$BASELINE_SUBST" ]; then
+  ok "no NEW gate runs a command from inside a shell string (<= baseline)"
+  [ "$substcount" -lt "$BASELINE_SUBST" ] && echo "  NOTE: dropped to $substcount — lower BASELINE_SUBST to keep the ratchet tight."
 else
-  no "unescaped backticks execute commands in:$badsubst (use single quotes, or escape as \\\`)"
+  no "unescaped backticks rose $BASELINE_SUBST -> $substcount; use single quotes for the label, or escape as \\\`"
 fi
 
 # --- shape 4: this gate must itself be able to fail ---------------------------------------------

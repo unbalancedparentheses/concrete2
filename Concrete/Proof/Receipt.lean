@@ -167,11 +167,15 @@ def ProofEvidenceReceipt.mint?
     table digests changes which name carries which value and survives the sort. Any of them
     means the recorded evidence was established against something other than what is here now. -/
 def ProofEvidenceReceipt.isCurrentAgainst
-    (r : ProofEvidenceReceipt) (subjectDigest : String)
+    (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
     (tableBindings : List (Name × String))
     (toolchainId workspaceId importsId : String) : Bool :=
   let normalized := tableBindings.mergeSort (fun a b => toString a.1 ≤ toString b.1)
   r.subjectDigest == subjectDigest
+    -- The EDGE participates, and its omission was a real hole: a receipt recorded for a
+    -- `contract` edge would have read current against `body` material, which is the direction
+    -- that matters — a claim that survives an implementation change it actually depends on.
+    && r.edge == edge
     && r.tableBindings == normalized
     && r.toolchainId == toolchainId
     && r.workspaceId == workspaceId
@@ -182,5 +186,37 @@ def ProofEvidenceReceipt.isCurrentAgainst
     `stale`: the format changed, and the program may not have. -/
 def ProofEvidenceReceipt.comparable (r : ProofEvidenceReceipt) : Bool :=
   r.schemaVersion == receiptSchemaVersion
+
+/-- What a stored receipt is worth against current material. ONE value, not two booleans.
+
+    `comparable` and `isCurrentAgainst` are each correct and had to be called in the right
+    order: schema first, then contents. That is a predicate a consumer must remember, and this
+    file already contains one lesson about predicates that must be remembered — the receipt's
+    own invariant was documentation until the constructor was closed. A consumer that reads
+    them out of order reports "the proof went stale" when the ENVELOPE changed, which is a
+    claim about the program rather than about the format.
+
+    So the sequencing lives here, once:
+
+      `needsRecheck`  written under a different envelope — not comparable, and NOT a statement
+                      about the program. Repair: re-verify and re-record.
+      `notCurrent`    same envelope, and something it binds has moved. Repair: fix or re-prove.
+      `current`       same envelope, everything it binds matches. -/
+inductive ReceiptDisposition where
+  | current
+  | notCurrent
+  | needsRecheck
+deriving Repr, DecidableEq, Inhabited
+
+/-- The single entry point a consumer should use. Checks schema BEFORE contents, so the
+    "different format" and "different program" answers can never be swapped. -/
+def ProofEvidenceReceipt.disposition
+    (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
+    (tableBindings : List (Name × String))
+    (toolchainId workspaceId importsId : String) : ReceiptDisposition :=
+  if !r.comparable then .needsRecheck
+  else if r.isCurrentAgainst subjectDigest edge tableBindings toolchainId workspaceId importsId
+    then .current else .notCurrent
+
 
 end Concrete.Proof
