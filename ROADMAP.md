@@ -3262,7 +3262,7 @@ Proof automation remains behind honest semantics and the external-user trial.
 > | slice | state |
 > |---|---|
 > | 1-3 | **complete** |
-> | 4 | mostly built — 8 of 9 proof tables migrated |
+> | 4 | environment identities DONE (2026-08-09); 8 of 9 proof tables migrated, ninth externally blocked. **Receipt status, qualified:** the receipt core can mint structurally valid envelopes from supplied facts; **no production replay-backed receipt is issued or authoritative** |
 > | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **V2 REFROZEN (2026-08-09), and the revocation retracted in the same commit.** The freeze
 prerequisite that failed — cross-compilation determinism — now holds, so `v2:` is the first
 ACCEPTED semantic subject format rather than a number spent on a shadow draft.
@@ -3290,7 +3290,10 @@ leaving the producer defect underneath.
 The reset lives at the START of `elabFn` rather than as teardown after each function: an early
 return or error path skips a teardown, and a frame outliving its owner is the entire defect class.
 
-**SCHEMA SHAPE FROZEN, VALUES NOT** (2026-08-09) — the wording matters and the first version got it wrong. The V2 *encoding* is frozen; the digest *values* are not migration-ready, because subject production is not yet canonical (see the nondeterminism blocker below). Fixing canonical production while still shadowed is exactly what shadow mode is for.
+*(An interim note here read "schema shape frozen, values not — subject production is not yet
+canonical". That was true for part of 2026-08-09 and is now superseded: production IS canonical
+and V2 is refrozen. Removed rather than left standing, because a stale caveat about
+non-determinism is exactly the sentence someone would quote to justify not trusting the digest.)*
 
 **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
 > | 6 | dependency graph/material exists, **not authoritative** |
@@ -4899,6 +4902,24 @@ complete V2 digest.
 Until then the honest claim is co-occurrence ("44 links occur in 20 files containing 52
 digestible subjects"), not mapping ("44 links map to 52 unique subjects"). The difference is
 exactly what a wrongly-attached link would exploit.
+
+**Slice 6 starting sequence, in order.** Recorded because the order is what keeps a partial
+consumer away from the `proved` decision path:
+
+1. implement the Lean-side `MetaM` classification hand-back;
+2. produce complete typed edge material;
+3. let incomplete/unclassified material REFUSE roots;
+4. wire validated roots into ProofCore and reports **in shadow**;
+5. compare root determinism and dependency-change sensitivity;
+6. connect the root to status composition;
+7. kill the mutation that omits the root while attempting `proved`;
+8. delete or permanently subordinate the old advisory/name-keyed path.
+
+**Mass refusal at the first honest integration is expected EVIDENCE, not a regression to hide.**
+Coverage recovers only by classifying more dependencies — never by weakening root completeness.
+That sentence is here because the pressure at step 3 will be to relax the refusal so the numbers
+look better, and relaxing it converts a fail-closed root into an advisory one, which is the whole
+defect class R-0004 exists to close.
 
 **Slice 6 acceptance boundary (recorded 2026-08-09, before starting).** Integration is the
 highest-risk remaining step, so its done-condition is written first rather than discovered:
