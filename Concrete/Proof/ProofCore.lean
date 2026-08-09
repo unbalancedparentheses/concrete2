@@ -2161,11 +2161,22 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
                  |>.bind (·.spec) |>.map (·.proofName) |>.getD ""
     let callerEdge := if thm.isEmpty then Proof.DependencyEdge.unclassified
                       else Proof.classifiedEdgeOf thm
-    let edges := callees.filterMap fun cn =>
+    -- EVERY call-graph edge is represented. This was a `filterMap` dropping unresolved callees,
+    -- which is fail-open in the worst way: the computed root then covers LESS than the actual
+    -- dependency closure while looking like a complete answer. A dependency you cannot resolve
+    -- is not a dependency you do not have.
+    --
+    -- An unresolved callee becomes an edge to an identity with NO NODE, which
+    -- `dependencyRootMaterial` refuses as `.unresolvedEdge`, naming the target. The refusal is
+    -- the point: the root must not be computable while part of the closure is unknown.
+    let edges := callees.map fun cn =>
       match idOf cn with
-      | some cid => some (if trustedNames.contains cn then Proof.DependencyEdge.trusted
-                          else callerEdge, cid)
-      | none => none
+      | some cid => (if trustedNames.contains cn then Proof.DependencyEdge.trusted
+                     else callerEdge, cid)
+      | none =>
+        -- Synthesized from the unresolved NAME purely so the refusal can name it. No node will
+        -- carry this id, which is exactly what makes the root refuse rather than traverse.
+        (Proof.DependencyEdge.missing, CallableId.ofUser "«unresolved»" cn)
     { id := e.callableId, digest := e.subjectDigest, edges := edges }
 
 /-- Validate a proof registry against a ProofCore artifact. -/

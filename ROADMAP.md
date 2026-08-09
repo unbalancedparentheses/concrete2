@@ -5098,7 +5098,9 @@ consumer away from the `proved` decision path:
    to `CallableId` at the boundary and never enter a node; the name-keyed `CallGraph` is thereby
    subordinated rather than propagated.
 
-   **Measured first result: 53 of 64 subjects root, 11 REFUSE** — every refusal naming the
+   **Current: 62 of 64 subjects root, 2 REFUSE** (was 53/11 at first wiring, then 57/7 after the
+   hand-back ran, then 62/2 once the generated table covered BOTH proof-attachment paths — the
+   investigation narrative is in the commit history; this line is the state) — every refusal naming the
    non-current edge that caused it. That is the expected honest outcome: the compiler cannot mint
    `contract`/`body` without the hand-back, so those edges are `unclassified` and the root refuses
    them. Coverage recovers by classifying more dependencies, never by weakening the root. A gate
@@ -5137,9 +5139,28 @@ consumer away from the `proved` decision path:
    `#[proof_by]`/the registry. The table is therefore complete for one of the two ways a proof
    can be attached.
 
-   Fix: enumerate the theorem set from the registry as well as `provedFunctions`, regenerate, and
-   re-check. Only when NO proved subject has a refusing root may step 6 connect — that is the
-   precise, checkable form of the precondition below.
+   **Fixed 2026-08-09** — `scripts/gen/refresh_classifications.sh` unions `provedFunctions` with
+   source-linked `#[proof_by]`/`#[ensures_proof]` names (43 rows). Refusals 7 -> 2.
+
+   **THREE FURTHER BLOCKERS before step 6 connects**, from review, all real:
+
+   a. ~~`dependencyNodesOf` silently dropped unresolved callees~~ **FIXED** — it was a
+      `filterMap`, so a callee whose identity could not be resolved vanished and the root covered
+      LESS than the actual closure while looking complete. Now every call-graph edge is
+      represented; an unresolved one becomes an edge to an identity with no node, which the root
+      refuses by name. A dependency you cannot resolve is not a dependency you do not have.
+   b. **The generated table keeps only (theorem, edge-kind), discarding the tables and digests
+      `classifyTheorem` produced.** Before production it must preserve enough to prove *this
+      classification belongs to this exact theorem and applies to these exact dependencies*;
+      otherwise a stale or misattached `body`/`contract` label stays structurally valid. OPEN.
+   c. **Applying one caller-level classification to every runtime callee needs a correspondence
+      gate.** A `contract` theorem does not thereby establish that every call-graph edge is
+      covered by an appropriate contract hypothesis — over-approximating is safe, but `contract`
+      could UNDER-bind implementation dependencies unless the theorem's hypothesis structure is
+      matched to the emitted edges. OPEN.
+
+   And the precondition itself is still unmet by one case: `calls.combine` is `proved` with a
+   refusing root. Step 6 connects only when that count is zero.
 
    **So step 6 waits for the hand-back to RUN over the real proof corpus**, producing genuine
    `contract`/`body` classifications, not merely for the merge machinery to exist (steps 1-3,
