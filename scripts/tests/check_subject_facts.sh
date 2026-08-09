@@ -138,12 +138,12 @@ probe "059: a signature change moves the subject digest with an identical body" 
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
   let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "u32" }
-  proofSubjectDigestV2 a (some {}) none != proofSubjectDigestV2 b (some {}) none'
+  proofSubjectDigestV2 a (some {}) none none != proofSubjectDigestV2 b (some {}) none none'
 probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 '#eval
   let t : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 1)] }
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 0)] }
-  proofSubjectDigestV2 t (some {}) none != proofSubjectDigestV2 f (some {}) none'
+  proofSubjectDigestV2 t (some {}) none none != proofSubjectDigestV2 f (some {}) none none'
 # The subject binds the STRUCTURAL body (2026-08-09), not the legacy Core-statement hash, so
 # "a body change is detected" is no longer expressible as two hash strings at this level —
 # it needs two real bodies. That coverage MOVED rather than being dropped:
@@ -159,32 +159,47 @@ probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 probe "a DIFFERENT selected spec moves the subject" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) (some "SpecA") != proofSubjectDigestV2 a (some {}) (some "SpecB")'
+  proofSubjectDigestV2 a (some {}) (some "SpecA") none != proofSubjectDigestV2 a (some {}) (some "SpecB") none'
 probe "the SAME selected spec leaves it unchanged" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) (some "SpecA") == proofSubjectDigestV2 a (some {}) (some "SpecA")'
+  proofSubjectDigestV2 a (some {}) (some "SpecA") none == proofSubjectDigestV2 a (some {}) (some "SpecA") none'
 # Absence is a VALUE, not a refusal — a function with no attached spec still has a subject, it
 # is simply unproved. It must be stable, and must not collide with a spec whose name is empty.
 probe "NO selected spec is stable across calls" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) none == proofSubjectDigestV2 a (some {}) none'
+  proofSubjectDigestV2 a (some {}) none none == proofSubjectDigestV2 a (some {}) none none'
 probe "NO spec differs from a spec named the empty string" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) none != proofSubjectDigestV2 a (some {}) (some "")'
+  proofSubjectDigestV2 a (some {}) none none != proofSubjectDigestV2 a (some {}) (some "") none'
+# CLAIM SCOPE. A proof covering ONE DIRECTION of a postcondition and one covering both are not
+# the same claim; narrowing `iff` to `one_direction` must move the subject, or less was proved
+# and nothing said so.
+probe "a NARROWED claim scope moves the subject" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) (some "S") (some "iff") != proofSubjectDigestV2 a (some {}) (some "S") (some "one_direction")'
+probe "the SAME claim scope leaves it unchanged" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) (some "S") (some "iff") == proofSubjectDigestV2 a (some {}) (some "S") (some "iff")'
+probe "NO claim scope differs from a scope named the empty string" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) (some "S") none != proofSubjectDigestV2 a (some {}) (some "S") (some "")'
 probe "an ABSENT structural body yields NO digest" "none" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a none none'
+  proofSubjectDigestV2 a none none none'
 # The schema tag must be in the bytes, so a stored v1 hash is recognisable as a
 # DIFFERENT SCHEMA rather than as a mismatch — that is what makes `needs_recheck`
 # possible instead of a false `stale`.
 probe "the subject digest is not the bare body hash" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) none != shortHash "B"'
+  proofSubjectDigestV2 a (some {}) none none != shortHash "B"'
 
 echo ""
 echo "=== completeness is ENFORCED, not advisory ==="
@@ -194,16 +209,16 @@ echo "=== completeness is ENFORCED, not advisory ==="
 probe "an uncovered contract yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.arrayLit sp [.intLit sp 1]] }
-  proofSubjectDigestV2 f (some {}) none'
+  proofSubjectDigestV2 f (some {}) none none'
 probe "a complete subject yields a digest" "some" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 f (some {}) none'
+  proofSubjectDigestV2 f (some {}) none none'
 # an incomplete IDENTITY (type-erased generic) must refuse too
 probe "an incomplete identity yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1 }
-  proofSubjectDigestV2 f (some {}) none'
+  proofSubjectDigestV2 f (some {}) none none'
 # loop contracts are part of the subject: R-0004 names them, and they are erased
 # with requires/ensures
 probe "a loop invariant change moves the subject" "true" \

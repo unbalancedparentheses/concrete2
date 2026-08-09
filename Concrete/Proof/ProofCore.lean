@@ -2067,7 +2067,7 @@ def shortHash (fingerprint : String) : String :=
     step; this function only defines the value. -/
 def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
     (evBody? : Option Proof.EvidenceBodyDraftV2)
-    (selectedSpec? : Option String) : Option String :=
+    (selectedSpec? : Option String) (claimScope? : Option String) : Option String :=
   -- ENFORCED, not advisory. `isComplete` existed and nothing consulted it, so an
   -- uncovered subject — a contract the encoder could not read, an incomplete
   -- identity — still received an ordinary-looking digest. A digest that cannot be
@@ -2104,9 +2104,21 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
       let specPart := match selectedSpec? with
         | some sp => "S" ++ toString sp.length ++ ":" ++ sp
         | none    => "S-none"
+      -- CLAIM SCOPE (coverage): `iff`, `one_direction`, `invariant`, `full_contract`, … A proof
+      -- covering ONE DIRECTION of a postcondition and a proof covering both are not the same
+      -- claim about the same subject; without this, narrowing a claim from `iff` to
+      -- `one_direction` would leave the subject — and the freshness verdict — untouched, which
+      -- is the fail-open direction: less was proved and nothing said so.
+      --
+      -- Absent scope is a distinct marker, for the reason absent spec is: an unproved function
+      -- has a subject, and refusing here would conflate "nothing claimed yet" with "cannot be
+      -- described".
+      let scopePart := match claimScope? with
+        | some c => "C" ++ toString c.length ++ ":" ++ c
+        | none   => "C-none"
       some (shortHash ("subjectV2:" ++ facts.canonical
               ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)
-              ++ "|spec:" ++ specPart))
+              ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2401,7 +2413,10 @@ private partial def extractModule
     -- theorem happens to carry it. Re-pointing a link at a differently-named proof of the SAME
     -- specification is not a change of subject; the theorem's identity belongs in the receipt.
     let subjDigest : Option String :=
-      facts?.bind (fun fx => proofSubjectDigestV2 fx evBody? (sa.map (·.specId.name)))
+      -- Coverage comes from the registry entry rather than the attachment: `SpecAttachment`
+      -- carries WHICH spec, the entry carries HOW MUCH of it the proof covers.
+      let scope? := (registry.find? (fun re => re.function == qualName)).map (·.coverage)
+      facts?.bind (fun fx => proofSubjectDigestV2 fx evBody? (sa.map (·.specId.name)) scope?)
     if elig.isTrusted then
       (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc
