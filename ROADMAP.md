@@ -5151,11 +5151,21 @@ consumer away from the `proved` decision path:
       refuses by name. A dependency you cannot resolve is not a dependency you do not have.
    b. **HALF CLOSED.** The table carries the theorem artifact digest, freshness is a MANDATORY
       gate (`make test-classification-freshness`, ~1s), and the gate rediscovers the
-      theorem-name inventory from source rather than trusting the generator's own list. Still
-      open: `classifiedEdgeOf` selects only the name and edge tag, so the DIGEST does not
-      participate in classification — a stale table is caught by the gate, not by the consumer,
-      and the type remains structurally capable of consuming stale provenance. Table identities,
-      table digests and quantifies-over-table are still discarded. Original finding: Before production it must preserve enough to prove *this
+      theorem-name inventory from source rather than trusting the generator's own list. ~~Still
+      open: the digest does not participate in classification.~~ **CLOSED 2026-08-09** —
+      classification routes through `validatedRowOf`, which refuses a row whose digest is absent,
+      empty, a placeholder, or not 32 hex chars, and `ValidatedRow`'s constructor is private so a
+      caller cannot assemble one around a failed row. Verified end to end: corrupting a digest in
+      the table turns that theorem's edge from `body` to `unclassified`.
+
+      **What consumer validation cannot establish**, stated so it is not read as more: the
+      compiler cannot recompute a theorem's artifact digest (that needs `MetaM` and the proof
+      modules), so the consumer checks STRUCTURE, not correspondence to the live theorem.
+      Correspondence stays `check_classification_freshness.sh`'s job, now mandatory. The two
+      answer different questions and neither substitutes for the other.
+
+      STILL OPEN: table identities, table digests and quantifies-over-table are discarded — the
+      row carries which THEOREM, not yet which DEPENDENCIES. Original finding: Before production it must preserve enough to prove *this
       classification belongs to this exact theorem and applies to these exact dependencies*;
       otherwise a stale or misattached `body`/`contract` label stays structurally valid. OPEN.
    c. **Applying one caller-level classification to every runtime callee needs a correspondence
