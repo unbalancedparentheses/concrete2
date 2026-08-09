@@ -126,7 +126,15 @@ EXPECT_LINKS=44
 echo "=== exact link ownership ==="
 MROWS=""
 for src in "${SRCS[@]}"; do
-  MROWS="$MROWS$("$BIN" "$src" --report migration-manifest 2>/dev/null | grep " | owner=" || true)
+  # SOURCE LOCATION FIRST, which the row schema specified from the start and I omitted. Without
+  # it two files defining the same callable id — `elf_header/src/main.con` and its
+  # `main_drifted.con` sibling — produce identical rows that deduplicate into one, silently
+  # losing a link that has its own stored fingerprint and must migrate separately.
+  #
+  # That is what the "9 missing links" were: not absent, MERGED. A link key without its source
+  # location cannot distinguish a duplicate from two distinct links that happen to name the same
+  # callable.
+  MROWS="$MROWS$("$BIN" "$src" --report migration-manifest 2>/dev/null | grep " | owner=" | sed "s|^|$src \| |" || true)
 "
 done
 # DEDUPLICATED. An imported function appears in several files' manifests, so summing per-file
@@ -137,9 +145,81 @@ MLINKS="$(printf '%s' "$MROWS" | grep -c " | owner=" || true)"
 MUNOWNED="$(printf '%s' "$MROWS" | grep -c "owner=NONE" || true)"
 MNOSUBJ="$(printf '%s' "$MROWS" | grep -c "| no_subject$" || true)"
 MSUBJ="$(printf '%s' "$MROWS" | grep -oE "owner=[^ ]+" | grep -v "owner=NONE" | sort -u | wc -l | tr -d ' ')"
+# Distinct LINKS are keyed by (source file, callable) — distinct SUBJECTS by callable alone.
 # Duplicate = the same (function, spec) pair twice. The same FUNCTION twice is legitimate — a
 # callable can be proved against more than one specification, and each link migrates separately.
-MDUPES="$(printf '%s' "$MROWS" | grep -oE "^[^ ]+ \| owner=[^ ]+ \| stored=[^ ]+ \| spec=[^ ]+" | sort | uniq -d | wc -l | tr -d ' ')"
+MDUPES="$(printf '%s' "$MROWS" | grep -oE "^[^ ]+ \| [^ ]+ \| owner=[^ ]+ \| stored=[^ ]+ \| spec=[^ ]+" | sort | uniq -d | wc -l | tr -d ' ')"
+
+echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  duplicate link keys: $MDUPES"
+
+# Every stored link must appear as a row. A link the manifest cannot see is one the migration
+# will not migrate, and it would be counted nowhere.
+# EQUALITY since 2026-08-09, no longer a ratchet. Every stored link has a manifest row.
+#
+# The "8 then 9 missing links" were never missing — they were MERGED. Rows keyed by callable
+# alone collapsed across files, and `elf_header` ships both `main.con` and `main_drifted.con`
+# defining the same callable ids, each with its own stored fingerprint. Adding the source
+# location to the key — which the row schema specified from the start and this gate omitted —
+# separates two distinct links that happen to name the same callable.
+#
+# A link with no row would migrate against nothing and be counted nowhere, so this is an
+# equality, not a floor.
+[ "$MLINKS" = "$LINKS" ] \
+  && ok "every stored link has a manifest row ($MLINKS = $LINKS)" \
+  || no "manifest has $MLINKS rows for $LINKS stored links — $((LINKS - MLINKS)) link(s) missing from the authoritative inventory"
+
+# Every subject either digests or is explicitly refused. Silence is the failure mode: a subject
+# that is neither would be migrating against nothing.
+[ "$((DIGESTED + REFUSED))" = "$SUBJECTS" ] \
+  && ok "every subject is accounted for: $DIGESTED digested + $REFUSED refused = $SUBJECTS" \
+  || no "$((SUBJECTS - DIGESTED - REFUSED)) subject(s) neither digested nor refused — unaccounted, which is how a link migrates against nothing"
+
+# The per-subject correlation, which the aggregate version could not see.
+[ -z "$MISMATCH" ] \
+  && ok "no subject disagrees with its own body line (per-subject, not summed)" \
+  || no "subject/body disagreement:$MISMATCH"
+
+# The fail-closed body requirement must cost the migration nothing. If this ever fires, some
+# link cannot migrate until its construct becomes describable — which is a real blocker and
+# should be loud, not discovered during step 7.
+[ "$REFUSED" = "0" ] \
+  && ok "no migration subject is structurally refused — fail-closed costs this set nothing" \
+  || no "$REFUSED migration subject(s) refused: those links cannot migrate until the producer describes their constructs"
+
+# === THE EXACT JOIN (compiler-produced, one row per link) ====================================
+# Everything above is CO-OCCURRENCE: 44 links live in files containing N digestible subjects.
+# That admits a link which is dangling, duplicated, or attached to the wrong function, because
+# nothing associated a link with an owner. `--report migration-manifest` is the join, produced
+# by the compiler, which is the only layer that knows both sides.
+#
+# The shell measurement above stays as a coarse regression check; these assertions are the
+# authoritative ones.
+echo "=== exact link ownership ==="
+MROWS=""
+for src in "${SRCS[@]}"; do
+  # SOURCE LOCATION FIRST, which the row schema specified from the start and I omitted. Without
+  # it two files defining the same callable id — `elf_header/src/main.con` and its
+  # `main_drifted.con` sibling — produce identical rows that deduplicate into one, silently
+  # losing a link that has its own stored fingerprint and must migrate separately.
+  #
+  # That is what the "9 missing links" were: not absent, MERGED. A link key without its source
+  # location cannot distinguish a duplicate from two distinct links that happen to name the same
+  # callable.
+  MROWS="$MROWS$("$BIN" "$src" --report migration-manifest 2>/dev/null | grep " | owner=" | sed "s|^|$src \| |" || true)
+"
+done
+# DEDUPLICATED. An imported function appears in several files' manifests, so summing per-file
+# row counts double-counts it — and the sum happened to reach exactly 44, which made the gap
+# below invisible. Distinct rows is the only count that means anything here.
+MROWS="$(printf '%s' "$MROWS" | sort -u)"
+MLINKS="$(printf '%s' "$MROWS" | grep -c " | owner=" || true)"
+MUNOWNED="$(printf '%s' "$MROWS" | grep -c "owner=NONE" || true)"
+MNOSUBJ="$(printf '%s' "$MROWS" | grep -c "| no_subject$" || true)"
+MSUBJ="$(printf '%s' "$MROWS" | grep -oE "owner=[^ ]+" | grep -v "owner=NONE" | sort -u | wc -l | tr -d ' ')"
+# Distinct LINKS are keyed by (source file, callable) — distinct SUBJECTS by callable alone.
+# Duplicate = the same (function, spec) pair twice. The same FUNCTION twice is legitimate — a
+# callable can be proved against more than one specification, and each link migrates separately.
+MDUPES="$(printf '%s' "$MROWS" | grep -oE "^[^ ]+ \| [^ ]+ \| owner=[^ ]+ \| stored=[^ ]+ \| spec=[^ ]+" | sort | uniq -d | wc -l | tr -d ' ')"
 
 echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  duplicate link keys: $MDUPES"
 

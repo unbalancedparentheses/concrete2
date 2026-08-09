@@ -4859,83 +4859,21 @@ way. Faking an environment in this module-level pass would be the same shape of 
 walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
 question that already has an authoritative one.
 
-**STEP 1 BLOCKERS, measured 2026-08-09 by the manifest itself, both PAUSING dependency-root
-integration and receipts:**
+**STEP 1 CLOSED (2026-08-09).** `check_migration_manifest.sh` reports **44/44 links accounted,
+0 unowned, 0 non-deterministic, 0 without a subject** — the closure gate is CLOSED and
+dependency-root integration may resume. Both blockers are resolved, and neither was what it first
+appeared to be:
 
-1. **8 of 44 stored links have no manifest row.** 36 distinct rows exist. A link the inventory
-   cannot see stays on its v1 value and reads as migrated because nothing enumerated it. This was
-   invisible while per-file rows were summed: 11 duplicate rows padded out 11 missing ones to a
-   coincidental 44.
-2. **The subject digest is not a function of the subject alone.** `calls.inc` digests as
-   `2a0ef88b` in `proof_patterns/composition` and `774ef796` in
-   `proof_patterns/composition_trusted_helper`. Instrumented per component as the review asked:
-   callable id, declaration facts, params, return type, capabilities and contracts are all
-   IDENTICAL; only `shadow bodyV2` (`f606dbc6` vs `bc98cca1`) and `shadow identityUses` differ.
-
-   The bodies are *literally* `return x + 1;` in both files, and `shadow edges` reports the body
-   reaches no callable — so this is NOT a trust leak through a call, which was the first
-   hypothesis.
-
-   **ROOT CAUSE FOUND 2026-08-09, by the control the review proposed.** Inserting an UNRELATED
-   declaration before `inc` in `proof_patterns/composition` moves its body digest from `f606dbc6`
-   to `bc98cca1` — and `bc98cca1` is *exactly* the value the same callable has in
-   `composition_trusted_helper`. So the encoding reads the declaration's POSITION IN THE MODULE,
-   not only the body: an order-dependent identifier (a module-global binder/identity counter
-   allocated in declaration order) is entering both `bodyBytesV2` and `identityUses`.
-
-   That explains the cross-project disagreement without any appeal to trust: the two projects
-   simply have different declarations above `inc`. It is gated as `TRIPWIRE(order)` in
-   `check_proof_freshness.sh`, which flips to a positive assertion when fixed.
-
-   **Narrowed further 2026-08-09, with candidates eliminated** — recorded because the remaining
-   search is short and re-deriving it would cost more than reading it:
-
-   * a declaration inserted BEFORE `inc` moves the digest; the same declaration AFTER it does
-     NOT. The effect is POSITIONAL — a monotonic identifier consumed in declaration order — not a
-     dependence on module content. Both are gated, because the two have different fixes;
-   * `TypeId` is ELIMINATED: it is `user (defModule declName)` / `builtin`, semantic rather than
-     allocation-ordered;
-   * `BodyScope.resolve?` is ELIMINATED: `binderRef` is `(framesOut, idx)` computed purely from
-     the frame stack, and the doc-comment already commits to position-not-name;
-   * a call is ELIMINATED as the carrier for this fixture: `shadow edges` reports the body reaches
-     no callable, and the body is `return x + 1;`.
-
-   **THE SERIALIZER IS ELIMINATED TOO (2026-08-09), which relocates the defect.** `bodyBytesV2`,
-   `stmtBytes` and `exprBytes` are pure functions of the evidence tree, and every case for this
-   fixture is positional or literal: `return x + 1;` encodes as `E(n("+"|r0.0, i(1|i32)))` —
-   a return of a binary node over a `binderRef 0 0` and an `intLit`. There is no identifier in
-   that path capable of varying with declaration order.
-
-   Therefore **the producer, not the serializer, is at fault**: the evidence TREE built for `inc`
-   differs between the two compilations. The remaining question is narrow and concrete — which
-   node of `inc`'s tree differs, given identical source. The most likely shapes are a differing
-   `binderRef` (an extra or missing lexical frame, so `x` resolves as `0.0` in one build and
-   `1.0` in another) or an extra/absent statement from desugaring.
-
-   This matters for the fix: normalizing identities at the serializer would have been the wrong
-   repair, because the serializer is already normal. The repair belongs in `EvidenceBuild`/
-   `BodyScope` frame construction, where the tree is produced.
-
-   **The correct encoding**, per the review, normalizes function-local identities
-   deterministically: parameters by POSITION, local bindings by lexical/declaration position
-   WITHIN the function, loop and match binders by structured lexical path, and constants, fields,
-   types and callables by stable qualified semantic identity. It must not hash process-global
-   elaboration ids, allocation order, source paths, imported-module order, or report traversal
-   order.
-
-   **The alpha-renaming gate was necessary and insufficient**, which is worth recording: it
-   proved spelling independence WITHIN one compilation, not identity stability ACROSS compilation
-   contexts. Both controls are now present.
-
-   **Versioning consequence.** Fixing this changes V2's canonical bytes, and V2 was explicitly
-   frozen. Two honest options: bump to V3, or formally REVOKE the V2 freeze as failed acceptance,
-   recording that no V2 value ever became authoritative. The second is preferable while V2 remains
-   entirely shadow with no receipts or stored links using it — it avoids permanently carrying a
-   never-authoritative schema — but the revocation must be explicit and gated. Silently redefining
-   `v2:` is the one move that is not available.
-
-   This is the more serious blocker: it means the frozen schema pins a value that is not unique
-   per subject, so receipts binding it and a migration pinning it would both be building on sand.
+1. ~~*8 of 44 stored links have no manifest row.*~~ They were never missing — they were **merged**.
+   Rows keyed by callable alone collapsed across files, and `elf_header` ships both `main.con` and
+   `main_drifted.con` defining the same callable ids, each with its own stored fingerprint. The
+   fix was the field the row schema specified from the start and the gate omitted: **source
+   location**. A link key without it cannot distinguish a duplicate from two distinct links that
+   happen to name the same callable. Now an equality assertion, not a ratchet.
+2. ~~*The subject digest is not a function of the subject alone.*~~ Root cause: `elabFn` did not
+   reset the binder frame per function, so lexical scope accumulated across declarations and a
+   parameter's resolved index depended on what was elaborated before it. Fixed at the start of
+   `elabFn`; the check is an equality assertion.
 
 **Closure gate** (`check_migration_manifest.sh`, separate from the ratchets): required state is
 0 missing, 0 unowned, 0 nondeterministic, 0 without subject, 44/44 accounted. It currently reports
