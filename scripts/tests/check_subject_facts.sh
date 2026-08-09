@@ -188,7 +188,20 @@ probe "NO spec differs from a spec named the empty string" "true" \
 # Updating the constant without bumping the tag is the one edit that turns every stored proof
 # link into a false staleness report, which is why this says so here rather than in a commit
 # message nobody will be reading at the time.
-probe "SCHEMA FREEZE: the subject digest of a fixed input is unchanged" "db0c59105288dea1437135ef062f9e86" \
+# THE FREEZE IS REVOKED (2026-08-09) — see V2_FREEZE_REVOKED in ROADMAP.md. Cross-compilation
+# determinism failed, which is a freeze PREREQUISITE, so this pin is no longer a freeze: it is a
+# composition tripwire that still catches an accidental change to the digest's structure.
+#
+# The two states are tied together below so neither can drift: while the order defect is open the
+# roadmap MUST carry the revocation, and when the defect is fixed the revocation MUST be removed
+# in the same commit that re-establishes the freeze. A revocation nobody retracts is how a
+# temporary state becomes permanent.
+if grep -q "V2_FREEZE_REVOKED" ROADMAP.md; then
+  ok "V2 freeze is REVOKED and recorded — the pin below is a composition tripwire, not a freeze"
+else
+  no "the V2 freeze is not marked revoked in ROADMAP.md, but cross-compilation determinism is still open — either refreeze with evidence or record the revocation"
+fi
+probe "COMPOSITION TRIPWIRE (freeze revoked): the digest of a fixed input is unchanged" "db0c59105288dea1437135ef062f9e86" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
   (proofSubjectDigestV2 f (some {}) (some "SpecA") (some "iff")).get!'

@@ -234,6 +234,18 @@ else
   ok "TRIPWIRE(order): an unrelated declaration still moves the body digest ($ORD_BEFORE -> $ORD_AFTER) — known open, blocks migration"
 fi
 
+# THE OTHER HALF OF THE TIE. `check_subject_facts.sh` fails if the revocation is missing while
+# this defect is open; this fails if the revocation LINGERS after it is fixed. Without both, a
+# temporary state becomes permanent — which is the normal fate of revocation markers, and the
+# reason removing it is specified as part of the refreeze commit rather than as follow-up.
+if [ -n "$ORD_BEFORE" ] && [ "$ORD_BEFORE" = "$ORD_AFTER" ]; then
+  if grep -q "V2_FREEZE_REVOKED" "$ROOT_DIR/ROADMAP.md"; then
+    no "determinism is FIXED but V2_FREEZE_REVOKED is still in ROADMAP.md — refreeze with evidence and remove the marker in the same commit"
+  else
+    ok "determinism fixed and the revocation marker removed together"
+  fi
+fi
+
 # Fail-closed: every subject that emits a digest must have a COMPLETE structural body. If any
 # subject digests while its body line reads REFUSED, the digest is being minted over gaps.
 BOTH="$("$COMPILER" "$LI/src/main.con" --report subject-facts 2>/dev/null)"
