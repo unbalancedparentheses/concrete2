@@ -281,6 +281,32 @@ fi
   && ok "exact owner count ($MSUBJ) is within the co-occurrence count ($SUBJECTS)" \
   || no "exact owners ($MSUBJ) exceed co-occurring subjects ($SUBJECTS) — the two measurements disagree"
 
+# SOURCE LOCATION IS MIGRATION METADATA, and must stay that way. It keys manifest ROWS, because
+# two files can define the same callable id and each annotation migrates separately. It must
+# never reach the semantic subject or the receipt: a subject that varied with the file path would
+# be un-reproducible across checkouts, which is precisely the defect the workspace identity is
+# shaped to avoid.
+#
+# Also repository-relative, never an absolute checkout path — the rows come from
+# `grep -rl examples/`, so they are relative by construction, and this asserts it rather than
+# relying on that staying true.
+echo "=== source location stays migration metadata ==="
+if printf '%s' "$MROWS" | grep -qE "^/|\| /"; then
+  no "a manifest row carries an ABSOLUTE path — rows must be repository-relative or receipts differ per checkout"
+else
+  ok "manifest rows are repository-relative"
+fi
+if grep -qE "sourceLoc|srcPath|filePath|FilePath" Concrete/Proof/Receipt.lean 2>/dev/null; then
+  no "the receipt references a source path — source location is migration metadata, not receipt identity"
+else
+  ok "the receipt binds no source location (it is migration metadata, not identity)"
+fi
+if grep -n "proofSubjectDigestV2" Concrete/Proof/ProofCore.lean | grep -qE "path|file|loc"; then
+  no "the subject digest takes a path/location argument — a subject must not vary with where it is compiled from"
+else
+  ok "the subject digest takes no source location"
+fi
+
 # === CLOSURE GATE (separate from the ratchets above) =========================================
 # The assertions above are RATCHETS: they stop things getting worse while known blockers stand.
 # This is the completion condition, and it is expected to FAIL until step 1 is genuinely done.

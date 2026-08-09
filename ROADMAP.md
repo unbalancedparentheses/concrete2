@@ -4900,6 +4900,30 @@ Until then the honest claim is co-occurrence ("44 links occur in 20 files contai
 digestible subjects"), not mapping ("44 links map to 52 unique subjects"). The difference is
 exactly what a wrongly-attached link would exploit.
 
+**Slice 6 acceptance boundary (recorded 2026-08-09, before starting).** Integration is the
+highest-risk remaining step, so its done-condition is written first rather than discovered:
+
+* ProofCore AND reports consume the SAME validated root — two consumers building their own is how
+  a second, weaker answer appears;
+* direct, transitive and recursive dependencies included;
+* dynamic table access binds the WHOLE table (`tableValueDigest` already does this, and
+  `tablesFullyBound` is the predicate a root must respect);
+* missing, unclassified or unbindable edges FAIL CLOSED — `dependencyRootMaterial` already
+  refuses these, and integration must not add a path around it;
+* trust and assumptions propagate MONOTONICALLY;
+* dependency ORDER and duplicate discovery do not change the root; any dependency SEMANTIC change
+  does; comments, paths, import order and equivalent traversal order do not;
+* no legacy `staleDeps`, name-keyed, or advisory path can issue `proved`;
+* a production-consumer MUTATION proves that omitting the root prevents a friendly verdict —
+  without it, "integrated" means the code is called, not that it decides anything.
+
+**Known shape of the first integration, from reading `DepNode`.** Nodes carry
+`(id : CallableId, digest : Option String, edges : List (DependencyEdge × CallableId))`. The
+compiler can honestly mint `trusted` and `missing` edges; the `contract` vs `body` split needs
+`classifyTheorem`, which runs in `MetaM` on the Lean side. Since `dependencyRootMaterial` fails
+closed on a `missing` edge, the first honest integration will REFUSE most roots — that is the
+correct outcome and must not be softened into an advisory value to make coverage look better.
+
 **Boundary between the three digests, recorded 2026-08-09 so the subject does not accrete.** It
 was tempting to fold dependency material and trust qualification into `ProofSubjectDigest`; they
 belong elsewhere, and keeping them out is what lets the subject be *frozen* independently:
