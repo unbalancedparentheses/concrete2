@@ -174,6 +174,25 @@ probe "NO spec differs from a spec named the empty string" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
   proofSubjectDigestV2 a (some {}) none none != proofSubjectDigestV2 a (some {}) (some "") none'
+# === SUBJECT SCHEMA FREEZE ==================================================================
+# The subject's components are complete: semantic identity, typed signature, structural V2 body,
+# contracts, selected specification, claim scope. From here the digest is a STORED VALUE — step 7
+# migrates 44 links to it — so any change to its composition invalidates every stored subject.
+#
+# This pins the digest of a fixed input. It is not testing a property; it is a FREEZE. Adding,
+# removing or reordering a component moves this value, and the correct response is never to
+# update the constant: it is to bump the schema tag (`subjectV2:` -> `subjectV3:`) so stored
+# values are recognised as a DIFFERENT SCHEMA and become `needs_recheck` rather than silently
+# comparing unequal and reading as `stale`.
+#
+# Updating the constant without bumping the tag is the one edit that turns every stored proof
+# link into a false staleness report, which is why this says so here rather than in a commit
+# message nobody will be reading at the time.
+probe "SCHEMA FREEZE: the subject digest of a fixed input is unchanged" "db0c59105288dea1437135ef062f9e86" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  (proofSubjectDigestV2 f (some {}) (some "SpecA") (some "iff")).get!'
+
 # CLAIM SCOPE. A proof covering ONE DIRECTION of a postcondition and one covering both are not
 # the same claim; narrowing `iff` to `one_direction` must move the subject, or less was proved
 # and nothing said so.
