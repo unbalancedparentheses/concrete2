@@ -4819,9 +4819,36 @@ integration and receipts:**
 
    The bodies are *literally* `return x + 1;` in both files, and `shadow edges` reports the body
    reaches no callable — so this is NOT a trust leak through a call, which was the first
-   hypothesis. It is a contextual input inside the body encoding itself: the same statement
-   encodes differently depending on the module it is compiled in. Remaining candidates from the
-   review's list are compilation-relative identity resolution and unstable binder identities.
+   hypothesis.
+
+   **ROOT CAUSE FOUND 2026-08-09, by the control the review proposed.** Inserting an UNRELATED
+   declaration before `inc` in `proof_patterns/composition` moves its body digest from `f606dbc6`
+   to `bc98cca1` — and `bc98cca1` is *exactly* the value the same callable has in
+   `composition_trusted_helper`. So the encoding reads the declaration's POSITION IN THE MODULE,
+   not only the body: an order-dependent identifier (a module-global binder/identity counter
+   allocated in declaration order) is entering both `bodyBytesV2` and `identityUses`.
+
+   That explains the cross-project disagreement without any appeal to trust: the two projects
+   simply have different declarations above `inc`. It is gated as `TRIPWIRE(order)` in
+   `check_proof_freshness.sh`, which flips to a positive assertion when fixed.
+
+   **The correct encoding**, per the review, normalizes function-local identities
+   deterministically: parameters by POSITION, local bindings by lexical/declaration position
+   WITHIN the function, loop and match binders by structured lexical path, and constants, fields,
+   types and callables by stable qualified semantic identity. It must not hash process-global
+   elaboration ids, allocation order, source paths, imported-module order, or report traversal
+   order.
+
+   **The alpha-renaming gate was necessary and insufficient**, which is worth recording: it
+   proved spelling independence WITHIN one compilation, not identity stability ACROSS compilation
+   contexts. Both controls are now present.
+
+   **Versioning consequence.** Fixing this changes V2's canonical bytes, and V2 was explicitly
+   frozen. Two honest options: bump to V3, or formally REVOKE the V2 freeze as failed acceptance,
+   recording that no V2 value ever became authoritative. The second is preferable while V2 remains
+   entirely shadow with no receipts or stored links using it — it avoids permanently carrying a
+   never-authoritative schema — but the revocation must be explicit and gated. Silently redefining
+   `v2:` is the one move that is not available.
 
    This is the more serious blocker: it means the frozen schema pins a value that is not unique
    per subject, so receipts binding it and a migration pinning it would both be building on sand.

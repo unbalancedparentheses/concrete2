@@ -203,6 +203,37 @@ RENAME_D="$(shadow_digest "$LI")"
   || no "SHADOW(alpha): a local rename moved the digest ($BASE_D -> $RENAME_D) — the subject measures source text, not the program"
 restore li loop_invariant
 
+# ORDER-DEPENDENCE TRIPWIRE — a KNOWN-OPEN defect, gated so it cannot be forgotten or silently
+# widened. Inserting an UNRELATED declaration before a function changes that function's body
+# digest, which means the encoding reads the declaration's position in the module rather than
+# only the body. Measured: `calls.inc` in proof_patterns/composition digests f606dbc6, and
+# bc98cca1 once an unrelated `fn` is inserted above it — bc98cca1 being exactly the value the
+# same callable has in proof_patterns/composition_trusted_helper, where a sibling differs.
+#
+# This is why the same subject digests differently in two projects, and it blocks the migration:
+# a value that moves when an unrelated neighbour changes cannot be pinned.
+#
+# The alpha-renaming leg above was necessary and NOT sufficient — it proved spelling
+# independence WITHIN one compilation, not identity stability ACROSS contexts.
+ORD="$TMP/ordercheck"; rm -rf "$ORD"; cp -r examples/proof_patterns/composition "$ORD"
+ord_digest() { "$COMPILER" "$1/src/main.con" --report subject-facts 2>/dev/null \
+  | awk '/^v1:user:calls.inc/{p=1} p&&/shadow bodyV2:/{print $3; exit}'; }
+ORD_BEFORE="$(ord_digest "$ORD")"
+python3 - "$ORD/src/main.con" <<'PYEOF'
+import sys
+p=sys.argv[1]; s=open(p).read()
+s=s.replace('    fn inc(', '    fn zzz_unrelated(q: i32) -> i32 {\n        return q;\n    }\n\n    fn inc(',1)
+open(p,'w').write(s)
+PYEOF
+ORD_AFTER="$(ord_digest "$ORD")"
+if [ -z "$ORD_BEFORE" ] || [ -z "$ORD_AFTER" ]; then
+  no "ORDER: probe produced no digest — inconclusive, not agreement"
+elif [ "$ORD_BEFORE" = "$ORD_AFTER" ]; then
+  ok "ORDER: DEFECT FIXED — an unrelated declaration no longer moves the body digest. Convert this tripwire to a positive assertion and close the manifest blocker."
+else
+  ok "TRIPWIRE(order): an unrelated declaration still moves the body digest ($ORD_BEFORE -> $ORD_AFTER) — known open, blocks migration"
+fi
+
 # Fail-closed: every subject that emits a digest must have a COMPLETE structural body. If any
 # subject digests while its body line reads REFUSED, the digest is being minted over gaps.
 BOTH="$("$COMPILER" "$LI/src/main.con" --report subject-facts 2>/dev/null)"
