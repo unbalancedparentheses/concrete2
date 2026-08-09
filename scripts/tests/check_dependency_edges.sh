@@ -729,6 +729,35 @@ probe "completeness agrees with the merge, both ways" "true" "
 #eval classificationsComplete [\"a\"] [(\"a\", $ok_ev)]
   && !(classificationsComplete [\"a\", \"b\"] [(\"a\", $ok_ev)])"
 
+# === SHADOW INTEGRATION (slice 6, step 4) ====================================================
+# Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and
+# REPORTED; it decides nothing yet.
+echo "=== dependency-root shadow integration ==="
+
+DR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot:' || true)"
+[ -n "$DR" ] \
+  && ok "subject-facts carries a depRoot line (both consumers read ProofCore's nodes)" \
+  || no "no depRoot line — the shadow integration is not wired"
+
+# A leaf must ROOT: if everything refused, the integration would be indistinguishable from not
+# having run, and "0 roots" would look like success.
+printf '%s' "$DR" | grep -qE "shadow depRoot: [0-9a-f]{8}" \
+  && ok "a leaf subject produces a root (the builder is actually reachable)" \
+  || no "no subject produced a root — refusal is expected for unclassified edges, but a leaf with no edges must succeed"
+
+# ...and a subject reaching an unclassified dependency must REFUSE, with the reason named.
+printf '%s' "$DR" | grep -q "REFUSED (.*non-current edge" \
+  && ok "a subject reaching an unclassified dependency refuses, naming the edge" \
+  || no "a subject with an unclassified dependency did not refuse — the root is not fail-closed"
+
+# The root must NOT reach any verdict yet. This is the step-4 containment, and it is the same
+# check the subject digest has: shadow means computed, not consulted.
+if grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
+  no "a dependency root reaches deriveObligationStatus — step 6 has begun without steps 5 and 7"
+else
+  ok "no dependency root reaches status derivation — still shadow"
+fi
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"

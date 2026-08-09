@@ -1741,6 +1741,28 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
       let details := (gaps.map (·.detail)).eraseDups
       s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
 
+/-- The dependency-ROOT shadow line: what a validated root would say, computed but not acted on.
+
+    R-0004 slice 6 step 4. Both consumers read `ProofCore.dependencyNodesOf`, so there is one set
+    of nodes rather than a Report-local rebuild — two builders is how a second, weaker answer
+    appears.
+
+    **REFUSED is the expected answer today, and it is evidence rather than a defect.** The
+    compiler cannot mint `contract` or `body` (that needs `classifyTheorem` in `MetaM`), so every
+    unclassifiable edge is `unclassified`, and `dependencyRootMaterial` refuses any edge that is
+    not current for dependents. Coverage recovers when the hand-back classifies more
+    dependencies — never by weakening what a root requires.
+
+    The refusal REASON is rendered, not counted. "12 refused" says a wall exists; naming the
+    cause says which wall, and that list is the remaining work. -/
+private def shadowDepRootLine (pc : Concrete.ProofCore) (id : CallableId) : String :=
+  let nodes := Concrete.dependencyNodesOf pc pc.callGraph
+  match Proof.dependencyRootMaterial nodes id with
+  | .error e => s!"REFUSED ({e.explain})"
+  | .ok m =>
+    let trust := if m.requiresTrustQualification then " [carries trust]" else ""
+    s!"{shortHash m.preimage}{trust}"
+
 /-- The subject-FRESHNESS shadow line: what the v2 comparison WOULD say, computed but not
     acted on.
 
@@ -2094,7 +2116,11 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- value — completeness of the subject and comparability of the claim are
         -- different questions, and one line for both would let the first imply the
         -- second.
-        , s!"  shadow subjectFreshness: {shadowSubjectFreshnessLine e.subjectDigest (storedFpFor pc e.qualName)}"
+        , s!"  shadow subjectFreshness: {shadowSubjectFreshnessLine e.subjectDigest (storedFpFor pc e.qualName)}\n"
+        -- The SIXTH axis. The five above describe this subject and what comparing it decides;
+        -- this says what a claim over it would REST ON transitively. Separate because a fresh,
+        -- fully-described subject can still reach a dependency nothing has classified.
+        , s!"  shadow depRoot: {shadowDepRootLine pc e.callableId}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 

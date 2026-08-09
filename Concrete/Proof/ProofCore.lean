@@ -3,6 +3,7 @@ import Concrete.Pipeline.Pipeline
 import Concrete.Proof.Proof
 import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
+import Concrete.Proof.DependencyRoot
 
 namespace Concrete
 
@@ -2119,6 +2120,40 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
       some (shortHash ("subjectV2:" ++ facts.canonical
               ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)
               ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
+
+/-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
+
+    R-0004 slice 6, step 4 — SHADOW. Produced here rather than in Report so both consumers read
+    one set of nodes; two builders is how a second, weaker answer appears, which is the defect
+    class this slice exists to close.
+
+    **Every edge the compiler cannot classify is `unclassified`, and that is most of them.** The
+    `contract` vs `body` split needs `classifyTheorem`, which reads a theorem's elaborated type
+    in `MetaM`. The compiler can honestly mint `trusted` — a declared boundary is a compiler
+    fact — and must not guess the rest. Since `dependencyRootMaterial` refuses any edge that is
+    not current for dependents, most roots will REFUSE until the hand-back runs.
+
+    That mass refusal is the expected first result, not a regression: coverage recovers by
+    classifying more dependencies, never by weakening what a root requires.
+
+    The call graph is name-keyed (`CallGraph = List (String × List String)`), which is the legacy
+    representation slice 6 subordinates. Names are resolved to `CallableId` HERE and never
+    escape into a node: a node keyed by name would reinstate exactly what R-0004 removes. A
+    callee whose identity cannot be resolved is DROPPED from the edge list and the node is marked
+    by its absence — it cannot be silently treated as an edge to nothing. -/
+def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode :=
+  let idOf : String → Option CallableId := fun qn =>
+    (pc.entries.find? (fun e => e.qualName == qn)).map (·.callableId)
+  let trustedNames := pc.excluded.filterMap fun x =>
+    if x.eligibility.isTrusted then some x.qualName else none
+  pc.entries.map fun e =>
+    let callees := (graph.find? (fun g => g.1 == e.qualName)).map (·.2) |>.getD []
+    let edges := callees.filterMap fun cn =>
+      match idOf cn with
+      | some cid => some (if trustedNames.contains cn then Proof.DependencyEdge.trusted
+                          else Proof.DependencyEdge.unclassified, cid)
+      | none => none
+    { id := e.callableId, digest := e.subjectDigest, edges := edges }
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=

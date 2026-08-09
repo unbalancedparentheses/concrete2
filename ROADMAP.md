@@ -4929,7 +4929,20 @@ consumer away from the `proved` decision path:
    by construction) and `mint?` independently, rather than trusting a caller to consult the root
    first. `mergeClassifications` refuses five distinct ways — unanswered, duplicate, unknown,
    still-unclassified, classified-missing — each its own constructor because the repairs differ;
-4. wire validated roots into ProofCore and reports **in shadow**;
+4. ~~wire validated roots into ProofCore and reports **in shadow**~~ **DONE 2026-08-09**.
+   `ProofCore.dependencyNodesOf` builds nodes over SEMANTIC IDENTITIES from ProofCore's own
+   entries and call graph — one producer, so both consumers read the same nodes rather than each
+   rebuilding. `--report subject-facts` carries a sixth axis, `shadow depRoot`. Names are resolved
+   to `CallableId` at the boundary and never enter a node; the name-keyed `CallGraph` is thereby
+   subordinated rather than propagated.
+
+   **Measured first result: 53 of 64 subjects root, 11 REFUSE** — every refusal naming the
+   non-current edge that caused it. That is the expected honest outcome: the compiler cannot mint
+   `contract`/`body` without the hand-back, so those edges are `unclassified` and the root refuses
+   them. Coverage recovers by classifying more dependencies, never by weakening the root. A gate
+   asserts BOTH directions — a leaf must produce a root (or the integration would be
+   indistinguishable from not running, and "0 roots" would read as success) and a subject reaching
+   an unclassified dependency must refuse — plus that no root reaches `deriveObligationStatus`;
 5. compare root determinism and dependency-change sensitivity;
 6. connect the root to status composition;
 7. kill the mutation that omits the root while attempting `proved`;
