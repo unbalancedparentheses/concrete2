@@ -204,6 +204,28 @@ def renderClassification (rows : List (Name × EdgeEvidence)) : String :=
       ++ String.join (tbls.map fun (tn, d?) => lp "t" (toString tn) ++ lp "d" (d?.getD "?"))
   "classifyV1:n" ++ toString sorted.length ++ ":" ++ String.join (sorted.map one)
 
+/-- A digest of the theorem ITSELF — its type and its proof term.
+
+    Without it a classification is a label floating free of what it classifies: `("T", "body")`
+    stays structurally valid after `T` is reproved, restated, or replaced by a different theorem
+    of the same name. The row would still parse, still merge, and still type an edge — while
+    describing a theorem that no longer exists.
+
+    The TYPE is what `classifyTheorem` reads, so a type change can change the classification and
+    must move this. The VALUE is included because a re-proof with the same statement is a
+    different artifact, and a receipt that binds "which proof" cannot rest on a digest that
+    ignores the proof.
+
+    Same toolchain-relativity limit as `tableValueDigest`, and acceptable for the same reason:
+    the toolchain is separately bound in the receipt. -/
+def theoremArtifactDigest (n : Name) : MetaM (Option String) := do
+  match (← try pure (some (← getConstInfo n)) catch _ => pure none) with
+  | none => return none
+  | some ci =>
+    let val := match ci.value? with | some v => toString v | none => "<opaque>"
+    return some (Concrete.shortHash ("thmV1:" ++ toString n ++ "|ty:" ++ toString ci.type
+                                     ++ "|val:" ++ val))
+
 /-! ## The merge (R-0004 slice 6, step 3)
 
 The compiler emits `unclassified` edges keyed by theorem name; Lean answers; this joins them.

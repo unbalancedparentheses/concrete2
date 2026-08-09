@@ -74,5 +74,10 @@ def sourceLinkedThms : List Name :=
   -- `unclassified` for an absent name, so listing them would state the default twice and grow
   -- the table with rows that say nothing.
   let useful := rows.filter (fun r => r.2.edge != DependencyEdge.unclassified)
-  let lits := useful.map fun (n, ev) => s!"  (\"{n}\", \"{ev.edge.canonical}\")"
+  -- The theorem's own digest travels with its classification. Without it the row is a label
+  -- floating free of what it classifies, and survives the theorem being reproved or replaced.
+  let mut lits : List String := []
+  for (n, ev) in useful do
+    let d := (← theoremArtifactDigest n).getD "?"
+    lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\")"]
   IO.println (String.intercalate ",\n" lits)
