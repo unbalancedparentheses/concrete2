@@ -10,6 +10,20 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Dependency-Root Status And Refusal Gate Reconciled
+
+_Roadmap and gate only, 2026-08-09. No proof verdict or production consumer changed._
+
+Compacted every canonical R-0004 status surface to the current shadow measurement: 62 of 64
+subjects root and two refuse explicitly. The remaining classification-evidence, per-edge
+correspondence, trusted-boundary and production-consumer requirements are stated at each summary
+instead of being visible only in the investigation transcript.
+
+Strengthened the corpus refusal check from “at least one refusal has an actionable explanation”
+to exact correspondence: every refusal must match a typed root-error shape that names the
+responsible identity or edge. The gate also refuses an empty corpus, so zero refusals cannot pass
+vacuously.
+
 ### Roadmap Governance And Verification Direction Clarified
 
 _Roadmap only, 2026-08-09. No compiler, language, proof status, or release claim changed._

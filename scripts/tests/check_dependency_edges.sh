@@ -831,16 +831,21 @@ printf '%s' "$DR" | grep -qE "shadow depRoot: [0-9a-f]{8}" \
 # rooted. A gate pinned to "some fixture still fails" gets falsified by success, which is the
 # wrong shape: the property is that a refusal, IF one occurs, names its edge — and the fail-closed
 # behaviour itself is unit-tested above ("a root refuses an UNCLASSIFIED edge").
-CORPUS_REF="$(for f in $(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u); do
+CORPUS_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+CORPUS_REF="$(for f in $CORPUS_FILES; do
   "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true
 done)"
+NFILES="$(printf '%s\n' "$CORPUS_FILES" | grep -c . || true)"
 NREF="$(printf '%s' "$CORPUS_REF" | grep -c 'REFUSED' || true)"
-if [ "$NREF" = "0" ]; then
+NNAMED="$(printf '%s' "$CORPUS_REF" | grep -cE "REFUSED \((no node for start identity|'[^']+' has no subject digest|duplicate node identity|'[^']+' depends on '[^']+', which has no node|'[^']+' has a non-current edge .* to '[^']+')" || true)"
+if [ "$NFILES" = "0" ]; then
+  no "dependency-root corpus is empty — a zero-refusal result would be vacuous"
+elif [ "$NREF" = "0" ]; then
   ok "no root refusals remain in the corpus — every subject roots"
-elif printf '%s' "$CORPUS_REF" | grep -q "REFUSED (.*to 'v1:"; then
-  ok "$NREF root refusal(s) remain, each naming the edge responsible"
+elif [ "$NNAMED" = "$NREF" ]; then
+  ok "$NREF root refusal(s) remain, all $NNAMED name the identity/edge responsible"
 else
-  no "a root refused without naming the edge — the reason is what makes a refusal actionable"
+  no "$NREF root refusal(s), but only $NNAMED name the identity/edge responsible"
 fi
 
 # The root must NOT reach any verdict yet. This is the step-4 containment, and it is the same
