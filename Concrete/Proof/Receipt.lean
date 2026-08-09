@@ -20,8 +20,13 @@ is built so it cannot be:
 
 * `tableBindings : List (Name × String)` — a digest per table, **not** `Option String`. There is
   no way to put an unbound table inside a receipt, so no consumer has to remember to check.
-* `mint?` is the only constructor, and it returns `Option`. It refuses when any named table is
-  unbound, when the subject digest is absent, or when an environment identity is empty.
+* the structure constructor is PRIVATE and `Inhabited` is not derived, so `mint?` really is the
+  only way to obtain one. Both were missing in the first version, and the claim below was
+  therefore false: a caller could build a receipt with an empty subject and the current schema
+  version, and `default` produced one with an empty schema.
+* `mint?` returns `Option` and refuses when any named table is unbound, when the digests do not
+  correspond to the named tables IDENTITY-wise, when a table is bound twice, when the subject
+  digest is absent OR empty, or when an environment identity is empty.
 
 This is the same move Register C made for status composition and `proofSubjectDigestV2` made for
 incomplete facts: make the bad state unrepresentable rather than merely discouraged. A guard that
@@ -63,6 +68,13 @@ open Lean
     Construct with `mint?` only — the fields are public for reading and pattern-matching, but
     building one directly would let a caller assemble the very state `mint?` refuses. -/
 structure ProofEvidenceReceipt where
+  /-- PRIVATE constructor. Without it, "mint? is the only constructor" was simply false: any
+      caller could assemble a receipt with an empty subject, no bindings and the CURRENT schema
+      version — which would then read as comparable. The gate in this repo demonstrated the
+      bypass while claiming the invariant held.
+
+      Projections stay public; only construction is closed. -/
+  private mk ::
   /-- This envelope's format. Compared BEFORE the contents, so an older receipt is
       `needs_recheck` rather than a failed comparison. -/
   schemaVersion : String
@@ -87,7 +99,11 @@ structure ProofEvidenceReceipt where
   toolchainId : String
   workspaceId : String
   importsId : String
-deriving Repr, Inhabited
+deriving Repr
+
+-- NO `Inhabited`. `deriving Inhabited` manufactures a default receipt — empty schema, empty
+-- subject, no bindings — which is another route to an invalid value and defeats the private
+-- constructor entirely. A type whose invalid state is one `default` away is not closed.
 
 /-- The current envelope format. Bumping this makes every stored receipt `needs_recheck`,
     which is the intended behaviour and the reason the field exists. -/
@@ -108,7 +124,20 @@ def ProofEvidenceReceipt.mint?
     (subjectDigest? : Option String) (ev : EdgeEvidence)
     (toolchainId workspaceId importsId : String) : Option ProofEvidenceReceipt := do
   let subj ← subjectDigest?
-  if !ev.tablesFullyBound then none
+  -- An EMPTY subject is not a subject. `none` was refused and `some ""` was not, which is the
+  -- same hole as an empty environment identity: "" is a value that compares equal to another
+  -- "", so two proofs over different subjects would agree.
+  if subj.isEmpty then none
+  else if !ev.tablesFullyBound then none
+  -- IDENTITY CORRESPONDENCE, not just arity. `tablesFullyBound` checks that the lists are the
+  -- same LENGTH and every digest is present — which admits `tables := [X]` with
+  -- `tableDigests := [(Y, …)]`, minting a receipt that claims Y while the theorem depended on
+  -- X. Equal counts of unrelated things is not correspondence.
+  else if (ev.tables.map toString).mergeSort (· ≤ ·)
+          != (ev.tableDigests.map (toString ·.1)).mergeSort (· ≤ ·) then none
+  -- A duplicate binding for one table means the evidence disagrees with itself about that
+  -- table's digest, and picking one would make the receipt depend on list order.
+  else if (ev.tableDigests.map (toString ·.1)).eraseDups.length != ev.tableDigests.length then none
   else if toolchainId.isEmpty || workspaceId.isEmpty || importsId.isEmpty then none
   else
     -- Safe by the guard above: `tablesFullyBound` establishes every digest is `some`, so this

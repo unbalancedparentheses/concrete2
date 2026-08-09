@@ -435,10 +435,19 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
      The CONSUMER side landed with it: `Concrete/Proof/Receipt.lean` defines
      `ProofEvidenceReceipt`, whose `tableBindings` is `List (Name × String)` — **not** `Option
      String` — so an unbound table has no representation inside a receipt at all, and `mint?`
-     is the only constructor. Unrepresentable rather than checked, because a predicate that
-     must be remembered is one that will eventually be forgotten. Nine gate legs pin every
-     refusal path (unbound table, absent subject, each of the three empty environment
-     identities separately) plus the mint and schema controls. Original finding, kept because it is why the item read as one thing:
+     is the only constructor — the structure constructor is PRIVATE and `Inhabited` is not
+     derived. **Both were missing when this first landed (`477a1726`), so the
+     "unrepresentable" claim was false for two commits**: a caller could assemble a receipt
+     with an empty subject and the CURRENT schema version, and `default` produced one with an
+     empty schema. The gate demonstrated the bypass while asserting the invariant held, because
+     its legs tested the smart constructor rather than the claim. Fixed with hostile controls
+     that assert direct construction and `default` do not COMPILE.
+
+     Two value-level holes closed at the same time, both found by the same review:
+     `tablesFullyBound` checked equal lengths and all-present, which admitted `tables := [X]`
+     with digests for `[Y]` — a receipt claiming Y while the theorem depended on X, since equal
+     counts of unrelated things is not correspondence; and `some ""` minted where `none`
+     refused, the same hole as an empty environment identity. Original finding, kept because it is why the item read as one thing:
      `tableDigest`/`tableReach`/`tableBytes` return nothing across the tree. So a proof over
      a body that indexes a table is currently bound to the table's IDENTITY discipline but
      not to its CONTENTS, and a change to an entry the body does not appear to touch moves

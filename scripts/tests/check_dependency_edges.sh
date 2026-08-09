@@ -351,12 +351,11 @@ probe "an empty IMPORTS id refuses to mint" "REFUSED" '
 # Schema version is IN the receipt so an older one reads as a different format rather than as a
 # failed comparison — the same reason `v2:` is in the subject digest. Without it the first
 # envelope change reports every stored receipt as a broken proof.
-probe "a receipt from another schema is NOT comparable" "INCOMPARABLE" '
-#eval show MetaM Unit from do
-  let r : ProofEvidenceReceipt := { schemaVersion := "receiptV0", subjectDigest := "v2:a"
-                                  , edge := .body, tableBindings := [], toolchainId := "t"
-                                  , workspaceId := "w", importsId := "i" }
-  IO.println (if r.comparable then "COMPARABLE" else "INCOMPARABLE")'
+# The old-schema leg USED to build a receipt directly — which is exactly the bypass this
+# section now forbids, and the reason the "unrepresentable" claim was false when first made.
+# An old-schema receipt can only arrive by DESERIALIZATION, which does not exist yet, so that
+# leg is deliberately absent rather than faked with a constructor call. Recorded here so its
+# absence is a known gap and not an oversight.
 probe "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
@@ -460,6 +459,60 @@ probe "fewer digests than names refuses AT MINT" "REFUSED" '
   let ev : EdgeEvidence := { edge := .body, tables := [`A, `B]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
   IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im").isNone then "REFUSED" else "MINTED")'
+
+# === HOSTILE CONTROLS: the invariant is the TYPE, not the smart constructor =================
+# The first version of this envelope claimed "partial evidence is unrepresentable" while the
+# structure constructor was public and `Inhabited` was derived — so a caller could assemble a
+# receipt with an empty subject and the CURRENT schema version, and `default` produced one with
+# an empty schema. The nine minting legs above passed the whole time: they tested the smart
+# constructor, not the claim. These test the claim.
+echo "=== hostile controls (construction is closed) ==="
+
+expect_no_compile() {
+  local label="$1" body="$2"
+  cat > "$TMP/h.lean" <<LEAN
+import Concrete
+import Examples
+open Lean Meta Concrete Concrete.Proof
+$body
+LEAN
+  local out; out="$(lake env lean "$TMP/h.lean" 2>&1 || true)"
+  if grep -qE "error:|error\(lean" <<<"$out"; then
+    ok "$label"
+  else
+    no "$label — IT COMPILED, so the invariant is documentation rather than a type"
+  fi
+}
+
+expect_no_compile "direct construction does NOT compile (constructor is private)" '
+def forged : ProofEvidenceReceipt :=
+  { schemaVersion := receiptSchemaVersion, subjectDigest := "", edge := .body
+  , tableBindings := [], toolchainId := "", workspaceId := "", importsId := "" }'
+
+expect_no_compile "`default` does NOT produce a receipt (no Inhabited)" '
+#eval show MetaM Unit from IO.println (default : ProofEvidenceReceipt).schemaVersion'
+
+# Correspondence, not arity. `tablesFullyBound` checks equal LENGTHS and all-present, which
+# admits tables := [X] with digests for [Y] — a receipt claiming Y while the theorem depended
+# on X. Equal counts of unrelated things is not correspondence.
+probe "digests for the WRONG table identity refuse to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X]
+                           , tableDigests := [(`Y, some "d")], quantifiesOverTable := false }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+
+probe "a DUPLICATE binding for one table refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X, `X]
+                           , tableDigests := [(`X, some "d"), (`X, some "e")], quantifiesOverTable := false }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+
+# `none` was refused and `some ""` was not — the same hole as an empty environment identity.
+# "" is a value, and it compares equal to another "".
+probe "an EMPTY-STRING subject digest refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 
 GATE_DONE=1
 echo ""
