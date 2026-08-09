@@ -2051,7 +2051,11 @@ def shortHash (fingerprint : String) : String :=
       * `CheckedDeclFacts.canonical` — identity, full typed signature, generics
         and bounds, capabilities, contracts, trust boundary. Captured in Elab
         BEFORE contract erasure, because Core drops them.
-      * the body fingerprint — what the legacy hash already covered.
+      * the VALIDATED STRUCTURAL V2 body (`bodyBytesV2` over a body with no gaps) — not the
+        legacy Core-statement hash, which is the representation bugs 059/060 are filed against.
+        An absent or refused body yields no digest at all.
+      * the SELECTED SPECIFICATION's identity, since a proof established against one
+        specification is not evidence for another.
 
     The facts' canonical form carries its own contract-COVERAGE flag, so a subject
     whose contracts could not be read cannot digest as one that has none.
@@ -2062,7 +2066,8 @@ def shortHash (fingerprint : String) : String :=
     `stale`. Wiring that distinction into the freshness decision is the remaining
     step; this function only defines the value. -/
 def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
-    (evBody? : Option Proof.EvidenceBodyDraftV2) : Option String :=
+    (evBody? : Option Proof.EvidenceBodyDraftV2)
+    (selectedSpec? : Option String) : Option String :=
   -- ENFORCED, not advisory. `isComplete` existed and nothing consulted it, so an
   -- uncovered subject — a contract the encoder could not read, an incomplete
   -- identity — still received an ordinary-looking digest. A digest that cannot be
@@ -2085,8 +2090,23 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
     -- alternative costs the meaning of the digest.
     | .error _ => none
     | .ok complete =>
+      -- SELECTED SPECIFICATION is part of the subject: a proof established against one
+      -- specification is not evidence for another, so changing which spec a function is
+      -- proved against changes what was proved. Without it, re-pointing a `#[proof_by]` at a
+      -- different theorem would leave the subject — and therefore the freshness verdict —
+      -- untouched.
+      --
+      -- ABSENCE IS A VALUE, not a refusal. A function with no attached specification still
+      -- has a perfectly good subject; it is simply unproved. Refusing here would conflate
+      -- "nothing to prove it against yet" with "the subject cannot be described", which are
+      -- different states with different repairs. It is rendered as a distinct marker rather
+      -- than the empty string, so "no spec" cannot collide with a spec whose name is "".
+      let specPart := match selectedSpec? with
+        | some sp => "S" ++ toString sp.length ++ ":" ++ sp
+        | none    => "S-none"
       some (shortHash ("subjectV2:" ++ facts.canonical
-              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)))
+              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)
+              ++ "|spec:" ++ specPart))
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2375,9 +2395,13 @@ private partial def extractModule
     let evBody? := (m.evidenceBodies.find? fun p => p.1 == cid).map Prod.snd
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
-    let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx evBody?)
     let elig := assessEligibility f qualName externNames recMap locMap
     let sa := resolveSpec qualName registry
+    -- The spec IDENTITY, not the proof name: what the claim is about, rather than which Lean
+    -- theorem happens to carry it. Re-pointing a link at a differently-named proof of the SAME
+    -- specification is not a change of subject; the theorem's identity belongs in the receipt.
+    let subjDigest : Option String :=
+      facts?.bind (fun fx => proofSubjectDigestV2 fx evBody? (sa.map (·.specId.name)))
     if elig.isTrusted then
       (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc

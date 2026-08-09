@@ -106,7 +106,7 @@ echo
 # === SHADOW: what the v2 subject digest WOULD decide (R-0004 step 5) ========================
 # The live verdict compares the body-only fingerprint; the v2 digest covers identity, full
 # typed signature, generics, capabilities and contracts. Switching the comparison would turn
-# 19 currently-proved links into needs_recheck at once, because all 53 stored fingerprints are
+# 19 currently-proved links into needs_recheck at once, because all 44 stored fingerprints are
 # v1 — that is the step-7 migration, not this slice. So the digest is OBSERVED here while the
 # authoritative path stays put, which is the same discipline the other four shadow axes are under.
 #

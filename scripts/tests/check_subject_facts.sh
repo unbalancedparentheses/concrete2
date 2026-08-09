@@ -138,12 +138,12 @@ probe "059: a signature change moves the subject digest with an identical body" 
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
   let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "u32" }
-  proofSubjectDigestV2 a (some {}) != proofSubjectDigestV2 b (some {})'
+  proofSubjectDigestV2 a (some {}) none != proofSubjectDigestV2 b (some {}) none'
 probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 '#eval
   let t : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 1)] }
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 0)] }
-  proofSubjectDigestV2 t (some {}) != proofSubjectDigestV2 f (some {})'
+  proofSubjectDigestV2 t (some {}) none != proofSubjectDigestV2 f (some {}) none'
 # The subject binds the STRUCTURAL body (2026-08-09), not the legacy Core-statement hash, so
 # "a body change is detected" is no longer expressible as two hash strings at this level —
 # it needs two real bodies. That coverage MOVED rather than being dropped:
@@ -155,14 +155,14 @@ probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 probe "an ABSENT structural body yields NO digest" "none" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a none'
+  proofSubjectDigestV2 a none none'
 # The schema tag must be in the bytes, so a stored v1 hash is recognisable as a
 # DIFFERENT SCHEMA rather than as a mismatch — that is what makes `needs_recheck`
 # possible instead of a false `stale`.
 probe "the subject digest is not the bare body hash" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a (some {}) != shortHash "B"'
+  proofSubjectDigestV2 a (some {}) none != shortHash "B"'
 
 echo ""
 echo "=== completeness is ENFORCED, not advisory ==="
@@ -172,16 +172,16 @@ echo "=== completeness is ENFORCED, not advisory ==="
 probe "an uncovered contract yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.arrayLit sp [.intLit sp 1]] }
-  proofSubjectDigestV2 f (some {})'
+  proofSubjectDigestV2 f (some {}) none'
 probe "a complete subject yields a digest" "some" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 f (some {})'
+  proofSubjectDigestV2 f (some {}) none'
 # an incomplete IDENTITY (type-erased generic) must refuse too
 probe "an incomplete identity yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1 }
-  proofSubjectDigestV2 f (some {})'
+  proofSubjectDigestV2 f (some {}) none'
 # loop contracts are part of the subject: R-0004 names them, and they are erased
 # with requires/ensures
 probe "a loop invariant change moves the subject" "true" \
