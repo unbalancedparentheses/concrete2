@@ -78,6 +78,13 @@ def sourceLinkedThms : List Name :=
   -- floating free of what it classifies, and survives the theorem being reproved or replaced.
   let mut lits : List String := []
   for (n, ev) in useful do
-    let d := (← theoremArtifactDigest n).getD "?"
+    -- NO PLACEHOLDER. `.getD "?"` would emit a row whose digest slot is filled with something
+    -- that is not a digest, and a consumer comparing digests would then accept it as one. A
+    -- theorem whose artifact cannot be digested must ABORT generation: the table's value is that
+    -- every row is checkable, and one uncheckable row makes the whole table's guarantee "most of
+    -- these are verified", which is not a guarantee.
+    let d ← match (← theoremArtifactDigest n) with
+      | some d => pure d
+      | none => throwError s!"cannot digest theorem artifact for {n} — refusing to emit a placeholder row"
     lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\")"]
   IO.println (String.intercalate ",\n" lits)

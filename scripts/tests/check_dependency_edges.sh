@@ -747,6 +747,38 @@ else
   ok "PRECONDITION MET: refusals are no longer unclassified — real classifications have landed, so the root may now gate proved"
 fi
 
+# THE THEOREM DIGEST MUST SEE THE PROOF, not only the statement. `theoremArtifactDigest` claims
+# a re-proof with the same statement moves it, and that claim rests on `ci.value?` exposing the
+# proof term — which is not true of every declaration kind. Asserted rather than assumed: two
+# theorems with an IDENTICAL type and DIFFERENT proofs must digest differently.
+#
+# If this ever fails, the digest binds statements rather than artifacts, and a receipt claiming
+# to record "which proof" would be recording only "which claim".
+echo "=== theorem digest binds the proof, not just the type ==="
+probe "same type, different proof => different digest" "true" '
+theorem tA : 1 + 1 = 2 := by rfl
+theorem tB : 1 + 1 = 2 := by simp
+#eval show MetaM Unit from do
+  let a ← theoremArtifactDigest `tA
+  let b ← theoremArtifactDigest `tB
+  IO.println (toString (a.isSome && b.isSome && a != b))'
+
+probe "the same theorem digests identically twice" "true" '
+theorem tC : 2 + 2 = 4 := by rfl
+#eval show MetaM Unit from do
+  let a ← theoremArtifactDigest `tC
+  let b ← theoremArtifactDigest `tC
+  IO.println (toString (a.isSome && a == b))'
+
+probe "an unknown theorem yields NO digest (never a placeholder)" "true" '
+#eval show MetaM Unit from do
+  let d ← theoremArtifactDigest `No.Such.Thm
+  IO.println (toString d.isNone)'
+
+# Table freshness lives in `check_classification_freshness.sh`, NOT here: verifying it means
+# running the generator, which classifies every linked theorem and digests each proof term. That
+# is minutes, and a per-commit gate that costs minutes is a gate people start skipping — which
+# would cost more than the check is worth.
 # === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
 # The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any
 # dependency SEMANTIC change must. A root that moves on order is unusable as a stored value; one
