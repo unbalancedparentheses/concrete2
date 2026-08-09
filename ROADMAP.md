@@ -4873,10 +4873,21 @@ integration and receipts:**
    * a call is ELIMINATED as the carrier for this fixture: `shadow edges` reports the body reaches
      no callable, and the body is `return x + 1;`.
 
-   What remains to inspect is the identity attached to the OPERATOR and literal nodes in
-   `IdentityUseBytes.exprBytes`, and anything allocated per-declaration during elaboration that
-   those nodes capture. The fixture is minimal and the control is one line, so this is a bounded
-   search rather than an investigation.
+   **THE SERIALIZER IS ELIMINATED TOO (2026-08-09), which relocates the defect.** `bodyBytesV2`,
+   `stmtBytes` and `exprBytes` are pure functions of the evidence tree, and every case for this
+   fixture is positional or literal: `return x + 1;` encodes as `E(n("+"|r0.0, i(1|i32)))` —
+   a return of a binary node over a `binderRef 0 0` and an `intLit`. There is no identifier in
+   that path capable of varying with declaration order.
+
+   Therefore **the producer, not the serializer, is at fault**: the evidence TREE built for `inc`
+   differs between the two compilations. The remaining question is narrow and concrete — which
+   node of `inc`'s tree differs, given identical source. The most likely shapes are a differing
+   `binderRef` (an extra or missing lexical frame, so `x` resolves as `0.0` in one build and
+   `1.0` in another) or an extra/absent statement from desugaring.
+
+   This matters for the fix: normalizing identities at the serializer would have been the wrong
+   repair, because the serializer is already normal. The repair belongs in `EvidenceBuild`/
+   `BodyScope` frame construction, where the tree is produced.
 
    **The correct encoding**, per the review, normalizes function-local identities
    deterministically: parameters by POSITION, local bindings by lexical/declaration position
