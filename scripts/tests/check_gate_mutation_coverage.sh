@@ -314,6 +314,19 @@ add "transform-has-effect" "Concrete/Semantics/TermIR.lean" "check_transform_reg
   $'    | .bin .tmod l r =>\n      let l\' := elimTmod l\n      let r\' := elimTmod r\n      .bin .sub l\' (.bin .mul r\' (.bin .tdiv l\' r\'))' \
   $'    | .bin .tmod l r => .bin .tmod (elimTmod l) (elimTmod r)'
 
+# R-0004 slice 5. The subject digest binds the STRUCTURAL body; before 2026-08-09 it bound the
+# legacy Core-statement hash, which is what bugs 059/060 are filed against. This mutation
+# restores the old behaviour in the direction that matters — the body stops contributing to the
+# subject at all — and `check_proof_freshness.sh` must go red on its SHADOW(body) leg.
+#
+# It is the RIGHT mutation for this gate because it is indistinguishable from the pre-change
+# state at every other surface: the digest still exists, still refuses incomplete facts, still
+# moves on signature and contract edits. Only "a body edit moves the subject" is lost, and if
+# the gate does not notice, then binding the structural body bought nothing.
+add "subject-binds-body" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
+  $'    | .ok complete =>\n      some (shortHash ("subjectV2:" ++ facts.canonical\n              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)))' \
+  $'    | .ok _ =>\n      some (shortHash ("subjectV2:" ++ facts.canonical))'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
