@@ -3939,9 +3939,11 @@ it must not be reported as done from the presence of its intermediate data.
    type exists and closes construction, empty-value, correspondence, duplicate and ordering
    bypasses. It is not the complete envelope and has no production consumer. Still required:
    deterministic workspace/import/toolchain identity producers; dependency root, theorem/artifact,
-   replay-result and qualification fields; canonical serialization plus validated decoding; and a
-   single comparison disposition that cannot forget schema or edge-kind checks. This slice may
-   establish replay plumbing, but it cannot upgrade a legacy body hash to a complete proof claim.
+   replay-result and qualification fields; and canonical serialization plus validated decoding.
+   The edge-aware, schema-first comparison disposition now exists; the remaining obligation is to
+   make the production status consumer use it rather than reconstructing comparison logic. This
+   slice may establish replay plumbing, but it cannot upgrade a legacy body hash to a complete
+   proof claim.
 5. **Semantic subject digest.** Replace body-only freshness with a versioned
    canonical `ProofSubjectDigest` covering qualified semantic identity, full
    typed signature and generic constraints, capabilities, normalized typed
