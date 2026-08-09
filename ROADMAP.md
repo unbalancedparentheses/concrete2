@@ -3262,7 +3262,7 @@ Proof automation remains behind honest semantics and the external-user trial.
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | mostly built — 8 of 9 proof tables migrated |
-> | 5 | declaration-facts V2 digest + legacy body hash implemented; comparison wired **in shadow** (`683d2dcf`), both halves gated; final semantic subject still incomplete |
+> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). Measured on the migration set rather than corpus-wide: **39 of 39 subjects in fingerprint-bearing examples digest, 0 refused**, so none of the 11 corpus refusals sit on a link that must migrate. Still absent from the subject: selected-spec identity and claim scope |
 > | 6 | dependency graph/material exists, **not authoritative** |
 > | 7 | receipt issuance and corpus migration **not started** |
 >
@@ -4503,7 +4503,7 @@ conditions are green; several current tests are deliberate tripwires proving the
 |---|---|
 | bugs 058/059/060/062 | **PARTIAL** — 058 contained, 062 closed; 059/060 still leave the live V1 verdict `proved` while only shadow V2 moves |
 | generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
-| final semantic subject and invariance | **PARTIAL** — declaration facts covered; structural V2 body, selected spec and claim scope absent from the authoritative digest; remaining alpha/invariance controls owed |
+| final semantic subject and invariance | **PARTIAL** — declaration facts AND structural V2 body covered (2026-08-09), alpha-invariance gated; selected spec and claim scope still absent. Note the digest remains SHADOW: nothing authoritative reads it, asserted directly (`deriveObligationStatus` must not see it) rather than by file-ownership proxy |
 | exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
 | typed deterministic dependencies | **PARTIAL** — graph/root/whole-table material tested; ProofCore and Report have no root consumer |
 | friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core type only; no real environment identities, replay issuance, storage or status consumer |
@@ -4801,6 +4801,22 @@ is exactly why they closed cheaply — and why the remaining four should not be 
 way. Faking an environment in this module-level pass would be the same shape of mistake as the
 walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
 question that already has an authoritative one.
+
+**Boundary between the three digests, recorded 2026-08-09 so the subject does not accrete.** It
+was tempting to fold dependency material and trust qualification into `ProofSubjectDigest`; they
+belong elsewhere, and keeping them out is what lets the subject be *frozen* independently:
+
+* **subject digest** — semantic identity, typed signature, structural V2 body, contracts,
+  selected specification, claim scope. What the proof is ABOUT.
+* **dependency root** — transitive dependency material, computed FROM finished subject digests.
+  Depends on the subject, so it cannot be inside it.
+* **receipt** — dependency root, trust and assumptions, theorem/replay/environment identities.
+  What the evidence RESTS ON, and the only layer that qualifies a claim.
+
+Order that follows from it: structural body (done) -> selected-spec identity -> claim scope ->
+freeze/version the subject schema -> integrate dependency roots -> environment identities and
+complete receipts -> replay and migrate. Receipts must not be minted nor fingerprints migrated
+before the freeze.
 
 **Acceptance boundary, from review and worth restating because it is easy to satisfy the letter
 of this task and miss it:** the record must retain resolved identities and types. Rejecting the
