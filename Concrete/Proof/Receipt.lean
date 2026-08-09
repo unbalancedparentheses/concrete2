@@ -71,7 +71,18 @@ structure ProofEvidenceReceipt where
   /-- What the proof relies on, derived from the theorem rather than declared. -/
   edge : DependencyEdge
   /-- One digest per named table, all present by construction. `Option` deliberately absent:
-      an unbound table has no representation inside a receipt. -/
+      an unbound table has no representation inside a receipt.
+
+      **Ordering is NORMALIZED, not semantic**, and stating which is the point. The pairs
+      arrive in Lean's traversal order, which is deterministic today and is not a promise —
+      it is an artifact of how `getUsedConstants` happens to walk an expression. A durable
+      receipt cannot rest on that: the same dependency set discovered in a different order
+      would serialize differently and compare unequal, reporting drift where there is none.
+
+      So `mint?` sorts by table identity. The consequence to be aware of: order carries no
+      information, and two receipts differing only in the ORDER of the same pairs are the
+      same receipt. What order cannot hide is a SWAP — exchanging two tables' digests changes
+      which name is paired with which value, and that survives sorting. -/
   tableBindings : List (Name × String)
   toolchainId : String
   workspaceId : String
@@ -103,12 +114,39 @@ def ProofEvidenceReceipt.mint?
     -- Safe by the guard above: `tablesFullyBound` establishes every digest is `some`, so this
     -- filterMap drops nothing. Written as filterMap rather than `!` so the total function stays
     -- total if the guard is ever moved.
-    let bindings := ev.tableDigests.filterMap fun (n, d?) => d?.map fun d => (n, d)
+    -- SORTED BY TABLE IDENTITY. See the field's note: traversal order is deterministic but
+    -- not meaningful, and a receipt that compares unequal because a walker visited two
+    -- constants in a different order would report drift that did not happen.
+    let bindings := (ev.tableDigests.filterMap fun (n, d?) => d?.map fun d => (n, d))
+                    |>.mergeSort (fun a b => toString a.1 ≤ toString b.1)
     some { schemaVersion := receiptSchemaVersion
          , subjectDigest := subj
          , edge := ev.edge
          , tableBindings := bindings
          , toolchainId, workspaceId, importsId }
+
+/-- Is a stored receipt still current against freshly computed material?
+
+    Schema is checked FIRST and separately: an older envelope is not comparable at all, and
+    answering `false` there would mean "the proof went stale", which is a claim about the
+    program rather than about the format. Callers must branch on `comparable` before reading
+    this — the two questions have different repairs, which is the same distinction
+    `needsRecheck` draws against `stale`.
+
+    Everything the receipt binds participates. A change to a table's body moves its digest; a
+    different toolchain, workspace or import closure moves those identities; a swapped pair of
+    table digests changes which name carries which value and survives the sort. Any of them
+    means the recorded evidence was established against something other than what is here now. -/
+def ProofEvidenceReceipt.isCurrentAgainst
+    (r : ProofEvidenceReceipt) (subjectDigest : String)
+    (tableBindings : List (Name × String))
+    (toolchainId workspaceId importsId : String) : Bool :=
+  let normalized := tableBindings.mergeSort (fun a b => toString a.1 ≤ toString b.1)
+  r.subjectDigest == subjectDigest
+    && r.tableBindings == normalized
+    && r.toolchainId == toolchainId
+    && r.workspaceId == workspaceId
+    && r.importsId == importsId
 
 /-- A stored receipt is comparable only when it was written under this envelope version.
     Distinct from "the contents differ" for the same reason `needsRecheck` is distinct from

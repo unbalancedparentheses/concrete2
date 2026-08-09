@@ -3244,7 +3244,9 @@ Proof automation remains behind honest semantics and the external-user trial.
 > the AUTHORITATIVE comparison — which is deliberately unflipped until step 7 — and must not be
 > read as "the V2 digest does not exist". It does.
 >
-> **Roughly 60-70% implemented; 3 of 7 slices fully closed.** What remains is four substantial
+> **Roughly 70% implemented; 3 of 7 slices fully closed.** It stays at 70 until the receipt
+> CONSUMER and the dependency root control actual verdicts — producing correct material is not
+> the same as anything acting on it. What remains is four substantial
 > integration/migration packages, not design exploration.
 >
 > | slice | state |
@@ -3264,6 +3266,18 @@ Proof automation remains behind honest semantics and the external-user trial.
 >    imports and toolchain identities — the envelope requires them and refuses empty ones, but
 >    nothing computes them yet; and migrate the ninth proof table (blocked by mutable-borrow
 >    extraction in ProofCore, outside R-0004).
+>
+>    **Receipt fields still unbound**, listed so the envelope's coverage is not overstated: the
+>    deterministic dependency ROOT (slice 6), theorem identity and theorem-artifact digest, the
+>    replay command/protocol and its result (slice 7 — a receipt minted without a replay is a
+>    claim about a proof nobody ran), and trust/assumption qualification. The envelope binds
+>    schema, subject, edge kind, and canonically-ordered table identities+digests today.
+>
+>    **Ordering is NORMALIZED and says so** (sorted by table identity in `mint?`). Traversal
+>    order is deterministic but not meaningful, and a receipt comparing unequal because a walker
+>    visited two constants differently would report drift that did not happen. Sorting hides
+>    order and NOT a swap — exchanging two tables' digests changes which name carries which
+>    value, gated in both directions.
 > 2. **Activate slice 5 safely** — extend the shadow proof beyond signature and contract edits to
 >    capability and generic edits; keep the live verdict unchanged until migration; then replace
 >    all 53 legacy fingerprints, accepting that 19 currently-`proved` links correctly become
