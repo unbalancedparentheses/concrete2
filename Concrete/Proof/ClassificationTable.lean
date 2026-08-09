@@ -76,22 +76,65 @@ def classificationTable : List (String × String × String) :=
   ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88")
 ]
 
-/-- The checked-in artifact digest for a theorem, if the table has seen it. Exposed so a
-    consumer can verify the row belongs to the theorem it is about to classify, rather than
-    trusting the name to be enough. -/
-def classifiedDigestOf (thm : String) : Option String :=
-  (classificationTable.find? (fun r => r.1 == thm)).map (·.2.2)
+/-- A row that has passed structural validation. The ONLY way to obtain a classification.
 
-/-- The edge a theorem implies, or `unclassified` when the table has not seen it. -/
+    **What this does and does not establish, stated because the difference is easy to lose.** The
+    compiler cannot recompute a theorem's artifact digest — that needs `MetaM` and the proof
+    modules — so a consumer here cannot verify a row against the LIVE theorem. That check is
+    `check_classification_freshness.sh`, and it is mandatory.
+
+    What the consumer CAN establish, and now does before any row types an edge: the row is
+    structurally sound. A digest that is absent, empty, a placeholder, or not a 32-character hex
+    string is a row whose provenance slot was never filled — from a generator that crashed
+    mid-emit, a hand-edit, or a merge artifact. Such a row would otherwise classify an edge
+    exactly as well as a real one.
+
+    Constructor is private, so a caller cannot assemble a `ValidatedRow` around a row that failed
+    validation and then classify from it. That is the same move `ProofEvidenceReceipt` makes, and
+    for the same reason: a check that must be remembered is a check that will be forgotten. -/
+structure ValidatedRow where
+  private mk ::
+  theoremName : String
+  edge        : DependencyEdge
+  digest      : String
+deriving Repr
+
+private def isHexDigest (d : String) : Bool :=
+  d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+
+private def edgeOfTag : String → Option DependencyEdge
+  | "contract" => some .contract
+  | "body"     => some .body
+  | "trusted"  => some .trusted
+  | "missing"  => some .missing
+  -- An unrecognised tag is a generator/consumer mismatch, and `none` here becomes
+  -- `unclassified` at the call site rather than a guess.
+  | _          => none
+
+/-- Look a theorem up, validating the row before it can classify anything.
+
+    `none` when the theorem is absent OR its row is structurally unsound. Both become
+    `unclassified` at the call site — the fail-closed reading — and neither is distinguishable
+    from the other to a consumer, deliberately: "we have no usable classification" is one state
+    however it arose. The freshness gate is what distinguishes the causes. -/
+def validatedRowOf (thm : String) : Option ValidatedRow := do
+  let (n, tag, dig) ← classificationTable.find? (fun r => r.1 == thm)
+  let e ← edgeOfTag tag
+  if !isHexDigest dig then none else some (ValidatedRow.mk n e dig)
+
+/-- The edge a theorem implies, or `unclassified` when there is no usable classification.
+
+    Routed through `validatedRowOf`, so a row with a malformed provenance slot cannot type an
+    edge. Previously this read the tag directly and would have classified from a row whose digest
+    was empty or a placeholder — the digest was stored and freshness-tested, but nothing in the
+    consumer required it to be present. -/
 def classifiedEdgeOf (thm : String) : DependencyEdge :=
-  match (classificationTable.find? (fun r => r.1 == thm)).map (·.2.1) with
-  | some "contract" => .contract
-  | some "body"     => .body
-  | some "trusted"  => .trusted
-  | some "missing"  => .missing
-  -- An unrecognised tag is `unclassified`, not a guess. A tag this function does not know is a
-  -- generator/consumer mismatch, and defaulting to anything current would convert that mismatch
-  -- into a claim.
-  | _               => .unclassified
+  match validatedRowOf thm with
+  | some r => r.edge
+  | none   => .unclassified
+
+/-- The validated artifact digest for a theorem, if there is a usable row. -/
+def classifiedDigestOf (thm : String) : Option String :=
+  (validatedRowOf thm).map (·.digest)
 
 end Concrete.Proof

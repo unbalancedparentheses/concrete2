@@ -779,6 +779,34 @@ probe "an unknown theorem yields NO digest (never a placeholder)" "true" '
 # running the generator, which classifies every linked theorem and digests each proof term. That
 # is minutes, and a per-commit gate that costs minutes is a gate people start skipping — which
 # would cost more than the check is worth.
+# === THE CONSUMER VALIDATES BEFORE CLASSIFYING ===============================================
+# The digest was stored and freshness-tested, but `classifiedEdgeOf` read the tag directly — so a
+# row whose provenance slot was empty, a placeholder, or malformed classified an edge exactly as
+# well as a real one. Verification lived in a gate; the consumer required nothing.
+echo "=== consumer validates the row ==="
+
+probe "a real theorem still classifies" "body" '
+#eval (classifiedEdgeOf "Concrete.Proof.parse_byte_correct").canonical'
+
+probe "an unknown theorem is unclassified" "unclassified" '
+#eval (classifiedEdgeOf "No.Such.Theorem").canonical'
+
+# The point of the change: a structurally unsound row must not classify.
+probe "a row with a MALFORMED digest cannot be validated" "true" '
+#eval (validatedRowOf "No.Such.Theorem").isNone'
+
+probe "a validated row exposes its digest" "true" '
+#eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with
+      | some r => r.digest.length == 32
+      | none => false'
+
+# `ValidatedRow`'s constructor is private, so a caller cannot assemble one around a row that
+# failed validation and classify from it. Asserted as a COMPILE failure, because that is the
+# only form in which "cannot be constructed" is testable.
+expect_no_compile "ValidatedRow cannot be constructed directly (private ctor)" '
+def forged : Concrete.Proof.ValidatedRow :=
+  { theoremName := "X", edge := Concrete.Proof.DependencyEdge.body, digest := "" }'
+
 # === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
 # The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any
 # dependency SEMANTIC change must. A root that moves on order is unusable as a stored value; one
