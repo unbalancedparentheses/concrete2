@@ -226,12 +226,15 @@ s=s.replace('    fn inc(', '    fn zzz_unrelated(q: i32) -> i32 {\n        retur
 open(p,'w').write(s)
 PYEOF
 ORD_AFTER="$(ord_digest "$ORD")"
+# POSITIVE ASSERTION since 2026-08-09 — this was a tripwire while the defect was open, and the
+# defect is fixed: `elabFn` now resets the binder frame per function, so a parameter's resolved
+# index no longer depends on what was elaborated before it.
 if [ -z "$ORD_BEFORE" ] || [ -z "$ORD_AFTER" ]; then
   no "ORDER: probe produced no digest — inconclusive, not agreement"
 elif [ "$ORD_BEFORE" = "$ORD_AFTER" ]; then
-  ok "ORDER: DEFECT FIXED — an unrelated declaration no longer moves the body digest. Convert this tripwire to a positive assertion and close the manifest blocker."
+  ok "ORDER: an unrelated PRECEDING declaration does not move the body digest ($ORD_BEFORE)"
 else
-  ok "TRIPWIRE(order): an unrelated declaration still moves the body digest ($ORD_BEFORE -> $ORD_AFTER) — known open, blocks migration"
+  no "ORDER REGRESSION: an unrelated declaration moved the body digest ($ORD_BEFORE -> $ORD_AFTER) — the per-function scope reset in elabFn has been lost"
 fi
 
 # DISCRIMINATOR: a declaration inserted AFTER the function must not move it either. Measured, it

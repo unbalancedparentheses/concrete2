@@ -3263,33 +3263,32 @@ Proof automation remains behind honest semantics and the external-user trial.
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | mostly built — 8 of 9 proof tables migrated |
-> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **V2_FREEZE_REVOKED (2026-08-09).** The freeze declared earlier the same day is revoked, and the
-decision is recorded verbatim so it cannot soften into "we adjusted the schema":
+> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **V2 REFROZEN (2026-08-09), and the revocation retracted in the same commit.** The freeze
+prerequisite that failed — cross-compilation determinism — now holds, so `v2:` is the first
+ACCEPTED semantic subject format rather than a number spent on a shadow draft.
 
-> The V2 freeze declared on 2026-08-09 is revoked because cross-compilation determinism — a
-> freeze prerequisite — failed. No V2 digest became authoritative, persisted, or receipt-bound.
-> The `v2:` encoding may change only to repair the identified order dependence. It must be
-> frozen again only after determinism and manifest closure gates pass.
+*Revocation history, kept because the reason matters more than the outcome:* the freeze declared
+earlier that day was revoked when the same callable proved to digest differently in two projects.
+No V2 digest had become authoritative, persisted, or receipt-bound, so this was failed
+pre-release acceptance rather than migration from a published schema — which is why the encoding
+was repaired in place instead of minting a V3 that would have become the first real format merely
+because V2 briefly existed in shadow.
 
-**No V3.** A version identifies a consumable compatibility boundary, and V2 never crossed one:
-no stored V2 fingerprints, no production freshness decisions, no issued receipts, no migrated
-links, no dependency root built on it, and the closure gate explicitly open. This is failed
-pre-release acceptance, not migration from a published schema. Minting V3 would make V3 the first
-real format merely because V2 briefly existed in shadow — `v2:` is retained and refrozen once
-repaired, so V2 becomes the first ACCEPTED semantic subject format.
+**Root cause and repair.** `elabFn` did not reset the binder frame per function, so the lexical
+scope ACCUMULATED across declarations in a module and a parameter's resolved index depended on
+what was elaborated before it. `calls.inc(x)` — one parameter — encoded as `r3:0.0` in
+`proof_patterns/composition` and `r3:0.1` in `composition_trusted_helper`, from identical source.
+`x` cannot be at index 1 of its own parameter frame.
 
-**Refreeze requires ALL of:** the order tripwire converted to a positive equality assertion; the
-same callable producing identical full bytes AND digest with an unrelated preceding declaration,
-across both existing projects, from repository-root and project-root invocation, and with
-import/declaration order perturbed where semantics are unchanged; the existing semantic-change
-controls still moving the digest; alpha-renaming still invariant; and the manifest closure gate
-at zero nondeterministic subjects. The revocation marker is removed in the SAME commit that
-re-establishes the freeze.
+Found by printing the canonical BYTES rather than their hash (`--report body-bytes`, added for
+this and kept): a hash says only THAT two things differ, and the bytes said WHERE, in one
+character. Three prior hypotheses — a trust leak, the operator encoding, and the serializers —
+were each eliminated by inspection first; the serializer elimination mattered most, because
+"normalize identities in the encoder" was the obvious fix and would have moved bytes while
+leaving the producer defect underneath.
 
-**Implementation is scoped to the evidence-body boundary**, not the global compiler identity
-system: parameters by signature POSITION, locals and nested binders by deterministic
-function-local lexical PATH. That keeps R-0004 contained and leaves unrelated consumers of
-callable identity undisturbed.
+The reset lives at the START of `elabFn` rather than as teardown after each function: an early
+return or error path skips a teardown, and a frame outliving its owner is the entire defect class.
 
 **SCHEMA SHAPE FROZEN, VALUES NOT** (2026-08-09) — the wording matters and the first version got it wrong. The V2 *encoding* is frozen; the digest *values* are not migration-ready, because subject production is not yet canonical (see the nondeterminism blocker below). Fixing canonical production while still shadowed is exactly what shadow mode is for.
 

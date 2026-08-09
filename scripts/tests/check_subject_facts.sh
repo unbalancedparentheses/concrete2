@@ -196,12 +196,15 @@ probe "NO spec differs from a spec named the empty string" "true" \
 # roadmap MUST carry the revocation, and when the defect is fixed the revocation MUST be removed
 # in the same commit that re-establishes the freeze. A revocation nobody retracts is how a
 # temporary state becomes permanent.
+# REFROZEN 2026-08-09, in the same commit that removed the revocation marker — the two are tied
+# in both directions and neither may drift alone. The freeze prerequisite that failed
+# (cross-compilation determinism) now holds: see the ORDER assertions in check_proof_freshness.sh.
 if grep -q "V2_FREEZE_REVOKED" ROADMAP.md; then
-  ok "V2 freeze is REVOKED and recorded — the pin below is a composition tripwire, not a freeze"
+  no "ROADMAP.md still carries V2_FREEZE_REVOKED, but determinism is repaired and V2 is refrozen — remove the marker"
 else
-  no "the V2 freeze is not marked revoked in ROADMAP.md, but cross-compilation determinism is still open — either refreeze with evidence or record the revocation"
+  ok "V2 freeze is in force and the revocation marker is gone"
 fi
-probe "COMPOSITION TRIPWIRE (freeze revoked): the digest of a fixed input is unchanged" "db0c59105288dea1437135ef062f9e86" \
+probe "SCHEMA FREEZE: the subject digest of a fixed input is unchanged" "db0c59105288dea1437135ef062f9e86" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
   (proofSubjectDigestV2 f (some {}) (some "SpecA") (some "iff")).get!'

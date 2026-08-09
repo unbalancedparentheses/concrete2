@@ -1961,6 +1961,20 @@ end
 def elabFn (f : FnDef) (implTy : Option Ty := none)
     : ElabM (CFnDef × Proof.ProofBodyIdentityInputsV2 × Proof.EvidenceBodyDraftV2) := do
   let env ← getEnv
+  -- FRESH LEXICAL SCOPE PER FUNCTION. Without this the binder frame ACCUMULATES across
+  -- declarations in a module, so a parameter's resolved index depends on what was elaborated
+  -- before it. Measured: `calls.inc(x)` — a single parameter — encoded as `r3:0.0` in
+  -- proof_patterns/composition and `r3:0.1` in composition_trusted_helper, from identical
+  -- source. `x` cannot be at index 1 of its own parameter frame.
+  --
+  -- That made the subject digest a function of DECLARATION ORDER rather than of the function,
+  -- which is why the V2 freeze was revoked: two projects, and even one project with an unrelated
+  -- declaration inserted above, disagreed about the same callable's body.
+  --
+  -- Reset here rather than at the end of the previous function: an early return or an error path
+  -- would skip a teardown, and the whole class of defect is a frame that outlives its owner.
+  setEnv { env with bodyScope := {}, pendingFrame := false }
+  let env ← getEnv
   -- Set up type params and return type
   let allTypeParams := f.typeParams
   let params := f.params.map fun p =>

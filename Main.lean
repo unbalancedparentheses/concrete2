@@ -2603,6 +2603,9 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "extraction" then
       IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
+    if reportType == "body-bytes" then
+      IO.println (Report.bodyBytesReport (pc := pc))
+      return 0
     if reportType == "migration-manifest" then
       IO.println (Report.migrationManifestReport (pc := pc) (registry := registry))
       return 0

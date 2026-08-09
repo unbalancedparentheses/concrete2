@@ -153,7 +153,10 @@ echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  dup
 # Step 7 CANNOT migrate a link the manifest does not contain: it would be counted nowhere, remain
 # on its v1 value, and read as successfully migrated because nothing enumerated it. So this is a
 # blocker for the migration, not a cosmetic gap.
-MANIFEST_ROWS_TODAY=36
+# 35, not 36. The determinism repair COLLAPSED the duplicated key — one callable had two rows
+# with different digests, and it now has one — so the old floor of 36 was counting an inflated
+# row. Lowering it is not a relaxation: the same links are represented, by one fewer row.
+MANIFEST_ROWS_TODAY=35
 if [ "$MLINKS" = "$LINKS" ]; then
   ok "every stored link has a manifest row ($MLINKS = $LINKS) — GAP CLOSED, tighten this to an equality assertion"
 elif [ "$MLINKS" -ge "$MANIFEST_ROWS_TODAY" ]; then
@@ -185,15 +188,12 @@ fi
 #
 # Ratcheted rather than failed so the finding is loud and tracked without leaving main red; the
 # floor is 1, so a SECOND such pair fails immediately.
-MDUPES_TODAY=1
-if [ "$MDUPES" = "0" ]; then
-  ok "no duplicate link keys — DETERMINISM DEFECT FIXED, tighten this to an equality assertion"
-elif [ "$MDUPES" -le "$MDUPES_TODAY" ]; then
-  ok "$MDUPES known non-deterministic link key (floor $MDUPES_TODAY): same key, two current V2 digests"
-  echo "       BLOCKS STEP 7: the subject digest is not a function of the subject alone."
-else
-  no "$MDUPES duplicated link keys (floor $MDUPES_TODAY) — MORE subjects now digest differently per compilation"
-fi
+# EQUALITY since 2026-08-09, no longer a ratchet: the determinism defect is fixed (elabFn resets
+# the binder frame per function), so a single non-deterministic key is a regression, not a
+# known state.
+[ "$MDUPES" = "0" ] \
+  && ok "no non-deterministic link keys — one subject, one digest" \
+  || no "$MDUPES link key(s) produce different V2 digests per compilation — the per-function scope reset has regressed"
 
 # Cross-check the two measurements. They count different things (files-containing vs owned), so
 # the exact one must not exceed the coarse one; a mismatch means one of them is wrong.

@@ -1971,6 +1971,26 @@ private def shadowEdgeKinds (entries : List Concrete.ProofCoreEntry)
       s!"{", ".intercalate parts}" ++
         s!" [{missingN} missing, {trustedN} trusted, {cs.length - missingN - trustedN} need the Lean classifier]"
 
+/-- Raw canonical body bytes per subject — the digest's INPUT, not its hash.
+
+    Added while diagnosing a determinism defect that a hash cannot localise: two compilations of
+    an identical `return x + 1;` produced different `bodyBytesV2` digests, and a hash says only
+    THAT they differ. The bytes say WHERE, which is the difference between a bounded diff and an
+    open investigation.
+
+    Kept rather than deleted after the diagnosis: any future disagreement in this digest — and it
+    is the value receipts will bind — is diagnosed the same way, and rebuilding this each time is
+    how a one-off debugging session becomes a recurring one. -/
+def bodyBytesReport (pc : Concrete.ProofCore) : String :=
+  let rows := pc.entries.map fun e =>
+    let hdr := e.callableId.render
+    match e.evidenceBody with
+    | none => s!"{hdr}\n  ABSENT (no structural body threaded)"
+    | some d => match Proof.validate d with
+      | .error gaps => s!"{hdr}\n  REFUSED ({gaps.length} gap(s))"
+      | .ok complete => s!"{hdr}\n  {Proof.bodyBytesV2 complete}"
+  s!"=== Canonical body bytes ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
+
 /-- The migration manifest: ONE ROW PER STORED PROOF LINK, joined to the callable it belongs to.
 
     `check_migration_manifest.sh` could only prove CO-OCCURRENCE — that 44 links live in files
