@@ -3248,22 +3248,25 @@ Proof automation remains behind honest semantics and the external-user trial.
 
 **Objective:** Fix proof-subject freshness and fail closed.
 
-> **HEADLINE STATUS — 2026-08-08. This supersedes every older state summary in this section.**
+> **HEADLINE STATUS — 2026-08-09 (`13adcf3d`, audited against code and executable gates). This
+> supersedes every older state summary in this section.**
 > Prose further down was written while the work was in flight and is kept for its reasoning, not
 > its status. In particular, wording describing the subject digest as "still V1-frozen" is about
 > the AUTHORITATIVE comparison — which is deliberately unflipped until step 7 — and must not be
 > read as "the V2 digest does not exist". It does.
 >
-> **Roughly 70% implemented; 3 of 8 slices fully closed.** It stays at 70 until the receipt
-> CONSUMER and the dependency root control actual verdicts — producing correct material is not
-> the same as anything acting on it. What remains is four substantial
-> integration/migration packages, not design exploration.
+> **Roughly 70–75% of the architecture is implemented; only 3 of 8 slices are formally closed,
+> and the authoritative evidence path is closer to 50–60% complete.** The distinction is
+> load-bearing: Concrete can compute the intended subject, dependency material, receipt helper
+> values and exact migration inventory, but production `proved` still uses the legacy
+> fingerprint/spec path. Producing correct material is not the same as making every friendly
+> verdict depend on it.
 >
 > | slice | state |
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | environment identities DONE (2026-08-09); 8 of 9 proof tables migrated, ninth externally blocked. **Receipt status, qualified:** the receipt core can mint structurally valid envelopes from supplied facts; **no production replay-backed receipt is issued or authoritative** |
-> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **V2 REFROZEN (2026-08-09), and the revocation retracted in the same commit.** The freeze
+> | 5 | **subject foundation complete and V2 refrozen** — semantic identity, typed signature, generics/capabilities, contracts, structural V2 body, selected specification and claim scope are bound; semantic edits move it, alpha-renaming and declaration-order changes do not. Exact compiler-produced migration inventory is **CLOSED: 44/44 links, 0 unowned, 0 links without subjects, 0 nondeterministic keys, 33 distinct callable owners**. V2 remains shadow-only until Slice 7 replays and migrates the corpus |
 prerequisite that failed — cross-compilation determinism — now holds, so `v2:` is the first
 ACCEPTED semantic subject format rather than a number spent on a shadow draft.
 
@@ -3300,7 +3303,7 @@ non-determinism is exactly the sentence someone would quote to justify not trust
 > | 7 | receipt issuance and corpus migration **not started** |
 > | 8 | adversarial validation of the authoritative pipeline **not started**; R-0004 cannot close without it |
 >
-> **The five remaining packages**, in critical-path order:
+> **The remaining work**, in critical-path order:
 >
 > 1. **Finish slice 4** — ~~never-under-approximate dependency access~~ **DONE 2026-08-08**
 >    (`tableValueDigest`, whole-by-construction, fail-closed); the validated receipt CORE TYPE is
@@ -3325,13 +3328,11 @@ non-determinism is exactly the sentence someone would quote to justify not trust
 >    visited two constants differently would report drift that did not happen. Sorting hides
 >    order and NOT a swap — exchanging two tables' digests changes which name carries which
 >    value, gated in both directions.
-> 2. **Finish the subject, then activate slice 5 safely.** `proofSubjectDigestV2` currently
->    combines declaration facts (identity/signature/generics/capabilities/contracts) with the
->    LEGACY `bodyFingerprint`. It still does NOT bind the structural typed V2 body, selected
->    specification identity, claim scope/coverage, dependency root, or trust/assumption
->    qualification. Extend the shadow proof beyond signature and contract edits to capability,
->    generic, selected-spec, claim-scope and alpha-renaming controls; keep the live verdict
->    unchanged until migration.
+> 2. **Clean the closed-manifest gate before building on it.** `check_migration_manifest.sh`
+>    currently contains the exact-join block twice: the first is the new 44/44 equality closure;
+>    the second retains the obsolete 35-row ratchet and old nondeterminism narrative. It still
+>    exits green, but one executable gate must not carry two conflicting definitions of its own
+>    state. Remove the duplicate historical block and retain one equality-based closure section.
 > 3. **Integrate slice 6** — feed the typed `DepNode` graph into the deterministic dependency-root
 >    builder; combine compiler-produced edges with Lean-side theorem classification; handle direct,
 >    transitive and recursive dependencies; bind dynamic table access to the WHOLE table rather
@@ -3340,12 +3341,25 @@ non-determinism is exactly the sentence someone would quote to justify not trust
 >    complete merely because `DependencyRoot` computes a root:** it exits only when ProofCore,
 >    Report and status composition consume validated roots and no old name-keyed/advisory path can
 >    emit `proved`.
-> 4. **Complete slice 7** — replay every repository proof; issue receipts only after successful
+> 4. **Complete the receipt and production environment binding.** The helper type still lacks the
+>    dependency root, theorem/artifact identity, replay protocol/result, trust/assumption
+>    qualification, canonical serialization, validated decoding, storage and a production status
+>    consumer. `toolchainIdOf`, `workspaceIdOf` and `importsIdOf` exist, but production must derive
+>    their inputs from the actual compiler, workspace/module closure, imported content and Lean
+>    toolchain rather than accepting fixture strings. Register every weakening in the central
+>    mutation harness and require the production consumer—not a helper probe—to kill it.
+> 5. **Complete slice 7** — replay every repository proof; issue receipts only after successful
 >    kernel replay; produce a dry-run migration manifest for every stored proof link; make V2
 >    fingerprints authoritative; convert old schemas to `needs_recheck`; publish the first
 >    eligibility-denominated proof-coverage baseline; verify clean-machine and
 >    repository-root/project-root reproducibility.
-> 5. **Complete slice 8** — red-team the migrated production path with independent hostile
+> 6. **Complete the ninth table** after mutable-borrow ProofCore extraction lands: extract
+>    `decode_header`, generate `proofFnsExt`'s remaining three entries, and replace its tripwire
+>    with positive generated-evaluation/kernel-replay correspondence.
+> 7. **Complete reproducibility and coverage** — repository-root/project-root and clean-machine
+>    replay parity; deterministic roots/receipts; cache off/on/corrupt-cache honesty; and the first
+>    eligibility-denominated coverage baseline with stable discharge routes and blockers.
+> 8. **Complete slice 8** — red-team the migrated production path with independent hostile
 >    fixtures, implementation mutations, and an end-to-end adversarial project. The attack goal
 >    is to obtain a friendly `proved` verdict from evidence that is stale, incomplete,
 >    context-dependent, misbound, unreplayed, dependency-incomplete, trust-widened, schema-confused,
@@ -3422,24 +3436,26 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 1 | executable witnesses | **LANDED** | Preserve the positive controls and convert each defect tripwire when its owning slice closes. |
 | 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
 | 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
-| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries), whole-table binding, and validated receipt core type landed** | Produce deterministic workspace/import/toolchain identities; complete receipt fields, canonical serialization and validated decoding; connect a production consumer. The ninth table is blocked on mutable-borrow ProofCore extraction. |
-| 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — declaration-facts digest, `needs_recheck`, and gated shadow comparison landed** | ~~Replace the legacy body-hash component~~ **DONE 2026-08-09** with the structural typed V2 body and bind selected spec and claim scope; add the remaining semantic/invariance controls. Keep the live verdict unchanged until slice 7 accounts for the authoritative **44-link** migration corpus and replays each link. |
+| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries), whole-table binding, validated receipt core and environment-ID helpers landed** | Derive real production environment inputs; add root, theorem/artifact, replay and trust/assumption fields; canonical serialization, validated decoding and storage; connect one production consumer; register production-consumer mutations. The ninth table is blocked on mutable-borrow ProofCore extraction. |
+| 5 | complete semantic `ProofSubjectDigest` | **FOUNDATION COMPLETE — deterministic V2 refrozen; exact manifest CLOSED 44/44** | Keep V2 shadow until Slice 7 successfully replays and migrates every link. Preserve semantic-change and invariance controls. Activation, not subject definition, remains. |
 | 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, whole-table binding, and standalone fail-closed root exist in shadow** | Integrate compiler and Lean-side classifications; make ProofCore, reports and status composition consume validated roots; prove no old name-keyed/advisory route can issue `proved`; gate direct, transitive and recursive production cases. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 | 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
-**Completion estimate as of 2026-08-08.** The representation and shadow
-foundation is roughly two-thirds built, but only slices 1–3 are closed. Five
-integration/migration packages remain: finish the receipt foundation, activate
-semantic freshness safely, integrate the dependency root end to end, and replay
-and migrate the corpus, then adversarially validate the authoritative result. Slice 6,
-the receipt/corpus migration, and Slice 8 are the highest-risk work. This is several focused weeks of work rather than a final
+**Completion estimate as of 2026-08-09.** Roughly 70–75% of the architecture exists, but only
+slices 1–3 are formally closed and the authoritative evidence path is nearer 50–60%. Remaining
+work is integration-heavy: clean the duplicated manifest gate, integrate dependency roots,
+complete and consume replay receipts, migrate the corpus, finish the externally blocked ninth
+table, prove reproducibility/publish coverage, then adversarially validate the authoritative
+result. Slice 6, receipt/corpus migration and Slice 8 are the highest-risk work. This is several focused weeks of work rather than a final
 cleanup pass, and the external mutable-borrow extraction prerequisite prevents
 formal closure even if slices 4–6 otherwise finish.
 
-**Critical path.** Integrate deterministic dependency roots → define and validate the receipt
-envelope → publish the complete shadow/migration manifest → replay and migrate
-the corpus → land mutable-borrow extraction and migrate the ninth table. Do not
+**Critical path.** Remove the duplicate manifest-gate block → integrate deterministic dependency
+roots in shadow → make a valid root mandatory in production status composition and kill the
+omission mutation → complete/serialize/decode the receipt and derive real environment facts →
+replay and migrate all 44 links → land mutable-borrow extraction and migrate the ninth table →
+publish reproducibility/coverage → execute Slice 8. Do not
 turn any shadow fact into a friendly authoritative verdict out of order.
 
 #### Binder frames: position and meaning are separate obligations
@@ -4563,12 +4579,12 @@ conditions are green; several current tests are deliberate tripwires proving the
 |---|---|
 | bugs 058/059/060/062 | **PARTIAL** — 058 contained, 062 closed; 059/060 still leave the live V1 verdict `proved` while only shadow V2 moves |
 | generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
-| final semantic subject and invariance | **PARTIAL** — declaration facts AND structural V2 body covered (2026-08-09), alpha-invariance gated; selected spec and claim scope still absent. Note the digest remains SHADOW: nothing authoritative reads it, asserted directly (`deriveObligationStatus` must not see it) rather than by file-ownership proxy |
+| final semantic subject and invariance | **FOUNDATION COMPLETE, ACTIVATION PENDING** — deterministic refrozen V2 binds declaration facts, structural body, selected spec and claim scope; semantic/invariance controls pass. It remains shadow-only until replay-backed Slice 7 migration |
 | exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
 | typed deterministic dependencies | **PARTIAL** — graph/root/whole-table material tested; ProofCore and Report have no root consumer |
-| friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core type only; no real environment identities, replay issuance, storage or status consumer |
-| legacy/schema migration | **NOT STARTED** — `needs_recheck` vocabulary exists; 44-row manifest/replay migration absent |
-| complete shadow manifest | **NOT STARTED** — per-subject shadow lines exist, but no exact migration manifest or zero-unexplained verdict |
+| friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core plus deterministic environment-ID helper functions exist; no production-derived environment facts, dependency root/theorem/artifact/replay/trust fields, serialization, storage, issuance or status consumer |
+| legacy/schema migration | **MANIFEST CLOSED, REPLAY/MIGRATION NOT STARTED** — `needs_recheck` vocabulary and exact 44-row input exist; no replay-backed V2 rewrite or authoritative activation yet |
+| exact migration manifest | **CLOSED 44/44** — compiler emits one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. Cleanup owed: remove the duplicated obsolete exact-join/35-row-ratchet block from `check_migration_manifest.sh` |
 | repository replay into receipts | **NOT STARTED** |
 | reproducibility and weakening mutations | **PARTIAL** — cwd parity and deterministic helper material gated; clean-machine receipt replay and receipt production-consumer mutations absent |
 | eligibility-denominated coverage baseline | **NOT STARTED** |
@@ -4881,34 +4897,38 @@ appeared to be:
 
 **Closure gate** (`check_migration_manifest.sh`, separate from the ratchets): required state is
 0 missing, 0 unowned, 0 nondeterministic, 0 without subject, 44/44 accounted. It currently reports
-NOT CLOSED, deliberately — a ratchet and a completion gate answer different questions, and merging
-them would let "9/0 green" read as "the manifest is finished".
+**CLOSED**. Preserve this as equality: a ratchet and a completion gate answer different questions,
+and a future regression must reopen closure rather than remain green above a lowered floor. The
+script cleanup below removes the obsolete duplicate ratchet block; it does not weaken these values.
 
-**The exact migration manifest — the authoritative input to slice 7, and not yet built.**
-`check_migration_manifest.sh` proves 44 stored links occur in files containing 52 digestible
-subjects. It does NOT associate each link with its owning callable, so a dangling, duplicated, or
-attached-to-the-wrong-function link still passes. The durable end state is a COMPILER-PRODUCED
-manifest with exactly one row per stored link:
+**The exact migration manifest — authoritative input to Slice 7, CLOSED 2026-08-09.** The compiler
+now produces exactly one row per stored source link:
 
 ```
 source-location | callable-id | stored-v1 | selected-spec-id | current-v2 | disposition
 ```
 
-gated on: exactly 44 rows; every row has exactly one callable owner; no duplicate source
-locations; no missing or ambiguous owners; all 44 rows map successfully; the unique-subject count
-computed by explicit deduplication of callable ids; and every referenced subject carrying a
-complete V2 digest.
-
-Until then the honest claim is co-occurrence ("44 links occur in 20 files containing 52
-digestible subjects"), not mapping ("44 links map to 52 unique subjects"). The difference is
-exactly what a wrongly-attached link would exploit.
+The closure gate establishes 44/44 rows, 0 unowned, 0 links without subjects and 0
+nondeterministic keys, covering 33 distinct callable owners. Source location is repository-relative
+migration metadata only; it is absent from subject and receipt identity. One cleanup remains:
+`check_migration_manifest.sh` accidentally retains a second copy of the exact-join block with the
+obsolete 35-row ratchet and historical blocker prose. Remove that duplicate so the executable gate
+has one authoritative definition of closure before Slice 6 builds on it.
 
 **Slice 6 starting sequence, in order.** Recorded because the order is what keeps a partial
 consumer away from the `proved` decision path:
 
-1. implement the Lean-side `MetaM` classification hand-back;
-2. produce complete typed edge material;
-3. let incomplete/unclassified material REFUSE roots;
+1. ~~implement the Lean-side `MetaM` classification hand-back~~ **DONE 2026-08-09**
+   (`classifyOrUnclassified`, `classifyAll`, `renderClassification` — one row per request, an
+   unknown name yields `unclassified` rather than a dropped row, serialization sorted so caller
+   order cannot enter the bytes);
+2. ~~produce complete typed edge material~~ **DONE** — the `unclassified` edge kind exists, with
+   completeness proved by `DependencyEdge.mem_all` rather than asserted by a length check;
+3. ~~let incomplete/unclassified material REFUSE roots~~ **DONE** — refused at BOTH doors: the
+   root via `isCurrentForDependents` (exhaustive, no catch-all, so a future kind is non-current
+   by construction) and `mint?` independently, rather than trusting a caller to consult the root
+   first. `mergeClassifications` refuses five distinct ways — unanswered, duplicate, unknown,
+   still-unclassified, classified-missing — each its own constructor because the repairs differ;
 4. wire validated roots into ProofCore and reports **in shadow**;
 5. compare root determinism and dependency-change sensitivity;
 6. connect the root to status composition;

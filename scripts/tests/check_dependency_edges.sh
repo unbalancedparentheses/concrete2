@@ -683,6 +683,52 @@ probe "an unbound table renders as ? and not as a digest" "true" '
   let s := renderClassification [(`Th, ev)]
   (s.splitOn "d1:?").length == 2'
 
+# === THE MERGE (slice 6, step 3) =============================================================
+# Where a partial answer becomes indistinguishable from a complete one. Each refusal is its own
+# constructor because the repairs differ, and each gets its own leg — a merge that refuses "some
+# of the time" is a merge nobody can reason about.
+echo "=== classification merge ==="
+
+ok_ev='{ edge := .contract, tables := [], tableDigests := [], quantifiesOverTable := true }'
+
+probe "a complete answer set merges" "true" "
+#eval (mergeClassifications [\"a\", \"b\"] [(\"a\", $ok_ev), (\"b\", $ok_ev)]) matches Except.ok _"
+
+probe "an UNANSWERED key refuses" "true" "
+#eval (mergeClassifications [\"a\", \"b\"] [(\"a\", $ok_ev)]) matches Except.error (MergeError.unanswered _)"
+
+probe "a DUPLICATE answer refuses (not first-wins)" "true" "
+#eval (mergeClassifications [\"a\"] [(\"a\", $ok_ev), (\"a\", $ok_ev)]) matches Except.error (MergeError.duplicateAnswer _)"
+
+probe "an UNKNOWN answer refuses" "true" "
+#eval (mergeClassifications [\"a\"] [(\"a\", $ok_ev), (\"zz\", $ok_ev)]) matches Except.error (MergeError.unknownAnswer _)"
+
+probe "a STILL-UNCLASSIFIED answer refuses" "true" '
+#eval (mergeClassifications ["a"] [("a", { edge := .unclassified, tables := [], tableDigests := [], quantifiesOverTable := false })]) matches Except.error (MergeError.stillUnclassified _)'
+
+probe "a MISSING classification refuses" "true" '
+#eval (mergeClassifications ["a"] [("a", { edge := .missing, tables := [], tableDigests := [], quantifiesOverTable := false })]) matches Except.error (MergeError.classifiedMissing _)'
+
+# The five refusals must be DISTINGUISHABLE, or a caller cannot route the repair. An unanswered
+# key means the hand-back did not run; a duplicate means the classifier is inconsistent; the two
+# have nothing to do with each other.
+probe "the refusals are distinct constructors" "true" '
+#eval (MergeError.unanswered "k") != (MergeError.duplicateAnswer "k")
+  && (MergeError.unknownAnswer "k") != (MergeError.stillUnclassified "k")
+  && (MergeError.classifiedMissing "k") != (MergeError.unanswered "k")'
+
+# Requested order, so a caller iterating the merge is stable regardless of answer order.
+probe "merged rows follow REQUESTED order, not answer order" "true" "
+#eval match mergeClassifications [\"a\", \"b\"] [(\"b\", $ok_ev), (\"a\", $ok_ev)] with
+      | Except.ok rows => rows.map Prod.fst == [\"a\", \"b\"]
+      | Except.error _ => false"
+
+# `classificationsComplete` must agree with the merge — two definitions of complete is how one
+# ends up weaker.
+probe "completeness agrees with the merge, both ways" "true" "
+#eval classificationsComplete [\"a\"] [(\"a\", $ok_ev)]
+  && !(classificationsComplete [\"a\", \"b\"] [(\"a\", $ok_ev)])"
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"

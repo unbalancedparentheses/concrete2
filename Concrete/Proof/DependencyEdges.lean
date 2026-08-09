@@ -204,4 +204,77 @@ def renderClassification (rows : List (Name × EdgeEvidence)) : String :=
       ++ String.join (tbls.map fun (tn, d?) => lp "t" (toString tn) ++ lp "d" (d?.getD "?"))
   "classifyV1:n" ++ toString sorted.length ++ ":" ++ String.join (sorted.map one)
 
+/-! ## The merge (R-0004 slice 6, step 3)
+
+The compiler emits `unclassified` edges keyed by theorem name; Lean answers; this joins them.
+It is the boundary where a partial answer becomes indistinguishable from a complete one, so it
+refuses five distinct ways rather than returning a best effort.
+
+Roots are computed only after this succeeds. A merge that silently dropped, defaulted, or
+double-counted a row would hand the root builder material it could not tell from complete
+material — and the root builder's own fail-closed checks cannot see a row that never arrived. -/
+
+inductive MergeError where
+  /-- A requested key came back with no classification. -/
+  | unanswered (key : String)
+  /-- A key was answered twice. Not "take the first": two answers for one question means the
+      classifier disagrees with itself, and picking one makes the result depend on list order. -/
+  | duplicateAnswer (key : String)
+  /-- An answer arrived for a key nobody asked about. Its presence means the answer set was
+      built from a different question set, so the whole batch is suspect — not just this row. -/
+  | unknownAnswer (key : String)
+  /-- The classifier returned `unclassified`, which is not an answer. Accepting it would put
+      exactly the state this merge exists to eliminate into a root. -/
+  | stillUnclassified (key : String)
+  /-- The classifier returned `missing`: it ran and found nothing validating this dependency.
+      A real answer, and not one a current root may be built from. -/
+  | classifiedMissing (key : String)
+deriving Repr, BEq
+
+def MergeError.explain : MergeError → String
+  | .unanswered k        => s!"no classification returned for '{k}'"
+  | .duplicateAnswer k   => s!"'{k}' was classified twice — the classifier disagrees with itself"
+  | .unknownAnswer k     => s!"classification returned for '{k}', which was never requested"
+  | .stillUnclassified k => s!"'{k}' came back unclassified — that is not an answer"
+  | .classifiedMissing k => s!"'{k}' classified as `missing`: nothing validates this dependency"
+
+/-- Join requested keys to returned classifications, or refuse.
+
+    EVERY refusal is a distinct constructor because the repairs differ: an unanswered key means
+    the hand-back did not run over it; a duplicate means the classifier is inconsistent; an
+    unknown answer means the two sides disagree about the question set; `unclassified` means the
+    classification did not conclude; `missing` means it concluded there is nothing. Collapsing
+    them to `none` would leave every one of those looking like "try again".
+
+    Returns rows in REQUESTED order, so a caller's iteration is stable without depending on how
+    the answers happened to be listed. -/
+def mergeClassifications
+    (requested : List String) (answers : List (String × EdgeEvidence))
+    : Except MergeError (List (String × EdgeEvidence)) := do
+  -- Unknown answers first: a key nobody asked about means the two sides were built from
+  -- different question sets, which makes every OTHER row suspect too. Reporting a downstream
+  -- symptom (say, an unanswered key) would send the reader to the wrong place.
+  for (k, _) in answers do
+    if !requested.contains k then throw (.unknownAnswer k)
+  let mut out : List (String × EdgeEvidence) := []
+  for k in requested do
+    let hits := answers.filter (fun a => a.1 == k)
+    match hits with
+    | []        => throw (.unanswered k)
+    | [(_, ev)] =>
+      if ev.edge == DependencyEdge.unclassified then throw (.stillUnclassified k)
+      else if ev.edge == DependencyEdge.missing then throw (.classifiedMissing k)
+      else out := out ++ [(k, ev)]
+    | _         => throw (.duplicateAnswer k)
+  return out
+
+/-- Was every requested key answered with a classification a root may use?
+
+    The predicate a caller should consult before building a root. Deliberately derived from
+    `mergeClassifications` rather than reimplemented: two definitions of "complete" is how one
+    of them ends up weaker. -/
+def classificationsComplete (requested : List String)
+    (answers : List (String × EdgeEvidence)) : Bool :=
+  (mergeClassifications requested answers) matches Except.ok _
+
 end Concrete.Proof
