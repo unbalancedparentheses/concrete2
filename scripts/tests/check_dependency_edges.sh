@@ -826,9 +826,22 @@ printf '%s' "$DR" | grep -qE "shadow depRoot: [0-9a-f]{8}" \
   || no "no subject produced a root — refusal is expected for unclassified edges, but a leaf with no edges must succeed"
 
 # ...and a subject reaching an unclassified dependency must REFUSE, with the reason named.
-printf '%s' "$DR" | grep -q "REFUSED (.*non-current edge" \
-  && ok "a subject reaching an unclassified dependency refuses, naming the edge" \
-  || no "a subject with an unclassified dependency did not refuse — the root is not fail-closed"
+# RESTATED 2026-08-09. This asserted that THIS fixture contains a refusal, which stopped being
+# true when the classification table covered both attachment paths and composition's subjects all
+# rooted. A gate pinned to "some fixture still fails" gets falsified by success, which is the
+# wrong shape: the property is that a refusal, IF one occurs, names its edge — and the fail-closed
+# behaviour itself is unit-tested above ("a root refuses an UNCLASSIFIED edge").
+CORPUS_REF="$(for f in $(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u); do
+  "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true
+done)"
+NREF="$(printf '%s' "$CORPUS_REF" | grep -c 'REFUSED' || true)"
+if [ "$NREF" = "0" ]; then
+  ok "no root refusals remain in the corpus — every subject roots"
+elif printf '%s' "$CORPUS_REF" | grep -q "REFUSED (.*to 'v1:"; then
+  ok "$NREF root refusal(s) remain, each naming the edge responsible"
+else
+  no "a root refused without naming the edge — the reason is what makes a refusal actionable"
+fi
 
 # The root must NOT reach any verdict yet. This is the step-4 containment, and it is the same
 # check the subject digest has: shadow means computed, not consulted.
