@@ -152,6 +152,28 @@ probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 #
 # What remains testable here is the fail-closed half: no structural body, no digest. A digest
 # over an absent body would describe nothing while looking like it described the program.
+# SELECTED SPECIFICATION is part of the subject: a proof established against one specification
+# is not evidence for another, so re-pointing a link must move the subject. Both directions,
+# because binding a value that never changes the digest would be indistinguishable from not
+# binding it at all.
+probe "a DIFFERENT selected spec moves the subject" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) (some "SpecA") != proofSubjectDigestV2 a (some {}) (some "SpecB")'
+probe "the SAME selected spec leaves it unchanged" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) (some "SpecA") == proofSubjectDigestV2 a (some {}) (some "SpecA")'
+# Absence is a VALUE, not a refusal — a function with no attached spec still has a subject, it
+# is simply unproved. It must be stable, and must not collide with a spec whose name is empty.
+probe "NO selected spec is stable across calls" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) none == proofSubjectDigestV2 a (some {}) none'
+probe "NO spec differs from a spec named the empty string" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
+  proofSubjectDigestV2 a (some {}) none != proofSubjectDigestV2 a (some {}) (some "")'
 probe "an ABSENT structural body yields NO digest" "none" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }

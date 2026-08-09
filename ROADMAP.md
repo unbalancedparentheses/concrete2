@@ -3262,7 +3262,7 @@ Proof automation remains behind honest semantics and the external-user trial.
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | mostly built — 8 of 9 proof tables migrated |
-> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links across 20 files -> 64 unique subjects, all 64 digesting, 0 refused**. The roadmap previously said "39 of 39" from an uncommitted shell loop over a narrower file set — the third miscount of this denominator, and why it is now gated. Still absent from the subject: claim scope |
+> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. Still absent from the subject: claim scope |
 > | 6 | dependency graph/material exists, **not authoritative** |
 > | 7 | receipt issuance and corpus migration **not started** |
 >
@@ -4801,6 +4801,25 @@ is exactly why they closed cheaply — and why the remaining four should not be 
 way. Faking an environment in this module-level pass would be the same shape of mistake as the
 walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
 question that already has an authoritative one.
+
+**The exact migration manifest — the authoritative input to slice 7, and not yet built.**
+`check_migration_manifest.sh` proves 44 stored links occur in files containing 52 digestible
+subjects. It does NOT associate each link with its owning callable, so a dangling, duplicated, or
+attached-to-the-wrong-function link still passes. The durable end state is a COMPILER-PRODUCED
+manifest with exactly one row per stored link:
+
+```
+source-location | callable-id | stored-v1 | selected-spec-id | current-v2 | disposition
+```
+
+gated on: exactly 44 rows; every row has exactly one callable owner; no duplicate source
+locations; no missing or ambiguous owners; all 44 rows map successfully; the unique-subject count
+computed by explicit deduplication of callable ids; and every referenced subject carrying a
+complete V2 digest.
+
+Until then the honest claim is co-occurrence ("44 links occur in 20 files containing 52
+digestible subjects"), not mapping ("44 links map to 52 unique subjects"). The difference is
+exactly what a wrongly-attached link would exploit.
 
 **Boundary between the three digests, recorded 2026-08-09 so the subject does not accrete.** It
 was tempting to fold dependency material and trust qualification into `ProofSubjectDigest`; they

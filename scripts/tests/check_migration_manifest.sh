@@ -30,6 +30,7 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/tests/lib/fresh.sh"
+source "$ROOT_DIR/scripts/tests/lib/fingerprints.sh"
 require_fresh_binary || exit 1
 
 BIN=".lake/build/bin/concrete"
@@ -40,17 +41,16 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # The migration set is defined by where links are STORED, not by a directory listing: a fixture
 # that never had a link has nothing to migrate, and including it would inflate the denominator
 # the same way the raw `grep examples/` count did (53) against the normative one (44).
-# THE SAME PATTERN AND SCOPE AS check_v1_fingerprint_golden.sh, deliberately. The first version
-# of this gate counted bare `proof_fingerprint` occurrences in `examples/*/src/main.con` and got
-# 23 against the golden's 44 — a FOURTH number, on top of 44 / 53 / 67. The cause was that the
-# two gates counted different things: the golden matches links with a stored HEX VALUE across
-# all of `examples/`, this matched any mention in one file per example. Two gates that disagree
-# about the denominator cannot both be right about the migration, so they now share the pattern
-# by construction rather than by two people writing the same regex twice.
-FP_PATTERN='#\[proof_fingerprint\("[a-f0-9]+"\)\]'
+# The pattern and file set come from `lib/fingerprints.sh`, which is the ONE definition. They
+# used to be duplicated text in two gates — same characters, not the same definition, so either
+# could drift alone and the two would measure different populations while both reporting a count.
 mapfile -t SRCS < <(grep -rlE "$FP_PATTERN" examples/ 2>/dev/null | sort -u)
 
-LINKS=0; SUBJECTS=0; DIGESTED=0; REFUSED=0; MISMATCH=""
+# Subject IDENTITIES, deduplicated — not a count of report blocks. The same subject can appear
+# in more than one file's report (an import surfaces in both), and counting blocks reported it
+# twice. "64 unique subjects" was therefore overstated: it was 64 block occurrences.
+LINKS=0; DIGESTED=0; REFUSED=0; MISMATCH=""
+SEEN_FILE="$(mktemp)"; DIG_FILE="$(mktemp)"; trap 'rm -f "$SEEN_FILE" "$DIG_FILE"' EXIT
 for src in "${SRCS[@]}"; do
   n="$(grep -cE "$FP_PATTERN" "$src" || true)"
   LINKS=$((LINKS + n))
@@ -62,9 +62,9 @@ for src in "${SRCS[@]}"; do
     case "$line" in
       v1:*)
         if [ -n "$cur" ]; then
-          SUBJECTS=$((SUBJECTS+1))
-          case "$body" in *REFUSED*) REFUSED=$((REFUSED+1)); [ -n "$fresh" ] && MISMATCH="$MISMATCH $cur(refused-but-digested)" ;;
-                          *)          case "$fresh" in "") MISMATCH="$MISMATCH $cur(complete-but-no-digest)" ;; *) DIGESTED=$((DIGESTED+1)) ;; esac ;;
+          printf '%s\n' "$cur" >> "$SEEN_FILE"
+          case "$body" in *REFUSED*) printf '%s\n' "$cur" >> "$DIG_FILE.ref"; [ -n "$fresh" ] && MISMATCH="$MISMATCH $cur(refused-but-digested)" ;;
+                          *)          case "$fresh" in "") MISMATCH="$MISMATCH $cur(complete-but-no-digest)" ;; *) printf '%s\n' "$cur" >> "$DIG_FILE" ;; esac ;;
           esac
         fi
         cur="$line"; body=""; fresh="" ;;
@@ -73,14 +73,20 @@ for src in "${SRCS[@]}"; do
     esac
   done <<< "$rep"
   if [ -n "$cur" ]; then
-    SUBJECTS=$((SUBJECTS+1))
-    case "$body" in *REFUSED*) REFUSED=$((REFUSED+1)); [ -n "$fresh" ] && MISMATCH="$MISMATCH $cur(refused-but-digested)" ;;
-                    *)          case "$fresh" in "") MISMATCH="$MISMATCH $cur(complete-but-no-digest)" ;; *) DIGESTED=$((DIGESTED+1)) ;; esac ;;
+    printf '%s\n' "$cur" >> "$SEEN_FILE"
+    case "$body" in *REFUSED*) printf '%s\n' "$cur" >> "$DIG_FILE.ref"; [ -n "$fresh" ] && MISMATCH="$MISMATCH $cur(refused-but-digested)" ;;
+                    *)          case "$fresh" in "") MISMATCH="$MISMATCH $cur(complete-but-no-digest)" ;; *) printf '%s\n' "$cur" >> "$DIG_FILE" ;; esac ;;
     esac
   fi
 done
 
+SUBJECTS="$(sort -u "$SEEN_FILE" 2>/dev/null | wc -l | tr -d ' ')"
+DIGESTED="$(sort -u "$DIG_FILE" 2>/dev/null | wc -l | tr -d ' ')"
+REFUSED="$(sort -u "$DIG_FILE.ref" 2>/dev/null | wc -l | tr -d ' ')"
+BLOCKS="$(wc -l < "$SEEN_FILE" | tr -d ' ')"
+
 echo "=== migration manifest ==="
+echo "  subject BLOCKS reported: $BLOCKS (deduplicated to $SUBJECTS identities)"
 echo "  examples with stored links: ${#SRCS[@]}"
 echo "  stored links: $LINKS   unique subjects: $SUBJECTS"
 echo "  subjects with a complete V2 digest: $DIGESTED   structurally refused: $REFUSED"

@@ -83,7 +83,11 @@ done
 [ "$unclass" = "0" ] && okk "all stderr diagnostics are the expected unbound-proof kind"
 
 # (3) The STORED corpus — a different population, counted on its own.
-stored=$( { grep -rhoE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ 2>/dev/null || true; } | wc -l | tr -d ' ')
+# From `lib/fingerprints.sh` — the ONE definition of a stored link. This regex used to live
+# here AND in check_migration_manifest.sh as separate text, which is how four different
+# denominators (23/44/53/67) came to be quoted for the same population.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fingerprints.sh"
+stored="$(fp_count)"
 [ "$stored" = "44" ] && okk "44 stored #[proof_fingerprint] values (V1 migration corpus)" \
   || note "expected 44 stored fingerprints, found $stored"
 
