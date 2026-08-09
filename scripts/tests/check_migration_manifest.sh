@@ -201,6 +201,24 @@ fi
   && ok "exact owner count ($MSUBJ) is within the co-occurrence count ($SUBJECTS)" \
   || no "exact owners ($MSUBJ) exceed co-occurring subjects ($SUBJECTS) — the two measurements disagree"
 
+# === CLOSURE GATE (separate from the ratchets above) =========================================
+# The assertions above are RATCHETS: they stop things getting worse while known blockers stand.
+# This is the completion condition, and it is expected to FAIL until step 1 is genuinely done.
+# Kept separate so "9/0 green" can never be read as "the manifest is finished" — a ratchet and a
+# completion gate answer different questions, and merging them loses the second.
+echo "=== closure (required state before dependency roots and receipts resume) ==="
+CLOSED=1
+[ "$MLINKS" = "$LINKS" ] || { echo "  OPEN  missing links: $((LINKS - MLINKS)) (required 0)"; CLOSED=0; }
+[ "$MUNOWNED" = "0" ]    || { echo "  OPEN  unowned links: $MUNOWNED (required 0)"; CLOSED=0; }
+[ "$MDUPES" = "0" ]      || { echo "  OPEN  nondeterministic subjects: $MDUPES (required 0)"; CLOSED=0; }
+[ "$MNOSUBJ" = "0" ]     || { echo "  OPEN  links with no subject: $MNOSUBJ (required 0)"; CLOSED=0; }
+if [ "$CLOSED" = "1" ]; then
+  echo "  CLOSED  44/44 accounted, 0 unowned, 0 nondeterministic — dependency roots may resume"
+else
+  echo "  NOT CLOSED — dependency-root integration and receipt issuance stay PAUSED."
+  echo "  This is the intended state, not a regression: the ratchets above are green and this is not."
+fi
+
 echo ""
 echo "MIGRATION-MANIFEST: PASS=$PASS FAIL=$FAIL (links=$LINKS subjects=$SUBJECTS)"
 [ "$FAIL" -eq 0 ]

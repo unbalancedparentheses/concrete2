@@ -3262,7 +3262,9 @@ Proof automation remains behind honest semantics and the external-user trial.
 > |---|---|
 > | 1-3 | **complete** |
 > | 4 | mostly built — 8 of 9 proof tables migrated |
-> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
+> | 5 | declaration facts + **structural V2 body** (2026-08-09 — the legacy Core-statement hash is OUT of the subject); comparison wired **in shadow**, both halves gated; **alpha-invariant** (a local rename does not move the digest). **Selected-spec identity bound** (2026-08-09). Migration set measured BY A GATE (`check_migration_manifest.sh`), not by hand: **44 stored links occur in 20 files containing 52 unique digestible subjects, 0 refused** — stated that way deliberately, because the gate proves CO-OCCURRENCE, not an exact join (no link is yet associated with its owning callable). The number has now been wrong three times: 39 (hand-run over a narrower file set), then 64 (report blocks, not deduplicated identities), now 52. Each correction came from making the measurement more exact, which is the argument for the compiler-produced manifest below. **Claim scope bound** (2026-08-09), completing the subject's components: semantic identity, typed signature, structural V2 body, contracts, selected specification, claim scope. **SCHEMA SHAPE FROZEN, VALUES NOT** (2026-08-09) — the wording matters and the first version got it wrong. The V2 *encoding* is frozen; the digest *values* are not migration-ready, because subject production is not yet canonical (see the nondeterminism blocker below). Fixing canonical production while still shadowed is exactly what shadow mode is for.
+
+**SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
 > | 6 | dependency graph/material exists, **not authoritative** |
 > | 7 | receipt issuance and corpus migration **not started** |
 >
@@ -4801,6 +4803,33 @@ is exactly why they closed cheaply — and why the remaining four should not be 
 way. Faking an environment in this module-level pass would be the same shape of mistake as the
 walkers keeping their own weaker copy of the trap rules (R-0464): a second, weaker answer to a
 question that already has an authoritative one.
+
+**STEP 1 BLOCKERS, measured 2026-08-09 by the manifest itself, both PAUSING dependency-root
+integration and receipts:**
+
+1. **8 of 44 stored links have no manifest row.** 36 distinct rows exist. A link the inventory
+   cannot see stays on its v1 value and reads as migrated because nothing enumerated it. This was
+   invisible while per-file rows were summed: 11 duplicate rows padded out 11 missing ones to a
+   coincidental 44.
+2. **The subject digest is not a function of the subject alone.** `calls.inc` digests as
+   `2a0ef88b` in `proof_patterns/composition` and `774ef796` in
+   `proof_patterns/composition_trusted_helper`. Instrumented per component as the review asked:
+   callable id, declaration facts, params, return type, capabilities and contracts are all
+   IDENTICAL; only `shadow bodyV2` (`f606dbc6` vs `bc98cca1`) and `shadow identityUses` differ.
+
+   The bodies are *literally* `return x + 1;` in both files, and `shadow edges` reports the body
+   reaches no callable — so this is NOT a trust leak through a call, which was the first
+   hypothesis. It is a contextual input inside the body encoding itself: the same statement
+   encodes differently depending on the module it is compiled in. Remaining candidates from the
+   review's list are compilation-relative identity resolution and unstable binder identities.
+
+   This is the more serious blocker: it means the frozen schema pins a value that is not unique
+   per subject, so receipts binding it and a migration pinning it would both be building on sand.
+
+**Closure gate** (`check_migration_manifest.sh`, separate from the ratchets): required state is
+0 missing, 0 unowned, 0 nondeterministic, 0 without subject, 44/44 accounted. It currently reports
+NOT CLOSED, deliberately — a ratchet and a completion gate answer different questions, and merging
+them would let "9/0 green" read as "the manifest is finished".
 
 **The exact migration manifest — the authoritative input to slice 7, and not yet built.**
 `check_migration_manifest.sh` proves 44 stored links occur in files containing 52 digestible
