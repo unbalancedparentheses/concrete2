@@ -19,57 +19,72 @@ denotes. -/
 
 namespace Concrete.Proof
 
-/-- (theorem name, canonical edge kind). -/
-def classificationTable : List (String × String) :=
+/-- (theorem name, canonical edge kind, theorem artifact digest).
+
+    The DIGEST is what makes a row BELONG to a theorem rather than merely mention one. Without
+    it `("T", "body")` stays structurally valid after `T` is reproved, restated, or replaced by a
+    different theorem of the same name — the row still parses, still merges, still types an edge,
+    while describing a theorem that no longer exists.
+
+    `check_classification_freshness.sh` re-derives these from the live environment and fails on
+    disagreement, so a stale table is a gate failure rather than a silent wrong answer. It is a
+    separate gate because re-derivation is slow. -/
+def classificationTable : List (String × String × String) :=
 [
-  ("Concrete.Proof.parse_byte_correct", "body"),
-  ("Concrete.Proof.check_length_rejects_short", "body"),
-  ("Concrete.Proof.decode_header_rejects_short", "body"),
-  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body"),
-  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body"),
-  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body"),
-  ("Examples.ElfHeader.Proofs.check_magic_correct", "body"),
-  ("Examples.ElfHeader.Proofs.check_class_correct", "body"),
-  ("Examples.ElfHeader.Proofs.check_data_correct", "body"),
-  ("Examples.ElfHeader.Proofs.check_version_correct", "body"),
-  ("Examples.ElfHeader.Proofs.validate_header_correct", "body"),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body"),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body"),
-  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body"),
-  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body"),
-  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body"),
-  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body"),
-  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body"),
-  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract"),
-  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract"),
-  ("Examples.HmacSha256.Proofs.ch_refines", "body"),
-  ("Examples.HmacSha256.Proofs.ch_selects_high", "body"),
-  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body"),
-  ("Examples.HmacSha256.Proofs.round_refines_list", "body"),
-  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body"),
-  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body"),
-  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body"),
-  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body"),
-  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body"),
-  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body"),
-  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract"),
-  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body"),
-  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body"),
-  ("Examples.ParseValidate.Proofs.validate_version_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.add_three_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.combine_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body"),
-  ("Examples.ProofPatterns.Proofs.dbl_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.inc_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body"),
-  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body"),
-  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body")
+  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
+  ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff"),
+  ("Concrete.Proof.decode_header_rejects_short", "body", "98bc0543aa2f21fe0215f61e33a31bd3"),
+  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body", "0a213b8fe94af7a02dd2e676db3448a0"),
+  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body", "0d4e1514e90142c45fbb493d819906ad"),
+  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body", "d93f7ee7c94d9f946626140a4eb5f70e"),
+  ("Examples.ElfHeader.Proofs.check_magic_correct", "body", "4ec2bf6300b8346ee56a420c7432cb52"),
+  ("Examples.ElfHeader.Proofs.check_class_correct", "body", "7a4df947f32ae0bf81bb6be812a12376"),
+  ("Examples.ElfHeader.Proofs.check_data_correct", "body", "6b79b8a6b380d8e9a5c6a592a9b005ac"),
+  ("Examples.ElfHeader.Proofs.check_version_correct", "body", "a2d629c19c42b0555343c7db75bef406"),
+  ("Examples.ElfHeader.Proofs.validate_header_correct", "body", "a4841e678e594c5581bd55011eb5e071"),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body", "a5f009923fa06c451b9f6d1d8a0a618c"),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body", "eb3464a1496339eb7d3ba66b5faaaa06"),
+  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body", "64b149f40c8348b5d9ad82b51f6ac86a"),
+  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body", "c03809fea8a03cd299d68f5073b8ea28"),
+  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body", "86641044424d8467caaedcc1456b8521"),
+  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body", "6dd8d351ab9225a609d8fb0598c65f13"),
+  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body", "3baf80715f1112d3e5cd70b4bce0cdbc"),
+  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract", "66c131f62baba38dc63cb5ed1a2ee0d9"),
+  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract", "7514cf668b484ad57f6638496e8da254"),
+  ("Examples.HmacSha256.Proofs.ch_refines", "body", "03c7ac500a119f1a9967e7c95a1462e2"),
+  ("Examples.HmacSha256.Proofs.ch_selects_high", "body", "dad0ea74403323b46dab5d3c1e99f5eb"),
+  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body", "bcff724c64133577213bb602047e7eb4"),
+  ("Examples.HmacSha256.Proofs.round_refines_list", "body", "52a7439c74366ee07d48cb8bce2bf844"),
+  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body", "d7518588077f8f2d9605ef725bc99f91"),
+  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body", "f54c86494d513cd00c0bded7bebe4085"),
+  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body", "bd7f85952d2f299401e49854542b0e53"),
+  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body", "cc7beef4d2f0b237721ba6b811ab2dcd"),
+  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body", "a60b88ebbd6bcb8e877fbbfed7de2100"),
+  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body", "f1e68b974ee5bfc806ed3598f9fc38c3"),
+  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract", "dfc4fb49d1dc178ff9d2f8af256e6d96"),
+  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body", "631a18e6482cac5515013298ad9c523b"),
+  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body", "2d51d46f8ba8cc0fe984cb7289dff1da"),
+  ("Examples.ParseValidate.Proofs.validate_version_correct", "body", "ce762322892966efae727e2c96fdd9ac"),
+  ("Examples.ProofPatterns.Proofs.add_three_correct", "body", "bf642e27e45729a9a4db4de97ecb75be"),
+  ("Examples.ProofPatterns.Proofs.combine_correct", "body", "098f3b62a5c123eb14149b1c917564f2"),
+  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body", "2e7d0a991aea1812c2fe9742d5b0549a"),
+  ("Examples.ProofPatterns.Proofs.dbl_correct", "body", "8a5c627bb3e11a18172dcddd77b6d9b7"),
+  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body", "858a134f01297e2ceca7934910d110fb"),
+  ("Examples.ProofPatterns.Proofs.inc_correct", "body", "aa47cb38439896023c17d5845f799001"),
+  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body", "ea930af89044e22c064fd34346746bae"),
+  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body", "2a0a7be6bfc7a6e7da5ec81e4f6164c8"),
+  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88")
 ]
+
+/-- The checked-in artifact digest for a theorem, if the table has seen it. Exposed so a
+    consumer can verify the row belongs to the theorem it is about to classify, rather than
+    trusting the name to be enough. -/
+def classifiedDigestOf (thm : String) : Option String :=
+  (classificationTable.find? (fun r => r.1 == thm)).map (·.2.2)
 
 /-- The edge a theorem implies, or `unclassified` when the table has not seen it. -/
 def classifiedEdgeOf (thm : String) : DependencyEdge :=
-  match (classificationTable.find? (fun r => r.1 == thm)).map (·.2) with
+  match (classificationTable.find? (fun r => r.1 == thm)).map (·.2.1) with
   | some "contract" => .contract
   | some "body"     => .body
   | some "trusted"  => .trusted

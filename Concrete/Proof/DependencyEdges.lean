@@ -222,9 +222,23 @@ def theoremArtifactDigest (n : Name) : MetaM (Option String) := do
   match (← try pure (some (← getConstInfo n)) catch _ => pure none) with
   | none => return none
   | some ci =>
-    let val := match ci.value? with | some v => toString v | none => "<opaque>"
+    -- The VALUE contributes as a structural HASH, not as rendered text. `toString` on a proof
+    -- term is O(term size), and proof terms are enormous: rendering 43 of them exceeded a
+    -- 28-minute budget and produced nothing. Measured, not predicted — the first version did
+    -- exactly that.
+    --
+    -- `Expr.hash` is a cheap structural hash and keeps the property that matters: a re-proof
+    -- with the same statement moves the digest, which is gated by a same-type/different-proof
+    -- probe. It trades an astronomically unlikely collision for the function being usable at
+    -- all, and an unusable digest protects nothing.
+    --
+    -- The TYPE is still rendered in full: types are small, and the type is what
+    -- `classifyTheorem` reads, so it is the part where an exact representation earns its cost.
+    let valHash := match ci.value? with
+      | some v => toString v.hash
+      | none   => "<opaque>"
     return some (Concrete.shortHash ("thmV1:" ++ toString n ++ "|ty:" ++ toString ci.type
-                                     ++ "|val:" ++ val))
+                                     ++ "|valh:" ++ valHash))
 
 /-! ## The merge (R-0004 slice 6, step 3)
 
