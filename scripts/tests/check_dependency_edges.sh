@@ -729,6 +729,68 @@ probe "completeness agrees with the merge, both ways" "true" "
 #eval classificationsComplete [\"a\"] [(\"a\", $ok_ev)]
   && !(classificationsComplete [\"a\", \"b\"] [(\"a\", $ok_ev)])"
 
+# === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
+# The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any
+# dependency SEMANTIC change must. A root that moves on order is unusable as a stored value; one
+# that does not move on content binds nothing. Sensitivity and duplicate-edge stability are
+# already covered above; these are the remaining properties.
+echo "=== root determinism and sensitivity ==="
+
+# EDGE order is discovery order, not meaning. Two traversals finding the same dependencies in a
+# different sequence describe the same program.
+probe "EDGE order does not change the root" "true" '
+#eval
+  let n := fun (es) => [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := es },
+                        { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] },
+                        { id := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }]
+  let e1 := [(DependencyEdge.body, CallableId.ofUser "m" "b"), (DependencyEdge.body, CallableId.ofUser "m" "c")]
+  let e2 := [(DependencyEdge.body, CallableId.ofUser "m" "c"), (DependencyEdge.body, CallableId.ofUser "m" "b")]
+  match dependencyRootMaterial (n e1) (CallableId.ofUser "m" "a"),
+        dependencyRootMaterial (n e2) (CallableId.ofUser "m" "a") with
+  | Except.ok x, Except.ok y => x.preimage == y.preimage
+  | _, _ => false'
+
+# NODE-LIST order is enumeration order — how the compiler happened to walk its own entries.
+probe "NODE-LIST order does not change the root" "true" '
+#eval
+  let a := { id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }
+  let b := { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }
+  match dependencyRootMaterial [a, b] (CallableId.ofUser "m" "a"),
+        dependencyRootMaterial [b, a] (CallableId.ofUser "m" "a") with
+  | Except.ok x, Except.ok y => x.preimage == y.preimage
+  | _, _ => false'
+
+# TRUST PROPAGATES MONOTONICALLY: a trusted edge anywhere in the closure qualifies the root, and
+# nothing downstream can unset it. Non-monotone trust would let a claim be laundered clean by
+# adding a dependency.
+probe "trust propagates from a DEEP dependency, not just a direct one" "true" '
+#eval
+  let ns := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] },
+             { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [(DependencyEdge.trusted, CallableId.ofUser "m" "c")] },
+             { id := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }]
+  match dependencyRootMaterial ns (CallableId.ofUser "m" "a") with
+  | Except.ok m => m.requiresTrustQualification
+  | Except.error _ => false'
+
+probe "an untrusted closure does NOT acquire trust qualification" "true" '
+#eval
+  let ns := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] },
+             { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
+  match dependencyRootMaterial ns (CallableId.ofUser "m" "a") with
+  | Except.ok m => !m.requiresTrustQualification
+  | Except.error _ => false'
+
+# The EDGE KIND is in the bytes: swapping contract for body over the same targets must move the
+# root, or typing the edges bought nothing.
+probe "changing an edge KIND moves the root" "true" '
+#eval
+  let n := fun (k) => [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(k, CallableId.ofUser "m" "b")] },
+                       { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
+  match dependencyRootMaterial (n DependencyEdge.body) (CallableId.ofUser "m" "a"),
+        dependencyRootMaterial (n DependencyEdge.contract) (CallableId.ofUser "m" "a") with
+  | Except.ok x, Except.ok y => x.preimage != y.preimage
+  | _, _ => false'
+
 # === SHADOW INTEGRATION (slice 6, step 4) ====================================================
 # Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and
 # REPORTED; it decides nothing yet.

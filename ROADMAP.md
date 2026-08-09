@@ -4943,7 +4943,14 @@ consumer away from the `proved` decision path:
    asserts BOTH directions — a leaf must produce a root (or the integration would be
    indistinguishable from not running, and "0 roots" would read as success) and a subject reaching
    an unclassified dependency must refuse — plus that no root reaches `deriveObligationStatus`;
-5. compare root determinism and dependency-change sensitivity;
+5. ~~compare root determinism and dependency-change sensitivity~~ **DONE 2026-08-09**. Both
+   halves gated: discovery ARTEFACTS do not move the root (edge order, node-list order,
+   duplicated edges) and dependency SEMANTICS do (a deep callee edit, an edge-KIND change — so
+   typing the edges is load-bearing rather than decorative). Trust propagates from a DEEP
+   dependency and an untrusted closure does not acquire qualification, which is monotonicity in
+   both directions: non-monotone trust would let a claim be laundered clean by adding a
+   dependency. A root that moves on order is unusable as a stored value; one that does not move
+   on content binds nothing;
 6. connect the root to status composition;
 7. kill the mutation that omits the root while attempting `proved`;
 8. delete or permanently subordinate the old advisory/name-keyed path.
