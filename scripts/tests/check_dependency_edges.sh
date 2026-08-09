@@ -729,6 +729,24 @@ probe "completeness agrees with the merge, both ways" "true" "
 #eval classificationsComplete [\"a\"] [(\"a\", $ok_ev)]
   && !(classificationsComplete [\"a\", \"b\"] [(\"a\", $ok_ev)])"
 
+# STEP 6 PRECONDITION. Every current root refusal is an `unclassified` edge — "we have not asked
+# the Lean side" — not a `missing` one. Gating `proved` on the root while that holds would report
+# depsNotCurrent for programs whose dependencies are fine, blaming the user's program for the
+# compiler's own unfinished state.
+#
+# This leg watches for the precondition being MET: when real classifications land, refusals
+# become `missing`, and those should gate a verdict. It reports rather than fails, because the
+# current state is expected and the transition is what needs noticing.
+echo "=== step 6 precondition (are refusals ours or the program's?) ==="
+DRR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true)"
+if [ -z "$DRR" ]; then
+  ok "no root refusals in this fixture"
+elif printf '%s' "$DRR" | grep -q "unclassified"; then
+  ok "refusals are UNCLASSIFIED (our state, not the program's) — step 6 stays blocked, correctly"
+else
+  ok "PRECONDITION MET: refusals are no longer unclassified — real classifications have landed, so the root may now gate proved"
+fi
+
 # === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
 # The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any
 # dependency SEMANTIC change must. A root that moves on order is unusable as a stored value; one
