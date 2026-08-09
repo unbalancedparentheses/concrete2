@@ -39,15 +39,28 @@ LEAN
 }
 
 echo "=== the vocabulary is complete and cannot launder trust ==="
-probe "all four edge kinds are enumerated" "true" \
-'#eval DependencyEdge.all.length == 4
-  && (DependencyEdge.all.map DependencyEdge.canonical).eraseDups.length == 4'
+probe "all five edge kinds are enumerated with distinct tags" "true" \
+'#eval DependencyEdge.all.length == 5
+  && (DependencyEdge.all.map DependencyEdge.canonical).eraseDups.length == 5'
 # `missing` is the only kind that is never current. `trusted` IS current — but
 # only with its trust carried forward, which is a separate question and must stay
 # a separate function, or an unqualified `proved_by_lean` gets minted over a trust
 # boundary.
-probe "only missing is not current for dependents" "true" \
-'#eval (DependencyEdge.all.filter (fun e => !e.isCurrentForDependents)) == [DependencyEdge.missing]'
+# TWO kinds are not current, and `unclassified` joining `missing` is the point: "nobody has
+# classified this" must not read as "this is fine". The predicate is exhaustive with no
+# wildcard, so a future edge kind is a compile error rather than silently born current — which
+# is what happened when `unclassified` was added under a `| _ => true` catch-all.
+probe "missing AND unclassified are not current for dependents" "true" \
+'#eval (DependencyEdge.all.filter (fun e => !e.isCurrentForDependents))
+        == [DependencyEdge.missing, DependencyEdge.unclassified]'
+# The distinction must survive: both fail closed, and they are still different states with
+# different repairs — a proof versus running the classification hand-back.
+probe "unclassified is DISTINCT from missing" "true" \
+'#eval DependencyEdge.unclassified != DependencyEdge.missing
+  && DependencyEdge.unclassified.canonical != DependencyEdge.missing.canonical'
+# And the root must refuse it, not traverse it as validated.
+probe "a root refuses an UNCLASSIFIED edge" "true" \
+'#eval (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.unclassified, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] (CallableId.ofUser "m" "a")) matches Except.error _'
 probe "only trusted propagates trust" "true" \
 '#eval (DependencyEdge.all.filter DependencyEdge.propagatesTrust) == [DependencyEdge.trusted]'
 probe "trusted is current AND propagates — both, not either" "true" \

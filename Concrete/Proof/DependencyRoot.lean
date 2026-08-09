@@ -95,7 +95,7 @@ def DepRootError.explain : DepRootError → String
   | .duplicateId id       => s!"duplicate node identity '{id.render}'"
   | .incompleteDigest id  => s!"'{id.render}' has no subject digest"
   | .unresolvedEdge f t   => s!"'{f.render}' depends on '{t.render}', which has no node"
-  | .missingEdge f t      => s!"'{f.render}' has a `missing` edge to '{t.render}'"
+  | .missingEdge f t      => s!"'{f.render}' has a non-current edge (`missing` or `unclassified`) to '{t.render}'"
 
 /-- Identities reachable from `start` over typed edges.
 
@@ -183,7 +183,12 @@ def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
     let sorted := node.edges.eraseDups.mergeSort
       fun a b => (a.1.canonical ++ a.2.render) ≤ (b.1.canonical ++ b.2.render)
     for (k, tgt) in sorted do
-      if k == DependencyEdge.missing then throw (.missingEdge n tgt)
+      -- Refuse on any edge that is not current for dependents, rather than on `missing` alone.
+      -- The literal check admitted `unclassified` the moment that constructor existed: an edge
+      -- nobody has classified would have been traversed as though validated. Routing through
+      -- the predicate means a new edge kind is refused until someone decides otherwise, which
+      -- is the fail-closed default.
+      if !k.isCurrentForDependents then throw (.missingEdge n tgt)
       let tgtDigest ← digestOf tgt
       if k == DependencyEdge.trusted then trust := true
       let tr := tgt.render
