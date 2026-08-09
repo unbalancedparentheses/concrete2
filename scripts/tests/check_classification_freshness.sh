@@ -28,6 +28,25 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 #
 # So the table is re-derived from the LIVE environment and compared. A stale table is a gate
 # failure, not a silent wrong answer.
+# THE NAME INVENTORY IS REDISCOVERED HERE, not taken from the generator. `classifications.lean`
+# carries a GENERATED `sourceLinkedThms` list, so running it proves the table matches that list —
+# not that the list matches the source. A new `#[proof_by]` annotation omitted from the list would
+# leave the gate green while its theorem was never classified, which is exactly the gap that made
+# `main.verify_message` proved-with-a-refusing-root.
+#
+# So: re-extract from source and compare against what the generator will actually ask about.
+echo "=== theorem-name inventory is exhaustive ==="
+grep -rhoE '#\[(proof_by|ensures_proof)\(([A-Za-z0-9_.]+)\)\]' examples/ \
+  | sed -E 's/.*\(([^)]*)\)\]/\1/' | sort -u > "$TMP/src_names.txt"
+grep -oE '`[A-Za-z0-9_.]+' scripts/gen/classifications.lean | sed 's/^`//' | sort -u > "$TMP/gen_names.txt"
+MISSING="$(comm -23 "$TMP/src_names.txt" "$TMP/gen_names.txt" || true)"
+if [ -z "$MISSING" ]; then
+  ok "every source-linked proof name is in the generator's inventory ($(wc -l < "$TMP/src_names.txt") names)"
+else
+  no "source-linked proof(s) missing from the generator inventory — run scripts/gen/refresh_classifications.sh:"
+  printf '%s\n' "$MISSING" | head -5 | sed 's/^/      /'
+fi
+
 echo "=== classification table freshness ==="
 FRESH="$TMP/fresh_rows.txt"
 if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then

@@ -227,10 +227,21 @@ def theoremArtifactDigest (n : Name) : MetaM (Option String) := do
     -- 28-minute budget and produced nothing. Measured, not predicted — the first version did
     -- exactly that.
     --
-    -- `Expr.hash` is a cheap structural hash and keeps the property that matters: a re-proof
-    -- with the same statement moves the digest, which is gated by a same-type/different-proof
-    -- probe. It trades an astronomically unlikely collision for the function being usable at
-    -- all, and an unusable digest protects nothing.
+    -- `Expr.hash` is a cheap structural hash and keeps the property that matters here: a
+    -- re-proof with the same statement moves the digest, gated by a same-type/different-proof
+    -- probe.
+    --
+    -- WHAT THIS IS NOT, stated because the previous wording ("astronomically unlikely
+    -- collision") claimed more than a 64-bit structural hash supports. `Expr.hash` is not a
+    -- cryptographic identity, and passing it through `shortHash` cannot restore collision
+    -- resistance that the input never had — hashing a hash adds no entropy. This is a
+    -- toolchain-bound FRESHNESS TRIPWIRE, adequate against drift and accident, and NOT an
+    -- adversarially robust receipt identity. Slice 8 should attack it.
+    --
+    -- A second known weakness: `value? = none` yields the shared marker `<opaque>`, so two
+    -- opaque declarations with the same name and type are indistinguishable here. Recorded
+    -- rather than papered over — an opaque artifact is exactly where a digest is least able to
+    -- tell one proof from another.
     --
     -- The TYPE is still rendered in full: types are small, and the type is what
     -- `classifyTheorem` reads, so it is the part where an exact representation earns its cost.

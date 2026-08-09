@@ -5149,8 +5149,13 @@ consumer away from the `proved` decision path:
       LESS than the actual closure while looking complete. Now every call-graph edge is
       represented; an unresolved one becomes an edge to an identity with no node, which the root
       refuses by name. A dependency you cannot resolve is not a dependency you do not have.
-   b. **The generated table keeps only (theorem, edge-kind), discarding the tables and digests
-      `classifyTheorem` produced.** Before production it must preserve enough to prove *this
+   b. **HALF CLOSED.** The table carries the theorem artifact digest, freshness is a MANDATORY
+      gate (`make test-classification-freshness`, ~1s), and the gate rediscovers the
+      theorem-name inventory from source rather than trusting the generator's own list. Still
+      open: `classifiedEdgeOf` selects only the name and edge tag, so the DIGEST does not
+      participate in classification — a stale table is caught by the gate, not by the consumer,
+      and the type remains structurally capable of consuming stale provenance. Table identities,
+      table digests and quantifies-over-table are still discarded. Original finding: Before production it must preserve enough to prove *this
       classification belongs to this exact theorem and applies to these exact dependencies*;
       otherwise a stale or misattached `body`/`contract` label stays structurally valid. OPEN.
    c. **Applying one caller-level classification to every runtime callee needs a correspondence
