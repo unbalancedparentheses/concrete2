@@ -48,6 +48,7 @@ import Concrete.Proof.IdentityUseBytes
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.DependencyEdge
 import Concrete.Proof.DependencyEdges
+import Concrete.Proof.Receipt
 import Concrete.ProofKit
 import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec

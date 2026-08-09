@@ -301,6 +301,78 @@ probe "fewer digests than named tables is NOT fully bound" "NOTBOUND" '
                           , tableDigests := [(`X, some "abc")], quantifiesOverTable := false }
   IO.println (if e.tablesFullyBound then "BOUND" else "NOTBOUND")'
 
+# === THE RECEIPT ENVELOPE (slice 4) =========================================================
+# `tablesFullyBound` is a predicate, and a predicate can be forgotten. The receipt type is built
+# so it cannot be: `tableBindings` is `List (Name × String)`, not `Option String`, so an unbound
+# table has NO REPRESENTATION inside a receipt. These legs pin every refusal path, because a
+# smart constructor that refuses nothing is just a constructor.
+echo "=== receipt envelope ==="
+
+probe "a receipt mints from complete evidence (control)" "MINTED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X]
+                           , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
+  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "lean-4.28" "/ws" "imp1"
+  IO.println (if r.isSome then "MINTED" else "REFUSED")'
+
+# The whole point. A body edge naming a table it could not bind announces a dependency whose
+# changes it cannot detect — which reads exactly like a dependency that never changes.
+probe "an UNBOUND table refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X]
+                           , tableDigests := [(`X, none)], quantifiesOverTable := false }
+  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "lean-4.28" "/ws" "imp1"
+  IO.println (if r.isNone then "REFUSED" else "MINTED")'
+
+probe "an ABSENT subject digest refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X]
+                           , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
+  let r := ProofEvidenceReceipt.mint? none ev "lean-4.28" "/ws" "imp1"
+  IO.println (if r.isNone then "REFUSED" else "MINTED")'
+
+# An empty identity is not "unknown" — it is a value, and it compares EQUAL to another empty
+# one, so two proofs established under different toolchains would agree. Refusing is the only
+# reading that does not invent agreement. One leg per field: a single check would pass while
+# two of the three were silently unbound.
+probe "an empty TOOLCHAIN id refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "" "/ws" "i").isNone then "REFUSED" else "MINTED")'
+probe "an empty WORKSPACE id refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "lean" "" "i").isNone then "REFUSED" else "MINTED")'
+probe "an empty IMPORTS id refuses to mint" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "lean" "/ws" "").isNone then "REFUSED" else "MINTED")'
+
+# Schema version is IN the receipt so an older one reads as a different format rather than as a
+# failed comparison — the same reason `v2:` is in the subject digest. Without it the first
+# envelope change reports every stored receipt as a broken proof.
+probe "a receipt from another schema is NOT comparable" "INCOMPARABLE" '
+#eval show MetaM Unit from do
+  let r : ProofEvidenceReceipt := { schemaVersion := "receiptV0", subjectDigest := "v2:a"
+                                  , edge := .body, tableBindings := [], toolchainId := "t"
+                                  , workspaceId := "w", importsId := "i" }
+  IO.println (if r.comparable then "COMPARABLE" else "INCOMPARABLE")'
+probe "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  match ProofEvidenceReceipt.mint? (some "v2:a") ev "t" "w" "i" with
+  | some r => IO.println (if r.comparable then "COMPARABLE" else "INCOMPARABLE")
+  | none   => IO.println "MINT-REFUSED"'
+
+# End-to-end: the digests a real classification produces must reach a receipt.
+probe "a minted receipt carries the table binding it was given" "d1" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [`X]
+                           , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
+  match ProofEvidenceReceipt.mint? (some "v2:a") ev "t" "w" "i" with
+  | some r => IO.println (String.intercalate "," (r.tableBindings.map (·.2)))
+  | none   => IO.println "REFUSED"'
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"

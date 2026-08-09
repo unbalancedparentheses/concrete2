@@ -432,9 +432,13 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
      + `tablesFullyBound`, gated 6 ways in `check_dependency_edges.sh`, 36 -> 42). It digests the
      table constant's DEFINING VALUE — whole by construction, since there is no subset to select
      from — and REFUSES for a valueless or unavailable constant rather than digesting a part.
-     What remains of this item is the CONSUMER side: `classifyTheorem` now carries the digests,
-     and the receipt envelope (slice 4) must reject a `body` edge whose `tablesFullyBound` is
-     false. Original finding, kept because it is why the item read as one thing:
+     The CONSUMER side landed with it: `Concrete/Proof/Receipt.lean` defines
+     `ProofEvidenceReceipt`, whose `tableBindings` is `List (Name × String)` — **not** `Option
+     String` — so an unbound table has no representation inside a receipt at all, and `mint?`
+     is the only constructor. Unrepresentable rather than checked, because a predicate that
+     must be remembered is one that will eventually be forgotten. Nine gate legs pin every
+     refusal path (unbound table, absent subject, each of the three empty environment
+     identities separately) plus the mint and schema controls. Original finding, kept because it is why the item read as one thing:
      `tableDigest`/`tableReach`/`tableBytes` return nothing across the tree. So a proof over
      a body that indexes a table is currently bound to the table's IDENTITY discipline but
      not to its CONTENTS, and a change to an entry the body does not appear to touch moves
@@ -3253,10 +3257,13 @@ Proof automation remains behind honest semantics and the external-user trial.
 >
 > **The four remaining packages**, in critical-path order:
 >
-> 1. **Finish slice 4** — enforce never-under-approximate dependency access; define the versioned
->    `ProofEvidenceReceipt` envelope; bind deterministic workspace, imports, toolchain and schema
->    identities; migrate the ninth proof table (blocked by mutable-borrow extraction in ProofCore,
->    which is outside R-0004).
+> 1. **Finish slice 4** — ~~never-under-approximate dependency access~~ **DONE 2026-08-08**
+>    (`tableValueDigest`, whole-by-construction, fail-closed); ~~define the versioned
+>    `ProofEvidenceReceipt` envelope~~ **DONE** (`Concrete/Proof/Receipt.lean`, unbindable
+>    evidence unrepresentable, 9 gate legs). REMAINS: *produce* the deterministic workspace,
+>    imports and toolchain identities — the envelope requires them and refuses empty ones, but
+>    nothing computes them yet; and migrate the ninth proof table (blocked by mutable-borrow
+>    extraction in ProofCore, outside R-0004).
 > 2. **Activate slice 5 safely** — extend the shadow proof beyond signature and contract edits to
 >    capability and generic edits; keep the live verdict unchanged until migration; then replace
 >    all 53 legacy fingerprints, accepting that 19 currently-`proved` links correctly become
