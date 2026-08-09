@@ -4860,6 +4860,24 @@ integration and receipts:**
    simply have different declarations above `inc`. It is gated as `TRIPWIRE(order)` in
    `check_proof_freshness.sh`, which flips to a positive assertion when fixed.
 
+   **Narrowed further 2026-08-09, with candidates eliminated** — recorded because the remaining
+   search is short and re-deriving it would cost more than reading it:
+
+   * a declaration inserted BEFORE `inc` moves the digest; the same declaration AFTER it does
+     NOT. The effect is POSITIONAL — a monotonic identifier consumed in declaration order — not a
+     dependence on module content. Both are gated, because the two have different fixes;
+   * `TypeId` is ELIMINATED: it is `user (defModule declName)` / `builtin`, semantic rather than
+     allocation-ordered;
+   * `BodyScope.resolve?` is ELIMINATED: `binderRef` is `(framesOut, idx)` computed purely from
+     the frame stack, and the doc-comment already commits to position-not-name;
+   * a call is ELIMINATED as the carrier for this fixture: `shadow edges` reports the body reaches
+     no callable, and the body is `return x + 1;`.
+
+   What remains to inspect is the identity attached to the OPERATOR and literal nodes in
+   `IdentityUseBytes.exprBytes`, and anything allocated per-declaration during elaboration that
+   those nodes capture. The fixture is minimal and the control is one line, so this is a bounded
+   search rather than an investigation.
+
    **The correct encoding**, per the review, normalizes function-local identities
    deterministically: parameters by POSITION, local bindings by lexical/declaration position
    WITHIN the function, loop and match binders by structured lexical path, and constants, fields,

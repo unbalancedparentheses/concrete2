@@ -234,6 +234,22 @@ else
   ok "TRIPWIRE(order): an unrelated declaration still moves the body digest ($ORD_BEFORE -> $ORD_AFTER) — known open, blocks migration"
 fi
 
+# DISCRIMINATOR: a declaration inserted AFTER the function must not move it either. Measured, it
+# does not — only a PRECEDING declaration moves the digest. That asymmetry is the finding: this is
+# a monotonic identifier consumed in declaration order, not a dependence on module CONTENT. A
+# content dependence would move on both sides, and the two have different fixes.
+ORD2="$TMP/ordercheck2"; rm -rf "$ORD2"; cp -r examples/proof_patterns/composition "$ORD2"
+python3 - "$ORD2/src/main.con" <<'PYEOF'
+import sys
+p=sys.argv[1]; s=open(p).read()
+j=s.index('}', s.index('return x + 1;'))+1
+open(p,'w').write(s[:j+1]+'\n    fn zzz_after(q: i32) -> i32 {\n        return q;\n    }\n'+s[j+1:])
+PYEOF
+ORD_AFTERDECL="$(ord_digest "$ORD2")"
+[ -n "$ORD_AFTERDECL" ] && [ "$ORD_AFTERDECL" = "$ORD_BEFORE" ] \
+  && ok "ORDER: a declaration inserted AFTER the function does NOT move it — the effect is positional, not module-content" \
+  || no "ORDER: a following declaration also moved the digest ($ORD_BEFORE -> $ORD_AFTERDECL) — the dependence is on module CONTENT, which is a different defect from the recorded one"
+
 # THE OTHER HALF OF THE TIE. `check_subject_facts.sh` fails if the revocation is missing while
 # this defect is open; this fails if the revocation LINGERS after it is fixed. Without both, a
 # temporary state becomes permanent — which is the normal fate of revocation markers, and the
