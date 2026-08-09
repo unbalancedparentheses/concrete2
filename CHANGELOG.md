@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Adversarial Validation Made A Completion Slice
+
+_Roadmap only, 2026-08-09. No compiler or proof verdict changed._
+
+R-0004 now has eight explicit slices. Slice 8 is a mandatory hostile validation pass over the
+authoritative, migrated evidence pipeline produced by Slice 7, not optional follow-up hardening.
+It attacks subject and claim binding, link ownership, direct/transitive/recursive dependencies,
+trust and assumptions, receipts and environment identity, replay, schema migration, caches,
+cross-project copying, reproducibility, and presentation downgrades.
+
+Closure requires production-consumer weakening mutations, permanent adversarial fixtures, one
+end-to-end hostile multi-module project, and at least one attack packet designed by a non-author.
+No stale, incomplete, context-dependent, misbound, dependency-incomplete, unreplayed,
+trust-widened, schema-confused, partially migrated, or cross-project evidence may retain a
+friendly `proved` verdict.
+
 ### Verification Capability Map And Documentation Boundaries
 
 _Branch `main`, 2026-08-07._

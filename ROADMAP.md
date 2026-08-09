@@ -531,10 +531,11 @@ None blocks the completion gate, which accepts "fail-closed uncovered".
    precisely what the obligation system reasons about. Matching the order a reader sees is worth
    an afternoon and one rebuild.
 
-2. **Slice 7 → HOLD R-0004 OPEN** until mutable-borrow extraction lands. The ninth proof table
-   needs it, and it lives outside R-0004. R-0004 stays at 6-of-7 rather than closing with a named
-   gap. The cost is a long-running task in flight on work it does not own; the reason to accept
-   that is that "7 of 7, with an asterisk" reads as done to everyone who did not write the
+2. **Slices 7–8 → HOLD R-0004 OPEN** until mutable-borrow extraction and adversarial validation
+   land. The ninth proof table needs the former, and it lives outside R-0004. R-0004 stays open
+   rather than closing with a named gap. The cost is a long-running task in flight on work it
+   does not own; the reason to accept that is that "done, with an asterisk" reads as done to
+   everyone who did not write the
    asterisk.
 
 **Original framing, kept because it records what was blocking and why:**
@@ -933,7 +934,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–7 | mid-flight; R-0454 depends on its receipt envelope. The step-5 language decision is resolved and the shadow freshness comparison is landed and gated. Current critical path: integrate the dependency root, define receipts, then replay/migrate. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
+| 1 | **R-0004** slices 4–8 | mid-flight; R-0454 depends on its receipt envelope. Current critical path: canonicalize/refreeze the subject, close the exact manifest, integrate the dependency root, define receipts, replay/migrate, then red-team the authoritative path. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction; Slice 8 is also mandatory closure work |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -3253,7 +3254,7 @@ Proof automation remains behind honest semantics and the external-user trial.
 > the AUTHORITATIVE comparison — which is deliberately unflipped until step 7 — and must not be
 > read as "the V2 digest does not exist". It does.
 >
-> **Roughly 70% implemented; 3 of 7 slices fully closed.** It stays at 70 until the receipt
+> **Roughly 70% implemented; 3 of 8 slices fully closed.** It stays at 70 until the receipt
 > CONSUMER and the dependency root control actual verdicts — producing correct material is not
 > the same as anything acting on it. What remains is four substantial
 > integration/migration packages, not design exploration.
@@ -3295,8 +3296,9 @@ callable identity undisturbed.
 **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
 > | 6 | dependency graph/material exists, **not authoritative** |
 > | 7 | receipt issuance and corpus migration **not started** |
+> | 8 | adversarial validation of the authoritative pipeline **not started**; R-0004 cannot close without it |
 >
-> **The four remaining packages**, in critical-path order:
+> **The five remaining packages**, in critical-path order:
 >
 > 1. **Finish slice 4** — ~~never-under-approximate dependency access~~ **DONE 2026-08-08**
 >    (`tableValueDigest`, whole-by-construction, fail-closed); the validated receipt CORE TYPE is
@@ -3340,6 +3342,12 @@ callable identity undisturbed.
 >    fingerprints authoritative; convert old schemas to `needs_recheck`; publish the first
 >    eligibility-denominated proof-coverage baseline; verify clean-machine and
 >    repository-root/project-root reproducibility.
+> 5. **Complete slice 8** — red-team the migrated production path with independent hostile
+>    fixtures, implementation mutations, and an end-to-end adversarial project. The attack goal
+>    is to obtain a friendly `proved` verdict from evidence that is stale, incomplete,
+>    context-dependent, misbound, unreplayed, dependency-incomplete, trust-widened, schema-confused,
+>    or copied from another project. Every successful attack becomes a permanent regression;
+>    every weakening mutation must be killed by the production consumer, not a helper probe.
 >
 > **Migration denominator — one number, one owner.** The executable
 > `check_v1_fingerprint_golden.sh` inventory is authoritative today: **44 stored legacy links over
@@ -3367,9 +3375,10 @@ callable identity undisturbed.
 >
 > **Estimate, stated so nobody plans against a wrong one.** To "architecture implemented in
 > shadow": about 2 major packages. To "authoritative and honestly closed": about 4, plus extensive
-> mutation gates, plus the mutable-borrow prerequisite. In calendar terms this is several focused
-> weeks, not days — slice 6 and the receipt/corpus migration dominate. **Without mutable-borrow
-> extraction, R-0004 stays 6-of-7 even if everything else lands**, by the decision recorded below.
+> mutation gates, a dedicated adversarial-validation package, plus the mutable-borrow prerequisite.
+> In calendar terms this is several focused weeks, not days — slice 6, receipt/corpus migration,
+> and the final hostile pass dominate. **Without mutable-borrow extraction or Slice 8 passing,
+> R-0004 remains open even if every other slice lands**, by the decision recorded below.
 >
 > No decision is outstanding. Both owed decisions were made 2026-08-08 (struct-literal evaluation
 > order → source order, implemented; slice 7 → hold open). The `MetaM` constraint in steps 4 and 6
@@ -3400,7 +3409,7 @@ Treat the following as one evidence-integrity defect class:
   reported multi-function witness and control (provisionally called bug 062);
   the number becomes stable only when its document and executable control land.
 
-Land this task in seven explicit slices. **This is the authoritative current-state
+Land this task in eight explicit slices. **This is the authoritative current-state
 summary; dated investigation notes later in the task explain how the state was
 reached but do not override this table.** `ACTIVE` means useful implementation
 has landed while the slice's user-visible outcome remains incomplete.
@@ -3414,13 +3423,14 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 5 | complete semantic `ProofSubjectDigest` | **ACTIVE — declaration-facts digest, `needs_recheck`, and gated shadow comparison landed** | ~~Replace the legacy body-hash component~~ **DONE 2026-08-09** with the structural typed V2 body and bind selected spec and claim scope; add the remaining semantic/invariance controls. Keep the live verdict unchanged until slice 7 accounts for the authoritative **44-link** migration corpus and replays each link. |
 | 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, whole-table binding, and standalone fail-closed root exist in shadow** | Integrate compiler and Lean-side classifications; make ProofCore, reports and status composition consume validated roots; prove no old name-keyed/advisory route can issue `proved`; gate direct, transitive and recursive production cases. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
+| 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
 **Completion estimate as of 2026-08-08.** The representation and shadow
-foundation is roughly two-thirds built, but only slices 1–3 are closed. Four
+foundation is roughly two-thirds built, but only slices 1–3 are closed. Five
 integration/migration packages remain: finish the receipt foundation, activate
 semantic freshness safely, integrate the dependency root end to end, and replay
-and migrate the corpus. Slice 6 and the receipt/corpus migration are the
-highest-risk work. This is several focused weeks of work rather than a final
+and migrate the corpus, then adversarially validate the authoritative result. Slice 6,
+the receipt/corpus migration, and Slice 8 are the highest-risk work. This is several focused weeks of work rather than a final
 cleanup pass, and the external mutable-borrow extraction prerequisite prevents
 formal closure even if slices 4–6 otherwise finish.
 
@@ -4465,6 +4475,19 @@ bytes are unchanged, so "V1 is untouched" is checked rather than intended.
    stored corpus changes before activation, update the manifest baseline and
    explain the delta rather than weakening the exact inventory.
 
+8. **Red-team the authoritative pipeline before declaring R-0004 complete.** This is a
+   completion slice, not optional post-closure hardening. Assume the attacker is trying to make
+   Concrete emit friendly `proved` using evidence that is stale, incomplete, context-dependent,
+   attached to the wrong callable or claim, missing a direct/transitive/recursive dependency,
+   trust- or assumption-widened, unreplayed, schema-confused, partially migrated, corrupted, or
+   copied across workspaces. Exercise three layers: production-consumer weakening mutations;
+   permanent adversarial fixtures for every discovered failure; and one hostile end-to-end
+   multi-module/project corpus combining subject, dependency, receipt, migration, cache and
+   environment attacks. At least one attack packet must be designed by a non-author. Every case
+   must downgrade or fail explicitly; none may retain a friendly verdict. Slice 8 starts only
+   after Slice 7 creates the production path it attacks, and every successful attack is fixed and
+   retained before closure.
+
 Keep the axes explicit: subject freshness, dependency freshness, kernel replay,
 producer/toolchain identity, and coverage are separate facts under R-0440. A
 friendly `proved_by_lean` claim requires a current subject, a current dependency
@@ -4524,7 +4547,11 @@ true together:
   artifacts are deterministic, and every weakening mutation above is killed;
   and
 - the first eligibility-denominated proof-coverage baseline is published with
-  stable discharge-route and blocker classifications.
+  stable discharge-route and blocker classifications; and
+- Slice 8's independent red-team packet, production-consumer mutation suite, permanent hostile
+  fixtures and end-to-end adversarial project all pass, with no stale, incomplete, misbound,
+  dependency-incomplete, unreplayed, trust-widened, schema-confused or cross-project evidence able
+  to produce a friendly `proved` verdict.
 
 **Completion-gate audit — 2026-08-08.** Green helper gates do not imply these end-to-end
 conditions are green; several current tests are deliberate tripwires proving the live gap remains.
@@ -4542,6 +4569,7 @@ conditions are green; several current tests are deliberate tripwires proving the
 | repository replay into receipts | **NOT STARTED** |
 | reproducibility and weakening mutations | **PARTIAL** — cwd parity and deterministic helper material gated; clean-machine receipt replay and receipt production-consumer mutations absent |
 | eligibility-denominated coverage baseline | **NOT STARTED** |
+| adversarial validation of authoritative path (Slice 8) | **NOT STARTED** — cannot begin meaningfully until Slice 7 activates the production path; mandatory for closure |
 
 This table is the acceptance view. The roughly-70% headline describes implementation foundation,
 not the fraction of completion-gate rows already closed; do not convert one percentage into the
