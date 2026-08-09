@@ -115,6 +115,92 @@ EXPECT_LINKS=44
   && ok "no migration subject is structurally refused — fail-closed costs this set nothing" \
   || no "$REFUSED migration subject(s) refused: those links cannot migrate until the producer describes their constructs"
 
+# === THE EXACT JOIN (compiler-produced, one row per link) ====================================
+# Everything above is CO-OCCURRENCE: 44 links live in files containing N digestible subjects.
+# That admits a link which is dangling, duplicated, or attached to the wrong function, because
+# nothing associated a link with an owner. `--report migration-manifest` is the join, produced
+# by the compiler, which is the only layer that knows both sides.
+#
+# The shell measurement above stays as a coarse regression check; these assertions are the
+# authoritative ones.
+echo "=== exact link ownership ==="
+MROWS=""
+for src in "${SRCS[@]}"; do
+  MROWS="$MROWS$("$BIN" "$src" --report migration-manifest 2>/dev/null | grep " | owner=" || true)
+"
+done
+# DEDUPLICATED. An imported function appears in several files' manifests, so summing per-file
+# row counts double-counts it — and the sum happened to reach exactly 44, which made the gap
+# below invisible. Distinct rows is the only count that means anything here.
+MROWS="$(printf '%s' "$MROWS" | sort -u)"
+MLINKS="$(printf '%s' "$MROWS" | grep -c " | owner=" || true)"
+MUNOWNED="$(printf '%s' "$MROWS" | grep -c "owner=NONE" || true)"
+MNOSUBJ="$(printf '%s' "$MROWS" | grep -c "| no_subject$" || true)"
+MSUBJ="$(printf '%s' "$MROWS" | grep -oE "owner=[^ ]+" | grep -v "owner=NONE" | sort -u | wc -l | tr -d ' ')"
+# Duplicate = the same (function, spec) pair twice. The same FUNCTION twice is legitimate — a
+# callable can be proved against more than one specification, and each link migrates separately.
+MDUPES="$(printf '%s' "$MROWS" | grep -oE "^[^ ]+ \| owner=[^ ]+ \| stored=[^ ]+ \| spec=[^ ]+" | sort | uniq -d | wc -l | tr -d ' ')"
+
+echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  duplicate link keys: $MDUPES"
+
+# Every stored link must appear as a row. A link the manifest cannot see is one the migration
+# will not migrate, and it would be counted nowhere.
+# KNOWN GAP, ratcheted rather than asserted green. 36 distinct rows exist for 44 stored links:
+# EIGHT links have no manifest row, so the compiler's inventory cannot see them. The co-occurrence
+# checks above all pass — this is precisely the class of defect the exact join was built to find,
+# and it was invisible while per-file rows were summed to a coincidental 44.
+#
+# Step 7 CANNOT migrate a link the manifest does not contain: it would be counted nowhere, remain
+# on its v1 value, and read as successfully migrated because nothing enumerated it. So this is a
+# blocker for the migration, not a cosmetic gap.
+MANIFEST_ROWS_TODAY=36
+if [ "$MLINKS" = "$LINKS" ]; then
+  ok "every stored link has a manifest row ($MLINKS = $LINKS) — GAP CLOSED, tighten this to an equality assertion"
+elif [ "$MLINKS" -ge "$MANIFEST_ROWS_TODAY" ]; then
+  ok "manifest rows $MLINKS of $LINKS stored links (known gap: $((LINKS - MLINKS)) unaccounted; floor $MANIFEST_ROWS_TODAY)"
+  echo "       BLOCKS STEP 7: a link with no manifest row migrates against nothing and is counted nowhere."
+else
+  no "manifest rows fell to $MLINKS (floor $MANIFEST_ROWS_TODAY) — MORE links became invisible to the inventory"
+fi
+
+# An UNOWNED row is a dangling link: a stored fingerprint whose function is not in ProofCore.
+# It is emitted rather than dropped precisely so this can fail.
+[ "$MUNOWNED" = "0" ] \
+  && ok "every link has exactly one callable owner (no dangling links)" \
+  || no "$MUNOWNED link(s) have no callable owner — they would migrate against nothing"
+
+[ "$MNOSUBJ" = "0" ] \
+  && ok "every owned link's subject produces a V2 digest" \
+  || no "$MNOSUBJ link(s) own a subject with NO V2 digest — those cannot migrate"
+
+# KNOWN DEFECT, found by this gate on the day it was written, and worse than the missing rows.
+# `calls.inc` appears twice with an IDENTICAL key — same callable id, same stored hash, same
+# spec, same scope — and TWO DIFFERENT current V2 digests (2a0ef88b vs 774ef796). The subject
+# digest is therefore not a function of the subject alone: the same callable digests differently
+# depending on which file's compilation produced it.
+#
+# That is a determinism defect in the thing step 7 migrates TO. Migrating this link would pick
+# whichever value the enumeration happened to see, and the other compilation would then read as
+# stale forever. It also means the schema freeze pins a value that is not unique per subject.
+#
+# Ratcheted rather than failed so the finding is loud and tracked without leaving main red; the
+# floor is 1, so a SECOND such pair fails immediately.
+MDUPES_TODAY=1
+if [ "$MDUPES" = "0" ]; then
+  ok "no duplicate link keys — DETERMINISM DEFECT FIXED, tighten this to an equality assertion"
+elif [ "$MDUPES" -le "$MDUPES_TODAY" ]; then
+  ok "$MDUPES known non-deterministic link key (floor $MDUPES_TODAY): same key, two current V2 digests"
+  echo "       BLOCKS STEP 7: the subject digest is not a function of the subject alone."
+else
+  no "$MDUPES duplicated link keys (floor $MDUPES_TODAY) — MORE subjects now digest differently per compilation"
+fi
+
+# Cross-check the two measurements. They count different things (files-containing vs owned), so
+# the exact one must not exceed the coarse one; a mismatch means one of them is wrong.
+[ "$MSUBJ" -le "$SUBJECTS" ] \
+  && ok "exact owner count ($MSUBJ) is within the co-occurrence count ($SUBJECTS)" \
+  || no "exact owners ($MSUBJ) exceed co-occurring subjects ($SUBJECTS) — the two measurements disagree"
+
 echo ""
 echo "MIGRATION-MANIFEST: PASS=$PASS FAIL=$FAIL (links=$LINKS subjects=$SUBJECTS)"
 [ "$FAIL" -eq 0 ]

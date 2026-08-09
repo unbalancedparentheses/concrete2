@@ -1971,6 +1971,50 @@ private def shadowEdgeKinds (entries : List Concrete.ProofCoreEntry)
       s!"{", ".intercalate parts}" ++
         s!" [{missingN} missing, {trustedN} trusted, {cs.length - missingN - trustedN} need the Lean classifier]"
 
+/-- The migration manifest: ONE ROW PER STORED PROOF LINK, joined to the callable it belongs to.
+
+    `check_migration_manifest.sh` could only prove CO-OCCURRENCE — that 44 links live in files
+    containing N digestible subjects. That admits a link which is dangling, duplicated, or
+    attached to the wrong function, because nothing associated a link with an owner. This is the
+    join, produced by the compiler, which is the only layer that knows both.
+
+    One row per link, not per subject: a subject may carry several links, and collapsing them
+    would hide a duplicate. The row is deliberately wide enough to be the authoritative input to
+    the step-7 migration rather than a summary of it —
+
+      callable-id | stored-v1 | selected-spec | claim-scope | current-v2 | disposition
+
+    `disposition` is derived, not stored: `needs_recheck` when the stored value is a v1 (no
+    `v2:` prefix) and therefore not comparable; `current`/`stale` only when it is. An UNOWNED
+    row — a stored link whose function is not in ProofCore — is emitted with `owner=NONE` rather
+    than dropped. Dropping it is precisely how a dangling link survives a migration: it would
+    disappear from the manifest and be counted nowhere. -/
+def migrationManifestReport (pc : Concrete.ProofCore) (registry : ProofRegistry) : String :=
+  let stored := registry.filter (fun re => re.expectedHash.isSome)
+  let rowsWithOwned := stored.map fun re =>
+    let entry? := pc.entries.find? fun e => e.qualName == re.function
+    let owner := match entry? with
+      | some e => e.callableId.render
+      | none   => "NONE"
+    let curV2 := match entry?.bind (·.subjectDigest) with
+      | some d => "v2:" ++ shortHash d
+      | none   => "NO-SUBJECT"
+    let storedV1 := re.expectedHash.getD ""
+    let disp :=
+      if owner == "NONE" then "unowned"
+      else if !("v2:".isPrefixOf storedV1) then "needs_recheck"
+      else if curV2 == "NO-SUBJECT" then "no_subject"
+      else if storedV1 == curV2 then "current" else "stale"
+    (s!"{re.function} | owner={owner} | stored={storedV1} | spec={re.spec} | scope={re.coverage} | current={curV2} | {disp}", owner != "NONE")
+  let rows := rowsWithOwned.map (·.1)
+  let owned := (rowsWithOwned.filter (·.2)).length
+  let subjects := (stored.filterMap fun re =>
+      (pc.entries.find? fun e => e.qualName == re.function).map (·.callableId.render)).eraseDups
+  String.join
+    [ s!"=== Migration manifest ({rows.length} stored links) ===\n"
+    , s!"links: {rows.length}  owned: {owned}  unique subjects: {subjects.length}\n\n"
+    , "\n".intercalate rows, "\n" ]
+
 /-- INSPECTION surface for captured declaration facts. Deliberately not evidence:
     it renders what was captured so a gate can check the producer against real
     programs, which is otherwise unobservable outside Lean.
