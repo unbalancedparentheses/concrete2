@@ -188,6 +188,21 @@ case "$BODY_LV" in
 esac
 restore li loop_invariant
 
+# ALPHA-INVARIANCE. A capture-avoiding rename of a local produces the SAME program, so the
+# subject must not move. Without this, every rename would look like a body change and stale
+# every proof over it — the digest would be measuring the source text rather than the program.
+# Paired with the body-edit leg above: one asserts it MOVES on a real change, this asserts it
+# does NOT on a non-change, and a digest that only ever moves is as useless as one that never
+# does.
+edit "$LI/src/main.con" 'let mut acc: i32 = 0;' 'let mut total: i32 = 0;'
+edit "$LI/src/main.con" 'acc = acc + i;' 'total = total + i;'
+edit "$LI/src/main.con" 'return acc;' 'return total;'
+RENAME_D="$(shadow_digest "$LI")"
+[ -n "$RENAME_D" ] && [ "$RENAME_D" = "$BASE_D" ] \
+  && ok "SHADOW(alpha): renaming a local leaves the v2 digest unchanged ($RENAME_D)" \
+  || no "SHADOW(alpha): a local rename moved the digest ($BASE_D -> $RENAME_D) — the subject measures source text, not the program"
+restore li loop_invariant
+
 # Fail-closed: every subject that emits a digest must have a COMPLETE structural body. If any
 # subject digests while its body line reads REFUSED, the digest is being minted over gaps.
 BOTH="$("$COMPILER" "$LI/src/main.con" --report subject-facts 2>/dev/null)"
