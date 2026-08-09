@@ -3307,7 +3307,8 @@ return or error path skips a teardown, and a frame outliving its owner is the en
 >    production consumer, serialization, replay result or complete envelope exists. REMAINS:
 >    *produce* the deterministic workspace,
 >    imports and toolchain identities — the envelope requires them and refuses empty ones, but
->    nothing computes them yet; and migrate the ninth proof table (blocked by mutable-borrow
+>    **DONE 2026-08-09** (`toolchainIdOf`, `workspaceIdOf`, `importsIdOf` in
+>    `Concrete/Proof/Receipt.lean`, 5 gate legs); and migrate the ninth proof table (blocked by mutable-borrow
 >    extraction in ProofCore, outside R-0004).
 >
 >    **Receipt fields still unbound**, listed so the envelope's coverage is not overstated: the

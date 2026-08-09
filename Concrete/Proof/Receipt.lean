@@ -1,4 +1,5 @@
 import Concrete.Proof.DependencyEdges
+open Concrete in
 
 /-! # The proof-evidence receipt envelope (R-0004 slice 4)
 
@@ -104,6 +105,50 @@ deriving Repr
 -- NO `Inhabited`. `deriving Inhabited` manufactures a default receipt — empty schema, empty
 -- subject, no bindings — which is another route to an invalid value and defeats the private
 -- constructor entirely. A type whose invalid state is one `default` away is not closed.
+
+/-! ## The three environment identities
+
+The receipt REFUSES an empty identity, so until something produces these no receipt can mint —
+fail-closed, and loud. These are those producers.
+
+Each is a digest over versioned canonical bytes rather than a display string, and each is
+deliberately independent of the machine it ran on, because clean-machine reproducibility is a
+completion requirement: an identity containing an absolute path would make every receipt
+un-replayable anywhere else, which is the opposite of what binding the environment is for. -/
+
+/-- The toolchain the proof was checked under: compiler version AND Lean toolchain.
+
+    Both, not either. The compiler decides what the subject IS; Lean decides what a proof of it
+    MEANS. A receipt that pinned only one would survive a change to the other, and
+    `tableValueDigest`'s structural rendering is explicitly toolchain-relative — that limit is
+    only acceptable because this exists. -/
+def toolchainIdOf (compilerVersion leanToolchain : String) : String :=
+  shortHash ("toolchainV1:" ++ toString compilerVersion.length ++ ":" ++ compilerVersion
+             ++ "|lean:" ++ toString leanToolchain.length ++ ":" ++ leanToolchain)
+
+/-- The workspace, identified by its PACKAGE identity rather than its path.
+
+    A filesystem path is not a workspace identity: it differs between two checkouts of the same
+    commit, so receipts would disagree across machines while describing identical evidence, and
+    an identical path on a different machine would wrongly agree. Package name plus the module
+    set is reproducible from the source alone.
+
+    Modules are SORTED, so discovery order cannot enter the identity. -/
+def workspaceIdOf (packageName : String) (moduleNames : List String) : String :=
+  let mods := (moduleNames.mergeSort (· ≤ ·)).map (fun m => "m" ++ toString m.length ++ ":" ++ m)
+  shortHash ("workspaceV1:" ++ toString packageName.length ++ ":" ++ packageName
+             ++ "|n" ++ toString moduleNames.length ++ ":" ++ String.join mods)
+
+/-- The import closure a proof could see, as (module, digest) pairs.
+
+    Names alone would not move when an imported module's CONTENT changes, which is the same
+    defect `tableValueDigest` exists to prevent one level down. Sorted by module name for the
+    reason the workspace's module list is: import order is not part of what a proof depends on,
+    but import CONTENT is. -/
+def importsIdOf (imports : List (String × String)) : String :=
+  let ps := (imports.mergeSort (fun a b => a.1 ≤ b.1)).map fun (m, d) =>
+    "i" ++ toString m.length ++ ":" ++ m ++ "=" ++ toString d.length ++ ":" ++ d
+  shortHash ("importsV1:n" ++ toString imports.length ++ ":" ++ String.join ps)
 
 /-- The current envelope format. Bumping this makes every stored receipt `needs_recheck`,
     which is the intended behaviour and the reason the field exists. -/

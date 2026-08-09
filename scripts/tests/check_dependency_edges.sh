@@ -541,6 +541,58 @@ probe "disposition: moved material is notCurrent (not needsRecheck)" "notCurrent
   | some r => IO.println (toString (repr (r.disposition "v2:MOVED" .body [] "tc" "ws" "im")))
   | none => IO.println "MINT-REFUSED"'
 
+# === ENVIRONMENT IDENTITIES ==================================================================
+# The receipt refuses an empty identity, so nothing could mint until these existed. Each must be
+# DETERMINISTIC (same inputs, same id — or a receipt cannot be replayed) and SENSITIVE (any input
+# change moves it — or binding it bought nothing). Both directions per identity, because an id
+# that never moves and an id that never repeats are equally useless.
+echo "=== environment identities ==="
+
+probe "toolchain id is deterministic and sensitive to BOTH inputs" "true" '
+#eval
+  let a := toolchainIdOf "0.1.0" "lean4:v4.28.0"
+  let b := toolchainIdOf "0.1.0" "lean4:v4.28.0"
+  let c := toolchainIdOf "0.2.0" "lean4:v4.28.0"
+  let d := toolchainIdOf "0.1.0" "lean4:v4.29.0"
+  a == b && a != c && a != d && c != d'
+
+# Discovery order must not enter the identity: the same workspace enumerated differently is the
+# same workspace.
+probe "workspace id ignores module ORDER but not module SET" "true" '
+#eval
+  let a := workspaceIdOf "pkg" ["m1", "m2"]
+  let b := workspaceIdOf "pkg" ["m2", "m1"]
+  let c := workspaceIdOf "pkg" ["m1", "m3"]
+  let d := workspaceIdOf "other" ["m1", "m2"]
+  a == b && a != c && a != d'
+
+# Import CONTENT, not just names — otherwise an imported module could change under a proof
+# without moving anything, which is the defect tableValueDigest exists to prevent one level down.
+probe "imports id moves when an imported CONTENT digest changes" "true" '
+#eval
+  let a := importsIdOf [("m1", "d1"), ("m2", "d2")]
+  let b := importsIdOf [("m2", "d2"), ("m1", "d1")]
+  let c := importsIdOf [("m1", "dCHANGED"), ("m2", "d2")]
+  a == b && a != c'
+
+# End to end: real identities let a receipt mint, which nothing could do before.
+probe "a receipt mints from produced identities" "MINTED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  let r := ProofEvidenceReceipt.mint? (some "v2:s") ev
+             (toolchainIdOf "0.1.0" "lean4:v4.28.0")
+             (workspaceIdOf "pkg" ["m1"])
+             (importsIdOf [("m1", "d1")])
+  IO.println (if r.isSome then "MINTED" else "REFUSED")'
+
+# No absolute paths, no machine-local state. Clean-machine reproducibility is a completion
+# requirement, and a path in an identity makes every receipt un-replayable elsewhere.
+if grep -nE "IO\.currentDir|System\.FilePath|getEnv" Concrete/Proof/Receipt.lean >/dev/null 2>&1; then
+  no "Receipt.lean reads filesystem or environment state — identities must be reproducible from source alone"
+else
+  ok "no filesystem or environment state in the identity producers (clean-machine reproducible)"
+fi
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
