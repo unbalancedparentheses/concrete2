@@ -10,6 +10,33 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Roadmap Governance And Verification Direction Clarified
+
+_Roadmap only, 2026-08-09. No compiler, language, proof status, or release claim changed._
+
+Added a concern-based area index, one authority order for conflicting roadmap text, and precise
+stage vocabulary distinguishing representation, shadow measurement, production consumption,
+corpus migration and closure. The current execution queue now explicitly owns sequencing; phase
+position is topical organization, and task-state compaction prevents superseded investigations
+from remaining as competing present-tense status reports. Canonical schema ownership is also a
+roadmap invariant so later package, editor and audit work consumes rather than forks the evidence
+model.
+
+Reframed the proof-support north star around compositional, fail-visible verification. Meaningful
+behavior must cross the complete source/contract → subject/claim → obligation → dependency/trust
+closure → replay receipt → caller/package-policy chain. Multi-kernel replay remains a defining
+evidence dimension, but kernel or construct count is no longer phrased as the product objective.
+The corrected inventory separates termination from general liveness, treats useful termination
+inference as possible despite undecidability in general, represents evidence as a vector, and
+describes backend-surface fidelity as not formally established today rather than inherently
+unprovable.
+
+Synchronized R-0004's canonical status with its shared shadow dependency-root producer: 53 of 64
+subjects currently root and 11 refuse explicitly, while no production status consumes the root.
+The next transition is exact classification completion, no dropped edge, production-consumer
+enforcement and a killed omission mutation—not receipt issuance merely because the helper can
+compute or mint an intermediate value.
+
 ### Roadmap Organized Around Capability Unlocks
 
 _Roadmap only, 2026-08-09. No compiler, language, or proof verdict changed._

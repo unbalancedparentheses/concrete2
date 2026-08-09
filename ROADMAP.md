@@ -6,10 +6,9 @@ should happen next, in what order?** Historical phase detail lives in
 constraints, and deferred tails with a real pull trigger.
 
 > **Start here for status:** [Status board](#status-board-2026-08-08--everything-open-ranked-with-why).
-> **Start here for direction:** [Design honesty vs Why3](#design-honesty-this-is-largely-why3s-architecture-and-one-layer-is-worse-than-why3s)
-> and [North star](#north-star-prove-every-kind-of-code-in-lean--rocq--isabelle) —
-> what "prove every kind of code in three kernels" decomposes into, what is reachable,
-> and the two limits that no amount of work removes.
+> **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
+> and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
+> the dimensions along which proof support grows, and the limits that must remain visible.
 
 ## How To Read This Roadmap
 
@@ -78,6 +77,56 @@ representation → shadow-measured → production-consumed → corpus-migrated �
 
 “The type/helper exists” never implies “the product guarantee exists.”
 
+### Area Index — Where Detailed Work Lives
+
+Use this index to navigate by concern. It summarizes ownership; it does not duplicate task state
+or create another queue.
+
+| area | detailed home | capability it serves |
+|---|---|---|
+| Evidence integrity, receipts and status composition | R-0004, R-0440, Phase 11 | trustworthy `proved`, replay and policy |
+| Contract language, identities and VC calculus | R-0473, R-0474, R-0477, R-0450 | typed compositional contracts and one obligation meaning |
+| Language/stdlib usability and workload pull | Phase 7 | real programs without hidden authority or ownership shortcuts |
+| Independent backend and differential validation | Phase 7.5 | QBE/LLVM independence and miscompile detection |
+| Flagships and cross-feature forcing examples | Phase 8 | proof that features survive realistic composition |
+| Incrementality, artifact store and query graph | Phase 8.5 | scalable builds, proof caching, packages and editor service |
+| Proof authoring, automation, frames and spec library | Phase 9 | affordable compositional proof work |
+| Audit artifacts, semantic diffs and trust gates | Phases 10–11 | reviewable assurance and release enforcement |
+| Named subsets and runtime/resource obligations | Phases 12–13 | precise `ProvableV1`/`PredictableV1` and absence-of-runtime-error claims |
+| Compiler/VC soundness and independent certificates | Phase 14 | reduction of the source/Core→claim trusted bridge |
+| ABI, FFI, unsafe islands, optimization and targets | Phases 15–16 | low-level, embedded and mixed-language systems |
+| Public compatibility, distribution and operations | Phases 17–17.5 | a supportable external promise |
+| Package/dependency evidence | Phase 18 | behavioral compatibility across dependency boundaries |
+| Editor, agent and migration tooling | Phase 19 | the same evidence facts where developers work |
+| Concurrency and semantic research | Phase 20 | workload-gated extensions without premature claims |
+
+### Decision And Status Vocabulary
+
+The roadmap has one authority ordering:
+
+1. **Safety/claim invariants and completion gates** decide what may ship.
+2. **The current execution queue** decides what work happens next.
+3. **Capability unlocks** define the user-visible destination and deletion boundary.
+4. **Phase/task position** is topical organization only.
+5. **Historical notes** explain why a decision exists but never override a newer dated status.
+
+Use these state words consistently:
+
+| state | precise meaning |
+|---|---|
+| `planned` | scoped, not implemented |
+| `blocked` | exit requires a named external prerequisite; other useful work is exhausted |
+| `active / representation` | types or algorithms exist, with no production consumer claim |
+| `active / shadow` | production facts are measured but forbidden from improving a verdict |
+| `active / production` | the real consumer uses the fact; migration or hostile validation remains |
+| `migrated` | the exact existing corpus/artifact population has moved with no silent skips |
+| `closed` | production-consumed, migrated where applicable, graduation contract satisfied, weaker path retired |
+| `experimental` | useful spike whose result must not appear as a supported claim |
+| `research-gated` | no implementation commitment until the recorded forcing trigger fires |
+
+`landed`, `implemented`, `green`, and `can mint/render/compute` are observations, not completion
+states. When used, they must be qualified by one of the stages above.
+
 ### Cross-Phase Forcing Artifact
 
 The roadmap needs one workload that pressures the whole chain rather than letting every phase
@@ -107,6 +156,20 @@ and use it from the host without inspecting private Concrete bodies.
 - **Done items:** do not remain here as task text. Keep only a dependency or
   invariant that still constrains future work; put the completion record in
   the changelog.
+
+**Task-state compaction rule.** Each active task gets one dated canonical status block containing
+current stage, measured facts, blockers, next transition and exit gate. When a later measurement
+supersedes it, replace that block; do not append a second headline below it. Investigation history,
+wrong hypotheses, gate transcripts and completed increments move to the changelog, bug record or a
+linked decision note. Keep a historical paragraph here only when its reasoning still constrains a
+future choice, and label it `history — non-authoritative`. A reader must never need to reconcile two
+present-tense answers inside one task.
+
+**Schema ownership rule.** Subject, obligation, receipt, audit, package and editor artifacts each
+name one canonical schema owner. Later tasks extend or consume that schema; they do not define a
+parallel representation. A task proposing a second schema must state the independent trust
+boundary that requires it, its correspondence check and which representation is eventually
+retired.
 
 ### Definition Of Done
 
@@ -201,12 +264,14 @@ changelog, not a failure.
 
 ### Where Execution Starts
 
-Execution starts at the first `Task R-NNNN` heading and advances by file
-position. The `R-NNNN` value is immutable identity, not priority: existing IDs
-are never renumbered or reused, and a newly confirmed urgent defect receives the
-next unused ID before being inserted at its first honest execution position.
-There are no phase-local queues, priority overlays, or separate stop-the-line
-lists. Phase headings are milestone labels only.
+Execution starts at **[The next 20 tasks, in execution order](#the-next-20-tasks-in-execution-order)**.
+That table is the one current queue. When it is exhausted, execution resumes at the first active
+`Task R-NNNN` in file order unless the table is refreshed in the same change that exhausts it.
+The `R-NNNN` value is immutable identity, not priority: existing IDs are never renumbered or
+reused, and a newly confirmed urgent defect receives the next unused ID before entering the
+queue. Phase headings and task position are topical filing only. There are no phase-local queues,
+hidden priority overlays or separate stop-the-line lists; a reproduced urgent defect must be
+placed in the current queue explicitly.
 Phases 1–6E and completed Phase 7 foundations/workloads 1–8 are historical and
 live in [CHANGELOG.md](CHANGELOG.md). Phase 7.5's QBE backend is specified but
 has not started.
@@ -1018,7 +1083,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–8 | mid-flight; R-0454 depends on its receipt envelope. Current critical path: canonicalize/refreeze the subject, close the exact manifest, integrate the dependency root, define receipts, replay/migrate, then red-team the authoritative path. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction; Slice 8 is also mandatory closure work |
+| 1 | **R-0004** slices 4–8 | mid-flight; subject V2 is deterministic/refrozen and the exact manifest is closed 44/44. Slice 6 now computes shared roots in shadow (53/64 root, 11 named refusals); current transition is exact MetaM classification merge → production status requires root → omission mutation → complete replay receipt → replay/migrate → Slice 8. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -1188,8 +1253,9 @@ here must say so here; a task whose urgency lives only in its own body is not se
 
 0. **R-0004's remaining slices come first, and are not optional to this arc.** R-0454
    states in its own body that it belongs immediately after them, and slice 4 (the receipt
-   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3
-   have landed; 4–7 have not.
+   envelope with typed dependency edges) is what R-0454's digest attaches to. Slices 1–3 are
+   closed; Slice 5's subject/manifest foundation is complete but not production-activated;
+   Slices 4 and 6 are active; 7–8 remain. Use R-0004's dated canonical block for exact state.
 
    **Slice 3 is also the template for R-0461, which is why R-0004 leads rather than
    merely precedes.** It closed bug 062 by making a not-current dependency downgrade its
@@ -1685,18 +1751,37 @@ because a register that quietly outlives its cause is how a metric turns into a 
    library, not its WP engine. Nothing exists here today, so even after items 1–2 land there is
    little to *say*. It was ranked sixth by how interesting it is to build, which is the wrong axis.
 4. **`#[decreases]`** — unlocks recursion and liveness at once.
-5. **loop invariants** — the other half of liveness; WP forces the question anyway.
+5. **loop invariants** — safety and functional-correctness machinery; variants supply the
+   separate termination half of total correctness.
 6. **enums + pattern matching in specs** — last quantifier-free construct.
 7. **realizations** — prove the axiomatized theories in the kernels rather than assuming them.
 8. **heap / separation** — largest remaining, needs design before code.
 
 Items 1–3 are where the leverage is.
 
-## North star: prove EVERY kind of code, in Lean + Rocq + Isabelle
+## North star: compositional, fail-visible verification
 
-The goal is worth stating precisely, because "everything" decomposes into three axes with very
-different answers — plus two limits that no amount of work removes. Written so the distance can be
-measured instead of guessed at.
+Concrete succeeds when meaningful behavior can be specified at a public boundary, relied upon
+compositionally across calls and packages, and traced to explicit, independently replayable
+evidence. Any behavior, dependency, assumption or translation step outside the supported surface
+must remain named and policy-visible.
+
+The unit of progress is therefore not construct count, prover count or the number of green local
+goals. It is meaningful real-program behavior carried through the complete chain:
+
+```text
+source + typed contract
+    → exact semantic subject and claim
+    → faithful obligation
+    → complete dependency/trust/environment closure
+    → replayed evidence receipt
+    → caller/package policy
+```
+
+Multi-kernel replay remains a defining evidence advantage: it lets a consumer choose and combine
+independent proof foundations. It is one dimension of the result, not the product objective and
+not a substitute for checking that every kernel received the intended proposition. The three axes
+below are a coverage inventory subordinate to this chain, not three competing roadmaps.
 
 ### Axis 1 — language constructs (what a proof is ABOUT)
 
@@ -1709,7 +1794,7 @@ measured instead of guessed at.
 | uninterpreted spec fns | — | **done** (rung 5) |
 | defined spec fns | refinement | **done** — the `spec fn … = expr` body |
 | **enums / sum types** | — | constructor injectivity + disjointness, emitted per kernel |
-| **loops** | bounds/overflow inside them | invariants as first-class obligations |
+| **loops** | safety plus invariant/variant obligation families | typed resolved invariants, production total-correctness consumption and stronger loop-state models |
 | **recursion** | none — profile-banned | `#[decreases]`; see rung 8 |
 | **heap / references** | linear types (static) | a memory model; separation-logic shaped |
 | **generics / traits** | monomorphised away | provable per instantiation; the general statement needs polymorphic lowering |
@@ -1722,63 +1807,56 @@ This axis matters more than the first and is easier to overlook.
 
 | Property | Shape | Status |
 |---|---|---|
-| **Safety** ("this bad event never happens") | quantifier-free per site | the entire pipeline today |
-| **Liveness** ("this good event eventually happens") | termination, progress | only *checked* by the `predictable` profile, never proved. The three fail-open gates found in this work were all liveness claims — no obligation could have caught them |
+| **Safety** ("this bad event never happens") | predominantly quantifier-free per site | the broadest automatic obligation pipeline today |
+| **Termination / total correctness** | variants and well-founded measures | loop variant obligations exist; production completeness and recursive `#[decreases]` remain. This is not general temporal liveness |
+| **General liveness** ("this good event eventually happens") | progress, fairness, eventual response | unsupported; requires an explicit transition/observation model rather than ordinary per-site VCs |
 | **Functional correctness** | refinement against a spec | rung 5 + defined specs; reaches only single-`return` bodies |
 | **Relational / hyperproperties** (constant-time, non-interference) | two executions compared | **not expressible** as a per-site obligation at all |
 | **Resource bounds** (stack, alloc, time) | quantitative | stack reported not gated; alloc capability-gated; time untouched |
 
-### Axis 3 — evidence strength
+### Axis 3 — evidence dimensions
 
-`runtime-checked` → `solver_trusted` (SMT in the TCB) → `proved_by_lean_replay` →
-`proved_by_kernel_decision` → **N independent kernels agreeing**. The last is what these tiers
-add, and only where the lowering's faithfulness can be CHECKED — see limit 2.
+Evidence is a vector, not a single strength ladder. Record at least disposition (proved,
+enforced, runtime-checked, tested, assumed, missing), semantic coverage, checker trust,
+translation assurance, independence, composition closure and freshness. Several independent
+kernels agreeing strengthens the checker-foundation dimension; it does not erase a shared
+lowering, subject-binding or dependency-closure gap.
 
-### The two hard limits
+### The hard limits
 
-**1. Undecidability is not an engineering problem.** Nothing decides termination, and by Rice's
-theorem no non-trivial semantic property is decidable in general. That is *why* `#[decreases]`
-puts the measure on the AUTHOR: the compiler can check it, never find it. Any plan reading "prove
-everything automatically" is wrong at the root. The achievable goal is **"prove everything the
-author is willing to specify, and refuse the rest loudly."**
+**1. General automation has mathematical limits.** Termination and non-trivial semantic
+properties are undecidable for arbitrary programs, although useful fragments admit sound
+inference. Author-supplied invariants and well-founded measures are part of the interface, not an
+admission of failure. The reachable promise is not automatic discovery of every true property;
+it is an attempt for every well-formed property in a declared logic, with an explicit disposition
+when inference, proof or support ends.
 
-**2. Faithfulness and strength trade against each other.** The multi-kernel claim rests on each
-kernel closing a lowering whose meaning is CHECKED against the reference evaluator — exhaustive
-for booleans (`2^n` rows), sampled for arithmetic, **undecidable** for anything quantified over
-unbounded structure. So the stronger the property, the weaker the guarantee that three kernels
-proved the *same* proposition. Rung 8 buys induction and pays in exactly this coin; it must be a
-stated decision, never a side effect.
+**2. Stronger logics make translation assurance harder, not inherently weaker.** Exhaustive
+agreement is practical for small finite boolean domains; arithmetic and unbounded structures need
+sampling, executable reference semantics, proof of selected transformations, certificate
+checking or an explicitly trusted bridge. Kernel breadth and arrow assurance must advance
+together, and the artifact must state what kind of assurance each arrow actually has.
 
-And the third, already documented: **print fidelity is not provable.** That an emitted string
-denotes the intended obligation needs a formal semantics of the target's surface syntax, which is
-not ours. Validated, never proved — no rung changes that.
+**3. Backend-surface fidelity is not formally established today.** Renderer tests and target
+parsing validate it. A formal target fragment and verified printer/parser correspondence could
+strengthen that boundary later, so the roadmap must describe the current absence rather than call
+the property unprovable.
 
-### So what "every kind of code" can honestly mean
+### Honest scope of the destination
 
-Not "everything proved automatically" — unreachable, and claiming it would be the overclaim this
-document keeps correcting. It means:
+The charter means:
 
-1. every construct can APPEAR in an obligation (axis 1 — finish enums, loops, recursion, heap);
-2. every property the author states can be ATTEMPTED (axis 2 — liveness and relational are the
-   genuinely missing shapes);
-3. whatever is not covered is **NAMED** rather than silently absent — `OUTSIDE the bounds
-   fragment`, `no definitional body`, `abstraction inconclusive`, the coverage counter.
+1. every admitted construct has a typed semantic representation or a precise refusal;
+2. every well-formed property in a declared supported logic receives an explicit disposition;
+3. callers and packages may rely only on exported contracts whose subject, dependencies, trust,
+   environment and replay state satisfy their policy; and
+4. unsupported constructs, observations and proof fragments remain named rather than silently
+   disappearing.
 
-Point 3 is what makes the other two honest, and it is the cheapest to keep.
-
-### Nearest-term ordering
-
-1. **finish the measurement base** — ~8 gates still lack negative controls; capability stacked on
-   unverified gates is the less defensible order;
-2. **rung 4's tier** — unblocked, mechanical, the only route to real corpus coverage;
-3. **enums** — the last quantifier-free construct missing; same shape as rung 6;
-4. **`#[decreases]` + rung 8** — unlocks recursion AND liveness, the biggest jump on axis 2, at
-   the faithfulness cost above;
-5. **loop invariants as obligations** — the other half of liveness;
-6. **heap / separation** — largest remaining item on axis 1; needs a design before any code.
-
-**Ahead of items 2–6:** the VC generator (design linked above). Steps 1–2 of its sequencing are
-small and reversible; the commitment point is moving generation to Core.
+This section does not own execution order. The [current execution queue](#the-next-20-tasks-in-execution-order)
+does; the [capability unlock map](#capability-unlocks--the-stable-product-map) states the durable
+dependency chain and exit artifacts. The rung material below remains a feasibility record for
+multi-kernel theory coverage, not a second priority list.
 
 ## Branch `spike/non-arithmetic-multi-kernel` (depends on `spike/multi-prover-evidence`)
 
@@ -3383,7 +3461,7 @@ and V2 is refrozen. Removed rather than left standing, because a stale caveat ab
 non-determinism is exactly the sentence someone would quote to justify not trusting the digest.)*
 
 **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
-> | 6 | dependency graph/material exists, **not authoritative** |
+> | 6 | **active / shadow** — one ProofCore producer now feeds ProofCore/report dependency-root measurement; 53/64 subjects root and 11 refuse explicitly. Root order invariance, semantic sensitivity, edge-kind binding and deep trust propagation are gated. It still cannot improve or cap production status; classification merge, production consumption, omission mutation and legacy-path retirement remain |
 > | 7 | receipt issuance and corpus migration **not started** |
 > | 8 | adversarial validation of the authoritative pipeline **not started**; R-0004 cannot close without it |
 >
@@ -3522,7 +3600,7 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
 | 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries), whole-table binding, validated receipt core and environment-ID helpers landed** | Derive real production environment inputs; add root, theorem/artifact, replay and trust/assumption fields; canonical serialization, validated decoding and storage; connect one production consumer; register production-consumer mutations. The ninth table is blocked on mutable-borrow ProofCore extraction. |
 | 5 | complete semantic `ProofSubjectDigest` | **FOUNDATION COMPLETE — deterministic V2 refrozen; exact manifest CLOSED 44/44** | Keep V2 shadow until Slice 7 successfully replays and migrates every link. Preserve semantic-change and invariance controls. Activation, not subject definition, remains. |
-| 6 | deterministic transitive dependency material/root | **ACTIVE — typed edges, closure material, trust/assumption propagation, whole-table binding, and standalone fail-closed root exist in shadow** | Integrate compiler and Lean-side classifications; make ProofCore, reports and status composition consume validated roots; prove no old name-keyed/advisory route can issue `proved`; gate direct, transitive and recursive production cases. |
+| 6 | deterministic transitive dependency material/root | **ACTIVE / SHADOW — one ProofCore node producer feeds ProofCore/report roots; 53/64 root, 11 named refusals; determinism/sensitivity/trust gates landed** | Finish the exact MetaM classification hand-back/merge; eliminate any dropped/unrepresented edge; make status composition require the validated root; kill skip/omit-root mutations; delete or permanently subordinate old name-keyed/advisory routes. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 | 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
@@ -4665,7 +4743,7 @@ conditions are green; several current tests are deliberate tripwires proving the
 | generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
 | final semantic subject and invariance | **FOUNDATION COMPLETE, ACTIVATION PENDING** — deterministic refrozen V2 binds declaration facts, structural body, selected spec and claim scope; semantic/invariance controls pass. It remains shadow-only until replay-backed Slice 7 migration |
 | exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
-| typed deterministic dependencies | **PARTIAL** — graph/root/whole-table material tested; ProofCore and Report have no root consumer |
+| typed deterministic dependencies | **ACTIVE / SHADOW** — ProofCore and reports share one node/root producer; 53/64 subjects root and 11 refuse by named non-current edge; order invariance, semantic sensitivity, edge-kind binding and deep trust propagation gated. No production status consumer yet |
 | friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core plus deterministic environment-ID helper functions exist; no production-derived environment facts, dependency root/theorem/artifact/replay/trust fields, serialization, storage, issuance or status consumer |
 | legacy/schema migration | **MANIFEST CLOSED, REPLAY/MIGRATION NOT STARTED** — `needs_recheck` vocabulary and exact 44-row input exist; no replay-backed V2 rewrite or authoritative activation yet |
 | exact migration manifest | **CLOSED 44/44** — compiler emits one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. Cleanup owed: remove the duplicated obsolete exact-join/35-row-ratchet block from `check_migration_manifest.sh` |
