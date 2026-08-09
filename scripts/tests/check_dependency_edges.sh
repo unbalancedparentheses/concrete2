@@ -39,9 +39,16 @@ LEAN
 }
 
 echo "=== the vocabulary is complete and cannot launder trust ==="
-probe "all five edge kinds are enumerated with distinct tags" "true" \
-'#eval DependencyEdge.all.length == 5
-  && (DependencyEdge.all.map DependencyEdge.canonical).eraseDups.length == 5'
+# COMPLETENESS IS A THEOREM (`DependencyEdge.mem_all`), not this length check. A count protects
+# nothing against a sixth constructor whose author also updates the 5 to a 6 — the list and the
+# number are edited in the same breath, so the test agrees with whatever was written. The theorem
+# leaves an unsolved case instead; verified by deleting a constructor from `all` and watching the
+# build fail with `case unclassified ⊢ False`.
+#
+# What stays here is what a theorem cannot state: that the canonical TAGS are distinct, since two
+# kinds sharing a tag would be indistinguishable in a receipt.
+probe "canonical edge tags are distinct" "true" \
+'#eval (DependencyEdge.all.map DependencyEdge.canonical).eraseDups.length == DependencyEdge.all.length'
 # `missing` is the only kind that is never current. `trusted` IS current — but
 # only with its trust carried forward, which is a separate question and must stay
 # a separate function, or an unqualified `proved_by_lean` gets minted over a trust
@@ -605,6 +612,76 @@ if grep -nE "IO\.currentDir|System\.FilePath|getEnv" Concrete/Proof/Receipt.lean
 else
   ok "no filesystem or environment state in the identity producers (clean-machine reproducible)"
 fi
+
+# THE INVARIANT: unclassified may reach diagnostics and shadow reports, never a current root or
+# a replay receipt. The root refuses it via isCurrentForDependents; the receipt refuses it
+# independently rather than trusting a caller to have consulted the root first.
+probe "a receipt refuses an UNCLASSIFIED edge" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .unclassified, tables := [], tableDigests := [], quantifiesOverTable := false }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+probe "a receipt refuses a MISSING edge" "REFUSED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .missing, tables := [], tableDigests := [], quantifiesOverTable := false }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+# ...and a classified edge still mints, or the refusal above is just a broken constructor.
+probe "a CONTRACT edge still mints (the refusals are targeted)" "MINTED" '
+#eval show MetaM Unit from do
+  let ev : EdgeEvidence := { edge := .contract, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isSome then "MINTED" else "REFUSED")'
+
+# === THE CLASSIFICATION HAND-BACK (slice 6, step 1) ==========================================
+# The compiler cannot classify: the answer comes from a theorem's elaborated type, which exists
+# only while Lean elaborates. These legs pin the properties the compiler will rely on when it
+# consumes the result.
+echo "=== classification hand-back ==="
+
+# EVERY requested name appears. A dropped row is how a dependency disappears from a root and the
+# root then reports a confident value over material it never saw.
+probe "an unknown theorem yields a row, not a dropped one" "1" '
+#eval show MetaM Unit from do
+  let rows ← classifyAll [`No.Such.Theorem]
+  IO.println (toString rows.length)'
+
+probe "...and that row is UNCLASSIFIED, never missing or contract" "unclassified" '
+#eval show MetaM Unit from do
+  let rows ← classifyAll [`No.Such.Theorem]
+  IO.println ((rows.map (·.2.edge.canonical)).headD "NONE")'
+
+probe "one row per request, including duplicates" "3" '
+#eval show MetaM Unit from do
+  let rows ← classifyAll [`A.B, `A.B, `C.D]
+  IO.println (toString rows.length)'
+
+# The caller's order is convenient for reading and must not enter the bytes, or the same
+# classification discovered in a different order would compare unequal.
+probe "serialization ignores REQUEST order" "true" '
+#eval show MetaM Unit from do
+  let a ← classifyAll [`M.x, `M.y]
+  let b ← classifyAll [`M.y, `M.x]
+  IO.println (toString (renderClassification a == renderClassification b))'
+
+probe "serialization is deterministic across runs" "true" '
+#eval show MetaM Unit from do
+  let a ← classifyAll [`M.x, `M.y]
+  let b ← classifyAll [`M.x, `M.y]
+  IO.println (toString (renderClassification a == renderClassification b))'
+
+# Sensitivity: a different theorem SET must serialize differently, or the table binds nothing.
+probe "serialization moves when the theorem set changes" "true" '
+#eval show MetaM Unit from do
+  let a ← classifyAll [`M.x, `M.y]
+  let b ← classifyAll [`M.x, `M.z]
+  IO.println (toString (renderClassification a != renderClassification b))'
+
+# An unbound table renders as `?`, deliberately NOT digest-shaped: a consumer must not be able to
+# mistake "we could not bind this" for a binding.
+probe "an unbound table renders as ? and not as a digest" "true" '
+#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [`T]
+                           , tableDigests := [(`T, none)], quantifiesOverTable := false }
+  let s := renderClassification [(`Th, ev)]
+  (s.splitOn "d1:?").length == 2'
 
 GATE_DONE=1
 echo ""

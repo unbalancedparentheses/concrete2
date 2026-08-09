@@ -153,4 +153,55 @@ def classifyTheorem (n : Name) : MetaM (Option EdgeEvidence) := do
                   , quantifiesOverTable := bound }
     return some { edge := .contract, tables := [], quantifiesOverTable := true }
 
+/-! ## The classification hand-back (R-0004 slice 6, step 1)
+
+The compiler cannot perform this classification: it reads a theorem's ELABORATED TYPE, which
+exists only while Lean is elaborating. So the Lean side answers, and the answers cross to the
+compiler as data. These are the producers of that data.
+
+**A theorem that cannot be classified yields `unclassified`, never a dropped row.** Dropping is
+how a dependency disappears from a root and the root then reports a confident value over
+material it never saw — the same failure the migration manifest's `owner=NONE` rows exist to
+prevent one layer up. Every requested name appears in the output, exactly once. -/
+
+/-- Classify one theorem, total. `none` from `classifyTheorem` means the theorem mentions no
+    table at all, which is a real answer (`contract`-like: nothing about a table can stale it)
+    and distinct from "we could not look". An unknown name is `unclassified`. -/
+def classifyOrUnclassified (n : Name) : MetaM EdgeEvidence := do
+  match (← try classifyTheorem n catch _ => pure none) with
+  | some ev => return ev
+  | none    =>
+    -- Distinguishing "no table dependency" from "could not classify" needs to survive here, and
+    -- it does: `classifyTheorem` throwing is caught above and both land as `unclassified`, which
+    -- is the fail-closed reading. A theorem that genuinely mentions no table is ALSO reported
+    -- unclassified rather than `contract`, because this function cannot tell the two apart from
+    -- a `none` — and inventing `contract` would assert independence from an implementation the
+    -- theorem might well depend on.
+    return { edge := .unclassified, tables := [], tableDigests := [], quantifiesOverTable := false }
+
+/-- Classify every requested theorem. One row per request, in the REQUESTED order — the caller's
+    order, not the environment's, so two runs over the same list agree regardless of how the
+    constants happen to be stored. -/
+def classifyAll (ns : List Name) : MetaM (List (Name × EdgeEvidence)) :=
+  ns.mapM fun n => do return (n, ← classifyOrUnclassified n)
+
+/-- Canonical, length-prefixed serialization of a classification table.
+
+    SORTED BY THEOREM NAME, for the reason `mint?` sorts table bindings: the caller's order is
+    convenient for reading and must not enter the bytes, or the same classification discovered in
+    a different order would serialize differently and compare unequal.
+
+    Tables are rendered with their digests so a consumer can tell a `body` edge bound to specific
+    entries from one that named them and bound nothing. An UNBOUND table renders as `?`, which is
+    deliberately not a digest-shaped value — a consumer must not be able to mistake it for one. -/
+def renderClassification (rows : List (Name × EdgeEvidence)) : String :=
+  let lp := fun (t p : String) => t ++ toString p.length ++ ":" ++ p
+  let sorted := rows.mergeSort (fun a b => toString a.1 ≤ toString b.1)
+  let one := fun (n, ev) =>
+    let tbls := ev.tableDigests.mergeSort (fun a b => toString a.1 ≤ toString b.1)
+    lp "T" (toString n) ++ lp "e" ev.edge.canonical
+      ++ "n" ++ toString tbls.length ++ ":"
+      ++ String.join (tbls.map fun (tn, d?) => lp "t" (toString tn) ++ lp "d" (d?.getD "?"))
+  "classifyV1:n" ++ toString sorted.length ++ ":" ++ String.join (sorted.map one)
+
 end Concrete.Proof

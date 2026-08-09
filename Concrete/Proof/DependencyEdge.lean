@@ -97,6 +97,18 @@ def DependencyEdge.canonical : DependencyEdge → String
 def DependencyEdge.all : List DependencyEdge :=
   [.contract, .body, .trusted, .missing, .unclassified]
 
+/-- Every constructor is in `all`. A THEOREM, not a length assertion in a gate.
+
+    `check_dependency_edges.sh` pinned `all.length == 5`, which protects nothing against a sixth
+    constructor whose author also updates the 5 to a 6 without adding the entry — the count and
+    the list are edited in the same breath, so the test agrees with whatever was written. This
+    cannot: adding a constructor leaves an unsolved case unless the constructor is genuinely in
+    the list.
+
+    Consumers that must handle every kind should rely on THIS, not on the literal length. -/
+theorem DependencyEdge.mem_all (e : DependencyEdge) : e ∈ DependencyEdge.all := by
+  cases e <;> simp [DependencyEdge.all]
+
 /-- Does this edge let the dependent be considered current?
 
     `missing` never does. The other three can, but `trusted` does so only with its

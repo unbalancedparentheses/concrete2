@@ -173,6 +173,16 @@ def ProofEvidenceReceipt.mint?
   -- same hole as an empty environment identity: "" is a value that compares equal to another
   -- "", so two proofs over different subjects would agree.
   if subj.isEmpty then none
+  -- THE INVARIANT: `unclassified` may flow into diagnostics and shadow reports, never into a
+  -- current dependency root or a replay receipt. The root already refuses it (via
+  -- `isCurrentForDependents`); this is the other door. A receipt records what evidence was
+  -- established against, and "we had not classified this dependency" is not something evidence
+  -- can be established against.
+  --
+  -- `missing` is refused for the same reason and would be caught by the root, but a receipt that
+  -- relied on the root having run would be trusting a caller to have called it — which is the
+  -- predicate-to-remember shape this file exists to avoid.
+  else if ev.edge == DependencyEdge.unclassified || ev.edge == DependencyEdge.missing then none
   else if !ev.tablesFullyBound then none
   -- IDENTITY CORRESPONDENCE, not just arity. `tablesFullyBound` checks that the lists are the
   -- same LENGTH and every digest is present — which admits `tables := [X]` with
