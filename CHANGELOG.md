@@ -10,6 +10,29 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Roadmap Organized Around Capability Unlocks
+
+_Roadmap only, 2026-08-09. No compiler, language, or proof verdict changed._
+
+Added a stable capability-unlock layer above the 470-task topical catalog. It groups tasks by the
+user-visible boundary they jointly create—trustworthy replay-bound `proved`, typed compositional
+contracts, one faithful verification pipeline, portable multi-kernel evidence, practical proof
+authoring, auditable safety/resources, independently checkable artifacts, proof-aware local
+packages, release, ecosystem tooling, and research-gated extensions—without renumbering or
+physically reordering task bodies.
+
+Every major unlock now shares a graduation contract: positive/negative/non-vacuous controls,
+class-level regression, production-consumer mutation, exact denominator and named holes,
+reproducibility, independent hostile review, claim/document convergence, and explicit deletion of
+the weaker path. Progress is staged as representation → shadow → production → migration → red
+team, so helper code cannot be mistaken for a shipped guarantee.
+
+The roadmap also records one cross-phase forcing artifact, distinguishes ordinary contracts from
+future paired-execution relational verification, pulls only the minimal local package/evidence
+boundary before beta, and pulls only the minimal incremental proof-diagnostic/editor consumer
+before release. Public registry, remote cache, advanced IDE breadth, concurrency and relational
+verification remain later or workload-gated rather than becoming accidental release blockers.
+
 ### R-0004 Adversarial Validation Made A Completion Slice
 
 _Roadmap only, 2026-08-09. No compiler or proof verdict changed._

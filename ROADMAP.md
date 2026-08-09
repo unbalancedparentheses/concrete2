@@ -13,6 +13,90 @@ constraints, and deferred tails with a real pull trigger.
 
 ## How To Read This Roadmap
 
+### Capability Unlocks — The Stable Product Map
+
+The task catalog below is deliberately detailed and the execution queue changes as defects are
+found. This table is the stable layer above both. It answers a different question: **which task
+clusters combine into a user-visible category change?** Phase numbers remain topical filing
+labels; this table is neither a second queue nor permission to skip prerequisites. When queue,
+phase position and this map appear to disagree, the current execution queue decides *when*, and
+the exit artifact here decides *what the work must ultimately unlock*.
+
+| unlock | principal owners | exit artifact / user-visible boundary | weaker path retired | state |
+|---|---|---|---|---|
+| Trustworthy `proved` | R-0004, R-0440 | every friendly verdict requires a current exact subject, complete dependency root, explicit trust/assumptions/environment and successful replay receipt; migrated corpus survives independent red-team pressure | V1/body-only friendly status, advisory dependency freshness, receipt-free `proved` | **active frontier** |
+| Typed compositional contracts | R-0473, R-0474, R-0477; Phase 9 frame/composition work | a nontrivial multi-function program is proved without callee inlining; caller establishes preconditions and imports postconditions; mutation is stated with `old` plus frame/`modifies`; one contract crosses an interface artifact | erased/name-keyed contracts, textual substitution, per-call inlining as the only composition story | **foundation next after R-0004** |
+| One faithful verification pipeline | R-0450, R-0454–R-0456, R-0460; Phase 14 | one typed neutral obligation IR and semantics feeds every prover; Core→obligation register rows are discharged or explicitly trusted; independent evaluator/certificate checks cover the admitted boundary | duplicated walkers/renderers and backend-specific meanings of one obligation | **partial / H19 open** |
+| Portable multi-kernel evidence | R-0448, R-0454–R-0456, R-0440 | Lean/Rocq/Isabelle receipts bind one neutral obligation identity and report checker, foundation, independence and unsupported fragments separately | coordinator-emitted aggregate badge and agreement over unbound/mismatched propositions | **experimental until prerequisites graduate** |
+| Practical proof authoring | Phase 9 | stable obligation artifacts, minimization, usable stubs/scaffolds, reusable lemmas, structural/operational automation, bounded specs and replay-checked repair on a real workload | hero proofs reconstructed manually from compiler internals | **planned** |
+| Auditable safety and resource guarantees | R-0445; Phases 10–13 | a named profile gates runtime failures, authority, stack/allocation/resource facts and assumptions through one ledger and audit bundle | reports that describe risks without controlling release policy | **partial** |
+| Independently checkable compiler/evidence artifacts | Phase 14, R-0275, R-0353 | an offline checker validates a versioned Core/evidence predicate and evidence DAG while naming every remaining compiler/backend-trusted boundary | “trust the compiler report” as the only verification route | **planned** |
+| Usable systems platform | Phase 7, Phase 7.5, Phases 15–16 | real stdlib workloads, independent backend validation, explicit FFI/Unsafe boundaries and a freestanding target retain the same evidence vocabulary | proof demos that cannot build ordinary or low-level programs | **broad foundation partial** |
+| Proof-aware local packages | Phase 8.5 plus the pre-release core of Phase 18 | manifest, lockfile/workspace, interface/body split and locally verified dependency certificate reject evidence/trust/authority weakening before artifact formats freeze publicly | single-repository proof attachment and source-private dependency inspection | **must precede beta/release** |
+| Narrow defensible release | Phase 17 | a fresh user installs Concrete, builds a useful project, inspects and independently replays its bundle, and can read the exact supported subset/compatibility promise | repository-local success and claims that require project-author interpretation | **planned** |
+| Ecosystem packages and editor experience | remainder of Phases 18–19 | evidence-typed imports, package publishing/provenance and an incremental editor expose the same facts as CLI/CI without a second truth source | manual dependency audits and batch-only proof feedback | **post-foundation** |
+| Relational/concurrent/research extensions | Phase 20 and explicit forcing tasks | only a workload-backed semantics graduates; constant-time/non-interference use paired execution, concurrency uses a mechanized memory model, and every unsupported observation remains named | treating source-shape checks as relational proof or adding concurrency before its evidence model | **research-gated, not a near-term promise** |
+
+The long-term product chain is therefore:
+
+```text
+trustworthy local evidence
+    → typed compositional contracts
+    → one faithful verification pipeline
+    → independently replayable artifacts
+    → proof-aware package boundaries
+    → CI/editor enforcement of behavioral compatibility
+```
+
+### Standard Graduation Contract
+
+Every major unlock above uses the same graduation shape. A task may specialize it, but may not
+silently omit a category:
+
+1. **Positive control** — the intended case succeeds through the production consumer.
+2. **Negative control** — the nearest invalid or unsupported case fails/downgrades precisely.
+3. **Non-vacuity control** — the fixture, anchor, denominator and produced artifact are present.
+4. **Class-level regression** — the gate covers the bug class, not only its first witness.
+5. **Production mutation** — weakening/removing the property is killed where the user-visible
+   verdict is decided; a helper-only mutation is necessary at most, never sufficient.
+6. **Exact denominator and named holes** — skipped, unsupported, refused and unmeasured cases are
+   counted rather than disappearing from the numerator.
+7. **Reproducibility** — repository/project-root, clean-checkout and relevant cache/toolchain
+   variations either agree or produce an explicit non-current disposition.
+8. **Independent hostile review** — at least one non-author attack packet for evidence-critical
+   unlocks; every successful attack becomes a permanent fixture.
+9. **Claim/docs convergence** — capability map, public claim, known-hole disposition and
+   shipped/experimental label change together.
+10. **Old-path deletion** — the task names the weaker implementation/status/schema it retires.
+    Two paths may coexist only during an explicit shadow comparison with an owner and exit gate.
+
+Progress is recorded by stage, not a single percentage:
+
+```text
+representation → shadow-measured → production-consumed → corpus-migrated → red-teamed
+```
+
+“The type/helper exists” never implies “the product guarantee exists.”
+
+### Cross-Phase Forcing Artifact
+
+The roadmap needs one workload that pressures the whole chain rather than letting every phase
+choose its easiest example. Select the final artifact through a cheap forcing probe; the current
+preferred shape is a small cryptographic or binary-protocol module exported through the C ABI and
+used by an existing host project. It must combine functional contracts, bounded arrays/loops,
+bit-level reasoning, no-allocation/resource policy, an explicit constant-time boundary,
+dependency receipts, package/interface evidence, clean replay and an external consumer.
+
+This is not permission to claim machine constant-time from source-shape checks. Ordinary contracts
+remain single-execution properties. True constant-time/non-interference requires a separately
+versioned paired/self-composed execution semantics, public/secret classification and declared
+observation/machine model; until a forcing consumer pulls that work, the roadmap records it as a
+research boundary rather than a scheduled implementation promise.
+
+The forcing artifact graduates only when a non-author can build it, import its certified
+interface, replay its evidence independently, perturb a dependency and see the right invalidation,
+and use it from the host without inspecting private Concrete bodies.
+
 ### Active Work vs Historical Record
 
 - **Active roadmap:** future work and pull-gated deferred work that can still
@@ -4951,7 +5035,24 @@ consumer away from the `proved` decision path:
    both directions: non-monotone trust would let a claim be laundered clean by adding a
    dependency. A root that moves on order is unusable as a stored value; one that does not move
    on content binds nothing;
-6. connect the root to status composition;
+6. connect the root to status composition — **BLOCKED on a precondition the sequence did not
+   state, found 2026-08-09 before wiring anything.** Every one of the 11 current refusals is an
+   `unclassified` edge, and `unclassified` means *we have not asked the Lean side yet*. Gating
+   `proved` on the root today would report `depsNotCurrent` for subjects whose dependencies are
+   perfectly fine — a claim about OUR unfinished toolchain rendered as a claim about the USER's
+   program.
+
+   The invariant says `unclassified` must never enter a CURRENT root, and it does not: the root
+   refuses it. It does not follow that a refusal caused by an unrun classifier should degrade a
+   verdict. `missing` degrading a verdict is honest — something really is unvalidated.
+   `unclassified` degrading one is the compiler blaming a program for the compiler's own state.
+
+   **So step 6 waits for the hand-back to RUN over the real proof corpus**, producing genuine
+   `contract`/`body` classifications, not merely for the merge machinery to exist (steps 1-3,
+   done). Once real classifications land, the remaining refusals will be `missing` — and those
+   SHOULD gate `proved`. The step-4 measurement (53 of 64 rooting, 11 refusing, all
+   `unclassified`) is the baseline that says when this precondition is met: it is met when the
+   refusal REASONS change, not when the count drops;
 7. kill the mutation that omits the root while attempting `proved`;
 8. delete or permanently subordinate the old advisory/name-keyed path.
 
@@ -11755,6 +11856,13 @@ validation are in place.
 audience):**
 - `concrete fmt`, `concrete test`, and a minimal project model (`Concrete.toml`)
   exist.
+- The **minimal local package/evidence foundation** has exercised the public artifact boundary
+  before it freezes: manifest, lockfile, workspace, interface/body split, local dependency
+  certificate verification, trust/assumption inheritance and evidence-schema compatibility. A
+  public registry, hosted publishing and remote cache are not beta prerequisites.
+- A **minimal editor path** exists for incremental structured diagnostics, capability/proof-status
+  hover, obligation navigation and replay commands. It consumes the compiler session/query facts;
+  advanced refactoring, dependency dashboards, migration UI and playground work remain later.
 - In-source proof links are the only proof path; `proof-registry.json` support
   must remain absent.
 - Release bundles have stable schemas, replay commands, assumption/trust
@@ -12251,6 +12359,15 @@ Prerequisite: Phase 8.5 completed. If it was rejected/deferred, Phase 18 may
 start only after an explicit roadmap amendment replaces these artifact/query
 dependencies; package work may not grow a private cache/driver as a workaround.
 
+**Sequencing split — local foundation before beta, ecosystem scale after.** Phase numbering is
+topical, not permission to freeze a public release artifact before its primary dependency consumer
+exists. The beta/release bar pulls forward only the minimal local foundation: R-0364–R-0369's
+manifest/lockfile/workspace/interface split and certificate codec/verification boundary, plus the
+narrow trust/assumption/evidence compatibility needed to prove an upgrade cannot silently weaken a
+consumer. Public registry/publishing, hosted docs, remote reuse and ecosystem-scale policy remain
+post-foundation work. This split avoids both bad extremes: releasing a public evidence schema never
+tested across a dependency boundary, or blocking a narrow release on operating a package registry.
+
 ### Task R-0363
 
 **Objective:** Expand package artifacts only after reports, policies, assumptions, interface artifacts, and CI gates prove what packages must carry. The first package artifact refactor must define exact files:
@@ -12527,6 +12644,14 @@ invalidation and certificate freshness, without inventing a second truth source.
 Prerequisite: Phase 8.5 completed. If it was rejected/deferred, Phase 19 needs a
 recorded replacement architecture before starting; an editor-only fact database
 or cache remains forbidden.
+
+**Minimal pre-release slice, advanced tooling later.** The beta bar pulls forward the smallest
+honest editor consumer of the Phase 8.5 session: compiler-as-service entrypoint, incremental
+structured diagnostics, capability/proof-status hover, obligation navigation and replay-command
+links. It must reuse CLI/CI facts and may not wrap batch compilation as its normal edit path.
+Proof-aware refactoring, dependency dashboards, migration/deprecation UI, hosted playground and
+other breadth stay in Phase 19 after the core path proves useful. First users should not meet a
+proof language exclusively through batch reports, but release is not blocked on a complete IDE.
 
 ### Task R-0384
 
