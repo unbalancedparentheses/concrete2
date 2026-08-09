@@ -31,9 +31,18 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # Exactly two references are expected: the definition, and the report line. A third is not
 # automatically wrong, but it must be looked at, which is why this asserts the set rather
 # than a count.
+# OWNER SET UPDATED 2026-08-09: ProofCore joins it, because `proofSubjectDigestV2` now binds the
+# structural body instead of the legacy Core-statement hash. That is the point of slice 5 — the
+# subject the shadow comparison digests must be the real one — and it is why a file-list proxy
+# alone is no longer the right guard.
+#
+# The property this section actually protects is one step further in: no STATUS may depend on
+# structural bytes before the step-7 migration. The owner list is kept as a cheap tripwire (a
+# FOURTH owner still needs looking at), and the property is asserted directly below it, because
+# a proxy that has to be widened every time the design advances stops meaning anything.
 refs="$(grep -rln "bodyBytesV2" Concrete/ Main.lean 2>/dev/null | sort | tr '\n' ' ')"
-if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Report/Report.lean " ]; then
-  ok "bodyBytesV2 is referenced only by its definition and the shadow report line"
+if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean " ]; then
+  ok "bodyBytesV2 owners are the definition, the subject digest, and the shadow report line"
 else
   no "bodyBytesV2 reached a new owner ($refs) — if a STATUS now depends on structural bytes, that is the V1 freeze breaking"
 fi
@@ -42,6 +51,18 @@ if grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean 2>/dev/null; then
   no "SubjectFacts references bodyBytesV2 — structural bytes could enter the canonical subject digest"
 else
   ok "the canonical subject digest cannot include structural body bytes"
+
+# THE PROPERTY, not the proxy. The subject digest may now be built from structural bytes; what
+# must not happen is a STATUS reading it. `deriveObligationStatus` takes the legacy fingerprint
+# and nothing else, so the live verdict cannot move when the structural body does — which is the
+# whole meaning of "still shadow". If subjectDigest ever reaches this call, the migration has
+# begun without its manifest.
+if grep -n "deriveObligationStatus" Concrete/Proof/ProofCore.lean | grep -qv "private def" \
+   && ! grep -A2 "deriveObligationStatus e.eligibility" Concrete/Proof/ProofCore.lean | grep -q "subjectDigest"; then
+  ok "no STATUS derivation consumes the subject digest — the live verdict stays on the legacy fingerprint"
+else
+  no "deriveObligationStatus now sees the subject digest — the step-7 migration has started without its manifest"
+fi
 fi
 
 # --- behaviour: the structural digest SEPARATES bodies the flat digest merges -----------

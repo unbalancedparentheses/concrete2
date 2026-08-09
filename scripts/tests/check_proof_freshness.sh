@@ -167,6 +167,39 @@ fi
 
 echo
 
+# The subject binds the STRUCTURAL V2 body, not the legacy Core-statement hash (2026-08-09).
+# Two properties, and the second is the one that makes the swap worth doing: a body edit must
+# move the digest (it did before too), AND a subject whose structural body is REFUSED must not
+# digest at all — a body with gaps describes less than the program, so a digest over it is
+# indistinguishable from one over a complete body.
+edit "$LI/src/main.con" 'acc = acc + i;' 'acc = acc + i + 0;'
+BODY_D="$(shadow_digest "$LI")"; BODY_LV="$(verdict "$LI")"
+[ -n "$BODY_D" ] && [ "$BODY_D" != "$BASE_D" ] \
+  && ok "SHADOW(body): a BODY edit moves the v2 digest ($BASE_D -> $BODY_D)" \
+  || no "SHADOW(body): a body edit left the v2 digest unchanged — the structural body is not bound"
+# NOT "still shadow" here, and the first draft of this leg got it wrong. "Still shadow" applies
+# to changes the LIVE path cannot see — signature and contracts, which is what 059/060 are
+# about. A BODY edit is precisely what the legacy fingerprint DOES catch, so the live verdict
+# must go stale: that is the control proving the live path works at all, and without it a
+# permanently-broken live comparison would look like successful containment.
+case "$BODY_LV" in
+  *stale*) ok "SHADOW(body): ...and the LIVE verdict correctly goes '$BODY_LV' — the legacy hash sees body edits" ;;
+  *)       no "SHADOW(body): a body edit left the live verdict '$BODY_LV' — the legacy comparison is not working, so the 059/060 tripwires prove nothing" ;;
+esac
+restore li loop_invariant
+
+# Fail-closed: every subject that emits a digest must have a COMPLETE structural body. If any
+# subject digests while its body line reads REFUSED, the digest is being minted over gaps.
+BOTH="$("$COMPILER" "$LI/src/main.con" --report subject-facts 2>/dev/null)"
+REFUSED_N="$(printf '%s\n' "$BOTH" | grep -c 'shadow bodyV2: REFUSED' || true)"
+DIGEST_N="$(printf '%s\n' "$BOTH" | grep -c 'subjectFreshness: .*current would be v2:' || true)"
+TOTAL_N="$(printf '%s\n' "$BOTH" | grep -c 'shadow bodyV2:' || true)"
+if [ "$TOTAL_N" -gt 0 ] && [ "$((REFUSED_N + DIGEST_N))" -le "$TOTAL_N" ]; then
+  ok "SHADOW(body): no subject digests over a REFUSED structural body ($DIGEST_N digested, $REFUSED_N refused, $TOTAL_N total)"
+else
+  no "SHADOW(body): a subject digested while its structural body was refused — the digest covers gaps"
+fi
+
 echo "=== bug 059 — GAP OPEN: the digest omits declared types ==="
 # Return type, accumulator and loop counter all change i32 -> u32. Every
 # STATEMENT is textually identical, so a body-only hash sees nothing — but the

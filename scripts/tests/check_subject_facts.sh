@@ -138,24 +138,31 @@ probe "059: a signature change moves the subject digest with an identical body" 
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
   let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "u32" }
-  proofSubjectDigestV2 a "SAME" != proofSubjectDigestV2 b "SAME"'
+  proofSubjectDigestV2 a (some {}) != proofSubjectDigestV2 b (some {})'
 probe "060: a TRUE/FALSE ensures flip moves it with an identical body" "true" \
 '#eval
   let t : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 1)] }
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 0)] }
-  proofSubjectDigestV2 t "SAME" != proofSubjectDigestV2 f "SAME"'
-# It must not LOSE what the legacy hash did catch.
-probe "a body change is still detected" "true" \
+  proofSubjectDigestV2 t (some {}) != proofSubjectDigestV2 f (some {})'
+# The subject binds the STRUCTURAL body (2026-08-09), not the legacy Core-statement hash, so
+# "a body change is detected" is no longer expressible as two hash strings at this level —
+# it needs two real bodies. That coverage MOVED rather than being dropped:
+# `check_proof_freshness.sh` asserts it end-to-end on a real program (SHADOW(body): a BODY
+# edit moves the v2 digest), which is stronger than this unit probe was.
+#
+# What remains testable here is the fail-closed half: no structural body, no digest. A digest
+# over an absent body would describe nothing while looking like it described the program.
+probe "an ABSENT structural body yields NO digest" "none" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a "ONE" != proofSubjectDigestV2 a "TWO"'
+  proofSubjectDigestV2 a none'
 # The schema tag must be in the bytes, so a stored v1 hash is recognisable as a
 # DIFFERENT SCHEMA rather than as a mismatch — that is what makes `needs_recheck`
 # possible instead of a false `stale`.
 probe "the subject digest is not the bare body hash" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 a "B" != shortHash "B"'
+  proofSubjectDigestV2 a (some {}) != shortHash "B"'
 
 echo ""
 echo "=== completeness is ENFORCED, not advisory ==="
@@ -165,16 +172,16 @@ echo "=== completeness is ENFORCED, not advisory ==="
 probe "an uncovered contract yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.arrayLit sp [.intLit sp 1]] }
-  proofSubjectDigestV2 f "B"'
+  proofSubjectDigestV2 f (some {})'
 probe "a complete subject yields a digest" "some" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
-  proofSubjectDigestV2 f "B"'
+  proofSubjectDigestV2 f (some {})'
 # an incomplete IDENTITY (type-erased generic) must refuse too
 probe "an incomplete identity yields NO digest" "none" \
 '#eval
   let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" 1 }
-  proofSubjectDigestV2 f "B"'
+  proofSubjectDigestV2 f (some {})'
 # loop contracts are part of the subject: R-0004 names them, and they are erased
 # with requires/ensures
 probe "a loop invariant change moves the subject" "true" \

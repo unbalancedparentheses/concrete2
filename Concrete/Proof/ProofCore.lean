@@ -2061,8 +2061,8 @@ def shortHash (fingerprint : String) : String :=
     changed, not necessarily the program, so such an entry is `needs_recheck`, not
     `stale`. Wiring that distinction into the freshness decision is the remaining
     step; this function only defines the value. -/
-def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts) (bodyFp : String)
-    : Option String :=
+def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
+    (evBody? : Option Proof.EvidenceBodyDraftV2) : Option String :=
   -- ENFORCED, not advisory. `isComplete` existed and nothing consulted it, so an
   -- uncovered subject — a contract the encoder could not read, an incomplete
   -- identity — still received an ordinary-looking digest. A digest that cannot be
@@ -2070,7 +2070,23 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts) (bodyFp : String)
   -- flag says. Returning `none` makes the incomplete case unrepresentable rather
   -- than merely discouraged.
   if !facts.isComplete then none
-  else some (shortHash ("subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash bodyFp))
+  else match evBody? with
+  -- No structural body threaded. Previously this position held the LEGACY body
+  -- fingerprint, which hashes Core statements and is the very thing bugs 059/060
+  -- are filed against; a subject built on it binds signature and contracts to a
+  -- body representation weaker than the one the producer can already emit.
+  -- Absent body is now `none` rather than a digest over nothing.
+  | none => none
+  | some d => match Proof.validate d with
+    -- REFUSED bodies do not digest, for the reason `shadowBodyV2Line` refuses them:
+    -- a body with gaps describes less than the program, and a digest over it is
+    -- indistinguishable from one over a complete body. Fail-closed costs coverage
+    -- (measured: 441 of 452 subjects have a complete structural body) and the
+    -- alternative costs the meaning of the digest.
+    | .error _ => none
+    | .ok complete =>
+      some (shortHash ("subjectV2:" ++ facts.canonical
+              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)))
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2359,7 +2375,7 @@ private partial def extractModule
     let evBody? := (m.evidenceBodies.find? fun p => p.1 == cid).map Prod.snd
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
-    let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx fp)
+    let subjDigest : Option String := facts?.bind (fun fx => proofSubjectDigestV2 fx evBody?)
     let elig := assessEligibility f qualName externNames recMap locMap
     let sa := resolveSpec qualName registry
     if elig.isTrusted then
