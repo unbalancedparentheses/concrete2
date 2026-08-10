@@ -5168,8 +5168,37 @@ consumer away from the `proved` decision path:
       row carries which THEOREM, not yet which DEPENDENCIES. Original finding: Before production it must preserve enough to prove *this
       classification belongs to this exact theorem and applies to these exact dependencies*;
       otherwise a stale or misattached `body`/`contract` label stays structurally valid. OPEN.
-   c. **Applying one caller-level classification to every runtime callee needs a correspondence
-      gate.** A `contract` theorem does not thereby establish that every call-graph edge is
+   c. **CRITICAL PATH. Correspondence is per-EDGE, not per-theorem.** A partial shape check
+      landed (`rowJustifies`: `contract` requires quantification, `body` requires a bound table)
+      and it is NECESSARY-not-sufficient — quantification alone does not establish that the
+      relevant contract hypothesis exists for a given callee, so an edge passing it may still
+      under-bind. It catches the gross failure only.
+
+      The right shape, per review, replaces `classifiedEdgeOf theorem` with something closer to
+      `validatedEdgesOf theorem`, returning dependency-specific evidence:
+
+      ```
+      EdgeJustification { callee; kind; table?; tableDigest?; witness }
+      ```
+
+      The merge must require EXACTLY ONE justified result per compiler-produced call edge and
+      refuse: missing or duplicate edges; classifications for unknown callees; callable or
+      table-identity mismatches; a `body` edge whose implementation is absent from the bound
+      table; a `contract` edge without a corresponding quantified lookup/hypothesis; leftover
+      caller-level classifications applied by default; unresolved or ambiguous table entries.
+
+      Conservative rules: `body` only when the bound table contains the exact callee
+      implementation (whole-table digest retained for dynamic access); `contract` only when the
+      theorem type establishes the relevant contract hypothesis for that callee; `trusted` only
+      from the compiler's declared boundary; anything not PROVEN to correspond is `unclassified`
+      and refuses the root.
+
+      **Acceptance is stronger than 64/64:** every actual call edge has exactly one validated
+      justification, and removing, swapping, or weakening any justification makes the
+      corresponding root refuse. Only once that mutation gate holds — and `calls.combine` closes
+      for the right reason — is connecting roots to verdict composition defensible.
+
+      Original finding: A `contract` theorem does not thereby establish that every call-graph edge is
       covered by an appropriate contract hypothesis — over-approximating is safe, but `contract`
       could UNDER-bind implementation dependencies unless the theorem's hypothesis structure is
       matched to the emitted edges. OPEN.

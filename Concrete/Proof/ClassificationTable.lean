@@ -163,6 +163,30 @@ def validatedRowOf (thm : String) : Option ValidatedRow :=
   | [row] => validateRawRow row
   | _     => none
 
+/-- A NECESSARY-CONDITION check on a row's own claim. **Not** correspondence, and the difference
+    matters enough to lead with it.
+
+    This asks whether the theorem's SHAPE could support the label at all. It does not ask the
+    real question — whether a SPECIFIC callee is covered — and it cannot, because a row carries a
+    table's digest rather than its membership.
+
+    In particular `contract` here requires only that the theorem quantifies over some table, and
+    **quantification alone is insufficient**: it does not establish that the relevant contract
+    HYPOTHESIS exists for the callee in question. So a `contract` edge passing this check may
+    still under-bind. The check catches the grosser failure (a `contract` label from a theorem
+    that quantifies over nothing) and must not be read as establishing the edge.
+
+    Correspondence proper is per-EDGE, not per-theorem: see `EdgeJustification` in the roadmap.
+    A caller-wide label spread across every callee is the wrong shape, and this function's
+    existence should not make that shape look validated. -/
+def rowJustifies (r : ValidatedRow) (e : DependencyEdge) : Bool :=
+  match e with
+  | .contract     => r.quantifies
+  | .body         => !r.tables.isEmpty
+  | .trusted      => true
+  | .missing      => true
+  | .unclassified => false
+
 /-- The edge a theorem implies, or `unclassified` when there is no usable classification.
 
     Routed through `validatedRowOf`, so a row with a malformed provenance slot cannot type an
@@ -171,7 +195,10 @@ def validatedRowOf (thm : String) : Option ValidatedRow :=
     consumer required it to be present. -/
 def classifiedEdgeOf (thm : String) : DependencyEdge :=
   match validatedRowOf thm with
-  | some r => r.edge
+  -- The row must JUSTIFY its own claim, not merely state it. A `contract` label on a theorem
+  -- that quantifies over nothing is downgraded to `unclassified` rather than trusted — the
+  -- fail-closed direction, since `contract` is the edge that lets an implementation change pass.
+  | some r => if rowJustifies r r.edge then r.edge else .unclassified
   | none   => .unclassified
 
 /-- The validated artifact digest for a theorem, if there is a usable row. -/

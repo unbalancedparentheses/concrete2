@@ -872,6 +872,47 @@ expect_no_compile "ValidatedRow cannot be constructed directly (private ctor)" '
 def forged : Concrete.Proof.ValidatedRow :=
   { theoremName := "X", edge := Concrete.Proof.DependencyEdge.body, digest := "" }'
 
+# === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
+# A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
+# claim — this dependency is covered that way — and the two can come apart. `contract` is the
+# direction that matters: it asserts the caller survives any implementation preserving the
+# contract, so typing it from a theorem that quantifies over nothing UNDER-binds, letting an
+# implementation change the proof actually depends on pass without staling the caller.
+echo "=== theorem-to-edge correspondence ==="
+
+mkrow() { echo "validateRawRow (\"T\", \"$1\", \"7bcec2d7871f93204b26e2bf83d5acf1\", $2, $3)"; }
+
+probe "contract WITHOUT quantification is not justified" "true" '
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+      | some r => !(rowJustifies r DependencyEdge.contract)
+      | none => false'
+probe "contract WITH quantification is justified" "true" '
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], true) with
+      | some r => rowJustifies r DependencyEdge.contract
+      | none => false'
+probe "body with NO bound table is not justified" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+      | some r => !(rowJustifies r DependencyEdge.body)
+      | none => false'
+probe "body WITH a bound table is justified" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false) with
+      | some r => rowJustifies r DependencyEdge.body
+      | none => false'
+probe "unclassified justifies nothing" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
+      | some r => !(rowJustifies r DependencyEdge.unclassified)
+      | none => false'
+
+# The consumer must ACT on it: an unjustified row downgrades to `unclassified` rather than being
+# trusted. Without this the check would be a function nobody consults.
+probe "an unjustifiable row would not classify" "unclassified" '
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+      | some r => (if rowJustifies r r.edge then r.edge else DependencyEdge.unclassified).canonical
+      | none => "no-row"'
+# ...and real rows still classify, so the check is not simply refusing everything.
+probe "a real row still classifies after the correspondence check" "body" '
+#eval (classifiedEdgeOf "Concrete.Proof.parse_byte_correct").canonical'
+
 # === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
 # The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any
 # dependency SEMANTIC change must. A root that moves on order is unusable as a stored value; one
