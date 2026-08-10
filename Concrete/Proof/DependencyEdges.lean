@@ -251,6 +251,53 @@ def theoremArtifactDigest (n : Name) : MetaM (Option String) := do
     return some (Concrete.shortHash ("thmV1:" ++ toString n ++ "|ty:" ++ toString ci.type
                                      ++ "|valh:" ++ valHash))
 
+/-! ## Canonical table-ENTRY evidence (R-0004 slice 6, blocker c prerequisite)
+
+A whole-table digest answers "did this table change". It cannot answer "does this table CONTAIN
+that callee", and correspondence needs the second: a `body` edge is justified only when the bound
+table holds the exact callee implementation. Digest and membership are different questions, and
+one has been standing in for the other.
+
+So entry-level material: per entry, the callable IDENTITY and the subject it was extracted from.
+`PFnDef` already carries both — `identity : PFnIdentity` and `sourceBodyDigest` — so this reads
+what exists rather than inventing a parallel record.
+
+**Whole-table digests remain necessary**, and this does not replace them. A dynamic index can
+reach ANY entry, so a dependency on a dynamically-indexed table is a dependency on all of it;
+entry evidence answers membership for the statically-known case and cannot narrow the dynamic
+one. Both, for different questions. -/
+
+/-- One entry's correspondence material: which callable, and which subject it came from. -/
+structure TableEntryEvidence where
+  callee : CallableId
+  /-- The extracted-from subject digest, when the entry records one. `none` is carried rather
+      than defaulted: an entry whose provenance is unrecorded must not compare equal to one whose
+      provenance is recorded and happens to match. -/
+  subjectDigest : Option String
+deriving Repr, BEq
+
+/-- Entry evidence for a table, or `none` if ANY entry lacks identity.
+
+    All-or-nothing deliberately. A partial membership list answers "is this callee present" with
+    "not in the part I could read", which is indistinguishable from "absent" — and absence is
+    what justifies refusing an edge. A caller cannot tell those apart from a shortened list, so
+    it does not get one. This mirrors `FnTable.allIdentified`: evidence requires identity for the
+    WHOLE table, not most of it. -/
+def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
+  t.canonicalEntries.toList.foldl (init := some []) fun acc d =>
+    match acc, d.identity.id? with
+    | some rows, some cid =>
+        some (rows ++ [{ callee := cid, subjectDigest := d.sourceBodyDigest.map (·.value) }])
+    | _, _ => none
+
+/-- Does this table contain the callee, by IDENTITY?
+
+    Identity, never name: two callables can share a display name, and `PFnDef.displayName` is
+    explicitly not identity. Membership decided on a rendering would be the defect R-0004 exists
+    to close, appearing in the check meant to close it. -/
+def entryEvidenceContains (rows : List TableEntryEvidence) (callee : CallableId) : Bool :=
+  rows.any fun r => r.callee == callee
+
 /-! ## The merge (R-0004 slice 6, step 3)
 
 The compiler emits `unclassified` edges keyed by theorem name; Lean answers; this joins them.

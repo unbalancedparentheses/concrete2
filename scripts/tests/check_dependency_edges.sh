@@ -872,6 +872,43 @@ expect_no_compile "ValidatedRow cannot be constructed directly (private ctor)" '
 def forged : Concrete.Proof.ValidatedRow :=
   { theoremName := "X", edge := Concrete.Proof.DependencyEdge.body, digest := "" }'
 
+# === CANONICAL TABLE-ENTRY EVIDENCE (blocker c prerequisite) =================================
+# A whole-table digest answers "did this table change" and cannot answer "does it CONTAIN that
+# callee". Correspondence needs the second, and one has been standing in for the other.
+echo "=== table-entry evidence ==="
+
+probe "a fully-identified table yields entry evidence" "true" '
+#eval
+  let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable)).isSome'
+
+# ALL OR NOTHING. A partial membership list answers "is this callee present" with "not in the
+# part I could read", which is indistinguishable from "absent" — and absence is what justifies
+# refusing an edge.
+probe "ONE legacy entry refuses evidence for the WHOLE table" "true" '
+#eval
+  let ok : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                       params := [], body := PExpr.lit (PVal.int 0) }
+  let legacy : PFnDef := { identity := .legacy, operationalKey := "g", params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[ok, legacy], globals := fun _ => none } : FnTable)).isNone'
+
+probe "membership is decided by IDENTITY and finds a present callee" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", subjectDigest := none : TableEntryEvidence }]
+  entryEvidenceContains rows (CallableId.ofUser "m" "f")'
+
+probe "...and does NOT find an absent one" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", subjectDigest := none : TableEntryEvidence }]
+  !(entryEvidenceContains rows (CallableId.ofUser "m" "g"))'
+
+# Same display name, different module: membership must not be decided on a rendering.
+probe "a same-NAMED callable from another module is not a member" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "modA" "f", subjectDigest := none : TableEntryEvidence }]
+  !(entryEvidenceContains rows (CallableId.ofUser "modB" "f"))'
+
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
 # A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
 # claim — this dependency is covered that way — and the two can come apart. `contract` is the

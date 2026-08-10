@@ -5193,6 +5193,20 @@ consumer away from the `proved` decision path:
       from the compiler's declared boundary; anything not PROVEN to correspond is `unclassified`
       and refuses the root.
 
+      **PREREQUISITE LANDED 2026-08-09** (`tableEntryEvidence`, `entryEvidenceContains`). Table
+      digests cannot prove membership — a digest answers "did this table change", not "does it
+      CONTAIN that callee", and one had been standing in for the other. Entry evidence reads what
+      `PFnDef` already carries (`identity : PFnIdentity`, `sourceBodyDigest`) rather than
+      inventing a parallel record.
+
+      ALL-OR-NOTHING: one legacy entry refuses evidence for the whole table, because a partial
+      membership list answers "is this callee present" with "not in the part I could read" —
+      indistinguishable from "absent", and absence is what justifies refusing an edge. Membership
+      is decided by IDENTITY, never by display name, gated with a same-named callable from
+      another module. Whole-table digests remain necessary and are not replaced: a dynamic index
+      can reach any entry, so entry evidence answers the statically-known case and cannot narrow
+      the dynamic one.
+
       **Acceptance is stronger than 64/64:** every actual call edge has exactly one validated
       justification, and removing, swapping, or weakening any justification makes the
       corresponding root refuse. Only once that mutation gate holds — and `calls.combine` closes
