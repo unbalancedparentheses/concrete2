@@ -798,22 +798,39 @@ probe "an unknown theorem is unclassified" "unclassified" '
 # checked-in table contains only well-formed rows, so validation could not be tested through
 # lookup at all; `validateRawRow` exists so it can be.
 probe "an EMPTY digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "")).isNone'
+#eval (validateRawRow ("T", "body", "", [], false)).isNone'
 probe "a PLACEHOLDER digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "?")).isNone'
+#eval (validateRawRow ("T", "body", "?", [], false)).isNone'
 probe "a WRONG-LENGTH digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "abc123")).isNone'
+#eval (validateRawRow ("T", "body", "abc123", [], false)).isNone'
 # Uppercase is not "the same digest in different case": the generator emits lowercase, so an
 # uppercase value did not come from the generator.
 probe "an UPPERCASE digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1")).isNone'
+#eval (validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1", [], false)).isNone'
 probe "a NON-HEX digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1")).isNone'
+#eval (validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1", [], false)).isNone'
 probe "an UNKNOWN edge tag is refused" "true" '
-#eval (validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1")).isNone'
+#eval (validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)).isNone'
 # Positive control: without it, a validator that refused everything would pass all six above.
 probe "a WELL-FORMED row validates (positive control)" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1")).isSome'
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)).isSome'
+
+# THE TABLE BINDINGS ARE VALIDATED TOO. A row whose theorem digest is sound but whose table
+# digests are not describes its dependencies with values nothing can compare — the same defect
+# one level down, and the level where it would be least visible.
+probe "a MALFORMED table digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false)).isNone'
+probe "a table named TWICE in one row is refused" "true" '
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false)).isNone'
+probe "well-formed table bindings validate and are carried" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
+      | some r => r.tables.length == 1 && r.quantifies
+      | none => false'
+# The real table must carry real bindings, or the generator emitted rows that describe nothing.
+probe "a real row carries its table identities" "true" '
+#eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with
+      | some r => r.tables.length > 0 && (r.tables.all fun t => t.2.length == 32)
+      | none => false'
 
 # DUPLICATES. `find?` took the first match, so a malformed first row could hide a valid second
 # and a valid first could hide conflicting trailing data — both silently. A generated security
@@ -821,16 +838,16 @@ probe "a WELL-FORMED row validates (positive control)" "true" '
 # and collapsing "ambiguous" into "take one" is how a conflicting table classifies confidently.
 probe "a theorem appearing TWICE yields no row, even if identical" "true" '
 #eval
-  let dup : List (String × String × String) :=
-    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
-     ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1")]
-  (match dup.filter (fun (r : String × String × String) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
+  let dup : List (String × String × String × List (String × String) × Bool) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
+     ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)]
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
 probe "a theorem appearing twice with CONFLICTING rows yields no row" "true" '
 #eval
-  let dup : List (String × String × String) :=
-    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
-     ("T", "contract", "bfda7f397e3221e757383578b50ee3ff")]
-  (match dup.filter (fun (r : String × String × String) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
+  let dup : List (String × String × String × List (String × String) × Bool) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
+     ("T", "contract", "bfda7f397e3221e757383578b50ee3ff", [], false)]
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
 
 probe "a validated row exposes its digest" "true" '
 #eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with

@@ -19,7 +19,7 @@ denotes. -/
 
 namespace Concrete.Proof
 
-/-- (theorem name, canonical edge kind, theorem artifact digest).
+/-- (theorem name, edge kind, theorem artifact digest, [(table identity, table digest)], quantifies-over-table).
 
     The DIGEST is what makes a row BELONG to a theorem rather than merely mention one. Without
     it `("T", "body")` stays structurally valid after `T` is reproved, restated, or replaced by a
@@ -29,51 +29,51 @@ namespace Concrete.Proof
     `check_classification_freshness.sh` re-derives these from the live environment and fails on
     disagreement, so a stale table is a gate failure rather than a silent wrong answer. It is a
     separate gate because re-derivation is slow. -/
-def classificationTable : List (String × String × String) :=
+def classificationTable : List (String × String × String × List (String × String) × Bool) :=
 [
-  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
-  ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff"),
-  ("Concrete.Proof.decode_header_rejects_short", "body", "98bc0543aa2f21fe0215f61e33a31bd3"),
-  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body", "0a213b8fe94af7a02dd2e676db3448a0"),
-  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body", "0d4e1514e90142c45fbb493d819906ad"),
-  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body", "d93f7ee7c94d9f946626140a4eb5f70e"),
-  ("Examples.ElfHeader.Proofs.check_magic_correct", "body", "4ec2bf6300b8346ee56a420c7432cb52"),
-  ("Examples.ElfHeader.Proofs.check_class_correct", "body", "7a4df947f32ae0bf81bb6be812a12376"),
-  ("Examples.ElfHeader.Proofs.check_data_correct", "body", "6b79b8a6b380d8e9a5c6a592a9b005ac"),
-  ("Examples.ElfHeader.Proofs.check_version_correct", "body", "a2d629c19c42b0555343c7db75bef406"),
-  ("Examples.ElfHeader.Proofs.validate_header_correct", "body", "a4841e678e594c5581bd55011eb5e071"),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body", "a5f009923fa06c451b9f6d1d8a0a618c"),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body", "eb3464a1496339eb7d3ba66b5faaaa06"),
-  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body", "64b149f40c8348b5d9ad82b51f6ac86a"),
-  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body", "c03809fea8a03cd299d68f5073b8ea28"),
-  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body", "86641044424d8467caaedcc1456b8521"),
-  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body", "6dd8d351ab9225a609d8fb0598c65f13"),
-  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body", "3baf80715f1112d3e5cd70b4bce0cdbc"),
-  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract", "66c131f62baba38dc63cb5ed1a2ee0d9"),
-  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract", "7514cf668b484ad57f6638496e8da254"),
-  ("Examples.HmacSha256.Proofs.ch_refines", "body", "03c7ac500a119f1a9967e7c95a1462e2"),
-  ("Examples.HmacSha256.Proofs.ch_selects_high", "body", "dad0ea74403323b46dab5d3c1e99f5eb"),
-  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body", "bcff724c64133577213bb602047e7eb4"),
-  ("Examples.HmacSha256.Proofs.round_refines_list", "body", "52a7439c74366ee07d48cb8bce2bf844"),
-  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body", "d7518588077f8f2d9605ef725bc99f91"),
-  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body", "f54c86494d513cd00c0bded7bebe4085"),
-  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body", "bd7f85952d2f299401e49854542b0e53"),
-  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body", "cc7beef4d2f0b237721ba6b811ab2dcd"),
-  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body", "a60b88ebbd6bcb8e877fbbfed7de2100"),
-  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body", "f1e68b974ee5bfc806ed3598f9fc38c3"),
-  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract", "dfc4fb49d1dc178ff9d2f8af256e6d96"),
-  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body", "631a18e6482cac5515013298ad9c523b"),
-  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body", "2d51d46f8ba8cc0fe984cb7289dff1da"),
-  ("Examples.ParseValidate.Proofs.validate_version_correct", "body", "ce762322892966efae727e2c96fdd9ac"),
-  ("Examples.ProofPatterns.Proofs.add_three_correct", "body", "bf642e27e45729a9a4db4de97ecb75be"),
-  ("Examples.ProofPatterns.Proofs.combine_correct", "body", "098f3b62a5c123eb14149b1c917564f2"),
-  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body", "2e7d0a991aea1812c2fe9742d5b0549a"),
-  ("Examples.ProofPatterns.Proofs.dbl_correct", "body", "8a5c627bb3e11a18172dcddd77b6d9b7"),
-  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body", "858a134f01297e2ceca7934910d110fb"),
-  ("Examples.ProofPatterns.Proofs.inc_correct", "body", "aa47cb38439896023c17d5845f799001"),
-  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body", "ea930af89044e22c064fd34346746bae"),
-  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body", "2a0a7be6bfc7a6e7da5ec81e4f6164c8"),
-  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88")
+  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),
+  ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),
+  ("Concrete.Proof.decode_header_rejects_short", "body", "98bc0543aa2f21fe0215f61e33a31bd3", [("Concrete.Proof.proofFnsExt", "8d7e53542a5e912ae4ce4ccdfd7f43cc")], false),
+  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body", "0a213b8fe94af7a02dd2e676db3448a0", [("Concrete.Proof.cryptoFns", "171a5072638a6bfd99e210c02c2bb78c")], false),
+  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body", "0d4e1514e90142c45fbb493d819906ad", [("Concrete.Proof.cryptoFns", "171a5072638a6bfd99e210c02c2bb78c")], false),
+  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body", "d93f7ee7c94d9f946626140a4eb5f70e", [("Concrete.Proof.cryptoFns", "171a5072638a6bfd99e210c02c2bb78c")], false),
+  ("Examples.ElfHeader.Proofs.check_magic_correct", "body", "4ec2bf6300b8346ee56a420c7432cb52", [("Concrete.Proof.elfFns", "435665588e5161f5e9a294a5920cbf95")], false),
+  ("Examples.ElfHeader.Proofs.check_class_correct", "body", "7a4df947f32ae0bf81bb6be812a12376", [("Concrete.Proof.elfFns", "435665588e5161f5e9a294a5920cbf95")], false),
+  ("Examples.ElfHeader.Proofs.check_data_correct", "body", "6b79b8a6b380d8e9a5c6a592a9b005ac", [("Concrete.Proof.elfFns", "435665588e5161f5e9a294a5920cbf95")], false),
+  ("Examples.ElfHeader.Proofs.check_version_correct", "body", "a2d629c19c42b0555343c7db75bef406", [("Concrete.Proof.elfFns", "435665588e5161f5e9a294a5920cbf95")], false),
+  ("Examples.ElfHeader.Proofs.validate_header_correct", "body", "a4841e678e594c5581bd55011eb5e071", [("Concrete.Proof.elfFns", "435665588e5161f5e9a294a5920cbf95")], false),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body", "a5f009923fa06c451b9f6d1d8a0a618c", [("Concrete.Proof.ctTagFns", "cdf4e29ef3ca3c93b8d26bff2740299f")], false),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body", "eb3464a1496339eb7d3ba66b5faaaa06", [("Concrete.Proof.ctTagFns", "cdf4e29ef3ca3c93b8d26bff2740299f")], false),
+  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body", "64b149f40c8348b5d9ad82b51f6ac86a", [("Concrete.Proof.cryptoFns", "171a5072638a6bfd99e210c02c2bb78c")], false),
+  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body", "c03809fea8a03cd299d68f5073b8ea28", [("Concrete.Proof.fixedCapacityFns", "f105cbc25216dd018b5356f8e8bcf888")], false),
+  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body", "86641044424d8467caaedcc1456b8521", [("Concrete.Proof.fixedCapacityFns", "f105cbc25216dd018b5356f8e8bcf888")], false),
+  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body", "6dd8d351ab9225a609d8fb0598c65f13", [("Concrete.Proof.fixedCapacityFns", "f105cbc25216dd018b5356f8e8bcf888")], false),
+  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body", "3baf80715f1112d3e5cd70b4bce0cdbc", [("Concrete.Proof.fixedCapacityFns", "f105cbc25216dd018b5356f8e8bcf888")], false),
+  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract", "66c131f62baba38dc63cb5ed1a2ee0d9", [], true),
+  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract", "7514cf668b484ad57f6638496e8da254", [], true),
+  ("Examples.HmacSha256.Proofs.ch_refines", "body", "03c7ac500a119f1a9967e7c95a1462e2", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.HmacSha256.Proofs.ch_selects_high", "body", "dad0ea74403323b46dab5d3c1e99f5eb", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body", "bcff724c64133577213bb602047e7eb4", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.round_refines_list", "body", "52a7439c74366ee07d48cb8bce2bf844", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body", "d7518588077f8f2d9605ef725bc99f91", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body", "f54c86494d513cd00c0bded7bebe4085", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body", "bd7f85952d2f299401e49854542b0e53", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body", "cc7beef4d2f0b237721ba6b811ab2dcd", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body", "a60b88ebbd6bcb8e877fbbfed7de2100", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body", "f1e68b974ee5bfc806ed3598f9fc38c3", [("Examples.HmacSha256.Proofs.shaFns", "a7625f17c47fa35fb4aecb123dfd2e4b")], false),
+  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract", "dfc4fb49d1dc178ff9d2f8af256e6d96", [], true),
+  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body", "631a18e6482cac5515013298ad9c523b", [("Concrete.Proof.parseValidateFns", "17a423aa511a349cee5c03f5d72fde6e")], false),
+  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body", "2d51d46f8ba8cc0fe984cb7289dff1da", [("Concrete.Proof.parseValidateFns", "17a423aa511a349cee5c03f5d72fde6e")], false),
+  ("Examples.ParseValidate.Proofs.validate_version_correct", "body", "ce762322892966efae727e2c96fdd9ac", [("Concrete.Proof.parseValidateFns", "17a423aa511a349cee5c03f5d72fde6e")], false),
+  ("Examples.ProofPatterns.Proofs.add_three_correct", "body", "bf642e27e45729a9a4db4de97ecb75be", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.ProofPatterns.Proofs.combine_correct", "body", "098f3b62a5c123eb14149b1c917564f2", [("Examples.ProofPatterns.Proofs.combineFns", "482fb3ba7394c42b62c97e7497cde59c")], false),
+  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body", "2e7d0a991aea1812c2fe9742d5b0549a", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.ProofPatterns.Proofs.dbl_correct", "body", "8a5c627bb3e11a18172dcddd77b6d9b7", [("Examples.ProofPatterns.Proofs.combineFns", "482fb3ba7394c42b62c97e7497cde59c")], false),
+  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body", "858a134f01297e2ceca7934910d110fb", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.ProofPatterns.Proofs.inc_correct", "body", "aa47cb38439896023c17d5845f799001", [("Examples.ProofPatterns.Proofs.combineFns", "482fb3ba7394c42b62c97e7497cde59c")], false),
+  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body", "ea930af89044e22c064fd34346746bae", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body", "2a0a7be6bfc7a6e7da5ec81e4f6164c8", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false),
+  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88", [("Concrete.Proof.FnTable.empty", "825028e957e63be2d2a8ec4a017b46c0")], false)
 ]
 
 /-- A row that has passed structural validation. The ONLY way to obtain a classification.
@@ -97,6 +97,14 @@ structure ValidatedRow where
   theoremName : String
   edge        : DependencyEdge
   digest      : String
+  /-- The tables this classification is ABOUT, each bound to a digest. A row carrying only
+      (theorem, edge) says which theorem was classified but not which dependencies the label
+      covers, so a `body` edge could not be checked against what it types. -/
+  tables      : List (String × String)
+  /-- Whether the theorem quantifies over some `FnTable`. Kept because it is the other half of
+      the discriminator `classifyTheorem` used: a consumer re-deriving the verdict from `edge`
+      alone could not tell a theorem that quantified from one that named nothing. -/
+  quantifies  : Bool
 deriving Repr
 
 private def isHexDigest (d : String) : Bool :=
@@ -116,10 +124,17 @@ private def edgeOfTag : String → Option DependencyEdge
     in the checked-in table, which are all well-formed — so "malformed rows are rejected" would
     be asserted against data that contains none. That is precisely the shape of vacuous control
     this codebase keeps finding. -/
-def validateRawRow : String × String × String → Option ValidatedRow
-  | (n, tag, dig) => do
+def validateRawRow : String × String × String × List (String × String) × Bool → Option ValidatedRow
+  | (n, tag, dig, tbls, q) => do
     let e ← edgeOfTag tag
-    if !isHexDigest dig then none else some (ValidatedRow.mk n e dig)
+    if !isHexDigest dig then none
+    -- EVERY table digest is validated too. A row whose theorem digest is sound but whose table
+    -- digests are not describes its dependencies with values nothing can compare — the same
+    -- defect one level down, and the level where it would be least visible.
+    else if !(tbls.all fun t => isHexDigest t.2) then none
+    -- A table named twice in one row is the row disagreeing with itself about that dependency.
+    else if (tbls.map (·.1)).eraseDups.length != tbls.length then none
+    else some (ValidatedRow.mk n e dig tbls q)
 
 /-- Look a theorem up, validating the row before it can classify anything: exactly ONE row, or
     nothing.

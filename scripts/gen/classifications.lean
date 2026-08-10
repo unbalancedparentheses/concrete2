@@ -86,5 +86,20 @@ def sourceLinkedThms : List Name :=
     let d ← match (← theoremArtifactDigest n) with
       | some d => pure d
       | none => throwError s!"cannot digest theorem artifact for {n} — refusing to emit a placeholder row"
-    lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\")"]
+    -- TABLE IDENTITIES AND DIGESTS travel with the classification. Without them the row says
+    -- which THEOREM was classified but not which DEPENDENCIES the classification is about, so a
+    -- `body` label cannot be checked against the edges it is used to type. Sorted by table name
+    -- so discovery order cannot enter the row.
+    let tbls := ev.tableDigests.mergeSort (fun a b => toString a.1 ≤ toString b.1)
+    let mut tlits : List String := []
+    for (tn, td?) in tbls do
+      match td? with
+      | some td => tlits := tlits ++ [s!"(\"{tn}\", \"{td}\")"]
+      | none =>
+        -- An unbound table cannot be emitted: the row would claim a dependency it could not
+        -- describe, and a consumer comparing digests would have nothing to compare.
+        throwError s!"table {tn} of {n} is unbound — refusing to emit a row that names a dependency it cannot bind"
+    let tstr := "[" ++ String.intercalate ", " tlits ++ "]"
+    let q := if ev.quantifiesOverTable then "true" else "false"
+    lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\", {tstr}, {q})"]
   IO.println (String.intercalate ",\n" lits)

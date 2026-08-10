@@ -53,8 +53,12 @@ if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then
   # Compare the (theorem, edge, digest) triples, order-insensitively: the generator emits in
   # request order, and the checked-in file may have been reordered by hand without meaning
   # anything. Content is what must agree.
-  CHECKED="$(grep -oE '\("[^"]+", "[^"]+", "[^"]+"\)' Concrete/Proof/ClassificationTable.lean | sort || true)"
-  LIVE="$(grep -oE '\("[^"]+", "[^"]+", "[^"]+"\)' "$FRESH" | sort || true)"
+  # WHOLE ROWS, not a 3-tuple prefix. The row grew to carry table identities, digests and
+  # quantification, and a regex matching only the first three fields would have compared the
+  # theorem/edge/digest while ignoring exactly the dependency evidence this slice added — a
+  # freshness check that stops looking where the new information is.
+  CHECKED="$(grep -oE '^  \(".*\),?$' Concrete/Proof/ClassificationTable.lean | sed 's/,$//' | sort || true)"
+  LIVE="$(grep -oE '^  \(".*\),?$' "$FRESH" | sed 's/,$//' | sort || true)"
   if [ -z "$LIVE" ]; then
     no "the generator produced no rows — cannot establish table freshness, which is not the same as the table being fresh"
   elif [ "$CHECKED" = "$LIVE" ]; then
