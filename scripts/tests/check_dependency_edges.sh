@@ -822,6 +822,17 @@ probe "a MALFORMED table digest is refused" "true" '
 #eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false)).isNone'
 probe "a table named TWICE in one row is refused" "true" '
 #eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false)).isNone'
+probe "an EMPTY table identity is refused" "true" '
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "6fe095a9f592a2e2b556e87f30306584")], false)).isNone'
+# ...and a NAMED table with the same digest validates, so the refusal is about the identity being
+# empty rather than about the digest.
+probe "a NAMED table with the same digest validates (the refusal is about the name)" "true" '
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false)).isSome'
+# The raw table is PRIVATE, so validation is the only route to a classification — not merely the
+# only route to the `ValidatedRow` type.
+expect_no_compile "classificationTable cannot be read directly (private)" '
+#eval Concrete.Proof.classificationTable.length'
+
 probe "well-formed table bindings validate and are carried" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
       | some r => r.tables.length == 1 && r.quantifies

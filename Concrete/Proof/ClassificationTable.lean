@@ -29,7 +29,12 @@ namespace Concrete.Proof
     `check_classification_freshness.sh` re-derives these from the live environment and fails on
     disagreement, so a stale table is a gate failure rather than a silent wrong answer. It is a
     separate gate because re-derivation is slow. -/
-def classificationTable : List (String × String × String × List (String × String) × Bool) :=
+-- PRIVATE. As public data any consumer could read these tuples and interpret the edge tag
+-- directly, bypassing `validatedRowOf` entirely — the private `ValidatedRow` constructor stops
+-- that type being forged, but it does not make validation the only ROUTE to the classification
+-- information. Closing the type without closing the data leaves the front door locked and the
+-- window open.
+private def classificationTable : List (String × String × String × List (String × String) × Bool) :=
 [
   ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),
   ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),
@@ -132,6 +137,10 @@ def validateRawRow : String × String × String × List (String × String) × Bo
     -- digests are not describes its dependencies with values nothing can compare — the same
     -- defect one level down, and the level where it would be least visible.
     else if !(tbls.all fun t => isHexDigest t.2) then none
+    -- An EMPTY table identity is refused. "" is a value, not an absence: two unrelated unknown
+    -- tables would both bind as "" and compare EQUAL, so a row could claim two dependencies are
+    -- the same table. Same reason an empty environment identity refuses in the receipt.
+    else if !(tbls.all fun t => !t.1.isEmpty) then none
     -- A table named twice in one row is the row disagreeing with itself about that dependency.
     else if (tbls.map (·.1)).eraseDups.length != tbls.length then none
     else some (ValidatedRow.mk n e dig tbls q)

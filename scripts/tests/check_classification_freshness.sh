@@ -53,6 +53,12 @@ if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then
   # Compare the (theorem, edge, digest) triples, order-insensitively: the generator emits in
   # request order, and the checked-in file may have been reordered by hand without meaning
   # anything. Content is what must agree.
+  # LIMIT, recorded because this comparison is textual. It matches one-line rows, so a harmless
+  # reformatting would read as staleness and a MULTILINE row would escape the regex entirely.
+  # Adequate while the generator emits one line per row and nothing else writes this file;
+  # before receipts become authoritative it should compare a canonical machine format or parsed
+  # Lean values, not source text. Recorded rather than left as an assumption about formatting.
+  #
   # WHOLE ROWS, not a 3-tuple prefix. The row grew to carry table identities, digests and
   # quantification, and a regex matching only the first three fields would have compared the
   # theorem/edge/digest while ignoring exactly the dependency evidence this slice added — a
