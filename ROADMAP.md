@@ -5205,11 +5205,14 @@ consumer away from the `proved` decision path:
       under which a signature or contract change would leave entry evidence looking current and
       the eventual per-edge join would be exact over the WRONG subject identity.
 
-      STILL MISSING, and it blocks a `body` justification from claiming the exact implementation
-      subject: either a V2 subject digest on `PFnDef`, or a join of the callable identity against
-      the authoritative subject manifest when correspondence evidence is built. A body
-      justification must also REFUSE when the matching entry's authoritative subject digest is
-      absent, rather than carrying `none` onward.
+      **RESOLVED 2026-08-09 by the join, not by widening `PFnDef`.** `bindEntrySubjects` joins
+      entry evidence against the authoritative subject manifest and REFUSES THE WHOLE LIST when
+      any entry has no subject or an empty one — dropping unbindable entries would shrink the
+      membership set, and a shrunken set answers "is this callee present" with "not among the
+      ones I could bind", indistinguishable from "absent". `BoundTableEntry.subjectV2` is a plain
+      `String` with a private constructor, so an entry without an authoritative subject has no
+      representation. Membership returns the SUBJECT rather than a Bool, so a justification
+      records which implementation justified it.
 
       DUPLICATE IDENTITIES REFUSED: a table holding one callable twice cannot say which
       implementation a static lookup selects, and membership answering "at least one" would let a

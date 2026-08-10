@@ -925,6 +925,53 @@ probe "a same-NAMED callable from another module is not a member" "true" '
   let rows := [{ callee := CallableId.ofUser "modA" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "modB" "f"))'
 
+# === AUTHORITATIVE SUBJECT BINDING ===========================================================
+# Entry evidence carries the V1 SOURCE-BODY digest, which binds no signature, contracts,
+# specification or claim scope. A `body` justification needs the exact implementation SUBJECT, so
+# the V2 digest is joined from the authoritative manifest rather than approximated from what the
+# table happened to store.
+echo "=== authoritative subject binding ==="
+
+probe "entries bind when every subject is known" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  (bindEntrySubjects rows (fun _ => some "v2:abc")).isSome'
+
+# REFUSES THE WHOLE LIST, not just the missing row. Dropping unbindable entries would shrink the
+# membership set, and a shrunken set answers "is this callee present" with "not among the ones I
+# could bind" — indistinguishable from "absent", which is what justifies refusing an edge.
+probe "ONE entry without an authoritative subject refuses the whole list" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence },
+               { callee := CallableId.ofUser "m" "g", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  (bindEntrySubjects rows (fun c => if c == CallableId.ofUser "m" "f" then some "v2:abc" else none)).isNone'
+
+probe "an EMPTY subject refuses (empty compares equal to empty)" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  (bindEntrySubjects rows (fun _ => some "")).isNone'
+
+# Membership returns the SUBJECT, not a Bool: a justification must record which implementation
+# justified it, or a later check cannot tell whether the entry it matched is the one still there.
+probe "membership returns the bound subject, not just presence" "v2:abc" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match bindEntrySubjects rows (fun _ => some "v2:abc") with
+  | some bound => (boundEntrySubjectOf bound (CallableId.ofUser "m" "f")).getD "MISSING"
+  | none => "REFUSED"'
+
+probe "an absent callee has no bound subject" "true" '
+#eval
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match bindEntrySubjects rows (fun _ => some "v2:abc") with
+  | some bound => (boundEntrySubjectOf bound (CallableId.ofUser "m" "g")).isNone
+  | none => false'
+
+# The constructor is private, so a caller cannot assemble a bound entry around a subject the
+# join refused — the same closure the receipt and ValidatedRow use.
+expect_no_compile "BoundTableEntry cannot be constructed directly" '
+#eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").subjectV2'
+
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
 # A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
 # claim — this dependency is covered that way — and the two can come apart. `contract` is the

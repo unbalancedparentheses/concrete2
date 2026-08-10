@@ -311,6 +311,48 @@ def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
   | some rows =>
     if (rows.map (·.callee)).eraseDups.length != rows.length then none else some rows
 
+/-- A table entry bound to its AUTHORITATIVE V2 subject digest.
+
+    `TableEntryEvidence` carries the V1 source-body digest, which is what `PFnDef` records and
+    which binds no signature, contracts, specification or claim scope. A `body` justification
+    needs the exact implementation SUBJECT, so the V2 digest is joined in from the authoritative
+    manifest rather than approximated from what the table happened to store.
+
+    `subjectV2` is a plain `String`, not `Option`: an entry without an authoritative subject has
+    no representation here. That is the point — a justification built from entries where some
+    subject was `none` would be indistinguishable from one where every subject was known. -/
+structure BoundTableEntry where
+  private mk ::
+  callee    : CallableId
+  subjectV2 : String
+deriving Repr, BEq
+
+/-- Join entry evidence against the authoritative subject manifest, or refuse.
+
+    Refuses — the whole list, not the missing rows — when ANY entry has no authoritative subject
+    or an empty one. Dropping the unbindable entries would silently shrink the membership set,
+    and a shrunken set answers "is this callee present" with "not among the ones I could bind",
+    which is indistinguishable from "absent". Absence is what justifies refusing an edge, so a
+    membership list must never be able to under-report.
+
+    An EMPTY subject is refused for the reason an empty environment identity is: "" is a value
+    that compares equal to another "", so two entries with unknown subjects would agree. -/
+def bindEntrySubjects (rows : List TableEntryEvidence)
+    (subjectOf : CallableId → Option String) : Option (List BoundTableEntry) :=
+  rows.foldl (init := some []) fun acc r =>
+    match acc, subjectOf r.callee with
+    | some out, some sv => if sv.isEmpty then none else some (out ++ [BoundTableEntry.mk r.callee sv])
+    | _, _ => none
+
+/-- Does the bound table contain the callee, and with which subject?
+
+    Returns the SUBJECT rather than a Bool: a `body` justification has to record which
+    implementation it was justified by, or a later check cannot tell whether the entry it matched
+    is the one still there. A Bool would answer "yes" identically for an entry that has since
+    been replaced. -/
+def boundEntrySubjectOf (rows : List BoundTableEntry) (callee : CallableId) : Option String :=
+  (rows.find? fun r => r.callee == callee).map (·.subjectV2)
+
 /-- Does this table contain the callee, by IDENTITY?
 
     Identity, never name: two callables can share a display name, and `PFnDef.displayName` is
