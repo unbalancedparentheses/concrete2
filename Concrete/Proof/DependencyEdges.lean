@@ -270,10 +270,22 @@ one. Both, for different questions. -/
 /-- One entry's correspondence material: which callable, and which subject it came from. -/
 structure TableEntryEvidence where
   callee : CallableId
-  /-- The extracted-from subject digest, when the entry records one. `none` is carried rather
-      than defaulted: an entry whose provenance is unrecorded must not compare equal to one whose
-      provenance is recorded and happens to match. -/
-  subjectDigest : Option String
+  /-- The V1 SOURCE-BODY digest, and the name says V1 because that is what it holds.
+      `PFnDef.sourceBodyDigest` is `sourceBodyDigestV1`: it covers the extracted BODY and binds
+      no typed signature, no contracts, no selected specification, no claim scope.
+      An earlier version of this field was called `subjectDigest` and documented as "which
+      subject it came from" — reinterpreting a V1 body digest as the frozen V2 subject. A
+      signature or contract change would leave such evidence looking current, and the eventual
+      per-edge join would then be exact over the WRONG subject identity.
+
+      `none` is carried rather than defaulted: an entry whose provenance is unrecorded must not
+      compare equal to one whose provenance is recorded and happens to match.
+
+      **The authoritative V2 subject is NOT bound here yet.** Closing that needs either a V2
+      subject digest on `PFnDef`, or a join of the callable identity against the authoritative
+      subject manifest when correspondence evidence is built. Until then a `body` justification
+      cannot claim the exact implementation subject — only that a body matched. -/
+  sourceBodyDigestV1 : Option String
 deriving Repr, BEq
 
 /-- Entry evidence for a table, or `none` if ANY entry lacks identity.
@@ -284,11 +296,20 @@ deriving Repr, BEq
     it does not get one. This mirrors `FnTable.allIdentified`: evidence requires identity for the
     WHOLE table, not most of it. -/
 def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
-  t.canonicalEntries.toList.foldl (init := some []) fun acc d =>
+  let rows? := t.canonicalEntries.toList.foldl (init := some []) fun acc d =>
     match acc, d.identity.id? with
     | some rows, some cid =>
-        some (rows ++ [{ callee := cid, subjectDigest := d.sourceBodyDigest.map (·.value) }])
+        some (rows ++ [{ callee := cid, sourceBodyDigestV1 := d.sourceBodyDigest.map (·.value) }])
     | _, _ => none
+  -- UNIQUE IDENTITIES, or nothing. A table holding one callable twice cannot say which
+  -- implementation a static lookup selects, and `entryEvidenceContains` answering "at least
+  -- one" would let a `body` edge be justified by an entry that is not the one dispatch reaches.
+  -- `FnTable.hasDuplicateIds` treats a duplicate as an integrity error for the same reason;
+  -- membership evidence must not be more permissive than the table it describes.
+  match rows? with
+  | none => none
+  | some rows =>
+    if (rows.map (·.callee)).eraseDups.length != rows.length then none else some rows
 
 /-- Does this table contain the callee, by IDENTITY?
 

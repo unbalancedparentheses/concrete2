@@ -893,20 +893,36 @@ probe "ONE legacy entry refuses evidence for the WHOLE table" "true" '
   let legacy : PFnDef := { identity := .legacy, operationalKey := "g", params := [], body := PExpr.lit (PVal.int 0) }
   (tableEntryEvidence ({ entries := #[ok, legacy], globals := fun _ => none } : FnTable)).isNone'
 
+# DUPLICATE IDENTITIES REFUSED. A table holding one callable twice cannot say which
+# implementation a static lookup selects, and membership answering "at least one" would let a
+# `body` edge be justified by an entry that is not the one dispatch reaches.
+probe "a table with the SAME callable twice yields no evidence" "true" '
+#eval
+  let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[d, d], globals := fun _ => none } : FnTable)).isNone'
+probe "...while two DISTINCT callables are fine (the refusal is about duplication)" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isSome'
+
 probe "membership is decided by IDENTITY and finds a present callee" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", subjectDigest := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
   entryEvidenceContains rows (CallableId.ofUser "m" "f")'
 
 probe "...and does NOT find an absent one" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", subjectDigest := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "m" "g"))'
 
 # Same display name, different module: membership must not be decided on a rendering.
 probe "a same-NAMED callable from another module is not a member" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "modA" "f", subjectDigest := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "modA" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "modB" "f"))'
 
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================

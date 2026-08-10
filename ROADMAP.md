@@ -5199,6 +5199,22 @@ consumer away from the `proved` decision path:
       `PFnDef` already carries (`identity : PFnIdentity`, `sourceBodyDigest`) rather than
       inventing a parallel record.
 
+      **The field holds the V1 SOURCE-BODY digest, not the V2 subject**, and is now named
+      `sourceBodyDigestV1` to say so. It was briefly called `subjectDigest` and documented as
+      "which subject it came from" — reinterpreting a V1 body digest as the frozen V2 subject,
+      under which a signature or contract change would leave entry evidence looking current and
+      the eventual per-edge join would be exact over the WRONG subject identity.
+
+      STILL MISSING, and it blocks a `body` justification from claiming the exact implementation
+      subject: either a V2 subject digest on `PFnDef`, or a join of the callable identity against
+      the authoritative subject manifest when correspondence evidence is built. A body
+      justification must also REFUSE when the matching entry's authoritative subject digest is
+      absent, rather than carrying `none` onward.
+
+      DUPLICATE IDENTITIES REFUSED: a table holding one callable twice cannot say which
+      implementation a static lookup selects, and membership answering "at least one" would let a
+      `body` edge be justified by an entry dispatch never reaches.
+
       ALL-OR-NOTHING: one legacy entry refuses evidence for the whole table, because a partial
       membership list answers "is this callee present" with "not in the part I could read" —
       indistinguishable from "absent", and absence is what justifies refusing an edge. Membership
