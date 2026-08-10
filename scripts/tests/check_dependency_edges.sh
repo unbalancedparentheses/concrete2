@@ -792,8 +792,45 @@ probe "an unknown theorem is unclassified" "unclassified" '
 #eval (classifiedEdgeOf "No.Such.Theorem").canonical'
 
 # The point of the change: a structurally unsound row must not classify.
-probe "a row with a MALFORMED digest cannot be validated" "true" '
-#eval (validatedRowOf "No.Such.Theorem").isNone'
+# THE MALFORMED CASES, reached DIRECTLY. The leg that used to sit here called
+# `validatedRowOf "No.Such.Theorem"` and called itself a malformed-digest test — it exercised the
+# ABSENT path, already covered by the leg above, and proved nothing about malformed data. The
+# checked-in table contains only well-formed rows, so validation could not be tested through
+# lookup at all; `validateRawRow` exists so it can be.
+probe "an EMPTY digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "")).isNone'
+probe "a PLACEHOLDER digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "?")).isNone'
+probe "a WRONG-LENGTH digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "abc123")).isNone'
+# Uppercase is not "the same digest in different case": the generator emits lowercase, so an
+# uppercase value did not come from the generator.
+probe "an UPPERCASE digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1")).isNone'
+probe "a NON-HEX digest is refused" "true" '
+#eval (validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1")).isNone'
+probe "an UNKNOWN edge tag is refused" "true" '
+#eval (validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1")).isNone'
+# Positive control: without it, a validator that refused everything would pass all six above.
+probe "a WELL-FORMED row validates (positive control)" "true" '
+#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1")).isSome'
+
+# DUPLICATES. `find?` took the first match, so a malformed first row could hide a valid second
+# and a valid first could hide conflicting trailing data — both silently. A generated security
+# table must map a theorem to EXACTLY one validated row; zero and several are equally unusable,
+# and collapsing "ambiguous" into "take one" is how a conflicting table classifies confidently.
+probe "a theorem appearing TWICE yields no row, even if identical" "true" '
+#eval
+  let dup : List (String × String × String) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
+     ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1")]
+  (match dup.filter (fun (r : String × String × String) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
+probe "a theorem appearing twice with CONFLICTING rows yields no row" "true" '
+#eval
+  let dup : List (String × String × String) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1"),
+     ("T", "contract", "bfda7f397e3221e757383578b50ee3ff")]
+  (match dup.filter (fun (r : String × String × String) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
 
 probe "a validated row exposes its digest" "true" '
 #eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with

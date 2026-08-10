@@ -111,16 +111,33 @@ private def edgeOfTag : String → Option DependencyEdge
   -- `unclassified` at the call site rather than a guess.
   | _          => none
 
-/-- Look a theorem up, validating the row before it can classify anything.
+/-- Validate ONE raw row. Separated from lookup so the validation itself is testable: a test
+    that can only reach this through `validatedRowOf` can only exercise rows that happen to be
+    in the checked-in table, which are all well-formed — so "malformed rows are rejected" would
+    be asserted against data that contains none. That is precisely the shape of vacuous control
+    this codebase keeps finding. -/
+def validateRawRow : String × String × String → Option ValidatedRow
+  | (n, tag, dig) => do
+    let e ← edgeOfTag tag
+    if !isHexDigest dig then none else some (ValidatedRow.mk n e dig)
 
-    `none` when the theorem is absent OR its row is structurally unsound. Both become
-    `unclassified` at the call site — the fail-closed reading — and neither is distinguishable
-    from the other to a consumer, deliberately: "we have no usable classification" is one state
-    however it arose. The freshness gate is what distinguishes the causes. -/
-def validatedRowOf (thm : String) : Option ValidatedRow := do
-  let (n, tag, dig) ← classificationTable.find? (fun r => r.1 == thm)
-  let e ← edgeOfTag tag
-  if !isHexDigest dig then none else some (ValidatedRow.mk n e dig)
+/-- Look a theorem up, validating the row before it can classify anything: exactly ONE row, or
+    nothing.
+
+    `none` when the theorem is absent, ambiguous, OR structurally unsound. All become
+    `unclassified` at the call site — the fail-closed reading — and none is distinguishable from
+    the others to a consumer, deliberately: "we have no usable classification" is one state
+    however it arose. The freshness gate distinguishes the causes.
+
+    `find?` took the first match, so a malformed first row could hide a valid second, and a valid
+    first row could hide conflicting trailing data — both silently. A generated security table
+    must represent theorem name -> exactly one validated row; zero and several are equally
+    unusable, and collapsing "ambiguous" into "take one" is how a conflicting table classifies
+    confidently. -/
+def validatedRowOf (thm : String) : Option ValidatedRow :=
+  match classificationTable.filter (fun r => r.1 == thm) with
+  | [row] => validateRawRow row
+  | _     => none
 
 /-- The edge a theorem implies, or `unclassified` when there is no usable classification.
 
