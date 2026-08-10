@@ -311,47 +311,74 @@ def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
   | some rows =>
     if (rows.map (·.callee)).eraseDups.length != rows.length then none else some rows
 
-/-- A table entry bound to its AUTHORITATIVE V2 subject digest.
+/-- A closed, validated map from callable identity to IMPLEMENTATION digest.
 
-    `TableEntryEvidence` carries the V1 source-body digest, which is what `PFnDef` records and
-    which binds no signature, contracts, specification or claim scope. A `body` justification
-    needs the exact implementation SUBJECT, so the V2 digest is joined in from the authoritative
-    manifest rather than approximated from what the table happened to store.
+    **Why implementation and not proof subject.** The frozen V2 subject includes the selected
+    specification and claim scope, which describe what a particular proof LINK claims. One
+    callable can carry several proof links, so `CallableId -> ProofSubjectDigestV2` is not a
+    function and a join on it is ill-defined. The IMPLEMENTATION digest excludes spec and scope,
+    so it is one per callable — which is what a table entry needs, since an entry describes an
+    implementation and does not change when a different specification is pointed at it.
 
-    `subjectV2` is a plain `String`, not `Option`: an entry without an authoritative subject has
-    no representation here. That is the point — a justification built from entries where some
-    subject was `none` would be indistinguishable from one where every subject was known. -/
+    **Why a closed type and not a callback.** The previous version took
+    `CallableId -> Option String`, so any caller could mint a "bound" entry from any non-empty
+    string — the private constructor required only non-emptiness, not provenance. The tests
+    passed `"v2:abc"` and proved exactly that. A private constructor guarding a value the caller
+    supplies is not a guard.
+
+    Constructor is private; `ofRows` is the only way in, and it validates. -/
+structure ImplementationManifest where
+  private mk ::
+  private rows : List (CallableId × String)
+deriving Repr
+
+/-- Build a manifest, or refuse.
+
+    Refuses on a duplicate callable — the manifest claims to be a FUNCTION, and two rows for one
+    callable means it is not — and on a digest that is not canonical 32-hex. Both refuse the
+    whole manifest rather than the offending row: a manifest missing entries answers "no
+    implementation for this callable" indistinguishably from a callable that genuinely has none. -/
+def ImplementationManifest.ofRows (rows : List (CallableId × String))
+    : Option ImplementationManifest :=
+  let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+  if (rows.map (·.1)).eraseDups.length != rows.length then none
+  else if !(rows.all fun r => isHex r.2) then none
+  else some (ImplementationManifest.mk rows)
+
+def ImplementationManifest.find? (m : ImplementationManifest) (c : CallableId) : Option String :=
+  (m.rows.find? fun r => r.1 == c).map (·.2)
+
+/-- A table entry bound to its authoritative IMPLEMENTATION digest.
+
+    `implDigest` is a plain `String` with a private constructor, so an entry without an
+    authoritative implementation has no representation — and the value can only have come from a
+    validated manifest, not from a caller-supplied callback. -/
 structure BoundTableEntry where
   private mk ::
-  callee    : CallableId
-  subjectV2 : String
+  callee     : CallableId
+  implDigest : String
 deriving Repr, BEq
 
-/-- Join entry evidence against the authoritative subject manifest, or refuse.
+/-- Join entry evidence against a CLOSED manifest, or refuse.
 
-    Refuses — the whole list, not the missing rows — when ANY entry has no authoritative subject
-    or an empty one. Dropping the unbindable entries would silently shrink the membership set,
-    and a shrunken set answers "is this callee present" with "not among the ones I could bind",
-    which is indistinguishable from "absent". Absence is what justifies refusing an edge, so a
-    membership list must never be able to under-report.
-
-    An EMPTY subject is refused for the reason an empty environment identity is: "" is a value
-    that compares equal to another "", so two entries with unknown subjects would agree. -/
-def bindEntrySubjects (rows : List TableEntryEvidence)
-    (subjectOf : CallableId → Option String) : Option (List BoundTableEntry) :=
+    Refuses the whole list when any entry has no manifest row. Dropping unbindable entries would
+    shrink the membership set, and a shrunken set answers "is this callee present" with "not
+    among the ones I could bind" — indistinguishable from "absent", which is what justifies
+    refusing an edge. A membership list must never be able to under-report. -/
+def bindEntrySubjects (rows : List TableEntryEvidence) (manifest : ImplementationManifest)
+    : Option (List BoundTableEntry) :=
   rows.foldl (init := some []) fun acc r =>
-    match acc, subjectOf r.callee with
-    | some out, some sv => if sv.isEmpty then none else some (out ++ [BoundTableEntry.mk r.callee sv])
+    match acc, manifest.find? r.callee with
+    | some out, some d => some (out ++ [BoundTableEntry.mk r.callee d])
     | _, _ => none
 
-/-- Does the bound table contain the callee, and with which subject?
+/-- The bound implementation digest for a callee, if it is a member.
 
-    Returns the SUBJECT rather than a Bool: a `body` justification has to record which
-    implementation it was justified by, or a later check cannot tell whether the entry it matched
-    is the one still there. A Bool would answer "yes" identically for an entry that has since
-    been replaced. -/
+    Returns the DIGEST rather than a Bool: a `body` justification must record which
+    implementation justified it, or a later check cannot tell whether the entry it matched is the
+    one still there. -/
 def boundEntrySubjectOf (rows : List BoundTableEntry) (callee : CallableId) : Option String :=
-  (rows.find? fun r => r.callee == callee).map (·.subjectV2)
+  (rows.find? fun r => r.callee == callee).map (·.implDigest)
 
 /-- Does this table contain the callee, by IDENTITY?
 

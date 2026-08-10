@@ -2042,6 +2042,29 @@ def shortHash (fingerprint : String) : String :=
   let digest := (Sha256Spec.hash bytes).take 16
   String.join (digest.map byteToHex)
 
+/-- The IMPLEMENTATION preimage: what a callable IS, with no proof-link metadata.
+
+    Identity, typed signature, generics, capabilities and contracts (via `facts.canonical`) plus
+    the structural body. Deliberately excludes the selected specification and claim scope: those
+    say what a particular proof CLAIMS about this implementation, and an implementation does not
+    change when a different proof is pointed at it.
+
+    Exposed as the preimage rather than only as a digest so `proofSubjectDigestV2` can extend it
+    without nesting a hash — which would change V2's bytes and break its freeze for a refactor
+    that adds no information. -/
+def implementationPreimage (facts : Proof.CheckedDeclFacts)
+    (body : Proof.CompleteEvidenceBodyV2) : String :=
+  "subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash (Proof.bodyBytesV2 body)
+
+/-- The implementation digest — the identity a `body` dependency edge should bind.
+
+    Distinct from the proof-subject digest, and the distinction is the point: a table entry
+    describes an implementation, so binding the full subject there would couple table membership
+    to which specification a proof link happened to select. -/
+def implementationDigest (facts : Proof.CheckedDeclFacts)
+    (body : Proof.CompleteEvidenceBodyV2) : String :=
+  shortHash (implementationPreimage facts body)
+
 /-- The versioned proof-subject digest, defined ONCE from the captured facts and
     the body fingerprint.
 
@@ -2118,8 +2141,22 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
       let scopePart := match claimScope? with
         | some c => "C" ++ toString c.length ++ ":" ++ c
         | none   => "C-none"
-      some (shortHash ("subjectV2:" ++ facts.canonical
-              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)
+      -- TWO IDENTITIES, sharing a preimage rather than nesting a hash.
+      --
+      -- The IMPLEMENTATION component — identity, typed signature, generics, capabilities,
+      -- contracts, structural body — describes a callable independently of which proof or
+      -- specification was selected for it. The SUBJECT adds the selected specification and claim
+      -- scope, which describe what a particular proof LINK claims.
+      --
+      -- A function-table entry is an implementation, so table membership must bind the first and
+      -- not the second: coupling membership to proof-link metadata would make a table entry
+      -- change when a spec was re-pointed, which has nothing to do with the implementation.
+      --
+      -- The subject hashes the implementation PREIMAGE, not `implementationDigest`. Nesting the
+      -- hash would change V2's bytes and break the freeze for a refactor that adds no
+      -- information; sharing the preimage keeps every V2 value identical while making the
+      -- implementation component reusable. The freeze gate is what proves that.
+      some (shortHash (implementationPreimage facts complete
               ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
 
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.

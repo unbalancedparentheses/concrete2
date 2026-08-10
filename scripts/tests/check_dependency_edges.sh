@@ -925,52 +925,64 @@ probe "a same-NAMED callable from another module is not a member" "true" '
   let rows := [{ callee := CallableId.ofUser "modA" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "modB" "f"))'
 
-# === AUTHORITATIVE SUBJECT BINDING ===========================================================
-# Entry evidence carries the V1 SOURCE-BODY digest, which binds no signature, contracts,
-# specification or claim scope. A `body` justification needs the exact implementation SUBJECT, so
-# the V2 digest is joined from the authoritative manifest rather than approximated from what the
-# table happened to store.
-echo "=== authoritative subject binding ==="
+# === AUTHORITATIVE IMPLEMENTATION BINDING ====================================================
+# Two things this fixes, both found by review.
+#
+# 1. The previous `bindEntrySubjects` took a CALLBACK, so any caller could mint a "bound" entry
+#    from any non-empty string — the private constructor required non-emptiness, not provenance.
+#    The old tests passed "v2:abc" and proved exactly that. A private constructor guarding a
+#    value the caller supplies is not a guard.
+# 2. It keyed on the V2 PROOF SUBJECT, which includes selected specification and claim scope. One
+#    callable can carry several proof links, so `CallableId -> SubjectDigest` is not a function
+#    and the join was ill-defined. The IMPLEMENTATION digest excludes spec and scope, so it is
+#    one per callable — which is what a table entry needs.
+echo "=== authoritative implementation binding ==="
 
-probe "entries bind when every subject is known" "true" '
+HEXA='"7bcec2d7871f93204b26e2bf83d5acf1"'
+HEXB='"bfda7f397e3221e757383578b50ee3ff"'
+
+probe "a manifest with distinct callables and canonical digests builds" "true" "
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)]).isSome"
+
+# The manifest CLAIMS to be a function; two rows for one callable means it is not.
+probe "a DUPLICATE callable refuses the manifest" "true" "
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA), (CallableId.ofUser \"m\" \"f\", $HEXB)]).isNone"
+
+probe "a NON-CANONICAL digest refuses the manifest" "true" '
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc")]).isNone'
+
+# The exact string the old tests used. It is not a digest, and the old API accepted it.
+probe "the old bypass value \"v2:abc\" is now rejected outright" "true" '
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc")]).isNone'
+
+probe "entries bind through a validated manifest" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  (bindEntrySubjects rows (fun _ => some "v2:abc")).isSome'
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+  | some mf => (bindEntrySubjects rows mf).isSome
+  | none => false"
 
-# REFUSES THE WHOLE LIST, not just the missing row. Dropping unbindable entries would shrink the
-# membership set, and a shrunken set answers "is this callee present" with "not among the ones I
-# could bind" — indistinguishable from "absent", which is what justifies refusing an edge.
-probe "ONE entry without an authoritative subject refuses the whole list" "true" '
+probe "ONE entry missing from the manifest refuses the whole list" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence },
-               { callee := CallableId.ofUser "m" "g", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  (bindEntrySubjects rows (fun c => if c == CallableId.ofUser "m" "f" then some "v2:abc" else none)).isNone'
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence },
+               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+  | some mf => (bindEntrySubjects rows mf).isNone
+  | none => false"
 
-probe "an EMPTY subject refuses (empty compares equal to empty)" "true" '
+probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d '\"')" "
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  (bindEntrySubjects rows (fun _ => some "")).isNone'
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+  | some mf => match bindEntrySubjects rows mf with
+    | some b => (boundEntrySubjectOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
+    | none => \"REFUSED\"
+  | none => \"NO-MANIFEST\""
 
-# Membership returns the SUBJECT, not a Bool: a justification must record which implementation
-# justified it, or a later check cannot tell whether the entry it matched is the one still there.
-probe "membership returns the bound subject, not just presence" "v2:abc" '
-#eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match bindEntrySubjects rows (fun _ => some "v2:abc") with
-  | some bound => (boundEntrySubjectOf bound (CallableId.ofUser "m" "f")).getD "MISSING"
-  | none => "REFUSED"'
-
-probe "an absent callee has no bound subject" "true" '
-#eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match bindEntrySubjects rows (fun _ => some "v2:abc") with
-  | some bound => (boundEntrySubjectOf bound (CallableId.ofUser "m" "g")).isNone
-  | none => false'
-
-# The constructor is private, so a caller cannot assemble a bound entry around a subject the
-# join refused — the same closure the receipt and ValidatedRow use.
+expect_no_compile "the manifest cannot be constructed directly" '
+#eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")'
 expect_no_compile "BoundTableEntry cannot be constructed directly" '
-#eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").subjectV2'
+#eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").implDigest'
 
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
 # A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
