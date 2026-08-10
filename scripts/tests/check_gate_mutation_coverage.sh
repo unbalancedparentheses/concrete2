@@ -327,6 +327,19 @@ add "subject-binds-body" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.
   $'    | .ok complete =>\n      some (shortHash ("subjectV2:" ++ facts.canonical\n              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)))' \
   $'    | .ok _ =>\n      some (shortHash ("subjectV2:" ++ facts.canonical))'
 
+# R-0004 slice 6, blocker (c) containment. `rowJustifies` refuses a classification whose theorem
+# SHAPE cannot support it, and `classifiedEdgeOf` downgrades such a row to `unclassified`. The
+# probes for that use SYNTHETIC rows, which proves the function rejects — not that the consumer
+# acts on it for a real row in the checked-in table.
+#
+# This mutation relabels a real row `body` -> `contract` while leaving `quantifies = false`. The
+# row stays structurally valid: well-formed digests, one table, no duplicates. Only the
+# correspondence condition fails, so nothing but `rowJustifies` can catch it — which is exactly
+# what makes it the right mutation for this control.
+add "classification-justifies" "Concrete/Proof/ClassificationTable.lean" "check_dependency_edges.sh" yes \
+  $'  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),' \
+  $'  ("Concrete.Proof.parse_byte_correct", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
