@@ -5229,9 +5229,38 @@ consumer away from the `proved` decision path:
       than defaulted, so the fail-closed chain runs end to end: undescribable implementation -> no
       manifest row -> no binding -> no `body` justification -> root refuses.
 
-      REMAINING: `ofRows` validates FORMAT only and is public, so a well-formed invented digest
-      (thirty-two zeros) can enter that way. Provenance closure needs the constructor restricted
-      to the producer, which is cross-module today.
+      **STEP 2 IS NOT CLOSED. Three open items, the first an unsoundness:**
+
+      1. **The join matches `CallableId` ALONE.** `bindEntryImplementations` attaches the
+         manifest's implementation digest without checking that the entry's stored body is the one
+         the manifest describes, and `TableEntryEvidence.sourceBodyDigestV1` is ignored — a test
+         with `sourceBodyDigestV1 := none` binds successfully, which demonstrates it. So a stale
+         or substituted table entry carrying the right identity ACQUIRES the current authoritative
+         digest. That is the misattachment blocker (c) exists to kill.
+
+         It cannot be fixed where the producer lives, for a concrete reason: the manifest digest
+         is built from `bodyBytesV2`, the entry field holds `sourceBodyDigestV1`, and `ProofCore`
+         records NO source-body digest at all — `renderSourceBodyDigest` is in Report. There is
+         nothing in the producer's reach to compare against. Closing it needs the authoritative
+         body component carried where the manifest is built; binding then requires identities
+         equal AND the entry's body digest PRESENT AND equal to that component.
+
+         **The acceptance mutation:** replace a table entry's body while preserving its
+         `CallableId`. Binding must refuse. Today it succeeds.
+
+      2. **`ofRows` validates FORMAT only and is public** — thirty-two zeros mints a manifest. It
+         cannot be made private while the producer is cross-module. A dedicated correspondence
+         module importing both ProofCore and the manifest definitions is the clean fix, rather
+         than keeping the current cycle-driven placement.
+
+      3. **`implementationManifestOf` uses `filterMap`**, so the manifest is neither complete nor
+         self-denominating. The downstream join refuses a missing callable, which is fail-closed
+         for that use, but the manifest must not be called complete without either retaining
+         named refusal rows or storing the expected eligible identity set and proving every
+         identity received exactly one digest.
+
+      Body, capability and generic sensitivity controls are also still owed — only signature and
+      contract sensitivity are demonstrated.
 
       DUPLICATE IDENTITIES REFUSED: a table holding one callable twice cannot say which
       implementation a static lookup selects, and membership answering "at least one" would let a

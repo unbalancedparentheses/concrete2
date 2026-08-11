@@ -181,10 +181,19 @@ structure TableEntryEvidence where
       `none` is carried rather than defaulted: an entry whose provenance is unrecorded must not
       compare equal to one whose provenance is recorded and happens to match.
 
-      **The authoritative V2 subject is NOT bound here yet.** Closing that needs either a V2
-      subject digest on `PFnDef`, or a join of the callable identity against the authoritative
-      subject manifest when correspondence evidence is built. Until then a `body` justification
-      cannot claim the exact implementation subject — only that a body matched. -/
+      **THIS FIELD IS NOT YET COMPARED, and that is an open unsoundness.**
+      `bindEntryImplementations` matches on `CallableId` alone and attaches the manifest's
+      implementation digest without checking that the entry's stored body is the one the manifest
+      describes. So a STALE OR SUBSTITUTED table entry carrying the right identity acquires the
+      current authoritative digest — which is the misattachment that blocker (c) exists to kill.
+
+      The comparison cannot be written yet, for a concrete reason rather than for want of effort:
+      the manifest's implementation digest is built from `bodyBytesV2`, this field holds
+      `sourceBodyDigestV1`, and `ProofCore` records no source-body digest at all
+      (`renderSourceBodyDigest` lives in Report). There is nothing in the producer's reach to
+      compare against. Closing it needs the authoritative body component carried where the
+      manifest is built — then binding requires: identities equal AND the entry's body digest is
+      PRESENT AND equal to the authoritative component. -/
   sourceBodyDigestV1 : Option String
 deriving Repr, BEq
 

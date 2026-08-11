@@ -17,6 +17,19 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
+expect_no_compile() {
+  local label="$1" body="$2"
+  cat > "$TMP/h.lean" <<LEAN
+import Concrete
+import Examples
+open Lean Meta Concrete Concrete.Proof
+$body
+LEAN
+  local out; out="$(lake env lean "$TMP/h.lean" 2>&1 || true)"
+  if grep -qE "error:|error\(lean" <<<"$out"; then ok "$label"
+  else no "$label — IT COMPILED, so the invariant is documentation rather than a type"; fi
+}
+
 probe() {
   local label="$1" want="$2" body="$3"
   cat > "$TMP/p.lean" <<LEAN
@@ -181,12 +194,18 @@ probe "NO spec differs from a spec named the empty string" "true" \
 # implementation, and would make table membership depend on proof-link metadata.
 echo "=== implementation identity is independent of proof-link metadata ==="
 
-probe "selected spec does NOT move the implementation digest" "true" \
-'#eval
-  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
-  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
-  | .ok b => implementationDigest f b == implementationDigest f b
-  | .error _ => false'
+# Independence from spec/scope is STRUCTURAL, not behavioural: `implementationDigest` takes no
+# spec or scope argument, so there is no input to vary. The probe that used to sit here compared
+# `implementationDigest f b` with ITSELF and called that independence — a tautology that would
+# pass for any function whatsoever.
+#
+# What is testable is that the API cannot ACCEPT them, which is where the property actually lives.
+expect_no_compile "implementationDigest cannot take a spec or scope argument" '
+#eval
+  let f : Concrete.Proof.CheckedDeclFacts := { id := Concrete.CallableId.ofUser "m" "f" }
+  match Concrete.Proof.validate ({} : Concrete.Proof.EvidenceBodyDraftV2) with
+  | .ok b => Concrete.implementationDigest f b (some "SpecA")
+  | .error _ => ""'
 
 # ...while the SUBJECT does move on spec and scope. Both directions, or "independent" would be
 # indistinguishable from "ignores everything".
