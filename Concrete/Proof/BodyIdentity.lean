@@ -1,28 +1,35 @@
 import Concrete.Proof.Proof
-import Concrete.Proof.Sha256Spec
+import Concrete.Proof.Digest
 
 /-!
-# Canonical PExpr normalization and content hashing
+# Canonical body identity
 
-These live BELOW `DependencyEdge` in import order, and that placement is the whole point.
+What makes two function bodies THE SAME body: alpha-invariant surface names (`stripAlpha`),
+canonical normalization (`normalizePExpr`), and the one digest built from them
+(`sourceBodyDigestV1Of`). One producer for that digest, deliberately — a second copy of the formula
+is a second answer to "did this body change".
 
-`tableEntryEvidence` (in `DependencyEdge`) has to recompute a body digest from the actual
-`PFnDef.body` and refuse when it disagrees with the stored provenance — otherwise a body can be
-replaced while keeping its callable identity AND its stored digest, and the join still binds,
-because every other leg compares metadata against metadata. The producer it needs
-(`normalizePExpr` then `shortHash`) used to sit in `ProofCore`, which imports `DependencyRoot`,
-which imports `DependencyEdge`. Calling it from the consumer was an import cycle.
+**Placement below `DependencyEdge` is the point, not an accident.** `tableEntryEvidence` (in
+`DependencyEdge`) recomputes a body digest from the actual `PFnDef.body` and refuses when it
+disagrees with the stored provenance; without that, a body can be replaced while keeping its
+callable identity AND its stored digest, and the join still binds, because every other leg compares
+metadata against metadata. The producer used to sit in `ProofCore`, which imports `DependencyRoot`,
+which imports `DependencyEdge` — so calling it from the consumer was an import cycle.
 
-Extracted here rather than into `Proof.lean` for a measured reason: `ProofCore` is `namespace
-Concrete` and `Proof.lean` is `namespace Concrete.Proof`, so moving these into `Proof.lean` would
-rename `Concrete.normalizePExpr` and `Concrete.shortHash` and churn every call site. This module
-keeps `namespace Concrete`, so the names do not move — only the file does.
+Imports `Proof` (for `PExpr`/`pexprCanonical`) and `Digest` (for `shortHash`). It must import
+neither `ProofCore` nor `DependencyEdge`, and both of those import it.
 
-Both blocks were moved verbatim; the four `private` helpers they use
-(`pexprFreeIn`, `pexprSortKey`, `isCommutative`, `byteToHex`) had no other users in `ProofCore`,
-so they came along and stay private to this module.
+Named for what it owns rather than how it works: an earlier name, `PExprNormalize`, described the
+normalization step and undersold a module that also owns surface-name stripping and the canonical
+digest. `shortHash` deliberately does NOT live here — it digests toolchains, workspaces, imports,
+tables and theorem artifacts too, so it is general and lives in `Digest`.
+
+`namespace Concrete`, matching `ProofCore`, so nothing was renamed when these moved: `Proof.lean` is
+`namespace Concrete.Proof`, and landing them there would have churned every call site.
+
+The three `private` helpers (`pexprFreeIn`, `pexprSortKey`, `isCommutative`) had no users outside
+the moved blocks and stay private here.
 -/
-
 namespace Concrete
 
 /-- Bug 045: Elab alpha-renames match binders (`value` → `value.b7`).
@@ -186,24 +193,6 @@ partial def normalizePExpr : Proof.PExpr → Proof.PExpr
       (normalizePExpr step)
       (normalizePExpr cont)
 
-/-- Two-digit lowercase hex of a byte. -/
-private def byteToHex (b : Sha256Spec.Byte) : String :=
-  let digits := "0123456789abcdef".toList
-  let n := b.toNat
-  String.ofList [digits.getD (n / 16) '0', digits.getD (n % 16) '0']
-
-/-- Compact, stable hex hash of a body fingerprint, for the in-source
-    `#[proof_fingerprint("…")]` attribute. The full PExpr string is grotesque in
-    source, so we store a digest. SHA-256 truncated to 128 bits: the previous
-    64-bit non-cryptographic `String.hash` defended against accidental drift but
-    not against a crafted body that collides with the recorded fingerprint —
-    a silent stale→proved upgrade. Reuses the in-repo FIPS 180-4 spec
-    (`Concrete.Sha256Spec`), so the digest needs no new trusted code. -/
-def shortHash (fingerprint : String) : String :=
-  let bytes : List Sha256Spec.Byte :=
-    fingerprint.toUTF8.toList.map fun b => BitVec.ofNat 8 b.toNat
-  let digest := (Sha256Spec.hash bytes).take 16
-  String.join (digest.map byteToHex)
 
 /-- THE canonical V1 source-body digest. One producer, and that is the point.
 
@@ -224,7 +213,7 @@ def shortHash (fingerprint : String) : String :=
     **Now used by `tableEntryEvidence`**, which is the check that matters most. It used to read
     `PFnDef.sourceBodyDigest` and TRUST it rather than recomputing from `PFnDef.body`, so a
     substituted body retaining old metadata still bound. That needed this producer BELOW
-    `DependencyEdge` in the import order, which is why it lives in `PExprNormalize` next to the
+    `DependencyEdge` in the import order, which is why it lives in `BodyIdentity` next to the
     `normalizePExpr` and `shortHash` it is built from, rather than in `ProofCore`. -/
 def sourceBodyDigestV1Of (pe : Proof.PExpr) : String :=
   shortHash (Proof.pexprCanonical (normalizePExpr pe))

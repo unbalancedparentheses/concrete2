@@ -5249,7 +5249,7 @@ consumer away from the `proved` decision path:
 
          The enabling refactor took SEVEN declarations, not the five predicted — `stripAlpha` and
          `byteToHex` surfaced only by rebuilding after each step — and landed in a new
-         `PExprNormalize` module rather than `Proof.lean`, because `ProofCore` is `namespace
+         `BodyIdentity` module (plus a general `Digest`) rather than `Proof.lean`, because `ProofCore` is `namespace
          Concrete` while `Proof.lean` is `namespace Concrete.Proof` and moving there would have
          renamed every call site.
 
@@ -5297,7 +5297,7 @@ consumer away from the `proved` decision path:
          - `implementationPreimage`/`implementationDigest` need only `Proof.CheckedDeclFacts`,
            `Proof.CompleteEvidenceBodyV2`, `Proof.bodyBytesV2` and `shortHash`;
          - those live in `SubjectFacts`, `EvidenceTree`/`IdentityUseBytes`, and (since the
-           `PExprNormalize` extraction) below `DependencyEdge`;
+           `BodyIdentity`/`Digest` extraction) below `DependencyEdge`;
          - **none of `SubjectFacts`, `EvidenceTree` or `IdentityUseBytes` mentions
            `DependencyEdge`** — verified by grep, so `DependencyEdge` can import that chain with
            no cycle.

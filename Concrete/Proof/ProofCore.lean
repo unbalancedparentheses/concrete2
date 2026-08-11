@@ -3,7 +3,7 @@ import Concrete.Pipeline.Pipeline
 import Concrete.Proof.Proof
 import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
-import Concrete.Proof.PExprNormalize
+import Concrete.Proof.BodyIdentity
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.ClassificationTable
 

@@ -1,5 +1,5 @@
 import Concrete.Proof.Proof
-import Concrete.Proof.PExprNormalize
+import Concrete.Proof.BodyIdentity
 
 /-! # Typed proof-dependency edges (R-0004 step 6)
 
