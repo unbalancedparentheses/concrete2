@@ -5231,6 +5231,29 @@ consumer away from the `proved` decision path:
 
       **STEP 2 IS NOT CLOSED. Three open items, the first an unsoundness:**
 
+      1a. **NEXT TASK, and its exact blocker — measured 2026-08-11, do not re-derive.**
+         `tableEntryEvidence` must recompute the canonical digest from the actual `PFnDef.body`
+         and refuse unless it equals the stored `PFnDef.sourceBodyDigest`. Until it does, the
+         acceptance mutation (replace a body, keep its callable identity AND its stored digest)
+         still binds: the existing legs compare metadata against metadata, never against the body.
+
+         **It cannot simply call `sourceBodyDigestV1Of` (landed in `2d351a2d`).** Import order
+         forbids it: the producer is in `ProofCore`, `tableEntryEvidence` is in `DependencyEdge`,
+         and `ProofCore -> DependencyRoot -> DependencyEdge`. Using it there is a cycle.
+
+         **The move is bigger than two functions**, which is why the first attempt over-captured
+         and was reverted. `normalizePExpr` depends on `pexprSortKey`, `isCommutative` and
+         `pexprFreeIn`, all in `ProofCore`. The full set to lift into `Proof.lean` is:
+
+         ```
+         pexprSortKey · isCommutative · pexprFreeIn · normalizePExpr · shortHash
+         ```
+
+         plus `import Concrete.Proof.Sha256Spec` (import-free, so no new cycle). Move by explicit
+         line ranges, one function at a time, rebuilding between each — a regex over this set is
+         what produced eleven errors. `Proof.lean` already has `pexprCanonical`, so once these
+         five are there the producer can live below `DependencyEdge` and both consumers reach it.
+
       1. ~~**The join matches `CallableId` ALONE.**~~ **FIXED 2026-08-11.** Manifest rows carry
          `(callable, authoritative source-body digest, implementation digest)`, and binding now
          requires the entry's stored body digest to be PRESENT and EQUAL to the authoritative one.
