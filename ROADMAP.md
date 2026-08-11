@@ -5287,10 +5287,31 @@ consumer away from the `proved` decision path:
          **The acceptance mutation:** replace a table entry's body while preserving its
          `CallableId`. Binding must refuse. Today it succeeds.
 
-      2. **`ofRows` validates FORMAT only and is public** — thirty-two zeros mints a manifest. It
-         cannot be made private while the producer is cross-module. A dedicated correspondence
-         module importing both ProofCore and the manifest definitions is the clean fix, rather
-         than keeping the current cycle-driven placement.
+      2. **`ofRows` validates FORMAT only and is public** — thirty-two zeros mints a manifest.
+
+         **NOT actually blocked — measured 2026-08-11, and the earlier "cannot be made private
+         while the producer is cross-module" was wrong.** The fix does not need a correspondence
+         module importing ProofCore. It needs the digest COMPUTATION below `DependencyEdge`, and
+         everything it depends on already is:
+
+         - `implementationPreimage`/`implementationDigest` need only `Proof.CheckedDeclFacts`,
+           `Proof.CompleteEvidenceBodyV2`, `Proof.bodyBytesV2` and `shortHash`;
+         - those live in `SubjectFacts`, `EvidenceTree`/`IdentityUseBytes`, and (since the
+           `PExprNormalize` extraction) below `DependencyEdge`;
+         - **none of `SubjectFacts`, `EvidenceTree` or `IdentityUseBytes` mentions
+           `DependencyEdge`** — verified by grep, so `DependencyEdge` can import that chain with
+           no cycle.
+
+         **The shape that closes it**, rather than merely narrowing it: move those two into a
+         module `DependencyEdge` imports, then replace the caller-supplied-digest entry point with
+         one taking `(CallableId × CheckedDeclFacts × CompleteEvidenceBodyV2)` and computing both
+         digests itself. A caller then has nowhere to put invented hex — the guard becomes the
+         type rather than a format check, which is the same move that fixed `TableEntryEvidence`.
+         `implementationManifestOf` can stay in `ProofCore`, since only the computation has to
+         move down, not the builder that walks a `ProofCore`.
+
+         Keep the format validation as well: it still rejects a malformed digest from the
+         authoritative producer, which is a different failure from a forged one.
 
       3. **`implementationManifestOf` uses `filterMap`**, so the manifest is neither complete nor
          self-denominating. The downstream join refuses a missing callable, which is fail-closed
