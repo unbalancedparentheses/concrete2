@@ -1717,7 +1717,10 @@ private def renderSourceBodyDigest (pexpr : Proof.PExpr) : String :=
   -- Measured while migrating: `crypto_verify.compute_tag` is `key * message +
   -- nonce` in source and normalizes to `nonce + key * message`. Its committed
   -- spec looked like a mismatch against the generated digest and was not one.
-  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))
+  -- DELEGATES to the one producer. This computed the formula itself, so the manifest's
+  -- authoritative body component and this rendering were independent copies of one intent — and
+  -- the comparison between them only means anything if they cannot drift.
+  let v := Concrete.sourceBodyDigestV1Of pexpr
   s!"some \{ value := \"{v}\" }"
 
 /-- The structural-body shadow line. Three outcomes, kept distinct because collapsing
