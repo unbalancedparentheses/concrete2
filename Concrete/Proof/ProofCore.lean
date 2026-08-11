@@ -2063,7 +2063,12 @@ def implementationPreimage (facts : Proof.CheckedDeclFacts)
     to which specification a proof link happened to select. -/
 def implementationDigest (facts : Proof.CheckedDeclFacts)
     (body : Proof.CompleteEvidenceBodyV2) : String :=
-  shortHash (implementationPreimage facts body)
+  -- DOMAIN-SEPARATED. The preimage begins `subjectV2:` because it is shared with
+  -- `proofSubjectDigestV2`, whose bytes are frozen. Hashing it unprefixed would give the
+  -- implementation identity the same domain as a proof subject over the same inputs — two
+  -- different identities whose values could not be told apart by their construction. The prefix
+  -- is on the HASH, not the preimage, so V2 values stay byte-identical.
+  shortHash ("implementationV1:" ++ implementationPreimage facts body)
 
 /-- The versioned proof-subject digest, defined ONCE from the captured facts and
     the body fingerprint.
@@ -2158,6 +2163,33 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
       -- implementation component reusable. The freeze gate is what proves that.
       some (shortHash (implementationPreimage facts complete
               ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
+
+/-- The authoritative implementation manifest, built from ProofCore's own entries.
+
+    The producer the manifest type was missing. Each row is `(callableId, implementationDigest)`,
+    and the digest is computed from the SAME `facts.canonical` + structural body that the frozen
+    V2 subject uses — so an implementation identity here and a subject digest there cannot drift:
+    they share a preimage rather than being computed twice.
+
+    **An entry that cannot produce a digest is ABSENT, not defaulted.** Missing facts or a refused
+    structural body means the implementation is undescribable, and `bindEntrySubjects` refuses
+    any table containing a callee absent from the manifest. So the fail-closed behaviour is end
+    to end: undescribable implementation -> no manifest row -> no binding -> no `body`
+    justification -> the root refuses. A placeholder row would break that chain at the first
+    link, which is why there is none.
+
+    Returns `none` if the assembled rows fail validation — a duplicate callable or a
+    non-canonical digest — rather than dropping the offending row and continuing. -/
+def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManifest :=
+  let rows := pc.entries.filterMap fun e =>
+    match e.declFacts, e.evidenceBody with
+    | some fx, some d =>
+      if !fx.isComplete then none
+      else match Proof.validate d with
+        | .ok complete => some (e.callableId, implementationDigest fx complete)
+        | .error _ => none
+    | _, _ => none
+  Proof.ImplementationManifest.ofRows rows
 
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
 

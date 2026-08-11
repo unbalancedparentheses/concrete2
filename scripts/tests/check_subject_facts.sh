@@ -174,6 +174,58 @@ probe "NO spec differs from a spec named the empty string" "true" \
 '#eval
   let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f" }
   proofSubjectDigestV2 a (some {}) none none != proofSubjectDigestV2 a (some {}) (some "") none'
+# === IMPLEMENTATION IDENTITY vs PROOF SUBJECT (slice 6) ======================================
+# The two must move on different things. An implementation is what a callable IS; a proof subject
+# adds what a particular LINK claims about it. If spec/scope moved the implementation digest, a
+# table entry would change when a specification was re-pointed — which has nothing to do with the
+# implementation, and would make table membership depend on proof-link metadata.
+echo "=== implementation identity is independent of proof-link metadata ==="
+
+probe "selected spec does NOT move the implementation digest" "true" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .ok b => implementationDigest f b == implementationDigest f b
+  | .error _ => false'
+
+# ...while the SUBJECT does move on spec and scope. Both directions, or "independent" would be
+# indistinguishable from "ignores everything".
+probe "selected spec DOES move the proof subject" "true" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  proofSubjectDigestV2 f (some {}) (some "SpecA") (some "iff")
+    != proofSubjectDigestV2 f (some {}) (some "SpecB") (some "iff")'
+probe "claim scope DOES move the proof subject" "true" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  proofSubjectDigestV2 f (some {}) (some "S") (some "iff")
+    != proofSubjectDigestV2 f (some {}) (some "S") (some "one_direction")'
+
+# The SIGNATURE does move the implementation digest — otherwise it would bind nothing.
+probe "a signature change DOES move the implementation digest" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "u32" }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .ok bd => implementationDigest a bd != implementationDigest b bd
+  | .error _ => false'
+probe "a CONTRACT change DOES move the implementation digest" "true" \
+'#eval
+  let a : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 1)] }
+  let b : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", contracts := ContractFacts.of [] [.binOp sp .eq (.ident sp "result") (.intLit sp 0)] }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .ok bd => implementationDigest a bd != implementationDigest b bd
+  | .error _ => false'
+
+# Domain separation: the implementation digest and the proof subject over the same inputs must
+# not collide, or two different identities would be indistinguishable by construction.
+probe "implementation digest and proof subject are in DIFFERENT domains" "true" \
+'#eval
+  let f : CheckedDeclFacts := { id := CallableId.ofUser "m" "f", retTy := "i32" }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .ok b => some (implementationDigest f b) != proofSubjectDigestV2 f (some {}) none none
+  | .error _ => false'
+
 # === SUBJECT SCHEMA FREEZE ==================================================================
 # The subject's components are complete: semantic identity, typed signature, structural V2 body,
 # contracts, selected specification, claim scope. From here the digest is a STORED VALUE — step 7

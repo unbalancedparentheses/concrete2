@@ -5205,14 +5205,33 @@ consumer away from the `proved` decision path:
       under which a signature or contract change would leave entry evidence looking current and
       the eventual per-edge join would be exact over the WRONG subject identity.
 
-      **RESOLVED 2026-08-09 by the join, not by widening `PFnDef`.** `bindEntrySubjects` joins
-      entry evidence against the authoritative subject manifest and REFUSES THE WHOLE LIST when
-      any entry has no subject or an empty one — dropping unbindable entries would shrink the
-      membership set, and a shrunken set answers "is this callee present" with "not among the
-      ones I could bind", indistinguishable from "absent". `BoundTableEntry.subjectV2` is a plain
-      `String` with a private constructor, so an entry without an authoritative subject has no
-      representation. Membership returns the SUBJECT rather than a Bool, so a justification
-      records which implementation justified it.
+      **RESOLVED 2026-08-11, and the first attempt was keyed on the wrong identity.** Table
+      entries bind an IMPLEMENTATION digest, not a proof subject: the frozen V2 subject includes
+      selected specification and claim scope, one callable can carry several proof links, so
+      `CallableId -> ProofSubjectDigestV2` is not a function and a join on it is ill-defined. An
+      entry describes an implementation and does not change when a different spec is pointed at
+      it.
+
+      `implementationPreimage` / `implementationDigest` extract that component from the existing
+      V2 construction; the subject hashes the PREIMAGE rather than nesting the hash, so every V2
+      value stays byte-identical and the schema freeze passes unchanged — which is the proof the
+      refactor added and removed nothing. The implementation hash is domain-separated
+      (`implementationV1:`) so the two identities cannot collide over the same inputs.
+
+      `bindEntryImplementations` joins against a CLOSED `ImplementationManifest` and refuses the
+      whole list when any entry is absent. The earlier version took a
+      `CallableId -> Option String` CALLBACK, so any caller could mint a bound entry from any
+      non-empty string — the tests passed `"v2:abc"` and demonstrated exactly that. A private
+      constructor guarding a caller-supplied value is not a guard.
+
+      `implementationManifestOf` is the authoritative producer, computing each digest from
+      complete canonical facts; an entry with incomplete facts or a refused body is ABSENT rather
+      than defaulted, so the fail-closed chain runs end to end: undescribable implementation -> no
+      manifest row -> no binding -> no `body` justification -> root refuses.
+
+      REMAINING: `ofRows` validates FORMAT only and is public, so a well-formed invented digest
+      (thirty-two zeros) can enter that way. Provenance closure needs the constructor restricted
+      to the producer, which is cross-module today.
 
       DUPLICATE IDENTITIES REFUSED: a table holding one callable twice cannot say which
       implementation a static lookup selects, and membership answering "at least one" would let a

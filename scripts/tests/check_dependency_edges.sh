@@ -928,7 +928,7 @@ probe "a same-NAMED callable from another module is not a member" "true" '
 # === AUTHORITATIVE IMPLEMENTATION BINDING ====================================================
 # Two things this fixes, both found by review.
 #
-# 1. The previous `bindEntrySubjects` took a CALLBACK, so any caller could mint a "bound" entry
+# 1. The previous `bindEntryImplementations` took a CALLBACK, so any caller could mint a "bound" entry
 #    from any non-empty string — the private constructor required non-emptiness, not provenance.
 #    The old tests passed "v2:abc" and proved exactly that. A private constructor guarding a
 #    value the caller supplies is not a guard.
@@ -959,7 +959,7 @@ probe "entries bind through a validated manifest" "true" "
 #eval
   let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
-  | some mf => (bindEntrySubjects rows mf).isSome
+  | some mf => (bindEntryImplementations rows mf).isSome
   | none => false"
 
 probe "ONE entry missing from the manifest refuses the whole list" "true" "
@@ -967,15 +967,15 @@ probe "ONE entry missing from the manifest refuses the whole list" "true" "
   let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence },
                { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := none : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
-  | some mf => (bindEntrySubjects rows mf).isNone
+  | some mf => (bindEntryImplementations rows mf).isNone
   | none => false"
 
 probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d '\"')" "
 #eval
   let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
-  | some mf => match bindEntrySubjects rows mf with
-    | some b => (boundEntrySubjectOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
+  | some mf => match bindEntryImplementations rows mf with
+    | some b => (boundEntryImplementationOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
     | none => \"REFUSED\"
   | none => \"NO-MANIFEST\""
 
