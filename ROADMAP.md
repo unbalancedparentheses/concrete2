@@ -5231,28 +5231,27 @@ consumer away from the `proved` decision path:
 
       **STEP 2 IS NOT CLOSED. Three open items, the first an unsoundness:**
 
-      1a. **NEXT TASK, and its exact blocker — measured 2026-08-11, do not re-derive.**
-         `tableEntryEvidence` must recompute the canonical digest from the actual `PFnDef.body`
-         and refuse unless it equals the stored `PFnDef.sourceBodyDigest`. Until it does, the
-         acceptance mutation (replace a body, keep its callable identity AND its stored digest)
-         still binds: the existing legs compare metadata against metadata, never against the body.
+      1a. ~~**`tableEntryEvidence` trusts the stored digest.**~~ **FIXED 2026-08-11.**
+         It now RECOMPUTES the canonical digest from `PFnDef.body` and refuses the whole table
+         unless the stored provenance agrees, with schema and scope checked first (a digest under
+         another schema is a different formula, so it is refused rather than compared). The
+         acceptance mutation — replace the body, keep the identity AND the stored digest — is
+         killed and registered as mutation family `entry-body-recomputed`.
 
-         **It cannot simply call `sourceBodyDigestV1Of` (landed in `2d351a2d`).** Import order
-         forbids it: the producer is in `ProofCore`, `tableEntryEvidence` is in `DependencyEdge`,
-         and `ProofCore -> DependencyRoot -> DependencyEdge`. Using it there is a cycle.
+         `TableEntryEvidence.sourceBodyDigestV1` is now `String`, not `Option String`: an entry
+         with no provenance, and one whose provenance was never checked against a body, both lose
+         their representation.
 
-         **The move is bigger than two functions**, which is why the first attempt over-captured
-         and was reverted. `normalizePExpr` depends on `pexprSortKey`, `isCommutative` and
-         `pexprFreeIn`, all in `ProofCore`. The full set to lift into `Proof.lean` is:
+         **Two things measured rather than assumed**, because either would have made it vacuous:
+         the 24 hand-authored `sourceBodyDigest` literals in `Proof.lean` AGREE with the recompute,
+         so the producer matches the real corpus instead of refusing all of it; and the positive
+         controls yield evidence, so the refusals do not hold merely because nothing can.
 
-         ```
-         pexprSortKey · isCommutative · pexprFreeIn · normalizePExpr · shortHash
-         ```
-
-         plus `import Concrete.Proof.Sha256Spec` (import-free, so no new cycle). Move by explicit
-         line ranges, one function at a time, rebuilding between each — a regex over this set is
-         what produced eleven errors. `Proof.lean` already has `pexprCanonical`, so once these
-         five are there the producer can live below `DependencyEdge` and both consumers reach it.
+         The enabling refactor took SEVEN declarations, not the five predicted — `stripAlpha` and
+         `byteToHex` surfaced only by rebuilding after each step — and landed in a new
+         `PExprNormalize` module rather than `Proof.lean`, because `ProofCore` is `namespace
+         Concrete` while `Proof.lean` is `namespace Concrete.Proof` and moving there would have
+         renamed every call site.
 
       1. ~~**The join matches `CallableId` ALONE.**~~ **FIXED 2026-08-11.** Manifest rows carry
          `(callable, authoritative source-body digest, implementation digest)`, and binding now
