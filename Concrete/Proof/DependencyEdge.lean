@@ -182,20 +182,18 @@ structure TableEntryEvidence where
       `none` is carried rather than defaulted: an entry whose provenance is unrecorded must not
       compare equal to one whose provenance is recorded and happens to match.
 
-      **THIS FIELD IS NOT YET COMPARED, and that is an open unsoundness.**
-      `bindEntryImplementations` matches on `CallableId` alone and attaches the manifest's
-      implementation digest without checking that the entry's stored body is the one the manifest
-      describes. So a STALE OR SUBSTITUTED table entry carrying the right identity acquires the
-      current authoritative digest — which is the misattachment that blocker (c) exists to kill.
+      **A VERIFIED value, and `String` rather than `Option String` for that reason.**
+      This field used to be optional and merely COPIED from `PFnDef.sourceBodyDigest`, which made
+      two bad states representable: an entry with no provenance, and an entry whose stored
+      provenance describes a body it no longer holds. The second is the dangerous one — a body
+      could be substituted while keeping its callable identity AND its stored digest, and the join
+      still bound, because every leg compared metadata against metadata and nothing ever read the
+      body.
 
-      The comparison cannot be written yet, for a concrete reason rather than for want of effort:
-      the manifest's implementation digest is built from `bodyBytesV2`, this field holds
-      `sourceBodyDigestV1`, and `ProofCore` records no source-body digest at all
-      (`renderSourceBodyDigest` lives in Report). There is nothing in the producer's reach to
-      compare against. Closing it needs the authoritative body component carried where the
-      manifest is built — then binding requires: identities equal AND the entry's body digest is
-      PRESENT AND equal to the authoritative component. -/
-  sourceBodyDigestV1 : Option String
+      Now `tableEntryEvidence` RECOMPUTES from `PFnDef.body` and refuses the whole table unless the
+      stored digest agrees, so a value here has been checked against the actual body. There is no
+      constructor for an unverified one. -/
+  sourceBodyDigestV1 : String
 deriving Repr, BEq
 
 /-- Entry evidence for a table, or `none` if ANY entry lacks identity.
@@ -207,10 +205,27 @@ deriving Repr, BEq
     WHOLE table, not most of it. -/
 def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
   let rows? := t.canonicalEntries.toList.foldl (init := some []) fun acc d =>
-    match acc, d.identity.id? with
-    | some rows, some cid =>
-        some (rows ++ [{ callee := cid, sourceBodyDigestV1 := d.sourceBodyDigest.map (·.value) }])
-    | _, _ => none
+    match acc, d.identity.id?, d.sourceBodyDigest with
+    | some rows, some cid, some stored =>
+        -- RECOMPUTED FROM THE BODY, not copied from the metadata beside it. Copying is what made
+        -- the acceptance mutation survive: replace `d.body`, keep `d.identity` and keep
+        -- `d.sourceBodyDigest`, and every downstream comparison still agreed, because the stored
+        -- digest was the only thing anyone read and it had not changed. The body was never an
+        -- input to its own provenance check.
+        --
+        -- SCHEMA AND SCOPE ARE CHECKED FIRST, and refusing is the point rather than a formality:
+        -- `sourceBodyDigestV1Of` implements exactly `sourceBodyDigestV1`/`body_only`. Comparing a
+        -- digest recorded under any other schema or scope against this producer's output compares
+        -- two different formulas, and a mismatch would then be reported as body drift when it is
+        -- really a formula difference. What cannot be verified is refused, not skipped.
+        if stored.schema != "sourceBodyDigestV1" then none
+        else if stored.scope != "body_only" then none
+        else if stored.value != Concrete.sourceBodyDigestV1Of d.body then none
+        else some (rows ++ [{ callee := cid, sourceBodyDigestV1 := stored.value }])
+    -- An entry with NO recorded provenance is refused rather than carried. Absence is not
+    -- agreement: it is the case where the table records nothing about what it holds, and evidence
+    -- that cannot be checked against a body must not stand in for evidence that was.
+    | _, _, _ => none
   -- UNIQUE IDENTITIES, or nothing. A table holding one callable twice cannot say which
   -- implementation a static lookup selects, and `entryEvidenceContains` answering "at least
   -- one" would let a `body` edge be justified by an entry that is not the one dispatch reaches.
@@ -308,16 +323,23 @@ deriving Repr, BEq
 def bindEntryImplementations (rows : List TableEntryEvidence) (manifest : ImplementationManifest)
     : Option (List BoundTableEntry) :=
   rows.foldl (init := some []) fun acc r =>
-    match acc, manifest.find? r.callee, r.sourceBodyDigestV1 with
+    match acc, manifest.find? r.callee with
     -- PROVENANCE IS COMPARED, not attached. Identity alone let a stale or substituted entry with
     -- the right `CallableId` acquire the current authoritative digest — the misattachment this
-    -- join exists to prevent. The entry's stored body digest must be PRESENT and EQUAL to the
-    -- authoritative one.
-    | some out, some (authBody, implD), some entryBody =>
-        if entryBody == authBody then some (out ++ [BoundTableEntry.mk r.callee implD]) else none
-    -- An entry with NO stored body digest cannot be compared, so it cannot bind. Absence is not
-    -- agreement: it is the case where the table records nothing about what it holds.
-    | _, _, _ => none
+    -- join exists to prevent. The entry's body digest must EQUAL the authoritative one.
+    --
+    -- Two independent checks, and both are needed. `tableEntryEvidence` established that this
+    -- value describes the body the table actually holds; this establishes that the body the table
+    -- holds is the one the manifest is authoritative for. Either alone leaves a gap: the first
+    -- without the second admits a self-consistent table of the wrong implementations, the second
+    -- without the first admits a substituted body wearing correct-looking metadata.
+    | some out, some (authBody, implD) =>
+        if r.sourceBodyDigestV1 == authBody then some (out ++ [BoundTableEntry.mk r.callee implD])
+        else none
+    -- No manifest row: refuse. The "no stored digest" arm this used to also cover is gone because
+    -- `TableEntryEvidence.sourceBodyDigestV1` is no longer optional — `tableEntryEvidence` refuses
+    -- an entry with unrecorded provenance, so an unverifiable one cannot reach this join at all.
+    | _, _ => none
 
 /-- The bound implementation digest for a callee, if it is a member.
 

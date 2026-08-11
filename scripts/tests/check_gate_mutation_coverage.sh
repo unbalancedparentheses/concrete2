@@ -340,6 +340,20 @@ add "classification-justifies" "Concrete/Proof/ClassificationTable.lean" "check_
   $'  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),' \
   $'  ("Concrete.Proof.parse_byte_correct", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),'
 
+# R-0004 slice 6. `tableEntryEvidence` RECOMPUTES the canonical body digest from `PFnDef.body` and
+# refuses unless the stored provenance agrees. Before that, the stored digest was copied and every
+# downstream check compared metadata to metadata, so this state bound successfully:
+#
+#     body replaced, `identity` retained, `sourceBodyDigest` retained
+#
+# The mutation restores exactly the old behaviour — the comparison still runs, its verdict is just
+# discarded — so the table entry is trusted again while everything else about the join is
+# untouched. Nothing but the recompute can catch it, which is what makes it the right control:
+# schema and scope checks still pass, identities are unique, and the manifest join still agrees.
+add "entry-body-recomputed" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
+  $'        else if stored.value != Concrete.sourceBodyDigestV1Of d.body then none' \
+  $'        else if false then none'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

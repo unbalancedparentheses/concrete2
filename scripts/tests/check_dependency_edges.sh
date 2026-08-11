@@ -877,9 +877,15 @@ def forged : Concrete.Proof.ValidatedRow :=
 # callee". Correspondence needs the second, and one has been standing in for the other.
 echo "=== table-entry evidence ==="
 
-probe "a fully-identified table yields entry evidence" "true" '
+# RENAMED 2026-08-11: this said "a fully-identified table yields entry evidence", and full
+# identification is no longer sufficient — an entry must also carry provenance that AGREES with a
+# digest recomputed from its body. The old wording would have made the added requirement look like
+# a regression in this probe rather than the point of it. The case it used to cover (identity
+# present, provenance absent) is now asserted as a refusal, in the recompute section below.
+probe "a table identified AND carrying agreeing provenance yields entry evidence" "true" '
 #eval
   let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
   (tableEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable)).isSome'
 
@@ -904,25 +910,121 @@ probe "a table with the SAME callable twice yields no evidence" "true" '
 probe "...while two DISTINCT callables are fine (the refusal is about duplication)" "true" '
 #eval
   let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
   let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
   (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isSome'
 
+# === THE BODY IS RECOMPUTED, NOT TRUSTED =====================================================
+# `tableEntryEvidence` used to COPY `PFnDef.sourceBodyDigest` into the evidence row. Every check
+# downstream then compared metadata against metadata, and the body was never an input to its own
+# provenance check. So this mutation survived the entire join:
+#
+#     replace `PFnDef.body`, keep `PFnDef.identity`, keep `PFnDef.sourceBodyDigest`
+#
+# -- a substituted implementation wearing correct-looking provenance, binding to the authoritative
+# implementation digest of the body it no longer holds. The digests below are MEASURED values of
+# `sourceBodyDigestV1Of`, not invented hex: a fabricated constant would make the positive control
+# refuse and the whole section would then pass vacuously on refusals alone.
+echo "=== entry provenance is recomputed from the body ==="
+
+# POSITIVE CONTROL FIRST. If this refuses, every refusal below is vacuous -- they would all hold
+# because nothing can ever produce evidence, which is indistinguishable from a working check.
+probe "a stored digest AGREEING with the recomputed body yields evidence" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isSome'
+
+# THE ACCEPTANCE MUTATION. Identity retained, stored digest retained, BODY replaced. This is the
+# exact state the old code accepted, and the reason the producer had to move below `DependencyEdge`
+# in the import order at all.
+probe "a REPLACED body keeping its identity AND its stored digest is refused" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  let mutated : PFnDef := { f with body := PExpr.lit (PVal.int 1) }
+  (tableEntryEvidence ({ entries := #[mutated], globals := fun _ => none } : FnTable)).isNone'
+
+# The converse direction: body untouched, stored digest edited. Both directions of disagreement
+# must refuse, or the check is only sensitive to one side of the comparison.
+probe "a stored digest edited away from the body is refused" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+
+probe "an entry with NO recorded provenance is refused" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+
+# SWAPPED BODIES between two identities. Each digest is individually a real digest of a real body
+# in the table, and the multiset of bodies is unchanged -- only the pairing is wrong. A check that
+# validated digests against "some body present" rather than against THIS entry's body would pass
+# this, so it distinguishes a per-entry check from a whole-table one.
+probe "bodies SWAPPED between two callable identities are refused" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 1) }
+  let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
+                      sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isNone'
+
+# ...and the same two entries paired CORRECTLY must bind, or the swap test above would pass for the
+# uninteresting reason that two-entry tables never yield evidence.
+probe "...and the same two bodies paired CORRECTLY yield evidence" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
+                      params := [], body := PExpr.lit (PVal.int 1) }
+  let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isSome'
+
+# SCHEMA AND SCOPE. `sourceBodyDigestV1Of` implements exactly `sourceBodyDigestV1`/`body_only`.
+# A digest recorded under a different schema or scope is a DIFFERENT FORMULA, so comparing it to
+# this producer's output would report body drift where there is a formula difference. Refusing what
+# cannot be verified is the fail-closed reading; silently comparing anyway is not.
+probe "a digest recorded under another SCHEMA is refused, not compared" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { schema := "sourceBodyDigestV2",
+                                                 value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+
+probe "a digest recorded under another SCOPE is refused, not compared" "true" '
+#eval
+  let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { scope := "body_and_contracts",
+                                                 value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+
 probe "membership is decided by IDENTITY and finds a present callee" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" : TableEntryEvidence }]
   entryEvidenceContains rows (CallableId.ofUser "m" "f")'
 
 probe "...and does NOT find an absent one" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "m" "f", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "m" "g"))'
 
 # Same display name, different module: membership must not be decided on a rendering.
 probe "a same-NAMED callable from another module is not a member" "true" '
 #eval
-  let rows := [{ callee := CallableId.ofUser "modA" "f", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser "modA" "f", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" : TableEntryEvidence }]
   !(entryEvidenceContains rows (CallableId.ofUser "modB" "f"))'
 
 # === AUTHORITATIVE IMPLEMENTATION BINDING ====================================================
@@ -958,22 +1060,22 @@ probe "the old bypass value \"v2:abc\" is now rejected outright" "true" '
 
 probe "entries bind through a validated manifest" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isSome
   | none => false"
 
 probe "ONE entry missing from the manifest refuses the whole list" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence },
-               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"496808fdd594d5047f23e823bc26b69c\" : TableEntryEvidence },
+               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isNone
   | none => false"
 
 probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d '\"')" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => match bindEntryImplementations rows mf with
     | some b => (boundEntryImplementationOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
@@ -984,21 +1086,24 @@ probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d
 # entry's stored body digest must be PRESENT and EQUAL to the authoritative one.
 probe "a STALE body digest refuses to bind (identity alone is not enough)" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"00000000000000000000000000000000\" : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"00000000000000000000000000000000\" : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isNone
   | none => false"
 
-probe "a MISSING body digest refuses to bind (absence is not agreement)" "true" "
+# WAS a runtime refusal; is now UNREPRESENTABLE. `TableEntryEvidence.sourceBodyDigestV1` is a
+# `String`, so "entry with no provenance" has no value to construct -- the check moved from
+# `bindEntryImplementations` to the type, and the refusal moved up to `tableEntryEvidence`, where a
+# `PFnDef` lacking `sourceBodyDigest` is rejected (asserted in the recompute section below).
+expect_no_compile "an entry with NO body digest has no representation (absence is not agreement)" '
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => (bindEntryImplementations rows mf).isNone
-  | none => false"
+  let rows := [{ callee := Concrete.CallableId.ofUser "m" "f",
+                 sourceBodyDigestV1 := none : Concrete.Proof.TableEntryEvidence }]
+  rows.length'
 
 probe "a MATCHING body digest binds (the refusals are targeted)" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
   match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isSome
   | none => false"

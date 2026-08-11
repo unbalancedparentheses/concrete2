@@ -205,4 +205,28 @@ def shortHash (fingerprint : String) : String :=
   let digest := (Sha256Spec.hash bytes).take 16
   String.join (digest.map byteToHex)
 
+/-- THE canonical V1 source-body digest. One producer, and that is the point.
+
+    This formula existed twice — `Report.renderSourceBodyDigest` and inline in
+    `implementationManifestOf`. Two copies of a digest are worse than two copies of ordinary
+    logic: the whole value of comparing an entry's stored digest against the manifest's is that
+    both sides mean the same thing, and a drifted copy makes every comparison quietly answer a
+    different question.
+
+    NORMALIZE FIRST, so the digest is invariant under commutative reordering: two bodies differing
+    only in the order of `+`'s operands denote the same body, and separating them would report
+    drift where there is none.
+
+    LIMIT: this establishes ARTIFACT binding and freshness. It does NOT establish semantic
+    equivalence between a source body and a `PFnDef` — that is the source-to-proof-model
+    faithfulness question, and matching digests are not an answer to it.
+
+    **Now used by `tableEntryEvidence`**, which is the check that matters most. It used to read
+    `PFnDef.sourceBodyDigest` and TRUST it rather than recomputing from `PFnDef.body`, so a
+    substituted body retaining old metadata still bound. That needed this producer BELOW
+    `DependencyEdge` in the import order, which is why it lives in `PExprNormalize` next to the
+    `normalizePExpr` and `shortHash` it is built from, rather than in `ProofCore`. -/
+def sourceBodyDigestV1Of (pe : Proof.PExpr) : String :=
+  shortHash (Proof.pexprCanonical (normalizePExpr pe))
+
 end Concrete

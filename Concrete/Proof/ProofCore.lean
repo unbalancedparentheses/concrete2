@@ -1988,30 +1988,6 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
       some (shortHash (implementationPreimage facts complete
               ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
 
-/-- THE canonical V1 source-body digest. One producer, and that is the point.
-
-    This formula existed twice — `Report.renderSourceBodyDigest` and inline in
-    `implementationManifestOf`. Two copies of a digest are worse than two copies of ordinary
-    logic: the whole value of comparing an entry's stored digest against the manifest's is that
-    both sides mean the same thing, and a drifted copy makes every comparison quietly answer a
-    different question.
-
-    NORMALIZE FIRST, so the digest is invariant under commutative reordering: two bodies differing
-    only in the order of `+`'s operands denote the same body, and separating them would report
-    drift where there is none.
-
-    LIMIT: this establishes ARTIFACT binding and freshness. It does NOT establish semantic
-    equivalence between a source body and a `PFnDef` — that is the source-to-proof-model
-    faithfulness question, and matching digests are not an answer to it.
-
-    **Cannot yet be used by `tableEntryEvidence`**, which is the check that matters most: that
-    reads `PFnDef.sourceBodyDigest` and TRUSTS it rather than recomputing from `PFnDef.body`, so a
-    substituted body retaining old metadata still binds. Fixing it needs this producer BELOW
-    `DependencyEdge` in the import order, and `normalizePExpr`/`shortHash` live here in
-    `ProofCore`, which imports it. Lifting them into `Proof.lean` is the refactor; attempted once
-    and reverted for over-capturing neighbouring definitions. -/
-def sourceBodyDigestV1Of (pe : Proof.PExpr) : String :=
-  shortHash (Proof.pexprCanonical (normalizePExpr pe))
 
 /-- The authoritative implementation manifest, built from ProofCore's own entries.
 
