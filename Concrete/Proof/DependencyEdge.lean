@@ -253,7 +253,11 @@ pure data over `CallableId`, so this is their natural home anyway.
     Constructor is private; `ofRows` is the only way in, and it validates. -/
 structure ImplementationManifest where
   private mk ::
-  private rows : List (CallableId × String)
+  /-- `(callable, authoritative source-body digest, implementation digest)`.
+      The BODY component is carried so the join can compare provenance rather than merely attach
+      it: identity alone does not establish that a table entry holds the implementation the
+      manifest describes. -/
+  private rows : List (CallableId × String × String)
 deriving Repr
 
 /-- Build a manifest from rows, validating FORMAT only — or refuse.
@@ -268,14 +272,19 @@ deriving Repr
     callable means it is not — and on a digest that is not canonical 32-hex. Both refuse the
     whole manifest rather than the offending row: a manifest missing entries answers "no
     implementation for this callable" indistinguishably from a callable that genuinely has none. -/
-def ImplementationManifest.ofRows (rows : List (CallableId × String))
+def ImplementationManifest.ofRows (rows : List (CallableId × String × String))
     : Option ImplementationManifest :=
   let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
   if (rows.map (·.1)).eraseDups.length != rows.length then none
-  else if !(rows.all fun r => isHex r.2) then none
+  -- BOTH digests validated: the body component is the value the join compares against, so a
+  -- malformed one would make every comparison fail or, worse, succeed against another malformed
+  -- entry.
+  else if !(rows.all fun r => isHex r.2.1 && isHex r.2.2) then none
   else some (ImplementationManifest.mk rows)
 
-def ImplementationManifest.find? (m : ImplementationManifest) (c : CallableId) : Option String :=
+/-- The `(authoritative body digest, implementation digest)` for a callable. -/
+def ImplementationManifest.find? (m : ImplementationManifest) (c : CallableId)
+    : Option (String × String) :=
   (m.rows.find? fun r => r.1 == c).map (·.2)
 
 /-- A table entry bound to its authoritative IMPLEMENTATION digest.
@@ -298,9 +307,16 @@ deriving Repr, BEq
 def bindEntryImplementations (rows : List TableEntryEvidence) (manifest : ImplementationManifest)
     : Option (List BoundTableEntry) :=
   rows.foldl (init := some []) fun acc r =>
-    match acc, manifest.find? r.callee with
-    | some out, some d => some (out ++ [BoundTableEntry.mk r.callee d])
-    | _, _ => none
+    match acc, manifest.find? r.callee, r.sourceBodyDigestV1 with
+    -- PROVENANCE IS COMPARED, not attached. Identity alone let a stale or substituted entry with
+    -- the right `CallableId` acquire the current authoritative digest — the misattachment this
+    -- join exists to prevent. The entry's stored body digest must be PRESENT and EQUAL to the
+    -- authoritative one.
+    | some out, some (authBody, implD), some entryBody =>
+        if entryBody == authBody then some (out ++ [BoundTableEntry.mk r.callee implD]) else none
+    -- An entry with NO stored body digest cannot be compared, so it cannot bind. Absence is not
+    -- agreement: it is the case where the table records nothing about what it holds.
+    | _, _, _ => none
 
 /-- The bound implementation digest for a callee, if it is a member.
 

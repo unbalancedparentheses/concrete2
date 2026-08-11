@@ -939,45 +939,69 @@ probe "a same-NAMED callable from another module is not a member" "true" '
 echo "=== authoritative implementation binding ==="
 
 HEXA='"7bcec2d7871f93204b26e2bf83d5acf1"'
+HEXBODY='"6fe095a9f592a2e2b556e87f30306584"'
 HEXB='"bfda7f397e3221e757383578b50ee3ff"'
 
 probe "a manifest with distinct callables and canonical digests builds" "true" "
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)]).isSome"
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)]).isSome"
 
 # The manifest CLAIMS to be a function; two rows for one callable means it is not.
 probe "a DUPLICATE callable refuses the manifest" "true" "
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA), (CallableId.ofUser \"m\" \"f\", $HEXB)]).isNone"
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA), (CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXB)]).isNone"
 
 probe "a NON-CANONICAL digest refuses the manifest" "true" '
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc")]).isNone'
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")]).isNone'
 
 # The exact string the old tests used. It is not a digest, and the old API accepted it.
 probe "the old bypass value \"v2:abc\" is now rejected outright" "true" '
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc")]).isNone'
+#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")]).isNone'
 
 probe "entries bind through a validated manifest" "true" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isSome
   | none => false"
 
 probe "ONE entry missing from the manifest refuses the whole list" "true" "
 #eval
   let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence },
-               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => (bindEntryImplementations rows mf).isNone
   | none => false"
 
 probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d '\"')" "
 #eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXA)] with
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
   | some mf => match bindEntryImplementations rows mf with
     | some b => (boundEntryImplementationOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
     | none => \"REFUSED\"
   | none => \"NO-MANIFEST\""
+
+# THE ACCEPTANCE MUTATIONS for the misattachment hole. Identity alone used to bind; now the
+# entry's stored body digest must be PRESENT and EQUAL to the authoritative one.
+probe "a STALE body digest refuses to bind (identity alone is not enough)" "true" "
+#eval
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"00000000000000000000000000000000\" : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
+  | some mf => (bindEntryImplementations rows mf).isNone
+  | none => false"
+
+probe "a MISSING body digest refuses to bind (absence is not agreement)" "true" "
+#eval
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := none : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
+  | some mf => (bindEntryImplementations rows mf).isNone
+  | none => false"
+
+probe "a MATCHING body digest binds (the refusals are targeted)" "true" "
+#eval
+  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := some \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
+  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
+  | some mf => (bindEntryImplementations rows mf).isSome
+  | none => false"
 
 expect_no_compile "the manifest cannot be constructed directly" '
 #eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")'

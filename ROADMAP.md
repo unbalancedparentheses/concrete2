@@ -5231,7 +5231,24 @@ consumer away from the `proved` decision path:
 
       **STEP 2 IS NOT CLOSED. Three open items, the first an unsoundness:**
 
-      1. **The join matches `CallableId` ALONE.** `bindEntryImplementations` attaches the
+      1. ~~**The join matches `CallableId` ALONE.**~~ **FIXED 2026-08-11.** Manifest rows carry
+         `(callable, authoritative source-body digest, implementation digest)`, and binding now
+         requires the entry's stored body digest to be PRESENT and EQUAL to the authoritative one.
+         The comparable value turned out to be reachable after all: `ProofCoreEntry.extracted`
+         holds the `PExpr`, so `shortHash (pexprCanonical (normalizePExpr pe))` computes the same
+         value Report's `sourceBodyDigestV1` does. Three acceptance legs: a STALE body digest
+         refuses, a MISSING one refuses (absence is not agreement), a MATCHING one binds.
+
+         **TWO LIMITS, both explicit.** (i) The digest formula is now DUPLICATED — Report computes
+         it and so does `implementationManifestOf`. One canonical producer in a neutral module
+         imported by both is the durable shape; two copies can drift, and the whole point of the
+         comparison is that both sides mean the same thing. (ii) Matching V1 source-body digests
+         establishes ARTIFACT binding and freshness, **not semantic equivalence** between the
+         source body and the `PFnDef`. That remains the source-to-proof-model faithfulness
+         boundary, and this repair must not be read as a claim that two representations have
+         proved-equal semantics.
+
+      1b. **Superseded description of the original hole:** `bindEntryImplementations` attaches the
          manifest's implementation digest without checking that the entry's stored body is the one
          the manifest describes, and `TableEntryEvidence.sourceBodyDigestV1` is ignored — a test
          with `sourceBodyDigestV1 := none` binds successfully, which demonstrates it. So a stale

@@ -2186,7 +2186,17 @@ def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManif
     | some fx, some d =>
       if !fx.isComplete then none
       else match Proof.validate d with
-        | .ok complete => some (e.callableId, implementationDigest fx complete)
+        | .ok complete =>
+          -- The authoritative body component, computed the same way Report's
+          -- `sourceBodyDigestV1` is: normalize first, then hash the canonical rendering. Same
+          -- function, same input, so the value the join compares against is the value a table
+          -- entry stores — not an approximation of it.
+          match e.extracted with
+          | some pe => some (e.callableId, shortHash (Proof.pexprCanonical (normalizePExpr pe)),
+                             implementationDigest fx complete)
+          -- No extracted body means no comparable component, so no row. The join then refuses any
+          -- table containing this callee, which is the fail-closed direction.
+          | none => none
         | .error _ => none
     | _, _ => none
   Proof.ImplementationManifest.ofRows rows
