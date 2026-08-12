@@ -367,6 +367,18 @@ add "implementation-facts-match-callable" "Concrete/Proof/ImplementationIdentity
   $'  if facts.id != callable then none' \
   $'  if false then none'
 
+# R-0004 slice 6, manifest completeness. `ManifestResult.usable?` compares the rows against the
+# STORED denominator (`expected`), which is what stops a producer that drops entries from returning a
+# smaller manifest that looks complete. The mutation discards that comparison, restoring exactly the
+# `filterMap` behaviour: rows are then trusted to be their own denominator.
+#
+# The refusals check is left intact by this mutation, so the probe that kills it is the one whose
+# refusal list is EMPTY and whose rows are a strict subset of `expected` — i.e. it can only be caught
+# by the stored-denominator comparison, not by any other condition.
+add "manifest-rows-match-expected" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
+  $'  else if r.impls.map (\u00b7.callable) != r.expected then none' \
+  $'  else if false then none'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

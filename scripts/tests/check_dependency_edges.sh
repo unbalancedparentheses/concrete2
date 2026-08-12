@@ -1140,6 +1140,61 @@ expect_no_compile "ofRows is private — chosen digests cannot become a manifest
         [(Concrete.CallableId.ofUser "m" "f",
           "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]).isSome'
 
+# === MANIFEST COMPLETENESS IS SELF-DENOMINATING ===============================================
+# The producer used to `filterMap`, so an entry it could not build a row for vanished and the result
+# was a SMALLER manifest that looked complete — the only record of how many rows there should have
+# been was how many there were. `ManifestResult` stores the denominator (`expected`) and gives every
+# unaccounted identity a NAMED refusal.
+echo "=== manifest completeness is self-denominating ==="
+
+# `MR` builds a complete result for one callable: expected = [cid], one impl, no refusals.
+MR='
+  let cid := CallableId.ofUser "m" "f"
+  let pe := PExpr.lit (PVal.int 0)
+  let fx : Proof.CheckedDeclFacts := { id := cid }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .error _ => false
+  | .ok bd =>
+  match CompleteImplementation.of? cid fx bd pe with
+  | none => false
+  | some ci =>'
+
+# POSITIVE CONTROL FIRST. If a complete result is not usable, every refusal below holds vacuously.
+probe "a result accounting for every expected identity is usable" "true" "
+#eval$MR
+  ({ expected := [cid], impls := [ci], refusals := [] } : ManifestResult).usable?.isSome"
+
+# THE ANTI-FILTERMAP CONDITION. Rows are a strict subset of expected: exactly what the old producer
+# returned, and exactly what must not be usable. Note the refusal list is EMPTY here — so this is not
+# passing because of the refusals check; it is the stored denominator doing the work.
+probe "rows covering FEWER identities than expected are refused" "true" "
+#eval$MR
+  ({ expected := [cid, CallableId.ofUser \"m\" \"g\"], impls := [ci], refusals := [] }
+     : ManifestResult).usable?.isNone"
+
+# A NAMED REFUSAL blocks usability even when the rows look self-consistent: expected = row
+# identities here, so only the refusal list can refuse it.
+probe "any named refusal makes the result unusable" "true" "
+#eval$MR
+  ({ expected := [cid], impls := [ci], refusals := [(CallableId.ofUser \"m\" \"g\", .factsMissing)] }
+     : ManifestResult).usable?.isNone"
+
+# Refusals must be DISTINGUISHABLE, not merely counted: "no facts" and "evidence failed validation"
+# are different failures, and a bare count cannot tell them apart.
+probe "refusal reasons render distinctly" "true" '
+#eval
+  let all : List ManifestRefusal :=
+    [.factsMissing, .factsIncomplete, .evidenceInvalid, .evidenceMissing, .extractedMissing, .inputsRefused]
+  let rendered := all.map ManifestRefusal.render
+  rendered.eraseDups.length == all.length && !(rendered.any (· == ""))'
+
+# Every identity accounted for EXACTLY ONCE. `accounted` is compared against the stored denominator,
+# so an identity lost between the two lists is visible rather than silent.
+probe "a complete result accounts for exactly the expected identities" "true" "
+#eval$MR
+  let r : ManifestResult := { expected := [cid], impls := [ci], refusals := [] }
+  r.accounted == r.expected.length"
+
 # === MANIFEST PROVENANCE: DIGESTS ARE COMPUTED, NOT SUPPLIED ==================================
 # `ofRows` validates that thirty-two hex characters are thirty-two hex characters. It cannot tell a
 # computed digest from a well-formed invented one, so `ofImplementations` takes INPUTS and computes

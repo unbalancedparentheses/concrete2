@@ -340,6 +340,75 @@ def ImplementationManifest.ofImplementations (impls : List CompleteImplementatio
   ImplementationManifest.ofRows (impls.map fun ci =>
     (ci.callable, ci.sourceBodyComponent, ci.implementationComponent))
 
+/-! ## Manifest completeness, self-denominating
+
+`filterMap` launders. A producer that drops what it cannot handle returns a SMALLER manifest that
+looks complete, because the only record of how many rows there should have been is the number of rows
+there are. The denominator has to be stored, not inferred from the numerator.
+
+So the producer returns every eligible identity it set out to cover, the rows it built, and a NAMED
+refusal for each identity it could not — and a manifest fit for correspondence exists only when the
+refusal list is empty and the rows account for exactly the expected identities. -/
+
+/-- Why one identity produced no manifest row. Named, because "absent" is the one answer that must
+    never stand in for the others: an entry with no facts and an entry whose evidence failed
+    validation are different failures, and a count cannot tell them apart. -/
+inductive ManifestRefusal where
+  /-- No checked declaration facts were captured for this identity. -/
+  | factsMissing
+  /-- Facts captured but incomplete — a digest over incomplete facts is a digest over an unknown. -/
+  | factsIncomplete
+  /-- An evidence body draft was present but failed validation. -/
+  | evidenceInvalid
+  /-- No evidence body draft at all. -/
+  | evidenceMissing
+  /-- No extracted proof-model body, so no comparable source-body component. -/
+  | extractedMissing
+  /-- All parts present, but `CompleteImplementation.of?` refused them — currently only reachable
+      by a facts/callable mispairing, since that is the mispairing it can see. -/
+  | inputsRefused
+deriving Repr, BEq
+
+def ManifestRefusal.render : ManifestRefusal → String
+  | .factsMissing      => "facts-missing"
+  | .factsIncomplete   => "facts-incomplete"
+  | .evidenceInvalid   => "evidence-invalid"
+  | .evidenceMissing   => "evidence-missing"
+  | .extractedMissing  => "extracted-missing"
+  | .inputsRefused     => "inputs-refused"
+
+/-- The outcome of trying to build a manifest for a whole program.
+
+    `expected` is the DENOMINATOR, recorded up front. Every eligible identity appears either in
+    `impls` or in `refusals`, never in neither and never in both. -/
+structure ManifestResult where
+  expected : List CallableId
+  impls    : List CompleteImplementation
+  refusals : List (CallableId × ManifestRefusal)
+
+/-- Total accounted-for identities. Equal to `expected.length` when the result is well-formed; a
+    difference means the producer lost an identity, which is the failure this type exists to make
+    visible rather than silent. -/
+def ManifestResult.accounted (r : ManifestResult) : Nat := r.impls.length + r.refusals.length
+
+/-- The manifest, ONLY if the result is complete — or `none`, with no partial answer available.
+
+    Three conditions, each refusing for a different reason:
+    - **no refusals**: a refusal means some identity has no row, and the join cannot distinguish
+      "this callable has no implementation" from "we failed to build its row";
+    - **rows account for exactly the expected identities**: this is the anti-`filterMap` condition.
+      Comparing against a stored denominator is the whole point; comparing rows against themselves
+      is what the old producer effectively did;
+    - **well-formed and duplicate-free**, via `ofImplementations`, which still applies.
+
+    Order-sensitive equality is deliberate and is not merely convenient: the producer walks entries
+    in one order and appends in that order, so a permutation means an identity was reordered relative
+    to its source, which is a bug in the producer rather than a harmless difference. -/
+def ManifestResult.usable? (r : ManifestResult) : Option ImplementationManifest :=
+  if !r.refusals.isEmpty then none
+  else if r.impls.map (·.callable) != r.expected then none
+  else ImplementationManifest.ofImplementations r.impls
+
 /-- A table entry bound to its authoritative IMPLEMENTATION digest.
 
     `implDigest` is a plain `String` with a private constructor, so an entry without an

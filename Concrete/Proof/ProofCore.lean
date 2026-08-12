@@ -1963,44 +1963,48 @@ def proofSubjectDigestV2 (facts : Proof.CheckedDeclFacts)
               ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))
 
 
-/-- The authoritative implementation manifest, built from ProofCore's own entries.
+/-- The manifest attempt for a whole program: every entry accounted for, none dropped.
 
-    The producer the manifest type was missing. Each row is `(callableId, implementationDigest)`,
-    and the digest is computed from the SAME `facts.canonical` + structural body that the frozen
-    V2 subject uses — so an implementation identity here and a subject digest there cannot drift:
-    they share a preimage rather than being computed twice.
+    REPLACED A `filterMap` 2026-08-12. That version silently omitted any entry it could not build a
+    row for, so the result was a smaller manifest whose only record of how many rows there should
+    have been was how many there were. The denominator is now recorded up front in `expected`, and
+    each identity that produced no row carries a NAMED reason.
 
-    **An entry that cannot produce a digest is ABSENT, not defaulted.** Missing facts or a refused
-    structural body means the implementation is undescribable, and `bindEntrySubjects` refuses
-    any table containing a callee absent from the manifest. So the fail-closed behaviour is end
-    to end: undescribable implementation -> no manifest row -> no binding -> no `body`
-    justification -> the root refuses. A placeholder row would break that chain at the first
-    link, which is why there is none.
+    EVERY entry is expected, deliberately, rather than pre-filtering to the ones that look
+    tractable. Pre-filtering would reintroduce the same laundering one level up: the filter would
+    define the denominator, and an entry excluded by it would be invisible rather than refused.
 
-    Returns `none` if the assembled rows fail validation — a duplicate callable or a
-    non-canonical digest — rather than dropping the offending row and continuing. -/
-def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManifest :=
-  let rows := pc.entries.filterMap fun e =>
+    Consequence, stated because it is the honest one: on a program where some entry lacks facts or an
+    extracted body, `usable?` returns `none`. That is the true state — the manifest cannot account for
+    every callable — and it is what the old producer concealed by returning the subset. -/
+def implementationManifestResultOf (pc : ProofCore) : Proof.ManifestResult :=
+  let step := fun (acc : Proof.ManifestResult) (e : ProofCoreEntry) =>
+    let refuse := fun (why : Proof.ManifestRefusal) =>
+      { acc with expected := acc.expected ++ [e.callableId],
+                 refusals := acc.refusals ++ [(e.callableId, why)] }
+    let expected := acc.expected ++ [e.callableId]
     match e.declFacts, e.evidenceBody with
+    | none, _ => refuse .factsMissing
+    | some _, none => refuse .evidenceMissing
     | some fx, some d =>
-      if !fx.isComplete then none
+      if !fx.isComplete then refuse .factsIncomplete
       else match Proof.validate d with
+        | .error _ => refuse .evidenceInvalid
         | .ok complete =>
-          -- The authoritative body component, computed the same way Report's
-          -- `sourceBodyDigestV1` is: normalize first, then hash the canonical rendering. Same
-          -- function, same input, so the value the join compares against is the value a table
-          -- entry stores — not an approximation of it.
           match e.extracted with
+          | none => refuse .extractedMissing
           -- ALL FOUR PARTS PROJECTED FROM ONE ENTRY, in one expression. The record cannot verify
           -- that they share an origin — neither the evidence body nor the extracted expression
           -- carries identity — so the guarantee is structural here and named as a gap there.
-          | some pe => CompleteImplementation.of? e.callableId fx complete pe
-          -- No extracted body means no comparable component, so no row. The join then refuses any
-          -- table containing this callee, which is the fail-closed direction.
-          | none => none
-        | .error _ => none
-    | _, _ => none
-  Proof.ImplementationManifest.ofImplementations rows
+          | some pe =>
+            match CompleteImplementation.of? e.callableId fx complete pe with
+            | none => refuse .inputsRefused
+            | some ci => { acc with expected := expected, impls := acc.impls ++ [ci] }
+  pc.entries.foldl (init := { expected := [], impls := [], refusals := [] }) step
+
+/-- The manifest itself, or `none` when the program cannot be fully accounted for. -/
+def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManifest :=
+  (implementationManifestResultOf pc).usable?
 
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
 
