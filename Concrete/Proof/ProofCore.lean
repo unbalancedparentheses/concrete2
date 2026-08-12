@@ -1991,13 +1991,16 @@ def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManif
           -- function, same input, so the value the join compares against is the value a table
           -- entry stores — not an approximation of it.
           match e.extracted with
-          | some pe => some (e.callableId, sourceBodyDigestV1Of pe, implementationDigest fx complete)
+          -- ALL FOUR PARTS PROJECTED FROM ONE ENTRY, in one expression. The record cannot verify
+          -- that they share an origin — neither the evidence body nor the extracted expression
+          -- carries identity — so the guarantee is structural here and named as a gap there.
+          | some pe => CompleteImplementation.of? e.callableId fx complete pe
           -- No extracted body means no comparable component, so no row. The join then refuses any
           -- table containing this callee, which is the fail-closed direction.
           | none => none
         | .error _ => none
     | _, _ => none
-  Proof.ImplementationManifest.ofRows rows
+  Proof.ImplementationManifest.ofImplementations rows
 
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
 

@@ -1,5 +1,6 @@
 import Concrete.Proof.IdentityUseBytes
 import Concrete.Proof.Digest
+import Concrete.Proof.BodyIdentity
 
 /-!
 # Implementation identity
@@ -49,5 +50,64 @@ def implementationDigest (facts : Proof.CheckedDeclFacts)
   -- different identities whose values could not be told apart by their construction. The prefix
   -- is on the HASH, not the preimage, so V2 values stay byte-identical.
   shortHash ("implementationV1:" ++ implementationPreimage facts body)
+
+
+/-! ## A complete implementation, as one inseparable record
+
+The manifest must not accept digests from a caller: a public entry point taking
+`(CallableId x String x String)` cannot tell a computed digest from a well-formed invented one.
+Computing them inside the constructor requires the constructor to receive the INPUTS instead — and
+those inputs must not be independently pairable, or the forgery just moves one level up.
+
+FOUR fields, not the three the design sketch listed, and the fourth is forced by what a manifest row
+actually holds. The row's body component is `sourceBodyDigestV1Of` of the EXTRACTED `PExpr` — the
+same value a table entry stores, which is the whole point of carrying it — and that is a different
+representation from `CompleteEvidenceBodyV2`. Deriving one from the other is not available, so the
+extracted body travels with the rest.
+
+**WHAT THIS RECORD DOES AND DOES NOT ESTABLISH.** `of?` verifies `facts.id == callable` and that the
+facts are complete; the body is a `CompleteEvidenceBodyV2`, so its validation is discharged by the
+type rather than re-checked. It does NOT establish that all four parts came from the same
+`ProofCoreEntry`:
+
+  `CompleteEvidenceBodyV2` carries only `val.statements` — NO identity. Neither does `PExpr`. So
+  pairing entry A's body or extracted expression with entry B's facts and `CallableId` satisfies
+  every check available here and silently yields a digest for an implementation that does not exist.
+
+That is a NAMED GAP, not a covered case. It cannot be closed from this module: `ProofCoreEntry` is
+defined above it, so a `private mk` here is unreachable from a producer that walks entries, which is
+why `of?` is a validating function rather than a sealed factory. Closing it needs the evidence body
+to carry its owning `CallableId`, and that is a V2 schema change — deliberately not done while the
+freeze holds. The `facts`/`callable` mispairing IS caught; the `body`/`extracted` mispairing is not,
+and no control may be written that implies otherwise. -/
+structure CompleteImplementation where
+  private mk ::
+  callable  : CallableId
+  facts     : Proof.CheckedDeclFacts
+  body      : Proof.CompleteEvidenceBodyV2
+  /-- The extracted proof-model body. Present because the manifest row's comparable component is
+      its V1 source-body digest, which no other field can produce. -/
+  extracted : Proof.PExpr
+
+/-- Build a complete implementation, or refuse.
+
+    Refuses when the facts describe a DIFFERENT callable than the one claimed, which is the
+    mispairing this record exists to prevent, and when the facts are incomplete, since a digest over
+    incomplete facts is a digest over an unknown. -/
+def CompleteImplementation.of? (callable : CallableId) (facts : Proof.CheckedDeclFacts)
+    (body : Proof.CompleteEvidenceBodyV2) (extracted : Proof.PExpr)
+    : Option CompleteImplementation :=
+  if facts.id != callable then none
+  else if !facts.isComplete then none
+  else some (CompleteImplementation.mk callable facts body extracted)
+
+/-- The authoritative V1 source-body component — the value a table entry stores, computed by the
+    same single producer, so the join compares a value against itself rather than an approximation. -/
+def CompleteImplementation.sourceBodyComponent (ci : CompleteImplementation) : String :=
+  sourceBodyDigestV1Of ci.extracted
+
+/-- The authoritative implementation digest. -/
+def CompleteImplementation.implementationComponent (ci : CompleteImplementation) : String :=
+  implementationDigest ci.facts ci.body
 
 end Concrete

@@ -1108,6 +1108,48 @@ probe "a MATCHING body digest binds (the refusals are targeted)" "true" "
   | some mf => (bindEntryImplementations rows mf).isSome
   | none => false"
 
+# === MANIFEST PROVENANCE: DIGESTS ARE COMPUTED, NOT SUPPLIED ==================================
+# `ofRows` validates that thirty-two hex characters are thirty-two hex characters. It cannot tell a
+# computed digest from a well-formed invented one, so `ofImplementations` takes INPUTS and computes
+# both digests itself, and the authoritative producer now goes through it.
+#
+# WHAT IS AND IS NOT COVERED, stated here so the section cannot be misread as more than it proves.
+# `CompleteImplementation.of?` refuses a `facts`/`callable` mispairing and incomplete facts. It
+# CANNOT refuse a `body` or `extracted` belonging to a different entry, because neither
+# `CompleteEvidenceBodyV2` nor `PExpr` carries identity. That swap is a NAMED GAP in the roadmap and
+# has deliberately NOT been registered as a mutation, because the mutation would survive and a
+# surviving control recorded as coverage is worse than no control.
+echo "=== manifest provenance: inputs in, digests computed ==="
+
+expect_no_compile "CompleteImplementation cannot be constructed directly" '
+#eval fun (fx : Concrete.Proof.CheckedDeclFacts) (b : Concrete.Proof.CompleteEvidenceBodyV2) =>
+  (Concrete.CompleteImplementation.mk (Concrete.CallableId.ofUser "m" "f") fx b
+    (Concrete.Proof.PExpr.lit (Concrete.Proof.PVal.int 0))).callable'
+
+# FACTS MUST DESCRIBE THE CALLABLE CLAIMED. Facts for `g`, offered as `f`: this is the mispairing
+# the record exists to prevent, and the one it can actually see.
+probe "facts describing ANOTHER callable are refused" "true" '
+#eval
+  let fx : Proof.CheckedDeclFacts := { id := CallableId.ofUser "m" "g" }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .ok body => (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
+  | .error _ => false'
+
+# INCOMPLETE FACTS. A digest over incomplete facts is a digest over an unknown, so it must not be
+# mintable at all -- refusing later would mean the value existed in the meantime.
+probe "INCOMPLETE facts are refused" "true" '
+#eval
+  -- `covered := false` is what makes these facts incomplete: default facts ARE complete
+  -- (`isComplete = id.isComplete && contracts.covered`, both true by default), so an id alone
+  -- would have tested the id check a second time rather than completeness.
+  let fx : Proof.CheckedDeclFacts :=
+    { id := CallableId.ofUser "m" "f", contracts := { covered := false } }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  -- The `!fx.isComplete` conjunct keeps this from passing for the wrong reason.
+  | .ok body => (!fx.isComplete)
+      && (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
+  | .error _ => false'
+
 expect_no_compile "the manifest cannot be constructed directly" '
 #eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")'
 expect_no_compile "BoundTableEntry cannot be constructed directly" '

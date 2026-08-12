@@ -354,6 +354,19 @@ add "entry-body-recomputed" "Concrete/Proof/DependencyEdge.lean" "check_dependen
   $'        else if stored.value != Concrete.sourceBodyDigestV1Of d.body then none' \
   $'        else if false then none'
 
+# R-0004 slice 6, manifest provenance. `CompleteImplementation.of?` refuses facts describing a
+# DIFFERENT callable than the one claimed, which is what stops a manifest row pairing one callable's
+# identity with another's signature, contracts and capabilities.
+#
+# SCOPE OF THIS CONTROL, stated because the neighbouring gap is easy to conflate with it: this covers
+# the facts/callable mispairing ONLY. A `body` or `extracted` belonging to another entry is NOT
+# covered and has deliberately no mutation, because neither `CompleteEvidenceBodyV2` nor `PExpr`
+# carries identity, so such a mutation would SURVIVE — and a surviving control recorded as coverage
+# is worse than an absent one. See the named gap in ROADMAP.md R-0004 item 2.
+add "implementation-facts-match-callable" "Concrete/Proof/ImplementationIdentity.lean" "check_dependency_edges.sh" yes \
+  $'  if facts.id != callable then none' \
+  $'  if false then none'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

@@ -304,6 +304,28 @@ def ImplementationManifest.find? (m : ImplementationManifest) (c : CallableId)
     : Option (String × String) :=
   (m.rows.find? fun r => r.1 == c).map (·.2)
 
+/-- Build a manifest from COMPLETE IMPLEMENTATIONS, computing both digests internally.
+
+    This is the entry point a caller should use, and the reason is provenance rather than
+    convenience: `ofRows` takes digests, and a digest handed to a constructor is a digest the
+    constructor cannot vouch for — it validates that thirty-two hex characters are thirty-two hex
+    characters. Here the caller supplies INPUTS and the digests are computed from them, so there is
+    nowhere to put an invented value.
+
+    Still routed through `ofRows`, so the duplicate-callable and canonical-format refusals apply
+    unchanged. Those are not redundant once digests are computed: a duplicate means the manifest is
+    not the function it claims to be, and a malformed digest from the AUTHORITATIVE producer is a
+    different failure from a forged one — worth refusing rather than assuming cannot happen.
+
+    LIMIT, stated because the type looks stronger than it is: this inherits exactly the guarantees
+    of `CompleteImplementation`. The `facts`/`callable` mispairing is refused; a `body` or
+    `extracted` belonging to another entry is NOT detectable, because neither carries identity. See
+    the named gap on `CompleteImplementation`. -/
+def ImplementationManifest.ofImplementations (impls : List CompleteImplementation)
+    : Option ImplementationManifest :=
+  ImplementationManifest.ofRows (impls.map fun ci =>
+    (ci.callable, ci.sourceBodyComponent, ci.implementationComponent))
+
 /-- A table entry bound to its authoritative IMPLEMENTATION digest.
 
     `implDigest` is a plain `String` with a private constructor, so an entry without an
