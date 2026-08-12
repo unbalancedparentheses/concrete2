@@ -1,5 +1,6 @@
 import Concrete.Proof.Proof
 import Concrete.Proof.BodyIdentity
+import Concrete.Proof.ImplementationIdentity
 
 /-! # Typed proof-dependency edges (R-0004 step 6)
 

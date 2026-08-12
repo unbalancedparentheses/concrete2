@@ -55,6 +55,7 @@ import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.Digest
 import Concrete.Proof.BodyIdentity
+import Concrete.Proof.ImplementationIdentity
 -- Example/flagship proof modules moved OUT of the compiler lib into the separate
 -- `Examples` Lake library (root `Examples.lean`, namespace `Examples.<Ex>.Proofs`).
 -- The compiler references their theorems by name/fingerprint (Concrete.Proof), it

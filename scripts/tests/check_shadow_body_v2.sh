@@ -92,8 +92,14 @@ else
 fi
 
 refs="$(code_refs bodyBytesV2 Concrete/ Main.lean)"
-if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean " ]; then
-  ok "bodyBytesV2 owners are the definition, the subject digest, and the shadow report line"
+# OWNER SET UPDATED 2026-08-11: `ProofCore` LEAVES and `ImplementationIdentity` ENTERS. This is a
+# relocation, not an expansion -- `implementationPreimage` moved verbatim into its own module so the
+# manifest constructor can compute digests instead of accepting them from a caller, and the set is
+# still three files. An owner set that GREW would need the argument to be made again; one where a
+# name is substituted for the same code does not, and recording which of the two happened is the
+# reason this asserts the set rather than a count.
+if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Proof/ImplementationIdentity.lean Concrete/Report/Report.lean " ]; then
+  ok "bodyBytesV2 owners are the definition, the implementation digest, and the shadow report line"
 else
   no "bodyBytesV2 reached a new owner ($refs) — if a STATUS now depends on structural bytes, that is the V1 freeze breaking"
 fi

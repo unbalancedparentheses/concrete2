@@ -4,6 +4,7 @@ import Concrete.Proof.Proof
 import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.BodyIdentity
+import Concrete.Proof.ImplementationIdentity
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.ClassificationTable
 
@@ -1866,33 +1867,6 @@ def RegistryIssue.isError : RegistryIssue → Bool
   | .unboundProofSubject _ => false
 
 
-/-- The IMPLEMENTATION preimage: what a callable IS, with no proof-link metadata.
-
-    Identity, typed signature, generics, capabilities and contracts (via `facts.canonical`) plus
-    the structural body. Deliberately excludes the selected specification and claim scope: those
-    say what a particular proof CLAIMS about this implementation, and an implementation does not
-    change when a different proof is pointed at it.
-
-    Exposed as the preimage rather than only as a digest so `proofSubjectDigestV2` can extend it
-    without nesting a hash — which would change V2's bytes and break its freeze for a refactor
-    that adds no information. -/
-def implementationPreimage (facts : Proof.CheckedDeclFacts)
-    (body : Proof.CompleteEvidenceBodyV2) : String :=
-  "subjectV2:" ++ facts.canonical ++ "|body:" ++ shortHash (Proof.bodyBytesV2 body)
-
-/-- The implementation digest — the identity a `body` dependency edge should bind.
-
-    Distinct from the proof-subject digest, and the distinction is the point: a table entry
-    describes an implementation, so binding the full subject there would couple table membership
-    to which specification a proof link happened to select. -/
-def implementationDigest (facts : Proof.CheckedDeclFacts)
-    (body : Proof.CompleteEvidenceBodyV2) : String :=
-  -- DOMAIN-SEPARATED. The preimage begins `subjectV2:` because it is shared with
-  -- `proofSubjectDigestV2`, whose bytes are frozen. Hashing it unprefixed would give the
-  -- implementation identity the same domain as a proof subject over the same inputs — two
-  -- different identities whose values could not be told apart by their construction. The prefix
-  -- is on the HASH, not the preimage, so V2 values stay byte-identical.
-  shortHash ("implementationV1:" ++ implementationPreimage facts body)
 
 /-- The versioned proof-subject digest, defined ONCE from the captured facts and
     the body fingerprint.

@@ -1083,7 +1083,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** slices 4–8 | mid-flight; subject V2 is deterministic/refrozen and the exact manifest is closed 44/44. Slice 6 computes shared roots in shadow (62/64 root, 2 named refusals), but its checked-in table still discards classification evidence and applies one caller-level kind to every callee. Current transition: exact typed classification artifact and per-edge correspondence → zero proved-subject refusals → production status requires root → omission mutation → complete replay receipt → replay/migrate → Slice 8. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
+| 1 | **R-0004** remaining trust boundaries | mid-flight; subject V2 is deterministic/refrozen and the exact migration inventory is closed 44/44. Slice 6 computes shared roots in shadow (62/64 root, 2 named refusals). Classification rows retain and validate theorem/table material, and table bodies are provenance-bound; implementation-manifest provenance/completeness and exact per-edge correspondence remain open. Current transition: close those two manifest boundaries → exact per-edge correspondence → zero proved-subject refusals → authority-transition gate → replay receipts and migration → Slice 8. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -3410,15 +3410,167 @@ Proof automation remains behind honest semantics and the external-user trial.
 
 **Objective:** Fix proof-subject freshness and fail closed.
 
+#### Canonical execution map — trust boundaries, not percentage complete
+
+**Status authority:** this block is the sole current execution summary for R-0004. The numbered
+slices and dated investigation notes below remain as traceability and rationale; they do not
+override this block. Do not describe R-0004 as a fraction such as "6.5/8" or as a percentage:
+those figures combine implemented helpers, shadow measurements and authoritative guarantees.
+Progress is instead the state of each trust boundary.
+
+Every boundary advances through the same states and may not skip one:
+
+```text
+designed -> implemented -> negatively controlled -> mutation-killed
+         -> shadow-measured -> authoritative -> adversarially closed
+```
+
+| trust boundary | current state | authority consequence |
+|---|---|---|
+| proof-subject identity | **implemented, mutation-controlled, schema frozen** | V2 exists but remains shadow until replay/migration |
+| exact migration inventory | **closed: 44/44 stored links accounted** | inventory is authoritative; migrated verdicts are not |
+| classification discovery | **implemented and mandatory-gated** | both proof-attachment paths are enumerated |
+| classification freshness | **implemented and mandatory-gated** | checked-in rows are compared with the live Lean environment |
+| classification structural validation | **implemented and mutation-controlled** | malformed, ambiguous and duplicate rows cannot classify |
+| table/body provenance | **implemented and mutation-killed** | stored provenance is recomputed from the actual `PFnDef.body` |
+| implementation-manifest provenance | **OPEN** | caller-supplied digest construction still prevents authoritative use |
+| implementation-manifest completeness | **OPEN** | `filterMap` can produce a smaller, non-self-denominating manifest |
+| theorem-to-call-edge correspondence | **OPEN — critical semantic boundary** | caller-wide labels cannot justify individual call edges |
+| dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** | roots MUST NOT affect production status yet |
+| dependency-aware verdict composition | **PROHIBITED** | no dependency-aware `proved` may issue before the authority-transition gate |
+| replay receipts and corpus migration | **PENDING** | no receipt is replay-backed or authoritative |
+| adversarial closure | **PENDING — mandatory** | R-0004 cannot close without Slice 8 |
+| ninth proof table | **EXTERNALLY BLOCKED** | mutable-borrow ProofCore extraction remains required for formal closure |
+
+The legacy slices map to outcomes only: slices 1–3 cover the landed containment foundation;
+slice 4 covers proof-table, receipt-envelope and environment plumbing; slice 5 covers subject
+identity; slice 6 covers dependency correspondence and roots; slice 7 covers replay, receipts and
+migration; slice 8 covers adversarial closure. Slice numbers are traceability labels, not a second
+progress model.
+
+#### Open boundary: implementation-manifest provenance
+
+**Status:** OPEN.
+
+**Risk:** a public format-only constructor can accept a syntactically valid invented digest. A
+private envelope around caller-supplied provenance is not authoritative provenance.
+
+**Required implementation:**
+
+- construct complete implementation inputs from one `ProofCoreEntry`, so callable identity,
+  checked declaration facts and validated evidence body cannot be cross-paired;
+- compute source-body and implementation digests internally through the single canonical
+  `BodyIdentity` / `Digest` path;
+- remove every public raw-digest construction route from proof-relevant consumers;
+- keep implementation identity distinct from proof-subject identity: selected specification and
+  claim scope belong only to the latter.
+
+**Acceptance:** forged but well-formed digests are unrepresentable; cross-paired identity/facts/body
+refuse; incomplete facts and invalid bodies refuse; a real complete `ProofCoreEntry` succeeds;
+the frozen V2 subject and V1 golden remain byte-identical.
+
+**Required mutations:** replace an implementation digest with 32 zeroes; pair one callable with
+another callable's facts or body; remove body provenance. Each must prevent binding through the
+real consumer path.
+
+**Unblocks:** self-denominating manifest completeness and body-edge correspondence.
+
+#### Open boundary: implementation-manifest completeness
+
+**Status:** OPEN.
+
+**Risk:** `filterMap` silently omits undescribable entries, making an incomplete manifest look
+complete over a smaller set.
+
+**Required implementation:** return a result with the exact expected eligible identity set,
+success rows and named refusals. A manifest usable for correspondence exists only when expected
+identities equal row identities, refusals are empty and identities are unique.
+
+**Acceptance:** every eligible callable produces exactly one row or one named refusal; no refusal
+is dropped; discovery order does not change canonical material; adding an eligible incomplete
+entry prevents a usable manifest rather than shrinking it.
+
+**Required mutations:** delete one produced row; introduce one incomplete eligible entry; duplicate
+an identity; return rows in another order. The first three refuse and the last remains equivalent.
+
+**Unblocks:** exact per-edge correspondence.
+
+#### Open boundary: theorem-to-call-edge correspondence
+
+**Status:** OPEN — critical path.
+
+**Risk:** applying one theorem-level `contract` or `body` label to every callee can under-bind the
+dependencies the theorem actually uses. Quantifying over a table is necessary for some contract
+proofs but does not establish a corresponding contract hypothesis for a particular callee.
+
+**Required implementation:** produce `validatedEdgesOf`-style evidence with exactly one
+dependency-specific justification for every compiler-produced call edge. A body witness binds the
+exact callable implementation and table material; a contract witness binds the exact callee
+contract/hypothesis; a trusted witness originates only at the compiler-declared trust boundary.
+Preserve missing, surplus, duplicate, unknown, ambiguous and mismatched sets as named refusals;
+never discard them with `filterMap`.
+
+**Acceptance:** every actual call edge has exactly one validated justification; every theorem
+witness is consumed exactly once or reported; dynamic table access binds the whole table; direct,
+transitive and recursive edges participate; `calls.combine` refuses until justified and the
+corpus reaches 64/64 only for semantic reasons.
+
+**Required mutations:** remove, swap, duplicate or weaken a witness; change a callee identity;
+change table membership; misattach a contract witness; omit a compiler edge. Each must make the
+corresponding root refuse.
+
+**Unblocks:** the authority-transition gate.
+
+#### Authority transition: dependency-aware verdicts
+
+**Status:** PROHIBITED. This is the single gate between shadow material and production `proved`.
+Do not connect roots to status composition until every item is true:
+
+- [ ] implementation-manifest provenance is closed by construction;
+- [ ] the manifest denominator is exact and every refusal is named;
+- [ ] every compiler-produced call edge has exactly one validated justification;
+- [ ] no theorem-derived witness, table binding or compiler edge remains unmatched;
+- [ ] body witnesses bind exact implementation identities;
+- [ ] contract witnesses bind exact callee contracts/hypotheses;
+- [ ] trust and assumptions propagate monotonically through the full closure;
+- [ ] root coverage is 64/64 with zero proved-subject refusals;
+- [ ] removal, swap, duplicate, weakening, omission and misattachment mutations are killed by the
+      production consumer, not merely a helper probe;
+- [ ] ProofCore and Report consume the same validated root;
+- [ ] no legacy name-keyed, advisory or root-optional path can emit `proved`;
+- [ ] the pre-activation authoritative verdict remains unchanged, and activation changes only the
+      explicitly measured expected cases.
+
+#### Remaining milestones after the authority transition
+
+1. **Replayable receipts and migration:** replay every repository proof; mint a receipt only after
+   successful kernel replay; bind subject, theorem artifact, dependency root, table material,
+   trust/assumptions, schema and environment; migrate all 44 stored links; convert legacy or
+   incomplete evidence to `needs_recheck`; prove repository-root, project-root, clean-checkout and
+   path-independent reproducibility; publish the first eligibility-denominated coverage baseline.
+2. **Externally blocked ninth table:** complete mutable-borrow ProofCore extraction, migrate the
+   final table and replace its tripwire with positive extraction/evaluation/replay correspondence.
+3. **Adversarial closure:** attack omission, stale and forged artifacts, ambiguity, duplicate
+   evidence, trust laundering, opaque theorems, collision/schema confusion, partial receipts,
+   dependency changes and environment changes. Every successful attack becomes a named hole and
+   permanent regression gate. Require an independent non-author attack contribution.
+
+#### Historical record and detailed slice traceability
+
+The remaining material in R-0004 preserves investigations, rejected hypotheses, corrections,
+commit-level measurements and the original eight-slice plan. It is intentionally not the current
+execution dashboard. When historical prose conflicts with the canonical map above, update or
+archive the prose; never create another competing "authoritative current state" block.
+
 > **HEADLINE STATUS — 2026-08-09 (`902ab601`, audited against code and executable gates). This
-> supersedes every older state summary in this section.**
+> is a historical snapshot and is superseded by the canonical trust-boundary map above.**
 > Prose further down was written while the work was in flight and is kept for its reasoning, not
 > its status. In particular, wording describing the subject digest as "still V1-frozen" is about
 > the AUTHORITATIVE comparison — which is deliberately unflipped until step 7 — and must not be
 > read as "the V2 digest does not exist". It does.
 >
-> **Roughly 70–75% of the architecture is implemented; only 3 of 8 slices are formally closed,
-> and the authoritative evidence path is closer to 50–60% complete.** The distinction is
+> **Historical estimate only: roughly 70–75% of the architecture was implemented at this
+> checkpoint, while only 3 of 8 slices were formally closed.** The distinction is
 > load-bearing: Concrete can compute the intended subject, dependency material, receipt helper
 > values and exact migration inventory, but production `proved` still uses the legacy
 > fingerprint/spec path. Producing correct material is not the same as making every friendly
@@ -3588,9 +3740,9 @@ Treat the following as one evidence-integrity defect class:
   reported multi-function witness and control (provisionally called bug 062);
   the number becomes stable only when its document and executable control land.
 
-Land this task in eight explicit slices. **This is the authoritative current-state
-summary; dated investigation notes later in the task explain how the state was
-reached but do not override this table.** `ACTIVE` means useful implementation
+Land this task in eight explicit slices. **This is the original slice traceability
+table, not the current execution dashboard; the canonical trust-boundary map at the
+start of R-0004 owns current status.** `ACTIVE` means useful implementation
 has landed while the slice's user-visible outcome remains incomplete.
 
 | slice | outcome | current state | what remains before the slice exits |
@@ -3604,7 +3756,7 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 | 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
-**Completion estimate as of 2026-08-09.** Roughly 70–75% of the architecture exists, but only
+**Historical completion estimate as of 2026-08-09.** Roughly 70–75% of the architecture existed, but only
 slices 1–3 are formally closed and the authoritative evidence path is nearer 50–60%. Remaining
 work is integration-heavy: clean the duplicated manifest gate, integrate dependency roots,
 complete and consume replay receipts, migrate the corpus, finish the externally blocked ninth
@@ -5312,6 +5464,59 @@ consumer away from the `proved` decision path:
 
          Keep the format validation as well: it still rejects a malformed digest from the
          authoritative producer, which is a different failure from a forged one.
+
+         **The shape, refined 2026-08-11.** Do NOT expose a replacement constructor taking bare
+         `CheckedDeclFacts` and `CompleteEvidenceBodyV2`: those prove completeness, but a caller
+         could pair one callable's facts or body with a different `CallableId`. Take a closed
+         record instead, so the three cannot be mixed independently:
+
+         ```lean
+         structure CompleteImplementation where
+           private mk ::
+           callable : CallableId
+           facts    : Proof.CheckedDeclFacts
+           body     : Proof.CompleteEvidenceBodyV2
+         ```
+
+         then `ImplementationManifest.ofImplementations : List CompleteImplementation -> Option
+         ImplementationManifest`, computing both digests internally. Raw
+         `(CallableId x String x String)` construction becomes private or test-only.
+
+         **What the smart constructor can and CANNOT check — measured, so no control is claimed
+         that cannot be delivered.** `implementationIdentityOf` now sits below `DependencyEdge`
+         (landed 2026-08-11), so the constructor can live there and verify:
+
+         - `facts.id == callable` — checkable, `CheckedDeclFacts.id : CallableId`;
+         - facts complete — checkable;
+         - the evidence body validates — checkable.
+
+         **"Both originated from the same `ProofCoreEntry`" is NOT checkable there**, twice over.
+         `ProofCoreEntry` lives in `ProofCore`, ABOVE this module, so a `private mk` in the low
+         module cannot be reached by a producer that walks entries — the constructor has to be a
+         validating function taking the three parts. And `CompleteEvidenceBodyV2` carries only
+         `val.statements`, **no identity**, so pairing entry A's BODY with entry B's facts and id
+         passes every check above and silently yields a wrong digest. A mutation for that swap
+         would SURVIVE, and must not be registered as if it were killed.
+
+         Closing it properly needs the body to carry its owning `CallableId`, which is a V2 schema
+         change and must not be done casually while the freeze holds. Until then this is a NAMED
+         REFUSAL, not a covered case, and the id/facts pairing mutation (which the `facts.id ==
+         callable` check does kill) must not be described as covering it.
+
+      2a. **Manifest completeness must be self-denominating** — `implementationManifestOf` uses
+         `filterMap`, which launders an incomplete production into a smaller apparently-complete
+         manifest. Prefer a result carrying NAMED refusals:
+
+         ```lean
+         structure ManifestResult where
+           expected : List CallableId
+           rows     : List ManifestRow
+           refusals : List (CallableId x ManifestRefusal)
+         ```
+
+         A manifest usable for correspondence exists only when: expected identities = row
+         identities, `refusals = []`, and no duplicates. The denominator is then stored rather
+         than inferred from the numerator, which is the defect `filterMap` has.
 
       3. **`implementationManifestOf` uses `filterMap`**, so the manifest is neither complete nor
          self-denominating. The downstream join refuses a missing callable, which is fail-closed
