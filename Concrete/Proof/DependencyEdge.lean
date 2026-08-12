@@ -267,7 +267,8 @@ pure data over `CallableId`, so this is their natural home anyway.
     passed `"v2:abc"` and proved exactly that. A private constructor guarding a value the caller
     supplies is not a guard.
 
-    Constructor is private; `ofRows` is the only way in, and it validates. -/
+    Constructor is private, and so is `ofRows`; `ofImplementations` is the only way in, and it
+    computes the digests rather than accepting them. -/
 structure ImplementationManifest where
   private mk ::
   /-- `(callable, authoritative source-body digest, implementation digest)`.
@@ -277,26 +278,39 @@ structure ImplementationManifest where
   private rows : List (CallableId × String × String)
 deriving Repr
 
-/-- Build a manifest from rows, validating FORMAT only — or refuse.
+/-- Is a candidate row set WELL-FORMED? Format only, and public so the format refusals can be
+    tested without a way to construct a manifest from chosen digests.
 
-    **This validates syntax, not provenance.** A caller cannot pass `"v2:abc"`, but can pass
-    thirty-two zeros. The authoritative producer is `implementationManifestOf` in `ProofCore`,
-    which computes each digest from complete canonical facts; this function cannot tell a computed
-    digest from a well-formed invented one, and does not claim to. Call the result a validated
-    manifest ENVELOPE unless it came from that producer.
+    Refuses a duplicate callable — the manifest claims to be a FUNCTION, and two rows for one
+    callable means it is not — and a digest that is not canonical 32-hex. Both refuse the WHOLE row
+    set rather than the offending row: a manifest missing entries answers "no implementation for
+    this callable" indistinguishably from a callable that genuinely has none.
 
-    Refuses on a duplicate callable — the manifest claims to be a FUNCTION, and two rows for one
-    callable means it is not — and on a digest that is not canonical 32-hex. Both refuse the
-    whole manifest rather than the offending row: a manifest missing entries answers "no
-    implementation for this callable" indistinguishably from a callable that genuinely has none. -/
-def ImplementationManifest.ofRows (rows : List (CallableId × String × String))
-    : Option ImplementationManifest :=
+    This is a predicate, not a constructor, and the split is the point. It says nothing about
+    provenance: thirty-two zeros are well-formed. Exposing it as a Bool means a caller can ask
+    whether rows are syntactically acceptable without that question yielding a manifest. -/
+def ImplementationManifest.rowsWellFormed (rows : List (CallableId × String × String)) : Bool :=
   let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
-  if (rows.map (·.1)).eraseDups.length != rows.length then none
+  (rows.map (·.1)).eraseDups.length == rows.length
   -- BOTH digests validated: the body component is the value the join compares against, so a
   -- malformed one would make every comparison fail or, worse, succeed against another malformed
   -- entry.
-  else if !(rows.all fun r => isHex r.2.1 && isHex r.2.2) then none
+  && rows.all fun r => isHex r.2.1 && isHex r.2.2
+
+/-- Build a manifest from raw rows. **PRIVATE, and that is the containment.**
+
+    It validates FORMAT ONLY: a caller cannot pass `"v2:abc"`, but can pass thirty-two zeros. While
+    this was public, "validated manifest" meant "well-formed hex", and the join's whole guarantee
+    rested on a value any caller could invent. `ofImplementations` is the way in — it takes inputs
+    and computes the digests — and this exists only for it to route through, so the duplicate and
+    format refusals stay in one place.
+
+    Made private 2026-08-12. The format refusals it used to be tested through are now tested via
+    `rowsWellFormed`, so nothing was lost by closing it; the compile-failure controls in
+    `check_dependency_edges.sh` pin that it stays closed. -/
+private def ImplementationManifest.ofRows (rows : List (CallableId × String × String))
+    : Option ImplementationManifest :=
+  if !ImplementationManifest.rowsWellFormed rows then none
   else some (ImplementationManifest.mk rows)
 
 /-- The `(authoritative body digest, implementation digest)` for a callable. -/

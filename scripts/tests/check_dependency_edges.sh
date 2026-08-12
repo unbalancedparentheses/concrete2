@@ -1044,52 +1044,74 @@ HEXA='"7bcec2d7871f93204b26e2bf83d5acf1"'
 HEXBODY='"6fe095a9f592a2e2b556e87f30306584"'
 HEXB='"bfda7f397e3221e757383578b50ee3ff"'
 
-probe "a manifest with distinct callables and canonical digests builds" "true" "
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)]).isSome"
+probe "distinct callables with canonical digests are well-formed" "true" "
+#eval ImplementationManifest.rowsWellFormed [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)]"
 
 # The manifest CLAIMS to be a function; two rows for one callable means it is not.
-probe "a DUPLICATE callable refuses the manifest" "true" "
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA), (CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXB)]).isNone"
+probe "a DUPLICATE callable is not well-formed" "true" "
+#eval !(ImplementationManifest.rowsWellFormed [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA), (CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXB)])"
 
-probe "a NON-CANONICAL digest refuses the manifest" "true" '
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")]).isNone'
+probe "a NON-CANONICAL digest is not well-formed" "true" '
+#eval !(ImplementationManifest.rowsWellFormed [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")])'
 
 # The exact string the old tests used. It is not a digest, and the old API accepted it.
-probe "the old bypass value \"v2:abc\" is now rejected outright" "true" '
-#eval (ImplementationManifest.ofRows [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")]).isNone'
+probe "the old bypass value \"v2:abc\" is rejected outright" "true" '
+#eval !(ImplementationManifest.rowsWellFormed [(CallableId.ofUser "m" "f", "v2:abc", "v2:abc")])'
 
-probe "entries bind through a validated manifest" "true" "
-#eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => (bindEntryImplementations rows mf).isSome
-  | none => false"
+# These probes now build the manifest the way production does — from a `CompleteImplementation`,
+# with the digests COMPUTED — because `ofRows` is private and chosen digests are no longer
+# constructible. That is a strictly better test: the entry digest and the manifest digest agree
+# because both derive from the SAME `PExpr`, rather than because two literals were typed to match.
+# `MF` is the shared setup; each probe supplies the final expression over `ci` and `mf`.
+MF='
+  let cid := CallableId.ofUser "m" "f"
+  let pe := PExpr.lit (PVal.int 0)
+  let fx : Proof.CheckedDeclFacts := { id := cid }
+  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+  | .error _ => false
+  | .ok bd =>
+  match CompleteImplementation.of? cid fx bd pe with
+  | none => false
+  | some ci =>
+  match ImplementationManifest.ofImplementations [ci] with
+  | none => false
+  | some mf =>'
+
+probe "entries bind through a computed manifest" "true" "
+#eval$MF
+  let rows := [{ callee := cid, sourceBodyDigestV1 := ci.sourceBodyComponent : TableEntryEvidence }]
+  (bindEntryImplementations rows mf).isSome"
 
 probe "ONE entry missing from the manifest refuses the whole list" "true" "
-#eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"496808fdd594d5047f23e823bc26b69c\" : TableEntryEvidence },
-               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => (bindEntryImplementations rows mf).isNone
-  | none => false"
+#eval$MF
+  let rows := [{ callee := cid, sourceBodyDigestV1 := ci.sourceBodyComponent : TableEntryEvidence },
+               { callee := CallableId.ofUser \"m\" \"g\", sourceBodyDigestV1 := ci.sourceBodyComponent : TableEntryEvidence }]
+  (bindEntryImplementations rows mf).isNone"
 
-probe "membership returns the bound implementation digest" "$(echo $HEXA | tr -d '\"')" "
-#eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => match bindEntryImplementations rows mf with
-    | some b => (boundEntryImplementationOf b (CallableId.ofUser \"m\" \"f\")).getD \"MISSING\"
-    | none => \"REFUSED\"
-  | none => \"NO-MANIFEST\""
+# Returns the digest, not a Bool, so a caller can record WHICH implementation justified an edge.
+# Asserted against `ci.implementationComponent` rather than a literal: with digests computed, a
+# hard-coded expectation would pin today's hash rather than the property that the value the join
+# hands back is the one the manifest computed.
+probe "membership returns the manifest's computed implementation digest" "true" "
+#eval$MF
+  let rows := [{ callee := cid, sourceBodyDigestV1 := ci.sourceBodyComponent : TableEntryEvidence }]
+  match bindEntryImplementations rows mf with
+  | some b => (boundEntryImplementationOf b cid) == some ci.implementationComponent
+  | none => false"
 
 # THE ACCEPTANCE MUTATIONS for the misattachment hole. Identity alone used to bind; now the
-# entry's stored body digest must be PRESENT and EQUAL to the authoritative one.
+# entry's body digest must EQUAL the authoritative one.
 probe "a STALE body digest refuses to bind (identity alone is not enough)" "true" "
-#eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"00000000000000000000000000000000\" : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => (bindEntryImplementations rows mf).isNone
-  | none => false"
+#eval$MF
+  let rows := [{ callee := cid, sourceBodyDigestV1 := \"00000000000000000000000000000000\" : TableEntryEvidence }]
+  (bindEntryImplementations rows mf).isNone"
+
+# A digest that is a REAL digest of a DIFFERENT body — well-formed, computed by the right producer,
+# and still wrong for this entry. Thirty-two zeros could be refused by a format check; this cannot.
+probe "a real digest of ANOTHER body refuses to bind" "true" "
+#eval$MF
+  let rows := [{ callee := cid, sourceBodyDigestV1 := sourceBodyDigestV1Of (PExpr.lit (PVal.int 1)) : TableEntryEvidence }]
+  (bindEntryImplementations rows mf).isNone"
 
 # WAS a runtime refusal; is now UNREPRESENTABLE. `TableEntryEvidence.sourceBodyDigestV1` is a
 # `String`, so "entry with no provenance" has no value to construct -- the check moved from
@@ -1101,12 +1123,22 @@ expect_no_compile "an entry with NO body digest has no representation (absence i
                  sourceBodyDigestV1 := none : Concrete.Proof.TableEntryEvidence }]
   rows.length'
 
-probe "a MATCHING body digest binds (the refusals are targeted)" "true" "
-#eval
-  let rows := [{ callee := CallableId.ofUser \"m\" \"f\", sourceBodyDigestV1 := \"6fe095a9f592a2e2b556e87f30306584\" : TableEntryEvidence }]
-  match ImplementationManifest.ofRows [(CallableId.ofUser \"m\" \"f\", $HEXBODY, $HEXA)] with
-  | some mf => (bindEntryImplementations rows mf).isSome
-  | none => false"
+# CONTAINMENT: the format-only door is closed. `rowsWellFormed` answers the format question as a
+# Bool; there is no public way to turn chosen digests into a manifest.
+# PAIRED CONTROL for the no-compile below, and it is not optional. An `expect_no_compile` passes
+# when the snippet fails to elaborate FOR ANY REASON — a misqualified name, a renamed type, a typo —
+# so on its own it cannot distinguish "private" from "misspelled", and would silently rot into a
+# tautology the day the path changes. This asserts the SAME fully-qualified path with the PUBLIC
+# predicate: it must compile. Only then does the failure below mean privacy.
+probe "the qualified manifest path resolves (so the no-compile below is about PRIVACY)" "true" '
+#eval Concrete.Proof.ImplementationManifest.rowsWellFormed
+        [(Concrete.CallableId.ofUser "m" "f",
+          "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]'
+
+expect_no_compile "ofRows is private — chosen digests cannot become a manifest" '
+#eval (Concrete.Proof.ImplementationManifest.ofRows
+        [(Concrete.CallableId.ofUser "m" "f",
+          "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]).isSome'
 
 # === MANIFEST PROVENANCE: DIGESTS ARE COMPUTED, NOT SUPPLIED ==================================
 # `ofRows` validates that thirty-two hex characters are thirty-two hex characters. It cannot tell a
