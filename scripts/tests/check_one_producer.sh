@@ -106,6 +106,57 @@ owners "isCurrentForDependents" 'isCurrentForDependents' \
   'Concrete/Proof/DependencyEdge.lean Concrete/Proof/DependencyRoot.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
 
 # ================================================================================================
+# R-0479 — A FACT IS NEVER DEFAULTED TO A VALID VALUE OF ITSELF.
+#
+# Housed here because it is the same family as one-producer: both are ways a fact can be FAKED. But
+# it is a distinct failure mode, and the more deceptive one. One-producer catches a second
+# computation of a fact; this catches a single producer that did not look and returned a plausible
+# in-domain value anyway. Such a value survives every type check and every set-comparison gate,
+# because it IS a legal value — it is simply not this one.
+#
+# The instance that motivated it: `shadowEdgeKinds` returned `unclassified`, a real
+# `DependencyEdge`, having consulted no classifier, and so produced a false finding rather than an
+# obvious wrong answer. The instance this check found: `Report.lean` had
+# `(pc.obligations.find? ...).map (·.status.canonical) |>.getD "missing"`, and `missing` is a real
+# canonical status (`.notProved => "missing"`), so "no obligation record" rendered identically to
+# "an obligation exists and is missing".
+#
+# NOTE ON WHAT IS *NOT* A VIOLATION: a COMPUTED branch may legitimately yield a domain value —
+# `if dep.isEmpty then ("none", "missing", "")` is a real determination that the obligation is
+# missing, not a failed lookup being papered over. This checks `.getD` defaults specifically,
+# because that is the failed-lookup shape.
+echo "=== no fact is defaulted to a valid value of itself ==="
+
+# Domain values that must never appear as a `.getD` default: canonical obligation statuses and
+# dependency-edge kinds. Both sets are small, closed, and meaningful — which is exactly what makes
+# a default drawn from them indistinguishable from a real answer.
+DOMAIN_VALUES="missing proved stale trusted unclassified body contract enforced assumed partial vacuous needs_recheck"
+# Via code_refs, because the FIRST run of this check flagged the very comment written to explain the
+# fix — the third guard in this suite to confuse prose for code. A comment quoting `.getD "missing"`
+# documents the defect; it does not commit it.
+viol=0
+for v in $DOMAIN_VALUES; do
+  hits="$(code_refs ".getD \"$v\"" Concrete/ Main.lean)"
+  if [ -n "$hits" ]; then
+    no "a fact is defaulted to the domain value '$v', in: $hits"
+    viol=$((viol+1))
+  fi
+done
+if [ "$viol" = "0" ]; then
+  ok "no .getD default is a canonical status or edge kind (closed vocabulary of 12 checked)"
+fi
+
+# NON-VACUITY: the check must actually fire on the shape it exists for. Without this, a typo in the
+# grep would read as a clean codebase — the exact failure mode R-0479 is about.
+mkdir -p "$TMP/dom"
+printf 'def bad : String := (lookup x).map f |>.getD "missing"\n' > "$TMP/dom/Bad.lean"
+if [ -n "$(code_refs '.getD "missing"' "$TMP/dom")" ]; then
+  ok "the domain-default check fires on a synthetic violation (it is not a typo passing silently)"
+else
+  no "the domain-default check did NOT fire on a synthetic violation — the pattern is wrong"
+fi
+
+# ================================================================================================
 # The registry must not be empty of teeth: prove an added second producer would FAIL.
 # ================================================================================================
 echo "=== the registry would catch a second producer ==="

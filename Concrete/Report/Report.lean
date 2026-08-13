@@ -4200,7 +4200,13 @@ def workspaceFiles (pc : Concrete.ProofCore) (registry : ProofRegistry)
         | none => pure ()
     for ens in f.ensures do
       let reqHyps := f.requires.map Concrete.fmtExpr
-      let st := (pc.obligations.find? (·.functionId.qualName == qualName)).map (·.status.canonical) |>.getD "missing"
+      -- R-0479: the default must NOT be a valid status. `.getD "missing"` was here, and `missing`
+      -- is a real canonical status (`.notProved => "missing"`), so "no obligation record for this
+      -- function" rendered identically to "an obligation exists and is missing". A consumer
+      -- comparing against the valid status set accepts both, which is the shape that made a stale
+      -- edge-kind line produce a false finding rather than an obvious wrong answer.
+      let st := (pc.obligations.find? (·.functionId.qualName == qualName)).map (·.status.canonical)
+                  |>.getD "no_obligation_record"
       files := files ++ [(s!"obligations/{artifactDirName s!"{qualName}#ensures"}.json", oblFile s!"{qualName}#ensures" "ensures" st (toString f.span.line) reqHyps (Concrete.fmtExpr ens))]
   | none => pure ()
   files := files ++ [("check.sh", s!"#!/usr/bin/env bash\n# Kernel-verify this function's linked Lean proof (structured JSON).\nconcrete prove {inputPath} {qualName} --check --json\n")]

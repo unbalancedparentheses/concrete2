@@ -1556,7 +1556,10 @@ def compileAndReport (inputPath : String) (reportType : String)
           | none => IO.println stub; return 0
         -- --emit-artifacts: write a reproducible bundle per failed obligation.
         if proveEmitArtifacts then
-          let proveStatus := (pc.obligations.find? (·.functionId.qualName == qual)).map (·.status.canonical) |>.getD "missing"
+          -- R-0479: NOT `.getD "missing"`. `missing` is a real canonical status, so a failed lookup
+          -- would render identically to a found obligation that is genuinely missing.
+          let proveStatus := (pc.obligations.find? (·.functionId.qualName == qual)).map (·.status.canonical)
+                               |>.getD "no_obligation_record"
           let obs := Report.callSiteObligations parsed.modules
           let myCands := ((List.range obs.length).zip obs).filterMap fun (i, o) =>
             if o.caller == qual then o.leanGoal.map (fun g => (i, g)) else none
@@ -1716,7 +1719,10 @@ def compileAndReport (inputPath : String) (reportType : String)
           return 0
         -- Process exit code follows the documented taxonomy (see --help=agent):
         --   0 proved/clean · 2 obligations missing · 3 stale evidence.
-        let proveStatus := (pc.obligations.find? (·.functionId.qualName == qual)).map (·.status.canonical) |>.getD "missing"
+        -- R-0479: see the note at the other `--emit-artifacts` site. A failed lookup must not
+        -- render as `missing`, which is a real status.
+        let proveStatus := (pc.obligations.find? (·.functionId.qualName == qual)).map (·.status.canonical)
+                             |>.getD "no_obligation_record"
         let proveExit : UInt32 := match proveStatus with
           | "stale" => ExitCode.staleEvidence
           | "missing" => ExitCode.obligationsMissing
