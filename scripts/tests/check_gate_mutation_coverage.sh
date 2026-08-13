@@ -393,6 +393,27 @@ add "manifest-refusal-recorded" "Concrete/Proof/ProofCore.lean" "check_impl_mani
   $'          | none => refuse .extractedMissing' \
   $'          | none => acc'
 
+# R-0004 slice 6. THE DISPATCH IS SECURITY-RELEVANT INVENTORY. It maps a hand-back table name to the
+# `FnTable` the compiler links, and per-edge correspondence rests on it: if an entry is removed or
+# misrouted, the tables a theorem names stop resolving, its edges lose their witnesses, and the
+# subject must fall to `missing` rather than corresponding on a table it never read.
+#
+# The mutation MISROUTES one entry to `none` — the shape a stale dispatch actually takes when a
+# table is renamed and the list is not updated. It is caught by the real-corpus assertion
+# (6/11 subjects fully correspond), not by a synthetic probe, so this covers the production path.
+add "dispatch-entry-routes" "Concrete/Proof/TableResolve.lean" "check_dependency_edges.sh" yes \
+  $'  | "Concrete.Proof.cryptoFns"         => some cryptoFns' \
+  $'  | "Concrete.Proof.cryptoFns"         => none'
+
+# R-0004 slice 6. Surplus must be RETAINED, not dropped. The review named this explicitly:
+# "dropping surplus handling through filterMap must be mutation-killed". The mutation empties the
+# surplus set while leaving every other set intact, which is exactly what a `filterMap` that
+# discarded unmatched witnesses would do — the join still reports matched/missing/ambiguous and
+# looks healthy.
+add "correspondence-surplus-retained" "Concrete/Proof/Correspondence.lean" "check_dependency_edges.sh" yes \
+  $'  let surplus := ours.filter (fun w => !(i.requestedEdges.any (fun r => witnessTargets r w)))' \
+  $'  let surplus := []'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
