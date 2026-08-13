@@ -197,45 +197,82 @@ structure TableEntryEvidence where
   sourceBodyDigestV1 : String
 deriving Repr, BEq
 
-/-- Entry evidence for a table, or `none` if ANY entry lacks identity.
+/-- Why a table yielded no entry evidence. NAMED, one constructor per distinct check.
+
+    `DependencyClosure` (docs/EVIDENCE_ARCHITECTURE.md) requires missing, surplus, duplicate,
+    ambiguous, unclassified and mismatched to be named refusals, "never discarded by `filterMap`, a
+    first-match lookup, or an advisory-only warning". This function previously returned `Option`, so
+    all six checks below collapsed to `none` — the recompute was right and the reason was thrown
+    away. A caller could not distinguish "this table holds a SUBSTITUTED body" from "this table has
+    an entry without identity", and those warrant different responses: the first is a possible
+    attack, the second is an incomplete build.
+
+    `bodyMismatch` is the `mismatched` set. It carries the callee and both digests, because "a body
+    disagreed" does not say which one or by how much, and a refusal you cannot act on is only
+    marginally better than a silent one. -/
+inductive EntryEvidenceRefusal where
+  /-- An entry carries no semantic identity, so membership cannot be decided for it. -/
+  | noIdentity
+  /-- An entry records no source-body provenance. Absence is not agreement. -/
+  | provenanceMissing (callee : CallableId)
+  /-- Provenance recorded under a schema this producer does not implement — a DIFFERENT formula,
+      so comparing it here would report body drift where there is a formula difference. -/
+  | schemaUnsupported (callee : CallableId) (schema : String)
+  /-- Provenance recorded under a different scope, for the same reason. -/
+  | scopeUnsupported (callee : CallableId) (scope : String)
+  /-- The stored digest disagrees with the digest recomputed from `PFnDef.body`. THE mismatched
+      case: identity and metadata are intact and the body is not the one described. -/
+  | bodyMismatch (callee : CallableId) (stored : String) (recomputed : String)
+  /-- One callable appears twice, so a static lookup cannot say which implementation it selects. -/
+  | duplicateIdentity
+deriving Repr, BEq
+
+def EntryEvidenceRefusal.explain : EntryEvidenceRefusal → String
+  | .noIdentity => "a table entry carries no semantic identity"
+  | .provenanceMissing c => s!"'{c.render}' records no source-body provenance"
+  | .schemaUnsupported c sc => s!"'{c.render}' records provenance under schema '{sc}', not sourceBodyDigestV1"
+  | .scopeUnsupported c sc => s!"'{c.render}' records provenance under scope '{sc}', not body_only"
+  | .bodyMismatch c st rc =>
+      s!"'{c.render}' stores body digest {st} but its body recomputes to {rc}"
+  | .duplicateIdentity => "one callable appears twice in the table"
+
+/-- Entry evidence for a table, or a NAMED refusal.
 
     All-or-nothing deliberately. A partial membership list answers "is this callee present" with
     "not in the part I could read", which is indistinguishable from "absent" — and absence is
     what justifies refusing an edge. A caller cannot tell those apart from a shortened list, so
     it does not get one. This mirrors `FnTable.allIdentified`: evidence requires identity for the
     WHOLE table, not most of it. -/
-def tableEntryEvidence (t : FnTable) : Option (List TableEntryEvidence) :=
-  let rows? := t.canonicalEntries.toList.foldl (init := some []) fun acc d =>
-    match acc, d.identity.id?, d.sourceBodyDigest with
-    | some rows, some cid, some stored =>
+def tableEntryEvidence (t : FnTable) : Except EntryEvidenceRefusal (List TableEntryEvidence) := do
+  let rows ← t.canonicalEntries.toList.foldlM (init := ([] : List TableEntryEvidence)) fun rows d =>
+    match d.identity.id?, d.sourceBodyDigest with
+    | some cid, some stored =>
         -- RECOMPUTED FROM THE BODY, not copied from the metadata beside it. Copying is what made
         -- the acceptance mutation survive: replace `d.body`, keep `d.identity` and keep
         -- `d.sourceBodyDigest`, and every downstream comparison still agreed, because the stored
-        -- digest was the only thing anyone read and it had not changed. The body was never an
-        -- input to its own provenance check.
+        -- digest was the only thing anyone read and it had not changed.
         --
-        -- SCHEMA AND SCOPE ARE CHECKED FIRST, and refusing is the point rather than a formality:
-        -- `sourceBodyDigestV1Of` implements exactly `sourceBodyDigestV1`/`body_only`. Comparing a
-        -- digest recorded under any other schema or scope against this producer's output compares
-        -- two different formulas, and a mismatch would then be reported as body drift when it is
-        -- really a formula difference. What cannot be verified is refused, not skipped.
-        if stored.schema != "sourceBodyDigestV1" then none
-        else if stored.scope != "body_only" then none
-        else if stored.value != Concrete.sourceBodyDigestV1Of d.body then none
-        else some (rows ++ [{ callee := cid, sourceBodyDigestV1 := stored.value }])
-    -- An entry with NO recorded provenance is refused rather than carried. Absence is not
-    -- agreement: it is the case where the table records nothing about what it holds, and evidence
-    -- that cannot be checked against a body must not stand in for evidence that was.
-    | _, _, _ => none
+        -- SCHEMA AND SCOPE FIRST, and each gets its own refusal: `sourceBodyDigestV1Of` implements
+        -- exactly `sourceBodyDigestV1`/`body_only`, so a digest under another schema or scope is a
+        -- different formula and a mismatch there is not body drift.
+        if stored.schema != "sourceBodyDigestV1" then
+          .error (.schemaUnsupported cid stored.schema)
+        else if stored.scope != "body_only" then
+          .error (.scopeUnsupported cid stored.scope)
+        else
+          let recomputed := Concrete.sourceBodyDigestV1Of d.body
+          if stored.value != recomputed then
+            .error (.bodyMismatch cid stored.value recomputed)
+          else .ok (rows ++ [{ callee := cid, sourceBodyDigestV1 := stored.value }])
+    -- An entry with NO recorded provenance is refused rather than carried: evidence that cannot be
+    -- checked against a body must not stand in for evidence that was.
+    | some cid, none => .error (.provenanceMissing cid)
+    | none, _ => .error .noIdentity
   -- UNIQUE IDENTITIES, or nothing. A table holding one callable twice cannot say which
-  -- implementation a static lookup selects, and `entryEvidenceContains` answering "at least
-  -- one" would let a `body` edge be justified by an entry that is not the one dispatch reaches.
-  -- `FnTable.hasDuplicateIds` treats a duplicate as an integrity error for the same reason;
-  -- membership evidence must not be more permissive than the table it describes.
-  match rows? with
-  | none => none
-  | some rows =>
-    if (rows.map (·.callee)).eraseDups.length != rows.length then none else some rows
+  -- implementation a static lookup selects, and `entryEvidenceContains` answering "at least one"
+  -- would let a `body` edge be justified by an entry that is not the one dispatch reaches.
+  if (rows.map (·.callee)).eraseDups.length != rows.length then .error .duplicateIdentity
+  else .ok rows
 
 /-- Does this table contain the callee, by IDENTITY?
 

@@ -350,9 +350,12 @@ add "classification-justifies" "Concrete/Proof/ClassificationTable.lean" "check_
 # discarded — so the table entry is trusted again while everything else about the join is
 # untouched. Nothing but the recompute can catch it, which is what makes it the right control:
 # schema and scope checks still pass, identities are unique, and the manifest join still agrees.
+# RETARGETED 2026-08-13 when `tableEntryEvidence` moved from `Option` to a named-refusal `Except`.
+# The harness FAILED rather than passing when its OLD text vanished, which is the behaviour that
+# makes a stale control detectable instead of a quiet always-green.
 add "entry-body-recomputed" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
-  $'        else if stored.value != Concrete.sourceBodyDigestV1Of d.body then none' \
-  $'        else if false then none'
+  $'          if stored.value != recomputed then' \
+  $'          if false then'
 
 # R-0004 slice 6, manifest provenance. `CompleteImplementation.of?` refuses facts describing a
 # DIFFERENT callable than the one claimed, which is what stops a manifest row pairing one callable's

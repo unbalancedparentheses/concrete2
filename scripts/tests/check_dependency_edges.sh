@@ -887,7 +887,7 @@ probe "a table identified AND carrying agreeing provenance yields entry evidence
   let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
                       sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable)).isSome'
+  (tableEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable)).toOption.isSome'
 
 # ALL OR NOTHING. A partial membership list answers "is this callee present" with "not in the
 # part I could read", which is indistinguishable from "absent" — and absence is what justifies
@@ -897,16 +897,22 @@ probe "ONE legacy entry refuses evidence for the WHOLE table" "true" '
   let ok : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
                        params := [], body := PExpr.lit (PVal.int 0) }
   let legacy : PFnDef := { identity := .legacy, operationalKey := "g", params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[ok, legacy], globals := fun _ => none } : FnTable)).isNone'
+  (tableEntryEvidence ({ entries := #[ok, legacy], globals := fun _ => none } : FnTable)).toOption.isNone'
 
 # DUPLICATE IDENTITIES REFUSED. A table holding one callable twice cannot say which
 # implementation a static lookup selects, and membership answering "at least one" would let a
 # `body` edge be justified by an entry that is not the one dispatch reaches.
 probe "a table with the SAME callable twice yields no evidence" "true" '
 #eval
+  -- Provenance is VALID here on purpose. Without it this probe refused at `provenanceMissing`
+  -- before ever reaching the duplicate check — invisible while every refusal was `none`, and
+  -- surfaced immediately once they were named. The probe was passing for the wrong reason.
   let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[d, d], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[d, d], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.duplicateIdentity) => true
+  | _ => false'
 probe "...while two DISTINCT callables are fine (the refusal is about duplication)" "true" '
 #eval
   let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
@@ -915,7 +921,7 @@ probe "...while two DISTINCT callables are fine (the refusal is about duplicatio
   let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
                       sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isSome'
+  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).toOption.isSome'
 
 # === THE BODY IS RECOMPUTED, NOT TRUSTED =====================================================
 # `tableEntryEvidence` used to COPY `PFnDef.sourceBodyDigest` into the evidence row. Every check
@@ -937,7 +943,7 @@ probe "a stored digest AGREEING with the recomputed body yields evidence" "true"
   let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
                       sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isSome'
+  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).toOption.isSome'
 
 # THE ACCEPTANCE MUTATION. Identity retained, stored digest retained, BODY replaced. This is the
 # exact state the old code accepted, and the reason the producer had to move below `DependencyEdge`
@@ -948,7 +954,9 @@ probe "a REPLACED body keeping its identity AND its stored digest is refused" "t
                       sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
   let mutated : PFnDef := { f with body := PExpr.lit (PVal.int 1) }
-  (tableEntryEvidence ({ entries := #[mutated], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[mutated], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.bodyMismatch _ _ _) => true
+  | _ => false'
 
 # The converse direction: body untouched, stored digest edited. Both directions of disagreement
 # must refuse, or the check is only sensitive to one side of the comparison.
@@ -957,13 +965,17 @@ probe "a stored digest edited away from the body is refused" "true" '
   let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
                       sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.bodyMismatch _ _ _) => true
+  | _ => false'
 
 probe "an entry with NO recorded provenance is refused" "true" '
 #eval
   let f : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.provenanceMissing _) => true
+  | _ => false'
 
 # SWAPPED BODIES between two identities. Each digest is individually a real digest of a real body
 # in the table, and the multiset of bodies is unchanged -- only the pairing is wrong. A check that
@@ -977,7 +989,9 @@ probe "bodies SWAPPED between two callable identities are refused" "true" '
   let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
                       sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.bodyMismatch _ _ _) => true
+  | _ => false'
 
 # ...and the same two entries paired CORRECTLY must bind, or the swap test above would pass for the
 # uninteresting reason that two-entry tables never yield evidence.
@@ -989,7 +1003,7 @@ probe "...and the same two bodies paired CORRECTLY yield evidence" "true" '
   let g : PFnDef := { identity := .semantic (CallableId.ofUser "m" "g"), operationalKey := "g",
                       sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).isSome'
+  (tableEntryEvidence ({ entries := #[f, g], globals := fun _ => none } : FnTable)).toOption.isSome'
 
 # SCHEMA AND SCOPE. `sourceBodyDigestV1Of` implements exactly `sourceBodyDigestV1`/`body_only`.
 # A digest recorded under a different schema or scope is a DIFFERENT FORMULA, so comparing it to
@@ -1001,7 +1015,9 @@ probe "a digest recorded under another SCHEMA is refused, not compared" "true" '
                       sourceBodyDigest := some { schema := "sourceBodyDigestV2",
                                                  value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.schemaUnsupported _ _) => true
+  | _ => false'
 
 probe "a digest recorded under another SCOPE is refused, not compared" "true" '
 #eval
@@ -1009,7 +1025,9 @@ probe "a digest recorded under another SCOPE is refused, not compared" "true" '
                       sourceBodyDigest := some { scope := "body_and_contracts",
                                                  value := "496808fdd594d5047f23e823bc26b69c" },
                       params := [], body := PExpr.lit (PVal.int 0) }
-  (tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable)).isNone'
+  match tableEntryEvidence ({ entries := #[f], globals := fun _ => none } : FnTable) with
+  | .error (EntryEvidenceRefusal.scopeUnsupported _ _) => true
+  | _ => false'
 
 probe "membership is decided by IDENTITY and finds a present callee" "true" '
 #eval
