@@ -99,6 +99,53 @@ The threat model covers both **deliberate attacks** (malicious contributor, supp
 
 **Demo:** `tests/programs/adversarial_proof_cross_module.con` — same name in different module, only one proved.
 
+### 7. Evidence Misbinding Or Laundering
+
+**What:** A valid digest, classification, theorem, certificate, table entry, or
+receipt is attached to the wrong subject or dependency, or authoritative
+information disappears through a partial join, first-match lookup, default, or
+display-string comparison.
+
+**Required defenses:** domain-specific identity types; private validating
+constructors; exact denominators; total joins; named missing/surplus/duplicate/
+ambiguous sets; structured comparison; production-consumer mutations for
+removal, swap, weakening, duplication, omission, and misattachment.
+
+### 8. Hostile Proof Or Checker Input
+
+**What:** An attached proof module, metaprogram, serialized environment,
+certificate, dependency table, or bundle deliberately exploits a producer,
+parser, checker, or kernel defect. The artifact may report no axioms and pass
+ordinary frontend checks.
+
+**Required defenses:** treat all evidence bytes as adversarial; retain exact
+artifacts; isolate replay; impose depth/time/memory limits; bind checker and
+rule-set identities; run historical exploit corpora; prefer small certificate
+profiles where available; preserve separate source-correspondence and logical-
+validity results.
+
+### 9. Checker Advisory And Revocation Drift
+
+**What:** Evidence remains green after its checker version is found affected,
+or an advisory is scoped too narrowly because the affected checker self-reports
+that the vulnerable mechanism was absent.
+
+**Required defenses:** a machine-readable validation-time advisory registry;
+whole-checker fail-closed downgrade by default; independently checked feature
+footprints before fragment-scoped narrowing; mechanical claim enumeration;
+receipt/root invalidation; fresh replay under an accepted checker.
+
+### 10. Vacuous Assurance Controls
+
+**What:** A gate passes because its collection or anchor is absent, compares
+only a prefix of a richer row, checks a synthetic helper rather than the
+production consumer, or records a mutation without executing it.
+
+**Required defenses:** shared non-vacuous assertion primitives; mandatory
+positive controls; structured denominators; explicit mutation states
+(`registered`, `executed`, `killed`, `survived`, `inconclusive`, `vacuous`);
+machine-produced rather than hand-transcribed counts.
+
 ## What Concrete Does NOT Protect Against
 
 - **Semantic changes outside the current proof subject**: signature/type and
@@ -109,6 +156,7 @@ The threat model covers both **deliberate attacks** (malicious contributor, supp
 - **Backend miscompilation**: Concrete proves properties at the Core IR level. LLVM/clang bugs are below the trust boundary.
 - **Side-channel attacks**: timing, power analysis, and cache behavior are not modeled.
 - **Completeness of the type system**: the linearity checker is heavily tested but not formally verified.
+- **Automatic detection of a checker implementation bug from inside that same checker**: Concrete can version, revoke, replay, and diversify checker evidence; it cannot make a compromised trust anchor certify its own soundness.
 
 ## End-to-End Demonstration
 

@@ -19,6 +19,14 @@ that `concrete audit`, CI, and release bundles can inspect.
 
 ## Design Principles
 
+Contract-callable functions require a semantic category, not a purity-shaped
+heuristic. The target language distinguishes `spec fn`, checked `total fn`,
+ordinary runtime functions, and trusted functions. A `total fn` may enter a
+contract only after effect freedom, termination, trap obligations, logical
+interpretation, and partial-operation preconditions close. Ordinary,
+diverging, trapping, capability-bearing, or trusted executable functions do
+not become mathematical definitions merely because their syntax is accepted.
+
 1. Contracts live in source.
 2. Contracts create obligations; they are not guarantees by themselves.
 3. Obligations are first-class compiler artifacts with stable ids and source
@@ -470,6 +478,14 @@ Named predicates should be admitted only when they are pure and have their own
 proof/evidence story.
 
 ## Contract IR
+
+The durable Contract IR is typed and identity-resolved before VC generation.
+It preserves stable lexical binding identities, resolved callable identities,
+types, source spans, old-state scope, and admissibility/totality evidence.
+Name-based textual substitution is containment-only infrastructure, never an
+authoritative proof primitive. Capture-safe substitution must satisfy the
+evaluation law documented by the VC-calculus gates before binder-bearing
+specifications graduate.
 
 After parsing and checking, contracts lower into stable artifacts.
 

@@ -9,6 +9,10 @@ constraints, and deferred tails with a real pull trigger.
 > **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
 > and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
 > the dimensions along which proof support grows, and the limits that must remain visible.
+> **Normative architecture:** [Evidence Architecture](docs/EVIDENCE_ARCHITECTURE.md) defines the
+> five authoritative evidence objects; [Verification IR](docs/VERIFICATION_IR.md) defines the
+> target portable proposition boundary. This roadmap sequences their implementation and must not
+> invent competing definitions.
 
 ## How To Read This Roadmap
 
@@ -24,12 +28,15 @@ the exit artifact here decides *what the work must ultimately unlock*.
 | unlock | principal owners | exit artifact / user-visible boundary | weaker path retired | state |
 |---|---|---|---|---|
 | Trustworthy `proved` | R-0004, R-0440 | every friendly verdict requires a current exact subject, complete dependency root, explicit trust/assumptions/environment and successful replay receipt; migrated corpus survives independent red-team pressure | V1/body-only friendly status, advisory dependency freshness, receipt-free `proved` | **active frontier** |
+| Typed evidence and revocable policy | R-0440, R-0208, R-0343 | source correspondence, logical validity, dependency closure, immutable replay receipt and current policy decision are distinct typed facts; checker advisories degrade only the dimensions they can honestly scope | flat status/digest strings, advisory state baked into historical evidence, whole-report reminting | **ratified / implementation pending** |
 | Typed compositional contracts | R-0473, R-0474, R-0477; Phase 9 frame/composition work | a nontrivial multi-function program is proved without callee inlining; caller establishes preconditions and imports postconditions; mutation is stated with `old` plus frame/`modifies`; one contract crosses an interface artifact | erased/name-keyed contracts, textual substitution, per-call inlining as the only composition story | **foundation next after R-0004** |
+| Total contract language | R-0473, R-0474; Phase 9 termination/spec-library work | `spec fn` and checked `total fn` are the only contract-callable definitions; effects, traps, unchecked recursion and trusted execution refuse explicitly | purity-shaped admission of executable functions whose totality/meaning is unestablished | **design required** |
 | One faithful verification pipeline | R-0450, R-0454–R-0456, R-0460; Phase 14 | one typed neutral obligation IR and semantics feeds every prover; Core→obligation register rows are discharged or explicitly trusted; independent evaluator/certificate checks cover the admitted boundary | duplicated walkers/renderers and backend-specific meanings of one obligation | **partial / H19 open** |
 | Portable multi-kernel evidence | R-0448, R-0454–R-0456, R-0440 | Lean/Rocq/Isabelle receipts bind one neutral obligation identity and report checker, foundation, independence and unsupported fragments separately | coordinator-emitted aggregate badge and agreement over unbound/mismatched propositions | **experimental until prerequisites graduate** |
 | Practical proof authoring | Phase 9 | stable obligation artifacts, minimization, usable stubs/scaffolds, reusable lemmas, structural/operational automation, bounded specs and replay-checked repair on a real workload | hero proofs reconstructed manually from compiler internals | **planned** |
 | Auditable safety and resource guarantees | R-0445; Phases 10–13 | a named profile gates runtime failures, authority, stack/allocation/resource facts and assumptions through one ledger and audit bundle | reports that describe risks without controlling release policy | **partial** |
 | Independently checkable compiler/evidence artifacts | Phase 14, R-0275, R-0353 | an offline checker validates a versioned Core/evidence predicate and evidence DAG while naming every remaining compiler/backend-trusted boundary | “trust the compiler report” as the only verification route | **planned** |
+| Non-vacuous assurance operations | R-0208, R-0343; testing/diagnostic hardening tasks | shared assertion primitives, exact declaration denominators, advisory/revocation drills and production-consumer mutations make false-green gates and unmeasured regions visible | hand-copied counts, absent anchors passing, registered-but-unrun mutations, first-error measurement masking | **partial / consolidation required** |
 | Usable systems platform | Phase 7, Phase 7.5, Phases 15–16 | real stdlib workloads, independent backend validation, explicit FFI/Unsafe boundaries and a freestanding target retain the same evidence vocabulary | proof demos that cannot build ordinary or low-level programs | **broad foundation partial** |
 | Proof-aware local packages | Phase 8.5 plus the pre-release core of Phase 18 | manifest, lockfile/workspace, interface/body split and locally verified dependency certificate reject evidence/trust/authority weakening before artifact formats freeze publicly | single-repository proof attachment and source-private dependency inspection | **must precede beta/release** |
 | Narrow defensible release | Phase 17 | a fresh user installs Concrete, builds a useful project, inspects and independently replays its bundle, and can read the exact supported subset/compatibility promise | repository-local success and claims that require project-author interpretation | **planned** |
@@ -46,6 +53,23 @@ trustworthy local evidence
     → proof-aware package boundaries
     → CI/editor enforcement of behavioral compatibility
 ```
+
+The cross-cutting dependency order inside those unlocks is:
+
+1. run the Lean #14576 upgrade/revocation fire drill without blessing unexplained proof drift;
+2. finish R-0004 correspondence, authority transition, replay migration, and adversarial closure;
+3. introduce typed digest/identity boundaries and the five-object evidence model in shadow;
+4. separate immutable replay receipts from advisory-aware policy decisions;
+5. freeze VIR v1 semantics and canonical bytes;
+6. finish typed contracts, capture-safe substitution, and the checked total contract fragment;
+7. land declaration-isolated measurement and the shared non-vacuous assertion library;
+8. build R-0353 Layer 0, then add certificate profiles only as their probes succeed;
+9. shadow-compare compiler and independent verifier, export proof-aware package interfaces, and
+   complete independent hostile review before the verifier becomes authoritative; and
+10. expand heap, resource, relational, recursion, and richer-logic support only on those foundations.
+
+This is a dependency chain, not a second execution queue: urgent correctness defects may insert
+ahead of it, and the status board remains the owner of current work.
 
 ### Standard Graduation Contract
 
@@ -69,6 +93,13 @@ silently omit a category:
 10. **Old-path deletion** — the task names the weaker implementation/status/schema it retires.
     Two paths may coexist only during an explicit shadow comparison with an owner and exit gate.
 
+Evidence-critical gates use one shared assertion library. Absence checks require a present anchor;
+negative suites require a positive control; joins report exact denominators; mutation state is one
+of `registered`, `executed`, `killed`, `survived`, `inconclusive`, or `vacuous`. Canonical status
+counts are generated or checked from machine output, never accepted because a commit message copied
+them. Audit remaining bespoke gates—including `test_prove_cli.sh`—before calling this contract
+repository-wide.
+
 Progress is recorded by stage, not a single percentage:
 
 ```text
@@ -85,7 +116,10 @@ or create another queue.
 | area | detailed home | capability it serves |
 |---|---|---|
 | Evidence integrity, receipts and status composition | R-0004, R-0440, Phase 11 | trustworthy `proved`, replay and policy |
+| Checker advisories, revocation and hostile evidence | R-0208, R-0343, R-0353 | current policy acceptance without rewriting replay history |
 | Contract language, identities and VC calculus | R-0473, R-0474, R-0477, R-0450 | typed compositional contracts and one obligation meaning |
+| Canonical VIR and certificate profiles | R-0450, R-0451, R-0463, R-0353 | portable propositions and small independent replay |
+| Diagnostic isolation and non-vacuous gates | R-0473, testing hardening tasks | truthful denominators and assurance controls |
 | Language/stdlib usability and workload pull | Phase 7 | real programs without hidden authority or ownership shortcuts |
 | Independent backend and differential validation | Phase 7.5 | QBE/LLVM independence and miscompile detection |
 | Flagships and cross-feature forcing examples | Phase 8 | proof that features survive realistic composition |
@@ -5239,6 +5273,22 @@ pinned by a gate assertion written to flip when the gap closes:
 * precise loop-binder scope — the bound set is every name bound anywhere in the function, so a
   name bound only *after* the loop is admitted and reaches the VC.
 
+**Language boundary added:** purity alone is not the final contract-callable
+criterion. Define `spec fn`, checked `total fn`, ordinary runtime functions,
+and trusted functions. A `total fn` enters contracts only after effect freedom,
+termination, trap obligations, logical interpretation, and partial-operation
+preconditions close. Until that type exists, executable calls accepted by the
+current narrow checker must not be documented as a general total fragment.
+Coordinate with `#[decreases]`, recursion/loop total correctness, `old`, frame/
+`modifies`, and the spec library rather than adding another call-name filter.
+
+**Compiler measurement boundary:** declaration-level isolation must report
+`valid`, `locally_invalid`, `blocked_by_invalid_dependency`,
+`parse_unreachable`, `timed_out`, and `unmeasured`. Continue through independent
+declarations using poisoned summaries; do not accumulate speculative cascades.
+The current first-error population remains a named denominator until this
+lands.
+
 **The four that remain share one root cause, and it is the argument for doing this properly.**
 Each needs the per-function environment: widths and operand domains need the types of locals,
 `result`'s type needs the signature at the annotation site, and scope needs the bindings live at
@@ -6386,6 +6436,34 @@ trusted_dependencies, freshness, replay receipt — and let the CLI keep renderi
 friendly composites like `proved_by_lean`. The scope axis is the one genuinely
 missing today, and it is the axis where the compiler already has the facts.
 
+The normative target is now
+`docs/EVIDENCE_ARCHITECTURE.md`: five objects—`SourceCorrespondence`,
+`LogicalValidity`, `DependencyClosure`, immutable `ReplayReceipt`, and
+time-relative `PolicyDecision`. Implement them as a shared envelope plus typed
+variants and authority-state constructors, not one record of optional fields.
+Reports and package formats are projections of these objects.
+
+Replace interchangeable digests at authoritative boundaries with
+domain-separated types (`SubjectDigest`, `ImplementationDigest`,
+`ContractDigest`, `PropositionDigest`, `TheoremArtifactDigest`,
+`CertificateDigest`, `DependencyRoot`, and `ReceiptDigest`). Gate that swapping
+two well-formed digest families fails at compile time. Migration inventories
+every raw `String`/tuple boundary, runs old/new structured facts in shadow, and
+deletes the old path after corpus conversion.
+
+Advisory disposition is deliberately **not** a replay-receipt field. A receipt
+records the checker/rule-set/artifact/environment that was replayed; current
+acceptance is computed later from that receipt, the current advisory registry,
+authentication, and consumer policy. A retained policy-decision attestation
+binds its policy and advisory-registry identities separately.
+
+Move evidence honesty to authorship as the language surface matures:
+`#[certificate_by(...)]`, `#[proof_object_by(...)]`,
+`#[trusted_proof_by(...)]`, and `#[assume(...)]` select distinct variants.
+Existing `#[proof_by]` migrates conservatively and cannot silently inherit the
+strongest class. Gate each mode through the production report, receipt, package,
+and policy consumers; syntax alone earns no authority.
+
 Trust is three fields, not one, because "who emitted the artifact", "who checked
 it", and "what must be trusted for the claim to hold" are different questions.
 The compiler may *produce* a Lean proof term that the kernel independently
@@ -6418,6 +6496,11 @@ dependency accounting required by its method is rejected, and a red-team case
 proving no rendering path can present a weaker-scope claim under a stronger
 composite name. Reconcile both documents against the implemented model rather
 than leaving a third vocabulary.
+
+Also gate graceful degradation: revoking one checker changes logical validity
+and policy acceptance while leaving independently established source binding
+and dependency closure intact. A renderer that collapses those facts into one
+stored `proved` field must fail.
 
 ProofCore callable identity is pulled forward as R-0442 in the global sequence.
 Every Phase 11 dependency/completeness task consumes that direct-call versus
@@ -10833,12 +10916,21 @@ larger trust gain than a fourth prover, and the thing that makes the auditor sto
 they run a few hundred lines of checker, not a multi-gigabyte Isabelle.
 
 The strategic point this raises, which belongs in the record even if the extraction proves
-impractical: **a certificate makes the second kernel unnecessary at that tier.** Multi-kernel
-evidence is currently spent where certificates would serve better, and it is the
+impractical: **a certificate may change whether a second kernel is the best spend at that tier.**
+That is a policy and measurement decision, not an automatic consequence: the certificate checker,
+exporter, canonicalizer, and integer semantics can also be wrong, and independent reproduction may
+still justify a second family. Multi-kernel evidence is currently concentrated where certificates
+may serve better, and it is the
 non-arithmetic tiers — where certification is measured to be impossible today (Alethe rejects
 any datatype-bearing proof) — that actually need independent kernels. The allocation is
 inverted. Probe the extraction before committing; kill criterion is a measured "the witness
 cannot be got out of micromega in a stable form".
+
+The probe binds the exact canonical VIR proposition and distinguishes integer
+reasoning from rational/polynomial witness semantics. It records eligible
+coverage, stable export, checker size, resource limits, and failure taxonomy
+before any "majority of claims" or "small checker" estimate becomes a roadmap
+fact.
 
 ### Task R-0464
 
@@ -12736,6 +12828,9 @@ outdated independent checker because that checker had a separate projection bug.
 - policy maintains explicit accepted, vulnerable and revoked checker-version sets; a receipt from
   a newly revoked kernel becomes `needs_recheck` or rejected, never remains `proved` because it was
   green when minted;
+- advisory status remains external validation-time input. A replay receipt binds immutable replay
+  facts; a retained policy-decision attestation binds the advisory-registry and policy identities
+  it evaluated. Neither artifact pretends a future advisory was known at minting;
 - high-assurance policy requires current independent replay through structurally different
   implementations, not merely two invocations or two wrappers around shared kernel code;
 - checker independence is recorded by implementation lineage and shared code/theory, not inferred
@@ -12748,6 +12843,12 @@ outdated independent checker because that checker had a separate projection bug.
   A receipt that merely states replay succeeded is insufficient;
 - revocation enumerates every affected Concrete claim through receipt indexes and invalidates
   cached roots/receipts mechanically. Public advisories must name the downgraded claims.
+
+Fragment-scoped revocation is an optimization, not the default. An affected checker version is
+downgraded wholesale unless an independently checked feature footprint proves the vulnerable
+mechanism absent from the retained environment. Surface VIR lacking the construct is insufficient:
+an attached metaprogram may introduce a hostile declaration unrelated to the visible proposition,
+and a footprint self-reported only by the affected checker cannot clear itself.
 
 Do not respond by banning Lean metaprogramming. The elaborator is untrusted by design, and hostile
 proof terms or serialized artifacts can bypass it. Defense belongs at the kernel/checker boundary,

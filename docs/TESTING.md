@@ -121,6 +121,30 @@ Named real-program corpus (13 tests):
 
 ## Coverage Matrix
 
+### Assurance assertions
+
+Security- and evidence-relevant gates use shared non-vacuous primitives rather
+than ad hoc text searches. The target assertion library includes:
+
+```text
+assert_nonempty             assert_exact_count
+assert_anchor_exists        assert_unique_keys
+assert_total_join           assert_block_present
+assert_block_absent         assert_positive_control
+assert_negative_control     assert_mutation_killed
+```
+
+An absence assertion fails when its anchor is absent. A negative suite also
+contains a positive control so a checker that refuses everything cannot pass.
+Structured results report denominators, matches, refusals, missing anchors,
+duplicates, and the exact property tested.
+
+Mutation coverage distinguishes `registered`, `executed`, `killed`,
+`survived`, `inconclusive`, and `vacuous`. Registration is not coverage; a
+helper-level kill is not a production-consumer kill. Gate totals in canonical
+status documents are generated or checked from machine output rather than
+copied by hand.
+
 ### By failure mode
 
 | Failure mode | Test layer | Test count | Key tests |

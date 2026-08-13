@@ -12,6 +12,10 @@ Concrete's long-term direction is recorded in the
 [verification charter](VERIFICATION_CHARTER.md). The charter is a design and
 roadmap constraint, not evidence that its target capabilities ship. This page
 remains the authoritative statement of what Concrete supports today.
+The target internal representation is documented in
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md), and the target canonical
+proposition language in [VERIFICATION_IR.md](VERIFICATION_IR.md). Neither
+document upgrades a current claim.
 The cross-axis capability map is
 [VERIFICATION_STATUS.md](VERIFICATION_STATUS.md).
 
@@ -308,7 +312,7 @@ The strongest current claims depend on these trusted components:
 | TCB layer | Trusted for | Verified? |
 |-----------|-------------|-----------|
 | Concrete checker and compiler | Parsing, checking, elaboration, lowering, reporting, artifact production | Adversarial tests + code review; no formal soundness proof |
-| Lean kernel | Checking attached theorems and proof objects | Trusted as core proof anchor |
+| Lean kernel | Checking attached theorems and proof objects under the pinned implementation/rule set | Versioned and revocable trusted proof anchor; no kernel-correctness proof |
 | Proof registry and fingerprint machinery | Binding functions to specs and detecting stale proofs | Compiler-enforced validation; still part of TCB |
 | Backend and toolchain (LLVM, clang, linker) | IR handling, optimization, object generation, linking | Assumed correct; not verified by Concrete |
 | Runtime / target / OS / hardware | ABI, calling conventions, allocator, guard pages | Assumed correct; outside compiler reach |

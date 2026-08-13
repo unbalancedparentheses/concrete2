@@ -61,6 +61,13 @@ Concrete accumulates across functions/modules and within function bodies (statem
 
 Further accumulation refinement (e.g., expression-level recovery, cross-block recovery) should only happen if it improves real diagnostic quality without producing misleading cascading errors.
 
+The verification corpus adds a stricter target: declaration-level isolation
+must distinguish `valid`, `locally_invalid`, `blocked_by_invalid_dependency`,
+`parse_unreachable`, and `timed_out`. One invalid declaration must not make
+independent declarations unmeasured. Recovery uses poisoned summaries and
+short dependency diagnostics rather than speculative expression placeholders.
+Until that target lands, corpus reports must name the unmeasured denominator.
+
 ## Current Architectural Rule
 
 Diagnostics work should proceed in this order:
@@ -89,3 +96,8 @@ Design constraints:
 - All accumulated diagnostics are thrown together at the end of the statement list
 
 If this changes further later, this document should be the place where the policy and rollout are recorded.
+
+Verification and contract reports must publish exact denominators: discovered,
+parsed, reached checking, accepted, locally rejected, dependency-blocked,
+parse-failed, timed out, and unmeasured. A smaller accepted set is not a
+coverage result unless the excluded population is equally visible.

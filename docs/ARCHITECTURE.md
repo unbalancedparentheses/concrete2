@@ -55,6 +55,17 @@ independent of file paths, so this is purely an `import`-path grouping; the
 
 ## Target Proof/Audit Pipeline
 
+The proof/audit pipeline targets five distinct authoritative objects rather
+than one proof-status value: source correspondence, logical validity,
+dependency closure, replay receipt, and policy decision. Their normative
+boundaries are in
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md); the canonical proposition
+language is in [VERIFICATION_IR.md](VERIFICATION_IR.md).
+
+Reports, package artifacts, and policies are consumers of those typed facts.
+They may not derive authority from display strings or rebuild a stronger state
+from a subset of the evidence vector.
+
 The backend path and the proof/audit path are intentionally separate.
 The backend path keeps producing executable code through Core, Mono,
 Lower, SSA, and LLVM. The proof/audit path should become:

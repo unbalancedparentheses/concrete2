@@ -33,6 +33,19 @@ allocator exists) while the policy stays silent on allocation
 Practically: assumption files describe the *surface*, policy files
 describe the *budget*.
 
+## Policy decisions are not replay receipts
+
+The target evidence architecture keeps historical replay and current
+acceptance separate. A replay receipt records the exact checker, rule set,
+artifact, dependencies, environment, trust, and assumptions that were checked.
+A policy decision evaluates that receipt against the **current** policy,
+advisory registry, expected root/signing keys, and hole budgets.
+
+If retained or signed, a policy decision binds `PolicyIdentity` and
+`AdvisoryRegistryIdentity`. Changing either recomputes acceptance without
+rewriting the receipt. See
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md).
+
 ## Where the policy lives
 
 The `[policy]` section of the project's `Concrete.toml` at the

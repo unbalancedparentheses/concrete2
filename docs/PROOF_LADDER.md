@@ -80,6 +80,13 @@ Two tiers are **non-negotiably distinct**: Lean and `bv_decide` are
 enters the TCB). The whole project is about not hiding trust, so these are
 different audit classes and must never collapse into one "green."
 
+“No TCB growth” means relative to accepting the pinned Lean kernel and its
+exact rule set; it is not a claim that the kernel is infallible. Kernel-backed
+evidence is versioned and revocable. Where an exact retained certificate can be
+checked by a smaller independent profile, record that as a distinct logical-
+validity method rather than silently replacing the historical kernel result.
+See [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md).
+
 ### `bv_decide` first (validated)
 
 Lean 4.28's `bv_decide` (`import Std.Tactic.BVDecide`, already in the

@@ -16,6 +16,11 @@ authoritative. For product direction, see
 containment, see [KNOWN_HOLES.md](KNOWN_HOLES.md). The ROADMAP owns work order,
 not present-tense capability claims.
 
+The target representation is
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md), and the target portable
+proposition boundary is [VERIFICATION_IR.md](VERIFICATION_IR.md). They do not
+change the present-tense capability matrix below.
+
 ## Read every support claim on three axes
 
 “Supported” is ambiguous unless all three axes are named:
@@ -131,6 +136,12 @@ The highest-priority missing foundations are:
 6. stronger Core-to-obligation faithfulness evidence for H19;
 7. dependency-closed, compositional contracts across calls and packages.
 
+Cross-cutting architecture work also includes distinct digest/authority types,
+the five-object evidence model, a checked total fragment for contract-callable
+functions, declaration-isolated diagnostics with exact denominators, and a
+shared non-vacuous assertion/mutation library. These prevent the evidence
+pipeline from representing less information than its public claims require.
+
 After those foundations come `old`/frame conditions, recursion and termination,
 heap/reference models, relational verification, resource contracts, and a
 workload-driven specification library.
@@ -197,4 +208,3 @@ Concrete does not currently claim:
 - complete heap, alias, allocation, stack, or time proofs;
 - automatic compositional verification across every call or dependency;
 - correctness of compilation, LLVM, linking, the runtime, OS, or hardware.
-
