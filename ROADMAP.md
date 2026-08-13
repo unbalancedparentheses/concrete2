@@ -71,6 +71,39 @@ The cross-cutting dependency order inside those unlocks is:
 This is a dependency chain, not a second execution queue: urgent correctness defects may insert
 ahead of it, and the status board remains the owner of current work.
 
+### Architecture-preparation closure
+
+The architecture package is not prepared merely because its two normative documents exist. Before
+implementation relies on them, close these documentation and drift boundaries:
+
+1. **Ratified decisions:** add durable `docs/DECISIONS.md` entries for the five-object evidence
+   model, immutable receipt versus time-relative policy decision, whole-checker fail-closed
+   revocation, VIR as the portable proposition boundary, explicit proof-authoring modes, and the
+   checked `total fn` contract-callable category. Each entry names rejected alternatives and what
+   evidence would justify reopening it.
+2. **Historical record:** add a `CHANGELOG.md` entry labelled design/roadmap only. It must state
+   that typed evidence, VIR v1, proof modes, the standalone verifier, total functions, and advisory
+   policy are targets rather than shipped guarantees.
+3. **Contradiction audit:** search all docs, examples, generated help, snapshots, and release copy
+   for claims equivalent to “kernel checking adds no trust,” “two kernels remove kernel trust,”
+   “a certificate makes another checker unnecessary,” “advisory state is a receipt fact,” “pure is
+   sufficient for contract calls,” or an unscoped `verified`/`proved`. Every live hit is corrected,
+   explicitly historical, or linked to a current-schema boundary.
+4. **Executable architecture drift:** add a docs/source gate proving there is one normative owner
+   for the five objects and VIR semantics; `CLAIMS_TODAY` does not present targets as shipped;
+   replay receipts do not acquire advisory disposition; policy decisions bind policy/advisory
+   identities; authoritative digest families cannot be swapped as strings; and R-0004/R-0353 keep
+   producer/consumer ownership separate. Mutate every rule and run the mutations.
+5. **No prose-only completion:** closing this block updates the decision log, changelog, drift gate,
+   mutation registry, documentation index, and roadmap together. It does not advance any
+   implementation authority state.
+
+After R-0004 closes, implementation proceeds in bounded migrations: typed identity wrappers;
+five evidence objects in shadow; structured old/new comparison; receipt/policy separation; VIR v1
+types and canonical bytes; explicit proof-authoring modes; checked total contract functions; then
+R-0353 Layer 0. Each increment migrates one real consumer, kills a production mutation, records the
+corpus denominator, and deletes its flattened predecessor only after shadow agreement.
+
 ### Standard Graduation Contract
 
 Every major unlock above uses the same graduation shape. A task may specialize it, but may not
@@ -10291,6 +10324,24 @@ fresh replay under an accepted checker can restore the corresponding evidence di
 R-0004 receipt is authoritative yet, this is also a rehearsal of migration and revocation—not a
 claim that old production receipts already exist. Never bless proof goldens merely to clear the
 upgrade.
+
+Fire-drill acceptance is operational, not “the new toolchain builds”:
+
+- retain the exact upstream exploit and an isolated historical affected toolchain; never run the
+  hostile project through an ambient developer environment;
+- inventory every Lean-backed claim before upgrading, then replay the same denominator afterward;
+- classify each proof/build/golden change and forbid unexplained snapshot regeneration;
+- show old checker-bound logical validity downgrades while independently established subject,
+  correspondence, and dependency facts remain separately visible;
+- show an old synthetic receipt cannot regain acceptance by editing a version string, advisory
+  entry, feature footprint, or report output;
+- require fresh replay under a confirmed accepted checker/rule set to restore acceptance; and
+- publish the exact affected claims and remaining trust rather than saying the whole compiler was
+  either safe or unsafe.
+
+Fragment-scoped narrowing is tested only after the broad fail-closed path. Surface VIR lacking the
+affected construct is not sufficient because attached metaprograms can add unrelated hostile
+declarations; an accepted narrowing needs an independently checked retained-environment footprint.
 
 ### Task R-0209
 
