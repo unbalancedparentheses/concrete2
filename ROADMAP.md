@@ -5159,6 +5159,25 @@ reads as "empty" rather than "not computed".
 `if dep.isEmpty then ("none", "missing", "")` is a COMPUTED determination that the obligation is
 missing, not a failed lookup papered over. The rule targets the failed-read shape.
 
+**RULE REFINED 2026-08-13, after `docs/EVIDENCE_ARCHITECTURE.md` landed.** The test is NOT "is the
+default a member of the vocabulary". It is **"does the default ASSERT something the failed read did
+not establish"**. Those come apart at the bottom of a ladder:
+
+- `transitive` has positive content — it claims the capability arrived by a particular route — so a
+  parse failure rendering as `transitive` fabricates provenance. Violation.
+- obligation `missing` describes an EXISTING record whose proof is absent, so using it for "no
+  record at all" conflates two different facts. Violation.
+- `SourceCorrespondence.missing` means exactly "no correspondence evidence established" — the ⊥ of
+  its ladder. A failed read defaulting to it asserts nothing and is fail-CLOSED. **Legitimate.**
+
+**Consequence for the ratchet, and it is over-strict as written.** `check_one_producer.sh` blacklists
+`.getD "missing"` wholesale, so it would reject a correct `SourceCorrespondence` default once the
+typed-evidence objects are implemented. When that happens the fix is an explicit allowlist entry
+naming the type and stating why its ⊥ is a safe default — NOT deleting the check, and NOT renaming
+the value to evade it. A ladder's ⊥ is the one value a failed read may legitimately produce, and it
+must be justified per type rather than assumed per name, since `missing` means different things in
+the two vocabularies that already use it.
+
 **Scope:** survey `Concrete/Report/Report.lean` for defaults standing in for "did not look".
 Known-good examples to preserve, since they already follow the rule: `ABSENT (no structural body
 threaded)`, `NO-SUBJECT`, `UNPINNED`, `none (no call-graph entry)`. The suspects are any branch

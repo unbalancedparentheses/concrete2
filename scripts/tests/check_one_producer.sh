@@ -130,6 +130,18 @@ echo "=== no fact is defaulted to a valid value of itself ==="
 # Domain values that must never appear as a `.getD` default: canonical obligation statuses and
 # dependency-edge kinds. Both sets are small, closed, and meaningful — which is exactly what makes
 # a default drawn from them indistinguishable from a real answer.
+#
+# THIS LIST IS OVER-STRICT BY DESIGN, and the escape hatch is deliberate. The real test is not
+# membership in a vocabulary but whether the default ASSERTS something the failed read did not
+# establish. Those come apart at the BOTTOM of an assurance ladder: `SourceCorrespondence.missing`
+# (see docs/EVIDENCE_ARCHITECTURE.md) means exactly "no correspondence evidence established", so a
+# failed read defaulting to it asserts nothing and is fail-closed — legitimate, unlike obligation
+# `missing`, which describes an existing record whose proof is absent.
+#
+# So when the typed-evidence objects land, this check WILL reject a correct default. The fix is an
+# explicit allowlist entry naming the type and stating why its ⊥ is safe. NOT deleting the check, and
+# NOT renaming the value to evade it. `missing` already means different things in two vocabularies,
+# which is why the justification has to be per type rather than per name.
 DOMAIN_VALUES="missing proved stale trusted unclassified body contract enforced assumed partial vacuous needs_recheck"
 # Via code_refs, because the FIRST run of this check flagged the very comment written to explain the
 # fix — the third guard in this suite to confuse prose for code. A comment quoting `.getD "missing"`
