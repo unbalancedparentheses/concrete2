@@ -5110,8 +5110,14 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
         | some (_, .str "declared") => "declared"
         | some (_, .str "intrinsic") => "intrinsic"
         | some (_, .str "extern") => "extern"
-        | _ => "transitive"
-      | _ => "transitive"
+        -- R-0479: `transitive` is stated EXPLICITLY, so the catch-all stops doing double duty.
+        -- It used to serve as both the real fourth origin and the fallback for an unreadable one,
+        -- which turned "the origin key is absent or the trace is malformed" into a positive claim
+        -- that the capability arrived transitively. `origin_unavailable` is outside the vocabulary
+        -- and so cannot be read as an origin.
+        | some (_, .str "transitive") => "transitive"
+        | _ => "origin_unavailable"
+      | _ => "origin_unavailable"
   let result := Val.obj [
     ("schema_version", .num (Int.ofNat schemaVersion)),
     ("kind", .str "query_answer"),
@@ -5277,8 +5283,9 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
           | [.obj kvs] =>
             match kvs.find? (fun (k, _) => k == "origin") with
             | some (_, .str o) => o
-            | _ => "transitive"
-          | _ => "transitive"
+            -- R-0479: an absent origin key or a non-object trace is not evidence of transitivity.
+            | _ => "origin_unavailable"
+          | _ => "origin_unavailable"
       .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
     -- Predictable
     let violations := modules.foldl (fun acc m =>

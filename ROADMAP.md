@@ -5092,6 +5092,39 @@ means something specific. This is already the discipline for
 `ofRows`), and `ManifestRefusal` (named reasons rather than a smaller count). Diagnostics were
 exempt because they "only report", which is exactly the assumption that made this one costly.
 
+**PROGRESS 2026-08-13 — the `.getD` half is DONE and ratcheted; the `| _ =>` half is MEASURED.**
+
+Five sites fixed, all of them a failed read rendering as a real value of the fact:
+
+- `Report.lean:4203`, `Main.lean:1559`, `Main.lean:1722` — a failed obligation lookup defaulting to
+  `"missing"`, which is a genuine canonical status (`.notProved => "missing"`), so "no obligation
+  record" was indistinguishable from "an obligation exists and is missing". Now
+  `no_obligation_record`.
+- `Report.lean` capability-origin, two sites — `| _ => "transitive"` served as BOTH the real fourth
+  origin and the fallback for an absent `origin` key or a malformed trace, so an unreadable origin
+  became a positive claim that the capability arrived transitively. `transitive` is now matched
+  explicitly and the fallback is `origin_unavailable`.
+
+Two of the three obligation sites were found BY THE RATCHET after I believed the sweep was
+complete, which is the argument for the ratchet over a one-time survey.
+
+**Ratcheted:** `check_one_producer.sh` refuses any `.getD` default drawn from a closed vocabulary of
+12 (canonical statuses, dependency-edge kinds), reading code rather than prose via
+`lib/code_refs.sh`, with a non-vacuity probe on the same path the assertion uses.
+
+**REMAINING, and smaller than expected.** Measured: of 36 `| _ =>` branches returning a string
+literal across `Concrete/` and `Main.lean`, **zero** return a value from the status or edge-kind
+vocabularies — that half was already clean for the closed sets the ratchet knows. What remains is
+the vocabularies the ratchet does NOT yet know: the 36 include `"source"`, `"self"`,
+`"missing_proof_link"` and 15 bare `""`. Each needs the same question asked — is this literal a
+meaningful value of the fact being reported? — and the ratchet's vocabulary extended per closed set
+found. `""` is the ambiguous case and deserves a decision: it is out-of-domain for a digest but
+reads as "empty" rather than "not computed".
+
+**NOT a violation, and written into the gate so it is not "fixed" later:**
+`if dep.isEmpty then ("none", "missing", "")` is a COMPUTED determination that the obligation is
+missing, not a failed lookup papered over. The rule targets the failed-read shape.
+
 **Scope:** survey `Concrete/Report/Report.lean` for defaults standing in for "did not look".
 Known-good examples to preserve, since they already follow the rule: `ABSENT (no structural body
 threaded)`, `NO-SUBJECT`, `UNPINNED`, `none (no call-graph entry)`. The suspects are any branch
