@@ -798,36 +798,36 @@ probe "an unknown theorem is unclassified" "unclassified" '
 # checked-in table contains only well-formed rows, so validation could not be tested through
 # lookup at all; `validateRawRow` exists so it can be.
 probe "an EMPTY digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "", [], false)).isNone'
+#eval ((validateRawRow ("T", "body", "", [], false))).toOption.isNone'
 probe "a PLACEHOLDER digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "?", [], false)).isNone'
+#eval ((validateRawRow ("T", "body", "?", [], false))).toOption.isNone'
 probe "a WRONG-LENGTH digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "abc123", [], false)).isNone'
+#eval ((validateRawRow ("T", "body", "abc123", [], false))).toOption.isNone'
 # Uppercase is not "the same digest in different case": the generator emits lowercase, so an
 # uppercase value did not come from the generator.
 probe "an UPPERCASE digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1", [], false)).isNone'
+#eval ((validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1", [], false))).toOption.isNone'
 probe "a NON-HEX digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1", [], false)).isNone'
+#eval ((validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isNone'
 probe "an UNKNOWN edge tag is refused" "true" '
-#eval (validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)).isNone'
+#eval ((validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isNone'
 # Positive control: without it, a validator that refused everything would pass all six above.
 probe "a WELL-FORMED row validates (positive control)" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)).isSome'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isSome'
 
 # THE TABLE BINDINGS ARE VALIDATED TOO. A row whose theorem digest is sound but whose table
 # digests are not describes its dependencies with values nothing can compare — the same defect
 # one level down, and the level where it would be least visible.
 probe "a MALFORMED table digest is refused" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false)).isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false))).toOption.isNone'
 probe "a table named TWICE in one row is refused" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false)).isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isNone'
 probe "an EMPTY table identity is refused" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "6fe095a9f592a2e2b556e87f30306584")], false)).isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isNone'
 # ...and a NAMED table with the same digest validates, so the refusal is about the identity being
 # empty rather than about the digest.
 probe "a NAMED table with the same digest validates (the refusal is about the name)" "true" '
-#eval (validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false)).isSome'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isSome'
 # The raw table is PRIVATE, so validation is the only route to a classification — not merely the
 # only route to the `ValidatedRow` type.
 expect_no_compile "classificationTable cannot be read directly (private)" '
@@ -835,8 +835,8 @@ expect_no_compile "classificationTable cannot be read directly (private)" '
 
 probe "well-formed table bindings validate and are carried" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
-      | some r => r.tables.length == 1 && r.quantifies
-      | none => false'
+      | .ok r => r.tables.length == 1 && r.quantifies
+      | .error _ => false'
 # The real table must carry real bindings, or the generator emitted rows that describe nothing.
 probe "a real row carries its table identities" "true" '
 #eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with
@@ -852,13 +852,13 @@ probe "a theorem appearing TWICE yields no row, even if identical" "true" '
   let dup : List (String × String × String × List (String × String) × Bool) :=
     [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
      ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)]
-  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
 probe "a theorem appearing twice with CONFLICTING rows yields no row" "true" '
 #eval
   let dup : List (String × String × String × List (String × String) × Bool) :=
     [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
      ("T", "contract", "bfda7f397e3221e757383578b50ee3ff", [], false)]
-  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
 
 # The refusal must be NAMED. `absent` and `ambiguous` and `malformed` have different fixes —
 # regenerate the hand-back, resolve a conflict, repair a row — and a single `none` sends a reader
@@ -1285,34 +1285,98 @@ mkrow() { echo "validateRawRow (\"T\", \"$1\", \"7bcec2d7871f93204b26e2bf83d5acf
 
 probe "contract WITHOUT quantification is not justified" "true" '
 #eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
-      | some r => !(rowJustifies r DependencyEdge.contract)
-      | none => false'
+      | .ok r => !(rowJustifies r DependencyEdge.contract)
+      | .error _ => false'
 probe "contract WITH quantification is justified" "true" '
 #eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], true) with
-      | some r => rowJustifies r DependencyEdge.contract
-      | none => false'
+      | .ok r => rowJustifies r DependencyEdge.contract
+      | .error _ => false'
 probe "body with NO bound table is not justified" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
-      | some r => !(rowJustifies r DependencyEdge.body)
-      | none => false'
+      | .ok r => !(rowJustifies r DependencyEdge.body)
+      | .error _ => false'
 probe "body WITH a bound table is justified" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false) with
-      | some r => rowJustifies r DependencyEdge.body
-      | none => false'
+      | .ok r => rowJustifies r DependencyEdge.body
+      | .error _ => false'
 probe "unclassified justifies nothing" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
-      | some r => !(rowJustifies r DependencyEdge.unclassified)
-      | none => false'
+      | .ok r => !(rowJustifies r DependencyEdge.unclassified)
+      | .error _ => false'
 
 # The consumer must ACT on it: an unjustified row downgrades to `unclassified` rather than being
 # trusted. Without this the check would be a function nobody consults.
 probe "an unjustifiable row would not classify" "unclassified" '
 #eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
-      | some r => (if rowJustifies r r.edge then r.edge else DependencyEdge.unclassified).canonical
-      | none => "no-row"'
+      | .ok r => (if rowJustifies r r.edge then r.edge else DependencyEdge.unclassified).canonical
+      | .error _ => "no-row"'
+# ROW DEFECTS ARE NAMED AND EACH IS REACHABLE. A named constructor no input can produce reads as
+# coverage while testing nothing, so every one below is exercised by a row that triggers it.
+probe "an EMPTY theorem identity is refused by name" "true" '
+#eval match validateRawRow ("", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+      | .error RawRowRefusal.emptyTheoremIdentity => true
+      | _ => false'
+probe "an EMPTY artifact digest is refused by name, distinctly from malformed" "true" '
+#eval match validateRawRow ("T", "body", "", [], false) with
+      | .error RawRowRefusal.emptyArtifactDigest => true
+      | _ => false'
+probe "an UNKNOWN edge tag is refused by name, carrying the tag" "true" '
+#eval match validateRawRow ("T", "no_such_kind", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+      | .error (RawRowRefusal.unknownEdgeTag "no_such_kind") => true
+      | _ => false'
+probe "a MALFORMED theorem digest is refused by name, carrying the value" "true" '
+#eval match validateRawRow ("T", "body", "nothex", [], false) with
+      | .error (RawRowRefusal.theoremDigestMalformed "nothex") => true
+      | _ => false'
+probe "a MALFORMED table digest is refused by name, carrying table and value" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false) with
+      | .error (RawRowRefusal.tableDigestMalformed "Tbl" "nothex") => true
+      | _ => false'
+probe "an EMPTY table identity is refused by name" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "7bcec2d7871f93204b26e2bf83d5acf1")], false) with
+      | .error RawRowRefusal.tableIdentityEmpty => true
+      | _ => false'
+probe "a table named TWICE is refused by name, carrying the table" "true" '
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1",
+        [("Tbl", "7bcec2d7871f93204b26e2bf83d5acf1"), ("Tbl", "bfda7f397e3221e757383578b50ee3ff")], false) with
+      | .error (RawRowRefusal.tableNamedTwice "Tbl") => true
+      | _ => false'
+# The two-level split holds: the lookup layer reports a stable category and carries the detail.
+probe "a malformed unique row surfaces as malformed CARRYING its defect" "true" '
+#eval match validatedRowOf "No.Such.Theorem" with
+      | .error ClassificationRefusal.absent => true
+      | _ => false'
+
 # ...and real rows still classify, so the check is not simply refusing everything.
 probe "a real row still classifies after the correspondence check" "body" '
 #eval (classifiedEdgeOf "Concrete.Proof.parse_byte_correct").canonical'
+
+# === WHICH DependencyClosure REFUSAL SETS ARE NAMED — DERIVED, NOT ASSERTED IN PROSE ==========
+# docs/EVIDENCE_ARCHITECTURE.md requires six: missing, surplus, duplicate, ambiguous, unclassified,
+# mismatched. I twice reported this count from memory and got it wrong (said "4 of 6" while listing
+# five). A count restated in prose is a measurement nobody took, so it is computed here from the
+# constructors that actually exist and printed with the verdict.
+echo "=== DependencyClosure refusal sets that are NAMED ==="
+NAMED=0; MISSING_SETS=""
+check_set() {  # set name | evidence: a constructor that names it
+  if grep -rq "$2" Concrete/Proof/ --include=*.lean 2>/dev/null; then
+    NAMED=$((NAMED+1)); ok "'$1' is a named refusal (via $2)"
+  else
+    MISSING_SETS="$MISSING_SETS $1"
+  fi
+}
+check_set missing      'provenanceMissing'
+check_set duplicate    'duplicateIdentity'
+check_set unclassified '| unclassified'
+check_set mismatched   'bodyMismatch'
+check_set ambiguous    '| ambiguous'
+check_set surplus      '| surplus'
+echo "  DependencyClosure refusal sets named: $NAMED/6 (unnamed:${MISSING_SETS:- none})"
+if [ "$NAMED" = "5" ] && [ "$MISSING_SETS" = " surplus" ]; then
+  ok "exactly 5 of 6 named, and the one outstanding is surplus (which needs a definition, not code)"
+else
+  no "refusal-set coverage moved to $NAMED/6, unnamed:${MISSING_SETS:- none} — update this and say which changed"
+fi
 
 # === ROOT DETERMINISM AND SENSITIVITY (slice 6, step 5) ======================================
 # The acceptance boundary in two halves: discovery ARTEFACTS must not move the root, and any

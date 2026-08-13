@@ -124,26 +124,74 @@ private def edgeOfTag : String → Option DependencyEdge
   -- `unclassified` at the call site rather than a guess.
   | _          => none
 
+/-- What is structurally wrong with one hand-back row. NAMED, one constructor per check.
+
+    The layer below `ClassificationRefusal.malformed`. Five distinct checks collapsed to `none`
+    here, so "this row is invalid" could mean an unknown edge tag, a theorem digest that is not a
+    digest, a TABLE digest that is not one, a table bound to the empty identity, or a table named
+    twice. Those are different generator bugs and a reader cannot act on the union.
+
+    Each carries the offending value, because the whole point of naming a defect is to be able to
+    go and look at it. -/
+inductive RawRowRefusal where
+  /-- The row's THEOREM identity is empty. This check did not exist before 2026-08-13: a row named
+      `""` would have validated, and two such rows would compare EQUAL as theorem identities — the
+      same defect the empty-table-identity check exists to prevent, one field over. -/
+  | emptyTheoremIdentity
+  /-- The artifact digest is EMPTY, kept distinct from malformed for the same reason empty table
+      identity is: absence and corruption have different causes and different fixes. -/
+  | emptyArtifactDigest
+  /-- The edge tag is not one this compiler knows. A hand-back from a newer generator, or a typo. -/
+  | unknownEdgeTag (tag : String)
+  /-- The theorem's own artifact digest is not canonical 32-hex. -/
+  | theoremDigestMalformed (digest : String)
+  /-- A TABLE digest is not canonical 32-hex — the same defect one level down, and the level where
+      it would be least visible, since the row's own digest looks fine. -/
+  | tableDigestMalformed (table : String) (digest : String)
+  /-- A table is bound to the EMPTY identity. `""` is a value, not an absence: two unrelated
+      unknown tables would both bind as `""` and compare EQUAL, so a row could claim two
+      dependencies are the same table. -/
+  | tableIdentityEmpty
+  /-- One table named twice in a row — the row disagreeing with itself about that dependency. -/
+  | tableNamedTwice (table : String)
+  -- `invalid_quantification_marker` was named in review and is deliberately ABSENT: the row's
+  -- quantification field is a `Bool` in the generated table, so there is no invalid value to
+  -- detect at this layer. Adding the constructor would create an unreachable refusal, which reads
+  -- as coverage while testing nothing. If the hand-back ever crosses as text, it belongs here.
+deriving Repr, BEq
+
+def RawRowRefusal.explain : RawRowRefusal → String
+  | .emptyTheoremIdentity      => "the row's theorem identity is empty"
+  | .emptyArtifactDigest       => "the artifact digest is empty"
+  | .unknownEdgeTag t          => s!"unknown edge tag '{t}'"
+  | .theoremDigestMalformed d  => s!"theorem digest '{d}' is not canonical 32-hex"
+  | .tableDigestMalformed t d  => s!"digest '{d}' for table '{t}' is not canonical 32-hex"
+  | .tableIdentityEmpty        => "a table is bound to the empty identity"
+  | .tableNamedTwice t         => s!"table '{t}' is named twice in one row"
+
 /-- Validate ONE raw row. Separated from lookup so the validation itself is testable: a test
     that can only reach this through `validatedRowOf` can only exercise rows that happen to be
     in the checked-in table, which are all well-formed — so "malformed rows are rejected" would
     be asserted against data that contains none. That is precisely the shape of vacuous control
     this codebase keeps finding. -/
-def validateRawRow : String × String × String × List (String × String) × Bool → Option ValidatedRow
-  | (n, tag, dig, tbls, q) => do
-    let e ← edgeOfTag tag
-    if !isHexDigest dig then none
-    -- EVERY table digest is validated too. A row whose theorem digest is sound but whose table
-    -- digests are not describes its dependencies with values nothing can compare — the same
-    -- defect one level down, and the level where it would be least visible.
-    else if !(tbls.all fun t => isHexDigest t.2) then none
-    -- An EMPTY table identity is refused. "" is a value, not an absence: two unrelated unknown
-    -- tables would both bind as "" and compare EQUAL, so a row could claim two dependencies are
-    -- the same table. Same reason an empty environment identity refuses in the receipt.
-    else if !(tbls.all fun t => !t.1.isEmpty) then none
-    -- A table named twice in one row is the row disagreeing with itself about that dependency.
-    else if (tbls.map (·.1)).eraseDups.length != tbls.length then none
-    else some (ValidatedRow.mk n e dig tbls q)
+def validateRawRow : String × String × String × List (String × String) × Bool
+    → Except RawRowRefusal ValidatedRow
+  | (n, tag, dig, tbls, q) =>
+    if n.isEmpty then .error .emptyTheoremIdentity
+    else match edgeOfTag tag with
+    | none => .error (.unknownEdgeTag tag)
+    | some e =>
+      if dig.isEmpty then .error .emptyArtifactDigest
+      else if !isHexDigest dig then .error (.theoremDigestMalformed dig)
+      -- EVERY table digest is validated too. A row whose theorem digest is sound but whose table
+      -- digests are not describes its dependencies with values nothing can compare.
+      else match tbls.find? (fun t => !isHexDigest t.2) with
+        | some (tn, td) => .error (.tableDigestMalformed tn td)
+        | none =>
+          if !(tbls.all fun t => !t.1.isEmpty) then .error .tableIdentityEmpty
+          else match (tbls.map (·.1)).find? (fun t => ((tbls.map (·.1)).filter (· == t)).length > 1) with
+            | some dup => .error (.tableNamedTwice dup)
+            | none => .ok (ValidatedRow.mk n e dig tbls q)
 
 /-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`
     (docs/EVIDENCE_ARCHITECTURE.md) requires `ambiguous` to be a named refusal rather than folded
@@ -165,15 +213,15 @@ inductive ClassificationRefusal where
   /-- Several rows for one theorem. The table is not the function it claims to be, and taking the
       first match is how a conflicting table classifies confidently. -/
   | ambiguous (count : Nat)
-  /-- Exactly one row, and it failed structural validation. The sub-reason is still collapsed
-      inside `validateRawRow`; splitting those is separate work. -/
-  | malformed
+  /-- Exactly one row, and it failed structural validation. Carries WHICH check failed — the
+      sub-reasons were collapsed inside `validateRawRow` until 2026-08-13. -/
+  | malformed (defect : RawRowRefusal)
 deriving Repr, BEq
 
 def ClassificationRefusal.explain : ClassificationRefusal → String
   | .absent      => "no row in the classification hand-back"
   | .ambiguous n => s!"{n} rows for one theorem — the hand-back is not a function"
-  | .malformed   => "one row, structurally invalid"
+  | .malformed d => s!"one row, structurally invalid: {d.explain}"
 
 /-- Look a theorem up, validating the row before it can classify anything: exactly ONE row, or a
     NAMED refusal.
@@ -186,8 +234,8 @@ def ClassificationRefusal.explain : ClassificationRefusal → String
 def validatedRowOf (thm : String) : Except ClassificationRefusal ValidatedRow :=
   match classificationTable.filter (fun r => r.1 == thm) with
   | [row] => match validateRawRow row with
-    | some v => .ok v
-    | none   => .error .malformed
+    | .ok v      => .ok v
+    | .error def_ => .error (.malformed def_)
   | []    => .error .absent
   | rows  => .error (.ambiguous rows.length)
 
