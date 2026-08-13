@@ -3438,9 +3438,9 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | theorem-to-call-edge correspondence | **OPEN — critical semantic boundary** | caller-wide labels cannot justify individual call edges |
 | dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** (re-measured 2026-08-13, not carried from notes) | roots MUST NOT affect production status yet |
 | implementation-manifest accounting | **shadow-measured: 64 expected, 63 rows, 1 named refusal** (`extracted-missing` in `examples/proof_pressure/src/main.con`, so that file is correctly not usable). The old `filterMap` returned that file's 4 rows as an apparently complete manifest — the incompleteness predates the fix; only its visibility changed | manifest MUST NOT affect production status yet |
-| **edge sources disagree (FOUND 2026-08-13)** | `shadow edgeKinds` derives from `e.evidenceBody`; `shadow depRoot` derives from `pc.callGraph`. **For 9 of 64 subjects the first reports an `unclassified`/`missing` edge while the second roots successfully.** The refusal logic is correct (`isCurrentForDependents` is `false` for `unclassified`, and `dependencyRootMaterial` throws on any non-current edge) — the graph handed to it is simply smaller than the subject's own reported dependencies, so there is nothing for it to refuse. **Consequence: "62/64 root" does not mean 62 subjects rooted over their real call edges; for 9 of them the root covers a subset.** Same defect class as the `filterMap` manifest, one layer over. Pinned at 9 in `check_dependency_edges.sh` (exact, not ratcheted: falling is the goal and must be an explicit edit; rising means a new subject began rooting over an incomplete closure) | **per-edge correspondence must be over the REAL edge set — resolving which source is authoritative is now a PREREQUISITE, not a detail.** Expect root coverage to FALL when it is fixed: 9 subjects should start refusing, taking 62/64 to roughly 53/64. That is the honest number |
-| all 40 real call edges are `unclassified` or `missing` | Measured 2026-08-13: 39 `unclassified`, 1 `missing`, **zero `body`, zero `contract`, zero `trusted`**, across 11 edge-bearing subjects (53 of 64 subjects have no outgoing edge at all). So the classification table's `body` rows currently reach NO call edge: `callerEdge` resolves to `unclassified` whenever the caller has no linked spec/proofName | correspondence cannot be demonstrated on this corpus until some edge classifies — a correspondence gate over an all-unclassified edge set would pass vacuously |
-| the compiler cannot check table membership per edge | The classification hand-back row is `(theorem, kind, artifactDigest, [(tableName, tableDigest)], quantifies)` — table NAME and WHOLE-table digest, **no entry-level material**. `tableEntryEvidence`/`bindEntryImplementations` operate on `FnTable` VALUES, which exist only Lean-side. So "does table T contain callee C" is unanswerable compiler-side today | the hand-back must also carry per-table entry evidence (callee identity + body digest). Generator + schema change, and it is the concrete blocker for `EdgeJustification` |
+| ~~edge sources disagree = coverage fail-open~~ **RETRACTED 2026-08-13, diagnosed backwards** | I recorded that 9 of 64 subjects rooted over a smaller edge set, called it a coverage fail-open, and predicted root coverage would fall to ~53/64 once fixed. **All of that was wrong.** `shadow edgeKinds` was a STUB: it derived callees from the evidence body then assigned the kind as `if isTrusted then "trusted" else "unclassified"`, consulting no classification table, so every non-trusted edge read `unclassified` regardless of the hand-back. The root was correct and the REPORT was stale — and since `dependencyRootMaterial` refuses any non-current edge, a subject with edges that roots has current edges by construction. **Root coverage remains 62/64 and was never inflated.** Fixed by making both lines read one source (`dependencyNodesOf`); the gate now asserts the invariant (no subject roots while reporting a non-current edge, 0 observed) plus its non-vacuity (12 non-current edges exist) | one producer for edge kinds; a hand-coded second opinion cannot drift from the real one if there is no second opinion |
+| real edge-kind distribution | **28 `body`, 11 `unclassified`, 1 `missing`** across 40 edges and 11 edge-bearing subjects (53 of 64 subjects have no outgoing edge). Measured 2026-08-13 through the corrected line. **Supersedes the earlier "all 40 unclassified, zero body" figure, which was read off the stub** | correspondence CAN be demonstrated on this corpus — 28 classified `body` edges exist, so a correspondence gate would not be vacuous. The earlier claim that it would be is withdrawn |
+| the compiler cannot check table membership per edge | The classification hand-back row is `(theorem, kind, artifactDigest, [(tableName, tableDigest)], quantifies)` — table NAME and WHOLE-table digest, **no entry-level material**. `tableEntryEvidence`/`bindEntryImplementations` operate on `FnTable` VALUES, which exist only Lean-side. So "does table T contain callee C" is unanswerable compiler-side today. **This one stands — re-verified after the retraction above, since it was measured from the row shape rather than from the stub** | the hand-back must also carry per-table entry evidence (callee identity + body digest). Generator + schema change, and it is the concrete blocker for `EdgeJustification` |
 | the two denominators | **the same 64, agreeing FILE BY FILE across all 20 sources.** Both derive from `pc.entries`, so this is a divergence tripwire rather than independent confirmation — its value is catching a later filter on either side, which totals alone would miss (one file gaining an identity while another loses one keeps the sum at 64) | — |
 | dependency-aware verdict composition | **PROHIBITED** | no dependency-aware `proved` may issue before the authority-transition gate |
 | replay receipts and corpus migration | **PENDING** | no receipt is replay-backed or authoritative |
@@ -3559,6 +3559,13 @@ Do not connect roots to status composition until every item is true:
    evidence, trust laundering, opaque theorems, collision/schema confusion, partial receipts,
    dependency changes and environment changes. Every successful attack becomes a named hole and
    permanent regression gate. Require an independent non-author attack contribution.
+
+**Product hand-off after R-0004:** Task R-0353 consumes the stabilized subject, dependency-root
+and replay-receipt schemas in a small standalone verifier. It is deliberately not another R-0004
+slice: R-0004 makes the evidence path honest; R-0353 makes that evidence independently consumable
+without trusting Concrete's compiler or report pipeline. Prototype codec/root work may begin in
+shadow, but no verifier result becomes authoritative until R-0004's replay, migration and
+adversarial boundaries close.
 
 #### Historical record and detailed slice traceability
 
@@ -12564,6 +12571,64 @@ the Phase 10 verified-profile command, not just written in prose.
 
 **Objective:** Define the canonical release-evidence DAG and offline independent bundle verifier before packaging or benchmarking it.
 
+**Strategic role and dependency.** This is the standalone consumer for R-0004's stabilized
+subjects, exact dependency roots and replay receipts. It is a separate product boundary, not an
+extra R-0004 slice: R-0004 makes evidence production honest; R-0353 lets a stranger check the
+result without trusting the Concrete compiler or its report pipeline. Codec, hostile-decoder and
+root-recomputation prototypes may start earlier in shadow, but no verifier result is authoritative
+until R-0004's replay, migration and adversarial boundaries close.
+
+**Trust promise.** Given hostile bundle bytes, an externally supplied expected root or an accepted
+signing key, and a verification policy, independently decide whether the bundle is internally
+complete, dependency-closed, replay-bound, authenticated and policy-compliant. Do not compile
+Concrete source, regenerate proofs or trust stored `proved` strings. The compiler proposes the
+evidence graph; the verifier recomputes whether it is closed and properly bound.
+
+**Small-verifier architecture.** Keep the deterministic core dependency-light and auditable:
+
+- `concrete-cert-core`: strict versioned decoding, canonical encoding, domain-separated digest
+  recomputation, identity uniqueness, graph closure/root recomputation, receipt validation,
+  trust/assumption propagation and policy evaluation. No filesystem, network, subprocesses,
+  compiler imports or ambient environment reads;
+- `concrete-cert`: hostile file loading, CLI, expected-root/key inputs, resource limits, structured
+  and human output, and kernel-adapter orchestration;
+- kernel adapters: separately versioned Lean, Rocq, Isabelle and certificate-checker replay paths.
+  Adapter success is evidence input, never authority to bypass core graph/policy checks.
+
+The hashed representation is a canonical binary format (deterministic CBOR or a deliberately
+smaller specified codec); JSON is display/debug output only. Unknown critical fields and unknown
+schema/rule-set versions refuse. Canonical decoding must reject duplicate keys, alternate integer
+encodings, ambiguous ordering, trailing data and resource-exhaustion shapes.
+
+**Lean kernel incident requirement (2026-07, issue #14576).** Treat proof kernels as versioned,
+revocable dependencies rather than timeless oracles. The incident allowed the ordinary checked
+Lean `addDecl` path to admit a malformed nested-inductive declaration and derive axiom-free
+`False`; `--trust=0` and axiom printing did not detect it. The original artifact also passed an
+outdated independent checker because that checker had a separate projection bug. Therefore:
+
+- every replay receipt binds exact kernel implementation, commit/release, rule-set digest,
+  exporter/serializer version and proof-artifact digest;
+- policy maintains explicit accepted, vulnerable and revoked checker-version sets; a receipt from
+  a newly revoked kernel becomes `needs_recheck` or rejected, never remains `proved` because it was
+  green when minted;
+- high-assurance policy requires current independent replay through structurally different
+  implementations, not merely two invocations or two wrappers around shared kernel code;
+- checker independence is recorded by implementation lineage and shared code/theory, not inferred
+  from different executable names. A port of the affected kernel logic does not count as a fully
+  independent defense against that defect class;
+- the #14576 exploit, the independent-checker projection exploit, and every future upstream kernel
+  soundness reproducer enter a permanent checker-arena corpus. Each accepted checker version must
+  reject every applicable historical exploit before it can satisfy policy;
+- successful replay is re-executed from the exact retained proof artifact in an isolated process.
+  A receipt that merely states replay succeeded is insufficient;
+- revocation enumerates every affected Concrete claim through receipt indexes and invalidates
+  cached roots/receipts mechanically. Public advisories must name the downgraded claims.
+
+Do not respond by banning Lean metaprogramming. The elaborator is untrusted by design, and hostile
+proof terms or serialized artifacts can bypass it. Defense belongs at the kernel/checker boundary,
+in independent replay, version binding, exploit regression, revocation and multidimensional
+policy.
+
 
  Move the common public/verifier codecs here: versioned canonical encoders
  for source/lock inputs, typed-Core artifacts and Phase 14 receipts,
@@ -12591,6 +12656,12 @@ the Phase 10 verified-profile command, not just written in prose.
  `proof_replay`, `policy`, `assumptions`, and `remaining_trust`—never one
  ambiguous `verified` badge.
 
+ The minimum result vector includes `internally_consistent`, `root_matches_expected`,
+ `signature_accepted`, `provenance_authenticated`, `dependencies_complete`, `kernel_replay_valid`,
+ `checker_set_current`, `policy_satisfied`, `assumptions`, `trusted_boundaries` and
+ `remaining_trust`. A bundle can be internally consistent yet describe the wrong project or rely
+ on a revoked checker; those states must remain independently visible.
+
  The schema can reject a missing mandatory edge; the Merkle graph cannot
  discover an arbitrary omitted semantic dependency unless completeness is
  separately proved. Proof/Core and SSA/BackendIR substitutions may fail their
@@ -12614,6 +12685,19 @@ the Phase 10 verified-profile command, not just written in prose.
  different root and fail against the pinned expected root (or lose accepted
  authentication), not necessarily fail internal-consistency parsing. Wire
  `scripts/tests/check_verify_bundle.sh`.
+
+ Also gate omitted/duplicated/surplus dependencies; swapped subject/receipt/table material; stale
+ theorem, implementation and checker identities; trust/assumption deletion; replay success without
+ retained replay material; revoked checker versions; one current plus one vulnerable checker;
+ purportedly independent adapters sharing the same implementation lineage; the Lean #14576
+ reproducer; the historical independent-checker projection reproducer; canonical-encoding
+ ambiguity; unknown critical fields; cyclic, oversized and deeply nested hostile bundles; and
+ deterministic verification across clean machines and checkout paths.
+
+**Authority progression:** `designed -> prototype -> negatively controlled -> mutation-killed ->
+shadow-compared with Concrete -> independently reproduced -> authoritative consumer ->
+adversarially closed`. No stage may be skipped, and internal consistency alone never satisfies the
+release policy.
 ### Task R-0354
 
 **Objective:** Add concrete distribution UX:

@@ -1744,6 +1744,19 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
       let details := (gaps.map (·.detail)).eraseDups
       s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
 
+/-- The CALL-GRAPH view of a subject's outgoing edges — the source `dependencyRootMaterial`
+    actually reads, printed so it can be compared against `shadow edgeKinds`, which reads the
+    evidence body instead.
+
+    Diagnostic only. It decides nothing; it exists so a disagreement between the two sources is
+    observable rather than inferred from the fact that a root succeeded when it should not have. -/
+private def shadowGraphEdgesLine (pc : Concrete.ProofCore) (qn : String) : String :=
+  match pc.callGraph.find? (fun g => g.1 == qn) with
+  | none => "none (no call-graph entry)"
+  | some (_, callees) =>
+    if callees.isEmpty then "none (call-graph entry with no callees)"
+    else s!"{callees.length}: " ++ ", ".intercalate callees.eraseDups.mergeSort
+
 /-- The dependency-ROOT shadow line: what a validated root would say, computed but not acted on.
 
     R-0004 slice 6 step 4. Both consumers read `ProofCore.dependencyNodesOf`, so there is one set
@@ -1978,23 +1991,36 @@ private def inheritedAssumptions (entries : List Concrete.ProofCoreEntry)
     would claim a proof EXISTS and depends on the implementation, when the truth is that
     this layer cannot see whether any proof exists. A wrong kind in dependency material is
     worse than an absent one: a root gets built on it. -/
-private def shadowEdgeKinds (entries : List Concrete.ProofCoreEntry)
-    (body? : Option Proof.EvidenceBodyDraftV2) : String :=
-  match body? with
-  | none => "ABSENT (no structural body threaded)"
-  | some body =>
-    let cs := Proof.bodyCallees body
-    if cs.isEmpty then "none (body reaches no callable)"
+private def shadowEdgeKinds (pc : Concrete.ProofCore) (e : Concrete.ProofCoreEntry) : String :=
+  -- ONE SOURCE FOR EDGE KINDS, and this used to be two. The previous version derived callees from
+  -- `e.evidenceBody` and then assigned the kind by
+  --     `if e.fn.isTrusted then "trusted" else "unclassified"`
+  -- which consults no classification table at all: every non-trusted edge was reported
+  -- `unclassified` no matter what the hand-back said. Meanwhile `dependencyRootMaterial` reads
+  -- `dependencyNodesOf`, which classifies via `classifiedEdgeOf`.
+  --
+  -- So the two lines disagreed for 9 of 64 subjects, and the disagreement was DIAGNOSED WRONG on
+  -- first look: it appeared that roots were being computed over a smaller edge set — a coverage
+  -- fail-open — because a subject reporting `unclassified` edges still rooted. It was the opposite.
+  -- The root was right and the report was stale: those edges are genuinely classified, and
+  -- `dependencyRootMaterial` refuses any non-current edge, so a subject with edges that roots has
+  -- current edges by construction.
+  --
+  -- Reading the node set fixes the class of bug rather than the instance: a hand-coded second
+  -- opinion about a kind cannot drift from the real one if there is no second opinion.
+  let nodes := Concrete.dependencyNodesOf pc pc.callGraph
+  match nodes.find? (fun n => n.id == e.callableId) with
+  | none => "ABSENT (no dependency node)"
+  | some n =>
+    if n.edges.isEmpty then "none (no outgoing edge)"
     else
-      let kindOf := fun (id : CallableId) =>
-        match entries.find? (fun x => x.callableId.render == id.render) with
-        | none => "missing"
-        | some e => if e.fn.isTrusted then "trusted" else "unclassified"
-      let parts := cs.map (fun id => s!"{id.render}={kindOf id}")
-      let missingN := (cs.filter (fun id => kindOf id == "missing")).length
-      let trustedN := (cs.filter (fun id => kindOf id == "trusted")).length
-      s!"{", ".intercalate parts}" ++
-        s!" [{missingN} missing, {trustedN} trusted, {cs.length - missingN - trustedN} need the Lean classifier]"
+      let sorted := n.edges.eraseDups.mergeSort
+        (fun a b => (a.2.render ++ a.1.canonical) ≤ (b.2.render ++ b.1.canonical))
+      let parts := sorted.map (fun (k, tgt) => s!"{tgt.render}={k.canonical}")
+      let nonCurrent := (sorted.filter (fun (k, _) => !k.isCurrentForDependents)).length
+      let trustedN := (sorted.filter (fun (k, _) => k == Proof.DependencyEdge.trusted)).length
+      s!"{", ".intercalate parts}"
+        ++ s!" [{nonCurrent} non-current, {trustedN} trusted, {sorted.length} total]"
 
 /-- Raw canonical body bytes per subject — the digest's INPUT, not its hash.
 
@@ -2135,7 +2161,7 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         , s!"  shadow assumes: {shadowAssumesLine e.evidenceBody}\n"
         , s!"  shadow edges: {shadowEdgesLine e.evidenceBody}\n"
         , s!"  shadow inherited: {inheritedAssumptions pc.entries e}\n"
-        , s!"  shadow edgeKinds: {shadowEdgeKinds pc.entries e.evidenceBody}\n"
+        , s!"  shadow edgeKinds: {shadowEdgeKinds pc e}\n"
         -- The FIFTH axis, and the one step 5 turns on. The four above describe the
         -- subject; this one says what COMPARING it would decide. Separate because a
         -- complete, bound, assumption-free subject can still be pinned against a v1
@@ -2146,6 +2172,14 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- The SIXTH axis. The five above describe this subject and what comparing it decides;
         -- this says what a claim over it would REST ON transitively. Separate because a fresh,
         -- fully-described subject can still reach a dependency nothing has classified.
+        -- THE SEVENTH AXIS, added 2026-08-13, and it exists because two axes above were silently
+        -- describing DIFFERENT edge sets. `shadow edgeKinds` derives from `e.evidenceBody`;
+        -- `shadow depRoot` derives from `pc.callGraph`. For 9 of 64 subjects the first reported a
+        -- non-current edge while the second rooted anyway, because the graph it read had no such
+        -- edge to refuse. Neither line was wrong about its own source, and that is precisely why the
+        -- disagreement was invisible: it needed a line showing the OTHER source to become a fact
+        -- rather than an inference. Printing the call-graph view makes both observable side by side.
+        , s!"  shadow graphEdges: {shadowGraphEdgesLine pc e.qualName}\n"
         , s!"  shadow depRoot: {shadowDepRootLine pc e.callableId}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
