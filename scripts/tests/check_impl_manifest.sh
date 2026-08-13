@@ -114,6 +114,29 @@ else
   no "NO source produces a usable manifest — the refusals are not targeted"
 fi
 
+# CROSS-CHECK AGAINST THE OTHER DENOMINATOR. The dependency-root work counts 64 subjects across this
+# same corpus (62 rooted, 2 refused), and the manifest expects 64 identities. Measured 2026-08-13:
+# the two agree FILE BY FILE across all 20 sources, not merely in total.
+#
+# WHAT THIS IS AND IS NOT. Both numbers currently derive from `pc.entries`, so agreement is what the
+# code should produce — this is a DIVERGENCE TRIPWIRE, not independent confirmation that the two
+# workstreams measure the same thing. Its value is that if either side later gains a filter (an
+# "eligible subjects" predicate, a skipped entry kind), the denominators separate silently and two
+# gates go on reporting confident numbers about different populations. Totals alone would not catch
+# it: one file gaining an identity while another loses one keeps the sum at 64.
+DIVERGED=0
+for src in "${SRCS[@]}"; do
+  me="$("$BIN" "$src" --report impl-manifest 2>/dev/null | grep -o 'expected=[0-9]*' | cut -d= -f2)"
+  dr="$("$BIN" "$src" --report subject-facts 2>/dev/null | grep -c 'shadow depRoot:')"
+  if [ "${me:-x}" != "${dr:-y}" ]; then
+    no "$src: manifest expects ${me:-?} identities but ${dr:-?} depRoot lines — the two denominators have diverged"
+    DIVERGED=$((DIVERGED+1))
+  fi
+done
+if [ "$DIVERGED" -eq 0 ]; then
+  ok "manifest and dependency-root denominators agree on all ${#SRCS[@]} sources, file by file"
+fi
+
 # CONTAINMENT: this is shadow. The manifest must not reach a status derivation.
 if grep -rn "implementationManifestOf\|implementationManifestResultOf" Concrete/ --include=*.lean \
      | grep -v "^Concrete/Proof/ProofCore.lean:" \

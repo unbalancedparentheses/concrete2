@@ -3436,7 +3436,9 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | implementation-manifest provenance | **OPEN** | caller-supplied digest construction still prevents authoritative use |
 | implementation-manifest completeness | **OPEN** | `filterMap` can produce a smaller, non-self-denominating manifest |
 | theorem-to-call-edge correspondence | **OPEN — critical semantic boundary** | caller-wide labels cannot justify individual call edges |
-| dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** | roots MUST NOT affect production status yet |
+| dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** (re-measured 2026-08-13, not carried from notes) | roots MUST NOT affect production status yet |
+| implementation-manifest accounting | **shadow-measured: 64 expected, 63 rows, 1 named refusal** (`extracted-missing` in `examples/proof_pressure/src/main.con`, so that file is correctly not usable). The old `filterMap` returned that file's 4 rows as an apparently complete manifest — the incompleteness predates the fix; only its visibility changed | manifest MUST NOT affect production status yet |
+| the two denominators | **the same 64, agreeing FILE BY FILE across all 20 sources.** Both derive from `pc.entries`, so this is a divergence tripwire rather than independent confirmation — its value is catching a later filter on either side, which totals alone would miss (one file gaining an identity while another loses one keeps the sum at 64) | — |
 | dependency-aware verdict composition | **PROHIBITED** | no dependency-aware `proved` may issue before the authority-transition gate |
 | replay receipts and corpus migration | **PENDING** | no receipt is replay-backed or authoritative |
 | adversarial closure | **PENDING — mandatory** | R-0004 cannot close without Slice 8 |
