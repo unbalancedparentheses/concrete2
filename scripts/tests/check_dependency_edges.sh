@@ -1351,6 +1351,98 @@ probe "a malformed unique row surfaces as malformed CARRYING its defect" "true" 
 probe "a real row still classifies after the correspondence check" "body" '
 #eval (classifiedEdgeOf "Concrete.Proof.parse_byte_correct").canonical'
 
+# === PER-EDGE CORRESPONDENCE: THE CLOSED JOIN ================================================
+# Every control below was specified in review. NOT WIRED to production — nothing calls `correspond`
+# yet, and it cannot be fed from the corpus until the hand-back carries per-table ENTRY evidence.
+# What is claimed here is the join and its refusals, not corpus coverage.
+echo "=== per-edge correspondence: the closed join ==="
+
+CORR='
+  let subj := CallableId.ofUser "m" "caller"
+  let cA := CallableId.ofUser "m" "a"
+  let cB := CallableId.ofUser "m" "b"
+  let reqA : RequestedEdge := { callee := cA, kind := .body }
+  let reqB : RequestedEdge := { callee := cB, kind := .body }
+  let wA : EdgeWitness := { subject := subj, target := .edgeTo cA, kind := .body }
+  let wB : EdgeWitness := { subject := subj, target := .edgeTo cB, kind := .body }'
+
+probe "an exact one-to-one join is usable" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA, reqB], candidateWitnesses := [wA, wB] }
+  r.usable 2"
+
+# ONE EXTRA UNRELATED WITNESS -> exactly one named surplus.
+probe "one extra unrelated witness produces exactly ONE named surplus" "true" "
+#eval$CORR
+  let extra : EdgeWitness := { subject := subj, target := .edgeTo (CallableId.ofUser \"m\" \"z\"), kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA, extra] }
+  r.surplus.length == 1 && !(r.usable 1)"
+
+# ...and REMOVING it restores usability, so the refusal is about that witness and nothing else.
+probe "removing the extra witness restores usability" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA] }
+  r.usable 1"
+
+# WRONG SUBJECT is an identity failure, named — not silently consumed, and NOT surplus, because
+# surplus means \"belonged to this operation and matched nothing\", a different fact from \"was never ours\".
+probe "a witness for the correct callee but WRONG subject is refused by name, not consumed" "true" "
+#eval$CORR
+  let wrong : EdgeWitness := { subject := CallableId.ofUser \"m\" \"other\", target := .edgeTo cA, kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wrong] }
+  r.malformed.length == 1 && r.surplus.isEmpty && r.missing.length == 1 && !(r.usable 1)"
+
+# WRONG KIND for a real edge is the `mismatched` set at the witness level.
+probe "a witness claiming the wrong KIND is named, and its edge has no valid justification" "true" "
+#eval$CORR
+  let badKind : EdgeWitness := { subject := subj, target := .edgeTo cA, kind := .contract }
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [badKind] }
+  r.malformed.length == 1 && r.missing.length == 1 && r.matched.isEmpty"
+
+# DUPLICATING a matched witness yields AMBIGUITY, not one match plus one surplus.
+probe "duplicating a matched witness produces ambiguity, not match-plus-surplus" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA, wA] }
+  r.ambiguous.length == 1 && r.matched.isEmpty && r.surplus.isEmpty"
+
+# SWAPPING two witnesses must never yield a successful join.
+# The review asked for "swapping two witnesses produces mismatched/ambiguous, never a successful
+# join". Measured: a permutation of two SAME-KIND witnesses between two requested edges legitimately
+# corresponds — each edge still receives exactly one witness naming it, so there is nothing to
+# refuse, and asserting otherwise would demand a refusal with no defect behind it. The meaningful
+# swaps are the ones that change an identity or a kind, and those are refused above. Labelled for
+# what it asserts rather than for what was asked, because a probe whose name contradicts its
+# assertion is worse than an absent one.
+probe "a same-kind PERMUTATION legitimately corresponds (the meaningful swaps are refused above)" "true" "
+#eval$CORR
+  let swapA : EdgeWitness := { subject := subj, target := .edgeTo cB, kind := .body }
+  let swapB : EdgeWitness := { subject := subj, target := .edgeTo cA, kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [reqA, reqB], candidateWitnesses := [swapA, swapB] }
+  r.usable 2"
+
+# A DYNAMIC whole-table witness is consumed ONCE and produces no per-entry surplus.
+probe "a dynamic whole-table witness is consumed once, with no per-entry surplus" "true" "
+#eval$CORR
+  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true }
+  let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [tbl] }
+  r.usable 1 && r.surplus.isEmpty"
+
+# ...and the same whole-table witness with NO dynamic request is surplus, so the exemption is
+# scoped to dynamic edges rather than blanket.
+probe "a whole-table witness with no dynamic request IS surplus" "true" "
+#eval$CORR
+  let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA, tbl] }
+  r.surplus.length == 1"
+
+# THE COUNT IS COMPARED, not inferred from empty sets: a join that dropped a request would leave
+# every set empty while covering less than was asked.
+probe "usability compares the COUNT, so a dropped request cannot pass" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA] }
+  r.usable 1 && !(r.usable 2)"
+
 # === WHICH DependencyClosure REFUSAL SETS ARE NAMED — DERIVED, NOT ASSERTED IN PROSE ==========
 # docs/EVIDENCE_ARCHITECTURE.md requires six: missing, surplus, duplicate, ambiguous, unclassified,
 # mismatched. I twice reported this count from memory and got it wrong (said "4 of 6" while listing
@@ -1370,10 +1462,14 @@ check_set duplicate    'duplicateIdentity'
 check_set unclassified '| unclassified'
 check_set mismatched   'bodyMismatch'
 check_set ambiguous    '| ambiguous'
-check_set surplus      '| surplus'
+# `surplus` is modelled as a RETAINED SET on `CorrespondenceResult`, not an inductive constructor
+# like the others — a witness is surplus by virtue of matching nothing, which is a property of the
+# join rather than a defect flag on the witness. The evidence pattern follows the modelling instead
+# of forcing the modelling to fit the pattern.
+check_set surplus      'surplus   : List EdgeWitness'
 echo "  DependencyClosure refusal sets named: $NAMED/6 (unnamed:${MISSING_SETS:- none})"
-if [ "$NAMED" = "5" ] && [ "$MISSING_SETS" = " surplus" ]; then
-  ok "exactly 5 of 6 named, and the one outstanding is surplus (which needs a definition, not code)"
+if [ "$NAMED" = "6" ] && [ -z "$MISSING_SETS" ]; then
+  ok "all 6 DependencyClosure refusal sets are named"
 else
   no "refusal-set coverage moved to $NAMED/6, unnamed:${MISSING_SETS:- none} — update this and say which changed"
 fi

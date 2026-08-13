@@ -47,6 +47,7 @@ import Concrete.Proof.EvidenceBuild
 import Concrete.Proof.IdentityUseBytes
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.DependencyEdge
+import Concrete.Proof.Correspondence
 import Concrete.Proof.ClassificationTable
 import Concrete.Proof.DependencyEdges
 import Concrete.Proof.Receipt

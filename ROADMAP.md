@@ -3521,10 +3521,12 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | theorem-to-call-edge correspondence | **OPEN — critical semantic boundary** | caller-wide labels cannot justify individual call edges |
 | dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** (re-measured 2026-08-13, not carried from notes) | roots MUST NOT affect production status yet |
 | implementation-manifest accounting | **shadow-measured: 64 expected, 63 rows, 1 named refusal** (`extracted-missing` in `examples/proof_pressure/src/main.con`, so that file is correctly not usable). The old `filterMap` returned that file's 4 rows as an apparently complete manifest — the incompleteness predates the fix; only its visibility changed | manifest MUST NOT affect production status yet |
+| report/CLI disposition integrity | **OPEN — two concrete acceptance defects found 2026-08-13**: `--report impl-manifest` prints its payload but falls through to `Unknown report type` and exits 1; a failed obligation lookup now renders the honest marker `no_obligation_record` but the prove exit-code catch-all maps it to success | no report or proof-facing CLI result is authoritative until its payload, stderr and process disposition agree and are gated together |
+| classification-refusal reachability | **PARTIAL**: `absent`, `ambiguous (count)` and `malformed` are represented, but committed controls reach only the production `absent` path; duplicate fixtures reproduce a local `filter`/`none` approximation rather than exercising `validatedRowOf`'s ambiguity result | a named refusal receives completion credit only after the exact production lookup and fail-closed consumer path are negatively controlled |
 | ~~edge sources disagree = coverage fail-open~~ **RETRACTED 2026-08-13, diagnosed backwards** | I recorded that 9 of 64 subjects rooted over a smaller edge set, called it a coverage fail-open, and predicted root coverage would fall to ~53/64 once fixed. **All of that was wrong.** `shadow edgeKinds` was a STUB: it derived callees from the evidence body then assigned the kind as `if isTrusted then "trusted" else "unclassified"`, consulting no classification table, so every non-trusted edge read `unclassified` regardless of the hand-back. The root was correct and the REPORT was stale — and since `dependencyRootMaterial` refuses any non-current edge, a subject with edges that roots has current edges by construction. **Root coverage remains 62/64 and was never inflated.** Fixed by making both lines read one source (`dependencyNodesOf`); the gate now asserts the invariant (no subject roots while reporting a non-current edge, 0 observed) plus its non-vacuity (12 non-current edges exist) | one producer for edge kinds; a hand-coded second opinion cannot drift from the real one if there is no second opinion |
 | real edge-kind distribution | **28 `body`, 11 `unclassified`, 1 `missing`** across 40 edges and 11 edge-bearing subjects (53 of 64 subjects have no outgoing edge). Measured 2026-08-13 through the corrected line. **Supersedes the earlier "all 40 unclassified, zero body" figure, which was read off the stub** | correspondence CAN be demonstrated on this corpus — 28 classified `body` edges exist, so a correspondence gate would not be vacuous. The earlier claim that it would be is withdrawn |
 | **per-edge correspondence maps to `DependencyClosure`, NOT `SourceCorrespondence`** | Corrected 2026-08-13 by reading `docs/EVIDENCE_ARCHITECTURE.md` rather than inferring from the commit subject: my first reading assumed the ratified `SourceCorrespondence` object superseded the `EdgeJustification` design. It does not. `SourceCorrespondence` is proposition↔source/Core behaviour; `DependencyClosure` is "every compiler edge, theorem witness, contract hypothesis, table entry, implementation, assumption and trusted boundary … present, unique, current, and consumed exactly once", with missing/surplus/duplicate/ambiguous/unclassified/mismatched as NAMED refusals never discarded by `filterMap` or a first-match lookup. **The slice-6 work is the implementation of `DependencyClosure`, not something replaced by the new architecture** | build `DependencyClosure`, not a parallel `EdgeJustification`. The architecture also retroactively endorses the two fixes already landed: `filterMap` removal and the first-match join both appear in its list of forbidden shapes |
-| **three refusal sets required by `DependencyClosure` are not named yet** | Measured against the six the doc requires. `missing` ✓ (`DependencyEdge.missing`, `ManifestRefusal.*Missing`), `duplicate` ✓ (`tableEntryEvidence` duplicate identities, `ofRows` duplicate callable, `DepRootError.duplicateId`), `unclassified` ✓ (`DependencyEdge.unclassified`). **`mismatched` is refused but UNNAMED** — `tableEntryEvidence` returns `Option`, so all six of its distinct refusals (no identity, no provenance, wrong schema, wrong scope, body mismatch, duplicate identity) collapse to `none`, which is exactly the "discarded rather than named" shape the doc forbids, in code landed 2026-08-11. ~~**`ambiguous` is collapsed too**~~ **NAMED 2026-08-13** — `validatedRowOf` now returns `Except ClassificationRefusal ValidatedRow` with `absent`, `ambiguous (count)` and `malformed`. The VERDICT is deliberately unchanged: `classifiedEdgeOf` still answers `unclassified` for all three, because the fail-closed decision does not depend on why the classification is unusable. Only the record differs — and it has to, since the three have different fixes (regenerate the hand-back, resolve a conflict, repair a row) and one `none` sends a reader to the wrong place. The sub-reasons INSIDE `validateRawRow` remain collapsed; that is the next layer. **`surplus` DEFINED 2026-08-13 (decision), implementation pending.**
+| **three refusal sets required by `DependencyClosure` are not named yet** | Measured against the six the doc requires. `missing` ✓ (`DependencyEdge.missing`, `ManifestRefusal.*Missing`), `duplicate` ✓ (`tableEntryEvidence` duplicate identities, `ofRows` duplicate callable, `DepRootError.duplicateId`), `unclassified` ✓ (`DependencyEdge.unclassified`). **`mismatched` is refused but UNNAMED** — `tableEntryEvidence` returns `Option`, so all six of its distinct refusals (no identity, no provenance, wrong schema, wrong scope, body mismatch, duplicate identity) collapse to `none`, which is exactly the "discarded rather than named" shape the doc forbids, in code landed 2026-08-11. ~~**`ambiguous` is collapsed too**~~ **NAMED 2026-08-13** — `validatedRowOf` now returns `Except ClassificationRefusal ValidatedRow` with `absent`, `ambiguous (count)` and `malformed`. The VERDICT is deliberately unchanged: `classifiedEdgeOf` still answers `unclassified` for all three, because the fail-closed decision does not depend on why the classification is unusable. Only the record differs — and it has to, since the three have different fixes (regenerate the hand-back, resolve a conflict, repair a row) and one `none` sends a reader to the wrong place. The sub-reasons INSIDE `validateRawRow` remain collapsed; that is the next layer. **`surplus` DEFINED and IMPLEMENTED 2026-08-13** in `Concrete/Proof/Correspondence.lean` — `correspond` performs the closed join and `CorrespondenceResult` retains all four sets. **NOT WIRED to production:** nothing calls it, and it cannot be fed from the corpus until the hand-back carries per-table entry evidence. The join and every refusal are gated; corpus coverage is not claimed. All 6 `DependencyClosure` refusal sets are now named (count derived by the gate).
 
 > Surplus is evidence supplied to a particular correspondence operation that belongs to no requested edge or witness slot in that operation.
 
@@ -3553,6 +3555,49 @@ slice 4 covers proof-table, receipt-envelope and environment plumbing; slice 5 c
 identity; slice 6 covers dependency correspondence and roots; slice 7 covers replay, receipts and
 migration; slice 8 covers adversarial closure. Slice numbers are traceability labels, not a second
 progress model.
+
+#### Open boundary: report and process disposition integrity
+
+**Status:** OPEN. This is part of the authority transition, not CLI polish. A structured payload,
+stderr diagnostic and process exit code are three projections of one disposition; disagreement
+lets automation accept a result that the report itself says was not computed, or lets a gate pass
+by reading partial stdout from a failed producer.
+
+**Required repairs and controls:**
+
+- every recognized `--report` branch returns explicitly after producing its payload; in
+  particular `impl-manifest` must not fall through to the unknown-report branch;
+- corpus/report gates capture the producer's exit status and require the expected value before
+  parsing stdout. `2>/dev/null || true` is forbidden on an evidence-producing command unless the
+  test is explicitly asserting failure and separately validates the failure class;
+- `no_obligation_record`, `not_computed`, malformed input and every other out-of-domain marker map
+  to an explicit non-success process disposition. A catch-all must never turn a new refusal into
+  `ExitCode.ok`;
+- text, JSON, artifact emission and process status are checked from the same negative fixture, so
+  one projection cannot be corrected while another remains fail-open;
+- unknown report names still fail, providing the over-acceptance control for recognized reports.
+
+**Acceptance:** `--report impl-manifest` emits exactly one manifest result, no unknown-report
+diagnostic, and exits 0; deleting its explicit return is mutation-killed. A prove request whose
+obligation lookup has no record emits the typed refusal in text/JSON/artifact forms and exits
+nonzero; mapping that refusal through the success catch-all is mutation-killed. No gate can become
+green from payload text produced by a command whose exit status it discarded.
+
+#### Open boundary: exact refusal-path controls
+
+**Status:** PARTIAL. Representation and fail-closed behavior are separate claims. Adding a named
+constructor proves neither that production can reach it nor that its consumer preserves the
+refusal. Synthetic code that merely resembles the lookup is not a control for the production path.
+
+**Required shape:** extract the pure lookup over supplied raw rows (for example
+`validatedRowIn rows theorem`) and make `validatedRowOf` only the private generated-table wrapper.
+Tests then inject absent, one malformed, identical duplicates and conflicting duplicates through
+that exact lookup, assert the precise refusal and ambiguity count, and assert the downstream edge
+remains `unclassified`. Include a valid singleton as the over-rejection control.
+
+**Acceptance:** removing duplicate detection, discarding the ambiguity count, first-match lookup,
+or mapping any refusal to a current edge is killed through the production consumer. A refusal set
+is not marked closed merely because a local test reconstructed its expected branching logic.
 
 #### Open boundary: implementation-manifest provenance
 
@@ -5191,6 +5236,13 @@ means something specific. This is already the discipline for
 `ProofEvidenceReceipt` (private constructor, no `Inhabited`), `ImplementationManifest` (private
 `ofRows`), and `ManifestRefusal` (named reasons rather than a smaller count). Diagnostics were
 exempt because they "only report", which is exactly the assumption that made this one costly.
+
+**The rule continues through every projection.** Replacing an in-domain default with an honest
+marker is not complete if a later string catch-all maps that marker to success. The typed result,
+rendered text, JSON/artifact disposition and process exit code must preserve the same distinction.
+Unknown or newly added refusal constructors default to non-success; success is enumerated rather
+than supplied by `_ => ok`. Report gates must likewise validate the producer's exit status before
+interpreting its stdout, so a failed command cannot contribute apparently valid evidence.
 
 **PROGRESS 2026-08-13 — the `.getD` half is DONE and ratcheted; the `| _ =>` half is MEASURED.**
 
