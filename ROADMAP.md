@@ -87,14 +87,22 @@ implementation relies on them, close these documentation and drift boundaries:
 3. **Contradiction audit:** search all docs, examples, generated help, snapshots, and release copy
    for claims equivalent to “kernel checking adds no trust,” “two kernels remove kernel trust,”
    “a certificate makes another checker unnecessary,” “advisory state is a receipt fact,” “pure is
-   sufficient for contract calls,” or an unscoped `verified`/`proved`. Every live hit is corrected,
-   explicitly historical, or linked to a current-schema boundary.
-4. **Executable architecture drift:** add a docs/source gate proving there is one normative owner
-   for the five objects and VIR semantics; `CLAIMS_TODAY` does not present targets as shipped;
-   replay receipts do not acquire advisory disposition; policy decisions bind policy/advisory
-   identities; authoritative digest families cannot be swapped as strings; and R-0004/R-0353 keep
-   producer/consumer ownership separate. Mutate every rule and run the mutations.
-5. **No prose-only completion:** closing this block updates the decision log, changelog, drift gate,
+   sufficient for contract calls,” TermIR and VIR described as parallel semantic owners, or an
+   unscoped `verified`/`proved`. Every live hit is corrected, explicitly historical, or linked to a
+   current-schema boundary.
+4. **Mechanically executable architecture drift:** add source/docs gates for the subset a machine
+   can decide: normative links name TermIR as VIR's semantic owner; `CLAIMS_TODAY` target sections
+   retain direction/not-shipped markers; replay-receipt types contain no advisory disposition;
+   retained policy decisions bind policy/advisory identities; authoritative digest families use
+   distinct types at migrated boundaries; and R-0004/R-0353 retain producer/consumer links. Each
+   rule has a concrete source/doc predicate, a positive control, and a run mutation. Do not claim
+   this proves semantic single ownership.
+5. **Manual architecture audit:** review module imports, constructors, call sites, codec ownership,
+   and deletion plans for duplicate semantics that textual gates cannot decide. Record reviewer,
+   commit, inspected owner set, conflicts/refusals, and follow-up task. A judgment-heavy statement
+   such as “there is one semantic owner” belongs here, not inside a grep gate whose acceptance can
+   be argued until disabled.
+6. **No prose-only completion:** closing this block updates the decision log, changelog, drift gate,
    mutation registry, documentation index, and roadmap together. It does not advance any
    implementation authority state.
 
@@ -103,6 +111,13 @@ five evidence objects in shadow; structured old/new comparison; receipt/policy s
 types and canonical bytes; explicit proof-authoring modes; checked total contract functions; then
 R-0353 Layer 0. Each increment migrates one real consumer, kills a production mutation, records the
 corpus denominator, and deletes its flattened predecessor only after shadow agreement.
+
+**Immediate release/evidence blocker:** complete R-0208's Lean #14576 fire drill before the next
+new authoritative evidence transition, receipt migration, checker graduation, or public proof-
+strength claim. Ordinary bug fixes and shadow instrumentation may continue; they may not mint a new
+stronger evidence class under the currently unaccepted toolchain. The drill freezes the before/after
+claim denominator, uses isolated hostile fixtures, explains every replay/golden change, and proves
+old checker-bound evidence cannot recover by editing metadata.
 
 ### Standard Graduation Contract
 

@@ -9,6 +9,14 @@ ObligationCore. TermIR owns internal proposition syntax and executable
 semantics; VIR adds validation, canonical hostile bytes, proposition identity,
 and certificate attachment.
 
+VIR v1 is TermIR (R-0455) promoted and extended—not rebuilt. Existing TermIR
+ownership of sorts, structural evaluation, truncating arithmetic semantics,
+uninterpreted applications, goals, and proved transformations is inherited.
+The promotion adds validated sorting/context, stable identities, records and
+arrays, canonical codec/digest, consumer parsing/evaluation, and certificate
+bindings. Any proposal that reimplements an already-owned TermIR meaning is an
+architecture violation unless it explicitly replaces and deletes the old owner.
+
 See [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md) for the surrounding
 evidence model and [CLAIMS_TODAY.md](CLAIMS_TODAY.md) for current support.
 
