@@ -10096,6 +10096,24 @@ under a stronger badge.
 
 **Objective:** Add tool-version drift checks: proof/evidence facts record the Lean version, Concrete compiler commit, ProofKit hash, extraction version, decision procedure version, and solver version where relevant. A toolchain bump marks affected evidence `needs_recheck` until replayed; old green badges are never silently reused across a proof-tool upgrade.
 
+This task also owns a machine-readable checker-advisory register. Key entries by checker/kernel
+implementation, exact version or commit, rule-set digest and upstream advisory/reproducer id; do
+not rely on an unverified CVE label or a prose version range. Each entry records
+`accepted | affected | revoked | unknown`, the affected evidence classes and fragments, replacement
+versions, replay requirements and claim indexes. Release policy must refuse or downgrade evidence
+whose checker state is affected, revoked or unknown. A changed advisory register is evidence input
+and therefore changes the policy result even when the proof artifact is byte-identical.
+
+**Lean #14576 fire drill:** the repository's currently pinned `leanprover/lean4:v4.28.0` predates
+the upstream fix and must be treated as not accepted for new high-assurance claims until an exact
+fixed toolchain is selected and the retained upstream reproducer is tested. Upgrade, rebuild and
+replay the affected corpus; prove that the toolchain identity changes; prove that a synthetic or
+historical receipt bound to the old identity becomes `needs_recheck`/rejected; and prove that only a
+fresh replay under an accepted checker can restore the corresponding evidence dimension. Since no
+R-0004 receipt is authoritative yet, this is also a rehearsal of migration and revocation—not a
+claim that old production receipts already exist. Never bless proof goldens merely to clear the
+upgrade.
+
 ### Task R-0209
 
 **Objective:** Add evidence monotonicity checks: a refactor cannot silently present a weaker claim as if it were still stronger (`proved` cannot degrade to `reported` while retaining the same badge/summary).
@@ -12521,6 +12539,15 @@ the Phase 10 verified-profile command, not just written in prose.
   failing with the downgraded claim named — no false green on a revoked
   proof. Task R-0353's independent verifier must reject the old evidence
   root and any cached receipt that still names the revoked theorem.
+- 9c. Treat upstream checker/kernel soundness advisories as Concrete security inputs. Attached
+  `#[proof_by]` / `#[ensures_proof]` modules, generated proof objects and serialized checker input
+  are adversarial even when they use an ordinary checked API and report no axioms. Axiom inventory
+  does not detect an axiom-free kernel exploit. For each advisory, retain the exact reproducer,
+  enumerate affected receipts/claims, exercise R-0208's version downgrade and R-0353's independent
+  replay, and publish which evidence dimensions remain intact. The threat model must say plainly
+  that Concrete cannot detect a kernel implementation bug from inside that same kernel; it can
+  contain the consequence through version binding, revocation, replay and genuinely different
+  checker families.
 ### Task R-0344
 
 **Objective:** Add a certification-style assurance bundle profile before any SPARK-class comparison claim. The bundle must include the claim matrix, authority/capability report, obligation ledger, proof status, runtime-safety status, assumptions, trusted boundaries, package/dependency evidence, toolchain versions, replay commands, and any SPARK-class flow/frame facts.
@@ -12594,6 +12621,61 @@ evidence graph; the verifier recomputes whether it is closed and properly bound.
   and human output, and kernel-adapter orchestration;
 - kernel adapters: separately versioned Lean, Rocq, Isabelle and certificate-checker replay paths.
   Adapter success is evidence input, never authority to bypass core graph/policy checks.
+
+The governing rule is **check retained producer outputs; never rerun a producer derivation and call
+that independent verification**. Re-elaboration, VC generation, extraction, SAT solving or tactic
+search may be useful diagnostics, but they do not substitute for checking the exact artifact that
+minted the receipt. The verifier has three explicit layers:
+
+1. **Envelope/accounting:** authenticate the expected root/signature; strictly decode canonical
+   bytes; recompute identities, dependency closure and roots; validate receipts; propagate trust,
+   assumptions and advisory state; apply policy. This proves internal binding and completeness only
+   relative to the declared graph. It cannot discover an arbitrary omitted semantic dependency
+   unless the bundle also carries an independently checkable completeness relation or an externally
+   pinned expected root.
+2. **Certificate profiles:** check the exact retained certificate against the exact retained
+   canonical proposition. Every profile defines its supported fragment, proposition encoding,
+   certificate encoding, checker implementation/version/rule set, checking relation, resource
+   limits, deterministic failure taxonomy and evidence class. A checker must not invoke the solver
+   or tactic that generated its certificate.
+3. **Translation assurance:** validate and report source/Core-to-VIR correspondence evidence without
+   claiming that the small verifier generally proves this semantic arrow. It may check future narrow
+   translation certificates or finite-fragment relations, but otherwise reports the producer's
+   named assurance (`producer_validated`, `sampled`, `exhaustive`, `formally_justified`, or
+   `missing`). Layer 1 truth about a VIR proposition does not imply that the proposition faithfully
+   describes the source program.
+
+**Initial certificate profiles and honest probes:**
+
+- Linear arithmetic follows R-0463: first determine whether stable micromega/Farkas or
+  Positivstellensatz witnesses can be exported with enough semantic detail for an independent
+  checker. Measure eligible obligations and distinguish integer reasoning from rational/polynomial
+  witness semantics before estimating coverage or checker size. Failure to export a stable witness
+  is the probe's named kill condition, not a reason to reconstruct the proof by rerunning tactics.
+- Boolean/bit-vector evidence follows R-0451, but the authoritative chain is exact
+  `VIR proposition -> CNF bytes/digest -> original retained DRAT/LRAT certificate -> checker result`.
+  Re-solving captured CNF to manufacture a second certificate is corroboration, not replay of the
+  certificate that supported the original claim.
+- Nonlinear evidence remains `solver_trusted` while H21/R-0451 lacks a replayable proof object. The
+  verifier names that boundary rather than converting solver success into certificate evidence.
+
+Certificate replay does not automatically make a second kernel/checker worthless. Whether one
+small checked certificate is sufficient is an explicit policy decision informed by checker
+maturity, independent reproduction and adversarial results. Record independence along separate
+axes: implementation/code lineage, algorithm and proof-system family, shared exporter/serializer,
+shared libraries and shared specification. Different executable names are not independent evidence.
+
+**Build sequence:** finish R-0004's exact correspondence and replay-receipt schema; freeze canonical
+receipt/bundle bytes; ship Layer 0 accounting with hostile fixtures; run the R-0463 extraction probe;
+bind exact CNF and retained certificates before the DRAT/LRAT checker; add kernel proof-object replay
+profiles; mint R-0004 slice-7 receipts only for defined profiles; shadow-compare the verifier with
+Concrete; complete R-0004/R-0353 adversarial exercises; then make the external verifier
+authoritative behind expected-root/signature authentication and revocation policy.
+
+From the first checker commit, each profile needs a valid positive certificate, malformed and
+truncated inputs, a corrupted certificate, a valid certificate paired with the wrong goal, empty
+material, duplicate/surplus material, resource-exhaustion limits, deterministic replay, and a
+production-consumer mutation proving that bypassing the checker cannot retain a friendly verdict.
 
 The hashed representation is a canonical binary format (deterministic CBOR or a deliberately
 smaller specified codec); JSON is display/debug output only. Unknown critical fields and unknown
