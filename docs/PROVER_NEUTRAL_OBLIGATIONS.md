@@ -2,6 +2,11 @@
 
 Status: normative architecture for the prover-neutral obligation layer.
 
+The internal proposition owner is `Concrete.Semantics.TermIR`. Its public,
+versioned, validated artifact form is VIR as defined by
+[VERIFICATION_IR.md](VERIFICATION_IR.md). “Neutral IR” below means promoting
+TermIR, not introducing a parallel proposition representation.
+
 Supersedes the sketches in [NOTES/concrete-design.md](NOTES/concrete-design.md) §Q5
 and [NOTES/why3-architecture-and-positioning.md](NOTES/why3-architecture-and-positioning.md),
 which remain as provenance. Those live under `NOTES/`, are non-normative, and are
@@ -22,6 +27,12 @@ trusted. Ours carry soundness registers.**
 ## THE NORMATIVE RULE (decide once, decide now)
 
 > **`ProofSubjectDigest` is computed over the NEUTRAL term. Never over a host AST.**
+
+More precisely, the proposition component is computed over canonical VIR bytes
+for a `ValidatedGoal` and its complete semantic context—not `repr`, renderer
+text, raw TermIR strings, or an unvalidated host value. The full proof subject
+also binds source/claim facts; proposition and subject digests are related but
+not interchangeable.
 
 Everything else in this document is negotiable. This is not.
 

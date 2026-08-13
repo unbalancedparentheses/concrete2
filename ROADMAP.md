@@ -6208,6 +6208,31 @@ is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
 
 **Objective:** Unify obligation lowering into one prover-neutral IR with per-backend drivers (Why3 shape) — implementation already in progress off-repo; land it in a worktree and merge once green per the operating rules. The problem is duplicated expression lowerings of the same obligations: several answers to one question, free to drift — and drift here means the Lean proof and the external check silently prove DIFFERENT obligations, an evidence-integrity defect in the system R-0004 is hardening. Define one typed obligation IR (linear integer arithmetic, bitvectors, bools, arrays: the deliberate intersection fragment; everything else `not_supported`), one semantics (a single `eval` in Lean, the IntArith single-source discipline), lowering as small named transforms, and per-backend drivers that select which transforms run.
 
+**Ownership decision:** promote `Concrete.Semantics.TermIR`; do not mint a
+parallel VIR. TermIR owns internal proposition syntax and semantics. VIR is the
+validated, versioned public codec/digest boundary described in
+`docs/VERIFICATION_IR.md`. ObligationCore owns provenance/status and references
+the canonical proposition identity. Receipts and policy remain separate.
+
+Current TermIR is a seed, not yet a typed authority: `Srt` exists beside an
+unindexed `Term`, and variables/symbols are strings. Add `RawTerm`/`RawGoal` to
+closed `ValidatedTerm`/`ValidatedGoal` validation (or an equivalent
+intrinsically sorted representation), stable identities and symbol signatures,
+then permit only validated goals into renderers, profiles, digests, and receipts.
+
+**Promotion slices:** inventory current obligation shapes/refusals; validate
+sorts/arity/width/context; define canonical context and full proposition digest;
+specify hostile canonical bytes; implement a second parser; attach exact
+certificate profiles; migrate one family in structured shadow comparison; make
+all renderers consume validated goals; bind ObligationCore/receipts; delete
+direct `Expr -> prover string` paths. Arrays and records are reviewed semantic
+extensions, not incidental constructor additions.
+
+Acceptance includes alpha/order invariance, semantic-change sensitivity,
+malformed/ambiguous context refusal, digest context binding, parser agreement,
+wrong-goal certificate swaps, renderer constructor totality, and a mutation
+showing no legacy string path can retain a friendly verdict.
+
 This task's pulled-forward position is conditional: it may land representation,
 semantics, and differential gates after R-0004 only when the existing branch is
 merge-ready. It does not issue receipts or upgrade any verdict to authoritative

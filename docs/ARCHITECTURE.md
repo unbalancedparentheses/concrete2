@@ -66,6 +66,12 @@ Reports, package artifacts, and policies are consumers of those typed facts.
 They may not derive authority from display strings or rebuild a stronger state
 from a subset of the evidence vector.
 
+`Concrete.Semantics.TermIR` is the single internal owner of prover-neutral
+proposition syntax and executable semantics. VIR is its validated, canonical,
+public artifact boundary—not another semantic IR. ObligationCore owns the
+ledger/provenance around that proposition. Backends consume validated values
+and do not reconstruct meaning directly from frontend expressions.
+
 The backend path and the proof/audit path are intentionally separate.
 The backend path keeps producing executable code through Core, Mono,
 Lower, SSA, and LLVM. The proof/audit path should become:

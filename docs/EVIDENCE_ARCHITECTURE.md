@@ -226,6 +226,12 @@ The independent verifier has three layers:
 Internal consistency is not authenticity. Verification requires an externally
 pinned expected root or a signature rooted in a consumer-accepted key.
 
+The proposition language is not independently reinvented here:
+`Concrete.Semantics.TermIR` owns internal syntax and executable semantics, and
+VIR is its validated canonical external form. The evidence model binds
+`PropositionDigest`; it does not infer proposition identity from renderer text
+or duplicate TermIR inside the ledger.
+
 ## Authority transitions
 
 Every new path progresses explicitly:
@@ -262,4 +268,3 @@ required_action: replay Lean artifact with an accepted checker
 
 That separability is the purpose of the architecture, not merely a reporting
 convenience.
-

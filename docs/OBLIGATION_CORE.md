@@ -31,6 +31,12 @@ passes are owned by [ARCHITECTURE.md](ARCHITECTURE.md) and
 layer" in [PROOF_AUDIT_PIPELINE.md](PROOF_AUDIT_PIPELINE.md). The migration is
 tracked as ROADMAP Phase 3 (ObligationCore Pipeline Consolidation).
 
+ObligationCore does not own proposition semantics. `TermIR` owns the internal
+language; VIR is its validated canonical artifact form. ObligationCore owns
+source/claim provenance, dependencies, attempts, disposition, and evidence,
+and references a typed `PropositionDigest`. It must not store a second
+independently meaningful expression tree or use prover text as identity.
+
 ## Non-Goals
 
 This is not a new proof language, a new solver, a new macro system, or a
@@ -57,6 +63,7 @@ originating source construct
 typed variables
 scoped hypotheses
 conclusion
+validated VIR proposition identity
 semantic profile
 dependencies
 allowed engines

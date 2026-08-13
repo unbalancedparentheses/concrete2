@@ -143,6 +143,10 @@ canonical encoding, identities, and extension admission rules. Prover-specific
 languages may be richer; their extra machinery remains backend trust rather
 than silently expanding portable VIR semantics.
 
+Implementation promotes the existing `Concrete.Semantics.TermIR` into that
+boundary. “VIR” names its validated public artifact/compatibility surface, not
+a second proposition IR beside TermIR.
+
 ## Evidence is a vector, not a ladder
 
 Evidence must retain at least these independent dimensions:
