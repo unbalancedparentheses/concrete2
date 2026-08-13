@@ -103,3 +103,25 @@ def sourceLinkedThms : List Name :=
     let q := if ev.quantifiesOverTable then "true" else "false"
     lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\", {tstr}, {q})"]
   IO.println (String.intercalate ",\n" lits)
+  -- OUT-OF-BUILD TABLE ENTRIES. The compiler resolves a table NAME to its value through a closed
+  -- dispatch, which covers every table defined inside the compiler. It cannot cover tables defined
+  -- under `proofs/`, because `Examples` imports `Concrete` and the reverse would be a cycle — so
+  -- for those, and ONLY those, the entries cross as data.
+  --
+  -- Referenced DIRECTLY rather than looked up by name: this module imports `Examples`, so the value
+  -- is in scope and no `evalExpr` is involved. The list is explicit for the same reason the
+  -- compiler's dispatch is: a name-keyed lookup that guessed would bind the wrong table.
+  IO.println "-- EXTERNAL"
+  let externals : List (String × FnTable) :=
+    [("Examples.ProofPatterns.Proofs.combineFns", Examples.ProofPatterns.Proofs.combineFns)]
+  let mut elits : List String := []
+  for (nm, t) in externals do
+    let mut rows : List String := []
+    for d in t.canonicalEntries.toList do
+      match d.identity.id?, d.sourceBodyDigest with
+      | some cid, some sbd => rows := rows ++ [s!"(\"{cid.defModule}\", \"{cid.declName}\", \"{sbd.value}\")"]
+      -- An entry without identity or provenance is NOT emitted as a partial row: the compiler
+      -- would then hold a membership list that under-reports, which reads as absence.
+      | _, _ => throwError s!"external table {nm} has an entry lacking identity or provenance — refusing to emit a partial membership list"
+    elits := elits ++ [s!"  (\"{nm}\", [" ++ String.intercalate ", " rows ++ "])"]
+  IO.println (String.intercalate ",\n" elits)

@@ -1,4 +1,5 @@
 import Concrete.Proof.DependencyEdge
+import Concrete.Proof.ClassificationTable
 
 /-!
 # Resolving a hand-back table NAME to its entries
@@ -56,13 +57,47 @@ def tableByName : String → Option FnTable
   | "Concrete.Proof.FnTable.empty"     => some FnTable.empty
   | _                                  => none
 
-/-- The validated entry evidence for a named table, or a named refusal. -/
-def entryEvidenceForTable (name : String) : Except TableResolveRefusal (List TableEntryEvidence) :=
+/-- How much a table's entry evidence is worth.
+
+    NOT cosmetic. `compilerLinked` means the compiler held the `FnTable` and RECOMPUTED every body
+    digest from the actual `PFnDef.body`, refusing on disagreement. `generatorAsserted` means it
+    holds digests emitted by the generator and no bodies, so it cannot recompute anything — the
+    evidence is trusted rather than checked. Collapsing the two would let a weaker fact be reported
+    as the stronger one, which is the failure this codebase keeps finding. -/
+inductive TableProvenance where
+  | compilerLinked
+  | generatorAsserted
+deriving Repr, BEq
+
+def TableProvenance.render : TableProvenance → String
+  | .compilerLinked    => "compiler-linked"
+  | .generatorAsserted => "generator-asserted"
+
+/-- The validated entry evidence for a named table, with its provenance, or a named refusal.
+
+    In-compiler tables are tried FIRST. A name present in both would resolve to the checked value,
+    never the asserted one — the stronger evidence wins, rather than whichever is found first. -/
+def entryEvidenceWithProvenance (name : String)
+    : Except TableResolveRefusal (TableProvenance × List TableEntryEvidence) :=
   match tableByName name with
-  | none => .error (.unknownTable name)
   | some t => match tableEntryEvidence t with
     | .error w => .error (.entriesRefused name w)
-    | .ok rows => .ok rows
+    | .ok rows => .ok (.compilerLinked, rows)
+  | none =>
+    match externalTableEntries.find? (fun e => e.1 == name) with
+    | none => .error (.unknownTable name)
+    | some (_, pairs) =>
+      -- Reconstructed from data. The digest is carried as recorded; there is no body to check it
+      -- against, which is exactly what `generatorAsserted` says.
+      -- Components, not a rendering: `CallableId` has no parser from `render`, and reconstructing
+      -- an identity by splitting a display string is exactly the name-as-identity mistake R-0004
+      -- exists to remove.
+      .ok (.generatorAsserted, pairs.map (fun (m, n, d) =>
+        { callee := CallableId.ofUser m n, sourceBodyDigestV1 := d }))
+
+/-- The validated entry evidence for a named table, or a named refusal. -/
+def entryEvidenceForTable (name : String) : Except TableResolveRefusal (List TableEntryEvidence) :=
+  (entryEvidenceWithProvenance name).map (·.2)
 
 /-- Does the named table contain this callee, by IDENTITY?
 

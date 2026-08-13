@@ -1374,9 +1374,22 @@ probe "membership answers FALSE for a callee the table lacks" "true" '
       | .error _ => false'
 # A table the compiler cannot read REFUSES rather than answering "no". "Absent" and "cannot tell"
 # are different, and collapsing them silently narrows a dependency closure.
-probe "an unlinked table refuses BY NAME rather than answering absent" "true" '
-#eval match tableContainsCallee "Examples.ProofPatterns.Proofs.combineFns" (CallableId.ofUser "m" "x") with
+probe "a wholly unknown table refuses BY NAME rather than answering absent" "true" '
+#eval match tableContainsCallee "No.Such.Table" (CallableId.ofUser "m" "x") with
       | .error (TableResolveRefusal.unknownTable _) => true
+      | _ => false'
+
+# PROVENANCE IS DISTINGUISHED. An in-compiler table is RECOMPUTED (every body digest checked against
+# the actual `PFnDef.body`); an out-of-build table is generator-ASSERTED (digests held, no bodies to
+# check them against). Reporting the second as the first would be a weaker fact wearing a stronger
+# label — so the two must not compare equal.
+probe "an in-compiler table reports compiler-linked provenance" "true" '
+#eval match entryEvidenceWithProvenance "Concrete.Proof.proofFns" with
+      | .ok (TableProvenance.compilerLinked, _) => true
+      | _ => false'
+probe "an out-of-build table reports generator-asserted provenance, NOT compiler-linked" "true" '
+#eval match entryEvidenceWithProvenance "Examples.ProofPatterns.Proofs.combineFns" with
+      | .ok (TableProvenance.generatorAsserted, rows) => !rows.isEmpty
       | _ => false'
 
 # DISPATCH COVERAGE against the real hand-back inventory. A table named by the checked-in
@@ -1393,8 +1406,11 @@ echo "  hand-back names $NTBL tables; dispatch resolves $KNOWN (unlisted:${UNKNO
 # `combineFns` is defined under proofs/, OUTSIDE the compiler build, so it cannot be linked and its
 # refusal is correct rather than a gap. Named explicitly: "one is unlisted" would stay true if a
 # different table silently became unresolvable.
+# `combineFns` is no longer unlisted-and-unresolvable: it is unlisted in the DISPATCH (correctly —
+# linking it would be a dependency cycle) and resolved from `externalTableEntries` instead. So the
+# expectation is unchanged here, and the provenance probes above assert the difference in strength.
 if [ "$NTBL" -gt 0 ] && [ "$UNKNOWN" = " Examples.ProofPatterns.Proofs.combineFns" ]; then
-  ok "every in-compiler table is dispatched ($KNOWN/$NTBL); the one exception is the out-of-build combineFns"
+  ok "every in-compiler table is dispatched ($KNOWN/$NTBL); combineFns resolves as data, not by linking"
 else
   no "dispatch coverage changed: unlisted =$UNKNOWN (expected only Examples.ProofPatterns.Proofs.combineFns) — a table the dispatch omits refuses as missing evidence rather than as a stale dispatch"
 fi
@@ -1505,10 +1521,14 @@ C_USABLE="$(printf '%s' "$CORR_LINES" | grep -c 'usable=yes' || true)"
 C_EDGED="$(printf '%s' "$CORR_LINES" | grep -c 'matched=' || true)"
 C_SURPLUS="$(printf '%s' "$CORR_LINES" | grep -oE 'surplus=[0-9]+' | awk -F= '{s+=$2} END {print s+0}')"
 echo "  correspondence: $C_USABLE/$C_EDGED edge-bearing subjects fully correspond; total surplus $C_SURPLUS"
-if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "6" ]; then
-  ok "6 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
+# 6 -> 8 on 2026-08-13 when out-of-build table entries began crossing as data. The three remaining:
+# `fixed_capacity.validate_message` (theorem unclassified, upstream of correspondence),
+# one `calls.combine` fixture (an UNRESOLVED callee in the compiler graph, not a table problem),
+# and `main.validate_header` (its theorem names a table lacking the callee).
+if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "8" ]; then
+  ok "8 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
 else
-  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 6/11) — say which subjects changed and why"
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 8/11) — say which subjects changed and why"
 fi
 # SURPLUS MUST BE ZERO HERE, and this is a real assertion rather than a formality. Deriving one
 # witness per TABLE ENTRY produced surplus on 5 subjects, because a table legitimately holds

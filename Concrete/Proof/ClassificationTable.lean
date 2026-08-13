@@ -193,6 +193,23 @@ def validateRawRow : String × String × String × List (String × String) × Bo
             | some dup => .error (.tableNamedTwice dup)
             | none => .ok (ValidatedRow.mk n e dig tbls q)
 
+/-- Entry evidence for tables the COMPILER CANNOT LINK, crossed as data.
+
+    `proofs/` is a separate `lean_lib` whose modules import `Concrete`, so the compiler linking a
+    table defined there would be a cycle. Its closed dispatch therefore covers every in-compiler
+    table and cannot cover these. For these, and ONLY these, the generator — which does import
+    `Examples` — reads the value directly and emits its `(callee, sourceBodyDigestV1)` pairs.
+
+    **THIS EVIDENCE IS GENERATOR-ASSERTED, NOT COMPILER-RECOMPUTED**, and the difference is the
+    reason `TableProvenance` exists. For an in-compiler table the compiler recomputes each body
+    digest from the actual `PFnDef.body` and refuses on disagreement. Here it cannot: it holds a
+    digest and no body. A consumer must be able to tell those apart, because one is checked and the
+    other is trusted. -/
+def externalTableEntries : List (String × List (String × String × String)) :=
+[
+  ("Examples.ProofPatterns.Proofs.combineFns", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])
+]
+
 /-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`
     (docs/EVIDENCE_ARCHITECTURE.md) requires `ambiguous` to be a named refusal rather than folded
     into a general absence.
