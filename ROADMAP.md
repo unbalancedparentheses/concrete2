@@ -1087,6 +1087,7 @@ system.
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
+| — | **R-0479** | **OPPORTUNISTIC, and cheap.** A stub or diagnostic that has NOT computed a fact must not return a valid inhabitant of that fact's domain. `shadowEdgeKinds` returned `unclassified` — a legitimate `DependencyEdge` — when it had never consulted the classifier, which is why it produced a FALSE FINDING rather than an obvious wrong answer. Same shape as `| _ => true`. The receipt and manifest types already make this unrepresentable via private constructors and named refusals; diagnostics were exempt. Needs a survey of report code for defaults standing in for "did not look" |
 | — | **R-0478** | **OPPORTUNISTIC — no queue position, pick up whenever.** 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Neither blocks anything; both keep producing defects, so the right time is whenever someone is already in the file. The `substExpr` rename should happen BEFORE R-0474 retires the unsound one |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
 | 2d | **R-0475** | `ModuleOrigin` at project-graph entry, so a report can separate project from dependency obligations. The snapshot half is done; this is the compiler half |
@@ -5057,6 +5058,48 @@ delete it.
 replace it by an identity later puts the name in the record and in every consumer built against
 it. This is why the identity substrate moved into R-0473 rather than waiting for R-0474, and why
 `ResolvedContractRef` is a sum rather than a string with a companion type table.
+
+### Task R-0479
+
+**Scheduling: opportunistic.** Nothing blocks on it, and each instance is a one-line change. The
+survey is the work, not the fix.
+
+**Objective:** make "this was not computed here" unrepresentable as a valid fact value.
+
+**The defect, from a real failure.** `shadowEdgeKinds` reported edge kinds as
+
+```
+if e.fn.isTrusted then "trusted" else "unclassified"
+```
+
+having consulted no classification table. `unclassified` is a LEGITIMATE `DependencyEdge`
+constructor, so the output was indistinguishable from a real classification of an unclassified
+edge. That is why it did not read as a bug: it read as a finding. On 2026-08-13 it caused a
+coverage fail-open to be reported that did not exist, with a prediction that root coverage would
+fall 62/64 → ~53/64, committed and then retracted. Had the stub returned `NOT-CLASSIFIED-HERE`, the
+staleness would have been visible on the first line of output.
+
+**Why this is not the same task as one-producer-per-fact.** `check_one_producer.sh` (landed
+2026-08-13) would now catch a second producer of edge kinds. It would NOT catch a producer that
+computes the right fact from too little information and reports a plausible default — that is a
+separate failure mode, and the more deceptive of the two, because a wrong value that is in-domain
+survives every type check and every set-comparison gate.
+
+**The rule:** a function that may not have looked returns a value OUTSIDE the fact's domain —
+`ABSENT`, `NOT-COMPUTED-HERE`, `Option`, a distinct constructor — never a domain value that also
+means something specific. This is already the discipline for
+`ProofEvidenceReceipt` (private constructor, no `Inhabited`), `ImplementationManifest` (private
+`ofRows`), and `ManifestRefusal` (named reasons rather than a smaller count). Diagnostics were
+exempt because they "only report", which is exactly the assumption that made this one costly.
+
+**Scope:** survey `Concrete/Report/Report.lean` for defaults standing in for "did not look".
+Known-good examples to preserve, since they already follow the rule: `ABSENT (no structural body
+threaded)`, `NO-SUBJECT`, `UNPINNED`, `none (no call-graph entry)`. The suspects are any branch
+returning a domain value on a `none` or a fallback.
+
+**Acceptance:** each converted site returns an out-of-domain marker; at least one gate asserts that
+a report line for an uncomputed fact does NOT render as a valid value; and the `| _ =>` /
+`.getD <domain value>` pattern is counted so the number cannot silently rise.
 
 ### Task R-0478
 
