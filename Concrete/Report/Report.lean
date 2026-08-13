@@ -4206,7 +4206,7 @@ def workspaceFiles (pc : Concrete.ProofCore) (registry : ProofRegistry)
       -- comparing against the valid status set accepts both, which is the shape that made a stale
       -- edge-kind line produce a false finding rather than an obvious wrong answer.
       let st := (pc.obligations.find? (·.functionId.qualName == qualName)).map (·.status.canonical)
-                  |>.getD "no_obligation_record"
+                  |>.getD Concrete.noObligationRecord
       files := files ++ [(s!"obligations/{artifactDirName s!"{qualName}#ensures"}.json", oblFile s!"{qualName}#ensures" "ensures" st (toString f.span.line) reqHyps (Concrete.fmtExpr ens))]
   | none => pure ()
   files := files ++ [("check.sh", s!"#!/usr/bin/env bash\n# Kernel-verify this function's linked Lean proof (structured JSON).\nconcrete prove {inputPath} {qualName} --check --json\n")]
@@ -5116,8 +5116,8 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
         -- that the capability arrived transitively. `origin_unavailable` is outside the vocabulary
         -- and so cannot be read as an origin.
         | some (_, .str "transitive") => "transitive"
-        | _ => "origin_unavailable"
-      | _ => "origin_unavailable"
+        | _ => Concrete.originUnavailable
+      | _ => Concrete.originUnavailable
   let result := Val.obj [
     ("schema_version", .num (Int.ofNat schemaVersion)),
     ("kind", .str "query_answer"),
@@ -5284,8 +5284,8 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
             match kvs.find? (fun (k, _) => k == "origin") with
             | some (_, .str o) => o
             -- R-0479: an absent origin key or a non-object trace is not evidence of transitivity.
-            | _ => "origin_unavailable"
-          | _ => "origin_unavailable"
+            | _ => Concrete.originUnavailable
+          | _ => Concrete.originUnavailable
       .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
     -- Predictable
     let violations := modules.foldl (fun acc m =>

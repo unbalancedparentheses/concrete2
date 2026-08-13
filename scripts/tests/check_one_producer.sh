@@ -70,6 +70,14 @@ formula() {  # label | fragment | expected sole owner
 formula "V1 source-body digest"  'shortHash (Proof.pexprCanonical' 'Concrete/Proof/BodyIdentity.lean'
 formula "implementation digest"  'shortHash ("implementationV1:'   'Concrete/Proof/ImplementationIdentity.lean'
 
+# THE "NOT READ" MARKERS. Registered as formulas because that is what they are: a fact whose spelling
+# several surfaces must agree on. Three call sites spelled `no_obligation_record` independently right
+# after the R-0479 fix, and a marker whose spelling can drift is one a consumer cannot match on —
+# a flat-string fact with several producers, which is the shape docs/EVIDENCE_ARCHITECTURE.md names as
+# what typed evidence replaces. Until these become typed, one definition each is the enforceable half.
+formula "no-obligation marker"    '"no_obligation_record"' 'Concrete/Proof/ProofCore.lean'
+formula "origin-unread marker"    '"origin_unavailable"'   'Concrete/Proof/ProofCore.lean'
+
 # ================================================================================================
 # OWNER REGISTRY — definition plus permitted consumers, asserted as an exact set.
 # ================================================================================================

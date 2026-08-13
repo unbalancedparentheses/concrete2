@@ -1516,6 +1516,32 @@ inductive ObligationStatus where
   | depsNotCurrent
   deriving BEq, Repr
 
+/-- The marker for "no obligation record was found for this function".
+
+    R-0479. Deliberately NOT a member of `ObligationStatus.canonical`'s vocabulary: a failed lookup
+    must not render as a status, or "no record exists" becomes indistinguishable from "a record
+    exists and its proof is missing". Three sites defaulted to `"missing"` and said the second thing
+    while meaning the first.
+
+    ONE DEFINITION, because three call sites spelled it independently after the fix, and a marker
+    whose spelling can drift is a marker a consumer cannot match on. `check_one_producer.sh` pins
+    that this literal appears in exactly one file — the same discipline applied to digests, since a
+    string constant duplicated across surfaces is a flat-string fact with several producers
+    (`docs/EVIDENCE_ARCHITECTURE.md` names that shape as the thing typed evidence replaces). -/
+def noObligationRecord : String := "no_obligation_record"
+
+/-- The marker for "this capability's origin could not be read".
+
+    R-0479, and the reason it is not `"transitive"` — which is what it used to be. `transitive` is a
+    real origin with positive content, so an absent `origin` key or a malformed trace rendered as a
+    claim that the capability arrived by that route. This value is outside the origin vocabulary and
+    asserts nothing.
+
+    Sits beside `noObligationRecord` so the markers have ONE home: they are the same kind of thing
+    (an out-of-domain value meaning "not read"), and scattering them is how one gets renamed while
+    a consumer keeps matching the old spelling. -/
+def originUnavailable : String := "origin_unavailable"
+
 /-- Canonical string representation of an ObligationStatus.
     This is the single source of truth for status terminology across
     all output surfaces: JSON facts, CLI reports, documentation, and
