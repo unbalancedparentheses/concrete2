@@ -213,6 +213,14 @@ A report says *what* was verified, *which* theorem / decision procedure / oracle
 / runtime check / trusted boundary supports it, and what remains outside — never
 one undifferentiated "formally verified."
 
+The target architecture keeps five facts separate: whether the proposition
+describes the source, whether it is logically valid, whether its dependencies
+are closed, what exact replay occurred, and whether current consumer policy
+accepts that replay. See
+[Evidence Architecture](docs/EVIDENCE_ARCHITECTURE.md) and
+[Verification IR](docs/VERIFICATION_IR.md). These are product direction;
+[Claims Today](docs/CLAIMS_TODAY.md) remains authoritative for shipped support.
+
 ## Four Claim Shapes
 
 These are intentionally different, and Concrete keeps them different — each is

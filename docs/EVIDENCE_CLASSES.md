@@ -12,6 +12,12 @@ scope, method, status, trust, freshness, and replay facts. These labels will
 remain useful composite views, but they are not a universal ranking and must not
 be read as mutually exclusive semantic dimensions.
 
+The normative target is [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md).
+These labels remain user-facing projections; they do not replace the separate
+facts for source correspondence, logical validity, dependency closure, replay
+history, and policy acceptance. In particular, a historical replay receipt can
+remain accurate while a current checker advisory makes policy reject it.
+
 The corpus under [`examples/evidence_classes/`](../examples/evidence_classes/)
 holds one clean subexample per class (no flagship-scale noise). Flagships are
 referenced where they are the better illustration.

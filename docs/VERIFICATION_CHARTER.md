@@ -76,6 +76,12 @@ encrypt        proved       proved   proved        bounded     relational: missi
 The rows and statuses must be derived from the same structured evidence used by
 policy and package artifacts, never reconstructed by the display layer.
 
+The normative target representation is defined in
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md). It separates source
+correspondence, logical validity, dependency closure, immutable replay receipts,
+and time-relative policy decisions. An advisory can invalidate current policy
+acceptance without rewriting the historical fact that a replay occurred.
+
 ## Product invariants
 
 1. **No silent coverage loss.** Every relevant construct is lowered,
@@ -132,6 +138,11 @@ source-to-Core and Core-to-obligation boundaries: differential validation is
 useful evidence today, while formal semantics, bridge lemmas, and verified
 translation strengthen individual rows over time.
 
+[VERIFICATION_IR.md](VERIFICATION_IR.md) owns the target fragment, semantics,
+canonical encoding, identities, and extension admission rules. Prover-specific
+languages may be richer; their extra machinery remains backend trust rather
+than silently expanding portable VIR semantics.
+
 ## Evidence is a vector, not a ladder
 
 Evidence must retain at least these independent dimensions:
@@ -145,6 +156,11 @@ Evidence must retain at least these independent dimensions:
 | independence | shared bridge; independent renderer; independent kernel |
 | composition | local; call-closed; package-closed |
 | freshness | unbound; source-bound; dependency-bound |
+
+These display dimensions are projections of the five-object evidence model,
+not the authoritative storage schema. In particular, replay history and
+current policy acceptance are different facts, and checker advisory state is a
+validation-time input rather than an immutable receipt field.
 
 Multi-kernel evidence is a differentiator because it makes claims portable
 across trust foundations. It is valuable only when the artifact and its lowering

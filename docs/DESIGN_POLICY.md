@@ -21,7 +21,7 @@ If an idea improves ergonomics while making the compiler harder to explain, it i
 
 ## Feature Admission Checklist
 
-Every proposed feature must pass all twelve checks. Failing any one is grounds for rejection.
+Every proposed feature must pass all fourteen checks. Failing any one is grounds for rejection.
 
 ### 1. Can it be explained as a simple invariant?
 
@@ -76,6 +76,22 @@ Every new construct must define its verification lowering, a conservative
 abstraction, or a precise unsupported-fragment diagnostic. Silence is not an
 admissible fallback. Policy may permit named holes, but it may not erase them.
 
+### 13. Is its evidence represented as precisely as its claim?
+
+A feature must define distinct typed identities for its subject, claim,
+dependencies, artifacts, checker rules, and freshness where those concepts can
+change independently. Interchangeable strings, optional authoritative fields,
+first-match lookup, and display-derived status are rejection signals. Reports
+project validated facts; they do not manufacture them.
+
+### 14. Does it remain honest under hostile input and later revocation?
+
+Proof modules, generated artifacts, dependency tables, receipts, package
+bundles, and checker output are adversarial inputs. A feature must define
+resource limits, malformed/duplicate/surplus behavior, negative controls,
+mutation tests, and how a checker or assumption advisory degrades existing
+claims without collapsing unaffected evidence dimensions.
+
 ## Quick Decision Rule
 
 **Adopt** ideas that are: explicit, local, phase-separated, summary-friendly, easy to lower away.
@@ -100,12 +116,15 @@ The highest-leverage improvements for Concrete are:
 2. Exhaustive and fail-visible verification-coverage accounting
 3. Core and the verification IR as semantic authorities
 4. Independently replayable evidence artifacts and proof-aware interfaces
-5. Summary-based frontend (declaration-level cross-file info)
-6. ABI/layout subsystem clarity
-7. Audit-focused tooling, explainability, and compiler outputs
-8. Small but excellent standard library
-9. Explicit project/build model
-10. Proof-driven narrowing
+5. Typed evidence identities and separately degradable claim dimensions
+6. Total contract-callable functions and source-level specification power
+7. Declaration-isolated checking and non-vacuous assurance infrastructure
+8. Summary-based frontend (declaration-level cross-file info)
+9. ABI/layout subsystem clarity
+10. Audit-focused tooling, explainability, and compiler outputs
+11. Small but excellent standard library
+12. Explicit project/build model
+13. Proof-driven narrowing
 
 These are high leverage because they improve compiler structure, user trust, auditability, proof tractability, and future tooling options simultaneously.
 
@@ -119,5 +138,8 @@ These are high leverage because they improve compiler structure, user trust, aud
 
 The [verification charter](VERIFICATION_CHARTER.md) defines the product-level
 direction these admission rules protect.
+The [evidence architecture](EVIDENCE_ARCHITECTURE.md) and
+[Verification IR](VERIFICATION_IR.md) define the representation and semantic
+boundaries these checks require.
 
 Concrete gets stronger by becoming sharper, not merely bigger.

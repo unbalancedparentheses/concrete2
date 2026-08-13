@@ -9,6 +9,10 @@ For the public guarantee statement, see [GUARANTEE_STATEMENT.md](GUARANTEE_STATE
 For the effect/trust proof boundary, see [EFFECT_PROOF_BOUNDARIES.md](EFFECT_PROOF_BOUNDARIES.md).
 For the language-semantics vs proof-semantics boundary, see [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md).
 For the user-facing proof contract, see [PROOF_CONTRACT.md](PROOF_CONTRACT.md).
+For the ratified replacement model, see
+[EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md). The target does not add a
+sixth composite class; it replaces composite authority with five separate
+objects and typed evidence-family variants.
 
 ---
 

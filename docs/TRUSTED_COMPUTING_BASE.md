@@ -64,9 +64,17 @@ Those claims are only honest if the trusted computing base stays visible.
 
 This is the core trust anchor for the "proved" label. When `--report check-proofs` invokes `lake env lean` and the theorem compiles without `sorry`, the Lean kernel has verified it. The Concrete compiler does not re-verify the proof — it trusts the Lean kernel's verdict.
 
+That verdict is conditional on the exact kernel implementation, version,
+rule set, exporter, and retained environment. Kernel soundness defects can
+admit axiom-free false theorems; `--trust=0` and an empty axiom inventory do not
+detect that class. Checker identity is therefore versioned evidence, and
+current acceptance is revocable policy rather than a timeless receipt fact.
+
 **Not currently claimed:**
 
 - Lean kernel correctness itself (Lean's kernel is widely trusted but not formally verified against an independent specification in this project)
+- That attached proof modules or serialized environments are benign; they are adversarial checker input
+- That two implementations are independent merely because their executable names differ
 
 ### 3. Proof attachment / registry / fingerprint machinery
 
@@ -247,13 +255,20 @@ Not yet defined. The intended shape is to inherit all three TCBs (safe + predict
 trusted base, and leave one conspicuous thing in it. Both directions belong here,
 because the badge is easy to read as stronger than it is.
 
-**Removed: sole dependence on one kernel's soundness.** An obligation closed by Lean's
+**Reduced: sole dependence on one kernel's soundness.** An obligation closed by Lean's
 `omega` *and* by Rocq's `lia` (and/or Isabelle's `presburger`) no longer rests on any
 single prover implementation being correct. With Isabelle among the attesters the
 agreement also spans logics — HOL rather than a CIC-family type theory — so a
 foundational error in one family does not silently carry the claim. Each attestation
 is recorded as a receipt carrying the exact tool version, so a claim can be
 re-audited, or invalidated, when a specific prover release is later found buggy.
+
+This reduction is conditional on version currency and genuine independence.
+Record code lineage, algorithm, logical foundation, parser, exporter, shared
+libraries, and shared specification separately. Two ports of the same flawed
+rule are not equivalent to two proof-system families, and an affected checker
+is rejected wholesale unless an independently checked feature footprint safely
+narrows the advisory's reach.
 
 **NOT removed: the Core→obligation bridge.** Every kernel checks a lowering produced
 by ONE shared bridge. If that bridge emits the wrong proposition, all kernels agree on
