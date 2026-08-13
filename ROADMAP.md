@@ -1165,7 +1165,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** remaining trust boundaries | mid-flight; subject V2 is deterministic/refrozen and the exact migration inventory is closed 44/44. Slice 6 computes shared roots in shadow (62/64 root, 2 named refusals). Classification rows retain and validate theorem/table material, and table bodies are provenance-bound; implementation-manifest provenance/completeness and exact per-edge correspondence remain open. Current transition: close those two manifest boundaries → exact per-edge correspondence → zero proved-subject refusals → authority-transition gate → replay receipts and migration → Slice 8. The ninth table and formal closure remain blocked on mutable-borrow ProofCore extraction |
+| 1 | **R-0004** remaining trust boundaries | mid-flight; subject V2 is deterministic/refrozen, migration inventory is closed 44/44, and implementation-manifest provenance/completeness are implemented and corpus-measured. Slice 6 has a synthetically controlled closed correspondence join, compiler-linked resolution for 8/9 referenced table identities, and shared roots in shadow (62/64 root, 2 named refusals). Current transition: populate correspondence from real subjects → resolve the named external `combineFns` case → measure and mutation-kill the production consumer → zero proved-subject refusals → authority-transition gate → replay receipts and migration → Slice 8. Separately, proof-table migration remains 8/9 tables (42/45 entries) and formal closure remains blocked on mutable-borrow ProofCore extraction |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -3516,9 +3516,11 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | classification freshness | **implemented and mandatory-gated** | checked-in rows are compared with the live Lean environment |
 | classification structural validation | **implemented and mutation-controlled** | malformed, ambiguous and duplicate rows cannot classify |
 | table/body provenance | **implemented and mutation-killed** | stored provenance is recomputed from the actual `PFnDef.body` |
-| implementation-manifest provenance | **OPEN** | caller-supplied digest construction still prevents authoritative use |
-| implementation-manifest completeness | **OPEN** | `filterMap` can produce a smaller, non-self-denominating manifest |
-| theorem-to-call-edge correspondence | **OPEN — critical semantic boundary** | caller-wide labels cannot justify individual call edges |
+| implementation-manifest provenance | **implemented and mutation-killed** | authoritative construction computes digests internally; raw-digest construction is closed on the gated path |
+| implementation-manifest completeness | **implemented and corpus-measured** | exact expected/row/refusal sets replace `filterMap`; 64 expected, 63 rows and 1 named refusal are visible |
+| closed correspondence join | **implemented and synthetically controlled** | `CorrespondenceResult` retains matched, missing, ambiguous, surplus and malformed sets; this is not yet corpus or verdict authority |
+| production correspondence population | **OPEN — critical semantic boundary** | real compiler edges, validated classification rows and resolved tables are not yet assembled per subject into `CorrespondenceInput` |
+| table-resolution inventory | **PARTIAL: 8/9 referenced table identities resolve** | `combineFns` is the single named external-table refusal; resolution is not silently treated as absence |
 | dependency-root computation | **shadow-measured: 62/64 root, 2 named refusals** (re-measured 2026-08-13, not carried from notes) | roots MUST NOT affect production status yet |
 | implementation-manifest accounting | **shadow-measured: 64 expected, 63 rows, 1 named refusal** (`extracted-missing` in `examples/proof_pressure/src/main.con`, so that file is correctly not usable). The old `filterMap` returned that file's 4 rows as an apparently complete manifest — the incompleteness predates the fix; only its visibility changed | manifest MUST NOT affect production status yet |
 | report/CLI disposition integrity | **OPEN — two concrete acceptance defects found 2026-08-13**: `--report impl-manifest` prints its payload but falls through to `Unknown report type` and exits 1; a failed obligation lookup now renders the honest marker `no_obligation_record` but the prove exit-code catch-all maps it to success | no report or proof-facing CLI result is authoritative until its payload, stderr and process disposition agree and are gated together |
@@ -3526,25 +3528,8 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | ~~edge sources disagree = coverage fail-open~~ **RETRACTED 2026-08-13, diagnosed backwards** | I recorded that 9 of 64 subjects rooted over a smaller edge set, called it a coverage fail-open, and predicted root coverage would fall to ~53/64 once fixed. **All of that was wrong.** `shadow edgeKinds` was a STUB: it derived callees from the evidence body then assigned the kind as `if isTrusted then "trusted" else "unclassified"`, consulting no classification table, so every non-trusted edge read `unclassified` regardless of the hand-back. The root was correct and the REPORT was stale — and since `dependencyRootMaterial` refuses any non-current edge, a subject with edges that roots has current edges by construction. **Root coverage remains 62/64 and was never inflated.** Fixed by making both lines read one source (`dependencyNodesOf`); the gate now asserts the invariant (no subject roots while reporting a non-current edge, 0 observed) plus its non-vacuity (12 non-current edges exist) | one producer for edge kinds; a hand-coded second opinion cannot drift from the real one if there is no second opinion |
 | real edge-kind distribution | **28 `body`, 11 `unclassified`, 1 `missing`** across 40 edges and 11 edge-bearing subjects (53 of 64 subjects have no outgoing edge). Measured 2026-08-13 through the corrected line. **Supersedes the earlier "all 40 unclassified, zero body" figure, which was read off the stub** | correspondence CAN be demonstrated on this corpus — 28 classified `body` edges exist, so a correspondence gate would not be vacuous. The earlier claim that it would be is withdrawn |
 | **per-edge correspondence maps to `DependencyClosure`, NOT `SourceCorrespondence`** | Corrected 2026-08-13 by reading `docs/EVIDENCE_ARCHITECTURE.md` rather than inferring from the commit subject: my first reading assumed the ratified `SourceCorrespondence` object superseded the `EdgeJustification` design. It does not. `SourceCorrespondence` is proposition↔source/Core behaviour; `DependencyClosure` is "every compiler edge, theorem witness, contract hypothesis, table entry, implementation, assumption and trusted boundary … present, unique, current, and consumed exactly once", with missing/surplus/duplicate/ambiguous/unclassified/mismatched as NAMED refusals never discarded by `filterMap` or a first-match lookup. **The slice-6 work is the implementation of `DependencyClosure`, not something replaced by the new architecture** | build `DependencyClosure`, not a parallel `EdgeJustification`. The architecture also retroactively endorses the two fixes already landed: `filterMap` removal and the first-match join both appear in its list of forbidden shapes |
-| **three refusal sets required by `DependencyClosure` are not named yet** | Measured against the six the doc requires. `missing` ✓ (`DependencyEdge.missing`, `ManifestRefusal.*Missing`), `duplicate` ✓ (`tableEntryEvidence` duplicate identities, `ofRows` duplicate callable, `DepRootError.duplicateId`), `unclassified` ✓ (`DependencyEdge.unclassified`). **`mismatched` is refused but UNNAMED** — `tableEntryEvidence` returns `Option`, so all six of its distinct refusals (no identity, no provenance, wrong schema, wrong scope, body mismatch, duplicate identity) collapse to `none`, which is exactly the "discarded rather than named" shape the doc forbids, in code landed 2026-08-11. ~~**`ambiguous` is collapsed too**~~ **NAMED 2026-08-13** — `validatedRowOf` now returns `Except ClassificationRefusal ValidatedRow` with `absent`, `ambiguous (count)` and `malformed`. The VERDICT is deliberately unchanged: `classifiedEdgeOf` still answers `unclassified` for all three, because the fail-closed decision does not depend on why the classification is unusable. Only the record differs — and it has to, since the three have different fixes (regenerate the hand-back, resolve a conflict, repair a row) and one `none` sends a reader to the wrong place. The sub-reasons INSIDE `validateRawRow` remain collapsed; that is the next layer. **`surplus` DEFINED and IMPLEMENTED 2026-08-13** in `Concrete/Proof/Correspondence.lean` — `correspond` performs the closed join and `CorrespondenceResult` retains all four sets. **NOT WIRED to production:** nothing calls it, and it cannot be fed from the corpus until the hand-back carries per-table entry evidence. The join and every refusal are gated; corpus coverage is not claimed. All 6 `DependencyClosure` refusal sets are now named (count derived by the gate).
-
-> Surplus is evidence supplied to a particular correspondence operation that belongs to no requested edge or witness slot in that operation.
-
-It is NOT "any classification-table row unused by this proof". A global classification table may hold entries for other proofs; a function table may hold implementations this caller never reaches; whole-table material may be intentionally bound for dynamic lookup. **None of those is surplus merely because one proof does not consume every entry** — which is exactly the over-broad reading I would have implemented without this decision.
-
-Surplus exists only at a CLOSED join boundary — requested compiler edges against theorem-derived justifications returned for this subject. After exact matching: `missing` = requested edges with zero justification; `ambiguous` = requested edges with more than one; `matched` = exactly one valid; `surplus` = returned justifications consumed by no requested edge. All four sets are RETAINED. Usable only when `missing = ∅`, `ambiguous = ∅`, `surplus = ∅`, and `matched.count = requested.count`.
-
-Surplus must refuse because it can indicate a stale theorem/table entry, a witness attached to the wrong caller, a callee identity mismatch, a producer/consumer inventory disagreement, a duplicated or fabricated dependency, or a proof claiming a dependency the compiler graph does not contain.
-
-**Dynamic access:** a whole-table witness is ONE justification for the dynamic edge, with the entire table as its required material. Entries inside it are not independently expected to match call edges and do not produce per-entry surplus.
-
-**Ordering rule:** compute surplus only AFTER validating witness identity and attempting the exact join. Never pre-filter unknown witnesses away — pre-filtering is how surplus disappears while looking handled.
-
-Shape: `CorrespondenceInput { requestedEdges, candidateWitnesses }` → `CorrespondenceResult { matched, missing, ambiguous, surplus, malformed }`.
-
-**Required controls:** one extra unrelated witness → exactly one named surplus; removing it restores usability; a witness for the right callee but wrong caller/subject is surplus OR mismatched by whichever identity field fails, never silently consumed; a dynamic whole-table witness is consumed once with no per-entry surplus; a global table row outside the requested theorem inventory produces NO correspondence surplus; duplicating a matched witness yields ambiguity, not one match plus one surplus; swapping two witnesses yields mismatched/ambiguous, never a successful join; and dropping surplus handling via `filterMap` must be mutation-killed by the production root consumer. | give `tableEntryEvidence` an `Except` with a named refusal per reason; split `ambiguous` out of `ClassificationTable`'s `none`; decide what `surplus` means for a table (an entry no edge needs is not obviously an error, so this one needs a definition before an implementation) |
+| DependencyClosure refusal vocabulary | **implemented: 6/6 named, gate-derived** | missing, duplicate, ambiguous, unclassified, mismatched and surplus remain distinct; production reachability and consumption are still pending |
 | ~~the compiler cannot check table membership per edge~~ **RESOLVED 2026-08-13 — the blocker was not one** | Recorded for weeks as needing the generator to `evalExpr` each `FnTable` and cross entry evidence over as data. The premise was half wrong: the hand-back really does carry only a name and a whole-table digest, **but the compiler IS a Lean program and these tables are ordinary definitions inside it**, so the values were already linked in. Only a name→value dispatch was missing. `Concrete/Proof/TableResolve.lean` provides it; `tableContainsCallee` answers the question per edge. Measured: `proofFns` 2 entries, `cryptoFns` 4, `elfFns` 5; membership true for a held callee, false for an absent one, and a named refusal for an unlinked table. **8 of the 9 tables the hand-back names are dispatched; the exception is `Examples.ProofPatterns.Proofs.combineFns`, defined under `proofs/` outside the compiler build, which correctly refuses.** The dispatch-coverage gate found a real omission while being written — `FnTable.empty` — which would have reported a vacuously-empty membership as an unresolvable dependency | no `evalExpr`, no generator change, no schema change. Correspondence can now be fed from real tables |
-| ~~the compiler cannot check table membership per edge (superseded row)~~ | The classification hand-back row is `(theorem, kind, artifactDigest, [(tableName, tableDigest)], quantifies)` — table NAME and WHOLE-table digest, **no entry-level material**. `tableEntryEvidence`/`bindEntryImplementations` operate on `FnTable` VALUES, which exist only Lean-side. So "does table T contain callee C" is unanswerable compiler-side today. **This one stands — re-verified after the retraction above, since it was measured from the row shape rather than from the stub** | the hand-back must also carry per-table entry evidence (callee identity + body digest). Generator + schema change, and it is the concrete blocker for `EdgeJustification` |
 | the two denominators | **the same 64, agreeing FILE BY FILE across all 20 sources.** Both derive from `pc.entries`, so this is a divergence tripwire rather than independent confirmation — its value is catching a later filter on either side, which totals alone would miss (one file gaining an identity while another loses one keeps the sum at 64) | — |
 | dependency-aware verdict composition | **PROHIBITED** | no dependency-aware `proved` may issue before the authority-transition gate |
 | replay receipts and corpus migration | **PENDING** | no receipt is replay-backed or authoritative |
@@ -3600,12 +3585,13 @@ remains `unclassified`. Include a valid singleton as the over-rejection control.
 or mapping any refusal to a current edge is killed through the production consumer. A refusal set
 is not marked closed merely because a local test reconstructed its expected branching logic.
 
-#### Open boundary: implementation-manifest provenance
+#### Closed foundation: implementation-manifest provenance
 
-**Status:** OPEN.
+**Status:** IMPLEMENTED, MUTATION-KILLED, AND CORPUS-EXERCISED.
 
-**Risk:** a public format-only constructor can accept a syntactically valid invented digest. A
-private envelope around caller-supplied provenance is not authoritative provenance.
+The former risk was a public format-only constructor accepting a syntactically valid invented
+digest. The authoritative path now constructs complete inputs and computes its digests internally;
+the acceptance and mutation criteria below remain as permanent regression requirements.
 
 **Required implementation:**
 
@@ -3625,14 +3611,15 @@ the frozen V2 subject and V1 golden remain byte-identical.
 another callable's facts or body; remove body provenance. Each must prevent binding through the
 real consumer path.
 
-**Unblocks:** self-denominating manifest completeness and body-edge correspondence.
+**Result:** unblocked self-denominating manifest completeness and body-edge correspondence.
 
-#### Open boundary: implementation-manifest completeness
+#### Closed foundation: implementation-manifest completeness
 
-**Status:** OPEN.
+**Status:** IMPLEMENTED AND MEASURED ON REAL INPUT.
 
-**Risk:** `filterMap` silently omits undescribable entries, making an incomplete manifest look
-complete over a smaller set.
+The former `filterMap` risk is closed: the result retains its expected denominator, rows and named
+refusals. The real corpus reports 64 expected identities, 63 rows and one `extracted-missing`
+refusal; the incomplete source is unusable rather than silently narrowed.
 
 **Required implementation:** return a result with the exact expected eligible identity set,
 success rows and named refusals. A manifest usable for correspondence exists only when expected
@@ -3645,22 +3632,43 @@ entry prevents a usable manifest rather than shrinking it.
 **Required mutations:** delete one produced row; introduce one incomplete eligible entry; duplicate
 an identity; return rows in another order. The first three refuse and the last remains equivalent.
 
-**Unblocks:** exact per-edge correspondence.
+**Result:** unblocked exact per-edge correspondence.
 
 #### Open boundary: theorem-to-call-edge correspondence
 
-**Status:** OPEN — critical path.
+**Status:** JOIN IMPLEMENTED AND SYNTHETICALLY CONTROLLED; REAL-SUBJECT POPULATION AND PRODUCTION
+CONSUMPTION OPEN — critical path.
 
 **Risk:** applying one theorem-level `contract` or `body` label to every callee can under-bind the
 dependencies the theorem actually uses. Quantifying over a table is necessary for some contract
 proofs but does not establish a corresponding contract hypothesis for a particular callee.
 
-**Required implementation:** produce `validatedEdgesOf`-style evidence with exactly one
-dependency-specific justification for every compiler-produced call edge. A body witness binds the
-exact callable implementation and table material; a contract witness binds the exact callee
-contract/hypothesis; a trusted witness originates only at the compiler-declared trust boundary.
-Preserve missing, surplus, duplicate, unknown, ambiguous and mismatched sets as named refusals;
-never discard them with `filterMap`.
+`Concrete/Proof/Correspondence.lean` now owns the closed join. `correspond` consumes requested edges
+that include callee identity—not bare edge kinds—and candidate witnesses, while
+`CorrespondenceResult` retains matched, missing, ambiguous, surplus and malformed material. All six
+DependencyClosure refusal classes are named and the synthetic join controls pass. A permutation of
+correctly identified same-kind witnesses is deliberately accepted; changing identity or kind is
+the meaningful swap and refuses.
+
+**Required production wiring:** for every real proved subject, construct requested edges from the
+compiler graph; obtain the validated theorem classification; resolve every named table through the
+closed table dispatch; derive candidate witnesses; run `correspond`; retain every result set in the
+subject's dependency closure; and publish a separate real-corpus correspondence denominator. Do
+not count the synthetic join gate as corpus correspondence.
+
+**Surplus scope:** surplus means a candidate supplied to this closed correspondence operation that
+matches no requested edge or witness slot. It does not mean an unrelated row in the global
+classification table or an unused entry of a whole table. Compute it only after identity validation
+and the exact join; never pre-filter unknown candidates. A dynamic whole-table witness is consumed
+once for the dynamic edge and does not create per-entry surplus.
+
+**Table-resolution inventory:** `Concrete/Proof/TableResolve.lean` resolves ordinary Lean table
+definitions already linked into the compiler. Eight of nine table identities referenced by the
+hand-back resolve. `Examples.ProofPatterns.Proofs.combineFns`, defined under `proofs/` outside the
+compiler build, is the single named refusal. This replaces the disproved plan to add `evalExpr`, a
+generator change and per-entry hand-back schema. Resolution must remain a closed, unique inventory:
+unknown and duplicate names refuse, table identity/digest must agree, and deleting or misrouting a
+dispatch entry must make the corresponding production subject refuse.
 
 **Acceptance:** every actual call edge has exactly one validated justification; every theorem
 witness is consumed exactly once or reported; dynamic table access binds the whole table; direct,
@@ -3678,8 +3686,8 @@ corresponding root refuse.
 **Status:** PROHIBITED. This is the single gate between shadow material and production `proved`.
 Do not connect roots to status composition until every item is true:
 
-- [ ] implementation-manifest provenance is closed by construction;
-- [ ] the manifest denominator is exact and every refusal is named;
+- [x] implementation-manifest provenance is closed by construction;
+- [x] the manifest denominator is exact and every refusal is named;
 - [ ] every compiler-produced call edge has exactly one validated justification;
 - [ ] no theorem-derived witness, table binding or compiler edge remains unmatched;
 - [ ] body witnesses bind exact implementation identities;
@@ -3772,7 +3780,7 @@ and V2 is refrozen. Removed rather than left standing, because a stale caveat ab
 non-determinism is exactly the sentence someone would quote to justify not trusting the digest.)*
 
 **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
-> | 6 | **active / shadow** — one ProofCore producer feeds ProofCore/report dependency-root measurement; 62/64 subjects root and 2 refuse explicitly. Root order invariance, semantic sensitivity, edge-kind binding and deep trust propagation are gated. The checked-in hand-back retains only theorem/kind strings and a caller-level kind is still applied to every callee, so classification evidence and per-edge correspondence remain open. No root may affect production status yet |
+> | 6 | **active / shadow** — one ProofCore producer feeds ProofCore/report dependency-root measurement; 62/64 subjects root and 2 refuse explicitly. The closed correspondence join and all six refusal classes are synthetically gated; compiler-linked table resolution covers 8/9 referenced identities. Real-subject input construction, `combineFns`, production-consumer mutations and verdict integration remain open. No root may affect production status yet |
 > | 7 | receipt issuance and corpus migration **not started** |
 > | 8 | adversarial validation of the authoritative pipeline **not started**; R-0004 cannot close without it |
 >
@@ -3909,9 +3917,9 @@ has landed while the slice's user-visible outcome remains incomplete.
 | 1 | executable witnesses | **LANDED** | Preserve the positive controls and convert each defect tripwire when its owning slice closes. |
 | 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
 | 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
-| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — 8 of 9 tables (42 of 45 entries), whole-table binding, validated receipt core and environment-ID helpers landed** | Derive real production environment inputs; add root, theorem/artifact, replay and trust/assumption fields; canonical serialization, validated decoding and storage; connect one production consumer; register production-consumer mutations. The ninth table is blocked on mutable-borrow ProofCore extraction. |
+| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — proof-table migration is 8 of 9 tables (42 of 45 entries), whole-table binding, validated receipt core and environment-ID helpers landed** | Derive real production environment inputs; add root, theorem/artifact, replay and trust/assumption fields; canonical serialization, validated decoding and storage; connect one production consumer; register production-consumer mutations. This 8/9 denominator is proof-table migration; its ninth table is blocked on mutable-borrow ProofCore extraction and must not be confused with Slice 6's 8/9 runtime table-resolution inventory. |
 | 5 | complete semantic `ProofSubjectDigest` | **FOUNDATION COMPLETE — deterministic V2 refrozen; exact manifest CLOSED 44/44** | Keep V2 shadow until Slice 7 successfully replays and migrates every link. Preserve semantic-change and invariance controls. Activation, not subject definition, remains. |
-| 6 | deterministic transitive dependency material/root | **ACTIVE / SHADOW — one ProofCore node producer feeds ProofCore/report roots; 62/64 root, 2 named refusals; determinism/sensitivity/trust gates landed** | Preserve full theorem/table evidence in an exact typed hand-back; prove classification-to-call-edge correspondence; represent trusted/excluded boundaries; reach zero proved-subject refusals; then make status composition require the validated root, kill skip/omit-root mutations and retire old name-keyed/advisory routes. |
+| 6 | deterministic transitive dependency material/root | **ACTIVE / SHADOW — closed correspondence join implemented and synthetically controlled; runtime table resolution covers 8 of 9 referenced identities; roots remain 62/64 with 2 named refusals** | Construct and measure correspondence for every real proved subject; resolve the named external `combineFns` table without an ad hoc fallback; retain all refusal sets; mutation-kill the production consumer; represent trusted/excluded boundaries; reach zero proved-subject refusals; then make status composition require the validated root and retire old name-keyed/advisory routes. This 8/9 denominator is runtime resolution, not Slice 4's 42/45 proof-table migration. |
 | 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
 | 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
@@ -5054,7 +5062,7 @@ conditions are green; several current tests are deliberate tripwires proving the
 | generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
 | final semantic subject and invariance | **FOUNDATION COMPLETE, ACTIVATION PENDING** — deterministic refrozen V2 binds declaration facts, structural body, selected spec and claim scope; semantic/invariance controls pass. It remains shadow-only until replay-backed Slice 7 migration |
 | exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
-| typed deterministic dependencies | **ACTIVE / SHADOW** — ProofCore and reports share one node/root producer; 62/64 subjects root and 2 refuse explicitly; order invariance, semantic sensitivity, edge-kind binding and deep trust propagation gated. Full classification evidence, per-edge correspondence, trusted-boundary representation and the production status consumer remain open |
+| typed deterministic dependencies | **ACTIVE / SHADOW** — ProofCore and reports share one node/root producer; 62/64 subjects root and 2 refuse explicitly; the closed correspondence join and all six named refusal classes are synthetically gated; runtime resolution covers 8/9 referenced table identities. Real-subject correspondence population, the external `combineFns` case, trusted-boundary representation, production-consumer mutations and verdict integration remain open |
 | friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core plus deterministic environment-ID helper functions exist; no production-derived environment facts, dependency root/theorem/artifact/replay/trust fields, serialization, storage, issuance or status consumer |
 | legacy/schema migration | **MANIFEST CLOSED, REPLAY/MIGRATION NOT STARTED** — `needs_recheck` vocabulary and exact 44-row input exist; no replay-backed V2 rewrite or authoritative activation yet |
 | exact migration manifest | **CLOSED 44/44** — compiler emits one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. Cleanup owed: remove the duplicated obsolete exact-join/35-row-ratchet block from `check_migration_manifest.sh` |

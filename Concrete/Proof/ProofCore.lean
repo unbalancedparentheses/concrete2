@@ -5,6 +5,8 @@ import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.BodyIdentity
 import Concrete.Proof.ImplementationIdentity
+import Concrete.Proof.TableResolve
+import Concrete.Proof.Correspondence
 import Concrete.Proof.DependencyRoot
 import Concrete.Proof.ClassificationTable
 
@@ -2032,6 +2034,13 @@ def implementationManifestResultOf (pc : ProofCore) : Proof.ManifestResult :=
 def implementationManifestOf (pc : ProofCore) : Option Proof.ImplementationManifest :=
   (implementationManifestResultOf pc).usable?
 
+/-- The linked theorem for a function, or `""` when none. ONE producer: the correspondence input
+    and the edge-kind derivation must agree about which theorem types a subject's dependencies, and
+    two copies of this lookup is how they would stop agreeing. -/
+def theoremNameOf (pc : ProofCore) (qualName : String) : String :=
+  (pc.obligations.find? (fun o => o.functionId.qualName == qualName))
+    |>.bind (·.spec) |>.map (·.proofName) |>.getD ""
+
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
 
     R-0004 slice 6, step 4 — SHADOW. Produced here rather than in Report so both consumers read
@@ -2067,8 +2076,7 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
     -- No proof link means no classification, which is `unclassified` rather than a default. A
     -- trusted callee still overrides: a declared boundary is a compiler fact and does not depend
     -- on how the caller was proved.
-    let thm := (pc.obligations.find? (fun o => o.functionId.qualName == e.qualName))
-                 |>.bind (·.spec) |>.map (·.proofName) |>.getD ""
+    let thm := theoremNameOf pc e.qualName
     let callerEdge := if thm.isEmpty then Proof.DependencyEdge.unclassified
                       else Proof.classifiedEdgeOf thm
     -- EVERY call-graph edge is represented. This was a `filterMap` dropping unresolved callees,
@@ -2989,5 +2997,43 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
     obligations := pc.obligations.filter fun o => isUser o.functionId.qualName
     diagnostics := pc.diagnostics.filter fun d => isUser d.function
   }
+
+/-- The closed correspondence request for one subject, built from what the compiler actually has.
+
+    REQUESTED EDGES are the subject's own dependency-node edges — the same node set the root reads,
+    not a second derivation.
+
+    CANDIDATE WITNESSES are derived from the subject's classification row: a row naming table `T`
+    justifies an edge to each callee `T` actually contains, which is the question
+    `tableContainsCallee` made answerable. A table that cannot be resolved contributes NO witnesses,
+    so its edges fall to `missing` rather than being quietly justified — the fail-closed direction.
+
+    SHADOW. Nothing consumes this. -/
+def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
+    : Proof.CorrespondenceInput :=
+  let nodes := dependencyNodesOf pc graph
+  let requested := match nodes.find? (fun n => n.id == id) with
+    | none   => []
+    | some n => n.edges.eraseDups.map (fun (k, tgt) =>
+        ({ callee := tgt, kind := k } : Proof.RequestedEdge))
+  let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
+  let thm := theoremNameOf pc qual
+  -- A WITNESS PER REQUESTED EDGE THE TABLE COVERS — not per table entry. Deriving one witness per
+  -- entry was wrong and the corpus said so immediately: it manufactured `surplus` for every
+  -- implementation a table holds that this caller does not reach, which is precisely the case the
+  -- design decision excludes ("a function table may legitimately contain implementations not
+  -- reached by this caller"). Surplus must mean the theorem claims a dependency the compiler graph
+  -- does not have, and a table entry nobody calls is not that claim.
+  let witnesses := match Proof.validatedRowOf thm with
+    | .error _ => []
+    | .ok row  => requested.filterMap (fun r =>
+        -- The row justifies this edge when SOME table it names actually contains the callee. A
+        -- table that cannot be resolved contributes nothing, so its edges fall to `missing`.
+        if row.tables.any (fun (tn, _) =>
+             (Proof.tableContainsCallee tn r.callee).toOption.getD false)
+        then some ({ subject := id, target := .edgeTo r.callee, kind := row.edge, source := thm }
+                    : Proof.EdgeWitness)
+        else none)
+  { subject := id, requestedEdges := requested, candidateWitnesses := witnesses }
 
 end Concrete

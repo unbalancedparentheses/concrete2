@@ -1744,6 +1744,21 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
       let details := (gaps.map (·.detail)).eraseDups
       s!"REFUSED ({gaps.length} gap(s): {" | ".intercalate details})"
 
+/-- Per-edge correspondence for one subject — SHADOW, decides nothing.
+
+    Reported separately from `depRoot` on purpose: root coverage says the dependency closure could
+    be computed, correspondence says every edge in it has exactly one validated justification. A
+    subject can root while corresponding badly, and conflating the two is how a weaker fact gets
+    reported as a stronger one. -/
+private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId) : String :=
+  let inp := Concrete.correspondenceInputOf pc pc.callGraph id
+  let r := Proof.correspond inp
+  if inp.requestedEdges.isEmpty then "none (no outgoing edge)"
+  else
+    let sets := s!"matched={r.matched.length} missing={r.missing.length} " ++
+                s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}"
+    s!"{sets} usable={if r.usable inp.requestedEdges.length then "yes" else "no"}"
+
 /-- The CALL-GRAPH view of a subject's outgoing edges — the source `dependencyRootMaterial`
     actually reads, printed so it can be compared against `shadow edgeKinds`, which reads the
     evidence body instead.
@@ -2180,6 +2195,7 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- disagreement was invisible: it needed a line showing the OTHER source to become a fact
         -- rather than an inference. Printing the call-graph view makes both observable side by side.
         , s!"  shadow graphEdges: {shadowGraphEdgesLine pc e.qualName}\n"
+        , s!"  shadow correspondence: {shadowCorrespondenceLine pc e.callableId}\n"
         , s!"  shadow depRoot: {shadowDepRootLine pc e.callableId}"
         ]
   s!"=== Subject facts ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"

@@ -1491,6 +1491,44 @@ probe "usability compares the COUNT, so a dropped request cannot pass" "true" "
   let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA] }
   r.usable 1 && !(r.usable 2)"
 
+# === REAL-CORPUS CORRESPONDENCE, measured separately from root coverage ========================
+# Root coverage says the closure could be computed; correspondence says every edge in it has exactly
+# one validated justification. A subject can root while corresponding badly, so these are reported
+# and pinned apart.
+CORR_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+CORR_LINES=""
+for f in $CORR_FILES; do
+  CORR_LINES="$CORR_LINES$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow correspondence:' || true)
+"
+done
+C_USABLE="$(printf '%s' "$CORR_LINES" | grep -c 'usable=yes' || true)"
+C_EDGED="$(printf '%s' "$CORR_LINES" | grep -c 'matched=' || true)"
+C_SURPLUS="$(printf '%s' "$CORR_LINES" | grep -oE 'surplus=[0-9]+' | awk -F= '{s+=$2} END {print s+0}')"
+echo "  correspondence: $C_USABLE/$C_EDGED edge-bearing subjects fully correspond; total surplus $C_SURPLUS"
+if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "6" ]; then
+  ok "6 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
+else
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 6/11) — say which subjects changed and why"
+fi
+# SURPLUS MUST BE ZERO HERE, and this is a real assertion rather than a formality. Deriving one
+# witness per TABLE ENTRY produced surplus on 5 subjects, because a table legitimately holds
+# implementations this caller never reaches. Witnesses are derived per REQUESTED EDGE the table
+# covers, so a nonzero surplus means that regression returned.
+if [ "$C_SURPLUS" = "0" ]; then
+  ok "no subject reports surplus — unreached table entries are not treated as claimed dependencies"
+else
+  no "surplus is $C_SURPLUS across the corpus — witnesses are being derived per table ENTRY again"
+fi
+
+# THE DISPATCH IS SECURITY-RELEVANT INVENTORY: a duplicate name would let the FIRST arm win
+# silently and route a table identity to the wrong value.
+DUPN="$(grep -oE '^  \| "[A-Za-z.]+"' Concrete/Proof/TableResolve.lean | sort | uniq -d | tr -d ' |"')"
+if [ -z "$DUPN" ]; then
+  ok "no table name appears twice in the dispatch (a duplicate would silently route to the first arm)"
+else
+  no "duplicate dispatch entries: $DUPN — the first arm wins silently"
+fi
+
 # === WHICH DependencyClosure REFUSAL SETS ARE NAMED — DERIVED, NOT ASSERTED IN PROSE ==========
 # docs/EVIDENCE_ARCHITECTURE.md requires six: missing, surplus, duplicate, ambiguous, unclassified,
 # mismatched. I twice reported this count from memory and got it wrong (said "4 of 6" while listing
