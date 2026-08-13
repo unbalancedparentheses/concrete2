@@ -1348,7 +1348,46 @@ probe "changing an edge KIND moves the root" "true" '
 # === SHADOW INTEGRATION (slice 6, step 4) ====================================================
 # Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and
 # REPORTED; it decides nothing yet.
-echo "=== dependency-root shadow integration ==="
+CORPUS_FILES_EARLY="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+TMPDISC="$(mktemp)"; trap 'rm -f "$TMPDISC"' EXIT
+
+# ============================================================================================
+# THE TWO EDGE SOURCES DISAGREE — measured 2026-08-13, and this is the finding that matters most
+# for per-edge correspondence.
+#
+# `shadow edgeKinds` is computed from `e.evidenceBody`; `shadow depRoot` is computed from
+# `pc.callGraph`. They are DIFFERENT edge sets, and for 9 of 64 subjects the first reports at least
+# one `unclassified` or `missing` edge while the second roots successfully.
+#
+# The refusal logic is NOT at fault: `isCurrentForDependents` returns false for `unclassified`, and
+# `dependencyRootMaterial` throws on any non-current edge. The graph handed to it is simply smaller
+# than the subject's own reported dependencies, so there is no edge for it to refuse.
+#
+# WHAT THIS MEANS FOR THE HEADLINE NUMBER. "62/64 root" does not mean 62 subjects rooted over their
+# real call edges. For 9 of those 62, the root was computed over a subset. That is a COVERAGE
+# fail-open — the root is confident about a closure it did not fully see — and it is the same defect
+# class as the `filterMap` manifest, one layer over.
+#
+# PINNED AT THE MEASURED VALUE rather than ratcheted. Falling to 0 is the goal and must be an
+# explicit edit; RISING means a new subject started rooting over an incomplete closure, which is the
+# regression this exists to catch. Correspondence work must not begin by choosing whichever edge set
+# is convenient — it has to be over the real one, and this number is how we know they still differ.
+DISCREPANT=0
+for f in $CORPUS_FILES_EARLY; do
+  "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+    | grep -E 'shadow edgeKinds:|shadow depRoot:' \
+    | paste - - 2>/dev/null \
+    | grep -E '=(unclassified|missing)' | grep -v 'depRoot: REFUSED' | grep -c . || true
+done > "$TMPDISC" 2>/dev/null || true
+DISCREPANT="$(awk '{s+=$1} END {print s+0}' "$TMPDISC")"
+if [ "$DISCREPANT" = "9" ]; then
+  ok "the two edge sources still disagree for exactly 9 subjects (known coverage fail-open, pinned)"
+elif [ "$DISCREPANT" -lt 9 ] 2>/dev/null; then
+  no "edge-source disagreement FELL to $DISCREPANT (was 9) — good news, but update this number and say which subjects closed"
+else
+  no "edge-source disagreement ROSE to $DISCREPANT (was 9) — a new subject is rooting over an incomplete closure"
+fi
+
 
 DR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot:' || true)"
 [ -n "$DR" ] \
