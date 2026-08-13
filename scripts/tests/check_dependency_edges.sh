@@ -1351,6 +1351,54 @@ probe "a malformed unique row surfaces as malformed CARRYING its defect" "true" 
 probe "a real row still classifies after the correspondence check" "body" '
 #eval (classifiedEdgeOf "Concrete.Proof.parse_byte_correct").canonical'
 
+# === TABLE NAME -> ENTRIES (the blocker that was not one) =====================================
+# Recorded for weeks as "the compiler cannot check table membership; the hand-back carries only a
+# name and a whole-table digest, so this needs the generator to evalExpr the FnTable". The second
+# half was true and the first was WRONG: the compiler IS a Lean program and these tables are
+# ordinary definitions inside it. Only the name->value mapping was missing. A dispatch replaced the
+# entire evalExpr plan.
+echo "=== hand-back table names resolve to entries ==="
+
+probe "a real table resolves to its entries" "true" '
+#eval match entryEvidenceForTable "Concrete.Proof.proofFns" with
+      | .ok rows => !rows.isEmpty
+      | .error _ => false'
+probe "membership answers TRUE for a callee the table holds" "true" '
+#eval match tableContainsCallee "Concrete.Proof.proofFns" (CallableId.ofUser "main" "parse_byte") with
+      | .ok b => b
+      | .error _ => false'
+# ...and FALSE for one it does not, so the answer is not constant.
+probe "membership answers FALSE for a callee the table lacks" "true" '
+#eval match tableContainsCallee "Concrete.Proof.proofFns" (CallableId.ofUser "main" "no_such") with
+      | .ok b => !b
+      | .error _ => false'
+# A table the compiler cannot read REFUSES rather than answering "no". "Absent" and "cannot tell"
+# are different, and collapsing them silently narrows a dependency closure.
+probe "an unlinked table refuses BY NAME rather than answering absent" "true" '
+#eval match tableContainsCallee "Examples.ProofPatterns.Proofs.combineFns" (CallableId.ofUser "m" "x") with
+      | .error (TableResolveRefusal.unknownTable _) => true
+      | _ => false'
+
+# DISPATCH COVERAGE against the real hand-back inventory. A table named by the checked-in
+# classification table that the dispatch does not know is a silent hole: correspondence for that
+# edge would refuse, and the cause would look like missing evidence rather than a stale dispatch.
+TBL_NAMES="$(grep -oE '\("[A-Za-z.]+", "[0-9a-f]{32}"\)' Concrete/Proof/ClassificationTable.lean \
+             | grep -oE '"[A-Za-z.]+"' | tr -d '"' | sort -u)"
+KNOWN=0; UNKNOWN=""
+for t in $TBL_NAMES; do
+  if grep -q "\"$t\"" Concrete/Proof/TableResolve.lean; then KNOWN=$((KNOWN+1)); else UNKNOWN="$UNKNOWN $t"; fi
+done
+NTBL="$(printf '%s\n' $TBL_NAMES | grep -c . || true)"
+echo "  hand-back names $NTBL tables; dispatch resolves $KNOWN (unlisted:${UNKNOWN:- none})"
+# `combineFns` is defined under proofs/, OUTSIDE the compiler build, so it cannot be linked and its
+# refusal is correct rather than a gap. Named explicitly: "one is unlisted" would stay true if a
+# different table silently became unresolvable.
+if [ "$NTBL" -gt 0 ] && [ "$UNKNOWN" = " Examples.ProofPatterns.Proofs.combineFns" ]; then
+  ok "every in-compiler table is dispatched ($KNOWN/$NTBL); the one exception is the out-of-build combineFns"
+else
+  no "dispatch coverage changed: unlisted =$UNKNOWN (expected only Examples.ProofPatterns.Proofs.combineFns) — a table the dispatch omits refuses as missing evidence rather than as a stale dispatch"
+fi
+
 # === PER-EDGE CORRESPONDENCE: THE CLOSED JOIN ================================================
 # Every control below was specified in review. NOT WIRED to production — nothing calls `correspond`
 # yet, and it cannot be fed from the corpus until the hand-back carries per-table ENTRY evidence.
