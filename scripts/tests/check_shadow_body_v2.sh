@@ -14,6 +14,7 @@
 # happen by accident.
 set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/code_refs.sh"
 require_fresh_binary || exit 1
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
@@ -49,46 +50,13 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # So: strip Lean comments (`/- ... -/` blocks, including `/-- ... -/`, and `--` to end of line),
 # THEN look for the identifier. Narrowing what the tripwire reads is only safe if it still catches a
 # real reference, so `code_refs` is self-tested below on a synthetic tree before it is trusted here.
-code_refs() {
-  local ident="$1"; shift
-  grep -rl "$ident" "$@" 2>/dev/null | sort | while read -r f; do
-    if awk -v ident="$ident" '
-      BEGIN { inblk = 0; found = 0 }
-      {
-        line = $0; out = ""
-        while (length(line) > 0) {
-          if (inblk) {
-            i = index(line, "-/")
-            if (i == 0) { line = "" } else { line = substr(line, i + 2); inblk = 0 }
-          } else {
-            i = index(line, "/-"); j = index(line, "--")
-            if (i > 0 && (j == 0 || i < j)) {
-              out = out substr(line, 1, i - 1); line = substr(line, i + 2); inblk = 1
-            } else if (j > 0) {
-              out = out substr(line, 1, j - 1); line = ""
-            } else { out = out line; line = "" }
-          }
-        }
-        if (index(out, ident) > 0) found = 1
-      }
-      END { exit(found ? 0 : 1) }
-    ' "$f"; then printf '%s\n' "$f"; fi
-  done | tr '\n' ' '
-}
-
 # SELF-TEST of the stripper, before its verdict is used for anything. A narrowed guard that has not
 # been shown to still fire is indistinguishable from a disabled one.
-ST="$TMP/selftest"; mkdir -p "$ST"
-printf '/-- explains bodyBytesV2 in prose -/\ndef unrelated : Nat := 1\n'   > "$ST/doconly.lean"
-printf -- '-- trailing note about bodyBytesV2\ndef alsoUnrelated : Nat := 2\n' > "$ST/lineonly.lean"
-printf '/- multi\n bodyBytesV2\n-/\ndef stillUnrelated : Nat := 3\n'        > "$ST/blockonly.lean"
-printf 'def real : String := bodyBytesV2 x\n'                                > "$ST/realuse.lean"
-printf '/-- doc -/\ndef mixed : String := bodyBytesV2 y -- and a note\n'     > "$ST/mixed.lean"
-st="$(code_refs bodyBytesV2 "$ST")"
-if [ "$st" = "$ST/mixed.lean $ST/realuse.lean " ]; then
+ST="$TMP/selftest"
+if code_refs_selftest "$ST" bodyBytesV2; then
   ok "the owner tripwire ignores comment-only mentions and still catches real code references"
 else
-  no "owner-tripwire self-test failed (got '$st') — the tripwire's reading is not trustworthy"
+  no "owner-tripwire self-test failed — the tripwire's reading is not trustworthy"
 fi
 
 refs="$(code_refs bodyBytesV2 Concrete/ Main.lean)"

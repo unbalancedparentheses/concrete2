@@ -91,12 +91,24 @@ fi
 # FAILURE paths (`no "… \`foo\` …"`), so they fire only when an assertion already failed —
 # latent rather than harmless, since they corrupt output exactly when it matters most. They are
 # ratcheted rather than fixed in bulk: the count may fall, never rise.
-BASELINE_SUBST=17
+# BASELINE TIGHTENED 17 -> 6 on 2026-08-13, when comment lines stopped being counted. Eleven of the
+# seventeen were PROSE, which means this ratchet had eleven slots of slack: a real
+# backtick-in-a-string bug could have been introduced without moving the number. An inflated
+# baseline is a ratchet that has already been loosened.
+BASELINE_SUBST=6
 echo "=== unintended command substitution in shell strings ==="
+# COMMENT LINES ARE SKIPPED. This counter matched any line with a backtick pair inside double
+# quotes, including SHELL COMMENTS — so prose describing a Lean identifier tripped it. On 2026-08-13
+# it failed a new gate purely for the sentence in its header explaining what the gate is for. A
+# comment cannot run a command, so counting it is a false positive, and the fix a false positive
+# invites is rewriting documentation to appease a grep. This is the third guard in this suite to hit
+# exactly this (see lib/code_refs.sh); the shape is: text-matching guards must know what code is.
+#
+# Self-tested below, because narrowing what a counter reads is only safe if it still counts.
 substcount=0
 for f in scripts/tests/check_*.sh; do
   [ "$(basename "$f")" = "check_gate_vacuity.sh" ] && continue
-  if grep -qE '"[^"]*[^\\]`[^"]*`' "$f"; then substcount=$((substcount+1)); fi
+  if grep -vE '^[[:space:]]*#' "$f" | grep -qE '"[^"]*[^\\]`[^"]*`'; then substcount=$((substcount+1)); fi
 done
 echo "  gates with an unescaped backtick in a double-quoted string: $substcount (baseline $BASELINE_SUBST)"
 if [ "$substcount" -le "$BASELINE_SUBST" ]; then
@@ -109,6 +121,21 @@ fi
 # --- shape 4: this gate must itself be able to fail ---------------------------------------------
 # A ratchet whose counter is broken silently reports success forever, which is the very defect
 # being ratcheted. Prove the counter responds to a known-bad input.
+# SELF-TEST OF THE BACKTICK COUNTER, added with the comment-skipping narrowing above. A counter that
+# has stopped counting looks exactly like a codebase with no defects.
+STB="$(mktemp -d)"; trap 'rm -rf "$STB"' EXIT
+printf '#!/usr/bin/env bash\n# a comment mentioning `an identifier` in prose\necho "safe"\n' > "$STB/check_comment_only.sh"
+printf '#!/usr/bin/env bash\necho "danger `id` here"\n' > "$STB/check_real_subst.sh"
+cnt=0
+for f in "$STB"/check_*.sh; do
+  if grep -vE '^[[:space:]]*#' "$f" | grep -qE '"[^"]*[^\\]`[^"]*`'; then cnt=$((cnt+1)); fi
+done
+if [ "$cnt" = "1" ]; then
+  ok "the backtick counter ignores comments and still catches a real command substitution"
+else
+  no "backtick-counter self-test found $cnt of an expected 1 — the counter is not trustworthy"
+fi
+
 echo "=== the ratchet can fail ==="
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 cat > "$TMPD/check_probe.sh" <<'EOF'
