@@ -145,23 +145,51 @@ def validateRawRow : String × String × String × List (String × String) × Bo
     else if (tbls.map (·.1)).eraseDups.length != tbls.length then none
     else some (ValidatedRow.mk n e dig tbls q)
 
-/-- Look a theorem up, validating the row before it can classify anything: exactly ONE row, or
-    nothing.
+/-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`
+    (docs/EVIDENCE_ARCHITECTURE.md) requires `ambiguous` to be a named refusal rather than folded
+    into a general absence.
 
-    `none` when the theorem is absent, ambiguous, OR structurally unsound. All become
-    `unclassified` at the call site — the fail-closed reading — and none is distinguishable from
-    the others to a consumer, deliberately: "we have no usable classification" is one state
-    however it arose. The freshness gate distinguishes the causes.
+    THE DECISION IS UNCHANGED, and that distinction is the point. An earlier version of this
+    comment argued that absent, ambiguous and unsound are "one state however it arose" because all
+    three are equally unusable and all three must fail closed. That argument is correct about the
+    VERDICT and wrong about the RECORD: `classifiedEdgeOf` still answers `unclassified` for every
+    one of these, but a consumer diagnosing a table needs to know whether a theorem is missing from
+    the hand-back, named twice in it, or present and malformed. Those have different fixes —
+    regenerate, resolve a conflict, repair a row — and a single `none` sends you looking in the
+    wrong place.
+
+    `ambiguous` carries the count, since "several" and "seventeen" suggest different causes. -/
+inductive ClassificationRefusal where
+  /-- No row for this theorem. The hand-back does not mention it. -/
+  | absent
+  /-- Several rows for one theorem. The table is not the function it claims to be, and taking the
+      first match is how a conflicting table classifies confidently. -/
+  | ambiguous (count : Nat)
+  /-- Exactly one row, and it failed structural validation. The sub-reason is still collapsed
+      inside `validateRawRow`; splitting those is separate work. -/
+  | malformed
+deriving Repr, BEq
+
+def ClassificationRefusal.explain : ClassificationRefusal → String
+  | .absent      => "no row in the classification hand-back"
+  | .ambiguous n => s!"{n} rows for one theorem — the hand-back is not a function"
+  | .malformed   => "one row, structurally invalid"
+
+/-- Look a theorem up, validating the row before it can classify anything: exactly ONE row, or a
+    NAMED refusal.
 
     `find?` took the first match, so a malformed first row could hide a valid second, and a valid
     first row could hide conflicting trailing data — both silently. A generated security table
     must represent theorem name -> exactly one validated row; zero and several are equally
     unusable, and collapsing "ambiguous" into "take one" is how a conflicting table classifies
     confidently. -/
-def validatedRowOf (thm : String) : Option ValidatedRow :=
+def validatedRowOf (thm : String) : Except ClassificationRefusal ValidatedRow :=
   match classificationTable.filter (fun r => r.1 == thm) with
-  | [row] => validateRawRow row
-  | _     => none
+  | [row] => match validateRawRow row with
+    | some v => .ok v
+    | none   => .error .malformed
+  | []    => .error .absent
+  | rows  => .error (.ambiguous rows.length)
 
 /-- A NECESSARY-CONDITION check on a row's own claim. **Not** correspondence, and the difference
     matters enough to lead with it.
@@ -198,11 +226,13 @@ def classifiedEdgeOf (thm : String) : DependencyEdge :=
   -- The row must JUSTIFY its own claim, not merely state it. A `contract` label on a theorem
   -- that quantifies over nothing is downgraded to `unclassified` rather than trusted — the
   -- fail-closed direction, since `contract` is the edge that lets an implementation change pass.
-  | some r => if rowJustifies r r.edge then r.edge else .unclassified
-  | none   => .unclassified
+  | .ok r    => if rowJustifies r r.edge then r.edge else .unclassified
+  -- EVERY refusal reads `unclassified` here, deliberately: the fail-closed verdict does not depend
+  -- on why the classification is unusable. The reason exists for diagnosis, not for the decision.
+  | .error _ => .unclassified
 
 /-- The validated artifact digest for a theorem, if there is a usable row. -/
 def classifiedDigestOf (thm : String) : Option String :=
-  (validatedRowOf thm).map (·.digest)
+  (validatedRowOf thm).toOption.map (·.digest)
 
 end Concrete.Proof

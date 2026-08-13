@@ -840,8 +840,8 @@ probe "well-formed table bindings validate and are carried" "true" '
 # The real table must carry real bindings, or the generator emitted rows that describe nothing.
 probe "a real row carries its table identities" "true" '
 #eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with
-      | some r => r.tables.length > 0 && (r.tables.all fun t => t.2.length == 32)
-      | none => false'
+      | .ok r => r.tables.length > 0 && (r.tables.all fun t => t.2.length == 32)
+      | .error _ => false'
 
 # DUPLICATES. `find?` took the first match, so a malformed first row could hide a valid second
 # and a valid first could hide conflicting trailing data — both silently. A generated security
@@ -860,10 +860,23 @@ probe "a theorem appearing twice with CONFLICTING rows yields no row" "true" '
      ("T", "contract", "bfda7f397e3221e757383578b50ee3ff", [], false)]
   (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => validateRawRow row | _ => none).isNone'
 
+# The refusal must be NAMED. `absent` and `ambiguous` and `malformed` have different fixes —
+# regenerate the hand-back, resolve a conflict, repair a row — and a single `none` sends a reader
+# looking in the wrong place. The VERDICT is identical for all three (see below); only the record
+# differs.
+probe "an ABSENT theorem refuses by name, not by a bare none" "true" '
+#eval match validatedRowOf "No.Such.Theorem" with
+      | .error ClassificationRefusal.absent => true
+      | _ => false'
+
+# ...and the fail-closed verdict is unchanged by naming: every refusal still reads `unclassified`.
+probe "a named refusal still classifies as unclassified (the verdict did not move)" "true" '
+#eval classifiedEdgeOf "No.Such.Theorem" == DependencyEdge.unclassified'
+
 probe "a validated row exposes its digest" "true" '
 #eval match validatedRowOf "Concrete.Proof.parse_byte_correct" with
-      | some r => r.digest.length == 32
-      | none => false'
+      | .ok r => r.digest.length == 32
+      | .error _ => false'
 
 # `ValidatedRow`'s constructor is private, so a caller cannot assemble one around a row that
 # failed validation and classify from it. Asserted as a COMPILE failure, because that is the
