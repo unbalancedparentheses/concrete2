@@ -2016,6 +2016,29 @@ def bodyBytesReport (pc : Concrete.ProofCore) : String :=
       | .ok complete => s!"{hdr}\n  {Proof.bodyBytesV2 complete}"
   s!"=== Canonical body bytes ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
+/-- The implementation-manifest accounting for a real program — SHADOW, decides nothing.
+
+    This exists because `implementationManifestResultOf` had no consumers and therefore no gate: the
+    completeness conditions were pinned only by synthetic results, so nothing measured whether real
+    production is actually complete. The old `filterMap` producer could not have told us — it
+    returned the subset it managed to build, which is indistinguishable from a complete manifest.
+
+    Prints the stored denominator, the rows built, and each refusal WITH ITS REASON, so an
+    incompleteness shows up as a named cause rather than a smaller number. `usable=` is the verdict
+    `ManifestResult.usable?` gives, reported rather than acted on: nothing consumes this manifest yet
+    and this line must not be read as connecting it to anything. -/
+def implementationManifestReport (pc : Concrete.ProofCore) : String :=
+  let r := Concrete.implementationManifestResultOf pc
+  let refusalLines := r.refusals.map fun (cid, why) =>
+    s!"refused {cid.render} | {Proof.ManifestRefusal.render why}\n"
+  let byReason := (r.refusals.map (fun rf => Proof.ManifestRefusal.render rf.2)).eraseDups.map
+    fun name => s!"{name}={((r.refusals.filter (fun rf => Proof.ManifestRefusal.render rf.2 == name)).length)}"
+  String.join refusalLines
+    ++ s!"IMPL-MANIFEST expected={r.expected.length} rows={r.impls.length} "
+    ++ s!"refused={r.refusals.length} accounted={r.accounted} "
+    ++ s!"usable={if r.usable?.isSome then "yes" else "no"}\n"
+    ++ (if byReason.isEmpty then "" else s!"IMPL-MANIFEST-REASONS {" ".intercalate byReason}\n")
+
 /-- The migration manifest: ONE ROW PER STORED PROOF LINK, joined to the callable it belongs to.
 
     `check_migration_manifest.sh` could only prove CO-OCCURRENCE — that 44 links live in files

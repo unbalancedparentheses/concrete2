@@ -379,6 +379,17 @@ add "manifest-rows-match-expected" "Concrete/Proof/DependencyEdge.lean" "check_d
   $'  else if r.impls.map (\u00b7.callable) != r.expected then none' \
   $'  else if false then none'
 
+# R-0004 slice 6, the laundering itself. The producer records a NAMED refusal for an entry it cannot
+# build a row for; the mutation drops that entry instead, which is exactly what `filterMap` did.
+#
+# This is the control for the REAL-CORPUS gate, not a synthetic one, and that is the point: under the
+# mutation the corpus reports expected=63 rows=63 refused=0 usable=yes for every file — a complete
+# manifest, with the incompleteness gone from the accounting rather than fixed. Only a gate that
+# stores the denominator can see the difference, which is what check_impl_manifest.sh does.
+add "manifest-refusal-recorded" "Concrete/Proof/ProofCore.lean" "check_impl_manifest.sh" yes \
+  $'          | none => refuse .extractedMissing' \
+  $'          | none => acc'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
