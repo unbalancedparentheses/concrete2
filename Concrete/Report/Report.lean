@@ -1753,7 +1753,19 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
 private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId) : String :=
   let inp := Concrete.correspondenceInputOf pc pc.callGraph id
   let r := Proof.correspond inp
+  let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
   if inp.requestedEdges.isEmpty then "none (no outgoing edge)"
+  -- NO CLAIM is not an unjustified claim. A subject with no linked theorem asserts nothing about
+  -- its dependencies, so there is nothing for correspondence to justify, and reporting `usable=no`
+  -- would count "nobody proved this" as "this proof is unsound". `fixed_capacity.validate_message`
+  -- is exactly that: eligible, 11 outgoing edges, no `#[proof_by]` anywhere.
+  --
+  -- This must NOT become a way to hide failures. A subject WITH a linked theorem whose
+  -- classification is unusable still corresponds badly and still reports `usable=no` — only the
+  -- total absence of a theorem is "no claim", and that absence is owned by proof linkage, not by
+  -- this layer.
+  else if (Concrete.theoremNameOf pc qual).isEmpty then
+    s!"no claim (no linked proof; {inp.requestedEdges.length} edge(s) unjustified by construction)"
   else
     let sets := s!"matched={r.matched.length} missing={r.missing.length} " ++
                 s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}"

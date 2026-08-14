@@ -1595,13 +1595,30 @@ echo "  correspondence: $C_USABLE/$C_EDGED edge-bearing subjects fully correspon
 # `fixed_capacity.validate_message` (theorem unclassified, upstream of correspondence),
 # one `calls.combine` fixture (an UNRESOLVED callee in the compiler graph, not a table problem),
 # and `main.validate_header` (its theorem names a table lacking the callee).
-# 8 -> 9 on 2026-08-14 when excluded records began retaining their `callableId`. The two remaining:
-# `fixed_capacity.validate_message` (theorem unclassified — classification discovery) and
-# `main.validate_header` (its theorem names a table lacking the callee).
-if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "9" ]; then
-  ok "9 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
+# DENOMINATOR CORRECTED 2026-08-14 to subjects that make a CLAIM. Correspondence asks whether a
+# proof's dependency closure is justified; a subject with no linked theorem asserts nothing, so
+# counting it as a failure reports "nobody proved this" as "this proof is unsound".
+# `fixed_capacity.validate_message` is that case — eligible, 11 outgoing edges, no `#[proof_by]`
+# anywhere — and it is owned by proof linkage, not by this layer.
+C_NOCLAIM="$(printf '%s' "$CORR_LINES" | grep -c 'no claim' || true)"
+if [ "$C_EDGED" = "10" ] && [ "$C_USABLE" = "9" ] && [ "$C_NOCLAIM" = "1" ]; then
+  ok "9 of 10 claiming subjects fully correspond, 1 makes no claim (exact, not ratcheted)"
 else
-  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 9/11) — say which subjects changed and why"
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED claiming (+$C_NOCLAIM no-claim; was 9/10 +1) — say which subjects changed and why"
+fi
+
+# "NO CLAIM" MUST NOT BECOME A HIDING PLACE. A subject WITH a linked theorem whose classification is
+# unusable must still report `usable=no`. `main.validate_header` is exactly that control and is the
+# one remaining failure — if it ever reported "no claim", the exemption would have widened from
+# "no theorem" to "no usable theorem", which are different facts.
+# Counted from the same lines the assertion above reads, rather than by re-deriving a window into
+# the report — a first version used `grep -A2` and missed the correspondence line entirely, passing
+# a check it never performed.
+VH="$(printf '%s' "$CORR_LINES" | grep -c 'usable=no' || true)"
+if [ "$VH" = "1" ]; then
+  ok "a subject WITH a theorem but unusable justification still reports usable=no (no-claim is not a hiding place)"
+else
+  no "no subject reports usable=no while having a linked theorem — the no-claim exemption may have widened"
 fi
 
 # IDENTITY IS RETAINED FOR EXCLUDED CALLEES. A trusted helper is excluded from the proof entries but
