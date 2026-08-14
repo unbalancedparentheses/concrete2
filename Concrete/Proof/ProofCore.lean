@@ -1762,6 +1762,18 @@ structure ProofDiagnostic where
 
 /-- A function that passed eligibility and was extracted (or attempted). -/
 structure ProofCoreEntry where
+  /-- The SCOPED identity for this definition, or a typed refusal.
+
+      Constructed HERE, at the extraction boundary, where the package identity and the authoritative
+      implementation digest are both in scope. Its implementation component is
+      `implementationDigest` — the digest binding typed signature, capabilities, generics, contracts
+      AND canonical body — not the V1 body digest, which binds only the body and would let a
+      signature or contract change pass as the same definition.
+
+      `Except` because an entry with incomplete facts or an unvalidated evidence body has no
+      authoritative implementation digest, and therefore no scoped identity. That is a refusal to
+      carry, not a value to default. -/
+  definitionIdentity : Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity
   qualName    : String
   bareName    : String
   /-- Semantic identity, minted HERE from resolved compiler facts — the defining
@@ -2376,6 +2388,7 @@ private def assessEligibility
 /-- Walk a module tree collecting eligibility + extraction for each function.
     This produces one ProofCoreEntry or ProofCoreExcluded per function. -/
 private partial def extractModule
+    (packageIdentity : Proof.PackageIdentity)
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
     (locMap : List (String × SourceLoc))
@@ -2437,7 +2450,22 @@ private partial def extractModule
           | [] => ["unmodelled statement or control-flow structure (no ProofCore form)"]
           | rs => rs
         else []
-      (accE ++ [{ qualName, bareName, callableId := cid,
+      -- THE SCOPED IDENTITY, from the AUTHORITATIVE implementation digest. Requires complete facts
+      -- AND a validated evidence body: without both there is no authoritative digest, so there is no
+      -- scoped identity and the entry carries the refusal instead. `implementationDigest` is used
+      -- rather than the V1 body digest because the latter binds only the body — a signature,
+      -- capability or contract change would otherwise read as the same definition.
+      let definitionIdentity :=
+        match facts?, evBody? with
+        | some fx, some d =>
+          if !fx.isComplete then .error (.legacyNameOnly cid.render)
+          else match Proof.validate d with
+            | .error _ => .error (.legacyNameOnly cid.render)
+            | .ok complete =>
+              Proof.DefinitionIdentity.of? packageIdentity.digest cid.defModule cid.declName
+                (implementationDigest fx complete)
+        | _, _ => .error (.legacyNameOnly cid.render)
+      (accE ++ [{ definitionIdentity, qualName, bareName, callableId := cid,
                    declFacts := facts?, evidenceBody := evBody?,
                    constBindings := m.constBindings,
                    subjectDigest := subjDigest, fn := f, extracted
@@ -2452,7 +2480,7 @@ private partial def extractModule
   ) ([], [])
   -- Recurse into submodules
   let (subEntries, subExcluded) := m.submodules.foldl (fun (accE, accX) sub =>
-    let (e, x) := extractModule externNames recMap locMap registry sub qualPrefix
+    let (e, x) := extractModule packageIdentity externNames recMap locMap registry sub qualPrefix
     (accE ++ e, accX ++ x)) ([], [])
   (entries ++ subEntries, excluded ++ subExcluded)
 
@@ -2741,7 +2769,7 @@ def extractProofCore (vc : ValidatedCore) (packageIdentity : Proof.PackageIdenti
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   -- Extract entries and excluded (with spec attachment)
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
-    let (e, x) := extractModule externNames recMap locMap registry m
+    let (e, x) := extractModule packageIdentity externNames recMap locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
   -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph

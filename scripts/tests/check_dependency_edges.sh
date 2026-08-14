@@ -1520,6 +1520,34 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# SCOPED IDENTITY ON THE REAL CORPUS. Every subject must get one, and the identity must SEPARATE at
+# least the collision that motivated it — `main.validate_header` exists in two fixtures with the same
+# `CallableId` rendering and different implementations.
+# Corpus computed locally: this section runs before the correspondence section defines its list, and
+# referencing a variable set later is how the first version of this block aborted the whole gate.
+DEFID_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+DEFID=""
+for f in $DEFID_FILES; do
+  DEFID="$DEFID$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+    | grep -E '^v1:|shadow defIdentity:' | paste - - 2>/dev/null)
+"
+done
+D_TOT="$(printf '%s' "$DEFID" | grep -c 'defIdentity' || true)"
+D_SCOPED="$(printf '%s' "$DEFID" | grep -cE ': [0-9a-f]{32}' || true)"
+if [ "$D_TOT" = "64" ] && [ "$D_SCOPED" = "64" ]; then
+  ok "all 64 subjects carry a scoped definition identity (none refused)"
+else
+  no "scoped identity coverage is $D_SCOPED/$D_TOT (was 64/64) — a subject lost its authoritative implementation digest"
+fi
+# THE COLLISION IS ACTUALLY SEPARATED, measured rather than assumed from the type's unit tests:
+# one CallableId rendering, two distinct scoped identities.
+VH_IDS="$(printf '%s' "$DEFID" | grep 'main.validate_header' | sed 's/.*defIdentity: //' | sort -u | grep -c . || true)"
+if [ "$VH_IDS" -ge 2 ]; then
+  ok "'v1:user:main.validate_header' resolves to $VH_IDS distinct scoped identities (CallableId conflated them)"
+else
+  no "'main.validate_header' has $VH_IDS scoped identity — the cross-program collision is NOT separated"
+fi
+
 # PACKAGE IDENTITY IS COMPUTED FROM DECLARED MATERIAL, once, in project loading. `projectRoot` is
 # deliberately not an input, so two checkouts of one package agree.
 probe "the same manifest and module inventory give the SAME identity (reproducible)" "true" '

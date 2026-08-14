@@ -2209,6 +2209,11 @@ def subjectFactsReport (pc : Concrete.ProofCore) : String :=
         -- disagreement was invisible: it needed a line showing the OTHER source to become a fact
         -- rather than an inference. Printing the call-graph view makes both observable side by side.
         , s!"  shadow graphEdges: {shadowGraphEdgesLine pc e.qualName}\n"
+        -- The SCOPED identity for this subject, or why it has none. Reported so coverage is
+        -- measurable before the join is migrated to use it.
+        , s!"  shadow defIdentity: {match e.definitionIdentity with
+              | .ok d => d.digest
+              | .error w => s!"NONE ({w.explain})"}\n"
         , s!"  shadow correspondence: {shadowCorrespondenceLine pc e.callableId}\n"
         , s!"  shadow depRoot: {shadowDepRootLine pc e.callableId}"
         ]
