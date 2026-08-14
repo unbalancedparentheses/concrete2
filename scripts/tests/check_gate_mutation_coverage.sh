@@ -442,6 +442,15 @@ add "external-stays-asserted" "Concrete/Proof/TableResolve.lean" "check_dependen
   $'      else .ok (.generatorAsserted, rows)' \
   $'      else .ok (.compilerLinked, rows)'
 
+# R-0004 slice 6. IDENTITY RETENTION FOR EXCLUDED CALLEES. A trusted helper is excluded from the
+# proof entries but is still a real callable. Resolving callee names only against `entries` reported
+# it as `«unresolved»`, which turned a `trusted` edge into a `missing` one and cost the subject its
+# correspondence. The mutation restores the entries-only lookup — the exact defect — and must be
+# caught by the REAL-CORPUS correspondence assertion (9/11), not by a synthetic probe.
+add "excluded-identity-retained" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'    | none => (pc.excluded.find? (fun x => x.qualName == qn)).map (\u00b7.callableId)' \
+  $'    | none => none'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

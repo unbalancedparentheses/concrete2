@@ -1805,6 +1805,14 @@ structure ProofCoreEntry where
 structure ProofCoreExcluded where
   qualName    : String
   bareName    : String
+  /-- The semantic identity, RETAINED. Excluding a function from the proof entries does not make
+      it nameless: a trusted helper is still a real callable that other functions depend on.
+      Dropping this was an identity loss at the earliest layer — the value was computed at the
+      construction site and simply not stored — and it surfaced far downstream as an
+      `«unresolved»` dependency edge on `composition_trusted_helper`, where a trusted callee
+      became a `missing` edge instead of a `trusted` one. Fixed here rather than by teaching the
+      edge layer to re-derive it, which would have been a second producer of an identity. -/
+  callableId  : CallableId
   fn          : CFnDef
   fingerprint : String
   eligibility : EligibilityEntry
@@ -2062,8 +2070,14 @@ def theoremNameOf (pc : ProofCore) (qualName : String) : String :=
     callee whose identity cannot be resolved is DROPPED from the edge list and the node is marked
     by its absence — it cannot be silently treated as an edge to nothing. -/
 def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode :=
+  -- BOTH POPULATIONS. A callee excluded from the proof entries — a trusted helper, most often —
+  -- still has a semantic identity, and resolving only against `entries` reported it as
+  -- `«unresolved»`. Entries are consulted FIRST so an eligible function can never be shadowed by
+  -- an excluded record of the same name.
   let idOf : String → Option CallableId := fun qn =>
-    (pc.entries.find? (fun e => e.qualName == qn)).map (·.callableId)
+    match (pc.entries.find? (fun e => e.qualName == qn)).map (·.callableId) with
+    | some cid => some cid
+    | none => (pc.excluded.find? (fun x => x.qualName == qn)).map (·.callableId)
   let trustedNames := pc.excluded.filterMap fun x =>
     if x.eligibility.isTrusted then some x.qualName else none
   pc.entries.map fun e =>
@@ -2395,7 +2409,7 @@ private partial def extractModule
       let scope? := (registry.find? (fun re => re.function == qualName)).map (·.coverage)
       facts?.bind (fun fx => proofSubjectDigestV2 fx evBody? (sa.map (·.specId.name)) scope?)
     if elig.isTrusted then
-      (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
+      (accE, accX ++ [{ qualName, bareName, callableId := cid, fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc
                        , spec := sa : ProofCoreExcluded }])
     else if elig.eligible then
@@ -2424,7 +2438,7 @@ private partial def extractModule
                  , eligibility := elig, loc := elig.loc
                  , spec := sa : ProofCoreEntry }], accX)
     else
-      (accE, accX ++ [{ qualName, bareName, fn := f, fingerprint := fp
+      (accE, accX ++ [{ qualName, bareName, callableId := cid, fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc
                        , spec := sa : ProofCoreExcluded }])
   ) ([], [])
@@ -3024,9 +3038,22 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
   -- design decision excludes ("a function table may legitimately contain implementations not
   -- reached by this caller"). Surplus must mean the theorem claims a dependency the compiler graph
   -- does not have, and a table entry nobody calls is not that claim.
-  let witnesses := match Proof.validatedRowOf thm with
+  -- A TRUSTED edge is justified by the DECLARED TRUST BOUNDARY, not by table membership. Its
+  -- witness comes from the exclusion record that made it trusted — asking a classification row to
+  -- justify it would be asking the wrong producer, and before this the kinds disagreed and the
+  -- edge was reported `malformed`. The trust is a compiler fact and does not depend on how the
+  -- caller was proved.
+  let trustedWitnesses := requested.filterMap (fun r =>
+    if r.kind == Proof.DependencyEdge.trusted then
+      some ({ subject := id, target := .edgeTo r.callee, kind := .trusted
+            , source := "declared-trusted-boundary" } : Proof.EdgeWitness)
+    else none)
+  let tableWitnesses := match Proof.validatedRowOf thm with
     | .error _ => []
     | .ok row  => requested.filterMap (fun r =>
+        -- Trusted edges are already witnessed above; a table must not also claim them, or one edge
+        -- would carry two justifications and correctly read as `ambiguous`.
+        if r.kind == Proof.DependencyEdge.trusted then none else
         -- The row justifies this edge when SOME table it names actually contains the callee. A
         -- table that cannot be resolved contributes nothing, so its edges fall to `missing`.
         if row.tables.any (fun (tn, _) =>
@@ -3034,6 +3061,7 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
         then some ({ subject := id, target := .edgeTo r.callee, kind := row.edge, source := thm }
                     : Proof.EdgeWitness)
         else none)
+  let witnesses := trustedWitnesses ++ tableWitnesses
   { subject := id, requestedEdges := requested, candidateWitnesses := witnesses }
 
 end Concrete

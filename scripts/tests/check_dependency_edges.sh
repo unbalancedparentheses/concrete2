@@ -1595,10 +1595,32 @@ echo "  correspondence: $C_USABLE/$C_EDGED edge-bearing subjects fully correspon
 # `fixed_capacity.validate_message` (theorem unclassified, upstream of correspondence),
 # one `calls.combine` fixture (an UNRESOLVED callee in the compiler graph, not a table problem),
 # and `main.validate_header` (its theorem names a table lacking the callee).
-if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "8" ]; then
-  ok "8 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
+# 8 -> 9 on 2026-08-14 when excluded records began retaining their `callableId`. The two remaining:
+# `fixed_capacity.validate_message` (theorem unclassified — classification discovery) and
+# `main.validate_header` (its theorem names a table lacking the callee).
+if [ "$C_EDGED" = "11" ] && [ "$C_USABLE" = "9" ]; then
+  ok "9 of 11 edge-bearing subjects fully correspond (exact, not ratcheted)"
 else
-  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 8/11) — say which subjects changed and why"
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED (was 9/11) — say which subjects changed and why"
+fi
+
+# IDENTITY IS RETAINED FOR EXCLUDED CALLEES. A trusted helper is excluded from the proof entries but
+# is still a real callable; resolving only against `entries` reported it as `«unresolved»` and turned
+# a `trusted` edge into a `missing` one. No `«unresolved»` may remain anywhere in the corpus.
+UNRES="$(for f in $CORR_FILES; do "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep -c '«unresolved»' || true; done | awk '{s+=$1} END{print s+0}')"
+if [ "$UNRES" = "0" ]; then
+  ok "no dependency edge in the corpus reports an «unresolved» identity"
+else
+  no "$UNRES edge(s) still report «unresolved» — an identity is being discarded upstream"
+fi
+# ...and the trusted helper resolves to a TRUSTED edge with its real identity, not merely to
+# something non-unresolved.
+TH="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow edgeKinds:' | grep 'calls.combine' || true)"
+TH2="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep -c 'v1:user:calls.dbl=trusted' || true)"
+if [ "$TH2" -ge 1 ]; then
+  ok "the trusted helper resolves to 'v1:user:calls.dbl=trusted' — right identity AND right kind"
+else
+  no "the trusted helper does not resolve to a trusted edge on its real identity"
 fi
 # SURPLUS MUST BE ZERO HERE, and this is a real assertion rather than a formality. Deriving one
 # witness per TABLE ENTRY produced surplus on 5 subjects, because a table legitimately holds
@@ -1755,10 +1777,15 @@ for f in $CORPUS_FILES_EARLY; do
         | grep -o 'shadow edgeKinds:.*' | grep -oE '=(unclassified|missing)' | grep -c . || true)"
   NONCUR=$((NONCUR + n))
 done
-if [ "$NONCUR" = "12" ]; then
-  ok "the corpus contains exactly 12 non-current edges (11 unclassified, 1 missing) — the check above is non-vacuous"
+# 12 -> 11 on 2026-08-14, and the cause is named: the single `missing` edge was
+# `«unresolved».calls.dbl`, which became `trusted` once excluded records retained their identity.
+# `trusted` IS current for dependents, so the count fell by exactly one and no `missing` edge
+# remains in the corpus. 11 `unclassified` edges are left, all in subjects whose theorems have no
+# usable classification.
+if [ "$NONCUR" = "11" ]; then
+  ok "the corpus contains exactly 11 non-current edges (11 unclassified, 0 missing) — the check above is non-vacuous"
 else
-  no "non-current edge count moved to $NONCUR (was 12: 11 unclassified + 1 missing) — if the hand-back classified more, update this and say so"
+  no "non-current edge count moved to $NONCUR (was 11, all unclassified) — if the hand-back classified more, update this and say so"
 fi
 
 DR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot:' || true)"
