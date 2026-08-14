@@ -264,6 +264,11 @@ structure ProjectContext where
   tomlContent   : String
   mainPath      : String                  -- entry point (src/main.con)
   depNames      : List String
+  /-- The scoped package identity, computed ONCE here and threaded, not re-derived per consumer.
+      `Except` rather than a defaulted value: a project with no declared name gets a typed refusal
+      and therefore no scoped evidence, because a default would make every unnamed project the same
+      package. -/
+  packageIdentity : Except Proof.PackageIdentityRefusal Proof.PackageIdentity
   policy        : Concrete.ProjectPolicy  -- the [policy] release profile, parsed once
   policyWarnings : List String            -- structural warnings from parsing [policy]
   -- proof/diagnostic facts derived once (Phase 4 #1): the source-location map, the
@@ -421,7 +426,11 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
         { code := "registry", severity := if issue.isError then "error" else "warning",
           message := Concrete.renderRegistryIssue issue }
       ledger := ledger.recordDiagnostic d
+    -- Computed from DECLARED material and module inventory only — `projectRoot` is deliberately not
+    -- an input, so two checkouts of one package agree.
+    let packageIdentity := Proof.packageIdentityOf tomlContent (merged.modules.map (·.name)) depNames
     return Except.ok { projectRoot, validCore, parsed := merged, allSrcMap, tomlContent,
-                       mainPath, depNames, policy, policyWarnings, policyLocMap, registry, pc, ledger }
+                       mainPath, depNames, packageIdentity, policy, policyWarnings, policyLocMap,
+                       registry, pc, ledger }
 
 end Concrete

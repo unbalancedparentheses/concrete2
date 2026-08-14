@@ -108,6 +108,57 @@ def PackageIdentity.canonical (p : PackageIdentity) : String :=
 def PackageIdentity.digest (p : PackageIdentity) : String :=
   Concrete.shortHash p.canonical
 
+/-- Read a scalar field from the `[package]` section, or `none`.
+
+    Section-aware: a `name` under `[dependencies]` is not the package's name, and a parser that
+    grepped the whole file would silently take whichever came first. -/
+def packageField (content : String) (field : String) : Option String :=
+  let lines := content.splitOn "\n" |>.map (·.trimAscii.toString)
+  let rec go : List String → Bool → Option String
+    | [], _ => none
+    | l :: rest, inPkg =>
+      if l.startsWith "[package]" then go rest true
+      else if l.startsWith "[" then go rest false
+      else if inPkg && l.startsWith field then
+        match (l.splitOn "=").getLast? with
+        | some v =>
+          let t := v.trimAscii.toString
+          -- strip surrounding quotes without a regex; an unquoted value is taken as-is
+          let t := if t.startsWith "\"" then (t.drop 1).toString else t
+          let t := if t.endsWith "\"" then (t.dropEnd 1).toString else t
+          if t.isEmpty then none else some t
+        | none => none
+      else go rest inPkg
+  go lines false
+
+/-- The package identity for this project, or a typed refusal.
+
+    DERIVED FROM DECLARED MATERIAL AND CONTENT, never from a path. `projectRoot` is deliberately not
+    an input: the same package built in two checkouts must yield ONE identity, and
+    `PackageIdentity.of?` refuses location-dependent components outright.
+
+    LIMITATION, stated because it is the residual collision rather than a closed one: the manifest
+    has no origin or namespace field — only `name` and `version` exist across the corpus — so
+    `originIdentity` is derived from the declared coordinate plus the dependency inventory, and
+    `contentRoot` from the module inventory. Two UNRELATED packages sharing name, version,
+    dependency names and module names would still collide. Fully closing that needs a declared
+    origin in `Concrete.toml`, which is a manifest surface change and therefore a decision rather
+    than an implementation detail. -/
+def packageIdentityOf (tomlContent : String) (moduleNames : List String)
+    (depNames : List String) : Except PackageIdentityRefusal PackageIdentity :=
+  match packageField tomlContent "name" with
+  | none =>
+    -- A project with no declared name gets no identity, and therefore no scoped evidence. Refusing
+    -- is the point: a default would make every unnamed project the same package.
+    .error (.emptyComponent "declaredName")
+  | some declared =>
+    let version := (packageField tomlContent "version").getD "«unversioned»"
+    let deps := (depNames.mergeSort (· ≤ ·)).foldl (fun a d => a ++ s!"|D{d.length}:{d}") ""
+    let mods := (moduleNames.mergeSort (· ≤ ·)).foldl (fun a m => a ++ s!"|M{m.length}:{m}") ""
+    let origin := Concrete.shortHash s!"pkgOriginV1:N{declared.length}:{declared}|V{version.length}:{version}{deps}"
+    let root := Concrete.shortHash s!"pkgRootV1:{mods}"
+    PackageIdentity.of? declared origin root
+
 /-- Why a definition identity could not be formed. -/
 inductive DefinitionIdentityRefusal where
   /-- A component is empty. `""` is a value, not an absence: two unknown packages would both bind

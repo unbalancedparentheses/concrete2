@@ -1520,6 +1520,29 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# PACKAGE IDENTITY IS COMPUTED FROM DECLARED MATERIAL, once, in project loading. `projectRoot` is
+# deliberately not an input, so two checkouts of one package agree.
+probe "the same manifest and module inventory give the SAME identity (reproducible)" "true" '
+#eval match packageIdentityOf "[package]\nname = \"app\"\nversion = \"1.0\"" ["main"] [],
+            packageIdentityOf "[package]\nname = \"app\"\nversion = \"1.0\"" ["main"] [] with
+      | .ok a, .ok b => a.digest == b.digest
+      | _, _ => false'
+# Same declared name, different module inventory -> different package. This is the realistic
+# collision: two projects both called "app".
+probe "the same declared name with a different module inventory differs" "true" '
+#eval match packageIdentityOf "[package]\nname = \"app\"" ["main"] [],
+            packageIdentityOf "[package]\nname = \"app\"" ["main", "extra"] [] with
+      | .ok a, .ok b => a.digest != b.digest
+      | _, _ => false'
+# NO DECLARED NAME -> typed refusal, not a default. A default would make every unnamed project the
+# same package, which is the collision the whole type exists to prevent.
+probe "a project with no declared name is REFUSED, not defaulted" "true" '
+#eval (packageIdentityOf "[package]\nversion = \"1.0\"" ["main"] []).toOption.isNone'
+# SECTION-AWARE. A `name` under [dependencies] is not the package name, and a whole-file grep would
+# have taken whichever came first — this refuses instead of adopting it.
+probe "a name under [dependencies] is not mistaken for the package name" "true" '
+#eval (packageIdentityOf "[dependencies]\nname = \"sneaky\"" ["main"] []).toOption.isNone'
+
 # PACKAGE IDENTITY. The manifest name alone is NOT sufficient — two unrelated packages can choose
 # the same name — so `declaredName` is bound with an origin and a canonical content root.
 probe "two packages with the SAME declared name but different origins differ" "true" '
