@@ -3553,18 +3553,10 @@ Three options, with what each costs:
 
 **(c) `DefinitionIdentity.ofGenerated`, gated to the generated file only.** Exposes a total constructor and enforces the boundary with a GATE rather than the type — precisely the discipline `check_one_producer.sh` already applies (it asserts exactly which files may reference a producer, code-only via `lib/code_refs.sh`). Cost: the boundary becomes gate-enforced instead of type-enforced, which is weaker in kind but enforced in practice and leaves the 103 theorem statements untouched.
 
-**Recommendation: (c).** It is the only option that does not change proof statements, and this repository already enforces owner sets this way for digest producers. (b) is (c) with the boundary unenforced, and (a) pays 103 re-checked theorems for a type-level guarantee on a value that cannot be forged anyway.
-
-**DECIDED 2026-08-14: take (c), narrowly.** `DefinitionIdentity.ofGenerated` is total only over an
-already validated generated identity; it is not a raw-parts constructor, does not accept strings or
-digests, and does not weaken the private `DefinitionIdentity` constructor. Its owner set is exact
-and code-only: the generated implementation-reference module and the single table-construction
-boundary. The owner gate fails on any added caller, moved producer, alternate constructor, raw
-component assembly, or table entry not originating from the generated-reference path. Mutations
-must remove/bypass the owner restriction and substitute a same-named cross-package identity; both
-must be killed by the production path. This accepts gate-enforced provenance for an otherwise
-unforgeable value and avoids changing 103 kernel-checked theorem statements. It does not establish
-model correspondence, upgrade `generatorAsserted`, or permit a mixed `CallableId`/scoped join.
+**Superseded recommendation: (c).** This appeared to be the only option that did not change proof
+statements, but it accepted a gate-enforced boundary only because refusal had been placed at the
+wrong layer. The total `ofAttested` design above preserves the private constructor and makes this
+generated-only constructor unnecessary. Do not implement it.
 
 **REMAINING for the atomic join transition: convert the 29 proof-model sites, migrate `RequestedEdge`/`EdgeWitness`/table membership/`DepNode` to `DefinitionIdentity` in the SAME change, delete the `CallableId` join with no fallback, then the eight scope/attestation mutations, the cross-project fixture, `proof_pressure` repair, and 10/10.** ~~Earlier note:~~ step 4b is a DIFFERENT SHAPE than "migrate five types together" — measured 2026-08-14.
 
