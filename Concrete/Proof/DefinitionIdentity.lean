@@ -34,6 +34,80 @@ evidence boundary: correspondence, proof-table entries, receipts, and package ar
 
 namespace Concrete.Proof
 
+/-- Why a package identity could not be formed. -/
+inductive PackageIdentityRefusal where
+  /-- A component is empty. `""` must never represent "not supplied": two unrelated packages would
+      both bind as `""` and compare EQUAL, which is the collision the whole type exists to prevent. -/
+  | emptyComponent (which : String)
+  /-- A checkout path or other mutable location was offered as identity. Rejected on principle
+      rather than sanitized: an identity that varies by where the code sits cannot be reproducible,
+      and legitimate package reuse in two locations must yield the SAME identity. -/
+  | locationDependent (found : String)
+deriving Repr, BEq
+
+def PackageIdentityRefusal.explain : PackageIdentityRefusal → String
+  | .emptyComponent w   => s!"package identity component '{w}' is empty"
+  | .locationDependent f => s!"'{f}' looks location-dependent — an identity must not vary by checkout"
+
+/-- Stable semantic package identity.
+
+    THE MANIFEST NAME ALONE IS NOT SUFFICIENT, which is the correction that produced this type: two
+    unrelated packages can choose the same name, so `declaredName` is a claim rather than an
+    identity. It is bound together with an origin/namespace and a canonical content root, and the
+    result is deterministic and checkout-independent.
+
+    Private constructor. An identity missing a component has no representation, and in particular
+    there is no empty-string sentinel for "not supplied" — a caller without an identity must take a
+    typed refusal, not a value that compares equal to every other absent one. -/
+structure PackageIdentity where
+  private mk ::
+  /-- The name the package declares for itself. A claim, not an identity. -/
+  declaredName : String
+  /-- Stable namespace or origin identity — what distinguishes two packages that chose one name. -/
+  originIdentity : String
+  /-- Canonical module/content root, so a package whose contents change is not silently the same
+      package for evidence purposes. -/
+  contentRoot : String
+deriving Repr, BEq
+
+/-- Reject identities that vary by where the code happens to sit. Heuristic and deliberately
+    conservative: it refuses rather than sanitizes, because a sanitized path is still a path. -/
+private def looksLocationDependent (v : String) : Bool :=
+  v.startsWith "/" || v.startsWith "./" || v.startsWith "../" || v.contains '\\'
+    || (v.splitOn "://").length > 1
+
+/-- Build a package identity, or refuse. -/
+def PackageIdentity.of? (declaredName originIdentity contentRoot : String)
+    : Except PackageIdentityRefusal PackageIdentity :=
+  if declaredName.isEmpty then .error (.emptyComponent "declaredName")
+  else if originIdentity.isEmpty then .error (.emptyComponent "originIdentity")
+  else if contentRoot.isEmpty then .error (.emptyComponent "contentRoot")
+  else if looksLocationDependent declaredName then .error (.locationDependent declaredName)
+  else if looksLocationDependent originIdentity then .error (.locationDependent originIdentity)
+  else .ok (PackageIdentity.mk declaredName originIdentity contentRoot)
+
+/-- The identity for a STANDALONE single-file compilation, derived from canonical content.
+
+    Explicit rather than implicit, and derived from the module/content material rather than from a
+    path or a generic `main`. Two different single files must not share an identity — which a
+    constant `"main"` would guarantee they do — and the same file compiled in two locations must
+    share one, which a path would guarantee it does not. `contentDigest` is the canonical content
+    material; the caller computes it once and it is bound here. -/
+def PackageIdentity.synthetic (contentDigest : String)
+    : Except PackageIdentityRefusal PackageIdentity :=
+  if contentDigest.isEmpty then .error (.emptyComponent "contentDigest")
+  else PackageIdentity.of? "«standalone»" ("synthetic:" ++ contentDigest) contentDigest
+
+/-- Canonical rendering, length-prefixed per component. -/
+def PackageIdentity.canonical (p : PackageIdentity) : String :=
+  s!"pkgIdV1:N{p.declaredName.length}:{p.declaredName}"
+    ++ s!"|O{p.originIdentity.length}:{p.originIdentity}"
+    ++ s!"|R{p.contentRoot.length}:{p.contentRoot}"
+
+/-- Domain-separated digest — the value `DefinitionIdentity.packageIdentity` carries. -/
+def PackageIdentity.digest (p : PackageIdentity) : String :=
+  Concrete.shortHash p.canonical
+
 /-- Why a definition identity could not be formed. -/
 inductive DefinitionIdentityRefusal where
   /-- A component is empty. `""` is a value, not an absence: two unknown packages would both bind

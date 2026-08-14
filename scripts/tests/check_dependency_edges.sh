@@ -1520,6 +1520,43 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# PACKAGE IDENTITY. The manifest name alone is NOT sufficient — two unrelated packages can choose
+# the same name — so `declaredName` is bound with an origin and a canonical content root.
+probe "two packages with the SAME declared name but different origins differ" "true" '
+#eval match PackageIdentity.of? "app" "origin-a" "root1", PackageIdentity.of? "app" "origin-b" "root1" with
+      | .ok a, .ok b => a.digest != b.digest
+      | _, _ => false'
+probe "the same declared name, origin and content root give the SAME identity (reproducible)" "true" '
+#eval match PackageIdentity.of? "app" "origin-a" "root1", PackageIdentity.of? "app" "origin-a" "root1" with
+      | .ok a, .ok b => a.digest == b.digest
+      | _, _ => false'
+# NO EMPTY SENTINEL. "not supplied" must not be a value that compares equal to every other absent one.
+probe "an empty declared name refuses by name" "true" '
+#eval match PackageIdentity.of? "" "o" "r" with
+      | .error (PackageIdentityRefusal.emptyComponent _) => true
+      | _ => false'
+# LOCATION-DEPENDENT IDENTITIES ARE REFUSED, not sanitized: a sanitized path is still a path, and an
+# identity that varies by checkout cannot be reproducible.
+probe "an absolute path as origin is refused as location-dependent" "true" '
+#eval match PackageIdentity.of? "app" "/home/user/checkout" "r" with
+      | .error (PackageIdentityRefusal.locationDependent _) => true
+      | _ => false'
+probe "a URL-shaped origin is refused as location-dependent" "true" '
+#eval match PackageIdentity.of? "app" "https://example.invalid/p" "r" with
+      | .error (PackageIdentityRefusal.locationDependent _) => true
+      | _ => false'
+# STANDALONE FILES get an explicit synthetic identity from CONTENT, so two different single files
+# cannot share one — which a constant `main` would guarantee they do.
+probe "two different standalone files get DIFFERENT synthetic identities" "true" '
+#eval match PackageIdentity.synthetic "496808fdd594d5047f23e823bc26b69c",
+            PackageIdentity.synthetic "7afedf51e742f4ce04201459a3965bc8" with
+      | .ok a, .ok b => a.digest != b.digest
+      | _, _ => false'
+probe "a synthetic identity with no content material refuses" "true" '
+#eval match PackageIdentity.synthetic "" with
+      | .error (PackageIdentityRefusal.emptyComponent _) => true
+      | _ => false'
+
 DI='
   let implA := "496808fdd594d5047f23e823bc26b69c"
   let implB := "7afedf51e742f4ce04201459a3965bc8"'
