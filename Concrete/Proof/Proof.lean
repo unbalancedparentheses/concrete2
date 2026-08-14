@@ -1,6 +1,7 @@
 import Concrete.Elab.Core
 import Concrete.Proof.SimpAttr
 import Concrete.Resolve.CallableId
+import Concrete.Proof.DefinitionIdentity
 
 namespace Concrete.Proof
 
@@ -433,6 +434,55 @@ def FnTable.empty : FnTable := { globals := fun _ => none }
 
 @[simp] theorem FnTable.globals_empty : FnTable.empty.globals = (fun _ => none) := rfl
 @[simp] theorem FnTable.callables_empty : FnTable.empty.callables = (fun _ => none) := rfl
+
+/-! ## Attested entries — binding a proof model to a source implementation
+
+A `PFnDef` is a MATHEMATICAL MODEL. It has no typed signature, no capabilities, no generics and no
+contracts, so it cannot derive the authoritative implementation identity of the function it models —
+and adding those fields to it would make it a dishonest hybrid claiming source facts it never had.
+
+So the binding is a separate object, and its components are GENERATED. A proof author selects a typed
+generated symbol; they never transcribe a package identity or a digest. Hand-copied digests are
+stale and typo-prone by construction, and a hand-written package name is exactly the collision the
+scoped identity exists to remove.
+
+**Matching implementation identity does NOT prove the model is faithful.** It establishes that this
+model entry is bound to THAT source implementation and no other. Whether the `PExpr` faithfully
+models it remains a separate claim — which is why this type binds rather than validates. -/
+
+/-- A proof-model entry bound to the authoritative identity of the source implementation it models.
+
+    Private constructor: the binding is formed by `ofAttested` from a GENERATED reference, so there
+    is no way to pair a model with an identity a proof author assembled by hand. -/
+structure AttestedPFnDef where
+  private mk ::
+  model    : PFnDef
+  /-- The generated reference. `Except` because a generated reference that failed validation must
+      stay a refusal rather than become a value — a malformed attestation is `needs_recheck`, not
+      something to default. -/
+  attested : Except DefinitionIdentityRefusal DefinitionIdentity
+deriving Repr
+
+/-- Bind a model to a generated implementation reference. -/
+def AttestedPFnDef.of (model : PFnDef)
+    (attested : Except DefinitionIdentityRefusal DefinitionIdentity) : AttestedPFnDef :=
+  AttestedPFnDef.mk model attested
+
+/-- Build a table from ATTESTED entries.
+
+    Refuses when any attestation is missing or malformed, and when two entries attest the SAME
+    definition identity — a table that binds one implementation twice cannot say which entry a lookup
+    selects, and taking the first is how a conflicting table resolves confidently.
+
+    Deliberately does NOT check that identities differ from `CallableId`-level duplicates: two
+    same-named models attesting DIFFERENT implementations are legitimate and are precisely what the
+    scoped identity exists to permit. -/
+def FnTable.ofAttested (entries : List AttestedPFnDef) : Option FnTable :=
+  if entries.any (fun e => e.attested.toOption.isNone) then none
+  else
+    let ids := entries.filterMap (fun e => e.attested.toOption.map (·.digest))
+    if ids.eraseDups.length != ids.length then none
+    else some { entries := (entries.map (·.model)).toArray, globals := fun _ => none }
 
 /-- A table of definitions only — no locally bound callables. The common case.
 

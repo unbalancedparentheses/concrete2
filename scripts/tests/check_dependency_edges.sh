@@ -1520,6 +1520,58 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================
+# A `PFnDef` is a mathematical MODEL: no typed signature, no capabilities, no generics, no contracts,
+# so it cannot derive the authoritative implementation identity and must not pretend to. The binding
+# is a separate object whose components are GENERATED — an author selects a typed symbol and
+# transcribes nothing, because hand-copied digests go stale silently and a hand-written package name
+# is the collision the scoped identity removes.
+echo "=== attested table entries ==="
+
+AT='
+  let m : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "inc"),
+                      operationalKey := "inc", params := ["x"], body := PExpr.var "x" }
+  let m2 : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "dbl"),
+                       operationalKey := "dbl", params := ["x"], body := PExpr.var "x" }
+  let idA := DefinitionIdentity.of? "496808fdd594d5047f23e823bc26b69c" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
+  let idB := DefinitionIdentity.of? "496808fdd594d5047f23e823bc26b69c" "calls" "dbl" "50333e79fd3df408c9fab0a0a3b40a93"'
+
+probe "attested entries with distinct generated references build a table" "true" "
+#eval$AT
+  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idB]).isSome"
+# MISSING generated reference -> refusal, the needs_recheck disposition rather than a default.
+probe "a MISSING generated reference refuses the table" "true" "
+#eval$AT
+  (FnTable.ofAttested [AttestedPFnDef.of m (.error (DefinitionIdentityRefusal.legacyNameOnly \"calls.inc\"))]).isNone"
+# DUPLICATE attestation -> ambiguous refusal: a table binding one implementation twice cannot say
+# which entry a lookup selects, and taking the first is how a conflicting table resolves confidently.
+probe "a DUPLICATE attestation refuses the table" "true" "
+#eval$AT
+  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idA]).isNone"
+# ...and two SAME-NAMED models attesting DIFFERENT implementations are LEGITIMATE — that is exactly
+# what the scoped identity exists to permit, so this must not be refused as a duplicate.
+probe "two same-named models attesting DIFFERENT implementations are permitted" "true" "
+#eval$AT
+  let sameName := DefinitionIdentity.of? \"496808fdd594d5047f23e823bc26b69c\" \"calls\" \"inc\" \"50333e79fd3df408c9fab0a0a3b40a93\"
+  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m sameName]).isSome"
+
+# THE GENERATOR EMITS A COMPILABLE, SELECTABLE SURFACE. Asserted against the real emitter rather than
+# a hand-written sample, since the point is that authors never write these values.
+# `|| true`: this command path exits 1 whenever the program has open proof obligations, independent
+# of the report — `--report impl-manifest` behaves the same and its gate does likewise. The report
+# CONTENT is what is asserted, so a nonzero exit must not abort the gate under `set -u`/pipefail.
+GEN="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report generated-implementations 2>/dev/null || true)"
+if printf '%s' "$GEN" | grep -q 'def calls_inc : Except DefinitionIdentityRefusal DefinitionIdentity'; then
+  ok "the generator emits typed opaque references (author selects a symbol, transcribes nothing)"
+else
+  no "the generated-implementations report does not emit typed references"
+fi
+if printf '%s' "$GEN" | grep -qE 'emitted=[0-9]+ unscoped=0'; then
+  ok "every entry in that fixture has a scoped identity to reference (unscoped=0)"
+else
+  no "the generator reported unscoped entries: $(printf '%s' "$GEN" | grep -oE 'emitted=[0-9]+ unscoped=[0-9]+')"
+fi
+
 # SCOPED IDENTITY ON THE REAL CORPUS. Every subject must get one, and the identity must SEPARATE at
 # least the collision that motivated it — `main.validate_header` exists in two fixtures with the same
 # `CallableId` rendering and different implementations.
