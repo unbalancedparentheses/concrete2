@@ -1617,6 +1617,19 @@ fi
 VH="$(printf '%s' "$CORR_LINES" | grep -c 'usable=no' || true)"
 if [ "$VH" = "1" ]; then
   ok "a subject WITH a theorem but unusable justification still reports usable=no (no-claim is not a hiding place)"
+  # AND THE REFUSAL IS CORRECT, not a gap to close. `proof_pressure`'s `validate_header` calls
+  # `check_nonce` and is linked to `Examples.ElfHeader.Proofs.validate_header_correct`, whose table
+  # `elfFns` holds check_class/check_data/check_magic/check_version/validate_header — no
+  # `check_nonce`. The theorem is about a DIFFERENT function that shares the qualified name
+  # `main.validate_header`. Correspondence caught a misattached proof link, which is what it is for.
+  #
+  # So 10/10 requires repairing the FIXTURE, not the compiler, and this must not be "fixed" by
+  # loosening the join. Pinned as a known-correct refusal so it cannot silently become usable.
+  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=1'; then
+    no "proof_pressure/validate_header no longer refuses with missing=1 — if the fixture's proof link was repaired, update this; if the join was loosened, revert it"
+  else
+    ok "proof_pressure/validate_header still refuses (misattached proof link, correctly caught)"
+  fi
 else
   no "no subject reports usable=no while having a linked theorem — the no-claim exemption may have widened"
 fi
