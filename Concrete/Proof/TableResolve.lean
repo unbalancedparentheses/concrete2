@@ -37,6 +37,13 @@ inductive TableResolveRefusal where
       equally disqualifying. Detects CORRUPTION of the recorded pair; it is not an independent
       validation of the material, since the same producer computes both sides. -/
   | tableDigestMismatch (name : String) (recorded : String) (recomputed : String)
+  /-- Several external rows for one table name. The external material is not the function it claims
+      to be, and taking the first match is how a conflicting hand-back resolves confidently. -/
+  | externalRowAmbiguous (name : String)
+  /-- An external row is structurally invalid: an empty module or declaration identity, a body
+      digest that is not canonical 32-hex, or one callable listed twice. Validated BEFORE the digest
+      comparison, because a well-formed digest over malformed entries would otherwise verify. -/
+  | externalRowMalformed (name : String) (why : String)
 deriving Repr, BEq
 
 def TableResolveRefusal.explain : TableResolveRefusal → String
@@ -44,6 +51,8 @@ def TableResolveRefusal.explain : TableResolveRefusal → String
   | .entriesRefused n w => s!"'{n}': {w.explain}"
   | .tableDigestMismatch n rec rc =>
       s!"'{n}' records entry digest {rec} but its entries hash to {rc}"
+  | .externalRowAmbiguous n => s!"'{n}' has several external rows — the hand-back is not a function"
+  | .externalRowMalformed n w => s!"'{n}' external row is malformed: {w}"
 
 /-- The hand-back name of every table this compiler links.
 
@@ -91,14 +100,31 @@ def entryEvidenceWithProvenance (name : String)
     | .error w => .error (.entriesRefused name w)
     | .ok rows => .ok (.compilerLinked, rows)
   | none =>
-    match externalTableEntries.find? (fun e => e.1 == name) with
-    | none => .error (.unknownTable name)
-    | some (_, recorded, pairs) =>
+    -- EXACTLY ONE ROW, or refuse. `find?` took the first match, so a duplicate name would bind
+    -- silently to whichever row came first — the same defect the classification lookup had, in the
+    -- table this one falls back to. Zero and several are equally unusable.
+    match externalTableEntries.filter (fun e => e.1 == name) with
+    | [] => .error (.unknownTable name)
+    | _ :: _ :: _ => .error (.externalRowAmbiguous name)
+    | [(_, recorded, pairs)] =>
       -- Reconstructed from data. The digest is carried as recorded; there is no body to check it
       -- against, which is exactly what `generatorAsserted` says.
       -- Components, not a rendering: `CallableId` has no parser from `render`, and reconstructing
       -- an identity by splitting a display string is exactly the name-as-identity mistake R-0004
       -- exists to remove.
+      -- STRUCTURAL VALIDATION BEFORE THE DIGEST COMPARISON. A digest recomputed over malformed
+      -- entries agrees with itself, so checking the digest first would let an empty identity or a
+      -- non-hex body digest through on a self-consistent pair.
+      let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+      let bad :=
+        if pairs.any (fun p => p.1.isEmpty || p.2.1.isEmpty) then some "an empty module or declaration identity"
+        else if pairs.any (fun p => !isHex p.2.2) then some "a body digest that is not canonical 32-hex"
+        else
+          let ids := pairs.map (fun p => p.1 ++ "." ++ p.2.1)
+          if ids.eraseDups.length != ids.length then some "one callable listed twice" else none
+      match bad with
+      | some why => .error (.externalRowMalformed name why)
+      | none =>
       let rows := pairs.map (fun (m, n, d) =>
         ({ callee := CallableId.ofUser m n, sourceBodyDigestV1 := d } : TableEntryEvidence))
       -- SINGLE-SOURCE RECOMPUTATION, not an independent check — the wording matters and an earlier

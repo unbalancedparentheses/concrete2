@@ -3056,12 +3056,34 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
         if r.kind == Proof.DependencyEdge.trusted then none else
         -- The row justifies this edge when SOME table it names actually contains the callee. A
         -- table that cannot be resolved contributes nothing, so its edges fall to `missing`.
+        -- NOT `.toOption.getD false`. That collapsed a table-resolution REFUSAL into "this callee
+        -- is not a member", which are different facts: one says the table does not hold it, the
+        -- other says we could not read the table. Both leave the edge unwitnessed and therefore
+        -- `missing`, so the verdict is unchanged — but the REASON was destroyed, and a reader
+        -- diagnosing an unjustified edge could not tell a genuine absence from an unreadable
+        -- dependency. The refusals are surfaced by `tableResolutionRefusalsOf` below.
         if row.tables.any (fun (tn, _) =>
-             (Proof.tableContainsCallee tn r.callee).toOption.getD false)
+             match Proof.tableContainsCallee tn r.callee with
+             | .ok b    => b
+             | .error _ => false)
         then some ({ subject := id, target := .edgeTo r.callee, kind := row.edge, source := thm }
                     : Proof.EdgeWitness)
         else none)
   let witnesses := trustedWitnesses ++ tableWitnesses
   { subject := id, requestedEdges := requested, candidateWitnesses := witnesses }
+
+/-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
+
+    The witness derivation cannot act on these — an unreadable table justifies nothing either way —
+    but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
+    dependency. Reported beside the correspondence line rather than folded into it. -/
+def tableResolutionRefusalsOf (pc : ProofCore) (id : CallableId) : List String :=
+  let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
+  match Proof.validatedRowOf (theoremNameOf pc qual) with
+  | .error _ => []
+  | .ok row  => row.tables.filterMap (fun (tn, _) =>
+      match Proof.entryEvidenceForTable tn with
+      | .error w => some w.explain
+      | .ok _    => none)
 
 end Concrete

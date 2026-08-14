@@ -1767,9 +1767,11 @@ private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId)
   else if (Concrete.theoremNameOf pc qual).isEmpty then
     s!"no claim (no linked proof; {inp.requestedEdges.length} edge(s) unjustified by construction)"
   else
+    let refusals := Concrete.tableResolutionRefusalsOf pc id
+    let refusalNote := if refusals.isEmpty then "" else s!" | table refusals: {" ; ".intercalate refusals}"
     let sets := s!"matched={r.matched.length} missing={r.missing.length} " ++
                 s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}"
-    s!"{sets} usable={if r.usable inp.requestedEdges.length then "yes" else "no"}"
+    s!"{sets} usable={if r.usable inp.requestedEdges.length then "yes" else "no"}{refusalNote}"
 
 /-- The CALL-GRAPH view of a subject's outgoing edges — the source `dependencyRootMaterial`
     actually reads, printed so it can be compared against `shadow edgeKinds`, which reads the

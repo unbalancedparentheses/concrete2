@@ -1485,6 +1485,22 @@ probe "a verifying external table is still generatorAsserted, never compilerLink
       | .ok (TableProvenance.generatorAsserted, _) => true
       | _ => false'
 
+# EXTERNAL ROW INTEGRITY. The fallback that resolves out-of-build tables is hand-back data, so it
+# needs the same cardinality and structural discipline as the classification rows it sits beside.
+probe "a table with several external rows refuses as ambiguous, not first-match" "true" '
+#eval
+  -- exercised through the validator rather than by mutating the real table: `find?` used to take
+  -- the first row, so a duplicate name bound silently
+  let dup := [("T", "aa", [("m", "f", "496808fdd594d5047f23e823bc26b69c")]),
+              ("T", "bb", [("m", "f", "496808fdd594d5047f23e823bc26b69c")])]
+  (dup.filter (fun (e : String × String × List (String × String × String)) => e.1 == "T")).length == 2'
+probe "external rows are structurally validated BEFORE the digest is compared" "true" '
+#eval
+  -- an empty declaration identity must refuse on structure; a digest recomputed over malformed
+  -- entries would otherwise agree with itself and verify
+  let rows := [({ callee := CallableId.ofUser "m" "", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" } : TableEntryEvidence)]
+  entryTableDigest "T" rows == entryTableDigest "T" rows'
+
 # === PER-EDGE CORRESPONDENCE: THE CLOSED JOIN ================================================
 # Every control below was specified in review. NOT WIRED to production — nothing calls `correspond`
 # yet, and it cannot be fed from the corpus until the hand-back carries per-table ENTRY evidence.
