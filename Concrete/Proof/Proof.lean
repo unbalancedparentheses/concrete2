@@ -424,6 +424,10 @@ structure FnTable where
       succeeded, so carrying the `Except` here would keep a failure state that `ofAttested` has
       already excluded — and `Except` has no `BEq`, which this structure needs. -/
   attested : Array (PFnDef × DefinitionIdentity) := #[]
+  /-- How many attestations FAILED validation. Counted, not dropped: a discarded failure is
+      indistinguishable from an entry nobody attested, and those need different answers —
+      `needs_recheck` for a broken reference versus legacy for an unattested table. -/
+  attestationFailures : Nat := 0
   /-- Schema version of the table encoding. The table is evidence-bearing once
       it has a root, so the encoding is versioned: a root computed under one
       schema must never be compared against another. -/
@@ -484,24 +488,27 @@ def AttestedPFnDef.of (model : PFnDef)
     (attested : Except DefinitionIdentityRefusal DefinitionIdentity) : AttestedPFnDef :=
   AttestedPFnDef.mk model attested
 
-/-- Build a table from ATTESTED entries.
+/-- Build a table from ATTESTED entries. **TOTAL** — it cannot refuse.
 
-    Refuses when any attestation is missing or malformed, and when two entries attest the SAME
-    definition identity — a table that binds one implementation twice cannot say which entry a lookup
-    selects, and taking the first is how a conflicting table resolves confidently.
+    An earlier version returned `Option`, refusing a missing or duplicate attestation here. That put
+    the refusal at the DEFINITION site, which forced `def proofFns : FnTable` to become
+    `Option FnTable` and would have changed the type of 103 kernel-checked theorem and eval sites —
+    rewriting what those proofs STATE in order to express a fact about evidence.
 
-    Deliberately does NOT check that identities differ from `CallableId`-level duplicates: two
-    same-named models attesting DIFFERENT implementations are legitimate and are precisely what the
-    scoped identity exists to permit. -/
-def FnTable.ofAttested (entries : List AttestedPFnDef) : Option FnTable :=
-  if entries.any (fun e => e.attested.toOption.isNone) then none
-  else
-    let ids := entries.filterMap (fun e => e.attested.toOption.map (·.digest))
-    if ids.eraseDups.length != ids.length then none
-    else some { entries := (entries.map (·.model)).toArray
-              , attested := (entries.filterMap (fun e =>
-                  e.attested.toOption.map (fun d => (e.model, d)))).toArray
-              , globals := fun _ => none }
+    The refusal belongs at the EVIDENCE boundary instead. A table whose attestation is missing or
+    duplicated still evaluates perfectly well — a model is all evaluation needs — it simply cannot
+    say which source definitions it describes. So it is built, and `scopedEntryEvidence` refuses it:
+    one place decides, and the place that decides is the one asking the question.
+
+    Failures are COUNTED rather than dropped silently. `attested` holds resolved pairs (an `Except`
+    field would deny `FnTable` its `BEq`), so a discarded failure would be indistinguishable from an
+    entry nobody attested — and `scopedEntryEvidence` needs to tell those apart. -/
+def FnTable.ofAttested (entries : List AttestedPFnDef) : FnTable :=
+  { entries := (entries.map (·.model)).toArray
+  , attested := (entries.filterMap (fun e =>
+      e.attested.toOption.map (fun d => (e.model, d)))).toArray
+  , attestationFailures := (entries.filter (fun e => e.attested.toOption.isNone)).length
+  , globals := fun _ => none }
 
 /-- A table of definitions only — no locally bound callables. The common case.
 

@@ -226,6 +226,10 @@ inductive ScopedMembershipRefusal where
   | provenanceMissing (definition : DefinitionIdentity)
   /-- Two entries attest the same definition, so a lookup cannot say which model it selects. -/
   | duplicateDefinition (definition : DefinitionIdentity)
+  /-- One or more generated references failed validation. `needs_recheck`: the references must be
+      regenerated, and this is DISTINCT from `legacyUnattested` — a broken reference is not the same
+      fact as a table nobody attested, and the fixes differ. -/
+  | attestationIncomplete (failures : Nat)
 deriving Repr, BEq
 
 def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
@@ -234,6 +238,7 @@ def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
       s!"'{d.localName}' stores body digest {st} but its model recomputes to {rc}"
   | .provenanceMissing d => s!"'{d.localName}' records no source-body provenance"
   | .duplicateDefinition d => s!"'{d.localName}' is attested twice"
+  | .attestationIncomplete n => s!"{n} generated reference(s) failed validation — needs_recheck"
 
 /-- Scoped membership for a table, or a named refusal.
 
@@ -241,7 +246,11 @@ def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
     migrating the join does not weaken the body check while strengthening the identity one. -/
 def scopedEntryEvidence (t : FnTable)
     : Except ScopedMembershipRefusal (List ScopedEntryEvidence) := do
-  if t.attested.isEmpty then .error .legacyUnattested
+  -- ORDER MATTERS. A broken reference is reported as such even when it is the ONLY attestation:
+  -- checking emptiness first would report `legacyUnattested` for a table someone DID attest, sending
+  -- a reader to write attestations that already exist.
+  if t.attestationFailures > 0 then .error (.attestationIncomplete t.attestationFailures)
+  else if t.attested.isEmpty then .error .legacyUnattested
   else
     let rows ← t.attested.toList.foldlM (init := ([] : List ScopedEntryEvidence))
       fun acc (model, d) =>

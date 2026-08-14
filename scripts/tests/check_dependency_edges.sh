@@ -1546,39 +1546,35 @@ probe "a table with models but no attestations refuses as legacy needs_recheck" 
 # An ATTESTED table answers scoped membership, and the body digest is still recomputed from the model.
 probe "an attested table yields scoped membership" "true" "
 #eval$SC
-  match FnTable.ofAttested [AttestedPFnDef.of m idA] with
-  | none => false
-  | some t => (scopedEntryEvidence t).toOption.isSome"
+  (scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA])).toOption.isSome"
 
 # THE COLLISION, at the membership level: the SAME name in a different PACKAGE is not a member.
 probe "membership is decided by all four components, so another package is NOT a member" "true" "
 #eval$SC
-  match FnTable.ofAttested [AttestedPFnDef.of m idA], idB with
-  | some t, .ok other =>
-    match scopedEntryEvidence t with
+  match idB with
+  | .ok other =>
+    match scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA]) with
     | .ok rows => scopedEvidenceContains rows other == false
     | .error _ => false
-  | _, _ => false"
+  | _ => false"
 # ...and the identity it WAS attested to IS a member, so the refusal above is not vacuous.
 probe "the attested definition itself IS a member" "true" "
 #eval$SC
-  match FnTable.ofAttested [AttestedPFnDef.of m idA], idA with
-  | some t, .ok own =>
-    match scopedEntryEvidence t with
+  match idA with
+  | .ok own =>
+    match scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA]) with
     | .ok rows => scopedEvidenceContains rows own
     | .error _ => false
-  | _, _ => false"
+  | _ => false"
 
 # The body check is NOT weakened by moving to scoped identity: a model whose body disagrees with its
 # stored provenance still refuses, now naming the definition rather than the callable.
 probe "a body/provenance mismatch still refuses on the scoped path" "true" "
 #eval$SC
   let tampered : PFnDef := { m with body := PExpr.lit (PVal.int 1) }
-  match FnTable.ofAttested [AttestedPFnDef.of tampered idA] with
-  | none => false
-  | some t => match scopedEntryEvidence t with
-    | .error (ScopedMembershipRefusal.bodyMismatch _ _ _) => true
-    | _ => false"
+  match scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of tampered idA]) with
+  | .error (ScopedMembershipRefusal.bodyMismatch _ _ _) => true
+  | _ => false"
 
 # === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================
 # A `PFnDef` is a mathematical MODEL: no typed signature, no capabilities, no generics, no contracts,
@@ -1588,32 +1584,49 @@ probe "a body/provenance mismatch still refuses on the scoped path" "true" "
 # is the collision the scoped identity removes.
 echo "=== attested table entries ==="
 
+# Models carry REAL provenance matching their bodies: `scopedEntryEvidence` recomputes the body
+# digest, so a model without it refuses as `provenanceMissing` and every probe below would fail for
+# that reason instead of the one it names. (These passed before the refusals moved, because
+# `ofAttested` never checked provenance — the move made the omission visible.)
 AT='
   let m : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "inc"),
-                      operationalKey := "inc", params := ["x"], body := PExpr.var "x" }
+                      operationalKey := "inc",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := ["x"], body := PExpr.lit (PVal.int 0) }
   let m2 : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "dbl"),
-                       operationalKey := "dbl", params := ["x"], body := PExpr.var "x" }
+                       operationalKey := "dbl",
+                       sourceBodyDigest := some { value := "7afedf51e742f4ce04201459a3965bc8" },
+                       params := ["x"], body := PExpr.lit (PVal.int 1) }
   let idA := DefinitionIdentity.of? "496808fdd594d5047f23e823bc26b69c" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
   let idB := DefinitionIdentity.of? "496808fdd594d5047f23e823bc26b69c" "calls" "dbl" "50333e79fd3df408c9fab0a0a3b40a93"'
 
-probe "attested entries with distinct generated references build a table" "true" "
+# `ofAttested` is TOTAL — it cannot refuse, because refusing at the DEFINITION site would have forced
+# `def proofFns : FnTable` to become an Option and changed 103 kernel-checked theorem statements. The
+# refusals live at the evidence boundary instead, asserted below.
+probe "attested entries with distinct generated references yield scoped membership" "true" "
 #eval$AT
-  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idB]).isSome"
+  (scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idB])).toOption.isSome"
 # MISSING generated reference -> refusal, the needs_recheck disposition rather than a default.
-probe "a MISSING generated reference refuses the table" "true" "
+# A BROKEN reference is `attestationIncomplete`, distinct from `legacyUnattested` — a failed
+# reference is not the same fact as a table nobody attested, and the fixes differ.
+probe "a MISSING generated reference refuses as attestationIncomplete, not as legacy" "true" "
 #eval$AT
-  (FnTable.ofAttested [AttestedPFnDef.of m (.error (DefinitionIdentityRefusal.legacyNameOnly \"calls.inc\"))]).isNone"
+  match scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m (.error (DefinitionIdentityRefusal.legacyNameOnly \"calls.inc\"))]) with
+  | .error (ScopedMembershipRefusal.attestationIncomplete _) => true
+  | _ => false"
 # DUPLICATE attestation -> ambiguous refusal: a table binding one implementation twice cannot say
 # which entry a lookup selects, and taking the first is how a conflicting table resolves confidently.
-probe "a DUPLICATE attestation refuses the table" "true" "
+probe "a DUPLICATE attestation refuses at the evidence boundary" "true" "
 #eval$AT
-  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idA]).isNone"
+  match scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m2 idA]) with
+  | .error (ScopedMembershipRefusal.duplicateDefinition _) => true
+  | _ => false"
 # ...and two SAME-NAMED models attesting DIFFERENT implementations are LEGITIMATE — that is exactly
 # what the scoped identity exists to permit, so this must not be refused as a duplicate.
 probe "two same-named models attesting DIFFERENT implementations are permitted" "true" "
 #eval$AT
   let sameName := DefinitionIdentity.of? \"496808fdd594d5047f23e823bc26b69c\" \"calls\" \"inc\" \"50333e79fd3df408c9fab0a0a3b40a93\"
-  (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m sameName]).isSome"
+  (scopedEntryEvidence (FnTable.ofAttested [AttestedPFnDef.of m idA, AttestedPFnDef.of m sameName])).toOption.isSome"
 
 # THE GENERATOR EMITS A COMPILABLE, SELECTABLE SURFACE. Asserted against the real emitter rather than
 # a hand-written sample, since the point is that authors never write these values.
