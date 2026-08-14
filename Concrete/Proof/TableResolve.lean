@@ -34,7 +34,8 @@ inductive TableResolveRefusal where
   | entriesRefused (name : String) (why : EntryEvidenceRefusal)
   /-- The supplied entries do not hash to the digest recorded beside them. The row is stale, was
       edited, or its digest was copied from another table — all indistinguishable from here, and all
-      equally disqualifying. This is the ONLY independent check external material gets. -/
+      equally disqualifying. Detects CORRUPTION of the recorded pair; it is not an independent
+      validation of the material, since the same producer computes both sides. -/
   | tableDigestMismatch (name : String) (recorded : String) (recomputed : String)
 deriving Repr, BEq
 
@@ -100,11 +101,13 @@ def entryEvidenceWithProvenance (name : String)
       -- exists to remove.
       let rows := pairs.map (fun (m, n, d) =>
         ({ callee := CallableId.ofUser m n, sourceBodyDigestV1 := d } : TableEntryEvidence))
-      -- THE ONLY INDEPENDENT CHECK EXTERNAL MATERIAL GETS. There is no body to recompute against,
-      -- so the entries are verified against the digest recorded beside them — which catches a stale
-      -- row, an edited entry list, and a digest copied from another table (the table's own name is
-      -- in the preimage). It does NOT make the evidence checked: agreement says the entries are the
-      -- ones recorded, not that a body was ever read. The provenance stays `generatorAsserted`.
+      -- SINGLE-SOURCE RECOMPUTATION, not an independent check — the wording matters and an earlier
+      -- version of this comment got it wrong. Generator and compiler run the SAME `entryTableDigest`,
+      -- so agreement establishes canonical-encoding consistency and binding between name, entries
+      -- and stored digest. It detects storage corruption, a stale row, and a digest copied from
+      -- another table. It does NOT validate the formula, generator correctness, or that these
+      -- entries describe the real table bodies — nothing here reads a body. Provenance stays
+      -- `generatorAsserted`, and a consistently-altered pair verifies structurally BY DESIGN.
       let recomputed := entryTableDigest name rows
       if recorded != recomputed then .error (.tableDigestMismatch name recorded recomputed)
       else .ok (.generatorAsserted, rows)

@@ -1462,6 +1462,21 @@ probe "external material whose entries disagree with its recorded digest REFUSES
          sourceBodyDigestV1 := "00000000000000000000000000000000" } : TableEntryEvidence))
     entryTableDigest nm rows != recorded'
 
+# THE POSITIVE ATTACK MODEL. A CONSISTENTLY-altered pair — entry list and stored digest changed
+# together — verifies structurally, and that is correct rather than a hole. Generator and compiler
+# run the SAME `entryTableDigest`, so agreement establishes canonical-encoding consistency and the
+# binding between name, entries and digest; it does NOT validate the formula, the generator, or
+# whether the entries describe real bodies. This probe exists to keep that limit visible: if it ever
+# started FAILING, someone would have mistaken structural agreement for external truth.
+probe "a CONSISTENTLY-altered entry list and digest still verify (agreement is not truth)" "true" '
+#eval
+  let rows := [({ callee := CallableId.ofUser "calls" "dbl",
+                  sourceBodyDigestV1 := "00000000000000000000000000000000" } : TableEntryEvidence)]
+  let nm := "Examples.ProofPatterns.Proofs.combineFns"
+  -- fabricated membership, with its digest recomputed to match: structurally consistent, and
+  -- describing a body nobody read
+  entryTableDigest nm rows == entryTableDigest nm rows'
+
 # AGREEMENT DOES NOT UPGRADE. combineFns verifies against its digest and is STILL asserted, never
 # compiler-linked — a matching digest says the entries are the ones recorded, not that a body was
 # ever read. This is the control that stops a weaker fact acquiring a stronger label.

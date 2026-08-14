@@ -298,9 +298,13 @@ def tableEntryEvidence (t : FnTable) : Except EntryEvidenceRefusal (List TableEn
 
     LENGTH-PREFIXED per field, so `("ab","c")` and `("a","bc")` cannot serialize alike.
 
-    **Agreement does NOT upgrade evidence.** A matching digest says the entries are the ones
-    recorded; it says nothing about whether a body was ever read. `generatorAsserted` material that
-    verifies is still asserted — see `TableProvenance`. -/
+    **Agreement does NOT upgrade evidence, and is not an independent check.** Generator and
+    compiler run this same implementation, so agreement establishes canonical-encoding consistency
+    and the binding between a table's name, its entries and its stored digest — enough to catch
+    corruption, staleness and a copied digest. It establishes nothing about the formula's
+    correctness, the generator's correctness, or whether the entries describe real bodies. A
+    consistently-altered entry list and digest verify structurally, by design. Independence would
+    require a standalone verifier implementing this canonical format separately. -/
 def entryTableDigest (tableName : String) (rows : List TableEntryEvidence) : String :=
   let sorted := rows.mergeSort (fun a b => a.callee.render ≤ b.callee.render)
   let parts := sorted.map (fun r =>
