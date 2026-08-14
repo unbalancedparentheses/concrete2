@@ -1415,6 +1415,61 @@ else
   no "dispatch coverage changed: unlisted =$UNKNOWN (expected only Examples.ProofPatterns.Proofs.combineFns) — a table the dispatch omits refuses as missing evidence rather than as a stale dispatch"
 fi
 
+# === ENTRY-DERIVED TABLE IDENTITY =============================================================
+echo "=== entry-derived table identity ==="
+
+TD='
+  let r1 : TableEntryEvidence := { callee := CallableId.ofUser "m" "a", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" }
+  let r2 : TableEntryEvidence := { callee := CallableId.ofUser "m" "b", sourceBodyDigestV1 := "7afedf51e742f4ce04201459a3965bc8" }'
+
+# REORDERING IS EQUIVALENT by construction — the digest measures membership, not iteration order.
+probe "reordering entries yields the SAME digest" "true" "
+#eval$TD
+  entryTableDigest \"T\" [r1, r2] == entryTableDigest \"T\" [r2, r1]"
+
+# ...and every other alteration is not.
+probe "ADDING an entry changes the digest" "true" "
+#eval$TD
+  let r3 : TableEntryEvidence := { callee := CallableId.ofUser \"m\" \"c\", sourceBodyDigestV1 := \"50333e79fd3df408c9fab0a0a3b40a93\" }
+  entryTableDigest \"T\" [r1, r2] != entryTableDigest \"T\" [r1, r2, r3]"
+probe "REMOVING an entry changes the digest" "true" "
+#eval$TD
+  entryTableDigest \"T\" [r1, r2] != entryTableDigest \"T\" [r1]"
+probe "DUPLICATING an entry changes the digest" "true" "
+#eval$TD
+  entryTableDigest \"T\" [r1, r2] != entryTableDigest \"T\" [r1, r2, r2]"
+probe "changing a BODY digest changes the table digest" "true" "
+#eval$TD
+  let r2' : TableEntryEvidence := { r2 with sourceBodyDigestV1 := \"50333e79fd3df408c9fab0a0a3b40a93\" }
+  entryTableDigest \"T\" [r1, r2] != entryTableDigest \"T\" [r1, r2']"
+
+# A DIGEST COPIED FROM ANOTHER TABLE must not verify: the table's own identity is in the preimage,
+# so the same membership under a different name is a different value.
+probe "the same entries under a DIFFERENT table name digest differently" "true" "
+#eval$TD
+  entryTableDigest \"TableA\" [r1, r2] != entryTableDigest \"TableB\" [r1, r2]"
+
+# THE STORED DIGEST IS CHECKED. External material has no body to recompute against, so this is its
+# only independent verification — a stale row, an edited entry list, or a copied digest all refuse.
+probe "external material whose entries disagree with its recorded digest REFUSES" "true" '
+#eval
+  -- the real row, with one entry digest altered, must not verify against the recorded value
+  match externalTableEntries.find? (fun e => e.1 == "Examples.ProofPatterns.Proofs.combineFns") with
+  | none => false
+  | some (nm, recorded, pairs) =>
+    let rows := pairs.map (fun (p : String × String × String) =>
+      ({ callee := CallableId.ofUser p.1 p.2.1,
+         sourceBodyDigestV1 := "00000000000000000000000000000000" } : TableEntryEvidence))
+    entryTableDigest nm rows != recorded'
+
+# AGREEMENT DOES NOT UPGRADE. combineFns verifies against its digest and is STILL asserted, never
+# compiler-linked — a matching digest says the entries are the ones recorded, not that a body was
+# ever read. This is the control that stops a weaker fact acquiring a stronger label.
+probe "a verifying external table is still generatorAsserted, never compilerLinked" "true" '
+#eval match entryEvidenceWithProvenance "Examples.ProofPatterns.Proofs.combineFns" with
+      | .ok (TableProvenance.generatorAsserted, _) => true
+      | _ => false'
+
 # === PER-EDGE CORRESPONDENCE: THE CLOSED JOIN ================================================
 # Every control below was specified in review. NOT WIRED to production — nothing calls `correspond`
 # yet, and it cannot be fed from the corpus until the hand-back carries per-table ENTRY evidence.

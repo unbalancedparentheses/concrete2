@@ -414,6 +414,16 @@ add "correspondence-surplus-retained" "Concrete/Proof/Correspondence.lean" "chec
   $'  let surplus := ours.filter (fun w => !(i.requestedEdges.any (fun r => witnessTargets r w)))' \
   $'  let surplus := []'
 
+# R-0004 slice 6. External table material is GENERATOR-ASSERTED: no body exists to recompute it
+# against, so the entry-derived digest recorded beside it is its ONLY independent verification.
+# The mutation changes the stored digest alone, leaving the entry list intact — the shape a stale
+# hand-back row takes after a table changes and the digest is regenerated but the rows are not, or
+# vice versa. If the comparison is not load-bearing this passes unnoticed and external evidence is
+# accepted on trust with a decorative digest beside it.
+add "external-table-digest-checked" "Concrete/Proof/ClassificationTable.lean" "check_dependency_edges.sh" yes \
+  $'  ("Examples.ProofPatterns.Proofs.combineFns", "1393cec60470308d80326ce29c170734", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])' \
+  $'  ("Examples.ProofPatterns.Proofs.combineFns", "00000000000000000000000000000000", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

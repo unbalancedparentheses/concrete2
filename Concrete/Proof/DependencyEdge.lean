@@ -274,6 +274,42 @@ def tableEntryEvidence (t : FnTable) : Except EntryEvidenceRefusal (List TableEn
   if (rows.map (·.callee)).eraseDups.length != rows.length then .error .duplicateIdentity
   else .ok rows
 
+/-- The canonical ENTRY-DERIVED table identity digest.
+
+    The table digest the hand-back already carries is `shortHash ("tableV1:" ++ name ++ toString v)`
+    over the SYNTACTIC term at generation time. The compiler cannot reproduce that — it has no term,
+    only a linked value or a row of data — so it has never been able to verify that a name it
+    resolved denotes the table a theorem actually bound. This digest can be recomputed from either
+    side, which is the property that was missing.
+
+    BINDS THE TABLE'S OWN IDENTITY, not just its membership. Without the name in the preimage, a
+    valid digest could be copied from another table and would verify — name, entry list and digest
+    must agree, and none may be substituted independently.
+
+    BINDS SCHEMA AND SCOPE per entry. `tableEntryEvidence` accepts only
+    `sourceBodyDigestV1`/`body_only` and refuses anything else, so these are the sole accepted
+    values today; binding them anyway means a future schema whose digests happen to collide cannot
+    silently satisfy a check written for this one.
+
+    CANONICALLY ORDERED BY IDENTITY before hashing, so declaration or traversal order cannot enter
+    the value: two producers walking the same table in different orders must agree, or the digest
+    measures iteration rather than membership. Reordering is therefore EQUIVALENT by construction,
+    while adding, removing, duplicating or altering an entry is not.
+
+    LENGTH-PREFIXED per field, so `("ab","c")` and `("a","bc")` cannot serialize alike.
+
+    **Agreement does NOT upgrade evidence.** A matching digest says the entries are the ones
+    recorded; it says nothing about whether a body was ever read. `generatorAsserted` material that
+    verifies is still asserted — see `TableProvenance`. -/
+def entryTableDigest (tableName : String) (rows : List TableEntryEvidence) : String :=
+  let sorted := rows.mergeSort (fun a b => a.callee.render ≤ b.callee.render)
+  let parts := sorted.map (fun r =>
+    let c := r.callee.render
+    -- schema and scope are the values `tableEntryEvidence` verified before admitting the row
+    s!"C{c.length}:{c}|S20:sourceBodyDigestV1|P9:body_only|B{r.sourceBodyDigestV1.length}:{r.sourceBodyDigestV1}")
+  Concrete.shortHash ("tableIdentityV1:T" ++ toString tableName.length ++ ":" ++ tableName
+    ++ "|n" ++ toString sorted.length ++ ":" ++ String.join parts)
+
 /-- Does this table contain the callee, by IDENTITY?
 
     Identity, never name: two callables can share a display name, and `PFnDef.displayName` is

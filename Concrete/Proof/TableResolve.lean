@@ -32,11 +32,17 @@ inductive TableResolveRefusal where
   /-- The table resolved, but its entries are not usable evidence. Carries the underlying reason
       rather than restating it — the entry-level checks already name themselves. -/
   | entriesRefused (name : String) (why : EntryEvidenceRefusal)
+  /-- The supplied entries do not hash to the digest recorded beside them. The row is stale, was
+      edited, or its digest was copied from another table — all indistinguishable from here, and all
+      equally disqualifying. This is the ONLY independent check external material gets. -/
+  | tableDigestMismatch (name : String) (recorded : String) (recomputed : String)
 deriving Repr, BEq
 
 def TableResolveRefusal.explain : TableResolveRefusal → String
   | .unknownTable n     => s!"'{n}' is not a table this compiler links"
   | .entriesRefused n w => s!"'{n}': {w.explain}"
+  | .tableDigestMismatch n rec rc =>
+      s!"'{n}' records entry digest {rec} but its entries hash to {rc}"
 
 /-- The hand-back name of every table this compiler links.
 
@@ -86,14 +92,22 @@ def entryEvidenceWithProvenance (name : String)
   | none =>
     match externalTableEntries.find? (fun e => e.1 == name) with
     | none => .error (.unknownTable name)
-    | some (_, pairs) =>
+    | some (_, recorded, pairs) =>
       -- Reconstructed from data. The digest is carried as recorded; there is no body to check it
       -- against, which is exactly what `generatorAsserted` says.
       -- Components, not a rendering: `CallableId` has no parser from `render`, and reconstructing
       -- an identity by splitting a display string is exactly the name-as-identity mistake R-0004
       -- exists to remove.
-      .ok (.generatorAsserted, pairs.map (fun (m, n, d) =>
-        { callee := CallableId.ofUser m n, sourceBodyDigestV1 := d }))
+      let rows := pairs.map (fun (m, n, d) =>
+        ({ callee := CallableId.ofUser m n, sourceBodyDigestV1 := d } : TableEntryEvidence))
+      -- THE ONLY INDEPENDENT CHECK EXTERNAL MATERIAL GETS. There is no body to recompute against,
+      -- so the entries are verified against the digest recorded beside them — which catches a stale
+      -- row, an edited entry list, and a digest copied from another table (the table's own name is
+      -- in the preimage). It does NOT make the evidence checked: agreement says the entries are the
+      -- ones recorded, not that a body was ever read. The provenance stays `generatorAsserted`.
+      let recomputed := entryTableDigest name rows
+      if recorded != recomputed then .error (.tableDigestMismatch name recorded recomputed)
+      else .ok (.generatorAsserted, rows)
 
 /-- The validated entry evidence for a named table, or a named refusal. -/
 def entryEvidenceForTable (name : String) : Except TableResolveRefusal (List TableEntryEvidence) :=

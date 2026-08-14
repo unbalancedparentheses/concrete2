@@ -205,9 +205,9 @@ def validateRawRow : String × String × String × List (String × String) × Bo
     digest from the actual `PFnDef.body` and refuses on disagreement. Here it cannot: it holds a
     digest and no body. A consumer must be able to tell those apart, because one is checked and the
     other is trusted. -/
-def externalTableEntries : List (String × List (String × String × String)) :=
+def externalTableEntries : List (String × String × List (String × String × String)) :=
 [
-  ("Examples.ProofPatterns.Proofs.combineFns", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])
+  ("Examples.ProofPatterns.Proofs.combineFns", "1393cec60470308d80326ce29c170734", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])
 ]
 
 /-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`

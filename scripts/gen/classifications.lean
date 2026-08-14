@@ -123,5 +123,11 @@ def sourceLinkedThms : List Name :=
       -- An entry without identity or provenance is NOT emitted as a partial row: the compiler
       -- would then hold a membership list that under-reports, which reads as absence.
       | _, _ => throwError s!"external table {nm} has an entry lacking identity or provenance — refusing to emit a partial membership list"
-    elits := elits ++ [s!"  (\"{nm}\", [" ++ String.intercalate ", " rows ++ "])"]
+    -- The digest is computed by the SAME function the compiler uses, over evidence built the same
+    -- way. Two copies of the formula would be two answers to "is this the table the theorem bound".
+    let ev ← match tableEntryEvidence t with
+      | .ok e => pure e
+      | .error w => throwError s!"external table {nm}: {w.explain}"
+    let dg := entryTableDigest nm ev
+    elits := elits ++ [s!"  (\"{nm}\", \"{dg}\", [" ++ String.intercalate ", " rows ++ "])"]
   IO.println (String.intercalate ",\n" elits)
