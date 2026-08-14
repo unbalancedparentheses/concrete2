@@ -388,7 +388,21 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
     let policyLocMap := Report.buildFnLocMap merged.modules mainPath
     let simpleLocMap := policyLocMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWithLinks mainPath merged.modules validCore.coreModules
-    let pc := extractProofCore validCore simpleLocMap registry
+    -- THE PROJECT PATH has manifest material, so the identity is derived from it rather than
+    -- synthesized. Computed HERE, above `pc`, because `extractProofCore` requires it — it was
+    -- previously computed at the return statement, which is below this binding.
+    let packageIdentity := Proof.packageIdentityOf tomlContent (merged.modules.map (·.name)) depNames
+    let pcE := extractProofCore? validCore packageIdentity simpleLocMap registry
+    -- A project whose manifest declares no name yields no scoped identity and therefore no
+    -- ProofCore. Refusing the LOAD is correct: every downstream consumer of this context treats
+    -- `pc` as authoritative, so a ProofCore built without scope would let unscoped definitions
+    -- participate in evidence — which is what this migration exists to prevent.
+    let pc ← match pcE with
+      | .ok pc => pure pc
+      | .error w =>
+        IO.eprintln s!"error: cannot extract proof core — {w.explain}"
+        IO.eprintln "hint: Concrete.toml [package] must declare a name; definition identity is package-scoped"
+        return Except.error 1
     -- Build the non-proof compiler fact store once (Phase 4 #2) from the facts this
     -- load already holds. Cheap facts only here (modules / deps / source files /
     -- obligation link); the git-backed toolchain id is filled lazily at render time.
@@ -426,9 +440,6 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
         { code := "registry", severity := if issue.isError then "error" else "warning",
           message := Concrete.renderRegistryIssue issue }
       ledger := ledger.recordDiagnostic d
-    -- Computed from DECLARED material and module inventory only — `projectRoot` is deliberately not
-    -- an input, so two checkouts of one package agree.
-    let packageIdentity := Proof.packageIdentityOf tomlContent (merged.modules.map (·.name)) depNames
     return Except.ok { projectRoot, validCore, parsed := merged, allSrcMap, tomlContent,
                        mainPath, depNames, packageIdentity, policy, policyWarnings, policyLocMap,
                        registry, pc, ledger }

@@ -5,6 +5,7 @@ import Concrete.Resolve.Intrinsic
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.BodyIdentity
 import Concrete.Proof.ImplementationIdentity
+import Concrete.Proof.DefinitionIdentity
 import Concrete.Proof.TableResolve
 import Concrete.Proof.Correspondence
 import Concrete.Proof.DependencyRoot
@@ -1822,6 +1823,13 @@ structure ProofCoreExcluded where
 /-- The proof-oriented fragment of validated Core.
     This is the single artifact boundary between Core and the proof pipeline. -/
 structure ProofCore where
+  /-- The package this ProofCore's definitions belong to.
+
+      REQUIRED, not defaulted. Every definition identity minted at this boundary is scoped by it, and
+      a default would make definitions from unrelated packages compare equal — the collision the
+      whole identity migration exists to close. A context that genuinely cannot supply one uses
+      `extractProofCore?` and takes a typed refusal instead of a value. -/
+  packageIdentity : Proof.PackageIdentity
   /-- Eligible functions with extraction results. -/
   entries     : List ProofCoreEntry
   /-- Excluded functions with reasons. -/
@@ -2720,7 +2728,7 @@ private def generateDiagnostics
 
 /-- Extract the proof-oriented fragment from validated Core.
     This is the primary entry point for the proof pipeline. -/
-def extractProofCore (vc : ValidatedCore)
+def extractProofCore (vc : ValidatedCore) (packageIdentity : Proof.PackageIdentity)
     (locMap : List (String × SourceLoc) := [])
     (registry : ProofRegistry := [])
     : ProofCore :=
@@ -2741,7 +2749,8 @@ def extractProofCore (vc : ValidatedCore)
   -- Generate attachment-integrity diagnostics from registry validation
   let regIssues := validateRegistry
     { entries, excluded, structs := [], enums := [], traitDefs := []
-    , callGraph := graph, recMap, externNames, obligations := [], diagnostics := [] }
+    , callGraph := graph, recMap, externNames, obligations := [], diagnostics := []
+    , packageIdentity }
     registry
   let regDiags := registryIssuesToDiagnostics regIssues locMap
   let diagnostics := oblDiags ++ regDiags
@@ -2750,7 +2759,7 @@ def extractProofCore (vc : ValidatedCore)
   let ens := List.flatten (allModules.map (·.enums)) |>.filter CEnumDef.isProofEligible
   let tds := List.flatten (allModules.map (·.traitDefs))
   { entries, excluded, structs := sts, enums := ens, traitDefs := tds
-  , callGraph := graph, recMap, externNames, obligations, diagnostics }
+  , callGraph := graph, recMap, externNames, obligations, diagnostics, packageIdentity }
 
 -- ============================================================
 -- Pretty-printing (for --report proofcore)
@@ -2767,6 +2776,31 @@ def ProofCore.summary (pc : ProofCore) : String :=
   s!"  {pc.enums.length} proof-eligible enums\n" ++
   s!"  eligible:  {eligibleNames}\n" ++
   s!"  excluded:  {excludedNames}"
+
+/-- Why a ProofCore could not be extracted. -/
+inductive ProofIdentityRefusal where
+  /-- No package identity could be formed for this compilation, so no definition in it can be
+      scoped. Carries the underlying reason rather than restating it. -/
+  | noPackageIdentity (why : Proof.PackageIdentityRefusal)
+deriving Repr, BEq
+
+def ProofIdentityRefusal.explain : ProofIdentityRefusal → String
+  | .noPackageIdentity w => s!"no package identity: {w.explain}"
+
+/-- Extract a ProofCore, or refuse because no package identity is available.
+
+    The entry point for contexts that cannot guarantee an identity. Deliberately separate from
+    `extractProofCore` rather than folded into it with a default: a caller that has an identity
+    should not be able to accidentally proceed without one, and a caller that lacks one should have
+    to say so. -/
+def extractProofCore? (vc : ValidatedCore)
+    (packageIdentity : Except Proof.PackageIdentityRefusal Proof.PackageIdentity)
+    (locMap : List (String × SourceLoc) := [])
+    (registry : ProofRegistry := [])
+    : Except ProofIdentityRefusal ProofCore :=
+  match packageIdentity with
+  | .error w => .error (.noPackageIdentity w)
+  | .ok pkg  => .ok (extractProofCore vc pkg locMap registry)
 
 /-- Get all eligibility entries (both eligible and excluded). -/
 def ProofCore.allEligibility (pc : ProofCore) : List EligibilityEntry :=

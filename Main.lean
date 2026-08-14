@@ -451,7 +451,16 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWithLinks inputPath parsed.modules validCore.coreModules
-    let pc := extractProofCore validCore simpleLocMap registry
+    -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
+    -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+    -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+    -- "unidentified" fallback would be shared by every such compilation, reintroducing the
+    -- collision this migration removes.
+    let pc ← match extractProofCore? validCore
+        (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+        simpleLocMap registry with
+      | .ok pc => pure pc
+      | .error w => IO.eprintln s!"error: {w.explain}"; return 1
     -- Traceability queries need the backend pipeline
     let parts := query.splitOn ":"
     if parts[0]! == "traceability" then
@@ -1515,7 +1524,16 @@ def compileAndReport (inputPath : String) (reportType : String)
     -- pc and registry validation run on the FULL user package: a
     -- registry entry naming a function defined in a sibling file must
     -- still validate when the user is querying just one file.
-    let pc := extractProofCore fullValidCore simpleLocMap registry
+    -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
+    -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+    -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+    -- "unidentified" fallback would be shared by every such compilation, reintroducing the
+    -- collision this migration removes.
+    let pc ← match extractProofCore? fullValidCore
+        (Proof.PackageIdentity.syntheticForModules (fullValidCore.coreModules.map (·.name)))
+        simpleLocMap registry with
+      | .ok pc => pure pc
+      | .error w => IO.eprintln s!"error: {w.explain}"; return 1
     -- Report output still iterates only the scoped modules.
     let validCore := scopedValidCore
     -- Validate registry against ProofCore and surface warnings/errors
@@ -2925,7 +2943,16 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
       let fullUserValidCore : ValidatedCore := { validCore with coreModules := userModules }
       let locMap := Report.buildFnLocMap parsed.modules inputPath
       let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
-      let pc := extractProofCore fullUserValidCore simpleLocMap
+      -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
+      -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+      -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+      -- "unidentified" fallback would be shared by every such compilation, reintroducing the
+      -- collision this migration removes.
+      let pc ← match extractProofCore? fullUserValidCore
+          (Proof.PackageIdentity.syntheticForModules (fullUserValidCore.coreModules.map (·.name)))
+          simpleLocMap with
+        | .ok pc => pure pc
+        | .error w => IO.eprintln s!"error: {w.explain}"; return 1
       -- Scope to the specific file the user invoked for the report
       -- output itself.
       let scopedModules ← scopeUserModulesToFile userModules inputPath root
@@ -2942,7 +2969,16 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     | .ok (parsed, _, validCore, _) =>
       let locMap := Report.buildFnLocMap parsed.modules inputPath
       let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
-      let pc := extractProofCore validCore simpleLocMap
+      -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
+      -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+      -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+      -- "unidentified" fallback would be shared by every such compilation, reintroducing the
+      -- collision this migration removes.
+      let pc ← match extractProofCore? validCore
+          (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+          simpleLocMap with
+        | .ok pc => pure pc
+        | .error w => IO.eprintln s!"error: {w.explain}"; return 1
       let srcMap : SourceMap := [(inputPath, source)]
       let (pass, report) := Report.checkPredictable validCore.coreModules locMap srcMap pc
       IO.println report
@@ -3409,7 +3445,16 @@ def main (args : List String) : IO UInt32 := do
         let locMap := Report.buildFnLocMap parsed.modules inp
         let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
         let registry ← loadRegistryWithLinks inp parsed.modules validCore.coreModules
-        let pc := extractProofCore validCore simpleLocMap registry
+        -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
+        -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+        -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+        -- "unidentified" fallback would be shared by every such compilation, reintroducing the
+        -- collision this migration removes.
+        let pc ← match extractProofCore? validCore
+            (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+            simpleLocMap registry with
+          | .ok pc => pure pc
+          | .error w => IO.eprintln s!"error: {w.explain}"; return 1
         -- Collect core facts (same as diagnostics-json) plus source-contract facts
         -- (AST metadata, absent from Core) so `concrete diff` can detect contract
         -- API drift (precondition strengthening, postcondition weakening).

@@ -137,7 +137,14 @@ def evalPredicate (pred : Predicate) (source : String)
     -- consistency-violation and verify-warning check here
     match pred with
     | .consistencyViolation =>
-      let pc := extractProofCore validCore [] []
+      -- STANDALONE PATH: no manifest in scope, so the identity is synthetic over the module
+      -- inventory. A refusal means the compilation has no content to identify, and this predicate
+      -- then answers "not violated" rather than inventing an identity — the fail-closed reading for
+      -- a reducer, which must not report a violation it cannot substantiate.
+      match Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) with
+      | .error _ => pure false
+      | .ok pkg =>
+      let pc := extractProofCore validCore pkg [] []
       let violations := pc.selfCheck
       return !violations.isEmpty
     | .verifyWarning =>

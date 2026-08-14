@@ -98,6 +98,22 @@ def PackageIdentity.synthetic (contentDigest : String)
   if contentDigest.isEmpty then .error (.emptyComponent "contentDigest")
   else PackageIdentity.of? "«standalone»" ("synthetic:" ++ contentDigest) contentDigest
 
+/-- The synthetic identity for a standalone compilation, from its MODULE INVENTORY.
+
+    ONE producer for the four standalone `extractProofCore` paths. Each deriving its own content
+    digest would be four answers to "which package is this", and they would drift — the defect class
+    this codebase gates for. Callers supply the module names; the canonical ordering and the digest
+    formula live here.
+
+    Refuses an empty inventory: a compilation with no modules has no content to identify, and a
+    constant fallback would make every such compilation the same package. -/
+def PackageIdentity.syntheticForModules (moduleNames : List String)
+    : Except PackageIdentityRefusal PackageIdentity :=
+  if moduleNames.isEmpty then .error (.emptyComponent "moduleInventory")
+  else
+    let mods := (moduleNames.mergeSort (· ≤ ·)).foldl (fun a m => a ++ s!"|M{m.length}:{m}") ""
+    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods))
+
 /-- Canonical rendering, length-prefixed per component. -/
 def PackageIdentity.canonical (p : PackageIdentity) : String :=
   s!"pkgIdV1:N{p.declaredName.length}:{p.declaredName}"
