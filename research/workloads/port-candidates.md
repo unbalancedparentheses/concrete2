@@ -13,8 +13,7 @@ set and the admission rule), `Task R-0450` (Phase 8, the X.509 security
 flagship), `Task R-0451` (Phase 11, the SAT/DRAT trust item), `Task R-0452`
 (Phase 13, the obligation-density port), and `Task R-0453` (Phase 16, the
 block-device freestanding workload). `Task R-0448` (MM0 verifier) predates this
-note and keeps its own analysis in
-[mm0-verifier-port.md](mm0-verifier-port.md).
+note; its analysis remains owned by that roadmap task rather than by a separate research file.
 
 Measurements were taken 2026-07-31 from shallow clones at the commits recorded
 below. "Core LOC" counts non-test `.c`/`.h` (`.cc` for MiniSat) in the subset a
@@ -38,7 +37,7 @@ Four filters did the real work, and they are worth keeping for future candidates
    deliberately refuses. This excluded every candidate small-language runtime
    except the ones already covered by `examples/lox` and `examples/mal`.
 4. **Global mutable state is an admission cost.**
-   `docs/LANGUAGE_INVARIANTS.md` §10 forbids it, so a program built around
+   `docs/language/LANGUAGE_INVARIANTS.md` §10 forbids it, so a program built around
    file-scope mutable arrays must have every one threaded through an explicit
    context struct before the port starts. Candidates already organized around a
    context handle (`MD_CTX`, `z_stream`, `lfs_t`) port close to 1:1; QBE,
@@ -47,7 +46,7 @@ Four filters did the real work, and they are worth keeping for future candidates
 Two structural notes that are *not* filters, because Concrete has an answer:
 
 - **Callback/renderer architectures are fine.** A C struct of function pointers
-  is exactly the shape `docs/ANTI_FEATURES.md` prescribes in place of trait
+  is exactly the shape `docs/language/ANTI_FEATURES.md` prescribes in place of trait
   objects, so md4c's renderer interface validates that decision on real code.
   The friction is the untyped `void *userdata` beside it, which wants to become
   a typed generic parameter.

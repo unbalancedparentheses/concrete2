@@ -37,6 +37,6 @@ For deeper stable references, see:
 
 - [`docs/README.md`](@/reference/_index.md)
 - [`docs/stdlib/STDLIB.md`](@/reference/STDLIB.md)
-- [`docs/TESTING.md`](@/reference/TESTING.md)
-- [`docs/ARCHITECTURE.md`](@/reference/ARCHITECTURE.md)
+- [`docs/compiler/TESTING.md`](@/reference/TESTING.md)
+- [`docs/compiler/ARCHITECTURE.md`](@/reference/ARCHITECTURE.md)
 - [`ROADMAP.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md)

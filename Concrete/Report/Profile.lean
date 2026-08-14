@@ -5,8 +5,8 @@ A build profile is a POLICY BUNDLE: it selects check *enforcement*, diagnostics,
 optimization assumptions, evidence floors, and reporting. It NEVER changes what a
 source program means — a reviewer must not need to know the profile to know
 whether `a + b` wraps. Arithmetic semantics are fixed and explicit (checked
-`+ - *`, explicit `wrapping_*` / `saturating_*`); see docs/ARITHMETIC_POLICY.md
-§14 and docs/PROFILES.md.
+`+ - *`, explicit `wrapping_*` / `saturating_*`); see docs/language/ARITHMETIC_POLICY.md
+§14 and docs/platform/PROFILES.md.
 
 Stage 1 makes the active profile and its bundle VISIBLE (`--profile`,
 `[profile]` in Concrete.toml, `--report profile`). It has NO codegen or semantic
@@ -124,6 +124,6 @@ def renderProfileReport (p : BuildProfile) (src : ProfileSource) : String :=
   s!"  optimization:   {p.optimization}\n" ++
   s!"  evidence/proof: {p.evidence}\n" ++
   s!"  note:           a build profile is a policy bundle, never an arithmetic mode " ++
-  "(docs/PROFILES.md, docs/ARITHMETIC_POLICY.md §14).\n"
+  "(docs/platform/PROFILES.md, docs/language/ARITHMETIC_POLICY.md §14).\n"
 
 end Concrete

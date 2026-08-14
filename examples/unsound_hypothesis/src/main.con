@@ -1,6 +1,6 @@
 // COUNTEREXAMPLE FIXTURE — this program is NOT correct, and that is the point.
 //
-// H23 in docs/KNOWN_HOLES.md. `bad` indexes a 4-element array with a counter
+// H23 in docs/verification/KNOWN_HOLES.md. `bad` indexes a 4-element array with a counter
 // running to 99. The array-bounds obligation nevertheless reports
 //
 //     [lam.bad#bounds0]  array_bounds  ->  proved_by_kernel_decision (omega)

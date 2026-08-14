@@ -7,7 +7,7 @@
 # exception for Ty.placeholder leaks via `?` (try) and `defer`, and
 # the harness reports them but does not fail on them. Any new warning
 # class added in the future should be triaged through the contract in
-# docs/VERIFY_GATES.md before the corpus accepts it silently.
+# docs/verification/VERIFY_GATES.md before the corpus accepts it silently.
 
 set -uo pipefail
 

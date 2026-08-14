@@ -1,9 +1,10 @@
 import Concrete.Proof.DependencyEdge
+import Concrete.Proof.TableResolve
 
 /-!
 # Per-edge correspondence — the closed join
 
-`DependencyClosure` (docs/EVIDENCE_ARCHITECTURE.md) requires every compiler edge to have exactly
+`DependencyClosure` (docs/verification/EVIDENCE_ARCHITECTURE.md) requires every compiler edge to have exactly
 one validated justification, with missing, surplus, duplicate, ambiguous, unclassified and
 mismatched retained as NAMED sets. This module is that join.
 
@@ -98,6 +99,14 @@ structure CorrespondenceInput where
   subject            : CallableId
   requestedEdges     : List RequestedEdge
   candidateWitnesses : List EdgeWitness
+  /-- Tables the witness builder NAMED but could not read, as typed refusals.
+
+      Carried into the result rather than reported beside it. An unreadable table is not the absence
+      of a dependency — it is a dependency whose material could not be examined — and while the
+      builder cannot produce a witness from it either way, dropping the reason meant a consumer of
+      `CorrespondenceResult` could not distinguish the two. It was previously appended to a report
+      string, which put the fact outside the type that decides usability. -/
+  resolverRefusals   : List TableResolveRefusal := []
 
 /-- All four sets retained, plus the witnesses that never entered the join.
 
@@ -110,6 +119,8 @@ structure CorrespondenceResult where
   ambiguous : List (RequestedEdge × List EdgeWitness)
   surplus   : List EdgeWitness
   malformed : List WitnessRefusal
+  /-- Tables named by the subject's evidence that could not be read. -/
+  resolverRefusals : List TableResolveRefusal
 
 /-- Does this witness target this requested edge? Identity for static edges; whole-table material
     for dynamic ones. A `wholeTable` witness answers a DYNAMIC request and nothing else. -/
@@ -158,7 +169,7 @@ def correspond (i : CorrespondenceInput) : CorrespondenceResult :=
   -- make surplus vanish rather than be reported.
   let surplus := ours.filter (fun w => !(i.requestedEdges.any (fun r => witnessTargets r w)))
   { matched := matched, missing := missing, ambiguous := ambiguous, surplus := surplus
-  , malformed := subjectRefusals ++ kindRefusals }
+  , malformed := subjectRefusals ++ kindRefusals, resolverRefusals := i.resolverRefusals }
 
 /-- Usable only when every set is empty and the count is exact.
 
@@ -168,6 +179,11 @@ def correspond (i : CorrespondenceInput) : CorrespondenceResult :=
     manifest accounting needed. -/
 def CorrespondenceResult.usable (r : CorrespondenceResult) (requested : Nat) : Bool :=
   r.missing.isEmpty && r.ambiguous.isEmpty && r.surplus.isEmpty && r.malformed.isEmpty
+    -- AN UNREADABLE TABLE BLOCKS USABILITY. Today every edge such a table would have justified
+    -- falls to `missing` anyway, so this changes no current verdict — but it is not implied by the
+    -- other sets: a subject whose theorem names two tables, one unreadable and one covering every
+    -- edge, would otherwise be usable while a named dependency was never examined.
+    && r.resolverRefusals.isEmpty
     && r.matched.length == requested
 
 end Concrete.Proof

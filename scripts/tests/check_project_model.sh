@@ -9,8 +9,8 @@
 #     surface cannot be added silently);
 #   - the entry point is src/main.con, and its absence is a clean error.
 # [policy] ENFORCEMENT is gated separately by check_policy.sh; this gate covers the
-# manifest structure itself. See docs/POLICY_FILES.md, docs/PROJECT_BOOTSTRAP.md,
-# docs/STANDALONE_VS_PROJECT.md.
+# manifest structure itself. See docs/project/POLICY_FILES.md, docs/project/PROJECT_BOOTSTRAP.md,
+# docs/project/STANDALONE_VS_PROJECT.md.
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"

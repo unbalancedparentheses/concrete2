@@ -133,4 +133,4 @@ These strengthen the philosophy Concrete already has rather than pulling it in a
 
 - [design-filters.md](design-filters.md)
 - [candidate-ideas.md](candidate-ideas.md)
-- [stdlib-design.md](stdlib-design.md)
+- [stdlib-design.md](../stdlib/stdlib-design.md)

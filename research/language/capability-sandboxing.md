@@ -169,7 +169,7 @@ So this should be introduced only where the split buys real operational value.
 
 Forward-looking decisions on the capability *vocabulary* (distinct from the
 granularity splits above). The guiding lesson — reinforced by the H1 closure
-(`docs/KNOWN_HOLES.md`: smaller, sharper primitives win) — is to add capabilities
+(`docs/verification/KNOWN_HOLES.md`: smaller, sharper primitives win) — is to add capabilities
 only when they name a *distinct authority* a real workload needs, and to keep
 each one sharp.
 
@@ -191,7 +191,7 @@ each one sharp.
   permission to run a pure PRNG. A deterministic PRNG seeded from a value is pure
   and needs no capability; only drawing real entropy requires `with(Random)`.
   This keeps the predictable/`ProvableV1` boundary honest. (Clarify in
-  `docs/SAFETY.md`.)
+  `docs/language/SAFETY.md`.)
 - **`Signal` — deferred.** OS signal handling (`with(Signal)`) is deferred: its
   control-flow/async-safety semantics are subtle and no current workload needs
   it. Revisit only with concrete evidence.
@@ -326,7 +326,7 @@ Why it matters:
 
 This should be treated as a later runtime/library-boundary milestone, not an immediate language-syntax feature.
 
-See [no-std-freestanding.md](no-std-freestanding.md).
+See [no-std-freestanding.md](../stdlib/no-std-freestanding.md).
 
 ## Things To Avoid
 
@@ -387,6 +387,6 @@ from `Device` with evidence and their own gates.
 
 ## Relationship To Other Notes
 
-- See [concurrency.md](concurrency.md) for the runtime/concurrency side of blocking, spawning, cancellation, and structured concurrency.
-- See [external-ideas.md](external-ideas.md) for broader language ideas that may influence capability design indirectly.
+- See [concurrency.md](../stdlib/concurrency.md) for the runtime/concurrency side of blocking, spawning, cancellation, and structured concurrency.
+- See [external-ideas.md](../meta/external-ideas.md) for broader language ideas that may influence capability design indirectly.
 - If these ideas become stable language or compiler rules, they should move into `docs/`, not stay in research.

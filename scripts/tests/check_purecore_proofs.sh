@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pure-core proof arc, slice 1 (docs/PURE_CORE_PROOF_ARC.md): the stdlib's
+# Pure-core proof arc, slice 1 (docs/verification/PURE_CORE_PROOF_ARC.md): the stdlib's
 # first kernel-backed proof link, held to the arc's Definition of Done —
 # registered + fingerprint-fresh + kernel-verified + MUTATION-SENSITIVE.
 set -uo pipefail

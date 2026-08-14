@@ -122,5 +122,5 @@ honest companion.
 - `examples/constant_time_tag/AUDIT.md` — graduation bar #6.
 - `examples/constant_time_tag/assumptions.toml`
   `[claims.machine_level_constant_time]` — the named gap.
-- `docs/POLICY_FILES.md` — the `[policy]` section this
+- `docs/project/POLICY_FILES.md` — the `[policy]` section this
   case enforces by demonstration.

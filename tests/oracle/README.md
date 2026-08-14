@@ -17,7 +17,7 @@ through both paths and produce the same observable result on every
 build.
 
 Phase A.2 — the trust boundary of the interpreter — lives in
-[`docs/INTERPRETER_TRUST.md`](../../docs/INTERPRETER_TRUST.md).
+[`docs/verification/INTERPRETER_TRUST.md`](../../docs/verification/INTERPRETER_TRUST.md).
 It enumerates supported constructs, excluded constructs, the
 fixed-width checked-arithmetic model, shared dependencies, and the
 explicit-failure contract that lets the harness distinguish PENDING from FAIL.

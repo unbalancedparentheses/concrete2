@@ -245,6 +245,6 @@ Promising but should wait:
 ## Related Notes
 
 - [design-filters.md](design-filters.md)
-- [file-summary-frontend.md](file-summary-frontend.md)
-- [derived-equality-design.md](derived-equality-design.md)
-- [mlir-backend-shape.md](mlir-backend-shape.md)
+- [file-summary-frontend.md](../compiler/file-summary-frontend.md)
+- [derived-equality-design.md](../language/derived-equality-design.md)
+- [mlir-backend-shape.md](../compiler/mlir-backend-shape.md)

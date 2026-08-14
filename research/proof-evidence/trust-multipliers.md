@@ -207,12 +207,12 @@ That stack is more aligned with Concrete than a random collection of new languag
 
 This note depends on or extends:
 
-- [authority-budgets.md](authority-budgets.md)
-- [capability-sandboxing.md](capability-sandboxing.md)
-- [execution-cost.md](execution-cost.md)
+- [authority-budgets.md](../packages-tooling/authority-budgets.md)
+- [capability-sandboxing.md](../language/capability-sandboxing.md)
+- [execution-cost.md](../stdlib/execution-cost.md)
 - [proof-evidence-artifacts.md](proof-evidence-artifacts.md)
-- [showcase-workloads.md](showcase-workloads.md)
-- [high-integrity-profile.md](high-integrity-profile.md)
+- [showcase-workloads.md](../workloads/showcase-workloads.md)
+- [high-integrity-profile.md](../language/high-integrity-profile.md)
 
 ## Recommended Roadmap Placement
 

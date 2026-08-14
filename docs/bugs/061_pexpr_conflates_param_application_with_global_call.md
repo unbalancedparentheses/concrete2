@@ -1,7 +1,7 @@
 # Bug 061: the proof model spells a parameter application and a global call the same way
 
 **Status:** Fixed (2026-07-28, R-0442).
-**Discovered:** 2026-07-25, auditing R-0002/R-0003 against `docs/PRINCIPLES.md`.
+**Discovered:** 2026-07-25, auditing R-0002/R-0003 against `docs/project/PRINCIPLES.md`.
 
 ## Symptom
 

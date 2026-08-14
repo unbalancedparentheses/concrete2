@@ -17,20 +17,20 @@ It exists so these ideas stay visible, comparable, and cross-linked even when th
 
 | Idea | Quick win | Full version | Current status | Primary note |
 |------|-----------|--------------|----------------|--------------|
-| Allocation budgets | 1-2 days (`--report alloc` classification) | 1-2 weeks for enforceable `NoAlloc`; longer for restricted `BoundedAlloc(N)` | Roadmap-committed in Phase N | [allocation-budgets.md](allocation-budgets.md) |
-| Arena allocation | ~1 week | ~1 week — feature is small if adopted | Research only | [arena-allocation.md](arena-allocation.md) |
-| Execution cost / boundedness | 1-2 days (structural boundedness report) | 2-3 weeks (abstract cost counting) | Research only | [execution-cost.md](execution-cost.md) |
-| Layout reports | 1 day for padding, 3-4 days for strong report pass | 3-4 days total for the near-term report set | Research only | [layout-reports.md](layout-reports.md) |
-| Typestate | 0 for ownership-based irreversible transitions | 2-3 weeks for phantom-type typestate | Research only; wait for evidence | [typestate.md](typestate.md) |
-| Authority budgets | ~1 week for module-level budgets | package-level enforcement depends on package model | Research only; blocked on package maturity | [authority-budgets.md](authority-budgets.md) |
-| Semantic query/search tooling | 2-4 days for per-function report slices and simple fact queries | 1-2 weeks for maintained query/search surface over machine-readable artifacts | Research only; strong operational fit | [semantic-diff-and-trust-drift.md](semantic-diff-and-trust-drift.md) |
-| Type-aware fuzzing/tool-generated invariants | 1-2 days for parser/container/property expansions | 1-2 weeks for maintained generator/fuzz tooling over types and bounds | Research only; prefer tooling over syntax | [testing-strategy.md](testing-strategy.md) |
-| Binary format DSL / derived parsers | none without real workload pressure | several weeks if promoted to surface syntax and proof-backed derivation | Research only; evidence-gated | [binary-format-dsl.md](binary-format-dsl.md) |
-| Cryptographic source commitments / reproducible evidence bundles | 2-4 days for deterministic bundle manifests and replayable verification | longer if signing, publication, and attestation become supported workflow surfaces | Strong roadmap fit; operationally committed direction, detailed mechanism still research | [cryptographic-source-commitments.md](cryptographic-source-commitments.md) |
-| Semantic review policy tooling | 2-4 days for CI checks over authority/trust drift | 1-2 weeks for maintained review-policy tooling over machine-readable compiler facts | Strong roadmap fit; tooling-first | [evidence-review-workflows.md](evidence-review-workflows.md) |
-| Self-describing binaries / proof-facing release artifacts | none without stronger artifact identity | 1-2 weeks once proof-facing export identity is stable | Research only; keep claims narrow | [self-describing-binaries.md](self-describing-binaries.md) |
-| Symbolic execution as proof addon tooling | reuse existing proof-facing exports | 1-2 weeks for first bounded-property workflow once proof subjects are stable | Strong research fit; addon-only | [proof-addon-architecture.md](proof-addon-architecture.md) |
-| Hardware capability mapping | none without target/runtime work | long-horizon target-specific research | Research only; do not commit yet | [hardware-capability-mapping.md](hardware-capability-mapping.md) |
+| Allocation budgets | 1-2 days (`--report alloc` classification) | 1-2 weeks for enforceable `NoAlloc`; longer for restricted `BoundedAlloc(N)` | Roadmap-committed in Phase N | [allocation-budgets.md](../stdlib/allocation-budgets.md) |
+| Arena allocation | ~1 week | ~1 week — feature is small if adopted | Research only | [arena-allocation.md](../stdlib/arena-allocation.md) |
+| Execution cost / boundedness | 1-2 days (structural boundedness report) | 2-3 weeks (abstract cost counting) | Research only | [execution-cost.md](../stdlib/execution-cost.md) |
+| Layout reports | 1 day for padding, 3-4 days for strong report pass | 3-4 days total for the near-term report set | Research only | [layout-reports.md](../stdlib/layout-reports.md) |
+| Typestate | 0 for ownership-based irreversible transitions | 2-3 weeks for phantom-type typestate | Research only; wait for evidence | [typestate.md](../language/typestate.md) |
+| Authority budgets | ~1 week for module-level budgets | package-level enforcement depends on package model | Research only; blocked on package maturity | [authority-budgets.md](../packages-tooling/authority-budgets.md) |
+| Semantic query/search tooling | 2-4 days for per-function report slices and simple fact queries | 1-2 weeks for maintained query/search surface over machine-readable artifacts | Research only; strong operational fit | [semantic-diff-and-trust-drift.md](../compiler/semantic-diff-and-trust-drift.md) |
+| Type-aware fuzzing/tool-generated invariants | 1-2 days for parser/container/property expansions | 1-2 weeks for maintained generator/fuzz tooling over types and bounds | Research only; prefer tooling over syntax | [testing-strategy.md](../process/testing-strategy.md) |
+| Binary format DSL / derived parsers | none without real workload pressure | several weeks if promoted to surface syntax and proof-backed derivation | Research only; evidence-gated | [binary-format-dsl.md](../language/binary-format-dsl.md) |
+| Cryptographic source commitments / reproducible evidence bundles | 2-4 days for deterministic bundle manifests and replayable verification | longer if signing, publication, and attestation become supported workflow surfaces | Strong roadmap fit; operationally committed direction, detailed mechanism still research | [cryptographic-source-commitments.md](../proof-evidence/cryptographic-source-commitments.md) |
+| Semantic review policy tooling | 2-4 days for CI checks over authority/trust drift | 1-2 weeks for maintained review-policy tooling over machine-readable compiler facts | Strong roadmap fit; tooling-first | [evidence-review-workflows.md](../proof-evidence/evidence-review-workflows.md) |
+| Self-describing binaries / proof-facing release artifacts | none without stronger artifact identity | 1-2 weeks once proof-facing export identity is stable | Research only; keep claims narrow | [self-describing-binaries.md](../proof-evidence/self-describing-binaries.md) |
+| Symbolic execution as proof addon tooling | reuse existing proof-facing exports | 1-2 weeks for first bounded-property workflow once proof subjects are stable | Strong research fit; addon-only | [proof-addon-architecture.md](../proof-evidence/proof-addon-architecture.md) |
+| Hardware capability mapping | none without target/runtime work | long-horizon target-specific research | Research only; do not commit yet | [hardware-capability-mapping.md](../stdlib/hardware-capability-mapping.md) |
 
 ## Why These Ideas Matter
 

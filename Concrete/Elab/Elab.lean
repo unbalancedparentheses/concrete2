@@ -1844,7 +1844,7 @@ partial def elabStmtEv (stmt : Stmt) : ElabM ElaboratedStmtV2 := do
     -- Linear-checked natively in Check; expanded here (past the linear checker) to a
     -- hidden temp + field-access binds. Sound at runtime: the source is moved into the
     -- temp, each field value is copied into its binding, and the temp is dead storage
-    -- afterward (its resource has moved to the bindings). See docs/OWNERSHIP_MODEL.md.
+    -- afterward (its resource has moved to the bindings). See docs/language/OWNERSHIP_MODEL.md.
     let tmpName := "__destr_" ++ structName
     let tmpLet := Stmt.letDecl sp tmpName false none value false
     let fieldLets := bindings.map fun b =>

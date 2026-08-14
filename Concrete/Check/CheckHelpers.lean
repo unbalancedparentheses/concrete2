@@ -100,7 +100,7 @@ def isReferenceType : Ty → Bool
 
 /-- Does this type contain a reference (`&T`/`&mut T`) anywhere? Used to enforce
     the "references are second-class — never returned" invariant
-    (docs/VALUE_MODEL.md). Raw pointers (`*const`/`*mut`) are NOT references and
+    (docs/language/VALUE_MODEL.md). Raw pointers (`*const`/`*mut`) are NOT references and
     are allowed in return position (they are the audit-visible unsafe escape). -/
 partial def tyContainsRef : Ty → Bool
   | .ref _ | .refMut _ => true
@@ -171,7 +171,7 @@ def resolveType (ty : Ty) : CheckM Ty := do
     let params' ← params.mapM resolveType
     let retTy' ← resolveType retTy
     -- References are second-class: a function TYPE may not return a reference,
-    -- directly or nested (docs/VALUE_MODEL.md). This makes ref-returning
+    -- directly or nested (docs/language/VALUE_MODEL.md). This makes ref-returning
     -- callbacks unconstructable, which keeps scoped callbacks (`with_value`)
     -- sound — the callback cannot return the borrowed element it was handed.
     if tyContainsRef retTy' then

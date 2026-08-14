@@ -1724,6 +1724,30 @@ probe "a whole-table witness with no dynamic request IS surplus" "true" "
   let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA, tbl] }
   r.surplus.length == 1"
 
+# RESOLVER REFUSALS ARE PART OF THE TYPED RESULT and block usability. Previously they were appended
+# to a report string, which put the fact outside the type that decides usability — so a consumer of
+# `CorrespondenceResult` could not tell an unreadable dependency from an absent one.
+#
+# NOT implied by the other sets: this case has every requested edge matched and all four sets empty,
+# and must still refuse because a named table was never examined.
+probe "an unreadable named table blocks usability even with every edge matched" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA]
+                      , resolverRefusals := [TableResolveRefusal.unknownTable \"No.Such.Table\"] }
+  r.matched.length == 1 && r.missing.isEmpty && r.ambiguous.isEmpty && r.surplus.isEmpty
+    && r.malformed.isEmpty && !(r.usable 1)"
+# ...and the same input without the refusal IS usable, so the refusal is what refuses.
+probe "the same input without a resolver refusal is usable" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA] }
+  r.usable 1"
+# The refusal is RETAINED, not merely counted — a consumer must be able to say which table.
+probe "the refusal is retained in the result and names its table" "true" "
+#eval$CORR
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA]
+                      , resolverRefusals := [TableResolveRefusal.unknownTable \"No.Such.Table\"] }
+  r.resolverRefusals.length == 1"
+
 # THE COUNT IS COMPARED, not inferred from empty sets: a join that dropped a request would leave
 # every set empty while covering less than was asked.
 probe "usability compares the COUNT, so a dropped request cannot pass" "true" "
@@ -1826,7 +1850,7 @@ else
 fi
 
 # === WHICH DependencyClosure REFUSAL SETS ARE NAMED — DERIVED, NOT ASSERTED IN PROSE ==========
-# docs/EVIDENCE_ARCHITECTURE.md requires six: missing, surplus, duplicate, ambiguous, unclassified,
+# docs/verification/EVIDENCE_ARCHITECTURE.md requires six: missing, surplus, duplicate, ambiguous, unclassified,
 # mismatched. I twice reported this count from memory and got it wrong (said "4 of 6" while listing
 # five). A count restated in prose is a measurement nobody took, so it is computed here from the
 # constructors that actually exist and printed with the verdict.

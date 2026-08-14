@@ -1,5 +1,5 @@
 # Assumption file for the fixed_capacity flagship candidate.
-# Schema: docs/ASSUMPTION_FILES.md
+# Schema: docs/verification/ASSUMPTION_FILES.md
 #
 # Active pull-through candidate (slot opened 2026-05-23).
 # fixed_capacity is the strategic candidate that surfaces every

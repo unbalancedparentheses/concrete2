@@ -253,7 +253,7 @@ inductive PExpr where
       to any `PVal`.  Returns `.array_ (elems.set i.toNat val)` —
       a new array with the i-th element replaced.  The original
       array is unchanged (PExpr is pure; mutation is encoded as
-      functional update + name rebind, per `docs/PROOF_STATE_MODEL.md`).
+      functional update + name rebind, per `docs/verification/PROOF_STATE_MODEL.md`).
 
       Out-of-bounds (`i < 0` or `i >= elems.length`) is *stuck*:
       eval returns `none`.  This matches the state-model decision
@@ -2198,7 +2198,7 @@ def ringPushFn : PFnDef :=
     extraction uses `PExpr.while_step` with a `LoopStep` enum:
       * `Cont { i: i+1 }`  — continue with incremented index
       * `Break { value: 1 }` — early exit with hit
-    (See `docs/PROOF_STATE_MODEL.md` § 4 for the encoding.)
+    (See `docs/verification/PROOF_STATE_MODEL.md` § 4 for the encoding.)
 
     Spec uses normalized form (commutative ops sorted by
     `normalizePExpr`'s pexprSortKey: vars before lits before

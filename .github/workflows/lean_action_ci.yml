@@ -183,7 +183,7 @@ jobs:
       - name: Proof-patterns corpus gate
         run: bash scripts/tests/check_proof_patterns.sh
 
-      - name: Axiom-inventory gate (docs/AXIOMS.md stays honest)
+      - name: Axiom-inventory gate (docs/verification/AXIOMS.md stays honest)
         run: bash scripts/tests/check_axiom_inventory.sh
 
   fuzz-campaign:
@@ -1069,7 +1069,7 @@ jobs:
           MULTI_KERNEL_MUTATE: "1"
         run: nix develop .#provers --command bash ./scripts/tests/check_multi_kernel.sh
 
-      # Corroborates the Tier-1 native-trust step recorded in docs/AXIOMS.md:
+      # Corroborates the Tier-1 native-trust step recorded in docs/verification/AXIOMS.md:
       # bv_decide's LRAT checker runs as compiled Lean, so this re-checks the same
       # bit-blasting with an independently implemented checker (drat-trim).
       - name: Independent DRAT check of bv_decide bit-blasting

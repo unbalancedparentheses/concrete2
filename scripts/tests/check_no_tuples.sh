@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# No-tuples decision gate (ROADMAP Phase 6 #5; docs/TUPLES.md).
+# No-tuples decision gate (ROADMAP Phase 6 #5; docs/language/TUPLES.md).
 #
 # Concrete V1 deliberately has no anonymous tuples — named structs are the one
 # product type. This gate pins that the tuple SYNTAX stays cleanly rejected at

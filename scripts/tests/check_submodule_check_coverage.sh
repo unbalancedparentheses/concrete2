@@ -162,7 +162,7 @@ if [ "$STDERRS" = "0" ]; then
 else
   no "std has $STDERRS front-end violations (was zero when H12 closed)"
 fi
-if grep -q '^### H12' docs/KNOWN_HOLES.md; then
+if grep -q '^### H12' docs/verification/KNOWN_HOLES.md; then
   ok "H12 recorded in KNOWN_HOLES.md"
 else
   no "H12 entry missing from KNOWN_HOLES.md"

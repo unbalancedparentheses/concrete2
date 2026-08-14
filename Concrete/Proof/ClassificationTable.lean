@@ -211,7 +211,7 @@ def externalTableEntries : List (String × String × List (String × String × S
 ]
 
 /-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`
-    (docs/EVIDENCE_ARCHITECTURE.md) requires `ambiguous` to be a named refusal rather than folded
+    (docs/verification/EVIDENCE_ARCHITECTURE.md) requires `ambiguous` to be a named refusal rather than folded
     into a general absence.
 
     THE DECISION IS UNCHANGED, and that distinction is the point. An earlier version of this

@@ -412,7 +412,7 @@ partial def parsePrimary : ParseM Expr := do
   | .while_ =>
     -- Phase 6D #2: value `while … else` was REMOVED — `while` is statement-only.
     -- (It was the oddest position-sensitive control form; see
-    -- docs/STATEMENT_EXPRESSION_MODEL.md and tests/programs/error_while_expr_removed.con.)
+    -- docs/language/STATEMENT_EXPRESSION_MODEL.md and tests/programs/error_while_expr_removed.con.)
     let sp ← peekSpan
     throwParse "while is a statement, not an expression (value `while … else` was removed)"
       (span := some sp)

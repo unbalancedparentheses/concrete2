@@ -11,7 +11,7 @@ import Concrete.Check.CheckHelpers
 
 namespace Concrete
 
-/-- Expression checking mode (docs/VALUE_FLOW_SPEC.md — the auto-consume
+/-- Expression checking mode (docs/language/VALUE_FLOW_SPEC.md — the auto-consume
     inversion, 2026-07-06). Consumption is decided HERE, in ONE place, not in
     every AST handler; a new syntax form that forgets to pick a mode gets
     `value` and fails closed (over-rejects) instead of silently leaking.
@@ -1862,7 +1862,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) : CheckM Unit := do
     -- moves each named field out into an owned binding. Checked natively (not via
     -- `let __destr = value; let a = __destr.a`, which is unsound for a linear struct
     -- — field access doesn't move, so the temp would leak). Elab expands it to the
-    -- temp+field form for codegen, past this checker. See docs/OWNERSHIP_MODEL.md.
+    -- temp+field form for codegen, past this checker. See docs/language/OWNERSHIP_MODEL.md.
     let valTy ← checkExpr value (some (.named structName))
     -- The destructure moves the source — value-mode checkExpr auto-consumes.
     -- Resolve any generic type arguments so field types are concrete.

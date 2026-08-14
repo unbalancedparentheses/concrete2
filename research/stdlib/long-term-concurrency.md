@@ -213,9 +213,9 @@ That is a much stronger long-term position than "support every concurrency style
 ## Relationship To Other Research
 
 - [concurrency.md](concurrency.md): near-term first implementation direction
-- [high-integrity-profile.md](high-integrity-profile.md): how stricter profiles may restrict concurrency
-- [trust-multipliers.md](trust-multipliers.md): how audit/report/evidence work could reinforce explicit runtime and concurrency boundaries
-- [complete-language-system.md](complete-language-system.md): why concurrency is part of becoming a complete system rather than just a compiler
+- [high-integrity-profile.md](../language/high-integrity-profile.md): how stricter profiles may restrict concurrency
+- [trust-multipliers.md](../proof-evidence/trust-multipliers.md): how audit/report/evidence work could reinforce explicit runtime and concurrency boundaries
+- [complete-language-system.md](../meta/complete-language-system.md): why concurrency is part of becoming a complete system rather than just a compiler
 
 ## Working Conclusion
 

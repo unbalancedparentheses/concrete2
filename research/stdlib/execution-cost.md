@@ -126,8 +126,8 @@ That would keep the explicitness while addressing the real need for bounded exec
 ## Relationship To Other Work
 
 - [concurrency.md](concurrency.md) — scheduling, preemption, and structured concurrency
-- [capability-sandboxing.md](capability-sandboxing.md) — `with(Bounded)` as a possible capability
-- [ten-x-improvements.md](ten-x-improvements.md) — audit outputs as a 10x improvement
+- [capability-sandboxing.md](../language/capability-sandboxing.md) — `with(Bounded)` as a possible capability
+- [ten-x-improvements.md](../meta/ten-x-improvements.md) — audit outputs as a 10x improvement
 
 ## Recommended Order
 

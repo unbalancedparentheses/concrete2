@@ -6,7 +6,7 @@ import Concrete.Proof.ProofCore
 
 This module is the home of compiler-correctness proofs for
 Concrete's `Core -> ProofCore` extraction.  Every Phase 4
-extraction rule in `docs/PROOF_OBLIGATIONS_REGISTER.md`
+extraction rule in `docs/verification/PROOF_OBLIGATIONS_REGISTER.md`
 (R-01..R-21) names a preservation theorem it owes Phase 12;
 this file is where they land.
 
@@ -38,7 +38,7 @@ in too much of the rest of Concrete's source IR.
 
 ## Where this is referenced
 
-- `docs/PROOF_OBLIGATIONS_REGISTER.md` R-01 and R-02 will
+- `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` R-01 and R-02 will
   link here once these theorems land.
 - The Lean kernel compiles this module at `make build`,
   so a future change that breaks the preservation
@@ -543,7 +543,7 @@ theorem while_flat_preservation
 When the source while body is NOT all flat assigns
 (`cAssignBodyToUpdates body = none`), the extractor falls
 back to `PExpr.while_step` with the `LoopStep` enum
-encoding from `docs/PROOF_STATE_MODEL.md` § 4. -/
+encoding from `docs/verification/PROOF_STATE_MODEL.md` § 4. -/
 theorem while_step_preservation
     (cond : CExpr) (body : List CStmt) (label : Option String)
     (step_body : List CStmt) (rest : List CStmt) (k : Option PExpr)

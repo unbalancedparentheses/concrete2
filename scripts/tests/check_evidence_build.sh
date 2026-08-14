@@ -126,7 +126,7 @@ fi
 # tripwire it began as. Both directions are pinned — writing `x` first must run `f` first, and
 # writing `y` first must run `g` first — because asserting only one direction would pass under a
 # rule that always evaluates the textually-first field regardless of the literal.
-# See docs/EVIDENCE_PRODUCER_MATRIX.md.
+# See docs/verification/EVIDENCE_PRODUCER_MATRIX.md.
 CC=".lake/build/bin/concrete"
 if [ -x "$CC" ]; then
   OT="$(mktemp -d)"

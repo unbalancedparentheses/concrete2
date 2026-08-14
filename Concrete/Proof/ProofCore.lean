@@ -677,7 +677,7 @@ def bodyFingerprint (body : List CStmt) : String :=
     Only widths/signs that `evalBinOp` supports are emitted; other
     combinations return `none` (extraction fails with a precise
     blocker rather than silently using i32 semantics).  See
-    `docs/PROOF_OBLIGATIONS_REGISTER.md` R-16 and R-17. -/
+    `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` R-16 and R-17. -/
 def binOpToPBinOp : BinOp → Ty → Option Proof.PBinOp
   -- Explicit modular add is the ONLY mod-2^32 spelling now that ordinary `+`
   -- is CHECKED (ROADMAP #10): `wrapping_add` on u32 → `addw 32`. Ordinary `.add`
@@ -861,7 +861,7 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
   -- `arr` is a simple identifier — we model the mutation as a
   -- shadowing letIn that rebinds the name to (arraySet arr idx
   -- val), which is the canonical functional-update encoding from
-  -- docs/PROOF_STATE_MODEL.md § 2.  More complex `arr` (e.g.
+  -- docs/verification/PROOF_STATE_MODEL.md § 2.  More complex `arr` (e.g.
   -- `obj.field[i] = v`) needs structSet first; deferred.
   | (.arrayIndexAssign (.ident name _) idx val) :: rest, k => do
     let pi ← cExprToPExprImpl idx
@@ -944,7 +944,7 @@ def extractCarried : List CStmt → List String
 
 /-- Extract a CStmt list (a while-loop body) into a PExpr that
     evaluates to a `PVal.enum_ "LoopStep" variant fields` value
-    per `docs/PROOF_STATE_MODEL.md` § 4.
+    per `docs/verification/PROOF_STATE_MODEL.md` § 4.
 
     `assigns` accumulates loop-carried-variable updates from `assign`
     statements walked so far.  When control falls off the end of the
@@ -1026,7 +1026,7 @@ def cMatchArmsToP :
     An array-element assignment `name[idx] = val` is modelled as
     the functional update `(name, arraySet name idx val)`, the
     same encoding cStmtsToPExprKImpl uses at the top level
-    (docs/PROOF_STATE_MODEL.md § 2).  Because `while_` applies the
+    (docs/verification/PROOF_STATE_MODEL.md § 2).  Because `while_` applies the
     update list IN ORDER with later updates seeing earlier ones
     (see PExpr.while_ semantics), several writes to the same array
     in one iteration (e.g. state_to_bytes' four byte stores) chain
@@ -1387,7 +1387,7 @@ structure EligibilityEntry where
     item 4 closes the gap by classifying every existing flagship
     proof.
 
-    See `docs/PROOF_OBLIGATIONS_REGISTER.md` for which proofs map to
+    See `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` for which proofs map to
     which classification, and "Phase 1 items 3/4" in the roadmap. -/
 structure ProofRegistryEntry where
   function        : String  -- qualified name, e.g. "main.parse_byte"
@@ -1529,7 +1529,7 @@ inductive ObligationStatus where
     whose spelling can drift is a marker a consumer cannot match on. `check_one_producer.sh` pins
     that this literal appears in exactly one file — the same discipline applied to digests, since a
     string constant duplicated across surfaces is a flat-string fact with several producers
-    (`docs/EVIDENCE_ARCHITECTURE.md` names that shape as the thing typed evidence replaces). -/
+    (`docs/verification/EVIDENCE_ARCHITECTURE.md` names that shape as the thing typed evidence replaces). -/
 def noObligationRecord : String := "no_obligation_record"
 
 /-- The marker for "this capability's origin could not be read".
@@ -3070,20 +3070,23 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
                     : Proof.EdgeWitness)
         else none)
   let witnesses := trustedWitnesses ++ tableWitnesses
-  { subject := id, requestedEdges := requested, candidateWitnesses := witnesses }
+  -- The refusals are collected HERE, where the tables are named, and travel in the input. Recomputing
+  -- them at the report would be a second producer of the same fact.
+  let refusals := match Proof.validatedRowOf thm with
+    | .error _ => []
+    | .ok row  => row.tables.filterMap (fun (tn, _) =>
+        match Proof.entryEvidenceForTable tn with
+        | .error w => some w
+        | .ok _    => none)
+  { subject := id, requestedEdges := requested, candidateWitnesses := witnesses
+  , resolverRefusals := refusals }
 
 /-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
 
     The witness derivation cannot act on these — an unreadable table justifies nothing either way —
     but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
     dependency. Reported beside the correspondence line rather than folded into it. -/
-def tableResolutionRefusalsOf (pc : ProofCore) (id : CallableId) : List String :=
-  let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
-  match Proof.validatedRowOf (theoremNameOf pc qual) with
-  | .error _ => []
-  | .ok row  => row.tables.filterMap (fun (tn, _) =>
-      match Proof.entryEvidenceForTable tn with
-      | .error w => some w.explain
-      | .ok _    => none)
+def tableResolutionRefusalsOf (pc : ProofCore) (graph : CallGraph) (id : CallableId) : List String :=
+  (correspondenceInputOf pc graph id).resolverRefusals.map (·.explain)
 
 end Concrete

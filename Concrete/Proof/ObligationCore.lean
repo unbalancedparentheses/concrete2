@@ -6,7 +6,7 @@ import Concrete.Report.Report
 One record model for every proof / contract / runtime-safety / SMT / policy /
 audit / proof-authoring surface. Reports, policies, proof workspaces, audit
 bundles, and codegen gates should all read from this ledger instead of
-recomputing facts in parallel walkers. See `docs/OBLIGATION_CORE.md` (canonical)
+recomputing facts in parallel walkers. See `docs/verification/OBLIGATION_CORE.md` (canonical)
 and ROADMAP Phase 3.
 
 This module establishes the schema (#1) and the single evidence/status
@@ -54,7 +54,7 @@ def statusVocabulary : List String :=
     -- in a kernel (Isabelle `smt` with `smt_oracle = false`, asserted oracle-free),
     -- not merely corroborated by a second decision procedure. Strictly stronger than
     -- `solver_checked`. Reconstruction covers linear integer arithmetic only, so a
-    -- nonlinear VC cannot currently reach this class — see docs/SMT_SOUNDNESS.md.
+    -- nonlinear VC cannot currently reach this class — see docs/verification/SMT_SOUNDNESS.md.
     "solver_replayed",
     "arithmetic_proved", "solver_trusted", "tested_by_oracle", "runtime_checked",
     "enforced", "assumed", "trusted", "partial", "stale", "vacuous", "missing",

@@ -77,4 +77,4 @@ Relevant files:
 
 ## Where To Go Deeper
 
-For the stable testing reference, read [`docs/TESTING.md`](../../TESTING.md).
+For the stable testing reference, read [`docs/compiler/TESTING.md`](../../compiler/TESTING.md).

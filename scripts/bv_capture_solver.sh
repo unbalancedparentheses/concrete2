@@ -8,7 +8,7 @@
 # to get hold of the bit-blasted CNF, which is otherwise written to a temp file that
 # Lean deletes; there is no Lean option to retain it.
 #
-# Why: docs/AXIOMS.md records that `bv_decide`'s LRAT certificate checker runs as
+# Why: docs/verification/AXIOMS.md records that `bv_decide`'s LRAT certificate checker runs as
 # COMPILED LEAN, so a "kernel-checked bitblasting" proof extends trust to
 # Lean.trustCompiler. Capturing the CNF lets a SEPARATELY IMPLEMENTED checker
 # (drat-trim) verify the same bit-blasting independently — see

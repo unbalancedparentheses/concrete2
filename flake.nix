@@ -51,7 +51,7 @@
               coq                # independent CIC kernel (coqc/lia)
               coqPackages.stdlib # Rocq 9.0 stdlib (ZArith, Lia) — split out of coq-core
               isabelle           # independent HOL kernel (presburger) — foundational independence
-              # Certificate-replay toolchain (see docs/SMT_SOUNDNESS.md). Makes a
+              # Certificate-replay toolchain (see docs/verification/SMT_SOUNDNESS.md). Makes a
               # solver's PROOF checkable rather than its verdict merely corroborated.
               drat-trim          # DRAT/LRAT checker for bit-blasted (SAT) certificates
               # cvc5 is here because check_multi_kernel.sh CONSUMES it: it locks the

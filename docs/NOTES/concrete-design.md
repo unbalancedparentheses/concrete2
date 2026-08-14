@@ -96,7 +96,7 @@ evidence-class machinery.
   compilation pipeline with an explicit trusted surface. Residual: the compiler *binary*
   runs on Lean's unverified runtime — a trusted component, differentially tested against
   the reference interpreter (a reasonable trust boundary).
-- **Point 4 (ecosystem) — mostly N/A by philosophy.** `docs/DESIGN_POLICY.md`'s
+- **Point 4 (ecosystem) — mostly N/A by philosophy.** `docs/project/DESIGN_POLICY.md`'s
   admission principle favors a small, compiler-owned proof surface over importing large
   frameworks. Only relevant to the deferred heap/concurrency proofs, where Rocq's Iris is
   decades ahead.

@@ -31,11 +31,11 @@ boundaries as machine-checkable contracts. The evidence ledger never collapses
 proofs, tests, solver results, runtime checks, and assumptions into a single
 green badge. Its direction includes independently replayable evidence that a
 consumer can check with a kernel they choose. See the
-[verification charter](docs/VERIFICATION_CHARTER.md); it is product direction,
+[verification charter](docs/verification/VERIFICATION_CHARTER.md); it is product direction,
 not a claim that all of this surface ships today.
 
 For the current shipped/experimental/missing capability matrix, see
-[Verification Status](docs/VERIFICATION_STATUS.md).
+[Verification Status](docs/verification/VERIFICATION_STATUS.md).
 
 ## At a Glance
 
@@ -217,9 +217,9 @@ The target architecture keeps five facts separate: whether the proposition
 describes the source, whether it is logically valid, whether its dependencies
 are closed, what exact replay occurred, and whether current consumer policy
 accepts that replay. See
-[Evidence Architecture](docs/EVIDENCE_ARCHITECTURE.md) and
-[Verification IR](docs/VERIFICATION_IR.md). These are product direction;
-[Claims Today](docs/CLAIMS_TODAY.md) remains authoritative for shipped support.
+[Evidence Architecture](docs/verification/EVIDENCE_ARCHITECTURE.md) and
+[Verification IR](docs/verification/VERIFICATION_IR.md). These are product direction;
+[Claims Today](docs/verification/CLAIMS_TODAY.md) remains authoritative for shipped support.
 
 ## Four Claim Shapes
 
@@ -373,10 +373,10 @@ indirect call has one compile-time target.
 | Lean/Coq/Isabelle | Small trusted kernels and machine-checked proofs | Concrete uses theorem proving as evidence for systems code rather than making proof authoring the whole programming experience. |
 
 For the longer C/Rust-oriented argument, read
-[docs/WHY_CONCRETE.md](docs/WHY_CONCRETE.md).
+[docs/project/WHY_CONCRETE.md](docs/project/WHY_CONCRETE.md).
 
 ## License
 
 Concrete was originally specified and created by Federico Carrone at LambdaClass.
 
-[Apache 2.0](/LICENSE)
+[Apache 2.0](LICENSE)

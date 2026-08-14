@@ -121,7 +121,7 @@ fi
 #    The bytes are accurate to today's semantics and stay. What must not happen is the
 #    order becoming AUTHORITATIVE while undecided, so the close condition is ratification
 #    before the fingerprint migration — asserted below rather than trusted to prose.
-if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/EVIDENCE_PRODUCER_MATRIX.md; then
+if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md; then
   ok "GAP OPEN: struct-literal initializer evaluation order is undecided"
 else
   no "the struct-literal ordering decision section is gone — it must be RATIFIED in the language reference, not deleted"
@@ -140,7 +140,7 @@ fi
 # 5b. THE CLOSE CONDITION. While V1 is the authoritative domain the order is only in shadow
 #     bytes. The moment the migration starts, an unratified evaluation order would become
 #     authoritative — so these two facts must not both change without the other.
-if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/EVIDENCE_PRODUCER_MATRIX.md \
+if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md \
    && grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean 2>/dev/null; then
   no "structural bytes reached the canonical subject while the struct-literal evaluation order is still UNRATIFIED — decide the order before the migration, not after"
 else

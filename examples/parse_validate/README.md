@@ -97,7 +97,7 @@ revoked (reported `stale`) — drift detection is part of the contract.
 ## ProvableV1 conformance
 
 Every proof-eligible function in `parse_validate` fits the
-`ProvableV1` profile (see [`docs/PROVABLE_V1.md`](../../docs/PROVABLE_V1.md)).
+`ProvableV1` profile (see [`docs/verification/PROVABLE_V1.md`](../../docs/verification/PROVABLE_V1.md)).
 The eight pure scalar validators plus `parse_header` use only
 constructs in the supported surface: i32 arithmetic, comparisons,
 let bindings, if/then/else, direct calls, struct and enum literals,
@@ -216,9 +216,9 @@ time) now opens up the next candidate.
 
 - `AUDIT.md` — graduation bars and progress.
 - `CATCHES.md` — negative-pair narrative.
-- `assumptions.toml` + `docs/ASSUMPTION_FILES.md` — declared trust
+- `assumptions.toml` + `docs/verification/ASSUMPTION_FILES.md` — declared trust
   surface and its CI gate.
-- `Concrete.toml` `[policy]` + `docs/POLICY_FILES.md` — enforced
+- `Concrete.toml` `[policy]` + `docs/project/POLICY_FILES.md` — enforced
   budgets.
 - in-source `#[proof_by]`/`#[spec]`/`#[proof_fingerprint]` links in
   `src/main.con` + `Concrete/Proof.lean` — attached theorems.

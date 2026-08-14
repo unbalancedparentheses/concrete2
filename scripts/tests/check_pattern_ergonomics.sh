@@ -7,7 +7,7 @@
 # patterns are explicit workload-gated decisions with separate gates/docs.
 #
 # Fixtures: tests/programs/patterns/. Example: examples/patterns/byte_ranges/.
-# See docs/PATTERN_ERGONOMICS.md.
+# See docs/language/PATTERN_ERGONOMICS.md.
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"

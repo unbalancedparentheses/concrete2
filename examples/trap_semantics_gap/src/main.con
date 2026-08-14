@@ -1,6 +1,6 @@
 // COUNTEREXAMPLE FIXTURE — both functions trap at runtime. That is the point.
 //
-// H24 in docs/KNOWN_HOLES.md. `Concrete.Semantics.IntArith` is the single-source trap
+// H24 in docs/verification/KNOWN_HOLES.md. `Concrete.Semantics.IntArith` is the single-source trap
 // semantics — it defines a checked division as trapping on "divide-by-zero, signed
 // MIN / -1, shift out of range" — and it is consumed by the interpreter, EmitSSA,
 // SSAVerify, SSACleanup and TypeJudgment. Obligation generation imports it too, but

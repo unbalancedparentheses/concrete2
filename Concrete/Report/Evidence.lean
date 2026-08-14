@@ -25,7 +25,7 @@ element, which is a visible act; H23 was an *omission*, and this shape has no om
 that loses information.
 
 This is the de Bruijn discipline the project already applies to other people's proofs and
-not to its own: the emitted Rocq scripts run `Print Assumptions`, `docs/AXIOMS.md` tracks
+not to its own: the emitted Rocq scripts run `Print Assumptions`, `docs/verification/AXIOMS.md` tracks
 and gates Lean's axiom set. A theorem carries its axioms and "proved" means the axiom set
 is empty. `Evidence` applies exactly that to Concrete's own claims.
 
@@ -230,7 +230,7 @@ theorem c2_under_hypotheses_proved (e : Evidence) (hyps : List Hypothesis) :
 
     The H23 *class* as a theorem. R-0461 (2026-08-03) then closed H23 itself by populating
     `assumes` from real hypothesis provenance, so this row now fires on live verdicts rather
-    than standing as proved substrate — `docs/KNOWN_HOLES.md` is the authority on that
+    than standing as proved substrate — `docs/verification/KNOWN_HOLES.md` is the authority on that
     status. It cannot present as any `proved_*` class because it presents as a
     single fixed literal — and that literal is proved to be outside `proofClasses` by a
     companion `example` next to the discharge-adapter firewall in `Report.lean`, which is

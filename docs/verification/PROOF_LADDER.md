@@ -1,0 +1,217 @@
+# The Proof Ladder — discharge infrastructure and evidence tiers
+
+Status: **partly shipped, partly design.** This document is explicit about
+which is which (see the table at the end). It is the discharge-side companion
+to [CONTRACTS_AND_VCS.md](CONTRACTS_AND_VCS.md), which covers the claim →
+obligation side.
+
+**Decision note (2026-07-25):** R-0440 ratified a multidimensional evidence
+model. “Ladder” below means a trust-cost routing preference among discharge
+methods for the same obligation and semantic scope. It is not a total ordering
+between unlike evidence such as a native oracle test and a narrower ProofCore
+theorem.
+
+The pipeline is:
+
+```
+claim  ->  obligation  ->  DISCHARGE  ->  audit class
+                            ^^^^^^^^^
+                         this document
+```
+
+`CONTRACTS_AND_VCS.md` owns the first two arrows (where claims come from and
+how they become obligations). This document owns the third: *how an obligation
+is discharged, and what trust class that discharge earns.*
+
+## The reusable proof layer (SHIPPED)
+
+These are kernel-verified lemmas in `Concrete/Proof/Proof.lean`. Their point is to
+turn loop/array proofs from heroic one-off `simp` scripts into a reusable
+layer, so the next proof is "large but systematic," not speculative.
+
+- **Array update lemmas** — `lookupIndex_set_self`, `lookupIndex_set_ne`,
+  `length_set`. Read-after-write, framing, and length for the `arraySet`/
+  `lookupIndex` model. The backbone for byte/word packing, schedule expansion,
+  and state updates.
+- **`while_` unfolding** — `eval_while_false`, `eval_while_true`. Stable
+  rewrite rules for the two loop transitions, so loop proofs induct on the
+  iteration count instead of unfolding the body N times.
+- **Fuel monotonicity (the keystone)** — `eval_fuel_succ` / `eval_fuel_le`.
+  `eval` consumes fuel and its termination is lexicographic on `(fuel, expr)`,
+  so relating two fuel levels needs a theorem, not a fuel induction. Proved
+  over `eval` and all six mutually recursive helpers via `eval.induct`. Once it
+  exists, loop proofs evaluate everything at a single large fuel and drop all
+  per-iteration fuel bookkeeping. (We deliberately did **not** refactor `eval`
+  to sized types to avoid this; see
+  `../research/proof-evidence/SIZED_EVALUATOR_INVESTIGATION.md`. The
+  additive lemma was the lower-risk choice and it neutralized the recurring
+  cost.)
+- **`evalAssigns_fuel_le`** — loop-body assignments are fuel-monotone (a short
+  list induction over `eval_fuel_le`).
+- **Bounded counter-loop induction** — `eval_while_count`. For a `while_` whose
+  env at the start of iteration `k` is `st k`: given the guard holds and the
+  body steps `st k` to `st (k+1)` for every `k < N`, and the guard fails at
+  `st N`, the loop evaluates to `cont` in the final env `st N`. This is the
+  lemma SHA-256's packing / schedule / compression loops are proved with.
+
+Source-level contracts and loop obligations now exist. Their arithmetic shapes
+align with the hypotheses used by `eval_while_count`, but full operational
+preservation and automatic composition remain narrower than the reusable Lean
+lemma layer. See [VERIFICATION_STATUS.md](VERIFICATION_STATUS.md) for the
+current boundary; this document describes discharge infrastructure, not syntax
+availability.
+
+## The discharge ladder (cheapest trust first)
+
+An obligation is discharged by one of these, and the audit records *which*.
+The ordering is by trust cost: prefer the tiers that grow nothing in the
+trusted computing base.
+
+| Tier | For | Audit class | TCB impact |
+|---|---|---|---|
+| **Lean (kernel)** | induction, refinement (`eval_while_count`, `f ⊑ spec`) | `proved_by_lean` | none (kernel checks the proof) |
+| **`bv_decide` (kernel-checked)** | BitVec / bounded-arithmetic leaves — `ch`/`maj`/`rotr`/σ, u32 wrap, shift-pack, index bounds | `proved_by_kernel_decision` | none (solver proposes, kernel checks the LRAT certificate) |
+| **external SMT** (Z3/cvc5) | nonlinear arithmetic, goals `bv_decide` cannot — **only when needed** | `solver_trusted` | **grows** (solver in TCB unless a certificate is replayed) |
+| **runtime check** (gradual mode) | unproved claims asserted at runtime | `runtime_checked` | none for soundness; shifts the check to runtime |
+| **`assume`** | explicitly accepted gaps | `assumed` | the assumption itself |
+
+Two tiers are **non-negotiably distinct**: Lean and `bv_decide` are
+*kernel-checked* (no TCB growth); external SMT is *solver-trusted* (the solver
+enters the TCB). The whole project is about not hiding trust, so these are
+different audit classes and must never collapse into one "green."
+
+“No TCB growth” means relative to accepting the pinned Lean kernel and its
+exact rule set; it is not a claim that the kernel is infallible. Kernel-backed
+evidence is versioned and revocable. Where an exact retained certificate can be
+checked by a smaller independent profile, record that as a distinct logical-
+validity method rather than silently replacing the historical kernel result.
+See [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md).
+
+### `bv_decide` first (validated)
+
+Lean 4.28's `bv_decide` (`import Std.Tactic.BVDecide`, already in the
+toolchain — no external dependency) bit-blasts a BitVec/boolean goal to SAT and
+replays a certificate the kernel checks. It targets exactly the obligations
+this domain produces. Confirmed against the HMAC helper facts: the universal
+`Ch(0xFFFFFFFF, y, z) = y`, `Maj` commutativity, `u32` wrapping-add identities,
+and shift/pack facts all close with zero added trust. So the arithmetic *leaves*
+of crypto proofs discharge kernel-checked, and an external solver is a later,
+louder, optional tier reached for only when `bv_decide` cannot.
+
+### Division of labour
+
+- **`bv_decide`** does the *leaves*: BitVec identities, bounds, per-iteration
+  arithmetic side conditions, the `decreases` variant.
+- **Lean** does the *structure*: loop induction (`eval_while_count`),
+  cross-function composition, and refinement against the spec layer.
+- **External SMT** does what neither can cheaply, and pays for it in trust
+  class.
+
+## `assume` is a controlled trapdoor
+
+An inline `assume P` (planned) can make any downstream `proved` claim vacuous
+if `P` is false. Rules, not one rule:
+
+1. It **taints** its obligation's class to `assumed` — never `proved`. The
+   taint propagates; you cannot launder an assumption into a proof.
+2. It flows into the **same audit ledger** as `assumptions.toml`
+   (`[claims.*]`), not a parallel one.
+3. It is **gate-forbiddable**: release / showcase mode can require zero
+   undischarged assumptions.
+
+This is the one feature whose default is suspicion.
+
+## Build order — the proof teaches the syntax
+
+Do **not** design contract syntax and VC shapes against imagined obligations.
+Prove a real HMAC obligation first; let it dictate the obligation format the
+contract system must generate.
+
+1. **Lean spec layer** — pure/total/erased SHA-256/HMAC spec functions
+   (the refinement targets *and* the vocabulary future contracts point at).
+2. **`bv_decide` automation tier** — wire it into the proof workflow; use it on
+   the HMAC helper lemmas. Low-risk, useful immediately, zero TCB cost.
+   *(Shipped: `Concrete/Sha256Refine.lean` uses `bv_decide` to close the
+   word-level core of the first refinements — the `proved_by_kernel_decision`
+   tier's first committed use.)*
+3. **Refinement theorem pattern** — establish the shape "extracted `PExpr`
+   refines the pure Lean spec," not "evaluates to these bytes."
+   *(Shipped: `ch_refines` / `maj_refines` prove the extracted Boolean round
+   functions equal `Sha256Spec.ch` / `maj` for ALL inputs, via two reusable
+   `BitVec.ofInt ∘ toNat` round-trip bridging lemmas + `bv_decide`. Also shipped:
+   `rotr_refines` (with the `32−n` shift amount) and all four sigma refinements
+   (`big_sigma0/1`, `small_sigma0/1`) — plus the `rotr_call` call/bind
+   scaffolding (`shaFns` function table + `eval.evalArgs`/`bindArgs` reduction)
+   that lets extracted `rotr(...)` calls inside the sigmas reduce to
+   `rotr_refines`. Every SHA-256 round *function* now refines its spec.)*
+4. **`block_to_words_refines_spec`** — the first real proof using the pattern +
+   `eval_while_count`. This validates what kind of obligation contracts must
+   generate.
+   *(Shipped: `block_to_words_refines_spec` proves the extracted 16-iteration
+   big-endian word-packing loop refines `Sha256Spec.blockToWords` for ALL 64
+   input bytes — `eval_while_count` for the loop, a `List.set`/`getElem`
+   invariant (`wList_set`) for the per-iteration array write, `bv_decide` for
+   the per-word packing fact, and the spec layer as target. The project has
+   moved from straight-line helper refinement to **looping crypto-state
+   refinement**. The remaining steps in the SHA-256 pipeline — `rotr`/sigmas
+   (the `32−n` shift amounts and `rotr` calls), the 48-round schedule, the
+   64-round compression, and the `hash`/`hmac` composition — reuse this same
+   machinery.)*
+5. **Attribute contracts + ghost values — shipped local surface.**
+   `#[requires]`, `#[ensures]`, loop invariants/variants, ghost values, and
+   their obligation/report paths exist. Recursive `#[decreases]`, two-state
+   `old`, and frame conditions remain planned.
+6. **VC generation — shipped families, consolidation active.** Existing
+   families lower contracts and runtime-safety sites through several walkers;
+   one typed calculus and Core-level faithfulness remain roadmap work.
+7. **Discharge routing + classification — shipped.** Lean, `bv_decide`, SMT,
+   runtime, and assumption outcomes remain distinct in the evidence ledger.
+8. **Gradual and external-SMT paths — shipped subsets.** Unsupported shapes and
+   trust boundaries remain explicit rather than silently earning proof status.
+
+Reason for the ordering: if contract syntax lands before
+`block_to_words_refines_spec`, we risk freezing syntax and VC shapes around a
+proof we have not done. HMAC should teach the contract system.
+
+## What this is NOT
+
+No dependent types or tactics in `.con` source, no row effects, no sized-types
+evaluator refactor (settled), no proof-directed optimization yet. Contracts and
+ghost values erase; the compiled binary is unchanged.
+
+## Shipped vs. planned
+
+| Piece | Status |
+|---|---|
+| Array / `while_` / fuel-monotonicity / counter-loop lemmas | **shipped** (`Concrete/Proof/Proof.lean`) |
+| `bv_decide` kernel-checked tier, used in a committed proof | **shipped** (`Concrete/Sha256Refine.lean`; `proved_by_kernel_decision`) |
+| Spec layer (`Concrete/Proof/Sha256Spec.lean`) | **shipped** |
+| Refinement pattern: extracted `PExpr` refines spec, ∀ inputs | **shipped** for the Boolean round functions (`ch_refines` / `maj_refines`) |
+| First **loop** refinement: `block_to_words_refines_spec` (∀ 64 bytes, via `eval_while_count`) | **shipped** (`Concrete/Sha256Refine.lean`) |
+| `rotr` + four sigma refinements (incl. `32−n` shift) + `rotr_call` call/bind scaffolding | **shipped** (`Concrete/Sha256Refine.lean`) |
+| `sha256_round` refinement (Σ/Ch/Maj + wrapping-`addw` chain, state reads, helper calls) | **shipped** (`round_refines`) |
+| `sha256_schedule` refinement — two loops incl. the **self-referential** 48-round expansion, via `expandSchedule_recurrence` + `eval_while_count` | **shipped** (`sha256_schedule_refines_spec`) |
+| `sha256_compress` **body** refinement — `compressFold` recurrence + 64-round `eval_while_count` (state invariant `s = compressFold m`, `round_call` lifts `round_refines` to the opaque 8-word state) + Davies-Meyer feed-forward | **shipped** (`compress_body_refines_spec`) |
+| Generic counter-loop frame lemma (`set_in_counter_map`) dedup'ing per-construct frame proofs | **shipped** |
+| Evidence classes `proved` / `enforced` / `reported` / `assumed` + `concrete audit` | **shipped** |
+| Full `sha256_compress(state, block)` refines `Sha256Spec.compress` (setup calls + body, end-to-end) | **shipped** (`sha256_compress_refines_spec`) |
+| Offset compression `sha256_compress_at(state, buf, off)` refines `Sha256Spec.compress` of the slice at `off` | **shipped** (`sha256_compress_at_refines_spec`; now a `shaFns` table entry) |
+| FIPS-180-4 **padding**: post-store buffer agrees with `Sha256Spec.padMessage` on `[0, plen)` (region characterization + be64↔u32 length-byte bridge, `bv_decide`); `bufArr_set` buffer-update model; `sliceAt = blockAt` block view | **shipped** (`padFn_eq`, `pad_getD`, `sliceAt_padFn`) |
+| **Multi-block hash loop** refines `hashState`: the `sha256_compress_at` fold over every padded block, via `eval_while_count` (state invariant `state = hashFold padded blk`) | **shipped** (`hash_loop_eval`) |
+| `state_to_bytes` refines `Sha256Spec.stateToBytes` — first **multi-store-per-iteration** loop (4 byte writes/word, `obAt` boundary invariant), bytes matched by `bv_decide` | **shipped** (`state_to_bytes_refines_spec`) |
+| Full `sha256_hash(data, len)` refines `Sha256Spec.hash` end-to-end (buffer copy, `0x80` marker, FIPS length stores at the computed `plen-k` indices, multi-block compress loop, digest unpack) for every `len ≤ 375` with a zero-padded buffer | **shipped** (`sha256_hash_refines_spec`; the symbolic-`i32` `nblocks=(len+9+63)/64` index discharged by the `BitVec.sdiv`→`Nat`-div bridge `sdiv64_bridge`) |
+| HMAC infrastructure — size-generic buffer model `arrN n`, the generic copy loop (`copy_loop`: `for i in 0..N { dst[off+i]=src[i] }` ⊑ `copyFn`), the ipad/opad two-buffer xor loop (`xor_loop`), and `sha256_hash` as a callable `shaFns` entry (`sha256_hash_call`) | **shipped** (all the loop/buffer building blocks hmac needs) |
+| Full `hmac_sha256(k, k_len, m, m_len)` refines `Sha256Spec.hmac` end-to-end (the `if k_len>64` key-prep branch + ipad/opad xor + message embed + three `sha256_hash` calls + digest copies) for every `k_len ≤ 128`, `m_len ≤ 256` | **shipped at graduation grade** (`hmac_sha256_refines_spec`; `hmac_linear` for the post-key-prep continuation, `kp_else`/`kp_if` for the branch). The proof is about the **stored-fingerprint extracted source body** — `hmac_sha256Expr` matches the extraction: `gt k_len 64`, the key-prep `if` as a statement that mutates `kp` in place and **duplicates the whole linear tail into both branches** (`thenBranch`/`elseBranch`, each ending in `hmac_linear`). All nine chain refinements + the two bar-#1 point proofs are registered with the spec equal to the source-extracted PExpr (`Concrete.Proof.specs`), so the **spec-drift gate** ties every link to the represented body: editing that body turns the proof stale (regression-verified). `--report check-proofs` = 11 verified, 0 failed. R-0004 still owns signatures, contracts, transitive dependencies, and replay context; “body-fresh” is not “full semantic subject pinned.” This is HMAC bar #2 / graduation closed at the same standard as the other flagships. |
+| `#[requires/ensures/invariant/decreases]`, `ghost`, `assume`, `contract` | **design** (ROADMAP Phase 4) |
+| VC generator; `proved_by_kernel_decision` / `proved_by_smt` / `solver_trusted` / `runtime_checked` classes; external SMT; gradual mode | **design** (ROADMAP Phase 5) |
+
+## See also
+
+- [CONTRACTS_AND_VCS.md](CONTRACTS_AND_VCS.md) — the claim → obligation side.
+- [PROOF_OBLIGATIONS_REGISTER.md](PROOF_OBLIGATIONS_REGISTER.md) — per-construct
+  ProvableV1 extensions (R-01…R-28) and Phase-12 obligations.
+- [PROOF_STORY_MATRIX.md](PROOF_STORY_MATRIX.md) — per-construct proved/trusted
+  status.
+- [../research/proof-evidence/SIZED_EVALUATOR_INVESTIGATION.md](../../research/proof-evidence/SIZED_EVALUATOR_INVESTIGATION.md) — why the
+  evaluator is not refactored to sized types.
+- [TRUSTED_COMPUTING_BASE.md](TRUSTED_COMPUTING_BASE.md) — the trust layers.

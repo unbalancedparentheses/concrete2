@@ -165,7 +165,7 @@ def lowerUnverified (mono : MonomorphizedProgram) : Except Diagnostics SSAProgra
 
       `postElab`        Ty.placeholder leak after elab (warnings —
                         try/defer have documented exceptions per
-                        `docs/VERIFY_GATES.md`).
+                        `docs/verification/VERIFY_GATES.md`).
       `postMono`        Ty.typeVar leak + Copy-field violations after
                         monomorphization (errors).
       `postLower`       SSA structural / dominator invariants on the

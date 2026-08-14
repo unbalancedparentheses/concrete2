@@ -37,18 +37,18 @@ design doc for a deferred part). The handoff gate parses this table.
 | callable-values | stable_for_stdlib | scripts/tests/check_callable_values.sh |
 | capability-callbacks | stable_for_stdlib | scripts/tests/check_capability_polymorphism_design.sh |
 | cli-verbs | stable_for_stdlib | scripts/tests/check_cli_contract.sh |
-| const-generics | provisional_with_gate | docs/CONST_GENERICS_V1.md |
+| const-generics | provisional_with_gate | docs/language/CONST_GENERICS_V1.md |
 | iteration | stable_for_stdlib | scripts/tests/check_iteration_protocol.sh |
-| build-profiles | provisional_with_gate | docs/PROFILES.md |
+| build-profiles | provisional_with_gate | docs/platform/PROFILES.md |
 
 ## Notes on the provisional surfaces
 
 - **const-generics** — narrow const generics for fixed-capacity APIs are
-  *designed and workload-gated* (see [CONST_GENERICS_V1.md](../CONST_GENERICS_V1.md)).
+  *designed and workload-gated* (see [CONST_GENERICS_V1.md](../language/CONST_GENERICS_V1.md)).
   Fixed-capacity stdlib APIs may assume the documented V1 subset only; anything
   beyond it must wait for a real workload to pull it in (ROADMAP #6a).
 - **build-profiles** — debug/release profile behavior and the policy surface are
-  designed ([PROFILES.md](../PROFILES.md)); the remaining work is checked-overflow
+  designed ([PROFILES.md](../platform/PROFILES.md)); the remaining work is checked-overflow
   codegen (ROADMAP #10). Until that lands, stdlib APIs must not depend on
   checked-overflow *trapping* semantics — overflow is the documented opt-in
   arithmetic policy, not a guarantee.
@@ -60,5 +60,5 @@ The two remaining `provisional_with_gate` surfaces (const-generics,
 build-profiles) bound what early stdlib APIs may assume; their deferred parts are
 tracked by ROADMAP #6a / #10 respectively. (Iteration was promoted to
 `stable_for_stdlib` once its protocol was written and gated — ROADMAP #17,
-[ITERATION_PROTOCOL.md](../ITERATION_PROTOCOL.md).) When the others close, promote
+[ITERATION_PROTOCOL.md](../project/ITERATION_PROTOCOL.md).) When the others close, promote
 the corresponding row to `stable_for_stdlib` here and in the gate.

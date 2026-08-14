@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 0b construction rights gate: representation is private-by-default across
-# modules (docs/CONSTRUCTION_RIGHTS.md). Pins every rejection + the pub
+# modules (docs/language/CONSTRUCTION_RIGHTS.md). Pins every rejection + the pub
 # escape. Verified soundness holes: NonZeroU32(0) bypass, and cross-module
 # Bytes field read/write/literal forgery.
 set -uo pipefail

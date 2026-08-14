@@ -20,7 +20,7 @@ Even with a strong low-level stdlib, a modern systems language still needs a coh
 
 Concrete should treat this as a first-class design problem, not as “add async later.”
 
-See [concurrency.md](concurrency.md).
+See [concurrency.md](../stdlib/concurrency.md).
 
 ### 2. Tooling maturity
 
@@ -65,7 +65,7 @@ The important missing pieces here are:
 - proof-backed lowering claims
 - a smaller/frozen kernel story if the project still wants one
 
-See [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) and [../docs/LANGUAGE_INVARIANTS.md](../docs/LANGUAGE_INVARIANTS.md).
+See [docs/compiler/ARCHITECTURE.md](../../docs/compiler/ARCHITECTURE.md) and [docs/language/LANGUAGE_INVARIANTS.md](../../docs/language/LANGUAGE_INVARIANTS.md).
 
 ### 5. Ecosystem and package model
 

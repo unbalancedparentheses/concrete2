@@ -94,7 +94,7 @@ friendly `proved` verdict.
 
 _Branch `main`, 2026-08-07._
 
-Added `docs/VERIFICATION_STATUS.md` as the canonical cross-axis answer to what Concrete can
+Added `docs/verification/VERIFICATION_STATUS.md` as the canonical cross-axis answer to what Concrete can
 prove or enforce, what remains unsupported, and what exists only on experimental branches. The
 map separates language constructs, property classes, proof subjects, evidence mechanisms,
 composition scope, and support state, so a statement such as “arrays are supported” no longer
@@ -258,14 +258,14 @@ implemented checker: `make test-bv-certificates` captures the CNF `bv_decide`
 bit-blasted, re-solves it, and verifies a DRAT certificate with drat-trim.
 
 Most importantly, the honest boundary is now enumerated rather than disclaimed.
-[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) inventories the Core→obligation
+[VC_BRIDGE_REGISTER.md](docs/verification/VC_BRIDGE_REGISTER.md) inventories the Core→obligation
 lowering rule by rule — what each emits, assumes, rejects, and the theorem that will
 discharge it — because that bridge is shared by every kernel and so cannot be checked
 by adding more of them. **0 of 4 rows are discharged** *(as of this entry, 2026-07-31; see
 VC_BRIDGE_REGISTER.md for the current count — 4 of 5 rows had their semantics half proved on
 2026-08-04, and the row total was corrected to five)*; the register is gated so a new
 obligation family cannot ship unregistered. Holes H19–H22 in
-[KNOWN_HOLES.md](docs/KNOWN_HOLES.md) record the unproven bridge, the native-code
+[KNOWN_HOLES.md](docs/verification/KNOWN_HOLES.md) record the unproven bridge, the native-code
 certificate check, and the linear-only reconstruction ceiling. **H22 is CLOSED.** It recorded a pre-existing
 decorative gate — `check_checked_arith.sh` could not detect removal of the
 checked-arithmetic trap it guards, because a wrap sentinel satisfied its `exit != 0`
@@ -314,7 +314,7 @@ is the single-source trap semantics and is consumed by the interpreter, `EmitSSA
 constants and then states its **own**, weaker trap conditions. So a division reports
 `proved_by_kernel_decision` under `divisor ≠ 0` and aborts on signed `MIN / -1`, and an
 over-width shift generates **no obligation at all** and aborts — the sufficiency and
-applicability failure modes [VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) names, both
+applicability failure modes [VC_BRIDGE_REGISTER.md](docs/verification/VC_BRIDGE_REGISTER.md) names, both
 live. Reproduced in `examples/trap_semantics_gap/`.
 
 It also forced a correction to this project's own claims: the register said the
@@ -350,9 +350,9 @@ no real defects on this arc, while the one real fault (`Z.div` vs `Z.quot` at `(
 came from `--report core-semantics-diff`, a differential test. Kernel diversity is
 therefore recorded throughout as a *portability* property for auditors, not a bug-finding
 strategy, and the differential surfaces plus
-[VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md)'s rows are sequenced ahead of a third
+[VC_BRIDGE_REGISTER.md](docs/verification/VC_BRIDGE_REGISTER.md)'s rows are sequenced ahead of a third
 kernel. As-built-versus-as-specified for the whole layer is tabulated in
-[PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+[PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md).
 
 ### Early Source-Resource Certificate Sequencing
 
@@ -881,7 +881,7 @@ privacy and stdlib work:
   and the positive public-record path, the diagnostics are registered, and the
   local parallel surface runner includes the gate (commits `dde1aa0f`,
   `0529a28e`, `4956a76e`). The complete one-keyword design and closure rules
-  remain documented in `docs/CONSTRUCTION_RIGHTS.md`.
+  remain documented in `docs/language/CONSTRUCTION_RIGHTS.md`.
 
 These completions do not close enum-variant visibility, raw newtype payload
 projection, or trusted raw-pointer dereference duplication; those remain
@@ -1050,7 +1050,7 @@ pins ASCII / non-ASCII / OOB / negative agreement.
 `overflow="wrapping"` (and `shift_oversize="wrap"`) months after the language
 started trapping, and `check_assumptions.sh` never read the section. Files
 corrected, the gate now asserts the frozen checked/trapping policy and
-cross-checks `--report arithmetic`, and `docs/ASSUMPTION_FILES.md`'s stale
+cross-checks `--report arithmetic`, and `docs/verification/ASSUMPTION_FILES.md`'s stale
 template and "not yet enforced" note are fixed.
 
 **Phantom `concrete new` scrubbed.** The compiler's std-import hint and the
@@ -1217,7 +1217,7 @@ stdin reader, streaming dump.
 ### Pure-core proof arc: seed planted, paused by the selective rule (2026-07-16)
 
 The Phase 7 exit obligation (item 4) opened contract-first
-(docs/PURE_CORE_PROOF_ARC.md: Lean kernel = judge, SMT = worker with a
+(docs/verification/PURE_CORE_PROOF_ARC.md: Lean kernel = judge, SMT = worker with a
 separate `solver_checked` class, five-point DoD incl. mutation-sensitivity)
 and shipped its seed: **11 kernel-backed stdlib proof links** — Option
 unwrap_or/map, Result map/map_err, NonZeroU32/U64/Port try_new,
@@ -1303,7 +1303,7 @@ record friction, implement only what is pulled.
   pipes, `set -e` works). Legacy full-width echo survives only behind the
   `CONCRETE_ECHO_RESULT=1` harness knob, exported one-line-per-script across
   the test harness until the stage-2 fixture migration deletes it. Gated by
-  `check_exit_codes.sh`; decision record in `docs/MAIN_EXIT_MODEL.md`
+  `check_exit_codes.sh`; decision record in `docs/platform/MAIN_EXIT_MODEL.md`
   (end state: `fn main() -> u8 | Unit`, Zig-shaped; deliberately no
   `process.exit()` in a linear language).
 - **Pulls 3 and 4 shipped**: `std.base64` landed with RFC 4648 vectors and
@@ -1368,7 +1368,7 @@ in CHANGELOG instead of cluttering the active roadmap.
 
 ### Pre-Phase-7 trio — error conventions, allocator decision, doc-snippet gate (2026-07-14)
 
-13t: `docs/ERROR_CONVENTIONS.md` (normative recoverable/fatal/policy-gated split
+13t: `docs/language/ERROR_CONVENTIONS.md` (normative recoverable/fatal/policy-gated split
 + classification checklist) with `examples/error_conventions` fixture. 13s:
 `research/stdlib/allocator-as-value.md` — GO two-tier: `with(Alloc)` stays
 authority, allocator identity is an explicit first-param `&mut` value; tier-1
@@ -1429,7 +1429,7 @@ assign in the body, `break;`), and the `Expr.whileExpr` / `CExpr.whileExpr`
 constructors are deleted pipeline-wide (~39 handling sites across 18 files —
 parser, formatter, resolve, check, elab, canonicalize, corecheck, mono, lower,
 interp, proof-core, reports, telemetry counters). EBNF + LL(1) checkers stay
-green; `docs/STATEMENT_EXPRESSION_MODEL.md` updated.
+green; `docs/language/STATEMENT_EXPRESSION_MODEL.md` updated.
 
 Fixture surface migrated to statement-form equivalents with identical behavior
 (`loop_break_result_*`, `loop_result_*`; oracle vector repointed) plus
@@ -1748,7 +1748,7 @@ Completed Phase 6B semantic-axis items:
   arithmetic-trap in `IntArith` with the const folder routing through it,
   cast-trap in `checkedToType`, bounds in `Lower`); the gate proves total/partial
   classification agrees interp==compiled. Gate-only, no new helper or record.
-- **CoreCheck / pre-Lower boundary audit + gate.** `docs/COMPILER_BOUNDARY.md`
+- **CoreCheck / pre-Lower boundary audit + gate.** `docs/compiler/COMPILER_BOUNDARY.md`
   maps the constructor-guarded `ValidatedCore`/`MonomorphizedProgram` tokens and
   which stage rejects each frontend/mono/type-policy residue class;
   `scripts/tests/check_corecheck_boundary.sh` proves every class is rejected
@@ -1766,10 +1766,10 @@ Completed Phase 6B semantic-axis items:
   (descending through `.ref`/`.refMut`, `.generic` args, `.array` elements) with no
   trust/safety exemption, wired into `verifyPostMono` and gated by
   `check_corecheck_boundary.sh`, confirmed load-bearing by mutation testing. This
-  closes residue class 6 in `docs/COMPILER_BOUNDARY.md` (no class is caught only in
+  closes residue class 6 in `docs/compiler/COMPILER_BOUNDARY.md` (no class is caught only in
   Check) and resolves returned-reference provenance (H1) by subtraction. The
   `from(param)` escape valve remains deeply deferred and evidence-gated. See
-  `docs/VALUE_MODEL.md`.
+  `docs/language/VALUE_MODEL.md`.
 - **Differential-sweep soundness/parity fixes.** Interpreter signed left-shift
   now truncates to width; labeled `break`/`continue` now dispatch to the targeted
   loop; `--interp` prints `main`'s return value only for a value-returning `main`.
@@ -1923,7 +1923,7 @@ trait bounds on type-var arguments were silently skipped). An owned
 `[linear; N]` is now a disclosed expressiveness gap that fails closed
 (E0208) until array destructure patterns land.
 
-The prevention program landed with it: `docs/VALUE_FLOW_SPEC.md` (a
+The prevention program landed with it: `docs/language/VALUE_FLOW_SPEC.md` (a
 normative value-flow row for every AST constructor) enforced by
 `check_value_flow_spec.sh` in CI (a new constructor fails until it declares
 its flow), and `scripts/tests/fuzz_linearity.py` — a ground-truth
@@ -2192,7 +2192,7 @@ disclosed one:
 - **H11 (open, disclosed):** projecting a non-Copy value out of a place *by value*
   (`let g = w.f;` / `let g = arr[i];`) still copies instead of moving — a double-free.
   Latent (no corpus use); the fix is context-sensitive (`&w.f` must stay legal), so it
-  is tracked in KNOWN_HOLES rather than rushed. See `docs/OWNERSHIP_MODEL.md`.
+  is tracked in KNOWN_HOLES rather than rushed. See `docs/language/OWNERSHIP_MODEL.md`.
 
 ### Concrete is linear, not affine: `_` may ignore only Copy values (2026-07-01)
 
@@ -2424,7 +2424,7 @@ work. Workarounds: `else if`, or `let x = …; x`.
 
 ### Ignored-result diagnostics — discarding a fallible result is an error (2026-06-27)
 
-Phase 6 #13 (`docs/IGNORED_RESULT.md`). A `;`-terminated statement expression
+Phase 6 #13 (`docs/language/IGNORED_RESULT.md`). A `;`-terminated statement expression
 whose value is a fallible result — `Result<…>` or `Option<…>` — silently threw
 the value away, ignoring a possible failure/absence. That discard is now
 rejected with **E0286** unless explicitly acknowledged.
@@ -2459,18 +2459,18 @@ unbuilt tooling remain.
 Three roadmap items closed by decision/doc/gate, shrinking Phase 6 without
 implementation churn:
 
-- **#16 source style guide** (`docs/STYLE.md`): naming, function/module
+- **#16 source style guide** (`docs/project/STYLE.md`): naming, function/module
   structure, pattern/error-handling idioms, arithmetic spelling, proof-bearing
   layout. Mechanical layout stays owned by `concrete fmt`; STYLE.md is the
   advisory rest.
-- **#33 memory model** (`docs/MEMORY_MODEL.md` + `check_memory_model.sh`): a
+- **#33 memory model** (`docs/language/MEMORY_MODEL.md` + `check_memory_model.sh`): a
   user-facing narrative tying together the canonical references. The audit found
   that **"no uninitialized reads" is a grammar-level guarantee, not a dataflow
   result** — `let` requires an initializer (`let x: T;` is a parse error), so
   uninitialized state is unrepresentable. Stated as an explicit invariant in
   MEMORY_SEMANTICS.md §1 and backed by a gate (declares-without-value rejected;
   declare-with-value + mutate-after-init still work).
-- **#26 target-conditional** (`docs/TARGET_CONDITIONAL.md`): decided — prefer
+- **#26 target-conditional** (`docs/platform/TARGET_CONDITIONAL.md`): decided — prefer
   profile/target-selected source roots in `Concrete.toml` (a build/audit fact,
   not preprocessor state) over in-source conditionals; a narrow `cfg`-style
   attribute is deferred (LL(1)-safe, target/profile-only, audit-reported if ever
@@ -2478,14 +2478,14 @@ implementation churn:
 
 And three forks closed as **decide-and-defer** (no premature architecture):
 
-- **#9 C/ABI glue UX** (`docs/FFI_GLUE.md`): eventual shape is a narrow
+- **#9 C/ABI glue UX** (`docs/platform/FFI_GLUE.md`): eventual shape is a narrow
   `concrete ffi`/`bindgen` emitting/importing *auditable* glue (ABI/layout/
   ownership/capability/trust facts, source spans, reproducible). Blocked on the
   FFI surface (#8); not built before it.
-- **#15 units-of-measure** (`docs/UNITS_OF_MEASURE.md`): evaluated → no units in
+- **#15 units-of-measure** (`docs/language/UNITS_OF_MEASURE.md`): evaluated → no units in
   v1 (a type-system feature with proof/report implications). Units live in names
   (`len_bytes`) per STYLE.md today; research/workload-gated otherwise.
-- **#27 target constants** (`docs/TARGET_CONSTANTS.md`): decided — typed,
+- **#27 target constants** (`docs/platform/TARGET_CONSTANTS.md`): decided — typed,
   resolved audit facts (not preprocessor magic), recorded in reports/bundles;
   implementation deferred until target-profile machinery needs it.
 
@@ -2675,7 +2675,7 @@ modular code has a spelling that never silently changes meaning.
 ### Phase 6 #17: iteration protocol (audit + gate) (2026-06-24)
 
 Documented Concrete's traversal story as a fixed hierarchy in
-`docs/ITERATION_PROTOCOL.md` — there is no `Iterator` trait, no closures, no
+`docs/project/ITERATION_PROTOCOL.md` — there is no `Iterator` trait, no closures, no
 trait-object iterators. Pick the first form that fits: `for`/indexed loop
 (simple bounded), cursor structs (`ByteCursor`, for parsers/readers),
 capability-polymorphic `for_each`/`fold`/`map` (collections), and explicit
@@ -2815,7 +2815,7 @@ the full fast suite (1576/0) all green locally.
   `let` destructuring forms; struct literals model field punning and the `..base`
   functional update. (Two pre-existing omissions — bool patterns, field punning —
   were filled in too.)
-- Added `docs/GRAMMAR.md` as the reference page: points at the canonical EBNF and
+- Added `docs/language/GRAMMAR.md` as the reference page: points at the canonical EBNF and
   indexes reserved keywords, attribute syntax (fixed compiler set, no user
   attrs/macros), contract/`ghost`/`assert`/`assume` syntax, and the
   negative-parser-fixture gates. The stmt-vs-trailing-expression distinction
@@ -2831,13 +2831,13 @@ the full fast suite (1576/0) all green locally.
 - Repetition uses ordinary functions, monomorphized generics, explicit stdlib
   APIs, and — when codegen is genuinely needed — external build-time generators
   whose output is checked in and audited as ordinary source. Recorded in
-  `docs/MACRO_STANCE.md`; pinned by `scripts/tests/check_no_macros.sh` (Makefile
+  `docs/language/MACRO_STANCE.md`; pinned by `scripts/tests/check_no_macros.sh` (Makefile
   `test-no-macros` + CI): macro definitions, bang invocations, and derive
   attributes all stay clean parse errors.
 
 ### Phase 6 #7 (`defer` / cleanup) core-complete (2026-06-23)
 
-- `defer <call>;` is documented (`docs/DEFER.md`) and gated
+- `defer <call>;` is documented (`docs/language/DEFER.md`) and gated
   (`scripts/tests/check_defer.sh` + `examples/defer/cleanup_order/`). The core
   cleanup semantics — already implemented in lowering — are now locked: deferred
   calls run **LIFO**, at scope exit, on **every exit path** (fall-through, early
@@ -2852,7 +2852,7 @@ the full fast suite (1576/0) all green locally.
 
 ### Phase 6 #6 (numeric literal/cast rules) core-complete (2026-06-23)
 
-- The numeric model is now documented (`docs/NUMERIC_MODEL.md`) and gated
+- The numeric model is now documented (`docs/language/NUMERIC_MODEL.md`) and gated
   (`scripts/tests/check_numeric_literals.sh`, 8 checks): default integer type is
   `Int`/i64; hex/binary literal bases; comparison signedness is type-driven
   (`u8` compares unsigned); conversion is explicit-`as`-only (no implicit
@@ -2892,9 +2892,9 @@ the full fast suite (1576/0) all green locally.
 - The compound pattern-ergonomics block is complete. Built + gated across this
   session: integer range patterns, `if let` / `while let`, match guards, OR
   patterns, match on `&T`, struct functional update `..base`, and `_`-wildcard
-  destructuring. Decided (workload-gated): no anonymous tuples (`docs/TUPLES.md`).
+  destructuring. Decided (workload-gated): no anonymous tuples (`docs/language/TUPLES.md`).
 - Nested patterns (`E::W { P { x, y } }`, `Some(Some(n))`) are the one remaining
-  item, now **deferred** (`docs/NESTED_PATTERNS.md`): a match arm destructures one
+  item, now **deferred** (`docs/language/NESTED_PATTERNS.md`): a match arm destructures one
   level; deeper nesting stays a clean parse error. It is fully expressive via the
   one-level + field-access / nested-`match` workaround. A recursive `Pattern` type
   is a large pipeline refactor for pure sugar with no forcing workload — the same
@@ -2919,7 +2919,7 @@ the full fast suite (1576/0) all green locally.
 
 - Phase 6 #5. Decided: Concrete V1 has no anonymous tuples — the named `struct`
   is the one product type; a multiple-value return is a small `struct Copy` with
-  named fields. Rationale in `docs/TUPLES.md`: field names flow into evidence /
+  named fields. Rationale in `docs/language/TUPLES.md`: field names flow into evidence /
   reports / proofs (`result.remainder`, not `result.1`), one product type instead
   of two, consistency with the language's named/explicit style, and no current
   workload needs tuples (workload-driven, cf. the const-generics decision).
@@ -3070,7 +3070,7 @@ the full fast suite (1576/0) all green locally.
 - Endpoints, high-endpoint exclusion, value-position (match-as-expression) arms,
   negative bounds, and the exhaustiveness rule (a range is not a catch-all — a
   range-only match still requires `_`, E0534) are documented in
-  `docs/PATTERN_ERGONOMICS.md` and locked by
+  `docs/language/PATTERN_ERGONOMICS.md` and locked by
   `scripts/tests/check_pattern_ergonomics.sh` over `tests/programs/patterns/` +
   `examples/patterns/byte_ranges/`.
 - Range patterns are not yet modelled in the proof path: a proof/`predictable`
@@ -3080,7 +3080,7 @@ the full fast suite (1576/0) all green locally.
 
 ### SPARK-class assurance target and AI agent guide recorded (2026-06-22)
 
-- Added `docs/SPARK_CLASS_ASSURANCE.md` as the stable design-target guide for
+- Added `docs/verification/SPARK_CLASS_ASSURANCE.md` as the stable design-target guide for
   SPARK-class assurance in Concrete: contracts, loop invariants/variants,
   frame/read/write facts, dependency-flow facts, ghost/spec code, package/import
   evidence, and certification-style bundles.
@@ -3096,7 +3096,7 @@ the full fast suite (1576/0) all green locally.
 
 - Phase 6 #3. Type aliases (`type Digest = [u8; 32]`) were parsed/resolved but
   undocumented, ungated, and only shallowly transparent. Now documented
-  (`docs/TYPE_ALIASES.md`) and locked by `scripts/tests/check_type_alias.sh` over
+  (`docs/language/TYPE_ALIASES.md`) and locked by `scripts/tests/check_type_alias.sh` over
   `tests/programs/type_alias/`: aliases are transparent over arrays / structs /
   generic instantiations / function signatures, both directions, and the gate
   proves `--report layout` + `--report fingerprints` are byte-identical to the
@@ -3122,7 +3122,7 @@ the full fast suite (1576/0) all green locally.
 ### Loop control documented + gated; while-expression width miscompile fixed (2026-06-21)
 
 - Phase 6 #4. `break`/`continue`/labeled loops/while-as-expression were already
-  implemented; their behavior is now documented (`docs/LOOP_CONTROL.md`) and
+  implemented; their behavior is now documented (`docs/language/LOOP_CONTROL.md`) and
   locked by `scripts/tests/check_loop_control.sh` over
   `tests/programs/loop_control/`: innermost-by-default break/continue, labeled
   `break 'l`/`continue 'l`, `for` break+continue, while-expression value via
@@ -3156,7 +3156,7 @@ the full fast suite (1576/0) all green locally.
   `concrete test` duplicate `@__concrete_argc` global, spanless E0208
   unconsumed-linear diagnostics, and the ByteView/Text UTF-8 validation gap.
 - Narrow const generics are DESIGN DECIDED / BUILD DEFERRED, not a hidden Phase
-  5 hole. `docs/CONST_GENERICS_V1.md` records the V1 boundary, rejected forms,
+  5 hole. `docs/language/CONST_GENERICS_V1.md` records the V1 boundary, rejected forms,
   difficulty/risk assessment, staged implementation plan, forcing triggers, and
   evidence that current workloads do not pull the feature. Implementation is now
   tracked as a workload-triggered Phase 7 stdlib/fixed-capacity item.
@@ -3194,7 +3194,7 @@ the full fast suite (1576/0) all green locally.
   no `off+len` u64 overflow, `off+len <= buf.len()`, and a buffer-length brand
   (`buf.len() == buf_len`) that rejects applying a view to a different-length
   buffer.
-- `docs/BYTE_VIEW.md` is the design. `examples/byte_view/{http_header_view,
+- `docs/language/BYTE_VIEW.md` is the design. `examples/byte_view/{http_header_view,
   tlv_packet_view,wrong_buffer}/` store views in result structs, reach the bytes
   back through the buffer, and self-verify that wrong-buffer / out-of-bounds /
   overflow uses return `None`. Gated by `scripts/tests/check_byte_view.sh`
@@ -3236,7 +3236,7 @@ the full fast suite (1576/0) all green locally.
   with a spurious **E0225** ("match arm type … does not match first arm type"). The
   dual gap: a block had no trailing-expression value. (ROADMAP #36 / LANGUAGE_GAPS
   #12, found by the CLI/config workload pass; design in
-  `docs/STATEMENT_EXPRESSION_MODEL.md`.)
+  `docs/language/STATEMENT_EXPRESSION_MODEL.md`.)
 - Fixed by modeling the distinction (Option A): `AST.Stmt.expr` and `Core.CStmt.expr`
   carry an `isValue : Bool` flag — a trailing expression with no `;` is the value,
   a `;`-terminated one is a discarded statement (`Unit`). The parser sets it
@@ -3451,7 +3451,7 @@ the full fast suite (1576/0) all green locally.
   a reference — directly, nested in an aggregate, or via generic instantiation.
   This closes the returned-reference-provenance hole (H1) *by subtraction* — no
   lifetimes, no regions, no `from()`. The no-aggregate-ref ban becomes a
-  corollary. (`docs/VALUE_MODEL.md`.)
+  corollary. (`docs/language/VALUE_MODEL.md`.)
 - Discovered during this work: returning a reference computed from a reference
   *identifier* or `&place` was a silent miscompile (spurious load → wrong
   pointer → segfault even with a live referent), and `with_value`'s generic `R`
@@ -3481,7 +3481,7 @@ the full fast suite (1576/0) all green locally.
 ### Bound-callback context threading + `&mut *` reborrow fix (#24 step 1) (2026-06-12)
 
 - Implemented the three context modes from the callable-values design
-  (`docs/CALLABLE_VALUES_AND_CAPABILITIES.md` §3): shared `&Ctx`, mutable
+  (`docs/language/CALLABLE_VALUES_AND_CAPABILITIES.md` §3): shared `&Ctx`, mutable
   `&mut Ctx`, and consuming `Ctx`, all generic over `Ctx` and capability-
   polymorphic over `cap C`. A bound callback is an explicit function pointer +
   context — no closures, no captures.
@@ -3503,11 +3503,11 @@ the full fast suite (1576/0) all green locally.
   H1/callable-values path): **C9** — an address-taken, loop-carried variable
   (`&i` in a mutating loop) miscompiles to a silent infinite loop (HIGH); **C10**
   — `&arr[i]` through a `&[T; N]` resolves to `&<unknown>` (fail-closed). Repros
-  under `tests/known_bugs/`, tracked in `docs/KNOWN_HOLES.md` and ROADMAP #6c.
+  under `tests/known_bugs/`, tracked in `docs/verification/KNOWN_HOLES.md` and ROADMAP #6c.
 
 ### Callable-values + capability-polymorphic callbacks design checkpoint (#24) (2026-06-12)
 
-- Wrote `docs/CALLABLE_VALUES_AND_CAPABILITIES.md`, the keystone design doc that
+- Wrote `docs/language/CALLABLE_VALUES_AND_CAPABILITIES.md`, the keystone design doc that
   gated the Phase 6 HOF/iteration surface, scoped collection callbacks, and the
   V1.1 immutable-read withdrawal (the last open half of H1). Decided model:
   - **Bound callbacks are an explicit function pointer + context** — no closures,
@@ -3595,7 +3595,7 @@ the full fast suite (1576/0) all green locally.
     non-Copy reads) — disclosed and frozen, withdrawn when scoped callbacks
     (`with_value`, callable-values doc #24) land.
 - `Clone` recorded as a SEPARATE, deliberate value-model design item, not a
-  soundness patch. Added the four-cell model to `docs/VALUE_MODEL.md`: Copy
+  soundness patch. Added the four-cell model to `docs/language/VALUE_MODEL.md`: Copy
   (implicit bit-dup), Move (default ownership transfer), Borrow (scoped),
   Clone (explicit, `Alloc`-visible, audit-visible, library-expressible via a
   stdlib trait — not yet built). Sibling `move`/`take` = `swap(i, new) -> V`
@@ -3706,7 +3706,7 @@ tracked, gated holes:
   non-cryptographic `String.hash`, craftable into a silent stale→proved
   upgrade). Reuses the in-repo FIPS 180-4 spec; all fresh fingerprints
   migrated, deliberately-stale fixtures preserved.
-- **Axiom-inventory gate** (`check_axiom_inventory.sh`, `docs/AXIOMS.md`,
+- **Axiom-inventory gate** (`check_axiom_inventory.sh`, `docs/verification/AXIOMS.md`,
   `make test-axiom-inventory`): `#print axioms` over every `#[proof_by]`
   theorem; kernel allowlist only; `sorryAx` fails hard; native-code trust
   (`Lean.ofReduceBool`/`trustCompiler`) must be declared per-theorem. First
@@ -3837,7 +3837,7 @@ tracked, gated holes:
     mod-wrapped nested-generic cases that confirm #44b (the E0602
     `Hold_Pair not found` lowering error) was the same head-only mangling
     collision as #44a and is resolved by it.
-- **`docs/KNOWN_HOLES.md`**: single canonical index of every tracked
+- **`docs/verification/KNOWN_HOLES.md`**: single canonical index of every tracked
   soundness/dark-construct gap — state (OPEN/CLOSED), reproducing fixture,
   locking gate, scheduled fix — replacing the scatter across claims
   disclosures, gate scripts, and roadmap items. Linked from ROADMAP and
@@ -3889,7 +3889,7 @@ The Phase 2 closure work also landed and is no longer active roadmap work:
 - release-bundle capture now includes `reports/vcs.txt`, `reports/audit.txt`,
   and `reports/contracts.txt`, so VC evidence ships beside assumptions,
   runtime-safety facts, proof status, and audit output;
-- [docs/SMT_SOUNDNESS.md](docs/SMT_SOUNDNESS.md) records the trusted solver
+- [docs/verification/SMT_SOUNDNESS.md](docs/verification/SMT_SOUNDNESS.md) records the trusted solver
   binary, encoding assumptions, unsupported theories, replay boundary, policy
   behavior, and blast radius of solver bugs;
 - `check_phase2_vc.sh` is the umbrella validation gate over the VC schema,
@@ -4113,7 +4113,7 @@ It gives one small, snapshot-backed reference per shipped class:
 `proved_by_lean`, `proved_by_kernel_decision_omega`,
 `proved_by_kernel_decision_bv`, `partial_contract`, `stale_proof`,
 `assumed_boundary`, and `trusted_boundary`. The catalog in
-`docs/EVIDENCE_CLASSES.md` keeps the classes visible without using a flagship
+`docs/verification/EVIDENCE_CLASSES.md` keeps the classes visible without using a flagship
 as the only example.
 
 The `tested_by_oracle` evidence example also has its standalone corpus shape:
@@ -4162,7 +4162,7 @@ The proof also produced reusable infrastructure: fuel monotonicity, bounded
 counter-loop induction, array/frame lemmas, BitVec bridge lemmas, call/FnTable
 helpers, copy/xor/multi-store loop templates, and refinement theorem patterns.
 That infrastructure was harvested into `Concrete/ProofKit/*` and documented in
-`docs/PROOFKIT_GUIDE.md`.
+`docs/verification/PROOFKIT_GUIDE.md`.
 
 ### Unprofiled floating point excluded from proof eligibility (2026-06-03)
 
@@ -4178,7 +4178,7 @@ has no active proof profile.
 
 ### Proof-story matrix defines the no-dark-constructs contract
 
-`docs/PROOF_STORY_MATRIX.md` records the language-level proof/evidence story:
+`docs/verification/PROOF_STORY_MATRIX.md` records the language-level proof/evidence story:
 every construct must be classified as proved, enforced, reported, assumed,
 trusted, or explicitly open with a named gap.
 
@@ -4211,7 +4211,7 @@ inventory.
 
 ### ProvableV1 defined as the first named provable subset
 
-`docs/PROVABLE_V1.md` defines the first release-facing proof subset contract:
+`docs/verification/PROVABLE_V1.md` defines the first release-facing proof subset contract:
 which functions, types, expressions, state forms, loops, effects, trusted
 boundaries, runtime failures, and proof attachment requirements are inside the
 subset.
@@ -4467,7 +4467,7 @@ make test-snapshots:   48/0
 ### Phase 4 while_step: ring_contains extracts and proves; zero blockers in fixed_capacity
 
 Second piece of the state-model implementation from
-`docs/PROOF_STATE_MODEL.md`.  Bounded while loops with bodies
+`docs/verification/PROOF_STATE_MODEL.md`.  Bounded while loops with bodies
 richer than flat assignments — nested `let`s, `if`s with
 early `return`s, and assignments to loop-carried variables —
 now extract into `PExpr.while_step` with a `LoopStep` enum
@@ -4546,7 +4546,7 @@ make test-snapshots:   48/0
 ### Phase 4 arraySet: ring_push extracts and proves
 
 First implementation of the state-model design from
-`docs/PROOF_STATE_MODEL.md`.  Source-level mutation
+`docs/verification/PROOF_STATE_MODEL.md`.  Source-level mutation
 (`arr[i] = v`) extracts as a shadowing `letIn` that rebinds
 the array name to a functional update — no in-place
 mutation in PExpr, just new arrays produced by `arraySet`.
@@ -4727,7 +4727,7 @@ work. The next proof-track priorities are now explicit:
 - keep Phase 12 extraction-soundness obligations attached to every
   Phase 4 extraction rule.
 
-`docs/PROOF_AUDIT_PIPELINE.md` now records the same direction so the
+`docs/verification/PROOF_AUDIT_PIPELINE.md` now records the same direction so the
 roadmap and target architecture agree: direct ProofCore extension can
 continue, but mutation and byte-level arithmetic need principled
 semantics rather than one-off evaluator patches.
@@ -5451,9 +5451,9 @@ sized for one flagship but applicable to every future one):
 - ProofCore early-return if-without-else extractor extension.
 - Per-example `proof-registry.json` + `Concrete.Proof.*_correct`
   attachment pattern.
-- `docs/ASSUMPTION_FILES.md` + `assumptions.toml` schema v1.
-- `docs/POLICY_FILES.md` + `Concrete.toml` `[policy]` schema.
-- `docs/RELEASE_BUNDLE.md` + capture-bundle script.
+- `docs/verification/ASSUMPTION_FILES.md` + `assumptions.toml` schema v1.
+- `docs/project/POLICY_FILES.md` + `Concrete.toml` `[policy]` schema.
+- `docs/project/RELEASE_BUNDLE.md` + capture-bundle script.
 - Negative pair pattern (`catches/` directory + `CATCHES.md` + CI
   gate).
 - Snapshot baseline gate (`snapshot/` + `check_snapshots.sh`).
@@ -5522,7 +5522,7 @@ The Phase 2 E.25 policy-file surface lands as a schema-extension to
 the existing `Concrete.toml` `[policy]` convention plus a
 drift-enforced CI gate.
 
-- **Contract** (`docs/POLICY_FILES.md`): schema v1 covering
+- **Contract** (`docs/project/POLICY_FILES.md`): schema v1 covering
   `predictable`, `no_alloc`, `no_unsafe`, `no_trusted`,
   `no_externs`, `max_stack_bytes`, `forbidden_capabilities`,
   `allowed_capabilities`. Documents the distinction from assumption
@@ -5553,7 +5553,7 @@ forcing two reusable infrastructure pieces into existence.
   registered via the per-example `proof-registry.json` pattern.
   Surfaces as `proved` in `--report proof-status`.
 - **Bar #3 — first assumption file format.** The Phase 2 E.24
-  surface lands with `docs/ASSUMPTION_FILES.md` (TOML schema v1
+  surface lands with `docs/verification/ASSUMPTION_FILES.md` (TOML schema v1
   covering target, arithmetic, allocation, authority, ffi, trusted,
   proof sections), `examples/parse_validate/assumptions.toml`
   (first instance), and `scripts/tests/check_assumptions.sh` +
@@ -5637,7 +5637,7 @@ program report (`concrete <file> --report verify`) and a corpus-wide
 make target (`make test-verify-gates`). Roadmap reference: Phase
 E.11.
 
-- **Contract** (`docs/VERIFY_GATES.md`): named boundaries, structural
+- **Contract** (`docs/verification/VERIFY_GATES.md`): named boundaries, structural
   invariant per boundary, severity, surface, the documented `try_`
   and `defer` placeholder exceptions for the post-elab gate, and the
   never-delete rule.
@@ -5666,7 +5666,7 @@ E.11.
   it could miscompile). Future verify-gate failures across the
   corpora will register in the wrong-code corpus under the
   `verifier-trigger` category with bundle capture per
-  `docs/BUG_BUNDLE.md`.
+  `docs/project/BUG_BUNDLE.md`.
 
 ### Phase D bug bundle export
 
@@ -5674,7 +5674,7 @@ The reducer's natural companion. Closes the gap between "I have a
 minimized repro" and "I have a manifest case landed in
 `tests/wrong-code/`." Roadmap reference: Phase D.12.
 
-- **Contract** (`docs/BUG_BUNDLE.md`): bundle purpose, required
+- **Contract** (`docs/project/BUG_BUNDLE.md`): bundle purpose, required
   layout, what is always included, what is included only if
   available, and how bundles relate to
   `tests/wrong-code/manifest.toml`.
@@ -5709,7 +5709,7 @@ The wrong-code corpus pipeline now closes the loop from "I just hit a
 compiler bug" to "the bug is a manifest entry." Roadmap reference:
 Phase D.14.
 
-- **Contract** (`docs/REDUCER_WORKFLOW.md`): when to reduce, what
+- **Contract** (`docs/compiler/REDUCER_WORKFLOW.md`): when to reduce, what
   counts as a good minimized repro, when not to over-minimize, how
   to preserve expected behavior with a correctly-stated predicate,
   and how reduced cases enter `tests/wrong-code/manifest.toml`.
@@ -5816,7 +5816,7 @@ real bugs, not just historical fixed ones.
   --emit-ssa-unverified` and `Pipeline.lowerUnverified` skip both
   the verifier and the cleanup pass to print raw Lower output.
   Debugging infrastructure for the wrong-code workflow per
-  `docs/WRONG_CODE_CORPUS.md`; not on the production compile path.
+  `docs/verification/WRONG_CODE_CORPUS.md`; not on the production compile path.
 - **Regression coverage**: `tests/wrong-code/cases/WC-0004/
   program.con` is now a permanent runtime regression in the corpus.
   WC-0004 in `tests/wrong-code/manifest.toml` flips from `open` to
@@ -5827,7 +5827,7 @@ real bugs, not just historical fixed ones.
 
 The Phase D.16 named regression corpus has a contract, a CI entry point, and the first four seeded cases.
 
-- **Contract** (`docs/WRONG_CODE_CORPUS.md`): defines what qualifies as a wrong-code regression (miscompile, codegen-divergence, verifier-trigger, fact-report-mismatch, proof-evidence-regression, crash, error-regression), the per-case manifest schema (id, category, status, repro, kind, expected, discovered, fixed, notes), the minimization rule ("smallest input that triggers the bug"), the artifact bundle (the per-case directory under `tests/wrong-code/cases/<id>/`), and the lifecycle (cases never deleted; growth is monotonic).
+- **Contract** (`docs/verification/WRONG_CODE_CORPUS.md`): defines what qualifies as a wrong-code regression (miscompile, codegen-divergence, verifier-trigger, fact-report-mismatch, proof-evidence-regression, crash, error-regression), the per-case manifest schema (id, category, status, repro, kind, expected, discovered, fixed, notes), the minimization rule ("smallest input that triggers the bug"), the artifact bundle (the per-case directory under `tests/wrong-code/cases/<id>/`), and the lifecycle (cases never deleted; growth is monotonic).
 - **Registry** (`tests/wrong-code/manifest.toml`): the corpus is a registry, not a relocation. Existing repros under `tests/programs/bug_*.con` and `tests/programs/adversarial/<area>/` keep their wiring; the manifest references them by path. New repros that have no other home land under `tests/wrong-code/cases/<id>/`.
 - **CI** (`make test-wrong-code`, `scripts/tests/test_wrong_code.sh`): runs every `status = "fixed"` case and asserts expected behavior. `--include-open` additionally probes open cases and reports when an open bug becomes fixed (so a manifest update isn't missed). The script also enforces manifest invariants (every `repro` and `notes` path exists).
 - **Seeded cases**:
@@ -5843,7 +5843,7 @@ The Phase A.1 differential harness has reached its useful steady state. 56 PASS 
 
 - **Closed gaps**: borrow / `borrowIn` / `?` / string literals all flipped from PENDING to PASS via interpreter additions (`9de6ae0`, `f4a7539`, `764ddd4`).
 - **Single remaining PENDING**: `examples/fixed_capacity/src/main.con` is blocked on print/IO intrinsics. The interpreter cannot reproduce stdout side effects, so any program that interleaves `print` / `println` with its return value is intentionally outside the harness contract. This is a *contract widening* concern (compare interleaved stdout, not just the int return), not a Phase A interpreter gap. Modeling print/IO is deferred until a flagship example forces it.
-- **Trust boundary**: `docs/INTERPRETER_TRUST.md` documents the supported subset, the path-with-frame borrow model, the `?` lowering equivalence, the materialize-into-env handling for borrows of literals, and the explicit "interp: print/IO intrinsic ... not yet supported" diagnostic for I/O calls.
+- **Trust boundary**: `docs/verification/INTERPRETER_TRUST.md` documents the supported subset, the path-with-frame borrow model, the `?` lowering equivalence, the materialize-into-env handling for borrows of literals, and the explicit "interp: print/IO intrinsic ... not yet supported" diagnostic for I/O calls.
 
 ### Semantic-oracle differential harness lands as a regression surface
 
@@ -5852,7 +5852,7 @@ Phase A.1 + A.2 close: the source-level interpreter (`Concrete/Interp/Interp.lea
 - **Harness**: `scripts/tests/test_oracle.sh` reads `tests/oracle/vectors.txt` and produces `ORACLE: PASS=N FAIL=N PENDING=N TOTAL=N`. Compiled and `--interp` paths share the same `<value>\n` contract for `fn main() -> Int` because the SSA wrapper formats the int return as `%lld\n` and `Main.lean`'s `interpProgram` `IO.println`s the int return.
 - **Corpus**: 39 vectors covering fib/arithmetic/recursion, structs, arrays, enums, match, linearity (non-borrow), generics, plus the canonical roadmap examples `parse_validate` and `service_errors`. Initial state: 32 PASS, 0 FAIL, 7 PENDING — borrow/try/string-literal cases (`fixed_capacity`, `result_ok`, `borrow_read`, `string_basic`, `impl_method`).
 - **Wired into normal flow**: `make test-oracle` runs standalone; `make test-full` runs the harness as the tail of the existing `interp` section in `scripts/tests/run_tests.sh`. The `full` mode includes `interp` (it didn't before this change).
-- **Trust-boundary doc**: `docs/INTERPRETER_TRUST.md` enumerates supported expressions/statements, the explicit `interp: ...` rejection contract for unsupported constructs, the value-passing-no-aliasing memory model, the arbitrary-precision-integer arithmetic stance (no wrapping — programs that need it are outside the predictable subset, not interpreter bugs), the 10M-iteration loop fuel, and the four reasons the interpreter is intentionally smaller and more trustworthy than the full compiler (small single file, no transformation passes, no platform dependence, no silent approximations).
+- **Trust-boundary doc**: `docs/verification/INTERPRETER_TRUST.md` enumerates supported expressions/statements, the explicit `interp: ...` rejection contract for unsupported constructs, the value-passing-no-aliasing memory model, the arbitrary-precision-integer arithmetic stance (no wrapping — programs that need it are outside the predictable subset, not interpreter bugs), the 10M-iteration loop fuel, and the four reasons the interpreter is intentionally smaller and more trustworthy than the full compiler (small single file, no transformation passes, no platform dependence, no silent approximations).
 - **Oracle README**: `tests/oracle/README.md` documents the harness contract, the PENDING-vs-FAIL split, and the rule that a PENDING is a Phase A.3 work item, not a permanent skip.
 
 ### Completed roadmap tasks moved out of the active roadmap
@@ -5886,14 +5886,14 @@ Coverage added: 15 new adversarial tests across newtype (9), enum_match, borrow,
 
 The canonical Phase 3 exit checklist is now 19/19 complete. The first-release stdlib/syntax surface is treated as freeze-ready on current evidence rather than on aspirational follow-up rewrites.
 
-- **Runtime-collection close-out**: `docs/RUNTIME_COLLECTIONS.md` and `docs/stdlib/STDLIB_FREEZE_LEDGER.md` now treat the shipped map/deque surface as sufficient for freeze. `HashMap::get_mut`, displaced-value `insert`, and `OrderedMap::get_mut` are all landed. `lox` runs end-to-end against the frozen surface; rewriting it onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains useful follow-up evidence, not a blocker.
+- **Runtime-collection close-out**: `docs/language/RUNTIME_COLLECTIONS.md` and `docs/stdlib/STDLIB_FREEZE_LEDGER.md` now treat the shipped map/deque surface as sufficient for freeze. `HashMap::get_mut`, displaced-value `insert`, and `OrderedMap::get_mut` are all landed. `lox` runs end-to-end against the frozen surface; rewriting it onto the canonical `HashMap<String, Value>` + `Vec<Frame>` shape remains useful follow-up evidence, not a blocker.
 - **Validated-wrapper close-out**: the local wrapper docs now match the actual compiler state. The freeze-ready surface is the shipped stdlib wrappers (`NonZeroU32`, `NonZeroU64`, `Port`, `AsciiText`) plus the four resolved compiler gaps: native/SSA layout on enum-payload newtypes, cross-module identity, instance-method dispatch on wrappers, and narrowed wrap/unwrap-only cast exemption.
 - **Roadmap/docs alignment**: ROADMAP items 57, 67, 72, and 79 now agree with the changelog and local freeze ledgers; `docs/stdlib/STDLIB_VALIDATION_PLAN.md` and `docs/stdlib/STDLIB_SURFACE_FREEZE.md` were also updated to stop advertising stale Phase 3 item metadata.
 - **Post-freeze cleanup**: the remaining Phase 3 roadmap entries were either closed with explicit rationale or reworded as post-freeze follow-up polish, the stale layout freeze checklist was converted into a close-out note, and the last golden `#` syntax files were migrated to `::` so the frozen syntax record matches the corpus again.
 
 ### Newtype-cast exemption narrowed to wrap/unwrap pairs
 
-The first cut of the instance-method-dispatch fix exempted *any* `.cast` where either side named a newtype from CoreCheck's cast-validity table. Reviewer caught the regression: `let x: bool = p as bool` and `let p: Port = b as Port` both compiled, bypassing the validated-wrapper contract in `docs/VALIDATED_WRAPPERS.md §2`. This narrows the exemption to the exact pattern Elab actually inserts: one side is a newtype `N`, and the other side equals `N`'s resolved inner type (after generic-arg substitution). Anything else falls through to the standard validity table and gets E0553 if it's not a legitimate cast on its own.
+The first cut of the instance-method-dispatch fix exempted *any* `.cast` where either side named a newtype from CoreCheck's cast-validity table. Reviewer caught the regression: `let x: bool = p as bool` and `let p: Port = b as Port` both compiled, bypassing the validated-wrapper contract in `docs/language/VALIDATED_WRAPPERS.md §2`. This narrows the exemption to the exact pattern Elab actually inserts: one side is a newtype `N`, and the other side equals `N`'s resolved inner type (after generic-arg substitution). Anything else falls through to the standard validity table and gets E0553 if it's not a legitimate cast on its own.
 
 - **Precise wrapper-pair check**: `Concrete/Check/CoreCheck.lean` builds a `Layout.Ctx` from its newtypes list and uses `Layout.resolveNewtype` to compute the inner type for either side; the cast is exempt only when one resolved side equals the other side. Direction-symmetric (covers both wrap and unwrap).
 - **`hasTypeVar` loophole closed**: the cast-validity skip on type variables also matched any `.named _`, including newtypes. Now `.named n` is treated as a type parameter only when `n` is *not* a known struct, enum, or newtype. This was a pre-existing overbroad skip that the dispatch fix surfaced.
@@ -5901,7 +5901,7 @@ The first cut of the instance-method-dispatch fix exempted *any* `.cast` where e
 
 ### Newtype instance-method dispatch resolves against the wrapper
 
-Calling an instance method on a newtype now resolves against the newtype's inherent impl, not the inner type. This closes the last documented gap in `docs/VALIDATED_WRAPPERS.md §8` and means the static-only `T::try_new(...)` convention is now a stylistic preference rather than a workaround.
+Calling an instance method on a newtype now resolves against the newtype's inherent impl, not the inner type. This closes the last documented gap in `docs/language/VALIDATED_WRAPPERS.md §8` and means the static-only `T::try_new(...)` convention is now a stylistic preference rather than a workaround.
 
 - **Type identity flows through elaboration**: `resolveTypeE` no longer erases newtype names. A `let p: Port = ...` binding now keeps `p` typed as `.named "Port"` through the rest of Elab, so `p.value()` mangles to `Port_value` and finds the inherent impl. Layout already resolves named types through `Layout.Ctx.newtypes`, so codegen still sees the right size/alignment.
 - **Constructor and `.0` carry the wrapper**: `Port(8080)` now produces a CExpr with type `.named "Port"` (via a representation no-op `.cast`); `p.0` unwraps back to the inner type. For generic newtypes, type args flow from explicit `::<T>` first, otherwise from the call hint (`let w: Wrapper<Int> = Wrapper(100);`).
@@ -5911,7 +5911,7 @@ Calling an instance method on a newtype now resolves against the newtype's inher
 
 ### Cross-module newtype import preserves identity end-to-end
 
-Newtypes now cross module boundaries cleanly, with no inner-type erasure and no special-casing required from callers. This closes the second of the two boundary gaps tracked against `docs/VALIDATED_WRAPPERS.md` (only the inherent-method-dispatch gap remains).
+Newtypes now cross module boundaries cleanly, with no inner-type erasure and no special-casing required from callers. This closes the second of the two boundary gaps tracked against `docs/language/VALIDATED_WRAPPERS.md` (only the inherent-method-dispatch gap remains).
 
 - **Public newtypes are importable**: `pub newtype Port = u16;` now lands in the exporting module's `publicNames` (`Concrete/Resolve/FileSummary.lean`); `import Wrap.{Port};` resolves and brings inherent impl methods along, mirroring the struct path.
 - **No erasure at the boundary**: `resolveImports` previously fed newtypes into the alias map alongside type aliases, which substituted the inner type into every imported signature — so a downstream `Port::try_new` returned `Option<u16>` instead of `Option<Port>`. The alias map is now type-aliases-only; newtype identity is preserved across the boundary, and Layout resolves through `Layout.Ctx.newtypes` natively (the 2026-04-24 fix).
@@ -5920,14 +5920,14 @@ Newtypes now cross module boundaries cleanly, with no inner-type erasure and no 
 
 ### Validated wrappers land in stdlib; newtype layout threads through codegen
 
-The newtype surface designed in `docs/VALIDATED_WRAPPERS.md` is now usable on the native/SSA path, and the first canonical wrappers ship in stdlib.
+The newtype surface designed in `docs/language/VALIDATED_WRAPPERS.md` is now usable on the native/SSA path, and the first canonical wrappers ship in stdlib.
 
 - **Stdlib wrappers**: `std.numeric.NonZeroU32`, `std.numeric.NonZeroU64`, `std.numeric.Port`, and `std.text.AsciiText` land as canonical validated wrappers. Each exposes static-only `try_new` / `try_from_<src>` constructors returning `Option<T>` and preserves the zero-cost `.0` extraction contract. `AsciiText` wraps `String` with the invariant that every byte is in `0..=127`, validated once in `try_new`. 3 new `AsciiText` tests (happy path, empty-OK, reject non-ASCII).
 - **Newtype layout fix (native/SSA)**: `Layout.tySize` / `Layout.tyAlign` / `Layout.isPassByPtr` / `Layout.tyToLLVM` previously panicked with `unknown named type 'Port'` whenever a newtype survived Elab's struct/enum-field erasure — for example as the payload of `Option<Port>` or `Option<AsciiText>`. `Layout.Ctx` now carries a `newtypes` list and resolves named/generic types through `resolveNewtype` before querying layout; recurses to handle newtype-of-newtype and substitutes generic args. `CModule` gains a `newtypes : List NewtypeDef` field populated by Elab; `SModule` carries the same, collected across submodules in Lower; EmitSSA state threads newtypes into the Layout context used by `scanBuiltinEnumArgs` and the rest of codegen. `CoreCheck` and `Report` build Layout.Ctx with newtypes too. Check.lean and FileSummary.lean are intentionally untouched — the type-check layer still rejects `Port` vs `u16` without implicit coercion (`tests/programs/error_newtype_no_implicit.con` still rejects).
 - **Inherent-impl path now native-clean**: the note in `tests/programs/newtype_validated.con` flagged `impl Port { fn try_new ... }` returning `Option<Port>` as a known layout-bug trigger. That path now lowers, links, and runs; it is the shape the stdlib wrappers use.
 - **`std.ordered_map` gains `get_mut`**: paired with the wrapper work because both are part of the Phase 3 stdlib-freeze checklist for runtime collections.
 - **Regression coverage**: `std/src/lib.con --test` runs 248/248 including the new `AsciiText` tests; `pipeline-test` 32/32 layout/ABI cases still green; 8 newtype `.con` test programs compile and run; 3 error-path tests (`error_newtype_no_implicit`, `error_newtype_double_unwrap`, `error_newtype_wrong_inner`) still reject as expected.
-- **Freeze-ledger update**: `docs/stdlib/STDLIB_FREEZE_LEDGER.md` validated-wrapper row flips from "Partial — newtype mechanism works at interp; native/SSA layout bug on enum-payload newtypes" to "Complete"; `docs/VALIDATED_WRAPPERS.md §8` drops the `Layout.tySize`/`Layout.tyAlign` gap (the instance-method-dispatch gap remains, by design).
+- **Freeze-ledger update**: `docs/stdlib/STDLIB_FREEZE_LEDGER.md` validated-wrapper row flips from "Partial — newtype mechanism works at interp; native/SSA layout bug on enum-payload newtypes" to "Complete"; `docs/language/VALIDATED_WRAPPERS.md §8` drops the `Layout.tySize`/`Layout.tyAlign` gap (the instance-method-dispatch gap remains, by design).
 
 ### Canonical Result/Option surface and `Type::Variant` qualification
 
@@ -5960,15 +5960,15 @@ Concrete now has one public `Result`/`Option` story and one enum/static qualific
 
 Three design documents defining developer-facing UX for different project shapes:
 
-- **`docs/FREESTANDING_SPLIT.md`** (item 34): freestanding vs hosted execution targets. Freestanding = no stdlib, no capabilities, no libc, pure computation. Hosted = full stdlib, main entry point, all capabilities. Feature table (18 items), concrete examples from fixed_capacity (freestanding-ready) and parse_validate (hosted). Freestanding is a strict subset of predictable.
-- **`docs/STANDALONE_VS_PROJECT.md`** (item 35): standalone file (`concrete myfile.con`) vs project (`concrete build` with Concrete.toml). Standalone for scripts/snippets, project for stdlib/policy/modules. Proposed `--stdlib` flag bridge. Migration path from standalone to project.
-- **`docs/PROJECT_BOOTSTRAP.md`** (item 36): `concrete new` command design with 3 templates (predictable, library, ffi), standard layout conventions, Concrete.toml field reference, first outsider workflow.
+- **`docs/platform/FREESTANDING_SPLIT.md`** (item 34): freestanding vs hosted execution targets. Freestanding = no stdlib, no capabilities, no libc, pure computation. Hosted = full stdlib, main entry point, all capabilities. Feature table (18 items), concrete examples from fixed_capacity (freestanding-ready) and parse_validate (hosted). Freestanding is a strict subset of predictable.
+- **`docs/project/STANDALONE_VS_PROJECT.md`** (item 35): standalone file (`concrete myfile.con`) vs project (`concrete build` with Concrete.toml). Standalone for scripts/snippets, project for stdlib/policy/modules. Proposed `--stdlib` flag bridge. Migration path from standalone to project.
+- **`docs/project/PROJECT_BOOTSTRAP.md`** (item 36): `concrete new` command design with 3 templates (predictable, library, ffi), standard layout conventions, Concrete.toml field reference, first outsider workflow.
 
 Phase 1 (Predictable Core) now has 17/18 items done. Only item 31 (interpreter) remains.
 
 ### Per-phase exit checklists (Phase 1, item 40)
 
-`docs/PHASE_EXIT_CHECKLISTS.md` — exit criteria for phases 1-7:
+`docs/compiler/PHASE_EXIT_CHECKLISTS.md` — exit criteria for phases 1-7:
 
 - **Phase 1 (Predictable Core)**: 10 criteria — canonical examples trust-gate tested, boundaries documented, stack-depth working, error propagation patterned, example governance, diagnostic UX designed, trusted boundary guide, no-std split, interpreter. Current: 14/18 items done
 - **Phases 2-7**: concrete exit criteria tied to specific outputs (pressure examples, stdlib freeze, tooling, benchmarks, showcase, proof expansion)
@@ -5979,16 +5979,16 @@ Phase 1 (Predictable Core) now has 17/18 items done. Only item 31 (interpreter) 
 
 Two design documents establishing quality standards:
 
-- **`docs/DIAGNOSTIC_UX.md`** (item 32): diagnostic quality tiers (good / missing "why" / bare), target format (rule + location + why + hint), 4 priority categories (policy violations, extraction blockers with per-construct explanations, ownership/linearity, stale proof repair). No new Lean types needed — existing Diagnostic fields sufficient
-- **`docs/TRUSTED_BOUNDARY_GUIDE.md`** (item 33): 4 canonical wrapper patterns (raw pointer reads, FFI shell, safe alternative, multi-layer orchestration), audit checklists for trusted fn (7 items) and trusted extern fn (4 items), report/evidence material references
+- **`docs/compiler/DIAGNOSTIC_UX.md`** (item 32): diagnostic quality tiers (good / missing "why" / bare), target format (rule + location + why + hint), 4 priority categories (policy violations, extraction blockers with per-construct explanations, ownership/linearity, stale proof repair). No new Lean types needed — existing Diagnostic fields sufficient
+- **`docs/verification/TRUSTED_BOUNDARY_GUIDE.md`** (item 33): 4 canonical wrapper patterns (raw pointer reads, FFI shell, safe alternative, multi-layer orchestration), audit checklists for trusted fn (7 items) and trusted extern fn (4 items), report/evidence material references
 
 ### Example inventory, lifecycle, and no-duplicate rule (Phase 1, items 37-39)
 
 Three documentation items establishing governance for the example set:
 
-- **`docs/EXAMPLE_INVENTORY.md`** (item 37): canonical inventory of all 20 named examples — 3 flagship (crypto_verify, elf_header, proof_pressure), 5 canonical (fixed_capacity, parse_validate, service_errors, thesis_demo, packet), 10 pressure (grep, http, integrity, json, kvstore, lox, mal, policy_engine, toml, verify), 2 supporting (project, snippets). Each entry records path, owning phase, claim, oracle strategy, test gates, and promotion status. Multi-phase ownership table. Promotion log.
-- **`docs/EXAMPLE_LIFECYCLE.md`** (item 38): 4 promotion levels (pressure → canonical → flagship → permanent regression target) with explicit bars, promotion path, anti-patterns (unnamed workload, test-free canonical, duplicate workload, phantom flagship), and new-example checklist.
-- **`docs/EXAMPLE_NO_DUPLICATES.md`** (item 39): rule against creating near-duplicate examples; reuse with multi-phase ownership. When-to-reuse vs when-to-create criteria. Current near-duplicates to watch.
+- **`docs/project/EXAMPLE_INVENTORY.md`** (item 37): canonical inventory of all 20 named examples — 3 flagship (crypto_verify, elf_header, proof_pressure), 5 canonical (fixed_capacity, parse_validate, service_errors, thesis_demo, packet), 10 pressure (grep, http, integrity, json, kvstore, lox, mal, policy_engine, toml, verify), 2 supporting (project, snippets). Each entry records path, owning phase, claim, oracle strategy, test gates, and promotion status. Multi-phase ownership table. Promotion log.
+- **`docs/project/EXAMPLE_LIFECYCLE.md`** (item 38): 4 promotion levels (pressure → canonical → flagship → permanent regression target) with explicit bars, promotion path, anti-patterns (unnamed workload, test-free canonical, duplicate workload, phantom flagship), and new-example checklist.
+- **`docs/project/EXAMPLE_NO_DUPLICATES.md`** (item 39): rule against creating near-duplicate examples; reuse with multi-phase ownership. When-to-reuse vs when-to-create criteria. Current near-duplicates to watch.
 
 ### Service-style error propagation example (Phase 1, item 30)
 
@@ -6020,7 +6020,7 @@ Three documentation items establishing governance for the example set:
 
 ### Predictable failure discipline (Phase 3, item 28)
 
-`docs/PREDICTABLE_FAILURE_DISCIPLINE.md` — failure-only discipline for predictable-profile code:
+`docs/platform/PREDICTABLE_FAILURE_DISCIPLINE.md` — failure-only discipline for predictable-profile code:
 
 - **Allowed**: explicit `Result<T, E>` return, error codes (`i32`, enum), sentinel values, `?` propagation
 - **Excluded**: abort, OOM, panic, unwinding, exceptions, blocking I/O failure, FFI failure, `longjmp` — all blocked by the five predictable gates
@@ -6030,7 +6030,7 @@ Three documentation items establishing governance for the example set:
 
 ### Failure strategy (Phase 3, item 27)
 
-`docs/FAILURE_STRATEGY.md` — definitive failure/panic strategy:
+`docs/language/FAILURE_STRATEGY.md` — definitive failure/panic strategy:
 
 - **Abort-only**: no panic, no unwinding, no catch — permanent design commitment
 - **Cleanup guarantees**: defer runs LIFO on all normal exits (return, `?`, break, scope exit); skipped on abort/signal
@@ -6042,7 +6042,7 @@ Three documentation items establishing governance for the example set:
 
 ### Predictable/proved boundary classification (Phase 3, item 26)
 
-`docs/PREDICTABLE_BOUNDARIES.md` — comprehensive classification of runtime boundaries for predictable and proved code:
+`docs/platform/PREDICTABLE_BOUNDARIES.md` — comprehensive classification of runtime boundaries for predictable and proved code:
 
 - **Host calls**: only `write(2)` reachable from predictable code (Console); all heap, string, Vec, FFI, and blocking operations excluded by five gates
 - **Cleanup paths**: defer runs LIFO on normal return/scope exit; abort/OOM/signals not reachable; all data stack-only
@@ -6097,7 +6097,7 @@ Completed former roadmap Phases 1 and 2 are now treated as historical milestones
 
 ### Trusted-computing-base accounting (Phase 2, item 22)
 
-`docs/TRUSTED_COMPUTING_BASE.md` rewritten as canonical TCB reference:
+`docs/verification/TRUSTED_COMPUTING_BASE.md` rewritten as canonical TCB reference:
 
 - **6 TCB layers**: Concrete checker/compiler, Lean kernel, proof registry/fingerprint machinery, backend/toolchain, runtime/target/OS, trusted/foreign code boundaries
 - Each layer specifies: what is trusted, what is actively verified, what is not claimed
@@ -6109,7 +6109,7 @@ Completed former roadmap Phases 1 and 2 are now treated as historical milestones
 
 ### Named user-facing profiles (Phase 2, item 21)
 
-`docs/PROFILES.md` rewritten as canonical profile reference:
+`docs/platform/PROFILES.md` rewritten as canonical profile reference:
 
 - **4 profiles** with per-profile gate/report/evidence tables
 - **Safe**: 7 enforced gates, 5 report commands, evidence artifacts; explicit non-coverage (bounds, overflow, stack, termination, checker soundness)
@@ -6122,7 +6122,7 @@ Completed former roadmap Phases 1 and 2 are now treated as historical milestones
 
 ### Canonical "claims today" surface (Phase 2, item 20)
 
-`docs/CLAIMS_TODAY.md` rewritten as the canonical short public statement of current guarantees:
+`docs/verification/CLAIMS_TODAY.md` rewritten as the canonical short public statement of current guarantees:
 
 - **9 sections**: compiler-enforced guarantees, proof-backed guarantees, proof workflow and evidence pipeline, compiler-reported analysis, profile status, explicit non-claims, trusted computing base, vocabulary rules, machine-readable evidence
 - **Compiler-enforced**: 12 properties (ownership, linearity, borrows, capabilities, cleanup, control flow) with mechanisms; explicit non-coverage (bounds, overflow, stack, termination, checker soundness)
@@ -6173,7 +6173,7 @@ Canonical outsider-facing tutorial added to the book (`docs/book/src/proving.md`
 
 Complete user-facing proof workflow defined and tested:
 
-- `docs/PROOF_WORKFLOW.md` — 12-step canonical workflow document covering: function eligibility, stub generation, proof writing, registry attachment, verification (`concrete check`, `check-proofs`), failure diagnosis (8 diagnostic kinds), stale repair, dependency fallout review, and proof-preserving refactors
+- `docs/verification/PROOF_WORKFLOW.md` — 12-step canonical workflow document covering: function eligibility, stub generation, proof writing, registry attachment, verification (`concrete check`, `check-proofs`), failure diagnosis (8 diagnostic kinds), stale repair, dependency fallout review, and proof-preserving refactors
 - Command reference table for all 9 proof-related CLI commands
 - End-to-end example: proving `clamp_value` from the pressure set
 - Rename detection workflow: orphaned registry entries matched by fingerprint
@@ -6297,7 +6297,7 @@ Adversarial test files in `tests/programs/adversarial_registry/` with 6 trust-ga
 
 ### Canonical theorem shapes (Phase 2, items 3 and 5)
 
-`docs/PROOF_THEOREM_SHAPES.md` defines the canonical proof-spec and theorem shapes:
+`docs/verification/PROOF_THEOREM_SHAPES.md` defines the canonical proof-spec and theorem shapes:
 - 3 theorem categories: concrete tests (`native_decide`), universal boundary, full contract
 - Naming rules: `<fn>Expr`, `<fn>Fn`, `eval_<fn>`, `<fn>_correct`, `<fn>_rejects_<X>`
 - Allowed property forms: total input-output, branch coverage, compositional
@@ -6340,7 +6340,7 @@ Trust-gate: 1115 pass, 0 fail.
 - **`clamp_value`** (missing) — pure, extractable, no registry entry yet
 - **`classify_range`** (blocked) — pure, eligible, but uses struct field access (unsupported in extraction)
 
-Design doc: `docs/PROOF_PRESSURE_SET.md`. Registry: `examples/proof_pressure/src/proof-registry.json`. 7 new trust-gate regression assertions verify all states + totals. Trust-gate: 1098 pass, 0 fail.
+Design doc: `docs/verification/PROOF_PRESSURE_SET.md`. Registry: `examples/proof_pressure/src/proof-registry.json`. 7 new trust-gate regression assertions verify all states + totals. Trust-gate: 1098 pass, 0 fail.
 
 ### Stable diagnostic and error-code taxonomy
 
@@ -6468,7 +6468,7 @@ Same-name functions in different modules produced duplicate LLVM definitions. Fi
 
 ### Attacker-style drift demo and threat model
 
-**Thesis threat/accident model** defined in `docs/THREAT_MODEL.md`, covering six threat categories: proof semantic drift, authority escalation, validation weakening, resource drift, trust boundary erosion, and specification mismatch. Each threat maps to the compiler mechanism that catches it.
+**Thesis threat/accident model** defined in `docs/verification/THREAT_MODEL.md`, covering six threat categories: proof semantic drift, authority escalation, validation weakening, resource drift, trust boundary erosion, and specification mismatch. Each threat maps to the compiler mechanism that catches it.
 
 Three end-to-end drift demos with drifted variants:
 - **`crypto_verify`**: `compute_tag` changes `+` to `-` (proof drift), `check_nonce` changes `>` to `>=` (validation weakening)
@@ -6623,7 +6623,7 @@ Cross-pass invariant table updated with ProofCore self-consistency and canonical
 
 **`ProofState.canonical` and `ProofDiagnosticKind.canonical`** added alongside `ObligationStatus.canonical` — all renderers delegate to these functions instead of inline match expressions.
 
-See [docs/CLAIM_TAXONOMY.md](docs/CLAIM_TAXONOMY.md) §7.6 for the canonical terminology table.
+See [docs/verification/CLAIM_TAXONOMY.md](docs/verification/CLAIM_TAXONOMY.md) §7.6 for the canonical terminology table.
 
 ### ProofCore self-consistency checks and `--report consistency`
 
@@ -6645,7 +6645,7 @@ See [docs/CLAIM_TAXONOMY.md](docs/CLAIM_TAXONOMY.md) §7.6 for the canonical ter
 
 **Single known non-deterministic field:** the `timestamp` in snapshot JSON, which is intentional metadata. All tooling (`concrete diff`, the regression suite) strips it before comparison.
 
-See [docs/DETERMINISM.md](docs/DETERMINISM.md) for the full guarantee, verification methodology, and cross-version caveats.
+See [docs/compiler/DETERMINISM.md](docs/compiler/DETERMINISM.md) for the full guarantee, verification methodology, and cross-version caveats.
 
 ### Unreachable checker error kinds audited and removed
 
@@ -6673,7 +6673,7 @@ Also removed: `inDeferBody` field from `TypeEnv`, `mutBorrowed` field from `VarI
 
 ### Memory/reference semantics, `&mut T` closure, and the first explicit no-leak boundary land
 
-**The safe-memory claim is now centralized and checker-matching:** Concrete now has a canonical memory/reference semantics document in [docs/MEMORY_SEMANTICS.md](docs/MEMORY_SEMANTICS.md), an explicit public guarantee statement in [docs/MEMORY_GUARANTEES.md](docs/MEMORY_GUARANTEES.md), and a dedicated `&mut T` closure tracker in [docs/MUT_REF_CLOSURE.md](docs/MUT_REF_CLOSURE.md). This is the point where the memory story stopped being scattered invariants and became one checked claim surface.
+**The safe-memory claim is now centralized and checker-matching:** Concrete now has a canonical memory/reference semantics document in [docs/language/MEMORY_SEMANTICS.md](docs/language/MEMORY_SEMANTICS.md), an explicit public guarantee statement in [docs/language/MEMORY_GUARANTEES.md](docs/language/MEMORY_GUARANTEES.md), and a dedicated `&mut T` closure tracker in [docs/language/MUT_REF_CLOSURE.md](docs/language/MUT_REF_CLOSURE.md). This is the point where the memory story stopped being scattered invariants and became one checked claim surface.
 
 **`&mut T` soundness-critical closure landed:** the compiler now distinguishes two real `&mut T` modes:
 
@@ -7114,13 +7114,13 @@ Added ~100 new tests (Phase 3) on top of Phase 2's 766.
 
 All six Phase G items complete. Concrete now has explicit feature-admission criteria, recorded language decisions, documented long-term shape commitments, and a defined provable subset.
 
-**Item 6 — Provable subset definition**: Created `docs/PROVABLE_SUBSET.md` as the standing reference. Defines the current ProofCore extraction boundary for proof-eligible functions (empty capability set, not trusted, not entry point, no trusted impl origin) and types (no repr(C)/packed, no builtin override), and distinguishes it from the stricter `--report proof` heuristic that also flags extern calls and raw-pointer operations. Documents pipeline position (extract from ValidatedCore after CoreCheck), current proof coverage (17 theorems over integers/booleans/arithmetic/conditionals), relationship to the high-integrity profile, and how permanent language decisions (no closures, no trait objects, static dispatch) make the subset boundary clean.
+**Item 6 — Provable subset definition**: Created `docs/verification/PROVABLE_SUBSET.md` as the standing reference. Defines the current ProofCore extraction boundary for proof-eligible functions (empty capability set, not trusted, not entry point, no trusted impl origin) and types (no repr(C)/packed, no builtin override), and distinguishes it from the stricter `--report proof` heuristic that also flags extern calls and raw-pointer operations. Documents pipeline position (extract from ValidatedCore after CoreCheck), current proof coverage (17 theorems over integers/booleans/arithmetic/conditionals), relationship to the high-integrity profile, and how permanent language decisions (no closures, no trait objects, static dispatch) make the subset boundary clean.
 
-**Item 1 — Feature admission criteria**: Created `docs/DESIGN_POLICY.md` as standing policy. 10-point admission checklist (simple invariant, visibility, phase separation, declaration-level dependencies, static dispatch, predictable codegen, diagnostics ownership, single-pass ownership, proof story, benefit for audited code). Quick decision rule and one-line test. Promoted from `research/design-filters.md`.
+**Item 1 — Feature admission criteria**: Created `docs/project/DESIGN_POLICY.md` as standing policy. 10-point admission checklist (simple invariant, visibility, phase separation, declaration-level dependencies, static dispatch, predictable codegen, diagnostics ownership, single-pass ownership, proof story, benefit for audited code). Quick decision rule and one-line test. Promoted from `research/meta/design-filters.md`.
 
-**Item 2 — "No" and "not yet" decisions**: Created `docs/DECISIONS.md` as a decisions registry. Six permanent decisions: no closures, no trait objects, no source-generating macros, no hidden dynamic dispatch, no inference-heavy abstraction, trusted = pointer containment only. Six deferred decisions with explicit prerequisites: freestanding mode, capability hiding, concurrency, pre/post conditions, derived equality, package model.
+**Item 2 — "No" and "not yet" decisions**: Created `docs/project/DECISIONS.md` as a decisions registry. Six permanent decisions: no closures, no trait objects, no source-generating macros, no hidden dynamic dispatch, no inference-heavy abstraction, trusted = pointer containment only. Six deferred decisions with explicit prerequisites: freestanding mode, capability hiding, concurrency, pre/post conditions, derived equality, package model.
 
-**Item 5 — Long-term language shape**: Created `docs/LANGUAGE_SHAPE.md` documenting six structural commitments (static/explicit dispatch, capabilities in signatures, three-way trust split, linear ownership, whole-program monomorphization, phase separation), five "will not become" constraints, and a table of what may change with evidence. Synthesizes IDENTITY.md, DESIGN_POLICY.md, DECISIONS.md, and SAFETY.md.
+**Item 5 — Long-term language shape**: Created `docs/language/LANGUAGE_SHAPE.md` documenting six structural commitments (static/explicit dispatch, capabilities in signatures, three-way trust split, linear ownership, whole-program monomorphization, phase separation), five "will not become" constraints, and a table of what may change with evidence. Synthesizes IDENTITY.md, DESIGN_POLICY.md, DECISIONS.md, and SAFETY.md.
 
 ### Phase G items 3–4: Language Surface Simplification and Trusted Narrowing
 
@@ -7155,7 +7155,7 @@ Four Phase F items landed, covering capability ergonomics, reporting, aliases, a
 - `--report proof`: ProofCore eligibility analysis — marks each function as eligible or excluded with specific reasons (capabilities, trusted, extern calls, raw pointers)
 15 semantic assertions in `run_tests.sh`. Total report modes: 8 with 59 assertions.
 
-**Item 3 — Capability aliases**: New `cap IO = File + Console;` syntax at module level. Parsed by the parser, expanded at parse time via `Module.expandCapAliases`, transparent to Check/Elab/CoreCheck. Validates cap names at definition time; supports `Std` macro and `pub cap`. Authority wrapper patterns documented in `docs/FFI.md` with stdlib examples.
+**Item 3 — Capability aliases**: New `cap IO = File + Console;` syntax at module level. Parsed by the parser, expanded at parse time via `Module.expandCapAliases`, transparent to Check/Elab/CoreCheck. Validates cap names at definition time; supports `Std` macro and `pub cap`. Authority wrapper patterns documented in `docs/platform/FFI.md` with stdlib examples.
 
 **Item 7 — Bounded semantic error recovery**: `checkStmts` (Check.lean) and `elabStmts` (Elab.lean) now catch per-statement errors, restore the type environment on failure, and add placeholder types for failed let-declarations to prevent cascading errors. All accumulated diagnostics are thrown together. Statement-level granularity avoids guessing at expression-level placeholders while catching independent errors.
 
@@ -7168,10 +7168,10 @@ What changed:
 - `Concrete/Check/CoreCheck.lean`: capability error hints
 - `Concrete/Report/Report.lean`: `authorityReport` and `proofReport` functions
 - `Main.lean`: authority/proof report dispatch
-- `docs/FFI.md`: authority wrapper patterns, capability aliases
-- `docs/PASSES.md`: error accumulation, cap alias expansion, pipeline signature fixes
-- `docs/DIAGNOSTICS.md`: statement-level accumulation policy
-- `docs/ARCHITECTURE.md`: Parse cap alias expansion, Check error accumulation
+- `docs/platform/FFI.md`: authority wrapper patterns, capability aliases
+- `docs/compiler/PASSES.md`: error accumulation, cap alias expansion, pipeline signature fixes
+- `docs/compiler/DIAGNOSTICS.md`: statement-level accumulation policy
+- `docs/compiler/ARCHITECTURE.md`: Parse cap alias expansion, Check error accumulation
 
 Test suite: 685 tests passing (7 new: 4 error recovery, 3 capability alias).
 
@@ -7179,15 +7179,15 @@ Test suite: 685 tests passing (7 new: 4 error recovery, 3 capability alias).
 
 **Item 4 — Safety usability**: Covered by the combination of capability aliases (item 3), error recovery (item 7), actionable error hints (item 1), and wrapper pattern documentation. Safety features are now easier to use correctly without weakening honesty.
 
-**Item 5 — Coherent safety story**: Created `docs/SAFETY.md` as the central safety reference. Defines the three-way split (capabilities / trusted / `with(Unsafe)`), documents all 8 report modes with what each shows, explains the error model with accumulation policy, describes the proof boundary and ProofCore eligibility, and introduces the high-integrity profile direction. Cross-references added from all existing docs: VALUE_MODEL.md, STDLIB.md, IDENTITY.md, DIAGNOSTICS.md, EXECUTION_MODEL.md, ARCHITECTURE.md, FFI.md, PASSES.md. Stale `ABI_LAYOUT.md` references replaced with `ABI.md`.
+**Item 5 — Coherent safety story**: Created `docs/language/SAFETY.md` as the central safety reference. Defines the three-way split (capabilities / trusted / `with(Unsafe)`), documents all 8 report modes with what each shows, explains the error model with accumulation policy, describes the proof boundary and ProofCore eligibility, and introduces the high-integrity profile direction. Cross-references added from all existing docs: VALUE_MODEL.md, STDLIB.md, IDENTITY.md, DIAGNOSTICS.md, EXECUTION_MODEL.md, ARCHITECTURE.md, FFI.md, PASSES.md. Stale `ABI_LAYOUT.md` references replaced with `ABI.md`.
 
-**Item 6 — High-integrity safety profile**: `docs/SAFETY.md` defines the profile direction: same language under stricter restrictions (no Unsafe, no unrestricted FFI, no/bounded allocation, no ambient authority growth, analyzable concurrency, stronger evidence). Documents what the compiler must provide (profile-recognized restrictions, profile-aware reports, package visibility, proof relation). Connects profile restrictions to existing features (capabilities gate authority, trusted contains unsafety, linearity ensures resource safety, ProofCore extracts the provable fragment, reports make boundaries visible).
+**Item 6 — High-integrity safety profile**: `docs/language/SAFETY.md` defines the profile direction: same language under stricter restrictions (no Unsafe, no unrestricted FFI, no/bounded allocation, no ambient authority growth, analyzable concurrency, stronger evidence). Documents what the compiler must provide (profile-recognized restrictions, profile-aware reports, package visibility, proof relation). Connects profile restrictions to existing features (capabilities gate authority, trusted contains unsafety, linearity ensures resource safety, ProofCore extracts the provable fragment, reports make boundaries visible).
 
 Phase F is now complete. All 7 items done.
 
 ### Phase E complete: Runtime and Execution Model
 
-Phase E is done. All 11 items are complete. `docs/EXECUTION_MODEL.md` is the central reference.
+Phase E is done. All 11 items are complete. `docs/language/EXECUTION_MODEL.md` is the central reference.
 
 **Items 6–11 (new this milestone):**
 
@@ -7200,13 +7200,13 @@ Phase E is done. All 11 items are complete. `docs/EXECUTION_MODEL.md` is the cen
 
 ### Phase E items 4–5: FFI ownership boundary and ABI calling convention
 
-**Item 4 — FFI/runtime ownership boundary**: `docs/EXECUTION_MODEL.md` now documents how ownership, capabilities, and resource tracking interact at the FFI boundary. Extern functions require `Unsafe`; `trusted fn` wrappers hide `Unsafe` behind safe APIs. Linear types consumed by-value in extern calls; references borrow without consuming; raw pointers are Copy with no tracking. Known gaps documented: raw pointer leaks, no verified FFI envelopes, no cross-language ownership protocol.
+**Item 4 — FFI/runtime ownership boundary**: `docs/language/EXECUTION_MODEL.md` now documents how ownership, capabilities, and resource tracking interact at the FFI boundary. Extern functions require `Unsafe`; `trusted fn` wrappers hide `Unsafe` behind safe APIs. Linear types consumed by-value in extern calls; references borrow without consuming; raw pointers are Copy with no tracking. Known gaps documented: raw pointer leaks, no verified FFI envelopes, no cross-language ownership protocol.
 
 **Item 5 — FFI/ABI calling convention fix**: `EmitSSA.lean` now distinguishes extern fn calls from internal calls. `#[repr(C)]` struct arguments in extern fn calls are passed by value per the C ABI instead of always by pointer. New helpers: `externParamTyToLLVMTy` and `isReprCStruct` detect repr(C) structs and emit by-value passing for extern calls while preserving pointer-based passing for internal calls.
 
 ### Phase E items 1–3: execution model and abort-on-OOM
 
-`docs/EXECUTION_MODEL.md` defines Concrete's execution model covering three Phase E items:
+`docs/language/EXECUTION_MODEL.md` defines Concrete's execution model covering three Phase E items:
 
 **Item 1 — Hosted vs freestanding model**: Concrete targets hosted (POSIX + libc) only. The stdlib is classified into three layers by host dependency: core (pure computation, no libc), alloc (malloc/realloc/free only), and hosted (full POSIX libc). Freestanding mode is a future milestone — the hosted boundary is now explicit so the split is straightforward when needed.
 
@@ -7237,7 +7237,7 @@ The final two partial checklist items are now done, completing the compiler impr
 What changed:
 - `Concrete/Pipeline/Pipeline.lean`: second `ssaVerifyProgram` call after cleanup
 - `Concrete/IR/SSAVerify.lean`: module docstring updated to document dual verification; `isAggregateType` comment explains why generic heap types (Vec, HashMap, etc.) are excluded from the aggregate check
-- `docs/PASSES.md`: pipeline diagram, SSAVerify section, and invariant chain updated to reflect post-cleanup verification
+- `docs/compiler/PASSES.md`: pipeline diagram, SSAVerify section, and invariant chain updated to reflect post-cleanup verification
 
 **Item 5 — Builtin extraction from EmitSSA**: 568 lines of builtin LLVM IR generation extracted from `EmitSSA.lean` into `Concrete/Backend/EmitBuiltins.lean`. The new module exports `getBuiltinFns` (string ops, conversion ops) and `getVecBuiltinFns` (vec ops per element size) and imports only `Concrete.LLVM` and `Concrete.Layout` — no dependency on SSA IR, Core IR, or `EmitSSAState`. This proves the builtins are structurally decoupled from the SSA→LLVM translation. `EmitSSA.lean` shrinks from 1642 to 1099 lines.
 
@@ -7268,11 +7268,11 @@ Test suite: 658 tests at time of fix (32 pass-level, 15 integration/regression, 
 Phase D (testing, backend, and trust multipliers) is fully complete. Final items landed:
 
 - **Item 5 — real-program corpus growth**: 4 new integration programs (calculator 200 lines, type registry 248 lines, pipeline processor 223 lines, stress bytecode interpreter 280 lines). Integration corpus now 12 programs. Stress workload exercises 11-variant enum, multiple Vec instances, 21-instruction execution loop, cross-module types/functions.
-- **Item 7 — deferred audit reports**: next report modes named in `docs/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes regression-tested with 44 stable semantic assertions.
+- **Item 7 — deferred audit reports**: next report modes named in `docs/compiler/PASSES.md` (`--report authority`, `--report proof`, `--report high-integrity` deferred to Phase E). All 6 existing modes regression-tested with 44 stable semantic assertions.
 
 ### Phase D item 4 complete: FFI/ABI maturity
 
-`docs/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `Concrete/Pipeline/PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
+`docs/platform/ABI.md` documents what's stable (FFI-safe scalars, repr(C)/packed/align layout, extern fn), what's intentionally unstable (non-repr struct layout, enum representation, pass-by-ptr convention, symbol naming), platform assumptions (64-bit only, hardcoded sizes), the FFI safety model, and a cross-platform verification matrix. 4 layout verification tests added to `Concrete/Pipeline/PipelineTest.lean` (scalar sizes, builtin sizes, repr(C) layout, pass-by-ptr decisions). Test suite: 651 tests (32 pass-level).
 
 ### Phase D2 complete: backend contract, ValidatedCore, and proof workflow
 
@@ -7282,7 +7282,7 @@ What landed:
 - **`ValidatedCore` artifact** (`Concrete/Pipeline/Pipeline.lean`): explicit pipeline type. `Pipeline.coreCheck` is the only constructor; `Pipeline.monomorphize` takes `ValidatedCore`. `Pipeline.elaborate` returns `ElaboratedProgram` (elab + canonicalize only), `Pipeline.coreCheck` validates it.
 - **`ProofCore` extraction** (`Concrete/Proof/ProofCore.lean`): filters `ValidatedCore` into the pure, proof-eligible fragment — pure functions (empty capability set, not trusted), safe structs (no repr(C)/packed), safe enums (no builtin overrides). Reports inclusion/exclusion counts.
 - **Formal proof workflow** (`Concrete/Proof/Proof.lean`): evaluation semantics for a pure Core fragment (integers, booleans, arithmetic, let bindings, conditionals, function calls). Embeds abs, max, clamp. 17 proven theorems: concrete correctness (9), structural lemmas (3), conditional reduction (2), arithmetic (3).
-- **SSA backend contract** (`docs/PASSES.md`): documents SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), and the invariant chain.
+- **SSA backend contract** (`docs/compiler/PASSES.md`): documents SSAVerify guarantees (8 invariants), SSACleanup guarantees (8 postconditions), EmitSSA assumptions (5 preconditions), and the invariant chain.
 
 ### Phase D1 complete: testing infrastructure
 
@@ -7292,7 +7292,7 @@ What landed:
 - **Pass-level Lean tests** (`Concrete/Pipeline/PipelineTest.lean`, 28 tests): parse (4), frontend/check/elab (8), monomorphize (2), SSA lowering (2), SSA verify (3), SSA cleanup (2), SSA emit (2), full pipeline (5). Each pass tested in isolation on in-memory source strings — no clang, no file I/O, <1s total. Tests both success and error paths.
 - **Test metadata**: `test_manifest.toml` provides per-test reference metadata (category, kind, passes, profile, owner_pass — not consumed by the runner, serves as documentation and future tooling source). `test_dep_map.toml` maps 27 compiler source files to affected test sections and categories (consumed by `run_tests.sh --affected`).
 - **Dependency-aware selection**: `run_tests.sh --affected` auto-detects changed files via `git diff` and runs only affected test sections. Conservative mapping: `--affected Concrete/Report/Report.lean` runs 72 tests (report + passlevel); `--affected Concrete/IR/Lower.lean` runs 248 tests (positive + codegen + O2 + passlevel). Unknown files fall back to the full suite.
-- **Coverage matrix and determinism policy** (`docs/TESTING.md`): full coverage matrix by failure mode (17 categories) and by compiler pass (12 passes), determinism rules (fixed seeds, no wall-clock dependence, 3 timeout tiers, network isolation by default, parallel safety, quarantine/repair policy), compile-time baselines, and failure isolation documentation.
+- **Coverage matrix and determinism policy** (`docs/compiler/TESTING.md`): full coverage matrix by failure mode (17 categories) and by compiler pass (12 passes), determinism rules (fixed seeds, no wall-clock dependence, 3 timeout tiers, network isolation by default, parallel safety, quarantine/repair policy), compile-time baselines, and failure isolation documentation.
 - **Compiler output cache**: file-keyed cache, 26/57 hits per fast run, avoids redundant recompilation for multi-assertion report tests.
 - **Failure artifact preservation**: `.test-failures/` with timestamped output and exact rerun commands.
 - **Manifest listing**: `run_tests.sh --manifest` now emits the full runner-known test inventory with category/kind/file metadata, so the documented manifest view is a real tool instead of a missing feature.

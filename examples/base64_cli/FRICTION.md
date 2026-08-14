@@ -35,7 +35,7 @@ zero mismatches. Invalid input (`!!!!`, bad length) → recoverable error messag
    return IS the process exit code (8-bit masked), stdout untouched; this
    tool now pipes cleanly and exits 1 on invalid input. Full decision record
    and the stage-2 end state (`fn main() -> u8 | Unit`) in
-   `docs/MAIN_EXIT_MODEL.md`.
+   `docs/platform/MAIN_EXIT_MODEL.md`.
 
 5. **base64 inline was ~70 lines and easy** — the alphabet/padding logic is
    self-contained. The friction was NOT the encoding math; it was everything
@@ -60,7 +60,7 @@ zero mismatches. Invalid input (`!!!!`, bad length) → recoverable error messag
 
 | # | Pull | Evidence | Size |
 |---|------|----------|------|
-| 1 | main return = exit code (not stdout echo) | friction 4 — blocks ALL CLI workloads | **SHIPPED stage 1** (docs/MAIN_EXIT_MODEL.md; stage 2 = `u8\|Unit` main, ROADMAP P7 #3) |
+| 1 | main return = exit code (not stdout echo) | friction 4 — blocks ALL CLI workloads | **SHIPPED stage 1** (docs/platform/MAIN_EXIT_MODEL.md; stage 2 = `u8\|Unit` main, ROADMAP P7 #3) |
 | 2 | `Bytes::from_string` / `String.to_bytes` | friction 7 — every text↔bytes program | std, small — **SHIPPED** (bytes.con, this workload now uses it) |
 | 3 | `std.base64` (encode/decode, Option-failing decode) | friction 5 — proto/CLI recurrence | **SHIPPED** (std/src/base64.con, RFC 4648 vectors + reject tests; this tool now uses it) |
 | 4 | standalone-import diagnostic hint | friction 1 — first-contact UX | **SHIPPED** (E0110 hint names project mode) |

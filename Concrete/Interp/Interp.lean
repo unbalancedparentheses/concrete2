@@ -7,7 +7,7 @@ open Concrete
 
 /-! ## Source-level interpreter for the predictable/core subset
 
-    Currently supported (oracle subset, see `docs/INTERPRETER_TRUST.md`):
+    Currently supported (oracle subset, see `docs/verification/INTERPRETER_TRUST.md`):
     integer/bool/char/string, structs, enums, arrays, match, bounded loops,
     calls, immutable/mutable borrows of locals, fields, and array elements,
     and the print_* intrinsics (buffered into a reserved stdout binding so

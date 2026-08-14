@@ -1,7 +1,7 @@
 [package]
 name = "hmac_sha256"
 
-# Enforceable budgets per docs/POLICY_FILES.md.
+# Enforceable budgets per docs/project/POLICY_FILES.md.
 # CI gate: make test-policy.
 #
 # Same discipline as constant_time_tag: NO trusted shells and NO

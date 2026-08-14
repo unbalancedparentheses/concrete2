@@ -104,8 +104,8 @@ The exact matrix can vary by support tier, but the project should say what each 
 ## Relationship To Other Research
 
 - [no-std-freestanding.md](no-std-freestanding.md)
-- [complete-language-system.md](complete-language-system.md)
-- [mlir-backend-shape.md](mlir-backend-shape.md)
+- [complete-language-system.md](../meta/complete-language-system.md)
+- [mlir-backend-shape.md](../compiler/mlir-backend-shape.md)
 
 ## Working Conclusion
 

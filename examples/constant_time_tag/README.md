@@ -90,7 +90,7 @@ uniform.
 ## ProvableV1 conformance
 
 `ct_compare` fits the `ProvableV1` profile (see
-[`docs/PROVABLE_V1.md`](../../docs/PROVABLE_V1.md)).  The
+[`docs/verification/PROVABLE_V1.md`](../../docs/verification/PROVABLE_V1.md)).  The
 function uses only constructs in the supported surface: u8
 BitVec `bitxor` and `bitor`, array indexing, a bounded
 16-iteration `while_` loop, and an `i32` accumulator branch
@@ -185,7 +185,7 @@ Three layers, same as the prior three flagships:
    The u8 PBinOp extensions (commits `12a4c94`, `28b1f2a`)
    are the load-bearing additions for this candidate; their
    Phase 12 preservation obligations are named in
-   `docs/PROOF_OBLIGATIONS_REGISTER.md` R-17 and R-21.
+   `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` R-17 and R-21.
 3. **Toolchain + runtime.**  LLVM, clang, linker, libc.
    Not verified.  `assumptions.toml` records the host/
    toolchain exercised AND the machine-level-timing gap.
@@ -242,7 +242,7 @@ catch.
   differential harness.
 - in-source `#[proof_by]`/`#[spec]`/`#[proof_fingerprint]` links in
   `src/main.con` + `Concrete/Proof.lean` — attached theorems.
-- `docs/PROOF_OBLIGATIONS_REGISTER.md` R-17, R-21 — the
+- `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` R-17, R-21 — the
   Phase 12 preservation obligations this candidate's u8
   PBinOp extensions created.
 - `examples/parse_validate/`, `examples/crypto_verify/`,

@@ -5,7 +5,7 @@
 # section, compiles the project, runs the relevant reports, and
 # asserts every policy is met. Drift fails the gate.
 #
-# Contract: docs/POLICY_FILES.md
+# Contract: docs/project/POLICY_FILES.md
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"

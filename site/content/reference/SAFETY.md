@@ -217,7 +217,7 @@ Trusted ──────── containment of pointer-level unsafety behind sa
      ├── trusted fn / trusted impl / trusted extern fn
      ├── callers still see the declared capabilities; only trusted extern fn avoids with(Unsafe)
      ├── --report unsafe shows trust boundaries
-     └── wrapper patterns documented in docs/FFI.md
+     └── wrapper patterns documented in docs/platform/FFI.md
 
 with(Unsafe) ─── explicit foreign boundary gate
      │

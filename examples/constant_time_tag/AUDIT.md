@@ -359,9 +359,9 @@ one row at a time:
   crypto scaffolding.
 - `examples/fixed_capacity/AUDIT.md` — third graduated;
   state-model + composition over bounded mutable state.
-- `docs/PROOF_OBLIGATIONS_REGISTER.md` — every Phase 4
+- `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` — every Phase 4
   extension this candidate forces appends a row here.
-- `docs/PROOF_STATE_MODEL.md` — the state model whose
+- `docs/verification/PROOF_STATE_MODEL.md` — the state model whose
   multi-iteration while_step the composition theorem here
   will exercise.
 - `ROADMAP.md` Phase 7 item 8 — the explicit real-crypto

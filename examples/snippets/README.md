@@ -50,4 +50,4 @@ built-in `Result`; this is the idiomatic error-flow pattern) ·
 > Note: these target the full language (the native codegen path). The
 > proof-oriented frontend handles the integer/array/loop subset; for what is in
 > the *provable* subset, see [`../evidence_classes/`](../evidence_classes/) and
-> [`../../docs/EVIDENCE_CLASSES.md`](../../docs/EVIDENCE_CLASSES.md).
+> [`../../docs/verification/EVIDENCE_CLASSES.md`](../../docs/verification/EVIDENCE_CLASSES.md).

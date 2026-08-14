@@ -16,7 +16,7 @@ class; EXIT-trap cleanup).
   split across client writes). **Partial writes: NOT claimed** — write_all
   executes end-to-end but loopback does not force the OS to split writes;
   deterministic short-write coverage belongs to the capability-fault
-  simulation gate (docs/DETERMINISTIC_SIMULATION.md), where TcpStream
+  simulation gate (docs/project/DETERMINISTIC_SIMULATION.md), where TcpStream
   joins as an injectable backend.
 - **IPv4 only**: std.net's sockaddr is AF_INET. IPv6 is out of scope by
   classification, not by accident.

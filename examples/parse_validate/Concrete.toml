@@ -1,7 +1,7 @@
 [package]
 name = "parse_validate"
 
-# Enforceable budgets per docs/POLICY_FILES.md. The CI gate
+# Enforceable budgets per docs/project/POLICY_FILES.md. The CI gate
 # `make test-policy` verifies every field below holds.
 [policy]
 predictable            = true

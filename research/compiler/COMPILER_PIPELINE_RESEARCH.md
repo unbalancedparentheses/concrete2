@@ -12,7 +12,7 @@ For the focused Phase 6.5 follow-up on Zig result-location semantics,
 Rust/rustc queries, MLIR pass infrastructure, Hylo second-class references,
 Austral linear capabilities, Perceus reuse, and incremental verification caches,
 see
-[research/compiler/pipeline-lessons-2026-07.md](../research/compiler/pipeline-lessons-2026-07.md).
+[research/compiler/pipeline-lessons-2026-07.md](pipeline-lessons-2026-07.md).
 
 ## Repositories Checked
 

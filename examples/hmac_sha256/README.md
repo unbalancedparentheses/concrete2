@@ -173,7 +173,7 @@ The HMAC proof was not left as a one-off. Its reusable parts were extracted into
 - call and function-table helpers;
 - refinement scaffolding.
 
-The guide is in `docs/PROOFKIT_GUIDE.md`.
+The guide is in `docs/verification/PROOFKIT_GUIDE.md`.
 
 ## ProvableV1 pressure
 
@@ -213,5 +213,5 @@ Evidence reports:
 - `Concrete.toml` — policy budgets.
 - in-source `#[proof_by]`/`#[spec]`/`#[proof_fingerprint]` links in `src/main.con`
   — attached proof entries and fingerprints (no JSON registry).
-- `docs/PROOFKIT_GUIDE.md` — how to reuse the proof infrastructure.
-- `docs/PROVABLE_V1.md` — the supported proof subset.
+- `docs/verification/PROOFKIT_GUIDE.md` — how to reuse the proof infrastructure.
+- `docs/verification/PROVABLE_V1.md` — the supported proof subset.

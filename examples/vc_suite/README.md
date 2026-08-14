@@ -25,4 +25,4 @@ misleading green. The only SMT-eligible obligation across all five is
 `fixed_point_filter::scale` (a signed `var * var` product); run it with `--smt`
 to see `solver_trusted` plus the solver provenance, or with `--smt --replay` for
 the Lean-replay artifact. See `../smt/README.md` and
-[docs/SMT_SOUNDNESS.md](../../docs/SMT_SOUNDNESS.md).
+[docs/verification/SMT_SOUNDNESS.md](../../docs/verification/SMT_SOUNDNESS.md).

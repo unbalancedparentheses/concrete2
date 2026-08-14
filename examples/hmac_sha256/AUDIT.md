@@ -452,16 +452,16 @@ These are decided BEFORE bar #1 attempts:
 - `examples/constant_time_tag/AUDIT.md` — fourth graduated;
   the constant-time helper this candidate's `ct_compare_32`
   inlines.
-- `docs/PROVABLE_V1.md` — the subset contract this
+- `docs/verification/PROVABLE_V1.md` — the subset contract this
   candidate's graduation will expand.  Today's "Excluded"
   list names shifts, bitand, and (multi-word) arithmetic as
   out-of-subset; this candidate's graduation moves them in.
-- `docs/PROOF_OBLIGATIONS_REGISTER.md` — every ProofCore
+- `docs/verification/PROOF_OBLIGATIONS_REGISTER.md` — every ProofCore
   extension this candidate forces appends a row here.
-- `docs/PROOF_STATE_MODEL.md` — the state model whose
+- `docs/verification/PROOF_STATE_MODEL.md` — the state model whose
   64-round loop induction the compression theorem will
   exercise.
-- `docs/PROOF_STORY_MATRIX.md` — the per-construct matrix
+- `docs/verification/PROOF_STORY_MATRIX.md` — the per-construct matrix
   this candidate moves several cells of from "open" to
   "proved at u32 width".
 - `ROADMAP.md` Phase 7 items 5–7 — the slot this candidate

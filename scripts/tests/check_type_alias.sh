@@ -17,7 +17,7 @@
 #      declaration (E0108); a recursive alias, direct or mutual, is rejected with
 #      a dedicated diagnostic (E0112) rather than a confusing downstream error.
 #
-# Fixtures: tests/programs/type_alias/. See docs/TYPE_ALIASES.md.
+# Fixtures: tests/programs/type_alias/. See docs/language/TYPE_ALIASES.md.
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"

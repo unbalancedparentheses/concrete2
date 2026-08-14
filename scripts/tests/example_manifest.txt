@@ -11,7 +11,7 @@
 #   expected-error — intentionally-failing diagnostics example; standalone
 #                    compile MUST exit non-zero.
 #   skip           — not checked by this gate. Either a pressure example that
-#                    does not compile yet (see docs/EXAMPLE_LIFECYCLE.md), or a
+#                    does not compile yet (see docs/project/EXAMPLE_LIFECYCLE.md), or a
 #                    file exercised by a dedicated gate with special flags
 #                    (proof_patterns, vc_discharge, vc_suite, smt/teaching,
 #                    contract_stability, obligation_core_probe, stale snippets,

@@ -542,7 +542,7 @@ A good Concrete concurrency feature should make concurrent code easier to audit 
 
 ## Related Notes
 
-- [design-filters.md](design-filters.md)
-- [external-ideas.md](external-ideas.md)
+- [design-filters.md](../meta/design-filters.md)
+- [external-ideas.md](../meta/external-ideas.md)
 - [stdlib-design.md](stdlib-design.md)
-- [pre-post-conditions.md](pre-post-conditions.md)
+- [pre-post-conditions.md](../language/pre-post-conditions.md)

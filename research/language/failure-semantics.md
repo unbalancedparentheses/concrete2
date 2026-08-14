@@ -79,8 +79,8 @@ Examples:
 
 ## Relationship To Other Notes
 
-1. [../../docs/EXECUTION_MODEL.md](../../docs/EXECUTION_MODEL.md)
-2. [../../docs/LANGUAGE_INVARIANTS.md](../../docs/LANGUAGE_INVARIANTS.md)
+1. [../../docs/language/EXECUTION_MODEL.md](../../docs/language/EXECUTION_MODEL.md)
+2. [../../docs/language/LANGUAGE_INVARIANTS.md](../../docs/language/LANGUAGE_INVARIANTS.md)
 3. [high-integrity-profile.md](high-integrity-profile.md)
 4. [../predictable-execution/predictable-execution.md](../predictable-execution/predictable-execution.md)
 

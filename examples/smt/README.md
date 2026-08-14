@@ -1,6 +1,6 @@
 # External-SMT examples (Phase 2 #8/#9)
 
-> Soundness reference: [docs/SMT_SOUNDNESS.md](../../docs/SMT_SOUNDNESS.md) — the
+> Soundness reference: [docs/verification/SMT_SOUNDNESS.md](../../docs/verification/SMT_SOUNDNESS.md) — the
 > trusted solver binary, encoding assumptions, unsupported theories, replayed
 > fragments, and the per-class blast radius of a solver bug.
 

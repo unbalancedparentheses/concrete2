@@ -1,6 +1,6 @@
 # Wrong-code regression corpus manifest.
 #
-# Operative contract: docs/WRONG_CODE_CORPUS.md
+# Operative contract: docs/verification/WRONG_CODE_CORPUS.md
 # Operations guide: tests/wrong-code/README.md
 #
 # Every wrong-code regression — miscompile, codegen divergence,

@@ -341,7 +341,7 @@ done
 # THE MATRIX MUST COVER EVERY AST CONSTRUCTOR. A classification that silently omits a
 # constructor is how a producer ends up with an unclassified case, so the coverage is
 # checked against the AST rather than trusted.
-MATRIX="docs/EVIDENCE_PRODUCER_MATRIX.md"
+MATRIX="docs/verification/EVIDENCE_PRODUCER_MATRIX.md"
 if [ -f "$MATRIX" ]; then
   missing=""
   for ctor in $(awk '/^inductive Stmt where/,/^$/' Concrete/Frontend/AST.lean \

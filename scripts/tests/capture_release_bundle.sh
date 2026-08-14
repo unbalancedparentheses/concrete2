@@ -31,7 +31,7 @@ Captures source, full report set, proof-registry, assumption/policy
 files, AUDIT/CATCHES/README, snapshot baselines, and compiler
 version into a stable layout suitable for release evidence review.
 
-Contract: docs/RELEASE_BUNDLE.md
+Contract: docs/project/RELEASE_BUNDLE.md
 USAGE
 }
 

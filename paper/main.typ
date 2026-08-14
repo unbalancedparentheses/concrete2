@@ -426,17 +426,17 @@ Concrete is an attempt to make systems programming more inspectable by default. 
 
 = References
 
-[1] Compiler Architecture. `docs/ARCHITECTURE.md`.
+[1] Compiler Architecture. `docs/compiler/ARCHITECTURE.md`.
 
-[2] Safety Model. `docs/SAFETY.md`.
+[2] Safety Model. `docs/language/SAFETY.md`.
 
-[3] Execution Model. `docs/EXECUTION_MODEL.md`.
+[3] Execution Model. `docs/language/EXECUTION_MODEL.md`.
 
-[4] Standard Library Direction. `docs/STDLIB.md`.
+[4] Standard Library Direction. `docs/stdlib/STDLIB.md`.
 
-[5] Value and Reference Model. `docs/VALUE_MODEL.md`.
+[5] Value and Reference Model. `docs/language/VALUE_MODEL.md`.
 
-[6] Provable Subset. `docs/PROVABLE_SUBSET.md`.
+[6] Provable Subset. `docs/verification/PROVABLE_SUBSET.md`.
 
 [7] Phase H Summary. `research/workloads/phase-h-summary.md`.
 

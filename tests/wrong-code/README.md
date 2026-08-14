@@ -1,7 +1,7 @@
 # Wrong-code regression corpus
 
 The named, durable home for compiler bugs that ever silently shipped
-wrong behavior. Contract: `docs/WRONG_CODE_CORPUS.md`.
+wrong behavior. Contract: `docs/verification/WRONG_CODE_CORPUS.md`.
 
 This directory is a **registry**, not a relocation. Existing repros
 under `tests/programs/bug_*.con` and `tests/programs/adversarial/`
@@ -30,7 +30,7 @@ the run; this is how we detect when an open bug becomes fixed.
 ## Adding a case
 
 1. Pick the next free `WC-NNNN` id.
-2. Append an entry to `manifest.toml`. See `docs/WRONG_CODE_CORPUS.md`
+2. Append an entry to `manifest.toml`. See `docs/verification/WRONG_CODE_CORPUS.md`
    for field semantics.
 3. Write `cases/WC-NNNN.md` with the conventional skeleton (Symptom,
    Root cause, Fix, Minimization, How to verify it stays fixed).

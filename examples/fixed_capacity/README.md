@@ -74,7 +74,7 @@ The composition theorem is the central proof-side claim:
 checked**.  It exercises functional array update (`arraySet`),
 the bounded while loop with rich body (`while_step` + LoopStep
 enum), and BitVec mod at i32 width — the full state-model
-surface from `docs/PROOF_STATE_MODEL.md`.
+surface from `docs/verification/PROOF_STATE_MODEL.md`.
 
 A non-composition empty-ring corollary
 (`ring_contains_empty_correct`) is also kernel-checked.
@@ -82,7 +82,7 @@ A non-composition empty-ring corollary
 ## ProvableV1 conformance
 
 The proof-eligible functions in `fixed_capacity` fit the
-`ProvableV1` profile (see [`docs/PROVABLE_V1.md`](../../docs/PROVABLE_V1.md)).
+`ProvableV1` profile (see [`docs/verification/PROVABLE_V1.md`](../../docs/verification/PROVABLE_V1.md)).
 The ring buffer, message validator, and tag fold exercise the full
 `ProvableV1` state-model surface: i32 BitVec arithmetic, structs,
 fixed arrays, array literals, `arraySet` functional update, and
@@ -193,7 +193,7 @@ state.
 - `Concrete.toml` `[policy]` — enforced budgets.
 - in-source `#[proof_by]`/`#[spec]`/`#[proof_fingerprint]` links in
   `src/main.con` + `Concrete/Proof.lean` — attached theorems.
-- `docs/PROOF_STATE_MODEL.md` — the state-model design that
+- `docs/verification/PROOF_STATE_MODEL.md` — the state-model design that
   the composition theorem validates.
 - `examples/parse_validate/` and `examples/crypto_verify/` —
   the graduated siblings; this README's structural template.

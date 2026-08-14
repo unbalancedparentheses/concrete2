@@ -71,7 +71,7 @@ fails with the wrong error — fails the gate.
 ## See also
 
 - `examples/parse_validate/AUDIT.md` — graduation bar #6.
-- `docs/POLICY_FILES.md` — the `[policy]` section that this case
+- `docs/project/POLICY_FILES.md` — the `[policy]` section that this case
   enforces by demonstration.
-- `docs/ASSUMPTION_FILES.md` — assumption-file sibling.
+- `docs/verification/ASSUMPTION_FILES.md` — assumption-file sibling.
 - ROADMAP Phase 1 (Hardening) item on first-class negative examples.

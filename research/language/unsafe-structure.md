@@ -200,9 +200,9 @@ This connects directly to:
 
 - [trusted-boundary.md](trusted-boundary.md) — the `trusted fn` / `trusted impl` design for containing pointer-level implementation unsafety behind safe APIs, without leaking `Unsafe` to callers. The wrapper-based containment pattern described here is what `trusted` formalizes as a language-level boundary.
 - [capability-sandboxing.md](capability-sandboxing.md)
-- [no-std-freestanding.md](no-std-freestanding.md)
+- [no-std-freestanding.md](../stdlib/no-std-freestanding.md)
 - [../stdlib/builtin-vs-stdlib.md](../stdlib/builtin-vs-stdlib.md)
-- [../docs/FFI.md](../docs/FFI.md)
+- [docs/platform/FFI.md](../../docs/platform/FFI.md)
 
 That trusted-boundary note also makes two constraints explicit that matter here:
 

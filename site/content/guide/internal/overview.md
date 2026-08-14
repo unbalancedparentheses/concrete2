@@ -17,9 +17,9 @@ Use this section if you want to understand:
 
 For the more current stable reference, also see:
 
-- `docs/ARCHITECTURE.md`
-- `docs/PASSES.md`
-- `docs/ABI.md`
+- `docs/compiler/ARCHITECTURE.md`
+- `docs/compiler/PASSES.md`
+- `docs/platform/ABI.md`
 
 Good starting pages in this section:
 

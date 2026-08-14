@@ -199,7 +199,7 @@ deriving Repr, BEq
 
 /-- Why a table yielded no entry evidence. NAMED, one constructor per distinct check.
 
-    `DependencyClosure` (docs/EVIDENCE_ARCHITECTURE.md) requires missing, surplus, duplicate,
+    `DependencyClosure` (docs/verification/EVIDENCE_ARCHITECTURE.md) requires missing, surplus, duplicate,
     ambiguous, unclassified and mismatched to be named refusals, "never discarded by `filterMap`, a
     first-match lookup, or an advisory-only warning". This function previously returned `Option`, so
     all six checks below collapsed to `none` — the recompute was right and the reason was thrown

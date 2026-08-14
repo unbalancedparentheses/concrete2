@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VC-bridge register gate.
 #
-# docs/VC_BRIDGE_REGISTER.md inventories the Core→obligation lowering rule by rule:
+# docs/verification/VC_BRIDGE_REGISTER.md inventories the Core→obligation lowering rule by rule:
 # what each emits, assumes, rejects, which example forced it, and the theorem that
 # will discharge it. That bridge is the one every runtime-safety claim rests on, and
 # the one multi-kernel agreement provably cannot check — all kernels check the SAME
@@ -21,7 +21,7 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-REG="docs/VC_BRIDGE_REGISTER.md"
+REG="docs/verification/VC_BRIDGE_REGISTER.md"
 SRC="Concrete/Report/ReportObligations.lean"
 
 PASS=0; FAIL=0
@@ -145,7 +145,7 @@ echo "=== the register's ROWS are checked, not just its row COUNT (2026-08-04) =
 #
 # This file is load-bearing for Register A — it is the list of what the compiler still owes —
 # and it had no gate over its claims at all.
-REG="docs/VC_BRIDGE_REGISTER.md"
+REG="docs/verification/VC_BRIDGE_REGISTER.md"
 
 # Structure is ALREADY gated above (per-row Emits/Assumes/Rejects/Discharging-theorem, with
 # a projection exemption). My first version of this block duplicated it and omitted the

@@ -5,7 +5,7 @@
 # still behaves as expected. Open cases are reported but do not affect
 # the run's exit code unless --include-open --strict is passed.
 #
-# Contract: docs/WRONG_CODE_CORPUS.md
+# Contract: docs/verification/WRONG_CODE_CORPUS.md
 
 set -uo pipefail
 

@@ -6,36 +6,36 @@ Use them when you need exact current direction rather than the book's higher-lev
 
 ## Core References
 
-- [`docs/IDENTITY.md`](../../IDENTITY.md)
+- [`docs/project/IDENTITY.md`](../../project/IDENTITY.md)
   Project identity, differentiators, non-goals, and what Concrete must eventually be able to show.
 
-- [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- [`docs/compiler/ARCHITECTURE.md`](../../compiler/ARCHITECTURE.md)
   Compiler pipeline, pass boundaries, artifact flow, and subsystem direction.
 
-- [`docs/PASSES.md`](../../PASSES.md)
+- [`docs/compiler/PASSES.md`](../../compiler/PASSES.md)
   Pass-by-pass ownership and responsibility breakdown.
 
 - [`docs/stdlib/STDLIB.md`](../../stdlib/STDLIB.md)
   Stable stdlib direction, systems-module conventions, and collection priorities.
 
-- [`docs/TESTING.md`](../../TESTING.md)
+- [`docs/compiler/TESTING.md`](../../compiler/TESTING.md)
   Test surfaces, fast/full workflows, targeted modes, fuzzing, differential tests, and regression strategy.
 
 ## Language And Runtime References
 
-- [`docs/VALUE_MODEL.md`](../../VALUE_MODEL.md)
+- [`docs/language/VALUE_MODEL.md`](../../language/VALUE_MODEL.md)
   The current value and ownership model.
 
-- [`docs/LANGUAGE_INVARIANTS.md`](../../LANGUAGE_INVARIANTS.md)
+- [`docs/language/LANGUAGE_INVARIANTS.md`](../../language/LANGUAGE_INVARIANTS.md)
   The invariants the language and compiler are trying to preserve.
 
-- [`docs/FFI.md`](../../FFI.md)
+- [`docs/platform/FFI.md`](../../platform/FFI.md)
   FFI direction, `extern fn`, `trusted extern fn`, and boundary rules.
 
-- [`docs/ABI.md`](../../ABI.md)
+- [`docs/platform/ABI.md`](../../platform/ABI.md)
   Layout and ABI-facing rules.
 
-- [`docs/DIAGNOSTICS.md`](../../DIAGNOSTICS.md)
+- [`docs/compiler/DIAGNOSTICS.md`](../../compiler/DIAGNOSTICS.md)
   Diagnostic direction and quality expectations.
 
 ## Planning And History

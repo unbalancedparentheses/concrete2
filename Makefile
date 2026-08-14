@@ -1,3 +1,4 @@
+.PHONY: test-doc-links
 .PHONY: test-one-producer test-impl-manifest test-classification-freshness test-gate-vacuity build setup-hooks pre-push pre-push-full test test-full test-ci-gates test-fast-surface-gates test-fast-surface-gates-mutate test-trust-gate test-proof-gate test-axiom-inventory test-cap-poly-design test-callable-values test-returned-ref-provenance test-proven-violation test-mono-collision test-nested-field-write test-raw-ptr-to-local test-struct-layout test-codegen-execution test-codegen-differential test-ssa test-golden test-examples test-fuzz test-oracle test-wrong-code test-reducer-smoke test-bundle-smoke test-verify-gates test-assumptions test-multi-kernel test-bv-certificates test-vc-bridge-register test-policy test-catches test-snapshots test-prove-cli test-evidence-corpus test-pv-oracle test-cv-oracle test-fc-oracle test-ct-oracle test-hmac-oracle test-release-bundle test-showcase test-registry-retirement test-proof-namespace test-proof-patterns test-contract-negatives test-contract-stability test-phase1-contracts test-vc-schema test-proofkit-arith test-smt-path test-smt-policy test-smt-replay test-smt-negatives test-vc-discharge-examples test-smt-examples test-smt-redteam test-vc-examples test-fpf-oracle test-phase2-vc test-obligation-core test-scoped-collector test-call-site-migration test-bounds-migration test-div-migration test-overflow-migration test-assume-migration test-loop-migration test-contract-clause-migration test-proof-link-migration test-obligation-lowering test-discharge-adapters test-obligation-report-views test-contracts-ledger-parity test-docs-drift test-workflow-yaml test-module-visibility test-project-model test-concrete-test test-diagnostics-quality test-byte-view test-collections test-concrete-fmt test-loop-control test-type-alias test-pattern-ergonomics test-struct-update test-no-tuples test-nested-patterns test-numeric-literals test-lex-escapes test-mixed-width-binops test-trailing-value-blocks test-submodule-check test-cast-matrix test-defer test-ignored-result test-array-bounds test-linear-discard test-linear-nested-scope test-linear-conservation test-fuzz-differential test-no-macros test-phase6-redteam test-stdlib-handoff test-build-profiles test-iteration-protocol test-wrapping-arith test-saturating-arith test-checked-arith test-arith-redteam test-report-arithmetic test-memory-model test-float-cast test-operational-vc-autodischarge test-no-duplicate-walkers test-single-truth-source test-obligation-policy-views test-obligation-prove-views test-phase3-obligation-core test-obligation-redteam test-compiler-ledger test-rich-diagnostics test-partial-facts test-source-maps test-cli-plumbing test-cli-contract test-api-boundary test-backend-contracts clean check-grammar paper paper-ec papers docs-site docs-serve help
 
 NIX_DEVELOP = XDG_CACHE_HOME=$(CURDIR)/.cache nix --extra-experimental-features "nix-command flakes" develop --command
@@ -121,7 +122,7 @@ test-backend-contracts: build ## Backend-contract gate (codegen guarantees, no d
 test-proof-gate: build ## Proof evidence gate (extraction, registry, Lean kernel check)
 	$(NIX_DEVELOP) bash ./scripts/ci/proof_gate.sh
 
-test-axiom-inventory: build ## Axiom-inventory gate (#print axioms over every proof_by theorem; docs/AXIOMS.md)
+test-axiom-inventory: build ## Axiom-inventory gate (#print axioms over every proof_by theorem; docs/verification/AXIOMS.md)
 	$(NIX_DEVELOP) bash ./scripts/tests/check_axiom_inventory.sh
 
 test-cap-poly-design: build ## Callable-values/capability design gate (fn-ptr smuggling stays closed; stdlib HOF freeze)
@@ -279,6 +280,10 @@ test-contracts-ledger-parity: build ## --report contracts ↔ ledger parity (#15
 
 test-docs-drift: build ## Docs-drift gate: present-tense docs reference only real artifacts (#44)
 	$(NIX_DEVELOP) bash ./scripts/tests/check_docs_drift.sh
+	$(NIX_DEVELOP) python3 ./scripts/tests/check_doc_links.py
+
+test-doc-links: ## Local Markdown-link gate (no build needed)
+	python3 ./scripts/tests/check_doc_links.py
 
 test-workflow-yaml: ## Workflow-YAML gate: every .github/workflows/*.yml parses (no build needed)
 	bash ./scripts/tests/check_workflow_yaml.sh
@@ -346,7 +351,7 @@ test-ownership-judgment: build ## Ownership matrix (Phase 6.5): Check accept/rej
 test-totality-judgment: build ## Totality matrix (Phase 6.5): trap/divergence facts (arith/bounds/branch) agree interp==compiled; a gate over the already-centralized facts
 	$(NIX_DEVELOP) bash ./scripts/tests/check_totality_judgment.sh
 
-test-corecheck-boundary: build ## CoreCheck boundary gate (Phase 6.5 #4): every frontend/mono/type-policy residue class is rejected before Lower (see docs/COMPILER_BOUNDARY.md)
+test-corecheck-boundary: build ## CoreCheck boundary gate (Phase 6.5 #4): every frontend/mono/type-policy residue class is rejected before Lower (see docs/compiler/COMPILER_BOUNDARY.md)
 	$(NIX_DEVELOP) bash ./scripts/tests/check_corecheck_boundary.sh
 
 test-capability-judgment: build ## Capability-judgment gate (Phase 6.5): direct-call capability satisfaction/missing is one decision (Capabilities.decideCall) shared by Check, CoreCheck, and reports

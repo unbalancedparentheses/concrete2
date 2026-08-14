@@ -73,4 +73,4 @@ entries follow the same rule — sell only what is true.
 
 - `examples/parse_validate/AUDIT.md` — the canonical 10-bar audit.
 - `ROADMAP.md` Phase 7 — the showcase contract.
-- `docs/RELEASE_BUNDLE.md` — release evidence bundles per flagship.
+- `docs/project/RELEASE_BUNDLE.md` — release evidence bundles per flagship.

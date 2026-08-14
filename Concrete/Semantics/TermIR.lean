@@ -22,7 +22,7 @@ of the same term over a small fragment, rather than a semantic claim about progr
 Print fidelity. Proving "this printer emits syntax denoting the same proposition" needs a
 formal semantics of the TARGET syntax, and there is none for SMT-LIB or Coq's parser that is
 ours. Formalising them relocates the trust rather than removing it. The honest split, from
-`docs/PROVER_NEUTRAL_OBLIGATIONS.md`:
+`docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md`:
 
   obligation → transformed goal   both sides ours   PROVABLE — this module's scope
   transformed goal → target text  target not ours   validated, plausibly forever

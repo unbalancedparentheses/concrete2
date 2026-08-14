@@ -39,5 +39,5 @@ The important modern direction is not the exact historical builder shape. It is:
 
 For the current stable view, prefer:
 
-- `docs/ARCHITECTURE.md`
-- `docs/PASSES.md`
+- `docs/compiler/ARCHITECTURE.md`
+- `docs/compiler/PASSES.md`

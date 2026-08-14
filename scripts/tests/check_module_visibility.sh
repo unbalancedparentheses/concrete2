@@ -6,7 +6,7 @@
 # importable; unknown modules and circular file-imports produce clean
 # diagnostics; and `--report interface` summarizes only the public surface.
 # Behavioral (drives the real compiler over small fixtures); see also
-# docs/VISIBILITY_AND_MODULE_HYGIENE.md.
+# docs/language/VISIBILITY_AND_MODULE_HYGIENE.md.
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"

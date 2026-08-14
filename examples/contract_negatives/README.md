@@ -21,7 +21,7 @@ Regenerate snapshots deliberately with
 
 The soundness *why* behind these behaviours is proved in
 `Concrete/ProofSoundness.lean` (`Source-contract soundness, R-22..R-28`) and
-explained in `docs/CONTRACTS_AND_VCS.md` (Soundness Bridge).
+explained in `docs/verification/CONTRACTS_AND_VCS.md` (Soundness Bridge).
 
 ## Failure classes — what each fixture proves, reports, or refuses
 

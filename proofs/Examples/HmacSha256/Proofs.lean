@@ -7,7 +7,7 @@
   closes the gap: it proves that the extracted source expressions
   *refine* the spec — for ALL inputs, not just witnesses.
 
-  This is the HACL*/seL4 discipline (docs/PROOF_LADDER.md): the payoff
+  This is the HACL*/seL4 discipline (docs/verification/PROOF_LADDER.md): the payoff
   is not "the program evaluates to these bytes" but "the program
   computes the mathematical function the spec names."
 

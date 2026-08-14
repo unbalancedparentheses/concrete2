@@ -24,7 +24,7 @@ let mixed: Vec<Box<dyn Display>> = vec![
 print_all(mixed);
 ```
 
-The call `item.display()` compiles to something like `vtable[0](data_ptr)` — an indirect call through a function pointer loaded from a table at runtime.
+The call `item.display()` compiles to something like `vtable[0]` applied to `data_ptr` — an indirect call through a function pointer loaded from a table at runtime.
 
 ## Why Concrete Excludes Them
 

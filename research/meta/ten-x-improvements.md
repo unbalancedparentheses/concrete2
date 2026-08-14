@@ -292,7 +292,7 @@ Why this is 10x:
 - strengthens sandboxing and platform-boundary reasoning
 - forces the stdlib/runtime boundary to stay honest
 
-See [no-std-freestanding.md](no-std-freestanding.md).
+See [no-std-freestanding.md](../stdlib/no-std-freestanding.md).
 
 ### 6. A better capability/sandboxing story
 
@@ -319,7 +319,7 @@ This is also one of the clearest security multipliers available to Concrete:
 
 Part of that improvement is shrinking string-based semantic logic in the compiler itself. A language is easier to audit when ordinary names stay ordinary and special behavior is carried by explicit identities and boundaries instead of raw string matching.
 
-See [capability-sandboxing.md](capability-sandboxing.md).
+See [capability-sandboxing.md](../language/capability-sandboxing.md).
 
 ## Long-Horizon Experimental Ideas Worth Preserving
 
@@ -342,8 +342,8 @@ The rule for all of them is the same: they should make Concrete more explicit, m
 
 Closely related:
 
-- a stronger `Unsafe` structure and audit story — see [unsafe-structure.md](unsafe-structure.md)
-- the `trusted fn` / `trusted impl` boundary for containing pointer-level implementation unsafety behind safe APIs, keeping the three-way split clean: semantic effects (capabilities) / implementation trust (`trusted`) / foreign boundaries (`Unsafe`) — see [trusted-boundary.md](trusted-boundary.md)
+- a stronger `Unsafe` structure and audit story — see [unsafe-structure.md](../language/unsafe-structure.md)
+- the `trusted fn` / `trusted impl` boundary for containing pointer-level implementation unsafety behind safe APIs, keeping the three-way split clean: semantic effects (capabilities) / implementation trust (`trusted`) / foreign boundaries (`Unsafe`) — see [trusted-boundary.md](../language/trusted-boundary.md)
 - builtin minimization and stdlib-owned public APIs, which shrink the trusted computing base and make those boundaries easier to audit — see [../stdlib/builtin-vs-stdlib.md](../stdlib/builtin-vs-stdlib.md)
 
 ### 7. A truly strong concurrency/runtime model
@@ -364,7 +364,7 @@ Why this could be 10x:
 
 This remains intentionally deferred until the current runtime/library boundary is stronger.
 
-See [concurrency.md](concurrency.md).
+See [concurrency.md](../stdlib/concurrency.md).
 
 ## Lessons From Other Languages
 

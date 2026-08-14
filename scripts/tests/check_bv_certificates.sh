@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Independent DRAT check of bv_decide's bit-blasting.
 #
-# docs/AXIOMS.md records a real trust extension: `bv_decide` proves a goal by
+# docs/verification/AXIOMS.md records a real trust extension: `bv_decide` proves a goal by
 # bit-blasting to SAT and validating the solver's LRAT certificate, but that
 # validation runs as COMPILED LEAN (Lean.ofReduceBool / Lean.trustCompiler). So a
 # theorem "proved by kernel-checked bitblasting" is not kernel-only — six named

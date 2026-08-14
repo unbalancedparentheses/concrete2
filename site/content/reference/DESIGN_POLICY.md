@@ -10,7 +10,7 @@ This document defines the admission criteria for language features, compiler fea
 
 For recorded decisions (permanent "no" and deferred "not yet"), see [DECISIONS](@/reference/DECISIONS.md).
 For the language identity, see [IDENTITY](@/reference/IDENTITY.md).
-For the original research note, see [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/design-filters.md).
+For the original research note, see [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/meta/design-filters.md).
 
 ## Admission Principle
 

@@ -79,7 +79,7 @@ This is not optional if the project wants evidence to be taken seriously.
 2. [../proof-evidence/proof-addon-architecture.md](../proof-evidence/proof-addon-architecture.md)
 3. [../predictable-execution/predictable-execution.md](../predictable-execution/predictable-execution.md)
 4. [../predictable-execution/effect-taxonomy.md](../predictable-execution/effect-taxonomy.md)
-5. [../../docs/PASSES.md](../../docs/PASSES.md)
+5. [../../docs/compiler/PASSES.md](../../docs/compiler/PASSES.md)
 
 ## Bottom Line
 

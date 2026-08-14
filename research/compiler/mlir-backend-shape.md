@@ -383,5 +383,5 @@ That keeps the architecture simple, preserves the proof story, and avoids turnin
 ## Related Notes
 
 - [file-summary-frontend.md](file-summary-frontend.md)
-- [candidate-ideas.md](candidate-ideas.md)
-- [design-filters.md](design-filters.md)
+- [candidate-ideas.md](../meta/candidate-ideas.md)
+- [design-filters.md](../meta/design-filters.md)

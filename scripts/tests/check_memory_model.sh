@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Memory-model gate — ROADMAP Phase 6 #33 (docs/MEMORY_MODEL.md).
+# Memory-model gate — ROADMAP Phase 6 #33 (docs/language/MEMORY_MODEL.md).
 #
 # Backs the headline invariant the user-facing memory model claims: safe
 # Concrete has NO UNINITIALIZED READS BY CONSTRUCTION. This is a grammar-level
@@ -52,10 +52,10 @@ accept_run decl 7
 accept_run mutate 42
 
 echo "=== the doc and its references exist ==="
-for d in docs/MEMORY_MODEL.md docs/MEMORY_SEMANTICS.md docs/VALUE_MODEL.md docs/MEMORY_GUARANTEES.md; do
+for d in docs/language/MEMORY_MODEL.md docs/language/MEMORY_SEMANTICS.md docs/language/VALUE_MODEL.md docs/language/MEMORY_GUARANTEES.md; do
   [ -f "$d" ] && ok "doc present: $d" || no "missing doc: $d"
 done
-grep -q "no uninitialized reads" docs/MEMORY_SEMANTICS.md && ok "MEMORY_SEMANTICS states the invariant" \
+grep -q "no uninitialized reads" docs/language/MEMORY_SEMANTICS.md && ok "MEMORY_SEMANTICS states the invariant" \
   || no "MEMORY_SEMANTICS missing the definite-initialization invariant"
 
 echo ""

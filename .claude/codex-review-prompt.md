@@ -8,8 +8,8 @@ FULL REPO ACCESS: read anything; do not confine yourself to the diff. The defect
 the diff's relationship to a file it does not touch. Worth opening:
 
   Concrete/Semantics/IntArith.lean          the single definition of when an operation traps
-  docs/KNOWN_HOLES.md                       the ONLY authority on hole status
-  docs/VC_BRIDGE_REGISTER.md                which lowering rules are discharged
+  docs/verification/KNOWN_HOLES.md                       the ONLY authority on hole status
+  docs/verification/VC_BRIDGE_REGISTER.md                which lowering rules are discharged
   ROADMAP.md "Current Execution State"      holes -> owner -> reproduce -> done-when
   Concrete/Proof/ObligationCore.lean        isCurrentForDependents — the reference shape
                                             for composing a status with its inputs

@@ -1,5 +1,5 @@
 # Assumption file for the crypto_verify flagship candidate.
-# Schema: docs/ASSUMPTION_FILES.md
+# Schema: docs/verification/ASSUMPTION_FILES.md
 #
 # Active pull-through candidate per ROADMAP Active Dependency Order
 # rule 2 (slot opened 2026-05-22 after parse_validate graduated).

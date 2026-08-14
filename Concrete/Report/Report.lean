@@ -1164,7 +1164,7 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {unboundCnt} unbound, {depsNC} dependency-not-current, {notProved} unproved, {blockedCnt} blocked, {notEligible} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
-/-- Program-level conformance check against `docs/PROVABLE_V1.md`.
+/-- Program-level conformance check against `docs/verification/PROVABLE_V1.md`.
     Classifies each function as:
     - in:        proof-eligible AND extraction succeeds (fits ProvableV1)
     - blocked:   proof-eligible BUT extraction failed on unsupported constructs
@@ -1208,7 +1208,7 @@ def provableV1ConformanceReport (modules : List CModule) (locMap : FnLocMap := [
     if blockedEntries.isEmpty then
       "Every proof-eligible function fits the ProvableV1 supported surface.\nExcluded functions are excluded by the profile itself (entry points,\ntrusted impls, capability use), not counted against conformance."
     else
-      s!"{blockedEntries.length} function(s) are proof-eligible but use constructs\noutside the current ProvableV1 supported surface (see docs/PROVABLE_V1.md)."
+      s!"{blockedEntries.length} function(s) are proof-eligible but use constructs\noutside the current ProvableV1 supported surface (see docs/verification/PROVABLE_V1.md)."
   s!"{header}\n\n{"\n".intercalate chunks}\n\nStatus: {conformance}\n{footer}\n"
 
 /-- Compact one-line proof summary suitable for build output. -/
@@ -1767,7 +1767,7 @@ private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId)
   else if (Concrete.theoremNameOf pc qual).isEmpty then
     s!"no claim (no linked proof; {inp.requestedEdges.length} edge(s) unjustified by construction)"
   else
-    let refusals := Concrete.tableResolutionRefusalsOf pc id
+    let refusals := r.resolverRefusals.map (·.explain)
     let refusalNote := if refusals.isEmpty then "" else s!" | table refusals: {" ; ".intercalate refusals}"
     let sets := s!"matched={r.matched.length} missing={r.missing.length} " ++
                 s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}"
@@ -3174,7 +3174,7 @@ def proofClasses : List String :=
     R-0461 (2026-08-03) closed H23 itself: `capOnHypothesisDebt` populates the assumption
     set from loop-invariant provenance, so this example now constrains live verdicts. The
     fixture in `check_known_wrong_corpus.sh` asserts the cap rather than the hole.
-    `docs/KNOWN_HOLES.md` is the authority on hole status; this comment is a reference to
+    `docs/verification/KNOWN_HOLES.md` is the authority on hole status; this comment is a reference to
     it, and `check_hole_status_consistency.sh` fails if a reference disagrees in EITHER
     direction — the stale-open form that replaced this sentence's stale-closed predecessor
     was found by exactly that check.
@@ -3632,7 +3632,7 @@ def proveReportJson (pc : Concrete.ProofCore) (registry : ProofRegistry)
         "  \"status\": \"ineligible\",\n",
         "  \"evidence_class\": \"ineligible\",\n",
         "  \"obligations\": [],\n",
-        s!"  \"next_actions\": [{action "open_docs" "see docs/PROFILES.md" "text" "ineligible"}]\n",
+        s!"  \"next_actions\": [{action "open_docs" "see docs/platform/PROFILES.md" "text" "ineligible"}]\n",
         "}" ]
     | none =>
       return String.join ["{\n", head, s!"\n  \"error\": {q s!"no function '{qualName}' in ProofCore"},\n  \"next_actions\": []\n", "}"]
@@ -3689,7 +3689,7 @@ def proveReportJson (pc : Concrete.ProofCore) (registry : ProofRegistry)
       | "stale" => [
           action "emit_link" s!"concrete prove {inputPath} {qualName} --emit-link" "text" "stale",
           action "check_proofs" s!"concrete {inputPath} --report check-proofs" "text" "stale" ]
-      | "blocked" => [ action "open_docs" "see docs/PROOF_WORKFLOW.md (extraction gates)" "text" "blocked" ]
+      | "blocked" => [ action "open_docs" "see docs/verification/PROOF_WORKFLOW.md (extraction gates)" "text" "blocked" ]
       | "proved" => [
           action "check_proofs" s!"concrete {inputPath} --report check-proofs" "text" "proved",
           action "replay" replay "text" "proved",
@@ -5524,7 +5524,7 @@ def snapshotJson
 /-- Single-command audit composing the surfaces a reviewer needs to answer
     "what does this program claim, and where do the trust boundaries sit?".
     The audit is the per-program rendering of the proof-story matrix
-    (`docs/PROOF_STORY_MATRIX.md`): authority, trust, allocation, proof
+    (`docs/verification/PROOF_STORY_MATRIX.md`): authority, trust, allocation, proof
     evidence with coverage, obligations.  Each section is the existing
     aspect-specific report under a labeled banner; later versions can
     add machine-readable JSON output and a ProvableV1 conformance check. -/
@@ -5536,7 +5536,7 @@ def auditReport (modules : List CModule) (locMap : FnLocMap := [])
     , ""
     , "Governing frame: every construct is one of"
     , "  proved / enforced / reported / assumed / trusted."
-    , "See docs/PROVABLE_V1.md and docs/PROOF_STORY_MATRIX.md for context."
+    , "See docs/verification/PROVABLE_V1.md and docs/verification/PROOF_STORY_MATRIX.md for context."
     ]
   let sectionHeader (name : String) : String :=
     s!"\n\n--- {name} ---\n"

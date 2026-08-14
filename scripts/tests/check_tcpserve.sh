@@ -7,7 +7,7 @@
 # the tiny server-side read buffer forces PARTIAL READS by construction;
 # write_all is executed end-to-end but loopback does not guarantee the OS
 # splits writes — deterministic short-write coverage belongs to the
-# planned capability-fault simulation gate (docs/DETERMINISTIC_SIMULATION.md).
+# planned capability-fault simulation gate (docs/project/DETERMINISTIC_SIMULATION.md).
 # A watchdog kills a hung server and reports a DISTINCT infra-timeout
 # failure, never conflated with expected application failures. All
 # processes and temp files are cleaned in the EXIT trap even when an

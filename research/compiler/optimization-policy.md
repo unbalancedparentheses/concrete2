@@ -86,9 +86,9 @@ Optimization policy and performance validation should stay linked:
 
 ## Relationship To Other Research
 
-- [complete-language-system.md](complete-language-system.md)
-- [testing-strategy.md](testing-strategy.md)
-- [showcase-workloads.md](showcase-workloads.md)
+- [complete-language-system.md](../meta/complete-language-system.md)
+- [testing-strategy.md](../process/testing-strategy.md)
+- [showcase-workloads.md](../workloads/showcase-workloads.md)
 
 ## Working Conclusion
 

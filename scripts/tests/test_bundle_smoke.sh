@@ -6,7 +6,7 @@
 # one stage-conditional file. Does not run a long reduction or a
 # full pipeline test.
 #
-# Contract: docs/BUG_BUNDLE.md
+# Contract: docs/project/BUG_BUNDLE.md
 
 set -uo pipefail
 

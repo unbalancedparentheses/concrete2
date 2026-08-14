@@ -97,7 +97,7 @@ decision rather than an accidental expansion of this one.
 
 The ban is an auditability and human-identity choice, not a claim that shadowing
 is inherently memory-unsafe. Elab alpha-renaming remains mandatory under
-[PRINCIPLES #12](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/PRINCIPLES.md);
+[PRINCIPLES #12](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/project/PRINCIPLES.md);
 rejecting the source spelling does not authorize later passes to recover
 identity from strings. Pattern-binder
 renaming must land before enforcement so nested `Option`/`Result` patterns

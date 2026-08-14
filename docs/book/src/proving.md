@@ -261,7 +261,7 @@ The Lean theorem states that evaluating the function's PExpr representation with
 | Other properties | The proof covers only the stated theorem. If you proved `clamp_value` returns `lo` when `x < lo`, you did not prove it terminates or is free of overflow |
 | Composition | A proof of `f` and a proof of `g` do not automatically prove anything about `f(g(x))` |
 
-For a complete treatment, see [PROOF_CONTRACT.md](../../docs/PROOF_CONTRACT.md).
+For a complete treatment, see [PROOF_CONTRACT.md](../../verification/PROOF_CONTRACT.md).
 
 ## When Things Go Wrong
 
@@ -377,7 +377,7 @@ concrete check && concrete src/main.con --report check-proofs
 
 ## Further Reading
 
-- [PROOF_CONTRACT.md](../../docs/PROOF_CONTRACT.md) — what "proved" means precisely
-- [PROOF_THEOREM_SHAPES.md](../../docs/PROOF_THEOREM_SHAPES.md) — naming rules and theorem categories
-- [PROOF_WORKFLOW.md](../../docs/PROOF_WORKFLOW.md) — complete reference workflow
-- [PROOF_PRESSURE_SET.md](../../docs/PROOF_PRESSURE_SET.md) — the 6-function test set used during development
+- [PROOF_CONTRACT.md](../../verification/PROOF_CONTRACT.md) — what "proved" means precisely
+- [PROOF_THEOREM_SHAPES.md](../../verification/PROOF_THEOREM_SHAPES.md) — naming rules and theorem categories
+- [PROOF_WORKFLOW.md](../../verification/PROOF_WORKFLOW.md) — complete reference workflow
+- [PROOF_PRESSURE_SET.md](../../verification/PROOF_PRESSURE_SET.md) — the 6-function test set used during development

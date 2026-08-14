@@ -11,7 +11,7 @@
 #
 # READ THIS BEFORE "FIXING" A FAILURE HERE. A red assertion means the documented
 # behaviour changed. That is usually GOOD NEWS — the hole got fixed — and the correct
-# response is to update docs/KNOWN_HOLES.md and flip the assertion into its
+# response is to update docs/verification/KNOWN_HOLES.md and flip the assertion into its
 # post-fix form, NOT to make the fixture wrong again. These assertions are written to be
 # inverted when R-0461 / R-0464 land; each one names what it should become.
 

@@ -92,7 +92,7 @@ which scoped the search to Lean sources. Enforcement of this number lives in
 | `scripts/tests/capture_release_bundle.sh:128` | greps the same line into the release bundle as `evidence.max_stack_bytes` |
 
 So the number is a **policy verdict** and a **published evidence field**, not
-report-only. `docs/POLICY_FILES.md:74` and `docs/ASSUMPTION_FILES.md:95` both
+report-only. `docs/project/POLICY_FILES.md:74` and `docs/verification/ASSUMPTION_FILES.md:95` both
 list it under "Enforced fields" — correctly, since the gates implement it; the
 key is simply absent from `Concrete/`, which is what the first grep saw.
 
@@ -117,7 +117,7 @@ number is currently correct. But that is a property of the corpus, not of the
 mechanism: the first recursive function to enter a budgeted project converts a
 silent pass into a published `evidence.max_stack_bytes` that is false.
 
-Still not filed in `docs/KNOWN_HOLES.md`, because no shipped claim is false
+Still not filed in `docs/verification/KNOWN_HOLES.md`, because no shipped claim is false
 today. The judgement call is narrow and worth stating plainly rather than
 burying: if a recursive function ever lands in one of those five projects before
 this is fixed, this becomes an H-numbered evidence hole with no further

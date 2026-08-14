@@ -19,5 +19,5 @@ This corpus is the worked reference for each, snapshot-backed.
 | `runtime_checked/` | runtime-error obligation (array bounds) | `--report contracts` |
 
 Each real subexample has `src/main.con`, a `README.md`, and a snapshot of the
-report that shows its class. See `docs/EVIDENCE_CLASSES.md` for the full catalog
+report that shows its class. See `docs/verification/EVIDENCE_CLASSES.md` for the full catalog
 including the flagship references.

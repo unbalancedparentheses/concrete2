@@ -1,4 +1,4 @@
-// Test: variadic append(&mut buf, ...) desugar per docs/FORMATTING_OUTPUT.md §2.2.
+// Test: variadic append(&mut buf, ...) desugar per docs/compiler/FORMATTING_OUTPUT.md §2.2.
 // Exercises: string ref arg, int arg, string-literal (owned) arg, bool arg, char arg.
 // Expected output: 0
 

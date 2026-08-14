@@ -5,7 +5,7 @@
 # and distinguishes pass/fail correctly. Does NOT run a long
 # minimization — the reducer engine is exercised by `make
 # test-wrong-code` indirectly (corpus entries are stable across
-# reductions) and by the demos in docs/REDUCER_WORKFLOW.md.
+# reductions) and by the demos in docs/compiler/REDUCER_WORKFLOW.md.
 
 set -uo pipefail
 

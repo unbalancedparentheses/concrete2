@@ -45,7 +45,7 @@ The evidence points at how array values are materialized and borrowed when takin
 
 ## Minimal Repro
 
-- [lean_tests/bug_stack_array_borrow_copy.con](../../lean_tests/bug_stack_array_borrow_copy.con)
+- [lean_tests/bug_stack_array_borrow_copy.con](../../tests/programs/bug_stack_array_borrow_copy.con)
 
 ## Current Workaround
 

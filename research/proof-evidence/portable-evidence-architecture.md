@@ -2,7 +2,7 @@
 
 Status: design vision, 2026-07-31. Non-normative (see `research/README.md`).
 Written after auditing `spike/multi-prover-evidence` by running it. The normative
-subset of this lives in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](../../docs/PROVER_NEUTRAL_OBLIGATIONS.md);
+subset of this lives in [docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](../../docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md);
 this note is the argument for the shape, the comparison to prior art, and the sequence.
 
 ---

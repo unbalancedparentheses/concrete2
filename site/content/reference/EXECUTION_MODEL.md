@@ -35,7 +35,7 @@ The compiler generates a `main` function that calls the user's `main` (renamed t
 
 `fn main() -> Int` is the current entry signature; the model narrows to
 `fn main() -> u8 | Unit` so the 8-bit contract lives in the type (see
-`docs/MAIN_EXIT_MODEL.md` for the full decision record, including why there
+`docs/platform/MAIN_EXIT_MODEL.md` for the full decision record, including why there
 is deliberately no `process.exit()` in a linear language; the transitional
 harness echo knob was deleted when stage 2 completed — the exit-code
 semantics above are the only behavior).

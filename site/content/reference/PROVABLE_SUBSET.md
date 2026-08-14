@@ -7,7 +7,7 @@ title = "Provable Subset"
 Status: standing architecture reference
 
 The exact admitted surface is maintained in
-[PROVABLE_V1](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/PROVABLE_V1.md).
+[PROVABLE_V1](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/verification/PROVABLE_V1.md).
 This page explains the boundary rather than copying a constructor list that can
 drift.
 
@@ -91,4 +91,4 @@ to the V1 contract, proof-story matrix, and obligation register. Removing or
 weakening an admitted V1 construct is a compatibility change.
 
 For the full user contract, see
-[PROOF_CONTRACT](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/PROOF_CONTRACT.md).
+[PROOF_CONTRACT](https://github.com/unbalancedparentheses/concrete2/blob/main/docs/verification/PROOF_CONTRACT.md).

@@ -6,7 +6,7 @@
   reads as FIPS 180-4, so that flagship proofs can show the *extracted*
   source `refines this spec*, rather than merely "evaluates to these
   bytes." (The HACL*/seL4 spec/implementation split — see
-  docs/PROOF_LADDER.md.)
+  docs/verification/PROOF_LADDER.md.)
 
   Scope (task #16): the per-block SHA-256 pipeline — Boolean functions,
   rotations/sigmas, constants, big-endian word packing, message-schedule

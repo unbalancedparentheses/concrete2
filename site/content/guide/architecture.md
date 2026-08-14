@@ -63,7 +63,7 @@ That is why the validated-Core boundary matters so much. It creates a serious pr
 
 Read the stable architecture references:
 
-- [`docs/ARCHITECTURE.md`](@/reference/ARCHITECTURE.md)
-- [`docs/PASSES.md`](@/reference/PASSES.md)
-- [`docs/LANGUAGE_INVARIANTS.md`](@/reference/LANGUAGE_INVARIANTS.md)
-- [`docs/VALUE_MODEL.md`](@/reference/VALUE_MODEL.md)
+- [`docs/compiler/ARCHITECTURE.md`](@/reference/ARCHITECTURE.md)
+- [`docs/compiler/PASSES.md`](@/reference/PASSES.md)
+- [`docs/language/LANGUAGE_INVARIANTS.md`](@/reference/LANGUAGE_INVARIANTS.md)
+- [`docs/language/VALUE_MODEL.md`](@/reference/VALUE_MODEL.md)

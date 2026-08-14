@@ -16,7 +16,7 @@
 #      the same type (E0222).
 #
 # Fixtures live in tests/programs/loop_control/ (not picked up by the main suite,
-# which only scans tests/programs/*.con). See docs/LOOP_CONTROL.md.
+# which only scans tests/programs/*.con). See docs/language/LOOP_CONTROL.md.
 
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -74,7 +74,7 @@ reject_with neg_while_expr_removed E0001
 
 echo "=== 5. the bounded-loop classifier is FAIL-CLOSED ==="
 # The `predictable` profile advertises "bounded iteration, compiler-enforced"
-# (docs/PREDICTABLE_BOUNDARIES.md). It was enforcing something much weaker: the condition had
+# (docs/platform/PREDICTABLE_BOUNDARIES.md). It was enforcing something much weaker: the condition had
 # to LOOK like a comparison and the step list had to be non-empty, with nothing tying the two
 # together. Both loops below were classified `bounded`, the module passed
 # `--check predictable`, and the effects report said `0 unbounded loops` -- for code that runs

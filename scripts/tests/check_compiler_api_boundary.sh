@@ -18,10 +18,10 @@ PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
-# The V1 boundary allowlist — must agree with docs/COMPILER_API.md.
+# The V1 boundary allowlist — must agree with docs/compiler/COMPILER_API.md.
 BOUNDARY=("Concrete.Resolve.Project" "Concrete.Pipeline.Pipeline" "Concrete.Report.CompilerLedger" "Concrete.Proof.ObligationCore" "Concrete.Report.Diagnostic" "Concrete.Report.DebugBundle")
 CONSUMER_ROOTS=("editor" "tools" "integrations" "lsp" "mcp" "plugins")
-DOC="docs/COMPILER_API.md"
+DOC="docs/compiler/COMPILER_API.md"
 
 is_boundary(){ local m="$1"; for b in "${BOUNDARY[@]}"; do [ "$m" = "$b" ] && return 0; done; return 1; }
 

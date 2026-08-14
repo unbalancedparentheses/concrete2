@@ -2,7 +2,7 @@
 # Hole-status consistency gate.
 #
 # WHY THIS EXISTS. On 2026-07-31 three files said "H23 closed as a compile-time fact"  HOLE-STATUS-OK: quoting the wrong claim
-# while docs/KNOWN_HOLES.md said "H23 — OPEN, reproduced" and
+# while docs/verification/KNOWN_HOLES.md said "H23 — OPEN, reproduced" and
 # check_known_wrong_corpus.sh ASSERTED it still reproduces. Every gate was green. The
 # contradiction survived because the claims live in different files and nothing compared
 # them: check_docs_drift.sh verifies that referenced artifacts EXIST, not that statements
@@ -24,7 +24,7 @@
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
-KH="docs/KNOWN_HOLES.md"
+KH="docs/verification/KNOWN_HOLES.md"
 CORPUS="scripts/tests/check_known_wrong_corpus.sh"
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }

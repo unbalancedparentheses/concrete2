@@ -40,7 +40,7 @@ Predicate kinds:
 
 --bundle <dir> captures a wrong-code bundle for the reduced output
 in <dir>. The basename is recorded as the case id. See
-docs/BUG_BUNDLE.md.
+docs/project/BUG_BUNDLE.md.
 
 Output is written to <source>.reduced unless -o is supplied.
 USAGE

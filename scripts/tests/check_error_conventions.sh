@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 13t gate (the report/assertion tail): the three error buckets of
-# docs/ERROR_CONVENTIONS.md are REPORT-VISIBLE on the fixture — one public API
+# docs/language/ERROR_CONVENTIONS.md are REPORT-VISIBLE on the fixture — one public API
 # per bucket, each classification shown by a compiler surface, not prose.
 
 set -uo pipefail

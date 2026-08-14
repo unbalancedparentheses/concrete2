@@ -8,7 +8,7 @@ target/backend assumptions, emitted files, and cache/dependency facts — plus a
 LINK to the `ObligationCore` ledger so the two halves compose into one project
 picture. Commands record into it through the `recordX` API and render it instead
 of recomputing; `loadProject` builds it once so every project-mode command reads
-the same facts. See ROADMAP Phase 4 #2 and `docs/COMPILER_PIPELINE.md`.
+the same facts. See ROADMAP Phase 4 #2 and `docs/compiler/COMPILER_PIPELINE.md`.
 
 This module is deliberately dependency-light (plain data + a manual JSON view):
 the RECORDING happens in the pipeline/commands that already hold the facts, so the

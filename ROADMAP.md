@@ -9,8 +9,8 @@ constraints, and deferred tails with a real pull trigger.
 > **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
 > and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
 > the dimensions along which proof support grows, and the limits that must remain visible.
-> **Normative architecture:** [Evidence Architecture](docs/EVIDENCE_ARCHITECTURE.md) defines the
-> five authoritative evidence objects; [Verification IR](docs/VERIFICATION_IR.md) defines the
+> **Normative architecture:** [Evidence Architecture](docs/verification/EVIDENCE_ARCHITECTURE.md) defines the
+> five authoritative evidence objects; [Verification IR](docs/verification/VERIFICATION_IR.md) defines the
 > target portable proposition boundary. This roadmap sequences their implementation and must not
 > invent competing definitions.
 
@@ -76,7 +76,7 @@ ahead of it, and the status board remains the owner of current work.
 The architecture package is not prepared merely because its two normative documents exist. Before
 implementation relies on them, close these documentation and drift boundaries:
 
-1. **Ratified decisions:** add durable `docs/DECISIONS.md` entries for the five-object evidence
+1. **Ratified decisions:** add durable `docs/project/DECISIONS.md` entries for the five-object evidence
    model, immutable receipt versus time-relative policy decision, whole-checker fail-closed
    revocation, VIR as the portable proposition boundary, explicit proof-authoring modes, and the
    checked `total fn` contract-callable category. Each entry names rejected alternatives and what
@@ -311,7 +311,7 @@ both pass their gates.** There is one instance so far, and it now has a specific
 not generalize until a second one bites.
 
 The instance: three files said "H23 closed as a compile-time fact" while <!-- HOLE-STATUS-OK: quoting the wrong claim -->
-[docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) said OPEN and
+[docs/verification/KNOWN_HOLES.md](docs/verification/KNOWN_HOLES.md) said OPEN and
 `check_known_wrong_corpus.sh` asserted it still reproduces. All green. `check_docs_drift.sh`
 verifies that referenced artifacts *exist*, not that statements *agree* — a limitation its
 own commit named (`5a0c4e3e`) before the contradiction recurred. Closed for hole status by
@@ -394,7 +394,7 @@ the provers, and it is doing exactly its job.
 ### R-0004 evidence producer — landed state (2026-08-05)
 
 Canonical inventory of what exists, so the next session does not re-derive it. The
-constructor-by-constructor classification lives in `docs/EVIDENCE_PRODUCER_MATRIX.md`
+constructor-by-constructor classification lives in `docs/verification/EVIDENCE_PRODUCER_MATRIX.md`
 (gated against the AST, so it cannot silently omit a form).
 
 **Producer.** `elabExprEv` / `elabStmtEv` / `elabStmtsEv` / `elabCallEv` are ONE producer of
@@ -1044,14 +1044,14 @@ digest, so these statuses cannot become authoritative until R-0004 lands.
 Not a second task queue — a map from *what is broken* to *who owns it* to *how you know
 when it is fixed*. Added because the information existed only as prose spread across
 KNOWN_HOLES, the gate scripts and commit messages, which is how the H23 status
-contradiction survived. [docs/KNOWN_HOLES.md](docs/KNOWN_HOLES.md) remains the authority
+contradiction survived. [docs/verification/KNOWN_HOLES.md](docs/verification/KNOWN_HOLES.md) remains the authority
 on hole status; this table is a reference to it and
 `scripts/tests/check_hole_status_consistency.sh` fails if the two disagree.
 
 ## Product north star: compositional, transferable evidence
 
 The canonical product direction is
-[docs/VERIFICATION_CHARTER.md](docs/VERIFICATION_CHARTER.md): important behavior
+[docs/verification/VERIFICATION_CHARTER.md](docs/verification/VERIFICATION_CHARTER.md): important behavior
 is specified at boundaries, composed across calls and packages, carried in
 independently re-checkable artifacts, and assigned explicit evidence. Anything
 outside the supported verification surface is named rather than silently
@@ -1123,7 +1123,7 @@ behavioral regression.
 
 ### Verification-document convergence required by every graduation
 
-[docs/VERIFICATION_STATUS.md](docs/VERIFICATION_STATUS.md) is the canonical
+[docs/verification/VERIFICATION_STATUS.md](docs/verification/VERIFICATION_STATUS.md) is the canonical
 cross-axis capability map. `CLAIMS_TODAY` owns exact public guarantees,
 `KNOWN_HOLES` owns defect status, the verification charter owns direction, and
 this ROADMAP owns ordering and acceptance criteria. A feature is not graduated
@@ -1203,7 +1203,7 @@ position is in the sequencing note below; this table is the index, not the reaso
 |---|---|---|---|
 | **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
 | **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 5 register rows fully discharged, 4 of 5 half — the *semantics* half of each is proved, the *lowering* half IS H19) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
-| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/AXIOMS.md](docs/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
+| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/verification/AXIOMS.md](docs/verification/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
 | **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
 
 **No reproduced unsoundness remains** (2026-08-03). H23 and H24 are both closed and both
@@ -1371,7 +1371,7 @@ here must say so here; a task whose urgency lives only in its own body is not se
    cap that used it was the cheapest third. The other two thirds were the ones this arc keeps
    underestimating — deriving real provenance (`loopInvariantDebt`), and making the resulting
    status *enforced* (`E0617`) rather than merely displayed, on *every* surface that renders
-   it. Full account in `docs/KNOWN_HOLES.md` under H23, and the transferable method is in the
+   it. Full account in `docs/verification/KNOWN_HOLES.md` under H23, and the transferable method is in the
    scope-limits section above.
 
 1b. **R-0464 immediately after, on the same grounds. Also precedes the R-0466–R-0469
@@ -1501,7 +1501,7 @@ next reader to rediscover.
 _Extracted from the `spike/multi-prover-evidence` pre-merge record after that merge landed._
 _The merge-specific parts are dropped; what follows outlives it._
 
-### Known holes still open (from `docs/KNOWN_HOLES.md`)
+### Known holes still open (from `docs/verification/KNOWN_HOLES.md`)
 
 - **H19 — the Core→obligation bridge is unproven.** Listed above; repeated here because it is the
   largest single gap in the trust story.
@@ -1603,7 +1603,7 @@ weakest-precondition generator makes most of those **impossible by construction*
 forget a case when you are not enumerating cases. Four walkers were patched to fix symptoms whose
 common cause is the absence of a calculus.
 
-**The design is written: [docs/VC_GENERATOR_DESIGN.md](docs/VC_GENERATOR_DESIGN.md).** One
+**The design is written: [docs/verification/VC_GENERATOR_DESIGN.md](docs/verification/VC_GENERATOR_DESIGN.md).** One
 traversal plus a per-constructor rule table replaces four walkers; the `if`/`while` rules subsume
 `scopedWalk`'s hand-threaded guards, and the transformer's environment is the `ScopeDecls` work
 already done. It recommends running over **Core rather than the surface AST**, which is the one
@@ -1699,7 +1699,7 @@ kept with their outcome because the *pattern* they belong to is the last item he
 ### Open — highest leverage first
 
 1. **The VC generator.** Four hand-written walkers replaced by a WP calculus.
-   Design: `docs/VC_GENERATOR_DESIGN.md`. Attacks the layer that produced every discovery defect
+   Design: `docs/verification/VC_GENERATOR_DESIGN.md`. Attacks the layer that produced every discovery defect
    this month, subsumes H19 if run over Core, and makes Register A statable as one theorem.
 2. **`old` / two-state postconditions.** Not a feature among features — **a ceiling on what can
    be written at all.** Without it no specification can describe MUTATION, so the corpus's only
@@ -1759,7 +1759,7 @@ instead of a slogan.
 
 | Why3 capability | Here | To close |
 |---|---|---|
-| WP calculus for VC generation | ✗ four hand-written walkers | `docs/VC_GENERATOR_DESIGN.md` |
+| WP calculus for VC generation | ✗ four hand-written walkers | `docs/verification/VC_GENERATOR_DESIGN.md` |
 | driver files per prover | ✓ `ProverLowering` | — |
 | transformation library (~100) | ~1 discharged row (`eliminate_tmod`) | Register B rows 2–3, then breadth |
 | `requires` / `ensures` | ✓ | — |
@@ -2367,7 +2367,7 @@ bounds-checks and traps regardless — but the proof REPORT was false.
 - **R-0462 widening**: capability holders, struct params, non-integer returns.
 - **One unclassified `dropped by both`** in `fixed_capacity`.
 
-### Known holes still open (from `docs/KNOWN_HOLES.md`)
+### Known holes still open (from `docs/verification/KNOWN_HOLES.md`)
 
 - **H19 — the Core→obligation bridge is unproven.** Listed above; repeated here because it is the
   largest single gap in the trust story.
@@ -2516,7 +2516,7 @@ a numeric rather than a label claim, IS transitive as of this change.
 ### From R-0455 (term IR + Register B) — slices 1–2 landed, four things remain
 
 - **Register B row 2, `eliminate_div_mod` (fresh-variable form).** Two concrete blockers, in
-  `docs/TRANSFORM_REGISTER.md`: it needs hand-written `DecidableEq` on `Term` (Lean cannot
+  `docs/compiler/TRANSFORM_REGISTER.md`: it needs hand-written `DecidableEq` on `Term` (Lean cannot
   derive it through the nested `List Term` in `sym`), and its real content is the magnitude
   bound `|r| < |b|`, which needs `Int.natAbs` reasoning with **no Mathlib in this repo**.
   Recorded there: comparing terms by their `repr` STRINGS was tried and is the wrong answer.
@@ -3528,7 +3528,7 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | classification-refusal reachability | **PARTIAL**: `absent`, `ambiguous (count)` and `malformed` are represented, but committed controls reach only the production `absent` path; duplicate fixtures reproduce a local `filter`/`none` approximation rather than exercising `validatedRowOf`'s ambiguity result | a named refusal receives completion credit only after the exact production lookup and fail-closed consumer path are negatively controlled |
 | ~~edge sources disagree = coverage fail-open~~ **RETRACTED 2026-08-13, diagnosed backwards** | I recorded that 9 of 64 subjects rooted over a smaller edge set, called it a coverage fail-open, and predicted root coverage would fall to ~53/64 once fixed. **All of that was wrong.** `shadow edgeKinds` was a STUB: it derived callees from the evidence body then assigned the kind as `if isTrusted then "trusted" else "unclassified"`, consulting no classification table, so every non-trusted edge read `unclassified` regardless of the hand-back. The root was correct and the REPORT was stale — and since `dependencyRootMaterial` refuses any non-current edge, a subject with edges that roots has current edges by construction. **Root coverage remains 62/64 and was never inflated.** Fixed by making both lines read one source (`dependencyNodesOf`); the gate now asserts the invariant (no subject roots while reporting a non-current edge, 0 observed) plus its non-vacuity (12 non-current edges exist) | one producer for edge kinds; a hand-coded second opinion cannot drift from the real one if there is no second opinion |
 | real edge-kind distribution | **28 `body`, 11 `unclassified`, 1 `missing`** across 40 edges and 11 edge-bearing subjects (53 of 64 subjects have no outgoing edge). Measured 2026-08-13 through the corrected line. **Supersedes the earlier "all 40 unclassified, zero body" figure, which was read off the stub** | correspondence CAN be demonstrated on this corpus — 28 classified `body` edges exist, so a correspondence gate would not be vacuous. The earlier claim that it would be is withdrawn |
-| **per-edge correspondence maps to `DependencyClosure`, NOT `SourceCorrespondence`** | Corrected 2026-08-13 by reading `docs/EVIDENCE_ARCHITECTURE.md` rather than inferring from the commit subject: my first reading assumed the ratified `SourceCorrespondence` object superseded the `EdgeJustification` design. It does not. `SourceCorrespondence` is proposition↔source/Core behaviour; `DependencyClosure` is "every compiler edge, theorem witness, contract hypothesis, table entry, implementation, assumption and trusted boundary … present, unique, current, and consumed exactly once", with missing/surplus/duplicate/ambiguous/unclassified/mismatched as NAMED refusals never discarded by `filterMap` or a first-match lookup. **The slice-6 work is the implementation of `DependencyClosure`, not something replaced by the new architecture** | build `DependencyClosure`, not a parallel `EdgeJustification`. The architecture also retroactively endorses the two fixes already landed: `filterMap` removal and the first-match join both appear in its list of forbidden shapes |
+| **per-edge correspondence maps to `DependencyClosure`, NOT `SourceCorrespondence`** | Corrected 2026-08-13 by reading `docs/verification/EVIDENCE_ARCHITECTURE.md` rather than inferring from the commit subject: my first reading assumed the ratified `SourceCorrespondence` object superseded the `EdgeJustification` design. It does not. `SourceCorrespondence` is proposition↔source/Core behaviour; `DependencyClosure` is "every compiler edge, theorem witness, contract hypothesis, table entry, implementation, assumption and trusted boundary … present, unique, current, and consumed exactly once", with missing/surplus/duplicate/ambiguous/unclassified/mismatched as NAMED refusals never discarded by `filterMap` or a first-match lookup. **The slice-6 work is the implementation of `DependencyClosure`, not something replaced by the new architecture** | build `DependencyClosure`, not a parallel `EdgeJustification`. The architecture also retroactively endorses the two fixes already landed: `filterMap` removal and the first-match join both appear in its list of forbidden shapes |
 | DependencyClosure refusal vocabulary | **implemented: 6/6 named, gate-derived** | missing, duplicate, ambiguous, unclassified, mismatched and surplus remain distinct; production reachability and consumption are still pending |
 | ~~the compiler cannot check table membership per edge~~ **RESOLVED 2026-08-13 — the blocker was not one** | Recorded for weeks as needing the generator to `evalExpr` each `FnTable` and cross entry evidence over as data. The premise was half wrong: the hand-back really does carry only a name and a whole-table digest, **but the compiler IS a Lean program and these tables are ordinary definitions inside it**, so the values were already linked in. Only a name→value dispatch was missing. `Concrete/Proof/TableResolve.lean` provides it; `tableContainsCallee` answers the question per edge. Measured: `proofFns` 2 entries, `cryptoFns` 4, `elfFns` 5; membership true for a held callee, false for an absent one, and a named refusal for an unlinked table. **8 of the 9 tables the hand-back names are dispatched; the exception is `Examples.ProofPatterns.Proofs.combineFns`, defined under `proofs/` outside the compiler build, which correctly refuses.** The dispatch-coverage gate found a real omission while being written — `FnTable.empty` — which would have reported a vacuously-empty membership as an unresolvable dependency | no `evalExpr`, no generator change, no schema change. Correspondence can now be fed from real tables |
 | **correspondence measured on the real corpus 2026-08-13** | **6 of 11 edge-bearing subjects fully correspond** (22 matched edges); the other 5 have `missing` edges — a callee in no table their theorem names. **Total surplus 0**, and that is a real assertion: deriving one witness per TABLE ENTRY produced surplus on 5 subjects, because a table legitimately holds implementations the caller never reaches. Witnesses are derived per REQUESTED EDGE the table covers, so nonzero surplus means that regression returned. 53 of 64 subjects have no outgoing edge. Pinned SEPARATELY from root coverage (62/64): rooting says the closure computes, corresponding says every edge in it has exactly one validated justification | reach 11/11, then integrate |
@@ -4472,7 +4472,7 @@ it must not be reported as done from the presence of its intermediate data.
    Contract edges are unaffected throughout, since they never name a table.
 
    The `contract`/`body` discriminator is visible in the theorem's TYPE, and both
-   shapes already exist in the tree — see `docs/PROOF_CONTRACT.md` §1.1-1.3 for
+   shapes already exist in the tree — see `docs/verification/PROOF_CONTRACT.md` §1.1-1.3 for
    the normative rules, including how a `body` edge is resolved and why the
    receipt's workspace field is a closure digest rather than a path.
    `ProofKit.unary_call` quantifies over `fns : FnTable` and takes the callee's
@@ -5169,7 +5169,7 @@ table" was wrong and is corrected.** C1-C4 live in `Concrete/Report/Evidence.lea
 as a proof class — H23 as a theorem, C4 discharge is the only shrinking operation), with 59
 structural assertions in `check_evidence_algebra.sh` and no `sorry`/`admit`/`native_decide`.
 
-The error is worth recording because of how it was made: I grepped `docs/VC_BRIDGE_REGISTER.md`,
+The error is worth recording because of how it was made: I grepped `docs/verification/VC_BRIDGE_REGISTER.md`,
 found no Register C rows, and reported absence. Register C's rows were never in that file — they
 are in the module they constrain, which is the better place for them. **A failed search is not
 evidence of absence**, and this is the same mistake pattern the rest of this document warns about,
@@ -5233,7 +5233,7 @@ a notion that does not exist yet. Until it does, this is containment of EFFECTFU
 described that way (H27, R-0473).
 
 **6. A failed search is not evidence of absence.** I reported "Register C has no row table" after
-grepping `docs/VC_BRIDGE_REGISTER.md` and finding nothing. Register C's rows were never in that
+grepping `docs/verification/VC_BRIDGE_REGISTER.md` and finding nothing. Register C's rows were never in that
 file — C1-C4 are compile-time theorems in `Concrete/Report/Evidence.lean`, the module they
 constrain, which is the better place for them. The claim reached this roadmap and two status
 summaries before an external audit caught it. Before recording an absence, establish where the
@@ -5263,6 +5263,14 @@ and lifecycle rules may land immediately. Do not bulk-move files while R-0004 an
 modules are changing: link churn, merge conflicts and stale references would obscure the work the
 reorganization is meant to clarify. Move one topic family at a time, with link and drift gates
 green before and after.
+
+**Physical migration landed 2026-08-14.** The worktree reached a clean integration boundary, so
+the stable documents moved into `language`, `compiler`, `verification`, `platform`, and `project`
+families; the existing book/bugs/notes/stdlib trees remained intact. Repository references were
+rewritten in the same change, the last root-level research note moved under `research/meta/`, and
+`check_doc_links.py` now checks local Markdown destinations on every docs-drift run. Phase A's full
+lifecycle-header inventory and Phase B's one-owner/duplicate-current-status controls remain open;
+physical neatness is not completion of the authority audit.
 
 **Objective:** make the repository answer three questions without requiring institutional memory:
 
@@ -5396,7 +5404,7 @@ reads as "empty" rather than "not computed".
 `if dep.isEmpty then ("none", "missing", "")` is a COMPUTED determination that the obligation is
 missing, not a failed lookup papered over. The rule targets the failed-read shape.
 
-**RULE REFINED 2026-08-13, after `docs/EVIDENCE_ARCHITECTURE.md` landed.** The test is NOT "is the
+**RULE REFINED 2026-08-13, after `docs/verification/EVIDENCE_ARCHITECTURE.md` landed.** The test is NOT "is the
 default a member of the vocabulary". It is **"does the default ASSERT something the failed read did
 not establish"**. Those come apart at the bottom of a ladder:
 
@@ -6035,7 +6043,7 @@ ResolvedContractRef
   | spec      CallableId
 ```
 
-`BindingId` here stays the *internal lexical* identity from `docs/BINDING_IDENTITY_DESIGN.md` —
+`BindingId` here stays the *internal lexical* identity from `docs/language/BINDING_IDENTITY_DESIGN.md` —
 assigned during elaboration, regenerated every build, never serialized. It must not be conflated
 with stable evidence identity, which has to survive harmless source edits.
 
@@ -6080,7 +6088,7 @@ identities are distinguished from all locally bound identities.
 `eval(subst(Q, x, e), rho) = eval(Q, rho[x |-> eval(e, rho)])` proved or exhaustively gated over
 the supported fragment.
 
-Scope is fixed in `docs/BINDING_IDENTITY_DESIGN.md` before any editing, because this refactor
+Scope is fixed in `docs/language/BINDING_IDENTITY_DESIGN.md` before any editing, because this refactor
 becomes invasive quietly. The load-bearing decision there is to keep **two** notions apart rather
 than build one identifier for both: a *lexical binding ID* (internal, unique within one elaborated
 function, regenerated every build, never serialized) and a *stable evidence identity* (canonical
@@ -6186,7 +6194,7 @@ let f: f64 = 1e300; return f as i32;  // traps. No obligation generated.
 ```
 
 Both trap in the compiled binary, both are expressible in all three kernels today, and nobody
-wrote the rule. Under `docs/VC_GENERATOR_DESIGN.md` these are **two table rows**. That the current
+wrote the rule. Under `docs/verification/VC_GENERATOR_DESIGN.md` these are **two table rows**. That the current
 four-walker design made them expensive enough to skip is itself an argument for that design.
 
 #### Blocked by one rung, already unblocked
@@ -6413,7 +6421,7 @@ is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
 **Ownership decision:** promote `Concrete.Semantics.TermIR`; do not mint a
 parallel VIR. TermIR owns internal proposition syntax and semantics. VIR is the
 validated, versioned public codec/digest boundary described in
-`docs/VERIFICATION_IR.md`. ObligationCore owns provenance/status and references
+`docs/verification/VERIFICATION_IR.md`. ObligationCore owns provenance/status and references
 the canonical proposition identity. Receipts and policy remain separate.
 
 Current TermIR is a seed, not yet a typed authority: `Srt` exists beside an
@@ -6734,7 +6742,7 @@ compiler trust per claim.
 remain as a policy preference among claims with the same subject and semantic
 scope, but it is not a universal ordering of unlike evidence.
 
-`docs/EVIDENCE_CLASSES.md` and `docs/CLAIM_TAXONOMY.md` mix categories that are
+`docs/verification/EVIDENCE_CLASSES.md` and `docs/verification/CLAIM_TAXONOMY.md` mix categories that are
 not comparable. `proved`, `tested`, `enforced`, and `trusted` are evidence
 *methods*; `stale`, `partial`, `missing`, and `counterexample` are *statuses*;
 `reported` is an observation, not evidence at all; `runtime_checked` is a
@@ -6751,7 +6759,7 @@ friendly composites like `proved_by_lean`. The scope axis is the one genuinely
 missing today, and it is the axis where the compiler already has the facts.
 
 The normative target is now
-`docs/EVIDENCE_ARCHITECTURE.md`: five objects—`SourceCorrespondence`,
+`docs/verification/EVIDENCE_ARCHITECTURE.md`: five objects—`SourceCorrespondence`,
 `LogicalValidity`, `DependencyClosure`, immutable `ReplayReceipt`, and
 time-relative `PolicyDecision`. Implement them as a shared envelope plus typed
 variants and authority-state constructors, not one record of optional fields.
@@ -6791,8 +6799,8 @@ is not: until checker soundness and artifact production are independently
 verified, enforcement depends on this compiler being correct. Being implemented in
 Lean does not remove that dependency; mutation testing and duplicate boundary
 checks are strong engineering evidence, not a soundness proof.
-`docs/ARCHITECTURE.md` already admits `ValidatedCore` does not remove the
-compiler from the TCB and `docs/TRUSTED_COMPUTING_BASE.md` holds the accounting —
+`docs/compiler/ARCHITECTURE.md` already admits `ValidatedCore` does not remove the
+compiler from the TCB and `docs/verification/TRUSTED_COMPUTING_BASE.md` holds the accounting —
 the change is that the dependency appears per claim.
 
 Migration scope is larger than the two evidence documents. Residual total-ladder
@@ -6912,8 +6920,8 @@ resolution, a legal-bound-name inventory that fails when a new builtin bound is
 recognized in code without an entry, and a mutation restoring the primitive
 fallthrough.
 Record the bound vocabulary normatively — `Copy` is described in
-`docs/VALUE_MODEL.md`, `Destroy` in `docs/RUNTIME_COLLECTIONS.md`, and nothing
-states the whole set or what satisfies it, while `docs/DECISIONS.md` records
+`docs/language/VALUE_MODEL.md`, `Destroy` in `docs/language/RUNTIME_COLLECTIONS.md`, and nothing
+states the whole set or what satisfies it, while `docs/project/DECISIONS.md` records
 "no trait objects" without mentioning that `impl Trait for Type` and `T: Trait`
 bounds exist and are load-bearing across the stdlib. Name bounds as a required
 section of the Phase 17 language reference.
@@ -7300,7 +7308,7 @@ remain owned by R-0416–R-0419; this task does not delete tracked or untracked
 research notes merely because they are at repository root.
 
 **Worktree and publication invariants.** The operating rules in
-`docs/CONCURRENT_WORK.md` are part of this ownership contract, not advisory
+`docs/project/CONCURRENT_WORK.md` are part of this ownership contract, not advisory
 prose. One writer owns one worktree; verification runs from a clean tree at an
 exact commit; the verified SHA must equal the push target immediately before
 publication; hosted CI is selected by the full 40-character SHA and `push`
@@ -7477,7 +7485,7 @@ non-goals here.
 
 ### Task R-0011
 
-**Objective:** Finish construction rights with private-by-default enum variants Struct-field privacy and direct-newtype construction are historical milestones, recorded in the changelog and `docs/CONSTRUCTION_RIGHTS.md`. Finish the same one-keyword model for the still-open construction paths: `pub` remains the only visibility word; exporting a type never implicitly exports its variants or raw representation.
+**Objective:** Finish construction rights with private-by-default enum variants Struct-field privacy and direct-newtype construction are historical milestones, recorded in the changelog and `docs/language/CONSTRUCTION_RIGHTS.md`. Finish the same one-keyword model for the still-open construction paths: `pub` remains the only visibility word; exporting a type never implicitly exports its variants or raw representation.
 
 
 - `pub enum T` exports the type name. A variant is externally constructible and
@@ -7923,7 +7931,7 @@ Also expand the gate's coverage: `PRESENT_DOCS` currently lists five files,
 while `docs/NOTES/` and `research/` accumulate claim-bearing design notes
 outside any drift check — bring both under the path check at minimum.
 
-`docs/PROOF_STORY_MATRIX.md` is what `docs/README.md` calls "the 'no semantically
+`docs/verification/PROOF_STORY_MATRIX.md` is what `docs/README.md` calls "the 'no semantically
 dark constructs' inventory": every construct must be `proved`, `enforced`,
 `reported`, `assumed`, or `trusted`. It has 30 hand-written rows, and grep counts
 zero occurrences of `defer`, `newtype`, `function pointer`, `monomorph`,
@@ -8165,9 +8173,9 @@ Do not duplicate compiler-command cleanup here.
   bug appears; run against `base64_cli`/`png_chunks`/workload 3, starting at the
   `Writer`/`File` seam and expanding only as each capability (`Alloc`, `Time`)
   gains an injectable backend. Design record:
-  [`docs/DETERMINISTIC_SIMULATION.md`](docs/DETERMINISTIC_SIMULATION.md), which
+  [`docs/project/DETERMINISTIC_SIMULATION.md`](docs/project/DETERMINISTIC_SIMULATION.md), which
   refines the tier-J+ "deterministic simulation backend" earmark in
-  `docs/EXECUTION_MODEL.md`. Gate: `scripts/tests/check_effect_simulation.sh`
+  `docs/language/EXECUTION_MODEL.md`. Gate: `scripts/tests/check_effect_simulation.sh`
   replays a fixed fault schedule and asserts each effect-boundary property.
 
 ### Task R-0031
@@ -8180,7 +8188,7 @@ it requires `with(Alloc)`, whether it can fail, and which runtime
 obligations it creates.
 
 Every new collection API must preserve the H18 ownership contract documented
-in [CHANGELOG.md](CHANGELOG.md) and `docs/RUNTIME_COLLECTIONS.md`: a
+in [CHANGELOG.md](CHANGELOG.md) and `docs/language/RUNTIME_COLLECTIONS.md`: a
 collection owns its live elements until they are explicitly moved out.
 `clear`, `drop`, overwrite,
 set/replacement, and compaction paths destroy displaced live elements;
@@ -8251,7 +8259,7 @@ tracking to the hash collections.
   wrappers. This is a research escape valve only if real workloads prove
   operation APIs, owned views, and scoped callbacks insufficient.
 - 1f. Pull narrow const generics forward only when fixed-capacity stdlib APIs
-  need reusable capacities. Follow `docs/CONST_GENERICS_V1.md`; implementation
+  need reusable capacities. Follow `docs/language/CONST_GENERICS_V1.md`; implementation
   is deferred until a real Phase 7 consumer
   appears (`BoundedVec<T, N>`, `RingBuffer<T, N>`, `PacketBuf<N>`, fixed hash
   table, parser scratch buffer, freestanding reusable buffer, or a
@@ -8275,7 +8283,7 @@ tracking to the hash collections.
   or freestanding pools.
 ### Task R-0032
 
-**Objective:** Build internal-iteration and builder APIs in proposed `std.iter` and `std.builder` after the collection shape is known. This is NOT Rust's external-iterator / adapter-tower model: `research/stdlib/iterators.md` resolved the v1 design as per-container internal traversal (`for_each`, `fold`, context-threaded callbacks, and optional early-exit via an explicit `Continue | Break` tag), with no iterator trait, no lazy adapter chain, and no cursor/lifetime model. Add known-length reporting and reverse traversal (`rev_fold`/`rev_for_each` — today every backwards walk is a manual index-decrement loop; extend `docs/ITERATION_PROTOCOL.md` when these land),
+**Objective:** Build internal-iteration and builder APIs in proposed `std.iter` and `std.builder` after the collection shape is known. This is NOT Rust's external-iterator / adapter-tower model: `research/stdlib/iterators.md` resolved the v1 design as per-container internal traversal (`for_each`, `fold`, context-threaded callbacks, and optional early-exit via an explicit `Continue | Break` tag), with no iterator trait, no lazy adapter chain, and no cursor/lifetime model. Add known-length reporting and reverse traversal (`rev_fold`/`rev_for_each` — today every backwards walk is a manual index-decrement loop; extend `docs/project/ITERATION_PROTOCOL.md` when these land),
 
 plus byte/text builders and tree/buffer builders inspired by Gleam's
 `BytesTree` and `StringTree`. Do not hide allocation; builder APIs either carry
@@ -9284,7 +9292,7 @@ from Phase 8 flagships and workloads, before public comparison pressure turns
 informal speed impressions into claims.
 
 **Decision status:** the project affirms predictable generated-code performance
-as an evidence-bearing claim; `docs/DECISIONS.md` records the posture.
+as an evidence-bearing claim; `docs/project/DECISIONS.md` records the posture.
 Individual comparisons remain `performance_not_claimed` until this task supplies
 their workload-scoped evidence.
 
@@ -9922,7 +9930,7 @@ with the example.
 
 **Objective:** Keep AI/agent assurance guidance aligned with the implemented proof surface.
 
- `docs/SPARK_CLASS_ASSURANCE.md` is the current design-target guide for
+ `docs/verification/SPARK_CLASS_ASSURANCE.md` is the current design-target guide for
  agents: it tells Claude/Codex-style tools which assurance annotations are
  implemented today, which are future-only, and which replay commands must
  validate a claim. When loop invariants, frame/dependency contracts,
@@ -9989,7 +9997,7 @@ with the example.
  generated assumptions, rejected assumptions, introduced trusted boundaries,
  final evidence class, replay command, and whether the final artifact works
  without the LLM. Design target:
- `docs/PROOF_SYNTHESIS.md`.
+ `docs/verification/PROOF_SYNTHESIS.md`.
 
  Product model: the human reviews the spec, assumptions, and evidence class;
  the kernel checks the generated proof artifact. Do not design this as
@@ -10327,7 +10335,7 @@ transitive-use budget before any gate changes program acceptance.
 
 `with(Std)` expands at parse time to every standard capability except `Unsafe`
 (`Concrete/Frontend/Parser.lean` "Expand \"Std\" to the full set";
-`docs/SAFETY.md:61`). It is used in `docs/DEFER.md`, `docs/SAFETY.md`, and
+`docs/language/SAFETY.md:61`). It is used in `docs/language/DEFER.md`, `docs/language/SAFETY.md`, and
 several `adversarial_cap_*` fixtures. The canonical identity docs now list
 `Std` beside the nine capabilities and accurately mark it as an alias over the
 eight non-`Unsafe` capabilities. That documentation repair does not decide the
@@ -10479,7 +10487,7 @@ an LLM-generated proof bundle replays using only checked artifacts.
 
 ### Task R-0199
 
-**Objective:** Keep public-facing docs and website copy grounded in the same evidence vocabulary. Use `docs/WHY_CONCRETE.md` as the source for a C/Rust-oriented "why this exists" page: small systems code, explicit authority, visible evidence classes, spec-drift-tied proofs, named trust boundaries, and what Concrete deliberately avoids. The website should show the end goal and the current honest status, not catchy slogans or one-badge proof claims.
+**Objective:** Keep public-facing docs and website copy grounded in the same evidence vocabulary. Use `docs/project/WHY_CONCRETE.md` as the source for a C/Rust-oriented "why this exists" page: small systems code, explicit authority, visible evidence classes, spec-drift-tied proofs, named trust boundaries, and what Concrete deliberately avoids. The website should show the end goal and the current honest status, not catchy slogans or one-badge proof claims.
 
 ### Task R-0200
 
@@ -10740,7 +10748,7 @@ Alethe) a third party re-checks independently of our toolchain; where none exist
 (`omega`, `lia`, `presburger`) the claim is `trusted_modulo_toolchain`, because `lia` has
 no certificate export and a `.vo` is re-checkable only by the same Rocq version.
 
-Normative shape in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+Normative shape in [docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md).
 
 ## Phase 12: Provable And Predictable Subsets
 
@@ -10765,7 +10773,7 @@ boundary.
 
 ### Task R-0221
 
-**Objective:** Freeze arithmetic-site semantics for subset claims. This task is reconciled with historical Phase 6 item 10 and `docs/ARITHMETIC_POLICY.md`: build/profile names are policy bundles, not arithmetic modes, and the same source expression must not mean wrap in one profile and checked in another. Ordinary `+ - *` are checked in every profile; intentional modular arithmetic is written as `wrapping_*`; intentional clamping is written as `saturating_*`. Subset reports must classify arithmetic sites as `checked`, `proved`, `runtime- checked`, `explicit-wrapping`, or `explicit-saturating`; they must never infer an ambient arithmetic mode from `debug`, `release`, `predictable`, or
+**Objective:** Freeze arithmetic-site semantics for subset claims. This task is reconciled with historical Phase 6 item 10 and `docs/language/ARITHMETIC_POLICY.md`: build/profile names are policy bundles, not arithmetic modes, and the same source expression must not mean wrap in one profile and checked in another. Ordinary `+ - *` are checked in every profile; intentional modular arithmetic is written as `wrapping_*`; intentional clamping is written as `saturating_*`. Subset reports must classify arithmetic sites as `checked`, `proved`, `runtime- checked`, `explicit-wrapping`, or `explicit-saturating`; they must never infer an ambient arithmetic mode from `debug`, `release`, `predictable`, or
 
 `proof`.
 ### Task R-0222
@@ -10886,7 +10894,7 @@ bounds, explicit backend timing assumptions.
  external workload pulls it. The design must explain how these facts differ
  from capabilities: capabilities name external authority; frame/dependency
  contracts name memory/state/data influence. Add
- `docs/SPARK_CLASS_ASSURANCE.md` updates, examples with one parser/buffer
+ `docs/verification/SPARK_CLASS_ASSURANCE.md` updates, examples with one parser/buffer
  loop and one policy/data-flow function, and a gate proving facts are
  reported as proved/enforced/reported/assumed/trusted rather than prose-only.
 ### Task R-0240
@@ -11186,7 +11194,7 @@ is why the fix is a record change plus a fold, not new proof machinery.
 the EXISTING `assumed`, plus a structured `conditions : [{ref, status}]` naming what is
 outstanding. Not a new conditional badge, and specifically **no status string containing
 `proved` may be emitted for a claim with an undischarged condition** — that rule is the
-gate. Rationale in [docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md):
+gate. Rationale in [docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md):
 a conditional badge still containing `proved` reproduces H23 for every consumer that
 pattern-matches the status, which is how H23 fooled the policy gate and the report reader
 alike. The precedent exists twice already (`assumed` for `#[assume]`, `assumed_at_entry`
@@ -11476,7 +11484,7 @@ self-concealing — a decorative gate stays green, so nothing else will report i
 **Objective:** Discharge the obligation-sufficiency register — *if the flat goal holds,
 the runtime property holds* — rule by rule.
 
-[docs/VC_BRIDGE_REGISTER.md](docs/VC_BRIDGE_REGISTER.md) enumerates the `Core ->
+[docs/verification/VC_BRIDGE_REGISTER.md](docs/verification/VC_BRIDGE_REGISTER.md) enumerates the `Core ->
 obligation` lowering as four rows with the theorem each owes. Zero are discharged. This
 is the ceiling on every runtime-safety claim and every multi-kernel badge: adding kernels
 cannot detect a fault here, because all of them check the *same* lowered proposition, so
@@ -11905,7 +11913,7 @@ is expensive.
 Do not widen R-0004 to absorb this. That task is mid-flight; this is its successor.
 
 Normative rule and record shapes in
-[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+[docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md).
 
 ### Task R-0455
 
@@ -11977,7 +11985,7 @@ remove different things from the trusted path — a verified printer feeding a t
 still trusts the solver; a replayed certificate from a mis-rendered goal still proves the
 wrong thing. The best position is both, not one ranked above the other. See the corrected
 boundary model in
-[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md).
+[docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md).
 
 What this task should therefore deliver, in order of value:
 
@@ -12025,7 +12033,7 @@ in a logic with no built-in general recursion.
 originally justified partly on non-arithmetic proof ergonomics: port `eval` so another
 host can prove refinement and functional-correctness properties. That justification does
 not survive the deep-vs-shallow measurement recorded in
-[docs/PROVER_NEUTRAL_OBLIGATIONS.md](docs/PROVER_NEUTRAL_OBLIGATIONS.md): per-function
+[docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md](docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md): per-function
 properties are *cheaper* proved against the SHALLOW extraction, because symbolic fuel in
 the deep embedding forces a case split per AST level before anything computes, and that
 cost grows with expression depth. Shallow extraction to another host is a **printer** —
@@ -12314,7 +12322,7 @@ direct SSA->LLVM path once parity is established.
  at which independent checking stops and backend/toolchain trust begins.
 ### Task R-0302
 
-**Objective:** Pin the supported LLVM/clang version and gate version drift. The backend today targets whatever `clang` defaults to on the host (`docs/EXECUTION_MODEL.md`), yet the TCB already conditions backend correctness on "LLVM version" — so a floating toolchain leaves the trusted boundary a moving, un-audited target and makes native output non-reproducible across hosts (`docs/DETERMINISM.md` already disclaims binary reproducibility for exactly this reason). Declare one supported LLVM version (or a narrow tested range) as part of the backend contract, and make an upgrade a deliberate, gated event: on a version bump the wrong-code corpus, the backend-contract gate, and IR golden tests must re-pass before the new version is
+**Objective:** Pin the supported LLVM/clang version and gate version drift. The backend today targets whatever `clang` defaults to on the host (`docs/language/EXECUTION_MODEL.md`), yet the TCB already conditions backend correctness on "LLVM version" — so a floating toolchain leaves the trusted boundary a moving, un-audited target and makes native output non-reproducible across hosts (`docs/compiler/DETERMINISM.md` already disclaims binary reproducibility for exactly this reason). Declare one supported LLVM version (or a narrow tested range) as part of the backend contract, and make an upgrade a deliberate, gated event: on a version bump the wrong-code corpus, the backend-contract gate, and IR golden tests must re-pass before the new version is
 
  declared supported. This is the cheap control that turns the moving boundary into
  a fixed one; the structured `BackendIR` contract (Task R-0288) and a future hand-written
@@ -12364,7 +12372,7 @@ direct SSA->LLVM path once parity is established.
    struct's size and field offsets equal the declared bit layout; an over-wide
    store into a `uN` field is rejected or wraps per the declared width, not
    silently. (SOA containers and `std.bigint` are stdlib-level, pulled the same
-   way; nested patterns is tracked in `docs/NESTED_PATTERNS.md`.)
+   way; nested patterns is tracked in `docs/language/NESTED_PATTERNS.md`.)
 ### Task R-0304
 
 **Objective:** Keep inbound FFI, outbound FFI, and unsafe-profile work connected but distinct. Inbound FFI says how Concrete safely calls host code; outbound FFI says how host code safely calls Concrete exports; Phase 15.5 says how the trusted/raw-pointer implementation islands remain auditable. Release-facing docs must not collapse these into a vague "FFI supported" claim. Each side needs its own examples, ABI restrictions, ownership-transfer rules, capability/evidence report, and red-team negatives.
@@ -13047,7 +13055,7 @@ the Phase 10 verified-profile command, not just written in prose.
   gate proving fixed-buffer formatting remains allocation-free.
 ### Task R-0349
 
-**Objective:** Refresh or archive stale gap/backlog documents before release. Documents such as `docs/LANGUAGE_GAPS.md`, root-level idea piles, and old stdlib reviews may be useful historically, but they cannot sit next to the roadmap making claims that contradict closed known holes or current semantics. Gate: `scripts/tests/check_gap_docs_current.sh` rejects stale "true blocker" / "largest gap" claims unless they map to an open roadmap item or known-hole id; otherwise the material moves to CHANGELOG/archive with a date and status.
+**Objective:** Refresh or archive stale gap/backlog documents before release. Documents such as `docs/language/LANGUAGE_GAPS.md`, root-level idea piles, and old stdlib reviews may be useful historically, but they cannot sit next to the roadmap making claims that contradict closed known holes or current semantics. Gate: `scripts/tests/check_gap_docs_current.sh` rejects stale "true blocker" / "largest gap" claims unless they map to an open roadmap item or known-hole id; otherwise the material moves to CHANGELOG/archive with a date and status.
 
 ### Task R-0350
 
@@ -13934,8 +13942,8 @@ includes the memory-model question Concrete must not answer accidentally:
 atomics, synchronization, shared mutable state, data-race freedom,
 capability-gated thread authority, and proof/evidence classes for concurrent
 code all remain research-gated until a formal model and pressure tests exist.
-Async syntax remains rejected for v1 per `docs/ANTI_FEATURES.md`; the
-positive research direction lives here and in `docs/EXECUTION_MODEL.md`:
+Async syntax remains rejected for v1 per `docs/language/ANTI_FEATURES.md`; the
+positive research direction lives here and in `docs/language/EXECUTION_MODEL.md`:
 explicit concurrency primitives, visible effects, linear handles, and
 bounded scheduling/failure evidence rather than hidden async lowering or a
 second control-flow semantics.

@@ -6,7 +6,7 @@
 # asserts the assumption file's declared values match the compiler's
 # actual output. Drift fails the gate.
 #
-# Contract: docs/ASSUMPTION_FILES.md
+# Contract: docs/verification/ASSUMPTION_FILES.md
 
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
@@ -230,7 +230,7 @@ check_example() {
   fi
 
   # --- arithmetic.{overflow,divide_by_zero,shift_oversize} ---
-  # The frozen policy (docs/ARITHMETIC_POLICY.md): ordinary integer ops are
+  # The frozen policy (docs/language/ARITHMETIC_POLICY.md): ordinary integer ops are
   # checked and TRAP on overflow / div-zero / over-width shift; only explicit
   # wrapping_*/saturating_* intrinsics do otherwise. An assumption file is the
   # evidence surface the example's bundle is read under — it must not declare

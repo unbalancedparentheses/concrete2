@@ -59,5 +59,5 @@ Read:
 
 - [`ROADMAP.md`](../../../ROADMAP.md)
 - [`CHANGELOG.md`](../../../CHANGELOG.md)
-- [`docs/IDENTITY.md`](../../IDENTITY.md)
+- [`docs/project/IDENTITY.md`](../../project/IDENTITY.md)
 - [`research/README.md`](../../../research/README.md)

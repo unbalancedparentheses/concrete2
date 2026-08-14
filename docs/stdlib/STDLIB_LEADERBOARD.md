@@ -242,8 +242,8 @@ leaderboard threaded through them:
    workload as the next validation driver.
 5. [STDLIB_SURFACE_FREEZE.md](STDLIB_SURFACE_FREEZE.md): keep frozen/provisional
    status aligned as modules graduate.
-6. [PROOF_SEMANTICS_BOUNDARY.md](../PROOF_SEMANTICS_BOUNDARY.md) and
-   [PROOF_STORY_MATRIX.md](../PROOF_STORY_MATRIX.md): update only when formal
+6. [PROOF_SEMANTICS_BOUNDARY.md](../verification/PROOF_SEMANTICS_BOUNDARY.md) and
+   [PROOF_STORY_MATRIX.md](../verification/PROOF_STORY_MATRIX.md): update only when formal
    modules become real proof inputs, not while they are just planned.
 
 Do not update all of these at once just to chase consistency. Update each when

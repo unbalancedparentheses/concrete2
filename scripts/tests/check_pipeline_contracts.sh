@@ -16,7 +16,7 @@
 # gates" and a pipeline that can say which earlier contract makes a case
 # impossible.
 #
-# See docs/PIPELINE_CONTRACTS.md for the per-boundary promises. Needs the
+# See docs/compiler/PIPELINE_CONTRACTS.md for the per-boundary promises. Needs the
 # compiler built; runs in the compiler test job.
 
 set -uo pipefail

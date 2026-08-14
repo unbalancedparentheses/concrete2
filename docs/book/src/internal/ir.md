@@ -38,6 +38,6 @@ Recent compiler work has specifically hardened aggregate lowering so mutable agg
 
 ## Where To Read More
 
-- `docs/ARCHITECTURE.md` for the full pass structure
-- `docs/PASSES.md` for pass-by-pass contracts
-- `docs/ABI.md` for type/layout rules
+- `docs/compiler/ARCHITECTURE.md` for the full pass structure
+- `docs/compiler/PASSES.md` for pass-by-pass contracts
+- `docs/platform/ABI.md` for type/layout rules

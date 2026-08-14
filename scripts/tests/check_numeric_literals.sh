@@ -50,7 +50,7 @@ echo "=== in-range / valid-negative literals compile; explicit as-cast still tru
 run_expect in_range_literals 1
 run_expect valid_negative_literals 1            # i8 = -128 (signed min), -var
 
-echo "=== numeric model invariants (docs/NUMERIC_MODEL.md) ==="
+echo "=== numeric model invariants (docs/language/NUMERIC_MODEL.md) ==="
 # inline probes: reject <label> <src>  /  accept <label> <src>
 inl_reject(){ printf '%s' "$2" > "$TMP/m.con"
   "$C" "$TMP/m.con" -o "$TMP/m.bin" >"$TMP/m.out" 2>&1 \

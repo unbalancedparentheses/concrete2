@@ -8,7 +8,7 @@
 # binary is produced (i.e. `concrete -o` fails). If any class ever reaches Lower
 # and compiles, that is a boundary hole — a miscompile risk — and fails here.
 #
-# Where each class is currently enforced (the audit — see docs/COMPILER_BOUNDARY.md):
+# Where each class is currently enforced (the audit — see docs/compiler/COMPILER_BOUNDARY.md):
 #   1. unresolved type vars after mono   -> verifyPostMono (verifyNoTypeVars)   [post-mono boundary]
 #   2. illegal Copy specialization       -> verifyPostMono (verifyCopyFields)   [post-mono boundary]
 #   3. mixed-width binops (E0228/E0715)  -> Check                                [front-end; not re-asserted post-mono]

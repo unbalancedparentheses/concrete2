@@ -4,7 +4,7 @@
 
 This note covers the testing workflow that should exist once Concrete has a real package/project model.
 
-It is intentionally narrower than [testing-strategy.md](testing-strategy.md).
+It is intentionally narrower than [testing-strategy.md](../process/testing-strategy.md).
 
 - `testing-strategy.md` is about confidence, invariants, fuzzing, reports, and differential testing
 - this note is about the user-facing package/project testing workflow: `concrete test`, discovery rules, output shape, filtering, and failure UX

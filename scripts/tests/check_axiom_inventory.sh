@@ -7,9 +7,9 @@
 #   - `sorryAx`                       → incomplete proof presented as evidence
 #   - `Lean.ofReduceBool`/`trustCompiler` → native-code trust (native_decide,
 #     and bv_decide's compiled LRAT checker) — permitted ONLY for theorems
-#     named in scripts/tests/axiom_native_trust.txt AND docs/AXIOMS.md
+#     named in scripts/tests/axiom_native_trust.txt AND docs/verification/AXIOMS.md
 #   - any user-declared axiom         → must never back proof evidence
-# The full trust story lives in docs/AXIOMS.md; this gate keeps it honest.
+# The full trust story lives in docs/verification/AXIOMS.md; this gate keeps it honest.
 #
 # Mechanism: collect theorem names from every #[proof_by(...)] attribute in
 # .con sources, generate a Lean file of `#print axioms` commands, run it under
@@ -93,26 +93,26 @@ done < "$TMP/records.txt"
 
 [ -z "$(echo "$NATIVE_UNLISTED" | tr -d ' ')" ] \
   && ok "native-code trust (bv_decide/native_decide) only where declared in $NATIVE_FILE" \
-  || no "theorems with UNDECLARED native-code trust:$NATIVE_UNLISTED (add to $NATIVE_FILE + docs/AXIOMS.md, or remove the dependency)"
+  || no "theorems with UNDECLARED native-code trust:$NATIVE_UNLISTED (add to $NATIVE_FILE + docs/verification/AXIOMS.md, or remove the dependency)"
 
 # Every theorem granted native trust must also be documented in AXIOMS.md.
 DOC_MISSING=""
 while read -r thm; do
   case "$thm" in \#*|"") continue ;; esac
-  grep -q "$thm" docs/AXIOMS.md 2>/dev/null || DOC_MISSING="$DOC_MISSING $thm"
+  grep -q "$thm" docs/verification/AXIOMS.md 2>/dev/null || DOC_MISSING="$DOC_MISSING $thm"
 done < "$NATIVE_FILE"
 [ -z "$DOC_MISSING" ] \
-  && ok "all native-trust theorems are documented in docs/AXIOMS.md" \
-  || no "native-trust theorems missing from docs/AXIOMS.md:$DOC_MISSING"
+  && ok "all native-trust theorems are documented in docs/verification/AXIOMS.md" \
+  || no "native-trust theorems missing from docs/verification/AXIOMS.md:$DOC_MISSING"
 
-# docs/AXIOMS.md must state the active kernel allowlist.
+# docs/verification/AXIOMS.md must state the active kernel allowlist.
 DOC_ALLOW_OK=1
 for a in $ALLOWLIST; do
-  grep -q "$a" docs/AXIOMS.md 2>/dev/null || DOC_ALLOW_OK=0
+  grep -q "$a" docs/verification/AXIOMS.md 2>/dev/null || DOC_ALLOW_OK=0
 done
 [ "$DOC_ALLOW_OK" = "1" ] \
-  && ok "docs/AXIOMS.md documents the kernel-axiom allowlist" \
-  || no "docs/AXIOMS.md missing/out of sync with the allowlist ($ALLOWLIST)"
+  && ok "docs/verification/AXIOMS.md documents the kernel-axiom allowlist" \
+  || no "docs/verification/AXIOMS.md missing/out of sync with the allowlist ($ALLOWLIST)"
 
 # ---------------------------------------------------------------------------
 # NEGATIVE CONTROL: does the detection actually catch anything?

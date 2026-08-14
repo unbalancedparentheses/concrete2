@@ -1,5 +1,5 @@
 # Assumption file for the hmac_sha256 candidate.
-# Schema: docs/ASSUMPTION_FILES.md
+# Schema: docs/verification/ASSUMPTION_FILES.md
 #
 # Fifth flagship candidate; first cryptographic-PRIMITIVE flagship.
 # Slot opened 2026-05-30 (the day constant_time_tag graduated).  The

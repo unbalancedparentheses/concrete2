@@ -2873,7 +2873,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "verify" then
       -- Pass-by-pass verify gates: post-elab, post-mono, post-lower,
       -- post-cleanup. Each gate's diagnostics are reported separately
-      -- per docs/VERIFY_GATES.md. Earlier failures (mono refusing to
+      -- per docs/verification/VERIFY_GATES.md. Earlier failures (mono refusing to
       -- run, lower aborting entirely) surface via the standard
       -- Pipeline.* error path; runVerifyGates short-circuits at the
       -- first such failure.

@@ -202,7 +202,7 @@ inductive Stmt where
   -- `;`-terminated expression is a discarded statement (`isValue := false`). Only
   -- the last statement of a value-bearing block may be `true`; statement-only
   -- blocks (fn/loop/if-statement bodies via parseBlock) are always `false`.
-  -- (Phase 5 #42 — docs/STATEMENT_EXPRESSION_MODEL.md.)
+  -- (Phase 5 #42 — docs/language/STATEMENT_EXPRESSION_MODEL.md.)
   | expr (span : Span) (e : Expr) (isValue : Bool)
   | ifElse (span : Span) (cond : Expr) (then_ : List Stmt) (else_ : Option (List Stmt))
   | while_ (span : Span) (cond : Expr) (body : List Stmt) (label : Option String)
@@ -679,7 +679,7 @@ partial def desugarStmts : List Stmt → List Stmt
   -- field access does not move, so `__destr` is left unconsumed (E0208) and the
   -- fields would alias it. Instead it is linearity-checked natively in Check
   -- (consume the source, move each field out) and expanded to the temp+field form
-  -- only at Elab time, past the linear checker. See docs/OWNERSHIP_MODEL.md.
+  -- only at Elab time, past the linear checker. See docs/language/OWNERSHIP_MODEL.md.
   | s :: rest => s :: desugarStmts rest
 
 /-- Apply desugaring to all function bodies in a module. -/

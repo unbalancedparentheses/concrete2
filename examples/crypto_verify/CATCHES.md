@@ -49,5 +49,5 @@ ask the right questions.
 - `examples/parse_validate/CATCHES.md` — sibling for the parsing
   flagship.
 - `examples/crypto_verify/AUDIT.md` — graduation bar #6.
-- `docs/POLICY_FILES.md` — the `[policy]` section this case
+- `docs/project/POLICY_FILES.md` — the `[policy]` section this case
   enforces by demonstration.

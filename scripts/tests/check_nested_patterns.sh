@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nested-patterns decision gate (ROADMAP Phase 6 #5; docs/NESTED_PATTERNS.md).
+# Nested-patterns decision gate (ROADMAP Phase 6 #5; docs/language/NESTED_PATTERNS.md).
 #
 # Concrete V1 destructures one level per match arm; nested patterns
 # (`E::W { P { x, y } }`, `Some(Some(n))`) are deferred (workload-gated). This

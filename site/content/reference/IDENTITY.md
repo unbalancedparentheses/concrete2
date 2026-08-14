@@ -77,7 +77,7 @@ hand-maintained theorem count in this stable identity document.
 
 ## Research Directions
 
-These are the most developed ideas in [research/](../research/). None are implemented yet, but each is grounded in the current compiler architecture.
+These are the most developed ideas in [research/](../../../research). None are implemented yet, but each is grounded in the current compiler architecture.
 
 ### Authority Budgets
 
@@ -160,7 +160,7 @@ Target use cases:
 
 ## Design Filters
 
-Every proposed feature must pass a checklist (see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md) and [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/design-filters.md)):
+Every proposed feature must pass a checklist (see [DESIGN_POLICY](@/reference/DESIGN_POLICY.md) and [../research/design-filters](https://github.com/unbalancedparentheses/concrete2/blob/main/research/meta/design-filters.md)):
 
 - Does it make behavior more visible or less visible?
 - Is dispatch still statically known?

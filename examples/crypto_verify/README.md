@@ -75,7 +75,7 @@ succeed, the composed verifier returns success.
 ## ProvableV1 conformance
 
 Every proof-eligible function in `crypto_verify` fits the
-`ProvableV1` profile (see [`docs/PROVABLE_V1.md`](../../docs/PROVABLE_V1.md)).
+`ProvableV1` profile (see [`docs/verification/PROVABLE_V1.md`](../../docs/verification/PROVABLE_V1.md)).
 The four pure scalar functions use only constructs in the supported
 surface: integer arithmetic, comparisons, let bindings,
 if/then/else, direct calls. Each registered theorem has a `coverage`

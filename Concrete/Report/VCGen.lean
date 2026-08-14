@@ -1,7 +1,7 @@
 /-
 # Obligation generation as a calculus — slice 1
 
-Implements the structure in `docs/VC_GENERATOR_DESIGN.md`: **one traversal plus a per-constructor
+Implements the structure in `docs/verification/VC_GENERATOR_DESIGN.md`: **one traversal plus a per-constructor
 rule table**, replacing four hand-written walkers over the same grammar.
 
 ## Why, in one number

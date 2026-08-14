@@ -4,8 +4,8 @@
 // UTF-8 view) is an EXPLICIT step — ByteView::try_text validates the region as
 // well-formed UTF-8 and returns None on invalid bytes. There is no implicit
 // lossy conversion: raw bytes stay bytes until you validate them. This closes
-// the byte/text split for stored zero-copy views. See docs/BYTE_VIEW.md and
-// docs/STRING_TEXT_CONTRACT.md.
+// the byte/text split for stored zero-copy views. See docs/language/BYTE_VIEW.md and
+// docs/language/STRING_TEXT_CONTRACT.md.
 
 mod utf8_text_slice {
 

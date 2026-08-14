@@ -63,5 +63,5 @@ Read:
 
 - [`ROADMAP.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/ROADMAP.md)
 - [`CHANGELOG.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/CHANGELOG.md)
-- [`docs/IDENTITY.md`](@/reference/IDENTITY.md)
+- [`docs/project/IDENTITY.md`](@/reference/IDENTITY.md)
 - [`research/README.md`](https://github.com/unbalancedparentheses/concrete2/blob/main/research/README.md)

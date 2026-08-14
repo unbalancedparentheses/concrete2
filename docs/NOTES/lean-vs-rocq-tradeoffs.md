@@ -73,7 +73,7 @@ runtime — but that's a trusted component, differentially tested against the
 reference interpreter, which is a reasonable trust boundary.
 
 ### 4. Ecosystem — mostly N/A by philosophy
-`docs/DESIGN_POLICY.md`'s admission principle favors a small, compiler-owned
+`docs/project/DESIGN_POLICY.md`'s admission principle favors a small, compiler-owned
 proof surface over importing large frameworks; Concrete rolls its own minimal
 `ProofKit`/`ProofCore`. The only place Rocq's ecosystem lead would matter is the
 deferred heap/allocation and concurrency proofs, where Iris-grade separation

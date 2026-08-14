@@ -7,7 +7,7 @@
 # compiler-version.txt, stdout.txt, stderr.txt, and any reports that
 # run cleanly.
 #
-# Contract: docs/BUG_BUNDLE.md
+# Contract: docs/project/BUG_BUNDLE.md
 #
 # Usage:
 #   capture_wrong_code_bundle.sh <source.con> --case WC-NNNN --predicate <KIND>:<ARG> [-o out/<dir>]

@@ -38,7 +38,7 @@ done
 echo "=== no escape hatches in the proofs ==="
 # `sorry`/`admit` would make a row vacuous while the gate above still passed.
 # `native_decide` would discharge it via compiled code, extending trust to
-# Lean.ofReduceBool / Lean.trustCompiler — the very extension docs/AXIOMS.md gates
+# Lean.ofReduceBool / Lean.trustCompiler — the very extension docs/verification/AXIOMS.md gates
 # elsewhere. Neither belongs in a register that exists to REMOVE trust.
 for bad in sorry admit native_decide; do
   grep -qE "\b$bad\b" "$EV" \

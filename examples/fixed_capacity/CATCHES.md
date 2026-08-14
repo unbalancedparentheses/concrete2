@@ -78,5 +78,5 @@ that mirrors the parse_validate and crypto_verify pairs.
 - `examples/crypto_verify/CATCHES.md` — sibling for the
   crypto/auth scaffolding flagship.
 - `examples/fixed_capacity/AUDIT.md` — graduation bar #6.
-- `docs/POLICY_FILES.md` — the `[policy]` section this case
+- `docs/project/POLICY_FILES.md` — the `[policy]` section this case
   enforces by demonstration.

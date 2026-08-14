@@ -9,7 +9,7 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 IR="Concrete/Semantics/TermIR.lean"
-REG="docs/TRANSFORM_REGISTER.md"
+REG="docs/compiler/TRANSFORM_REGISTER.md"
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }

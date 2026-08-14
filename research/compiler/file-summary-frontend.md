@@ -422,5 +422,5 @@ That single move would turn the current whole-program frontend from an implement
 
 - matklad, [Against Query Based Compilers](https://matklad.github.io/2026/02/25/against-query-based-compilers.html), February 25, 2026.
 - [README.md](../README.md)
-- [docs/PASSES.md](../docs/PASSES.md)
-- [ROADMAP.md](../ROADMAP.md)
+- [docs/compiler/PASSES.md](../../docs/compiler/PASSES.md)
+- [ROADMAP.md](../../ROADMAP.md)

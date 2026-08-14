@@ -6,7 +6,7 @@
 # queryable and auditable for documentation and future tooling.
 #
 # Used by:
-# - docs/TESTING.md coverage matrix (reference data)
+# - docs/compiler/TESTING.md coverage matrix (reference data)
 # - future tooling for test selection and reporting
 #
 # Fields per test entry:

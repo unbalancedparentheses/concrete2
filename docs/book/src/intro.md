@@ -33,6 +33,6 @@ For deeper stable references, see:
 
 - [`docs/README.md`](../../README.md)
 - [`docs/stdlib/STDLIB.md`](../../stdlib/STDLIB.md)
-- [`docs/TESTING.md`](../../TESTING.md)
-- [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- [`docs/compiler/TESTING.md`](../../compiler/TESTING.md)
+- [`docs/compiler/ARCHITECTURE.md`](../../compiler/ARCHITECTURE.md)
 - [`ROADMAP.md`](../../../ROADMAP.md)

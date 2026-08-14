@@ -267,4 +267,4 @@ The migration is not ad hoc. The remaining order is:
 
 - [unsafe-structure.md](unsafe-structure.md) — the broader `Unsafe` inspection and containment story
 - [capability-sandboxing.md](capability-sandboxing.md) — capability hardening and sandboxing
-- [../docs/FFI.md](../docs/FFI.md) — the foreign-function interface boundary
+- [docs/platform/FFI.md](../../docs/platform/FFI.md) — the foreign-function interface boundary

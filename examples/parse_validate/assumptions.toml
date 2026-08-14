@@ -1,5 +1,5 @@
 # Assumption file for the parse_validate flagship.
-# Schema: docs/ASSUMPTION_FILES.md
+# Schema: docs/verification/ASSUMPTION_FILES.md
 #
 # parse_validate is the pull-through pilot for ROADMAP Active Dependency
 # Order rule 2. The values below are the declared trust surface; the

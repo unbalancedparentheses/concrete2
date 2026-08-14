@@ -73,7 +73,7 @@ formula "implementation digest"  'shortHash ("implementationV1:'   'Concrete/Pro
 # THE "NOT READ" MARKERS. Registered as formulas because that is what they are: a fact whose spelling
 # several surfaces must agree on. Three call sites spelled `no_obligation_record` independently right
 # after the R-0479 fix, and a marker whose spelling can drift is one a consumer cannot match on —
-# a flat-string fact with several producers, which is the shape docs/EVIDENCE_ARCHITECTURE.md names as
+# a flat-string fact with several producers, which is the shape docs/verification/EVIDENCE_ARCHITECTURE.md names as
 # what typed evidence replaces. Until these become typed, one definition each is the enforceable half.
 formula "no-obligation marker"    '"no_obligation_record"' 'Concrete/Proof/ProofCore.lean'
 formula "origin-unread marker"    '"origin_unavailable"'   'Concrete/Proof/ProofCore.lean'
@@ -142,7 +142,7 @@ echo "=== no fact is defaulted to a valid value of itself ==="
 # THIS LIST IS OVER-STRICT BY DESIGN, and the escape hatch is deliberate. The real test is not
 # membership in a vocabulary but whether the default ASSERTS something the failed read did not
 # establish. Those come apart at the BOTTOM of an assurance ladder: `SourceCorrespondence.missing`
-# (see docs/EVIDENCE_ARCHITECTURE.md) means exactly "no correspondence evidence established", so a
+# (see docs/verification/EVIDENCE_ARCHITECTURE.md) means exactly "no correspondence evidence established", so a
 # failed read defaulting to it asserts nothing and is fail-closed — legitimate, unlike obligation
 # `missing`, which describes an existing record whose proof is absent.
 #

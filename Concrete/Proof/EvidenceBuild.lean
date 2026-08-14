@@ -108,7 +108,7 @@ that can fail, unlike this comment.
 
 `FieldId` keys each entry under either outcome, so a spelling or import alias can never
 become identity. Only the ORDER of entries is undecided. See
-docs/EVIDENCE_PRODUCER_MATRIX.md. -/
+docs/verification/EVIDENCE_PRODUCER_MATRIX.md. -/
 
 /-- A call to a resolved callee. Argument order is the ARGUMENT list's order, which is
     the evaluation order — measured observable for calls.

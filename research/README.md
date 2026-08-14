@@ -20,7 +20,7 @@ The consequences, which is what makes this safe:
   `research/` describes its own moment. If you need to know what is true now, read
   `docs/` or run the report.
 - **A note that becomes normative moves to `docs/` and enters the gate**, rather than
-  being promoted in place. `docs/PROVER_NEUTRAL_OBLIGATIONS.md` is the worked example:
+  being promoted in place. `docs/verification/PROVER_NEUTRAL_OBLIGATIONS.md` is the worked example:
   its predecessors are still here, and the normative version is gated.
 - **An adopted or closed note names its normative owner.** `Adopted` does not make a research file
   a second source of current truth; its header or index entry points to the governing `docs/`
