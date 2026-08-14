@@ -3543,6 +3543,18 @@ designed -> implemented -> negatively controlled -> mutation-killed
 
 **This also explains why `FnTable.empty` is the highest-risk site**: eight packages share it, so a single attestation would silently strip scoped evidence from seven of them.
 
+**DECISION NEEDED before the flip — measured 2026-08-14, and the cost is NOT the 29 literals.** `FnTable.ofAttested` returns `Option FnTable`, so converting `def proofFns : FnTable` changes its TYPE, and **103 theorem/eval sites depend on these eight tables**: proofFns 11, proofFnsExt 11, cryptoFns 18, elfFns 19, fixedCapacityFns 12, parseValidateFns 15, ctTagFns 9, combineFns 8. Threading an `Option` through kernel-checked theorem statements is not a mechanical edit — it changes what the proofs state.
+
+Three options, with what each costs:
+
+**(a) Corpus threads the `Option`.** Honest, no new surface. Cost: 103 sites, and proof STATEMENTS change, so every affected theorem is re-checked rather than merely re-elaborated.
+
+**(b) Tables written as `{ entries := …, attested := … }` directly.** `attested` is a plain field, and a `DefinitionIdentity` still cannot be forged (private ctor, `of?` validates), so authors could select generated symbols. But generated symbols are `Except`, so this needs a total way to get a bare identity — i.e. a fallback, which is a back door.
+
+**(c) `DefinitionIdentity.ofGenerated`, gated to the generated file only.** Exposes a total constructor and enforces the boundary with a GATE rather than the type — precisely the discipline `check_one_producer.sh` already applies (it asserts exactly which files may reference a producer, code-only via `lib/code_refs.sh`). Cost: the boundary becomes gate-enforced instead of type-enforced, which is weaker in kind but enforced in practice and leaves the 103 theorem statements untouched.
+
+**Recommendation: (c).** It is the only option that does not change proof statements, and this repository already enforces owner sets this way for digest producers. (b) is (c) with the boundary unenforced, and (a) pays 103 re-checked theorems for a type-level guarantee on a value that cannot be forged anyway.
+
 **REMAINING for the atomic join transition: convert the 29 proof-model sites, migrate `RequestedEdge`/`EdgeWitness`/table membership/`DepNode` to `DefinitionIdentity` in the SAME change, delete the `CallableId` join with no fallback, then the eight scope/attestation mutations, the cross-project fixture, `proof_pressure` repair, and 10/10.** ~~Earlier note:~~ step 4b is a DIFFERENT SHAPE than "migrate five types together" — measured 2026-08-14.
 
 **`PFnDef` cannot supply a `DefinitionIdentity`, and cannot derive one.** It carries `identity : PFnIdentity` (a `CallableId`) and `sourceBodyDigest` — the V1 BODY digest, which is precisely the digest ruled insufficient for the implementation component. No package identity, no implementation identity. 29 literals exist (27 in `Concrete/Proof/Proof.lean`, 2 in `proofs/`).
