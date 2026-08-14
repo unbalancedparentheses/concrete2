@@ -424,6 +424,24 @@ add "external-table-digest-checked" "Concrete/Proof/ClassificationTable.lean" "c
   $'  ("Examples.ProofPatterns.Proofs.combineFns", "1393cec60470308d80326ce29c170734", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])' \
   $'  ("Examples.ProofPatterns.Proofs.combineFns", "00000000000000000000000000000000", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])'
 
+# R-0004 slice 6. MISROUTING a table name to ANOTHER TABLE'S VALUE — distinct from the
+# routed-to-`none` case already covered. Routing to `none` makes the table unresolvable and the
+# subject's edges fall to `missing`; routing to a WRONG table resolves successfully and answers
+# membership from the wrong material, which is the more dangerous shape because nothing looks
+# absent. `cryptoFns` is pointed at `elfFns`: both resolve, both have entries, and the callees
+# simply are not the ones the theorem bound.
+add "dispatch-routes-to-correct-table" "Concrete/Proof/TableResolve.lean" "check_dependency_edges.sh" yes \
+  $'  | "Concrete.Proof.cryptoFns"         => some cryptoFns' \
+  $'  | "Concrete.Proof.cryptoFns"         => some elfFns'
+
+# R-0004 slice 6. RELABELLING asserted evidence as checked. The digest agreeing does not mean a
+# body was ever read, and this mutation makes external material claim it was — the single most
+# consequential lie this subsystem could tell, because every downstream consumer treats
+# `compilerLinked` as recomputed-from-source.
+add "external-stays-asserted" "Concrete/Proof/TableResolve.lean" "check_dependency_edges.sh" yes \
+  $'      else .ok (.generatorAsserted, rows)' \
+  $'      else .ok (.compilerLinked, rows)'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
