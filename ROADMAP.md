@@ -3562,6 +3562,21 @@ generated-only constructor unnecessary. Do not implement it.
 
 **TWO MEASUREMENTS THAT MUST PRECEDE THE CONVERSION — both found by attempting it.** (1) Generating references for `proofFns` resolved to `examples/thesis_demo/src/main_drifted.con`, a DRIFT fixture whose digests are deliberately stale; converting against it would bake drifted identities into the table and look correct. (2) `proofFns` never appeared in the table→package cardinality map, because that map followed only `#[proof_by]`-linked theorems while `proofFns` is used by in-repo theorems. **So the conversion needs a per-table source-of-truth mapping covering BOTH attachment paths, and it must exclude drift fixtures** — the same union defect `scripts/gen/classifications.lean` was built to fix, recurring one layer down.
 
+**NEXT ARTEFACT — the attestation manifest generator. Acceptance conditions, ratified 2026-08-14.** Produces an exact manifest keyed by TABLE and SCOPED IMPLEMENTATION, derived from BOTH attachment populations (source-linked proof attributes/registry, and Lean-side theorem/table usage). It must:
+
+- state a source mapping for EVERY evidence-bearing table;
+- represent every legitimate (model, package, implementation) REUSE — `FnTable.empty` serves 8 packages and `combineFns` 3, so a single mapping per table is wrong by construction;
+- CLASSIFY drift fixtures as named exclusions/refusals rather than filtering them out silently — `thesis_demo/src/main_drifted.con` is the measured hazard;
+- REFUSE on missing, duplicate, ambiguous, conflicting and surplus mappings;
+- never let a table select a mapping because a CALLABLE NAME matches;
+- RECOMPUTE the generated identity against current compiler facts;
+- fail the corpus gate if EITHER attachment population is removed;
+- be mutation-killed by substituting `main_drifted.con`, another package, or another same-named implementation;
+- carry a SELF-DECLARED denominator reconciled against both source inventories;
+- and preserve table entries, ordering, `globals` and existing theorem statements byte-for-byte where applicable.
+
+Only then is the flip mechanical: apply `withAttestations`, migrate all joins to `DefinitionIdentity`, delete the `CallableId` path, re-measure correspondence.
+
 **REMAINING for the atomic join transition: convert the 29 proof-model sites, migrate `RequestedEdge`/`EdgeWitness`/table membership/`DepNode` to `DefinitionIdentity` in the SAME change, delete the `CallableId` join with no fallback, then the eight scope/attestation mutations, the cross-project fixture, `proof_pressure` repair, and 10/10.** ~~Earlier note:~~ step 4b is a DIFFERENT SHAPE than "migrate five types together" — measured 2026-08-14.
 
 **`PFnDef` cannot supply a `DefinitionIdentity`, and cannot derive one.** It carries `identity : PFnIdentity` (a `CallableId`) and `sourceBodyDigest` — the V1 BODY digest, which is precisely the digest ruled insufficient for the implementation component. No package identity, no implementation identity. 29 literals exist (27 in `Concrete/Proof/Proof.lean`, 2 in `proofs/`).
