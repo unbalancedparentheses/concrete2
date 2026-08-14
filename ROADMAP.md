@@ -1169,6 +1169,7 @@ system.
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
+| — | **R-0480** | **INCREMENTAL INFORMATION ARCHITECTURE.** Establish document authority, lifecycle and executable ownership checks before moving files. Then migrate one topic family at a time; no bulk rename during R-0004. This prevents the cleanup from creating broken links, merge churn or a cleaner-looking second source of truth |
 | — | **R-0479** | **OPPORTUNISTIC, and cheap.** A stub or diagnostic that has NOT computed a fact must not return a valid inhabitant of that fact's domain. `shadowEdgeKinds` returned `unclassified` — a legitimate `DependencyEdge` — when it had never consulted the classifier, which is why it produced a FALSE FINDING rather than an obvious wrong answer. Same shape as `| _ => true`. The receipt and manifest types already make this unrepresentable via private constructors and named refusals; diagnostics were exempt. Needs a survey of report code for defaults standing in for "did not look" |
 | — | **R-0478** | **OPPORTUNISTIC — no queue position, pick up whenever.** 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Neither blocks anything; both keep producing defects, so the right time is whenever someone is already in the file. The `substExpr` rename should happen BEFORE R-0474 retires the unsound one |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
@@ -3534,7 +3535,7 @@ designed -> implemented -> negatively controlled -> mutation-killed
 | **`combineFns` CANNOT be dispatched — dependency cycle, measured 2026-08-13** | `proofs/` is a separate `lean_lib` (`srcDir = "proofs"`) whose modules `import Concrete.Proof.Proof`. The compiler linking `combineFns` would require `Concrete` to import `proofs`, which is a cycle. **So the named refusal is correct and permanent for the dispatch route** — not a gap to close by extending the list. **But the fix is a much smaller version of the original hand-back idea than the one that was abandoned:** the classification generator already elaborates those theorems, so a generator module importing `Examples.ProofPatterns.Proofs` can reference `combineFns` DIRECTLY and emit its entry evidence as data — the same name→value trick as the dispatch, one level up, and again with no `evalExpr`. **Entry evidence in the hand-back is therefore needed ONLY for tables the compiler cannot link, not for all of them:** in-compiler tables resolve exactly through the dispatch (8 of 9), and only out-of-build tables carry data. That is the whole remaining cost of taking correspondence 6/11 → 9/11 | generate entry evidence for out-of-build tables only; keep the dispatch for the rest |
 | **entry-derived table identity — landed 2026-08-14** | `entryTableDigest name rows` binds the table's own identity plus, per entry, the callable identity, source-body schema and scope, and body digest; canonically ordered so REORDERING IS EQUIVALENT while add/remove/duplicate/alter are not. Generator and compiler call the SAME function. **It is SINGLE-SOURCE RECOMPUTATION, not an independent check** (corrected 2026-08-14 — generator and compiler run the same implementation). It establishes canonical-encoding consistency, the binding between name/entries/digest, and detection of corruption, stale rows and copied digests. It does NOT validate the formula, the generator, or that external entries describe real bodies — nothing in that path reads a body. A consistently-altered entry list and digest verify structurally BY DESIGN, pinned by a probe whose value is in continuing to pass. Real independence would need a standalone verifier implementing this canonical format separately. **Agreement does NOT upgrade evidence:** `combineFns` verifies and stays `generatorAsserted`, pinned by its own probe. Eight controls plus mutation `external-table-digest-checked` (changes the stored digest alone), KILLED | the reviewed mutation list is COMPLETE: `dispatch-routes-to-correct-table` (points `cryptoFns` at `elfFns` — resolves with plausible material, so nothing looks absent) and `external-stays-asserted` both KILLED 2026-08-14 |
 | **correspondence 9/11 as of 2026-08-14** | Was 8/11. The `calls.dbl` `«unresolved»` identity is FIXED at its earliest cause: `ProofCoreExcluded` carried no `callableId` although `cid` was in scope at both construction sites, so a TRUSTED helper — excluded from proof entries but still a real callable — had no identity, became `«unresolved»`, and its edge typed `missing`. The `trusted` branch was also unreachable for exactly the functions it existed for, since the check sat inside the `some cid` arm. Field retained; `idOf` consults both populations, entries first. A trusted edge is now witnessed by the DECLARED TRUST BOUNDARY rather than by table membership (asking a classification row to justify declared trust is the wrong producer). **Roots UNCHANGED at 62/64** — that subject's refusal moved to "depends on 'calls.dbl', which has no node", owned by node construction, not correspondence. Non-current edges 12 → 11, no `missing` edge remains. Mutation `excluded-identity-retained` KILLED. **ONE remains.** `fixed_capacity.validate_message` turned out NOT to be a correspondence failure: it has no `#[proof_by]` and no hand-back row — an eligible function with 11 edges and NO LINKED PROOF. It makes no claim, so there is nothing to justify, and counting it as a failure reported "nobody proved this" as "this proof is unsound". Now reported `no claim` and excluded from the denominator: **correspondence is 9/10 claiming subjects, plus 1 no-claim.** The exemption is narrow — only the TOTAL absence of a theorem qualifies; a subject WITH a theorem whose classification is unusable still reports `usable=no`, guarded by a control asserting at least one such subject exists. `main.validate_header` is that subject and the single remaining failure | **AUDITED 2026-08-14: the refusal is CORRECT and 10/10 needs a FIXTURE repair, not compiler work.** `proof_pressure`'s `validate_header` calls `check_nonce` and carries `#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]`. That theorem's table `elfFns` holds check_class/check_data/check_magic/check_version/validate_header — measured, and no `check_nonce`. The theorem is about a DIFFERENT function sharing the qualified name `main.validate_header`, while the fixture's own header documents this one as intended-proved. A name-based attachment that passes every name-based check and fails an identity-and-membership one — the exact class slice 6 exists to surface. Pinned as a known-correct refusal whose failure message distinguishes "fixture repaired" from "join loosened" |
-| **DECIDED and TYPE LANDED 2026-08-14 — proof-table membership and correspondence are program/package scoped** | `Concrete/Proof/DefinitionIdentity.lean`: `{packageIdentity, moduleIdentity, declarationIdentity, implementationIdentity}`, private constructor, `sameDefinition` comparing ALL FOUR. `packageIdentity` is the stable SEMANTIC package name — not a checkout path or mutable workspace id, which would break reproducibility and legitimate package reuse. `CallableId` unchanged as the compiler-local name; only evidence boundaries take the stronger identity. Cross-program collision controls in place (same module+declaration, different package → not the same definition; same name, different implementation → not the same definition), with a positive control and empty-component refusals. `legacyNameOnly` is the `needs_recheck` disposition for name-only evidence. **NOT production: nothing consumes it — table entries and requested edges still carry `CallableId`, so the join still matches on the weaker identity** | **MEASURED PREREQUISITE, scoped 2026-08-14:** the package name exists in `Concrete.toml` (`[package] name`) and reaches `workspaceIdOf`, but is NOT threaded into `ProofCore` and is **not in scope at any of the 6 `extractProofCore` call sites** (`Main.lean:454`, `Main.lean:1518`, `Resolve/Project.lean:386`, `Report/DebugBundle.lean:276`, `Report/Reduce.lean:140`, plus the definition). Threading it means reading the manifest at those sites — mechanical but 6-site plumbing, not a local edit. **Recommended shape: add `packageIdentity : String := ""` to `ProofCore` so no call site breaks, populate where the manifest is available, and rely on `DefinitionIdentity.of?` refusing `emptyComponent` for the rest — an unwired site then produces NO identity rather than a wrong one, which is the fail-closed direction.** Then, then make table entries and requested edges carry `DefinitionIdentity`, match on the full identity, refuse legacy rows with `needs_recheck`, mutation-test package-scope and implementation-scope removal independently, and only then repair `proof_pressure` and require correspondence for root usability |
+| **DECIDED and TYPE LANDED 2026-08-14 — proof-table membership and correspondence are program/package scoped** | `Concrete/Proof/DefinitionIdentity.lean`: `{packageIdentity, moduleIdentity, declarationIdentity, implementationIdentity}`, private constructor, `sameDefinition` comparing ALL FOUR. `CallableId` remains the compiler-local name; evidence boundaries take the stronger identity. Cross-program collision controls exist, with a positive control and empty-component refusals. `legacyNameOnly` is the `needs_recheck` disposition for name-only evidence. **NOT production: nothing consumes it — table entries and requested edges still carry `CallableId`, so the join still matches on the weaker identity** | **CORRECTED THREADING CONTRACT 2026-08-14:** do NOT add `packageIdentity : String := ""`. A default lets missed call sites compile and turns an integration omission into a late refusal. Introduce a private, non-empty `PackageIdentity`; compute it once in project loading and require it at all six `extractProofCore` call sites. A genuinely unavailable identity is a typed extraction refusal, not an empty string. Standalone files receive an explicit deterministic synthetic identity derived from canonical package/module content, never a checkout path or generic `main`. The identity binds declared package name plus a stable namespace/origin when available and a canonical module/content root, since a name alone is not globally unique. Then migrate table entries, requested edges, witnesses, roots and receipts together to `DefinitionIdentity`; forbid mixed old/new joins; convert legacy/name-only evidence to `needs_recheck`; mutation-test removal of package and implementation scope separately; only then repair `proof_pressure` and require correspondence for root usability |
 | ~~DECISION NEEDED — cross-program identity scoping~~ | `CallableId` carries `defModule` + `declName` but no program/workspace identity, so `v1:user:main.validate_header` denotes different functions in `elf_header` and `proof_pressure`. Within one compilation that is unambiguous; the Lean-side proof TABLES are shared across fixtures, so a table describing one program's `main.check_magic` could match another program's edge to `main.check_magic`. **No such false justification exists in the corpus today** — the observed case refuses because the callee is absent from the table — but the collision is structurally possible and it is a trust-model question, not a bounded implementation choice. Not decided unilaterally | decide whether proof tables are program-scoped, and if so bind a program/workspace identity into `CallableId` or into table identity |
 | ~~correspondence 8/11 as of 2026-08-13~~ | Was 6/11 before out-of-build entries crossed as data. Three remain, each owned by a different layer: `fixed_capacity.validate_message` (theorem unclassified — upstream of correspondence), one `calls.combine` fixture (UNRESOLVED callee in the compiler graph, not a table problem — my classification had put all three `calls.combine` subjects under the `combineFns` cause and two of three was right), `main.validate_header` (its theorem names a table lacking the callee). Surplus 0 throughout. Kept distinct from roots 62/64 | 11/11 for defensible reasons, then root usability, then verdict composition |
 | **the 5 non-corresponding subjects, classified 2026-08-13** | **3 of 5 are the `combineFns` case** — `calls.combine` in three fixtures. Its edges ARE classified `body` and its theorem names `Examples.ProofPatterns.Proofs.combineFns`, the one table outside the compiler build, so no witness can be derived and both edges fall to `missing`. **This makes `combineFns` the single highest-value item on the path: resolving it takes correspondence from 6/11 to 9/11**, and it is legitimate evidence rather than something to keep refusing. **1 of 5 is `fixed_capacity.validate_message`** — all 11 edges `unclassified`, so its theorem has no usable classification and the failure is upstream of correspondence entirely (hand-back coverage, not table resolution). **1 of 5 is `main.validate_header`** (crypto fixture) — its theorem IS classified `body` but the table it names does not contain `check_nonce`, though `cryptoFns` does contain it; a theorem/table mismatch needing a case-by-case look, and the only one of the five that might indicate a genuinely unjustified call | fix `combineFns` first (3 subjects), then hand-back coverage for `fixed_capacity` (1), then investigate `validate_header` (1) |
@@ -3687,6 +3688,37 @@ corpus reaches 64/64 only for semantic reasons.
 **Required mutations:** remove, swap, duplicate or weaken a witness; change a callee identity;
 change table membership; misattach a contract witness; omit a compiler edge. Each must make the
 corresponding root refuse.
+
+**Identity-boundary migration gate:** completion requires all five evidence boundaries—table
+entries, requested edges, witnesses, dependency roots and receipts—to carry `DefinitionIdentity`.
+No proof-relevant equality may remain `CallableId`-only, no adapter may synthesize package scope
+from a display string, and no mixed legacy/V2 join is permitted. Legacy name-only rows produce the
+typed `legacyNameOnly -> needs_recheck` disposition. The real cross-package collision fixture must
+fail under the old identity, refuse under legacy evidence, and close only under the correctly scoped
+definition; removing either package scope or implementation scope is mutation-killed independently.
+
+**Resolution refusals are closure data, not report decoration:** zero/ambiguous/malformed external
+rows, entry-provenance failures and table-digest mismatches must enter the typed
+`CorrespondenceResult` consumed by roots and receipts. Rediscovering and appending them to a shadow
+report is useful diagnosis but not authority. Dropping a resolver refusal while leaving ordinary
+missing-edge handling intact must be killed by the production consumer.
+
+**External-row controls use the production validator:** local list-length checks and
+digest-equals-itself probes do not count. Inject zero rows, one valid row, identical duplicates,
+conflicting duplicates, empty module/declaration identities, malformed body digests, duplicate
+callable identities, and a self-consistent malformed entry/digest pair through the same pure
+exact-one validator called by `entryEvidenceWithProvenance`. Include the valid singleton as the
+over-rejection control.
+
+**Dynamic-table boundary:** a dynamic requested edge carries the expected table identity and
+canonical table digest; a `wholeTable` witness matches only when both agree. Until that exact match
+is implemented and negatively controlled, dynamic correspondence is unsupported rather than
+closed—`dynamic = true` alone must never accept an arbitrary whole-table witness.
+
+**Trusted-boundary evidence:** a trusted witness binds the exact trusted callable/definition,
+declaration or source identity, trust classification and assumption/trust digest. A diagnostic
+string such as `declared-trusted-boundary` is not identity. Trust propagates monotonically into the
+root and receipt, and removing or substituting the declaration is mutation-killed.
 
 **Unblocks:** the authority-transition gate.
 
@@ -5221,6 +5253,75 @@ delete it.
 replace it by an identity later puts the name in the record and in every consumer built against
 it. This is why the identity substrate moved into R-0473 rather than waiting for R-0474, and why
 `ResolvedContractRef` is a sum rather than a string with a companion type table.
+
+### Task R-0480
+
+**Documentation information architecture.**
+
+**Scheduling: incremental; physical moves wait for a stable integration boundary.** The ownership
+and lifecycle rules may land immediately. Do not bulk-move files while R-0004 and its evidence
+modules are changing: link churn, merge conflicts and stale references would obscure the work the
+reorganization is meant to clarify. Move one topic family at a time, with link and drift gates
+green before and after.
+
+**Objective:** make the repository answer three questions without requiring institutional memory:
+
+1. Which document is authoritative for this fact?
+2. Is this file normative, an active design, a stable reference, historical, or exploratory?
+3. Where should a change to this subject be made so that a second source of truth is not created?
+
+The canonical ownership map and precedence order live in `docs/README.md`; the research promotion
+and retirement workflow lives in `research/README.md`. This task implements and enforces those
+rules. It must not create a second roadmap, a second current-status dashboard, or a second copy of
+normative prose under a cleaner directory name.
+
+**Phase A — inventory before movement:**
+
+- inventory every file under `docs/` and `research/` with lifecycle status, topic, canonical owner
+  and—where applicable—the roadmap task or decision that consumes it;
+- identify duplicate present-tense claims, stale status snapshots, adopted research that still
+  reads as a competing proposal, and active designs with no named normative destination;
+- add or normalize visible status/owner headers; dated measurements must name the commit,
+  toolchain and denominator they describe;
+- keep `CLAIMS_TODAY.md` as the shipped-claims authority and this file as the sole canonical task
+  status. Changelogs and research notes may link to those facts but may not restate them as current.
+
+**Phase B — executable information architecture:**
+
+- gate internal Markdown links and repository-relative file references;
+- gate the mechanically checkable subset of document ownership: required status headers, canonical
+  owner links, no advisory state represented as a receipt fact, and no known duplicate current-
+  status headings;
+- require every `adopted` or `closed` research note to link to its normative owner; retain rejected
+  hypotheses and dated measurements as history rather than silently rewriting them;
+- distinguish the manual contradiction audit from automated checks. Prose judgment is not made
+  trustworthy by putting an arguable heuristic in a shell gate.
+
+**Phase C — staged physical layout:** use the target families documented in `docs/README.md`:
+`docs/language/`, `docs/compiler/`, `docs/verification/`, and `docs/platform/`, while retaining the
+existing `docs/stdlib/`, `docs/bugs/`, `docs/book/`, and `docs/NOTES/` roles. `research/` already has
+topic directories; reorganize its contents by promotion/retirement state, not by duplicating the
+normative hierarchy. For every moved family:
+
+1. choose and record its canonical owner;
+2. update all inbound links and code comments in the same commit;
+3. leave a small pointer only where an external or durable path requires compatibility;
+4. run documentation, reference and roadmap-drift gates before and after;
+5. do not mix the move with semantic compiler changes.
+
+**Acceptance:**
+
+- every normative document has one lifecycle status and one owner entry;
+- every adopted/closed research note points to the normative result, and exploratory notes contain
+  no undated claim of current implementation status;
+- one subject has one present-tense authority; contradiction searches name concrete forbidden
+  formulations rather than relying on reviewer memory;
+- broken-link and ownership gates fail non-vacuously under a removed owner, stale link and duplicate
+  current-status mutation;
+- at least one document family completes the staged move with zero broken references before the
+  remaining families are scheduled;
+- repository-root navigation remains small: `README.md`, `ROADMAP.md` and `CHANGELOG.md` point into
+  the hierarchy instead of accumulating detailed design prose themselves.
 
 ### Task R-0479
 

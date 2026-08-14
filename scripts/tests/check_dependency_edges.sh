@@ -1485,21 +1485,32 @@ probe "a verifying external table is still generatorAsserted, never compilerLink
       | .ok (TableProvenance.generatorAsserted, _) => true
       | _ => false'
 
-# EXTERNAL ROW INTEGRITY. The fallback that resolves out-of-build tables is hand-back data, so it
-# needs the same cardinality and structural discipline as the classification rows it sits beside.
-probe "a table with several external rows refuses as ambiguous, not first-match" "true" '
-#eval
-  -- exercised through the validator rather than by mutating the real table: `find?` used to take
-  -- the first row, so a duplicate name bound silently
-  let dup := [("T", "aa", [("m", "f", "496808fdd594d5047f23e823bc26b69c")]),
-              ("T", "bb", [("m", "f", "496808fdd594d5047f23e823bc26b69c")])]
-  (dup.filter (fun (e : String × String × List (String × String × String)) => e.1 == "T")).length == 2'
-probe "external rows are structurally validated BEFORE the digest is compared" "true" '
-#eval
-  -- an empty declaration identity must refuse on structure; a digest recomputed over malformed
-  -- entries would otherwise agree with itself and verify
-  let rows := [({ callee := CallableId.ofUser "m" "", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" } : TableEntryEvidence)]
-  entryTableDigest "T" rows == entryTableDigest "T" rows'
+# EXTERNAL ROW INTEGRITY, exercising the REAL validator.
+#
+# The first version of these two probes was VACUOUS and review caught it: one filtered a local list
+# and asserted its length, the other compared `entryTableDigest x` with itself. Neither reached the
+# validation code. `externalRowDefect` is now separated from lookup for exactly this reason — a probe
+# that can only go through `entryEvidenceWithProvenance` can only see the checked-in rows, which are
+# well-formed, so "malformed rows are rejected" would be asserted against data containing none.
+probe "the real validator rejects an EMPTY declaration identity" "true" '
+#eval (externalRowDefect [("m", "", "496808fdd594d5047f23e823bc26b69c")]).isSome'
+probe "the real validator rejects an EMPTY module identity" "true" '
+#eval (externalRowDefect [("", "f", "496808fdd594d5047f23e823bc26b69c")]).isSome'
+probe "the real validator rejects a NON-HEX body digest" "true" '
+#eval (externalRowDefect [("m", "f", "nothex")]).isSome'
+probe "the real validator rejects ONE CALLABLE LISTED TWICE" "true" '
+#eval (externalRowDefect [("m", "f", "496808fdd594d5047f23e823bc26b69c"),
+                          ("m", "f", "7afedf51e742f4ce04201459a3965bc8")]).isSome'
+# POSITIVE CONTROL: a well-formed list passes, so the four refusals above are not holding because
+# the validator rejects everything.
+probe "the real validator ACCEPTS a well-formed row list" "true" '
+#eval (externalRowDefect [("m", "f", "496808fdd594d5047f23e823bc26b69c"),
+                          ("m", "g", "7afedf51e742f4ce04201459a3965bc8")]).isNone'
+# ...and the checked-in row is itself well-formed, so the production path is covered too.
+probe "the checked-in external row passes the real validator" "true" '
+#eval match externalTableEntries.filter (fun e => e.1 == "Examples.ProofPatterns.Proofs.combineFns") with
+      | [(_, _, pairs)] => (externalRowDefect pairs).isNone
+      | _ => false'
 
 # === SCOPED DEFINITION IDENTITY (the trust-model repair) ======================================
 # `CallableId` is a SOURCE NAME. `elf_header` and `proof_pressure` both define
@@ -1636,10 +1647,37 @@ probe "a same-kind PERMUTATION legitimately corresponds (the meaningful swaps ar
 # A DYNAMIC whole-table witness is consumed ONCE and produces no per-entry surplus.
 probe "a dynamic whole-table witness is consumed once, with no per-entry surplus" "true" "
 #eval$CORR
-  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true }
+  -- the request now states WHICH table and which digest it expects; without that it matches nothing
+  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+                             , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
   let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
   let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [tbl] }
   r.usable 1 && r.surplus.isEmpty"
+
+# A dynamic witness naming the WRONG table, or the right table with a stale digest, must not justify
+# the edge. Before this the exemption that stops per-entry surplus also stopped any checking.
+probe "a whole-table witness for the WRONG table does not justify a dynamic edge" "true" "
+#eval$CORR
+  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+                             , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
+  let other : EdgeWitness := { subject := subj, target := .wholeTable \"OtherTbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [other] }
+  !(r.usable 1) && r.surplus.length == 1"
+probe "a whole-table witness with a STALE digest does not justify a dynamic edge" "true" "
+#eval$CORR
+  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+                             , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
+  let stale : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"00000000000000000000000000000000\", kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [stale] }
+  !(r.usable 1) && r.surplus.length == 1"
+# A dynamic request with NO stated expectation matches nothing — an edge whose required material is
+# unstated must not be justified by material merely claiming to be whole-table.
+probe "a dynamic request with no expected table matches nothing" "true" "
+#eval$CORR
+  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true }
+  let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
+  let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [tbl] }
+  !(r.usable 1)"
 
 # ...and the same whole-table witness with NO dynamic request is surplus, so the exemption is
 # scoped to dynamic edges rather than blanket.

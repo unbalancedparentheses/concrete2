@@ -89,6 +89,21 @@ def TableProvenance.render : TableProvenance → String
   | .compilerLinked    => "compiler-linked"
   | .generatorAsserted => "generator-asserted"
 
+/-- What is structurally wrong with an external row's entry list, or `none`.
+
+    SEPARATED FROM LOOKUP so it is testable. A probe that can only reach this through
+    `entryEvidenceWithProvenance` can only exercise the checked-in rows, which are well-formed — so
+    "malformed external rows are rejected" would be asserted against data containing none. Two
+    earlier probes did worse than that: one filtered a local list and the other compared
+    `entryTableDigest x` with itself, so both passed without touching this code at all. -/
+def externalRowDefect (pairs : List (String × String × String)) : Option String :=
+  let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
+  if pairs.any (fun p => p.1.isEmpty || p.2.1.isEmpty) then some "an empty module or declaration identity"
+  else if pairs.any (fun p => !isHex p.2.2) then some "a body digest that is not canonical 32-hex"
+  else
+    let ids := pairs.map (fun p => p.1 ++ "." ++ p.2.1)
+    if ids.eraseDups.length != ids.length then some "one callable listed twice" else none
+
 /-- The validated entry evidence for a named table, with its provenance, or a named refusal.
 
     In-compiler tables are tried FIRST. A name present in both would resolve to the checked value,
@@ -115,14 +130,7 @@ def entryEvidenceWithProvenance (name : String)
       -- STRUCTURAL VALIDATION BEFORE THE DIGEST COMPARISON. A digest recomputed over malformed
       -- entries agrees with itself, so checking the digest first would let an empty identity or a
       -- non-hex body digest through on a self-consistent pair.
-      let isHex := fun (d : String) => d.length == 32 && d.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
-      let bad :=
-        if pairs.any (fun p => p.1.isEmpty || p.2.1.isEmpty) then some "an empty module or declaration identity"
-        else if pairs.any (fun p => !isHex p.2.2) then some "a body digest that is not canonical 32-hex"
-        else
-          let ids := pairs.map (fun p => p.1 ++ "." ++ p.2.1)
-          if ids.eraseDups.length != ids.length then some "one callable listed twice" else none
-      match bad with
+      match externalRowDefect pairs with
       | some why => .error (.externalRowMalformed name why)
       | none =>
       let rows := pairs.map (fun (m, n, d) =>

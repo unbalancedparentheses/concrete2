@@ -41,6 +41,15 @@ structure RequestedEdge where
   /-- A dynamically-indexed dependency. Its justification is whole-table material, because a
       dynamic index can reach ANY entry, so the dependency is on all of it. -/
   dynamic : Bool := false
+  /-- For a dynamic edge, WHICH table and which entry-derived digest the compiler expects, as
+      `(tableName, entryTableDigest)`.
+
+      Without this a dynamic request accepted ANY whole-table witness: the exemption that stops a
+      bound table producing per-entry surplus also stopped it being checked at all, so a witness
+      naming an unrelated table justified a dynamic edge. The expectation is the table's IDENTITY
+      and its digest together — a name alone would match a stale table, a digest alone would match
+      a different table with identical membership. -/
+  expectedTable : Option (String × String) := none
 deriving Repr, BEq
 
 /-- What a witness claims to justify. -/
@@ -106,8 +115,15 @@ structure CorrespondenceResult where
     for dynamic ones. A `wholeTable` witness answers a DYNAMIC request and nothing else. -/
 def witnessTargets (r : RequestedEdge) (w : EdgeWitness) : Bool :=
   match w.target with
-  | .edgeTo c      => !r.dynamic && c == r.callee
-  | .wholeTable _ _ => r.dynamic
+  | .edgeTo c => !r.dynamic && c == r.callee
+  | .wholeTable tn td =>
+    -- BOTH the table identity and its digest must be the expected ones. A dynamic request with NO
+    -- expectation recorded matches nothing: an edge whose required material is unstated cannot be
+    -- justified by material that merely claims to be whole-table, and defaulting to "accept" is how
+    -- the per-entry-surplus exemption became a hole.
+    r.dynamic && (match r.expectedTable with
+                  | some (etn, etd) => tn == etn && td == etd
+                  | none => false)
 
 /-- The closed join. Identity first, then exact matching, then surplus — in that order. -/
 def correspond (i : CorrespondenceInput) : CorrespondenceResult :=

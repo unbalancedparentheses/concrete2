@@ -22,6 +22,9 @@ The consequences, which is what makes this safe:
 - **A note that becomes normative moves to `docs/` and enters the gate**, rather than
   being promoted in place. `docs/PROVER_NEUTRAL_OBLIGATIONS.md` is the worked example:
   its predecessors are still here, and the normative version is gated.
+- **An adopted or closed note names its normative owner.** `Adopted` does not make a research file
+  a second source of current truth; its header or index entry points to the governing `docs/`
+  document or roadmap task. If no normative owner exists yet, the note remains `Open`.
 - **Date and stamp findings.** A measurement recorded with its date and tool versions
   stays useful after it stops being current; one written in the timeless present
   becomes a lie the moment the code moves.
@@ -34,6 +37,24 @@ from normative documents and make present-tense claims about modules and report 
 - use `ROADMAP.md` for active project sequencing
 - use `docs/` for stable rules and implementation contracts
 - use `research/` for design work that is still being explored, sharpened, or staged for later phases
+
+Do not put live implementation percentages, current gate counts, or canonical task status here.
+Measurements are welcome when dated and tied to the exact commit/toolchain that produced them.
+The current answer always lives in a gated document or executable report.
+
+## Promotion And Retirement
+
+When research becomes a project decision:
+
+1. identify the single normative owner in `docs/` (or create it);
+2. move the rule and acceptance criteria there rather than copying a second current summary;
+3. mark the research note `Adopted` or `Closed`, date it, and link the normative owner;
+4. update this index entry with that owner;
+5. leave rejected hypotheses and measurements in the research note as historical rationale.
+
+Research files are not bulk-moved into `docs/` merely because implementation began. Only the
+ratified contract moves; exploratory alternatives remain here. Conversely, a normative file must
+not be moved back into research to escape drift gates.
 
 ## Directory Layout
 

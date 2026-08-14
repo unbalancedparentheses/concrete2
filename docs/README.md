@@ -4,6 +4,40 @@ Status: stable reference
 
 This directory holds the stable reference docs for Concrete's implementation and language model.
 
+## Authority And Ownership
+
+The repository has many documents because it preserves design rationale as well as current
+contracts. They do not all have equal authority. When two files disagree, use this order:
+
+1. `docs/CLAIMS_TODAY.md` for shipped user-visible guarantees.
+2. Normative architecture/policy documents named below for stable design contracts.
+3. The canonical trust-boundary/status block in `ROADMAP.md` for active implementation state.
+4. `CHANGELOG.md` for landed historical milestones.
+5. `research/` for dated, non-normative investigation.
+
+No other document may introduce a competing "current status" dashboard. Detailed audit and phase
+documents must link to their canonical owner and identify themselves as normative, explanatory, or
+historical. A roadmap task owns sequencing; a design document owns semantics; neither duplicates
+the other.
+
+### Canonical owners by topic
+
+| Topic | Canonical owner |
+|---|---|
+| shipped verification claims | [CLAIMS_TODAY.md](CLAIMS_TODAY.md) |
+| product verification commitment | [VERIFICATION_CHARTER.md](VERIFICATION_CHARTER.md) |
+| evidence objects and trust boundaries | [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md) |
+| canonical proposition language | [VERIFICATION_IR.md](VERIFICATION_IR.md) |
+| proof status vocabulary | [VERIFICATION_STATUS.md](VERIFICATION_STATUS.md) |
+| threats, hostile artifacts and advisories | [THREAT_MODEL.md](THREAT_MODEL.md) |
+| compiler stages and ownership | [ARCHITECTURE.md](ARCHITECTURE.md), [PASSES.md](PASSES.md) |
+| language invariants and value model | [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md), [VALUE_MODEL.md](VALUE_MODEL.md) |
+| contracts and verification conditions | [CONTRACTS_AND_VCS.md](CONTRACTS_AND_VCS.md) |
+| active implementation order/status | [../ROADMAP.md](../ROADMAP.md) |
+| completed changes | [../CHANGELOG.md](../CHANGELOG.md) |
+
+This table is an ownership map, not another summary of each document's contents.
+
 Use these files as the primary reference once a design has moved out of exploration:
 
 - [IDENTITY.md](IDENTITY.md) — what Concrete is optimizing for, where it intends to differentiate, and what it is not trying to be
@@ -73,3 +107,42 @@ If a topic is still being explored or debated, it belongs in `research/` first. 
 - active plan/sequencing -> `ROADMAP.md`
 - landed milestone/history -> `CHANGELOG.md`
 - exploratory note -> `research/`
+
+## Document Lifecycle
+
+Every new or materially rewritten document starts with a status line chosen from:
+
+- `Status: normative contract` — current rules that code and gates must obey;
+- `Status: stable reference` — explanatory current material whose normative owner is linked;
+- `Status: active design` — a ratified design not yet fully implemented; current state remains in
+  `ROADMAP.md`;
+- `Status: historical` — retained rationale or audit record, never current status;
+- `Status: exploratory` — belongs in `research/`, not `docs/`.
+
+Promotion is a move, not a relabel in place: when research becomes a rule, create or move the
+normative form into `docs/`, link the old research note to it, and leave the research note dated.
+When a stable document becomes historical, move it under a future `docs/archive/` only after link
+checking and add a replacement pointer. Do not reorganize files merely for aesthetics while active
+tasks cite them.
+
+## Physical Layout Policy
+
+The current flat `docs/` directory is large. Reorganization is staged rather than performed as a
+bulk rename:
+
+1. establish canonical owners and status headers;
+2. detect duplicate current-status claims and broken links;
+3. move one topic family at a time, updating every reference in the same commit;
+4. keep redirects/replacement pointers for externally cited paths where practical;
+5. run documentation drift and link gates after each family.
+
+Target families, once the ownership audit is green:
+
+- `docs/language/` — language/value/ownership/contracts semantics;
+- `docs/compiler/` — pipeline, passes, diagnostics and backend boundaries;
+- `docs/verification/` — charter, evidence, VIR, proof workflow and trust model;
+- `docs/platform/` — ABI, FFI, targets, runtime and freestanding boundaries;
+- existing `docs/stdlib/`, `docs/bugs/`, `docs/book/`, and `docs/NOTES/` remain distinct.
+
+Until that staged migration starts, the canonical-owner table above is the navigation layer; do
+not create parallel copies in the proposed directories.
