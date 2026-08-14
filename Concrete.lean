@@ -56,6 +56,7 @@ import Concrete.ProofKit
 import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec
 import Concrete.Proof.Digest
+import Concrete.Proof.DefinitionIdentity
 import Concrete.Proof.BodyIdentity
 import Concrete.Proof.ImplementationIdentity
 -- Example/flagship proof modules moved OUT of the compiler lib into the separate

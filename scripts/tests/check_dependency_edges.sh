@@ -1501,6 +1501,69 @@ probe "external rows are structurally validated BEFORE the digest is compared" "
   let rows := [({ callee := CallableId.ofUser "m" "", sourceBodyDigestV1 := "496808fdd594d5047f23e823bc26b69c" } : TableEntryEvidence)]
   entryTableDigest "T" rows == entryTableDigest "T" rows'
 
+# === SCOPED DEFINITION IDENTITY (the trust-model repair) ======================================
+# `CallableId` is a SOURCE NAME. `elf_header` and `proof_pressure` both define
+# `main.validate_header`, both render `v1:user:main.validate_header`, and they are different
+# functions — so a shared proof table could match the wrong program's edge on name agreement alone.
+# These probes are the CROSS-PROGRAM COLLISION FIXTURE in synthetic form: names and callee names
+# coincide, implementations differ.
+echo "=== scoped definition identity ==="
+
+DI='
+  let implA := "496808fdd594d5047f23e823bc26b69c"
+  let implB := "7afedf51e742f4ce04201459a3965bc8"'
+
+# THE COLLISION, stated as the property that must hold: same module and declaration, different
+# package -> NOT the same definition. Under CallableId alone these are indistinguishable.
+probe "same module+declaration in DIFFERENT packages are not the same definition" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"elf_header\" \"main\" \"validate_header\" implA,
+        DefinitionIdentity.of? \"proof_pressure\" \"main\" \"validate_header\" implA with
+  | .ok a, .ok b => !(a.sameDefinition b)
+  | _, _ => false"
+
+# ...and same package+module+declaration with a DIFFERENT implementation is also not the same:
+# package scope alone is insufficient because implementations change within a package.
+probe "the same name with a different IMPLEMENTATION is not the same definition" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"p\" \"main\" \"validate_header\" implA,
+        DefinitionIdentity.of? \"p\" \"main\" \"validate_header\" implB with
+  | .ok a, .ok b => !(a.sameDefinition b)
+  | _, _ => false"
+
+# POSITIVE CONTROL. All four components equal -> the same definition. Without this every refusal
+# above could hold because nothing ever matches.
+probe "identical components ARE the same definition" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"p\" \"main\" \"f\" implA, DefinitionIdentity.of? \"p\" \"main\" \"f\" implA with
+  | .ok a, .ok b => a.sameDefinition b
+  | _, _ => false"
+
+# EMPTY COMPONENTS REFUSE. Two unknown packages would both bind as \"\" and compare EQUAL — the very
+# collision this type exists to prevent, reintroduced through an absence.
+probe "an empty package identity refuses by name" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"\" \"main\" \"f\" implA with
+  | .error (DefinitionIdentityRefusal.emptyComponent _) => true
+  | _ => false"
+probe "an empty declaration identity refuses by name" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"p\" \"main\" \"\" implA with
+  | .error (DefinitionIdentityRefusal.emptyComponent _) => true
+  | _ => false"
+# A non-canonical implementation identity cannot have come from `implementationDigest`.
+probe "a non-canonical implementation identity refuses by name" "true" '
+#eval match DefinitionIdentity.of? "p" "main" "f" "not-a-digest" with
+      | .error (DefinitionIdentityRefusal.implementationNotCanonical _) => true
+      | _ => false'
+
+# The digest binds all four components, so two identities differing only in package digest apart.
+probe "the identity digest separates packages" "true" "
+#eval$DI
+  match DefinitionIdentity.of? \"a\" \"main\" \"f\" implA, DefinitionIdentity.of? \"b\" \"main\" \"f\" implA with
+  | .ok x, .ok y => x.digest != y.digest
+  | _, _ => false"
+
 # === PER-EDGE CORRESPONDENCE: THE CLOSED JOIN ================================================
 # Every control below was specified in review. NOT WIRED to production — nothing calls `correspond`
 # yet, and it cannot be fed from the corpus until the hand-back carries per-table ENTRY evidence.
