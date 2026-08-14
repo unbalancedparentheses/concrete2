@@ -1520,6 +1520,66 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# === SCOPED MEMBERSHIP (the join's replacement key) ============================================
+# `tableEntryEvidence` keys on `CallableId`, a source NAME. `scopedEntryEvidence` asks the same
+# question of the four-component identity. A table with no attestations is LEGACY — it evaluates, but
+# cannot say which definitions it describes, so it yields `needs_recheck` rather than participating.
+echo "=== scoped membership ==="
+
+SC='
+  let m : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "inc"), operationalKey := "inc",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  let idA := DefinitionIdentity.of? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
+  let idB := DefinitionIdentity.of? "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"'
+
+# A LEGACY table refuses with needs_recheck rather than answering membership from names.
+probe "a table with models but no attestations refuses as legacy needs_recheck" "true" '
+#eval
+  let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  match scopedEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable) with
+  | .error ScopedMembershipRefusal.legacyUnattested => true
+  | _ => false'
+
+# An ATTESTED table answers scoped membership, and the body digest is still recomputed from the model.
+probe "an attested table yields scoped membership" "true" "
+#eval$SC
+  match FnTable.ofAttested [AttestedPFnDef.of m idA] with
+  | none => false
+  | some t => (scopedEntryEvidence t).toOption.isSome"
+
+# THE COLLISION, at the membership level: the SAME name in a different PACKAGE is not a member.
+probe "membership is decided by all four components, so another package is NOT a member" "true" "
+#eval$SC
+  match FnTable.ofAttested [AttestedPFnDef.of m idA], idB with
+  | some t, .ok other =>
+    match scopedEntryEvidence t with
+    | .ok rows => scopedEvidenceContains rows other == false
+    | .error _ => false
+  | _, _ => false"
+# ...and the identity it WAS attested to IS a member, so the refusal above is not vacuous.
+probe "the attested definition itself IS a member" "true" "
+#eval$SC
+  match FnTable.ofAttested [AttestedPFnDef.of m idA], idA with
+  | some t, .ok own =>
+    match scopedEntryEvidence t with
+    | .ok rows => scopedEvidenceContains rows own
+    | .error _ => false
+  | _, _ => false"
+
+# The body check is NOT weakened by moving to scoped identity: a model whose body disagrees with its
+# stored provenance still refuses, now naming the definition rather than the callable.
+probe "a body/provenance mismatch still refuses on the scoped path" "true" "
+#eval$SC
+  let tampered : PFnDef := { m with body := PExpr.lit (PVal.int 1) }
+  match FnTable.ofAttested [AttestedPFnDef.of tampered idA] with
+  | none => false
+  | some t => match scopedEntryEvidence t with
+    | .error (ScopedMembershipRefusal.bodyMismatch _ _ _) => true
+    | _ => false"
+
 # === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================
 # A `PFnDef` is a mathematical MODEL: no typed signature, no capabilities, no generics, no contracts,
 # so it cannot derive the authoritative implementation identity and must not pretend to. The binding

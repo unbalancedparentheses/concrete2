@@ -197,6 +197,73 @@ structure TableEntryEvidence where
   sourceBodyDigestV1 : String
 deriving Repr, BEq
 
+/-! ## Scoped membership — the DefinitionIdentity-keyed form
+
+`tableEntryEvidence` keys on `CallableId`, which measurement showed is a source NAME: two packages
+may define `main.validate_header` and a shared table could match the wrong one. This is the same
+question asked of the scoped identity instead.
+
+**A table with no attestations is LEGACY**, not empty. It evaluates fine — models are all evaluation
+needs — but it cannot say which source definitions it describes, so it cannot participate in a scoped
+join and yields `needs_recheck`. That is a refusal to re-derive, not one to argue with: the missing
+scope is exactly what would distinguish two same-named definitions. -/
+
+/-- One attested entry's membership material, keyed by SCOPED identity. -/
+structure ScopedEntryEvidence where
+  definition       : DefinitionIdentity
+  sourceBodyDigest : String
+deriving Repr, BEq
+
+/-- Why a table yielded no scoped membership. -/
+inductive ScopedMembershipRefusal where
+  /-- No attestations: the table carries models only. `needs_recheck` — it must be rebuilt through
+      `ofAttested` with generated references before it can describe definitions. -/
+  | legacyUnattested
+  /-- An attested entry's stored provenance disagrees with the digest recomputed from its model body.
+      Same check `tableEntryEvidence` performs, kept here so the scoped path is not weaker. -/
+  | bodyMismatch (definition : DefinitionIdentity) (stored : String) (recomputed : String)
+  /-- An attested entry records no provenance at all. -/
+  | provenanceMissing (definition : DefinitionIdentity)
+  /-- Two entries attest the same definition, so a lookup cannot say which model it selects. -/
+  | duplicateDefinition (definition : DefinitionIdentity)
+deriving Repr, BEq
+
+def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
+  | .legacyUnattested => "table carries models but no attestations — needs_recheck"
+  | .bodyMismatch d st rc =>
+      s!"'{d.localName}' stores body digest {st} but its model recomputes to {rc}"
+  | .provenanceMissing d => s!"'{d.localName}' records no source-body provenance"
+  | .duplicateDefinition d => s!"'{d.localName}' is attested twice"
+
+/-- Scoped membership for a table, or a named refusal.
+
+    Recomputes each body digest from the attested MODEL, exactly as the unscoped path does, so
+    migrating the join does not weaken the body check while strengthening the identity one. -/
+def scopedEntryEvidence (t : FnTable)
+    : Except ScopedMembershipRefusal (List ScopedEntryEvidence) := do
+  if t.attested.isEmpty then .error .legacyUnattested
+  else
+    let rows ← t.attested.toList.foldlM (init := ([] : List ScopedEntryEvidence))
+      fun acc (model, d) =>
+        match model.sourceBodyDigest with
+        | none => .error (.provenanceMissing d)
+        | some stored =>
+          let recomputed := Concrete.sourceBodyDigestV1Of model.body
+          if stored.value != recomputed then
+            .error (.bodyMismatch d stored.value recomputed)
+          else .ok (acc ++ [{ definition := d, sourceBodyDigest := stored.value }])
+    match (rows.map (·.definition.digest)).find?
+            (fun x => ((rows.map (·.definition.digest)).filter (· == x)).length > 1) with
+    | some dup =>
+      match rows.find? (fun r => r.definition.digest == dup) with
+      | some r => .error (.duplicateDefinition r.definition)
+      | none   => .ok rows
+    | none => .ok rows
+
+/-- Does this table contain that DEFINITION? All four identity components, never a name. -/
+def scopedEvidenceContains (rows : List ScopedEntryEvidence) (d : DefinitionIdentity) : Bool :=
+  rows.any (fun r => r.definition.sameDefinition d)
+
 /-- Why a table yielded no entry evidence. NAMED, one constructor per distinct check.
 
     `DependencyClosure` (docs/verification/EVIDENCE_ARCHITECTURE.md) requires missing, surplus, duplicate,

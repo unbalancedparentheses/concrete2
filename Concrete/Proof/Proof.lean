@@ -408,6 +408,22 @@ It stays a structure of functions rather than gaining an `eval` parameter so the
 their meaning; only the three places that APPLY the table had to choose a
 namespace, which is exactly where the choice belongs. -/
 structure FnTable where
+  /-- ATTESTED entries: each model bound to the authoritative identity of the source implementation
+      it models.
+
+      Separate from `entries` rather than replacing it, because the two answer different questions.
+      `entries` is what EVALUATION needs — a model to run. This is what CORRESPONDENCE needs — which
+      source definition each model claims to describe. A table with models but no attestations
+      evaluates fine and is LEGACY for evidence purposes: it cannot say which definitions it
+      describes, so it yields `needs_recheck` rather than participating in a scoped join.
+
+      Populated only by `ofAttested`. A hand-written `{ entries := ... }` table leaves it empty,
+      which is the honest result — nothing about writing models supplies source facts.
+
+      RESOLVED pairs, not `AttestedPFnDef`: by the time a table exists every attestation has already
+      succeeded, so carrying the `Except` here would keep a failure state that `ofAttested` has
+      already excluded — and `Except` has no `BEq`, which this structure needs. -/
+  attested : Array (PFnDef × DefinitionIdentity) := #[]
   /-- Schema version of the table encoding. The table is evidence-bearing once
       it has a root, so the encoding is versioned: a root computed under one
       schema must never be compared against another. -/
@@ -482,7 +498,10 @@ def FnTable.ofAttested (entries : List AttestedPFnDef) : Option FnTable :=
   else
     let ids := entries.filterMap (fun e => e.attested.toOption.map (·.digest))
     if ids.eraseDups.length != ids.length then none
-    else some { entries := (entries.map (·.model)).toArray, globals := fun _ => none }
+    else some { entries := (entries.map (·.model)).toArray
+              , attested := (entries.filterMap (fun e =>
+                  e.attested.toOption.map (fun d => (e.model, d)))).toArray
+              , globals := fun _ => none }
 
 /-- A table of definitions only — no locally bound callables. The common case.
 
