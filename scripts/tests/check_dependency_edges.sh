@@ -1576,6 +1576,37 @@ probe "a body/provenance mismatch still refuses on the scoped path" "true" "
   | .error (ScopedMembershipRefusal.bodyMismatch _ _ _) => true
   | _ => false"
 
+# CONVERSION PATH for the hand-written tables. They set `globals` for dispatch and carry
+# `@[simp] … .globals = … := rfl` lemmas the proofs rely on, so `ofAttested` — which nulls `globals` —
+# cannot convert them. `withAttestations` is a structure update: type and behaviour untouched, only
+# evidence material added.
+probe "withAttestations preserves globals (the rfl simp lemmas keep working)" "true" '
+#eval
+  let g : String → Option PFnDef := fun n => if n == "f" then some { params := [], body := PExpr.lit (PVal.int 0) } else none
+  let t : FnTable := { entries := #[], globals := g }
+  ((FnTable.withAttestations t []).globals "f").isSome'
+# AN ATTESTED MODEL MUST BE IN THE TABLE. `attested` and `entries` are separate arrays, so nothing
+# structural stops a table attesting a model it does not hold — and membership answered from that
+# would describe something the table cannot dispatch to.
+probe "attesting a model the table does not contain refuses" "true" '
+#eval
+  let m : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "inc"), operationalKey := "inc",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  let idA := DefinitionIdentity.of? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
+  let other : PFnDef := { m with operationalKey := "elsewhere" }
+  match scopedEntryEvidence (FnTable.withAttestations { entries := #[m], globals := fun _ => none } [AttestedPFnDef.of other idA]) with
+  | .error (ScopedMembershipRefusal.attestedModelNotInTable _) => true
+  | _ => false'
+# ...and attesting a model the table DOES contain is accepted, so the refusal is targeted.
+probe "attesting a model the table contains is accepted" "true" '
+#eval
+  let m : PFnDef := { identity := .semantic (CallableId.ofUser "calls" "inc"), operationalKey := "inc",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  let idA := DefinitionIdentity.of? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
+  (scopedEntryEvidence (FnTable.withAttestations { entries := #[m], globals := fun _ => none } [AttestedPFnDef.of m idA])).toOption.isSome'
+
 # === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================
 # A `PFnDef` is a mathematical MODEL: no typed signature, no capabilities, no generics, no contracts,
 # so it cannot derive the authoritative implementation identity and must not pretend to. The binding

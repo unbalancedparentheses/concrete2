@@ -483,6 +483,23 @@ structure AttestedPFnDef where
   attested : Except DefinitionIdentityRefusal DefinitionIdentity
 deriving Repr
 
+/-- Add attestations to an EXISTING table, preserving everything else.
+
+    The conversion path for the hand-written tables, and the reason `ofAttested` alone is not enough:
+    those tables set `globals` for dispatch and carry `@[simp] … .globals = … := rfl` lemmas the
+    proofs rely on. `ofAttested` nulls `globals`, so converting through it would break evaluation and
+    those lemmas. This is a structure update, so `.globals` still reduces definitionally and the
+    `rfl` lemmas keep working — the table's TYPE and behaviour are untouched and only evidence
+    material is added.
+
+    Failures are counted here as they are in `ofAttested`; a broken reference stays `needs_recheck`
+    at the evidence boundary rather than silently reducing the attested set. -/
+def FnTable.withAttestations (t : FnTable) (entries : List AttestedPFnDef) : FnTable :=
+  { t with
+    attested := (entries.filterMap (fun e =>
+      e.attested.toOption.map (fun d => (e.model, d)))).toArray
+  , attestationFailures := (entries.filter (fun e => e.attested.toOption.isNone)).length }
+
 /-- Bind a model to a generated implementation reference. -/
 def AttestedPFnDef.of (model : PFnDef)
     (attested : Except DefinitionIdentityRefusal DefinitionIdentity) : AttestedPFnDef :=

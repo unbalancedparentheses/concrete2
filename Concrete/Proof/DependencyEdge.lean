@@ -230,6 +230,10 @@ inductive ScopedMembershipRefusal where
       regenerated, and this is DISTINCT from `legacyUnattested` — a broken reference is not the same
       fact as a table nobody attested, and the fixes differ. -/
   | attestationIncomplete (failures : Nat)
+  /-- An attested model is not among the table's own entries. The attestation would then describe a
+      model the table does not contain, so membership answered from it would be about something the
+      table cannot dispatch to. -/
+  | attestedModelNotInTable (definition : DefinitionIdentity)
 deriving Repr, BEq
 
 def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
@@ -239,6 +243,7 @@ def ScopedMembershipRefusal.explain : ScopedMembershipRefusal → String
   | .provenanceMissing d => s!"'{d.localName}' records no source-body provenance"
   | .duplicateDefinition d => s!"'{d.localName}' is attested twice"
   | .attestationIncomplete n => s!"{n} generated reference(s) failed validation — needs_recheck"
+  | .attestedModelNotInTable d => s!"'{d.localName}' attests a model the table does not contain"
 
 /-- Scoped membership for a table, or a named refusal.
 
@@ -254,6 +259,11 @@ def scopedEntryEvidence (t : FnTable)
   else
     let rows ← t.attested.toList.foldlM (init := ([] : List ScopedEntryEvidence))
       fun acc (model, d) =>
+        -- The attested model must BE one of the table's entries. `attested` and `entries` are
+        -- separate arrays, so nothing structural stops a table attesting a model it does not hold —
+        -- and membership answered from such an attestation would describe something the table
+        -- cannot dispatch to.
+        if !t.entries.toList.contains model then .error (.attestedModelNotInTable d) else
         match model.sourceBodyDigest with
         | none => .error (.provenanceMissing d)
         | some stored =>
