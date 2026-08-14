@@ -3555,6 +3555,17 @@ Three options, with what each costs:
 
 **Recommendation: (c).** It is the only option that does not change proof statements, and this repository already enforces owner sets this way for digest producers. (b) is (c) with the boundary unenforced, and (a) pays 103 re-checked theorems for a type-level guarantee on a value that cannot be forged anyway.
 
+**DECIDED 2026-08-14: take (c), narrowly.** `DefinitionIdentity.ofGenerated` is total only over an
+already validated generated identity; it is not a raw-parts constructor, does not accept strings or
+digests, and does not weaken the private `DefinitionIdentity` constructor. Its owner set is exact
+and code-only: the generated implementation-reference module and the single table-construction
+boundary. The owner gate fails on any added caller, moved producer, alternate constructor, raw
+component assembly, or table entry not originating from the generated-reference path. Mutations
+must remove/bypass the owner restriction and substitute a same-named cross-package identity; both
+must be killed by the production path. This accepts gate-enforced provenance for an otherwise
+unforgeable value and avoids changing 103 kernel-checked theorem statements. It does not establish
+model correspondence, upgrade `generatorAsserted`, or permit a mixed `CallableId`/scoped join.
+
 **REMAINING for the atomic join transition: convert the 29 proof-model sites, migrate `RequestedEdge`/`EdgeWitness`/table membership/`DepNode` to `DefinitionIdentity` in the SAME change, delete the `CallableId` join with no fallback, then the eight scope/attestation mutations, the cross-project fixture, `proof_pressure` repair, and 10/10.** ~~Earlier note:~~ step 4b is a DIFFERENT SHAPE than "migrate five types together" — measured 2026-08-14.
 
 **`PFnDef` cannot supply a `DefinitionIdentity`, and cannot derive one.** It carries `identity : PFnIdentity` (a `CallableId`) and `sourceBodyDigest` — the V1 BODY digest, which is precisely the digest ruled insufficient for the implementation component. No package identity, no implementation identity. 29 literals exist (27 in `Concrete/Proof/Proof.lean`, 2 in `proofs/`).
@@ -5804,6 +5815,14 @@ These are not aliases. A one-direction refinement cannot be rendered or consumed
 Trust is an evidence mode/disposition, not a semantic relation kind; a trusted model remains an
 assumption even when the implementation reference is exact.
 
+**Total-model admission is a semantic prerequisite, not merely sequencing.** A model used as
+logical contract semantics may carry a current `implements`, `refines`, `equivalent`, or
+`contract_only` attestation only when it is effect-free, terminating, free of unhandled traps, and
+has a complete logical interpretation over the claimed domain. Recursive models require accepted
+`#[decreases]`/well-foundedness evidence. Missing or invalid totality evidence leaves correspondence
+`missing`/`unsupported`, or explicitly `assumed` through the trusted surface. Exact selection,
+kernel-valid proof over the model, or finite differential agreement cannot manufacture totality.
+
 **`ExportedContract`:** the package/caller interface, with a distinct `ContractIdentity`, covering:
 
 ```text
@@ -5984,6 +6003,8 @@ probe alone is insufficient:
 22. model/body correspondence removed while logical proof remains valid;
 23. implementation/model/contract identities swapped independently;
 24. duplicate, surplus or unmatched package-link evidence discarded by filtering.
+25. termination, trap-freedom or logical-interpretation evidence removed from a contract-level
+    model attestation—the attestation and every dependent contract claim refuse or downgrade.
 
 #### Documentation and reporting requirements
 
@@ -6034,7 +6055,7 @@ correspondence without claiming the old theorem became logically false.
 every attachment states relation/scope/mode; correspondence and logical validity are independently
 replayable; exported contracts compose across packages; the partial linker refuses every unmatched
 or weakened case; dependency strength produces the intended freshness behavior; receipts bind
-code/model/proposition/contract/policy separately; and all twenty-four attacks are killed by the
+code/model/proposition/contract/policy separately; and all twenty-five attacks are killed by the
 production path without collapsing evidence into one status.
 
 ### Task R-0479

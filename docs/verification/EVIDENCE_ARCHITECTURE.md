@@ -87,6 +87,17 @@ Refinement in one direction is not equivalence. Trust is an evidence
 mode/disposition rather than a semantic relation; a trusted model remains
 assumed even when implementation selection is exact.
 
+A model used as logical contract semantics must also be total over the claimed
+domain. An `implements`, `refines`, `equivalent`, or `contract_only`
+attestation cannot receive a current logical disposition unless the model is
+effect-free, terminating, free of unhandled traps, and has a complete logical
+interpretation. Recursive models additionally require accepted
+`#[decreases]`/well-foundedness evidence. Missing or invalid totality evidence
+leaves correspondence `missing` or `unsupported`, or explicitly `assumed` on
+the trusted surface; exact identity, successful replay, and finite behavioral
+agreement cannot upgrade it. This is the dependency on the checked total
+contract-callable fragment, not an incidental sequencing preference.
+
 The authoritative key is
 `(DefinitionIdentity, ModelIdentity, ClaimScope)`. Relation kind and evidence
 mode are coherent payload, not key fields: allowing them into the key would
