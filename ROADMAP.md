@@ -1170,6 +1170,7 @@ system.
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
 | — | **R-0480** | **INCREMENTAL INFORMATION ARCHITECTURE.** Establish document authority, lifecycle and executable ownership checks before moving files. Then migrate one topic family at a time; no bulk rename during R-0004. This prevents the cleanup from creating broken links, merge churn or a cleaner-looking second source of truth |
+| — | **R-0481** | **FINAL REPOSITORY ARCHITECTURE.** Preserve subject-oriented docs, add a dated journal and canonical generated artifacts, centralize gate/mutation/corpus facts, and—only after R-0004 identity closure—split Proof production, portable Evidence, VIR and Report along enforced import boundaries. This is the repository-wide owner of the complete layout and sequencing contract |
 | — | **R-0479** | **OPPORTUNISTIC, and cheap.** A stub or diagnostic that has NOT computed a fact must not return a valid inhabitant of that fact's domain. `shadowEdgeKinds` returned `unclassified` — a legitimate `DependencyEdge` — when it had never consulted the classifier, which is why it produced a FALSE FINDING rather than an obvious wrong answer. Same shape as `| _ => true`. The receipt and manifest types already make this unrepresentable via private constructors and named refusals; diagnostics were exempt. Needs a survey of report code for defaults standing in for "did not look" |
 | — | **R-0478** | **OPPORTUNISTIC — no queue position, pick up whenever.** 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Neither blocks anything; both keep producing defects, so the right time is whenever someone is already in the file. The `substExpr` rename should happen BEFORE R-0474 retires the unsound one |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
@@ -5330,6 +5331,345 @@ normative hierarchy. For every moved family:
   remaining families are scheduled;
 - repository-root navigation remains small: `README.md`, `ROADMAP.md` and `CHANGELOG.md` point into
   the hierarchy instead of accumulating detailed design prose themselves.
+
+### Task R-0481
+
+**Final repository architecture: temporal honesty, generated facts, and enforced dependency
+boundaries.**
+
+**Status and scheduling:** RATIFIED TARGET; implement in vertical slices. R-0480's subject-based
+documentation move is complete and is NOT to be undone. Journal/status infrastructure and the gate
+library may proceed independently. The `Concrete/` module moves wait until R-0004 finishes scoped
+definition identity and the affected evidence boundaries are stable; then align them with
+R-0114–R-0118 rather than moving the same modules twice. VIR moves when TermIR promotion begins.
+
+**Why this task exists.** Repository disorder is primarily informational, not cosmetic. Four kinds
+of material have repeatedly occupied the same documents and data structures:
+
+1. what is normatively true now;
+2. what is measured now;
+3. what happened at a dated point in history; and
+4. what the project intends to build.
+
+Moving files without separating those temporal roles only relocates drift. The durable design uses
+subject-oriented directories for discovery, explicit lifecycle/owner metadata for authority, a
+journal for dated narrative, canonical machine artifacts for measured state, and compiler module
+boundaries that mirror producer/consumer trust boundaries.
+
+#### Canonical target layout
+
+```text
+/
+├── Concrete/                 compiler implementation
+│   ├── Frontend/
+│   ├── Resolve/
+│   ├── Check/
+│   ├── Core/
+│   ├── Proof/                proof/extraction producer machinery
+│   ├── Evidence/             portable typed evidence objects
+│   ├── VIR/                  canonical proposition language and certificates
+│   ├── Report/               projections only; never reconstructs evidence
+│   └── Backend/
+│
+├── docs/                     maintained documentation, organized by subject
+│   ├── language/
+│   ├── compiler/
+│   ├── verification/
+│   ├── platform/
+│   ├── project/
+│   ├── stdlib/
+│   ├── bugs/
+│   └── book/
+│
+├── research/                 non-normative exploration, organized by subject
+├── journal/                  dated historical records
+│   ├── incidents/
+│   ├── audits/
+│   ├── decisions/
+│   └── milestones/
+│
+├── artifacts/                schemas and checked/generated repository facts
+│   ├── schemas/
+│   ├── status/
+│   └── manifests/
+│
+├── proofs/                   attached proof developments
+├── std/                      Concrete standard-library source
+├── examples/                 user-facing programs and evidence workloads
+├── tests/                    compiler, oracle, adversarial and negative corpora
+├── scripts/
+│   ├── tests/
+│   │   └── lib/              shared non-vacuous assertion vocabulary
+│   ├── generators/
+│   └── tooling/
+├── site/
+├── paper/
+├── editor/
+└── bench/
+```
+
+The root remains conventional and small. `README.md`, `ROADMAP.md`, `CHANGELOG.md`, `LICENSE`,
+`Makefile`, Lean/Lake/Nix manifests and toolchain files, `Concrete.lean`, `Main.lean`, and the shared
+logo are legitimate root entry points. Ignored `.lake`, `.cache`, `.build`, and `.concrete-cache`
+directories are generated local state, not repository information architecture, and are not moved
+merely to make a checkout look emptier.
+
+#### Axis 1 — subject location and temporal authority are separate
+
+Do NOT replace the subject hierarchy with `docs/normative/` and `docs/reference/`. A file's subject
+determines its directory; its lifecycle and authority are typed metadata. Otherwise all normative
+material becomes a second flat miscellaneous directory and cross-subject navigation degrades.
+
+Every maintained document uses a visible lifecycle from R-0480 and, where it is not itself the
+owner, names the canonical owner. The intended header model is:
+
+```text
+Status: normative contract | stable reference | active design | historical
+Owner: docs/<subject>/<owner>.md
+Current implementation: ROADMAP R-NNNN
+Historical record: journal/<class>/<dated-entry>.md
+```
+
+`CLAIMS_TODAY.md` owns shipped public claims. Normative design documents own semantics and trust
+contracts. `ROADMAP.md` owns active sequencing and qualitative transition state. `CHANGELOG.md`
+owns landed milestone history. Research is never normative merely because an idea was adopted.
+
+#### Axis 2 — journal for dated narrative
+
+Create `journal/` for material whose value is historical context rather than current authority:
+
+- `journal/incidents/` — failures, regressions, security advisories and fire drills;
+- `journal/audits/` — dated corpus measurements, red-team reports and architecture reviews;
+- `journal/decisions/` — dated decision rationale and supersession records;
+- `journal/milestones/` — implementation narratives and release retrospectives.
+
+Migrate `docs/NOTES/`, dated roadmap narratives and bug write-ups selectively, not mechanically.
+An active reproducible defect specification remains in `docs/bugs/`; an incident narrative moves
+to the journal and links the living bug/contract. A journal entry records date, commit, toolchain,
+denominator, conclusion-at-the-time, current normative owner and supersession state.
+
+"Append-only" means historical claims are never silently rewritten to appear prescient. It does
+NOT forbid correction: an erratum or superseding entry explicitly preserves the original record
+and links the correction. Journal text cannot define current status, policy or shipped claims.
+
+#### Axis 3 — canonical generated status and artifacts
+
+Add an `artifacts/` ownership layer. Canonical machine data does not live conceptually inside docs;
+human documentation and CI render projections of it.
+
+At minimum, generate and schema-version:
+
+- `artifacts/status/corpus.json` — every discovered example/test/proof input, its stable identity,
+  classification, eligibility, measured/unmeasured disposition and named refusal;
+- `artifacts/status/verification.json` — subjects, stored links, current digests, correspondence,
+  dependency roots, receipts, assumptions, trust and multidimensional evidence state;
+- `artifacts/status/mutations.json` — mutation families, attacked invariant, production consumer,
+  killing gate, positive control, last verified commit and toolchain;
+- `artifacts/manifests/` — package, proof-link, implementation, theorem, table and dependency
+  inventories consumed by migration/replay tooling;
+- `artifacts/schemas/` — canonical wire/status schemas and compatibility/revocation rules.
+
+`make status` (or its eventual equivalent) reads authoritative compiler/gate outputs and emits the
+canonical structured facts plus an optional generated Markdown view. It never scrapes decorative
+report prose when typed or structured facts exist. Generation must fail on missing denominators,
+duplicate identities, unknown classifications, partial joins, failed producer commands and schema
+mismatch.
+
+Generated counts replace hand-copied numbers in status summaries: discovered files, measurable
+files, proof subjects, stored links, root coverage, correspondence coverage, receipt migration and
+mutation coverage each have one denominator-owning producer. A dashboard with an incomplete input
+inventory is a refusal, not a smaller confident number.
+
+The roadmap keeps qualitative status that cannot be safely inferred from counts: shadow-only,
+blocked on a decision, implemented without a production consumer, acceptance condition open, or
+authority transition forbidden. It LINKS generated quantitative facts rather than copying them.
+
+#### Axis 4 — one gate assertion library and one mutation registry
+
+Consolidate gate helpers into `scripts/tests/lib/`. The shared vocabulary must encode the failure
+shapes repeatedly found in this repository, including:
+
+- presence before content checks;
+- absence only after proving the anchor exists;
+- universal assertions only with an explicit non-empty witness/denominator;
+- exact denominator and exact join checks;
+- paired moving/non-moving controls;
+- positive controls for negative validators;
+- producer exit-status validation before stdout interpretation;
+- typed/named refusal preservation;
+- mutation registration and killed/survived/inconclusive dispositions.
+
+Required conceptual helpers include `assert_present`, `assert_absent_after_anchor`,
+`assert_nonempty_then_all`, `assert_exact_denominator`, `assert_join_complete`,
+`assert_positive_and_negative_control`, `assert_command_succeeded`, and
+`assert_mutation_killed`; exact names may follow existing shell conventions. Private copies retire
+only after the shared helper has discriminating self-tests, including deliberate vacuity attacks.
+
+Create one machine-readable mutation registry. Every security/evidence mutation records its stable
+family ID, invariant, subsystem, production path, killing gate, positive control, authority state,
+and last execution identity. "Which boundaries lack negative controls?" and "which mutations were
+not run under this toolchain?" become queries, not manual audits. A registered-but-never-run or
+synthetic-only mutation cannot be reported as production coverage.
+
+#### Axis 5 — one corpus manifest
+
+Generate a repository corpus manifest spanning `examples/`, `tests/`, `proofs/`, proof tables and
+stored proof links. Each row has a stable owner and classification such as positive fixture,
+negative fixture, showcase, workload, oracle, performance case, migration link or hostile input.
+The manifest records whether the item reached the relevant phase and, if not, its typed refusal.
+
+This manifest owns denominators such as discovered/measured/unmeasured files and prevents two gates
+from using identical-looking but independently maintained regexes. Per-file and per-subject joins
+must be explicit; equal totals are not evidence that two inventories describe the same population.
+
+#### Axis 6 — Proof, Evidence, VIR and Report are different layers
+
+Keep `Concrete/Proof/` and `Concrete/Evidence/` separate:
+
+- `Proof/` owns compiler-side extraction, theorem attachment, prover integration, classification
+  production and proof replay orchestration;
+- `Evidence/` owns portable typed subjects, identity wrappers, digests, theorem/table bindings,
+  dependency material, correspondence results, roots, assumptions, trust propagation, receipts and
+  policy inputs;
+- `VIR/` owns the promoted TermIR proposition language, closed fragment, canonical codec,
+  structural evaluator and certificate attachment/checking interfaces;
+- `Report/` owns human/JSON views over validated objects only.
+
+The intended dependency direction is:
+
+```text
+Frontend -> Resolve -> Check -> typed Core -> Proof producer
+                                      |             |
+                                      v             v
+                                     VIR -------> Evidence -> Report
+                                                     |
+                                                     v
+                                          standalone verifier artifacts
+```
+
+This diagram is a constraint, not permission for every displayed arrow. In particular:
+
+1. `Evidence` MUST NOT import `Report`.
+2. `Report` may render validated evidence but MUST NOT mint receipts, recompute roots, classify
+   theorem dependencies, reconstruct identity from strings, or independently derive evidence.
+3. `VIR` MUST NOT import frontend parsing, project loading, compiler reporting or ambient prover
+   elaboration. Its consumer grammar and evaluator remain small and structural.
+4. The standalone verifier shares canonical schemas/VIR semantics, not compiler implementation or
+   report code.
+5. Proof producers may emit candidate objects; only closed constructors/validators in the owning
+   evidence layer produce authoritative values.
+6. Unknown imports, constructors, schema fields and evidence dispositions fail non-current by
+   default. Success is enumerated; catch-alls do not grant it.
+
+Enforce these rules through generated import-graph gates, private constructors, compile-failure
+probes and production-consumer mutations—not comments alone.
+
+#### Concrete/Evidence target ownership
+
+After R-0004 stabilizes its identities, migrate by semantic owner rather than by today's filenames:
+
+```text
+Concrete/Evidence/
+├── Identity/        PackageIdentity, DefinitionIdentity, typed digest domains
+├── Subject/         implementation and proof-subject preimages/digests
+├── Dependency/      typed edges, classification, table bindings, correspondence, roots
+├── Receipt/         envelope, replay binding, environment identities, serialization
+└── Policy/          assumptions, trust/advisories, multidimensional acceptance
+```
+
+Do not collapse all existing Proof modules into Evidence. PExpr/ProofCore extraction, theorem
+metaprograms and backend proof production remain producer machinery. A relocation lands only when
+the semantic owner is clear, imports remain acyclic, behavior is unchanged, and every code/comment/
+gate reference moves in the same commit.
+
+#### Concrete/VIR promotion
+
+Do not invent a parallel VIR. Promote and extend `Concrete/Semantics/TermIR.lean` when its roadmap
+work begins. The target adds canonical serialization and domain-separated proposition identity,
+the closed declared fragment needed by obligations, a total structural consumer evaluator,
+adversarial parsing, and certificate bindings for Farkas/linear and DRAT/bitvector witnesses.
+
+The fragment permanently excludes ambient metaprogramming and proof-kernel features irrelevant to
+Concrete claims. Extensions are explicit trust-surface decisions with semantics, codec, evaluator,
+negative controls, compatibility/versioning and independent-parser implications reviewed together.
+
+#### Sequencing — one move per stable boundary
+
+1. **Preserve the completed subject-based docs migration.** Finish R-0480 lifecycle/owner headers
+   and duplicate-current-status gates; do not create `docs/normative/` or `docs/reference/`.
+2. **Introduce journal conventions and a pilot migration.** Move one dated audit/incident family,
+   preserve errata/supersession semantics, and gate that journal entries cannot become current
+   authorities.
+3. **Create canonical corpus/status schemas and generators.** Establish exact denominators before
+   deleting hand-maintained numbers. Keep old/new shadow comparison until they agree by identity,
+   not merely total.
+4. **Consolidate gate assertions and mutation registration.** Migrate one gate family at a time;
+   keep behavior and deliberate failure controls green before deleting local helpers.
+5. **Finish R-0004 scoped identity migration.** `PackageIdentity` and `DefinitionIdentity` become
+   mandatory at all evidence boundaries; correspondence reaches its honest closure; roots and
+   receipts become authoritative only afterward.
+6. **Perform the Evidence module split with R-0114–R-0118.** Move stabilized identity/subject/
+   dependency/receipt/policy objects once, while typed ProgramFacts/pass boundaries remove the
+   remaining reverse dependencies. No path-only compiler reshuffle beforehand.
+7. **Promote TermIR into VIR when the codec/evaluator/certificate work begins.** Preserve one
+   proposition authority; do not duplicate semantics under a new name.
+8. **Build the standalone verifier from canonical artifacts.** It checks envelope/accounting and
+   replayable certificates without importing the compiler; it never claims to verify source-to-VIR
+   correspondence.
+9. **Shrink historical roadmap prose only after replacement authorities exist.** Move dated
+   narratives to the journal, quantitative snapshots to generated artifacts, and completed work to
+   the changelog. The roadmap retains the capability map, execution order, acceptance conditions,
+   blockers and qualitative authority states.
+
+Each step is independently green and reviewable. Do not combine semantic compiler edits with broad
+path moves. Do not delete an old status/count producer until its replacement is denominator-complete
+and mutation-tested.
+
+#### Explicit non-goals
+
+- no second repository or monorepo split—the compiler, proofs, corpus and gates deliberately
+  cross-validate one another;
+- no deep decorative taxonomies beyond the named ownership boundaries;
+- no grand renaming campaign and no path churn without a semantic owner;
+- no relocation of `research/`, `paper/`, `site/`, `std/`, examples or tests merely for symmetry;
+- no machine-generated replacement for decisions that require qualitative judgment;
+- no journal entry, generated Markdown page, changelog entry or research note as a competing source
+  of current truth;
+- no certificate/verifier claim that closes source-to-VIR correspondence—the producer-side semantic
+  bridge remains separately measured and explicitly weaker;
+- no Evidence/Report cycle, no report-side fact reconstruction and no raw string digest crossing an
+  evidence module boundary where a typed digest domain exists.
+
+#### Completion gates
+
+R-0481 is complete only when all of the following are true:
+
+1. the directory layout above exists for every component whose implementation phase has begun, and
+   deferred directories remain named targets rather than empty scaffolding;
+2. every maintained doc has lifecycle/owner metadata, every adopted research note names its
+   normative owner, and every journal entry is dated and linked forward;
+3. local-link, owner, contradiction and journal-authority gates have non-vacuous negative controls;
+4. canonical corpus/status/mutation artifacts reproduce across checkout paths and reject missing,
+   duplicate, partial, unknown and failed-producer inputs;
+5. every hand-copied canonical denominator has been replaced by one generated owner or explicitly
+   marked historical with its commit/toolchain;
+6. shared assertion helpers replace private copies and their vacuity/self-test suite is green;
+7. the mutation registry answers coverage by invariant and production consumer, with no
+   registered-but-unexecuted mutation counted as killed;
+8. import gates prove `Evidence !-> Report`, `VIR !-> Frontend/Report`, and the standalone verifier
+   imports neither compiler nor report implementation;
+9. reports are projections: removing any report-side reconstruction cannot change authoritative
+   evidence, while mutating the owning evidence object changes every projection consistently;
+10. Proof/Evidence relocation is behavior-preserving and happens after R-0004 identity closure;
+11. TermIR/VIR has one semantics, one canonical codec and one proposition identity;
+12. ROADMAP contains no duplicated quantitative status board, while retaining the qualitative
+    state needed to understand blockers and authority transitions;
+13. build, docs drift, local links, roadmap linearity, import direction, corpus/status generation,
+    gate vacuity and mutation-registry gates all pass from a clean checkout.
+
+**The governing rule:** organize by semantic subject, represent temporal authority explicitly, and
+make every structural boundary executable. A cleaner tree without unique fact ownership and gates
+is not completion; it is future archaeology with better folder names.
 
 ### Task R-0479
 
