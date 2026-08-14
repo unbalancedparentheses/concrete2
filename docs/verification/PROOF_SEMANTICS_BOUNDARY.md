@@ -26,6 +26,26 @@ for the compiler. A construct may be accepted by Concrete while being outside
 `ProvableV1`, and a theorem about a `PExpr` still depends on the unverified
 extraction and compilation bridges described below.
 
+### Identity is not the bridge
+
+The target architecture gives implementations and models distinct
+`DefinitionIdentity` and `ModelIdentity` values. An exact generated
+implementation reference prevents a proof attachment from silently moving to
+another package, declaration, or implementation revision. It does not prove
+that the PExpr/model denotes the implementation's behavior.
+
+Accordingly, Concrete retains two independent claims:
+
+```text
+implementation/model correspondence
+logical validity of a proposition over the model
+```
+
+Correspondence requires its own relation (`refines`, `equivalent`,
+`abstracts`, and so on), scope, evidence, and disposition. A kernel theorem
+over PExpr cannot fill that field. Conversely, a correspondence result does
+not prove every proposition stated over the model.
+
 ## 2. Established Overlap
 
 The extractor and evaluator currently represent the shapes forced by the

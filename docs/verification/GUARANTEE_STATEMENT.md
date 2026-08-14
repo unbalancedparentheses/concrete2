@@ -73,7 +73,7 @@ For proof-backed code, the following additional properties hold:
 |----------|-----------|----------------|
 | Return value correctness | Lean 4 theorem proving `eval(body, env) = expected` | Proof-backed |
 | Current stale detection | Stored body fingerprint invalidates links when the body changes; full proof-subject digest remains R-0004 | Compiler-enforced containment |
-| Extraction fidelity | `PExpr` normalized proof targets match Core IR semantics | Compiler-enforced |
+| Extraction/model fidelity | Differential/negative-control evidence for admitted fragments; no general source/Core-to-PExpr correspondence proof | Reported translation assurance, not established by theorem replay |
 
 ### What makes code proof-eligible
 
@@ -91,6 +91,10 @@ All of these must hold simultaneously:
 - **No proof of the checker itself.** The Lean theorems prove properties of specific functions, not that the checker is sound.
 - **No cross-function composition.** Proofs are per-function. A proof that `f` is correct and `g` is correct does not automatically prove `f(g(x))` is correct.
 - **No proof of runtime behavior.** Proofs operate on the `PExpr` semantic model, not on the compiled binary. Backend correctness is a separate assumption.
+- **No correspondence from identity alone.** Exact implementation identity
+  prevents substitution and detects covered changes; it does not prove that the
+  selected PExpr/model faithfully denotes that implementation. Model
+  correspondence and logical validity are separate target evidence fields.
 - **No coverage of all proof-eligible functions.** A function can be proof-eligible without having a proof attached. Eligibility is a necessary condition, not sufficient.
 
 ---

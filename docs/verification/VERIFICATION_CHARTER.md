@@ -100,6 +100,15 @@ acceptance without rewriting the historical fact that a replay occurred.
    module, boundary, property family, and explicit hole budget. Strict profiles
    may deny all holes; adoption profiles may permit named debt. Neither may hide
    or relabel it.
+8. **Identity is not correspondence.** Exact implementation identity prevents
+   substitution and detects staleness; it does not prove that an extracted or
+   hand-written model represents that implementation. Implementation
+   selection, model correspondence, logical validity, dependency closure, and
+   policy acceptance remain separate typed claims.
+9. **Relations are not interchangeable.** `implements`, `refines`,
+   `equivalent`, `abstracts`, and `contract_only` have distinct obligations and
+   cannot be upgraded by rendering, policy, or attachment syntax. Trust is an
+   evidence mode, not a semantic relation.
 
 A strict boundary may therefore say:
 

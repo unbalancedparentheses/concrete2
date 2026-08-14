@@ -10,6 +10,40 @@ Concrete does not protect against all software bugs. It protects against a speci
 
 The threat model covers both **deliberate attacks** (malicious contributor, supply chain compromise) and **accidental drift** (refactoring mistakes, copy-paste errors, merge conflicts).
 
+## Model/implementation attachment attacks
+
+The model-attestation architecture treats all attachment material as hostile.
+Required attack classes include:
+
+- a correct proof/model attached to the wrong implementation;
+- the correct implementation attached to a different or stale model;
+- same module/declaration name in another package;
+- same declared package name/version from a different registry, repository,
+  source namespace, or origin identity;
+- unchanged body with changed signature, capability, generic, or contract facts;
+- a narrowed claim scope presented as the original claim;
+- one-direction refinement relabeled as equivalence;
+- trusted/assumed correspondence relabeled as proved;
+- a changed model paired with an unchanged proof artifact;
+- a changed proof artifact copied under the old proposition identity;
+- a generated implementation reference forged, hand-constructed, duplicated,
+  or copied between definitions;
+- package or implementation scope removed from identity;
+- a certificate or receipt copied under another proposition, contract, package,
+  policy, or rule set;
+- an inferred-conservative effect/dependency contract presented as exact;
+- a vacuous exported contract receiving a strong proved presentation;
+- duplicate, surplus, ambiguous, or unmatched package-link evidence discarded
+  by filtering;
+- a self-consistently altered external row and digest mistaken for independent
+  validation.
+
+The required response is typed degradation or refusal, not merely a warning in
+rendered text. Exact identity detects substitution and staleness; it does not
+establish semantic model correspondence. Shared digest code establishes
+canonical-format agreement, not independence. Every attack needs a positive
+control and a mutation through the production consumer.
+
 ## Threat Categories
 
 ### 1. Proof Semantic Drift

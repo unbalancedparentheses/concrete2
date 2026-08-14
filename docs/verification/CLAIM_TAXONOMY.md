@@ -67,6 +67,14 @@ program-declared trusted boundary.
 
 **What it means for users:** The stated theorem holds over the PExpr model with Lean's unbounded integer arithmetic. The proof does not cover integer overflow, compiled binary behavior, or backend correctness. See [PROOF_SEMANTICS_BOUNDARY.md](PROOF_SEMANTICS_BOUNDARY.md) for the exact scope.
 
+**Identity/correspondence limit:** A fresh exact implementation identity can
+show which implementation the attachment selected. It cannot prove that the
+PExpr or hand-written model faithfully represents that implementation. The
+target schema therefore retains implementation selection, model
+correspondence, logical validity, dependency closure, and policy acceptance
+separately; the current composite `proved` label must not be interpreted as all
+five being strongest.
+
 **Current freshness limitation:** a source link without a stored fingerprint is
 `unbound`, not proved. A stored body fingerprint catches the body changes it
 encodes and revokes the proof, dropping the evidence level to

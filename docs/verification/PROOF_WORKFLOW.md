@@ -13,6 +13,54 @@ For the future LLM-guided synthesis loop, see
 
 ---
 
+## Target identity-safe attachment workflow
+
+As scoped model attestations land, the complete workflow is:
+
+1. Generate typed implementation references from authoritative compiler facts.
+2. Write or select the mathematical model.
+3. Select the generated reference—never copy an identity or digest.
+4. Declare the exact relation kind and claim scope.
+5. Prove model-to-implementation correspondence, validate it under a declared
+   finite/runtime domain, or retain an explicit assumption.
+6. Prove the desired proposition over the model.
+7. Replay correspondence and logical evidence independently.
+8. Inspect contract/model/implementation dependency closure, trust,
+   assumptions, and policy disposition.
+9. Regenerate/replay when implementation, model, contract, proposition,
+   dependency, toolchain, schema, or policy identity moves.
+
+Attaching the model first creates a named `missing` correspondence obligation.
+Only explicit `assume`/trusted authorship changes that disposition to assumed.
+For executable fragments, run differential correspondence checking immediately:
+exhaustive over declared finite domains and sampled—with retained domain,
+strategy and seed—over infinite ones. A counterexample blocks the attachment;
+sampled agreement remains sampled evidence.
+
+The generated reference secures which implementation was selected. It is not a
+correspondence proof. A successful theorem replay is not a source/model proof.
+The workflow is incomplete unless both arrows have explicit dispositions.
+
+For package-facing proofs, publish an `ExportedContract` whose functional,
+effect, frame, failure, termination, resource, trust and assumption components
+each state their provenance. Callers depend on the contract, model, or exact
+implementation according to what their proof actually uses.
+
+Models callable from contracts must belong to the checked total fragment or
+carry an explicit weaker disposition. Exported frame/`modifies` contracts wait
+for the typed contract and capture-safe `old` substrate owned by R-0473/R-0474;
+the authoring workflow must not imply those guarantees exist before it does.
+
+Migration failures are interpreted narrowly:
+
+- missing generated symbol: implementation selection is missing;
+- legacy name-only attachment: `needs_recheck`;
+- digest/scope mismatch: wrong or stale implementation;
+- valid theorem plus absent correspondence: logically valid model theorem with
+  no established source meaning;
+- preserved contract plus changed body: contract callers remain current, body
+  callers replay.
+
 ## 1. Choose a Function
 
 Not every function is provable. Before writing a proof, check whether the function passes the eligibility gates.

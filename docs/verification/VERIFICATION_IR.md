@@ -116,6 +116,18 @@ sort/symbol declarations, referenced definitions or identities, arithmetic
 profile, quantifier domains, assumptions, transformation profile, relevant
 checking limits, and claim scope where it changes meaning.
 
+`ModelIdentity` and VIR `PropositionIdentity` are distinct. A model identifies
+the mathematical semantics selected for an implementation; a proposition
+identifies one claim over that model. Several propositions may use one model,
+and a proof-script change need not change either identity when the model and
+claim are semantically unchanged.
+
+Certificates bind and establish logical validity of an exact VIR proposition.
+They do not establish that a source implementation corresponds to the selected
+model. Correspondence evidence is a separate artifact and receipt field. VIR
+must represent relation claims such as refinement and equivalence distinctly;
+one-direction refinement cannot be relabeled as equivalence by metadata.
+
 ## Semantics
 
 TermIR's structural evaluator is the seed of the executable semantics. VIR

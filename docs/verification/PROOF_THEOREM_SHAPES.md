@@ -58,6 +58,30 @@ theorem check_nonce_correct (nonce maxNonce : Int) (fuel : Nat) :
 
 **Naming**: `<fn>_correct`. This is the name referenced by the `#[proof_by]` in-source link.
 
+### 4. Model-correspondence theorems (target)
+
+These establish a declared relation between an exact implementation semantics
+and a `ModelIdentity`. Required categories are:
+
+- implementation refines model;
+- implementation is equivalent to model;
+- implementation satisfies exported contract;
+- model is a declared abstraction under an explicit scope;
+- correspondence is trusted/assumed rather than proved.
+
+The theorem shape binds `DefinitionIdentity`, `ModelIdentity`, `RelationKind`,
+and `ClaimScope`. A theorem over PExpr alone is not a correspondence theorem.
+Refinement and equivalence use different theorem constructors/names so one
+cannot be substituted for the other.
+
+### 5. Contract and package-composition theorems (target)
+
+These establish exported contract satisfaction, behavioral compatibility of a
+replacement implementation, or preservation under package linking. They bind
+`ContractIdentity`, dependencies, assumptions, and trust. A body change that
+preserves the contract may satisfy a compatibility theorem without preserving
+an implementation-edge theorem.
+
 ## Naming rules
 
 | Element | Pattern | Example |

@@ -33,6 +33,56 @@ These roles must not be collapsed:
   kernel-checks in the selected Lean workspace;
 - the coverage class states how much the theorem proves.
 
+## Exact implementation selection and model correspondence
+
+A proof model and the source implementation are different objects. The target
+authoring contract requires the author to provide or select:
+
+1. a mathematical `PFnDef`/model;
+2. an opaque generated `ImplementationReference`;
+3. an explicit semantic relation (`implements`, `refines`, `equivalent`,
+   `abstracts`, or `contract_only`);
+4. a claim scope;
+5. a declared evidence mode; and
+6. correspondence evidence, or an explicit assumption.
+
+Proof authors do **not** write raw implementation digests, package identity
+components, checkout paths, display-name attachments, or implicit equivalence.
+The compiler generates typed implementation-reference symbols and independently
+recomputes their complete `DefinitionIdentity`.
+
+Selecting the exact implementation establishes only
+`implementation_selection = exact`. It does not establish
+`model_correspondence`. A proof over the model establishes logical validity of
+its proposition, not faithfulness of the model to source. Reports and receipts
+retain both facts separately.
+
+Creating an attachment creates a named correspondence obligation with default
+state `missing`. Silence is not assumption. Only the explicit `assume` or
+trusted attachment surface may produce an assumed disposition. Executable
+fragments may earn scoped `checked` correspondence through exhaustive finite
+or recorded sampled differential validation; sampled agreement never means
+universal proof.
+
+The intended evidence modes are distinct at authorship:
+
+```text
+certificate_by      independently checkable certificate
+proof_object_by     retained and replayable proof object
+trusted_proof_by    explicit trusted attachment
+assume              explicit assumption
+```
+
+Exact syntax remains a language-design task. No general attachment may silently
+infer or upgrade among these modes. A generated or trusted attachment remains
+in its original trust class after identity matching.
+
+The active attachment key is `(DefinitionIdentity, ModelIdentity,
+ClaimScope)`. Relation and evidence mode are payload governed by coherence,
+not key fields that let contradictory rows coexist. A stronger relation must
+explicitly supersede or retire a weaker row. A trusted/assumed mode cannot sit
+beside a proved mode and win by lookup order.
+
 The current implementation stores a body fingerprint and emits a replay
 verdict rather than the complete artifacts in items 3 and 5. R-0004's target
 model separates them:

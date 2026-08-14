@@ -34,6 +34,43 @@ change the present-tense capability matrix below.
 The proof subject matters too. A theorem over extracted `ProofCore` semantics is
 not an end-to-end theorem about the emitted binary.
 
+## Selection decomposes the existing correspondence object
+
+This is not a parallel status taxonomy. It refines the existing five-object
+evidence model: `implementation_selection` and `model_correspondence` are two
+components of `SourceCorrespondence`; logical validity, dependency closure and
+policy acceptance retain their existing owners. The target architecture never
+stores or reports one authoritative `proved` bit. Its structured projection is:
+
+```text
+implementation_selection:
+  exact | stale | missing | ambiguous | legacy
+
+model_correspondence:
+  proved | checked | assumed | missing | stale | ambiguous | unsupported
+
+logical_validity:
+  certificate_replayed | kernel_replayed | solver_trusted |
+  assumed | missing | invalid
+
+dependency_closure:
+  complete | incomplete | stale | ambiguous | unclassified
+
+policy_acceptance:
+  accepted | rejected | needs_recheck
+```
+
+These are target data-model dispositions, not claims that every producer ships
+today. Exact implementation selection prevents substitution but does not prove
+model correspondence. Logical validity says a proposition follows in its
+formal system, not that the proposition corresponds to source. Policy is a
+consumer decision over the other facts and cannot rewrite them.
+
+Reports may provide a convenience summary only as a projection. The underlying
+five results remain available in structured output and receipts so, for
+example, a checker advisory can degrade logical validity without pretending the
+implementation identity or dependency graph changed.
+
 ## Systems available on `main`
 
 Concrete currently has two proof paths plus compiler enforcement.

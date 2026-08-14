@@ -21,7 +21,7 @@ If an idea improves ergonomics while making the compiler harder to explain, it i
 
 ## Feature Admission Checklist
 
-Every proposed feature must pass all fourteen checks. Failing any one is grounds for rejection.
+Every proposed feature must pass all fifteen checks. Failing any one is grounds for rejection.
 
 ### 1. Can it be explained as a simple invariant?
 
@@ -91,6 +91,25 @@ bundles, and checker output are adversarial inputs. A feature must define
 resource limits, malformed/duplicate/surplus behavior, negative controls,
 mutation tests, and how a checker or assumption advisory degrades existing
 claims without collapsing unaffected evidence dimensions.
+
+### 15. Does it preserve independently changing semantic identities?
+
+A verification feature must not collapse implementation, mathematical model,
+exported contract, proposition, policy, relation kind, or claim scope merely
+because two are currently derived together. It must state which identity moves
+under each semantic change and which dependency consumers become stale.
+
+Exact identity is not correspondence: a digest may prevent substitution while
+saying nothing about whether a model faithfully represents the implementation.
+Raw digest strings, display-name attachment, implicit equivalence, unlabelled
+trust, and one status standing in for several independently degradable claims
+are grounds for rejection.
+
+Identity keys contain the subject of a fact, not alternative answers for that
+fact. Relation strength and evidence mode are coherent payload: placing them in
+the key so contradictory trusted/proved or refinement/equivalence rows can
+coexist recreates first-match ambiguity. Silence creates a missing obligation,
+never an assumption.
 
 ## Quick Decision Rule
 

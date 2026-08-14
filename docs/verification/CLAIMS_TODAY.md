@@ -302,6 +302,8 @@ Reference: [PROFILES.md](../platform/PROFILES.md)
 | Stabilized first public release surface | Still evolving |
 | Concurrency safety | Single-threaded model assumed; concurrency is explicitly deferred. Async/concurrency capabilities, structured scopes, linear task handles, and simulation-backed evidence are research directions, not current claims. |
 | Cross-package guarantees | Single-compilation-unit model today |
+| Proved model-to-source correspondence from identity alone | Scoped implementation identities and freshness checks prevent some substitution/staleness attacks, but a matching identity or digest does not prove that a hand-written or extracted proof model faithfully represents the source implementation |
+| Authoritative model attestations and behavioral package interfaces | The target `ModelIdentity`, explicit relation/correspondence evidence, `ContractIdentity`, and partial package-evidence linker are roadmap architecture, not shipped guarantees |
 
 ---
 

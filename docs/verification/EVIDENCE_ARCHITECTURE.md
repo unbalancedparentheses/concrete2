@@ -19,6 +19,155 @@ authoritative fact from display strings. Authority moves only through checked
 constructors whose acceptance conditions are executable and negatively
 controlled.
 
+## Identity, model, contract, and proposition are different objects
+
+Concrete retains five independently identified objects:
+
+```text
+DefinitionIdentity   exact executable implementation
+ModelIdentity        mathematical semantics used by a proof
+ContractIdentity     exported behavioral interface used by callers
+PropositionIdentity  canonical VIR claim proved by a certificate/kernel
+PolicyIdentity       rule set under which evidence is accepted
+```
+
+Their digest domains and constructors are distinct. A value from one domain
+cannot populate another field, and no identity is reconstructed from a display
+name, path, raw string, or neighbouring digest.
+
+The architecture contains two independent proof arrows:
+
+```text
+model --correspondence evidence--> implementation
+model/proposition --logical proof--> claimed property
+```
+
+An exact generated implementation reference prevents substitution of the
+endpoint. It does **not** prove that the model faithfully represents that
+endpoint. A kernel-valid theorem proves its proposition over the model; it does
+not establish source/model correspondence. These facts remain independently
+degradable through reports, roots, receipts, packages, and policy.
+
+### ImplementationReference
+
+An `ImplementationReference` is an opaque generated selector for an exact
+`DefinitionIdentity`: package, module, declaration, and authoritative semantic
+implementation digest. Its constructor is private. Proof authors select a
+generated typed symbol and never write package components, paths, display names
+or hexadecimal digests. The compiler independently recomputes the identity;
+missing, stale, forged, duplicate, ambiguous, malformed, or legacy name-only
+references refuse or become `needs_recheck`.
+
+Matching recomputation preserves provenance. `generatorAsserted` material does
+not become `compilerLinked` merely because producer and consumer invoke the
+same canonical digest function.
+
+### ModelIdentity and ModelAttestation
+
+`ModelIdentity` binds the model schema, canonical model digest,
+parameterization, logical dependencies, and model codec/toolchain identity. A
+proof-script-only change need not move it; a semantic model change must.
+
+`ModelAttestation` records:
+
+```text
+implementation : ImplementationReference
+model          : ModelIdentity
+relation       : implements | refines | equivalent | abstracts |
+                 contract_only
+claimScope     : ClaimScope
+provenance     : AttestationProvenance
+correspondence : proved | checked | assumed | missing | stale |
+                 ambiguous | unsupported
+```
+
+Attaching a model creates a named correspondence obligation whose default is
+`missing`; generation does not discharge it and silence is never `assumed`.
+Refinement in one direction is not equivalence. Trust is an evidence
+mode/disposition rather than a semantic relation; a trusted model remains
+assumed even when implementation selection is exact.
+
+The authoritative key is
+`(DefinitionIdentity, ModelIdentity, ClaimScope)`. Relation kind and evidence
+mode are coherent payload, not key fields: allowing them into the key would
+permit trusted/proved or refinement/equivalence rows to coexist as two answers
+for one attachment. More than one active row for the key is ambiguous—even
+when byte-identical—and refuses.
+
+Relation kinds form an explicit entailment/coherence algebra. At minimum,
+equivalence entails the corresponding directional refinements, and a suitable
+refinement may satisfy a selected contract. `implements` and `abstracts` retain
+explicit direction rather than being forced into an unsound total order. A
+stronger row explicitly supersedes or retires the weaker active row; it never
+shadows it. Evidence-mode downgrade is trust widening and requires an explicit
+transition.
+
+### Correspondence evidence available before full formalization
+
+Concrete should reuse its differential/reference-evaluator machinery to check
+model behavior against implementation semantics. Exhaustive agreement earns
+`checked` only over a declared finite domain. Sampled agreement over an
+infinite domain records domain, strategy, seed and coverage and remains weaker;
+it never becomes universal equivalence. A mismatch emits a counterexample and
+refuses current correspondence.
+
+This reuses the translation-assurance dimension rather than creating a second
+testing ontology. It is correspondence evidence—not a kernel theorem—and its
+shared producer/evaluator trust remains explicit.
+
+### ExportedContract
+
+An exported interface has its own `ContractIdentity` and independently
+classified components:
+
+```text
+functional behavior
+effects and capabilities
+reads set
+modifies/frame set
+failure behavior
+termination disposition
+resource contract
+assumptions and trusted boundaries
+```
+
+Each component records whether it is authored, inferred-exact,
+inferred-conservative, runtime-checked, assumed, or missing. Conservative
+inference is safe but weaker; it cannot render or satisfy policy as exact or
+proved evidence.
+
+### Dependency strengths
+
+Evidence distinguishes:
+
+- a `contract` edge, invalidated by the exported contract/evidence changing;
+- a `model` edge, invalidated by model identity or correspondence changing;
+- an `implementation` edge, invalidated by exact implementation semantics
+  changing;
+- explicit `trusted`, `missing`, and `unclassified` edges.
+
+A contract-preserving body change leaves contract consumers current while
+staling implementation consumers. A model change stales model consumers even
+when the executable body is unchanged. Edge kind is derived from what the
+proof actually uses, never selected as a freshness optimization.
+
+### Partial evidence linking
+
+Package evidence composition is a checked partial operation, not row
+concatenation followed by hashing. It rejects duplicate identities,
+incompatible contracts/scopes/schemas/rule sets, trust widening, assumption
+deletion or conflict, model/implementation substitution, ambiguous
+attestations, incomplete closure, and evidence weaker than consumer policy.
+Successful linking recomputes closure and roots and records the exact
+contract/model/implementation justification for every imported claim.
+
+Receipts bind implementation, model, relation, scope, correspondence evidence,
+contract, proposition, policy/rule set, theorem artifact, tables, environment,
+dependency root, trust, and assumptions in separately typed fields. A valid
+certificate copied to another code object, model, proposition, contract, or
+policy refuses. Advisory state remains a validation-time registry input, not a
+retroactively mutable receipt fact.
+
 ## Five objects, not one status
 
 ### Source correspondence

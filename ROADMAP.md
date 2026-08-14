@@ -1171,6 +1171,7 @@ system.
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
 | — | **R-0480** | **INCREMENTAL INFORMATION ARCHITECTURE.** Establish document authority, lifecycle and executable ownership checks before moving files. Then migrate one topic family at a time; no bulk rename during R-0004. This prevents the cleanup from creating broken links, merge churn or a cleaner-looking second source of truth |
 | — | **R-0481** | **FINAL REPOSITORY ARCHITECTURE.** Preserve subject-oriented docs, add a dated journal and canonical generated artifacts, centralize gate/mutation/corpus facts, and—only after R-0004 identity closure—split Proof production, portable Evidence, VIR and Report along enforced import boundaries. This is the repository-wide owner of the complete layout and sequencing contract |
+| — | **R-0482** | **MODEL ATTESTATIONS AND EXPORTED INTERFACES.** After R-0004 closes exact implementation selection, add independent model identity, explicit relation kinds and correspondence evidence, exported contract identity, contract/model/implementation dependency edges, partial package-evidence linking, and the full substitution/downgrade attack matrix. Exact identity prevents substitution; it never proves semantic correspondence |
 | — | **R-0479** | **OPPORTUNISTIC, and cheap.** A stub or diagnostic that has NOT computed a fact must not return a valid inhabitant of that fact's domain. `shadowEdgeKinds` returned `unclassified` — a legitimate `DependencyEdge` — when it had never consulted the classifier, which is why it produced a FALSE FINDING rather than an obvious wrong answer. Same shape as `| _ => true`. The receipt and manifest types already make this unrepresentable via private constructors and named refusals; diagnostics were exempt. Needs a survey of report code for defaults standing in for "did not look" |
 | — | **R-0478** | **OPPORTUNISTIC — no queue position, pick up whenever.** 163 of 183 gates carry private copies of the assertion helpers (which is why one vacuity fix had to be applied twice), and `substExpr` names two unrelated operations, one sound and one not. Neither blocks anything; both keep producing defects, so the right time is whenever someone is already in the file. The `substExpr` rename should happen BEFORE R-0474 retires the unsound one |
 | 2e | **R-0477** | `vcgen/calculus` is 4 commits off `main` and tracked nowhere — rebase or retire, AFTER R-0473/0474 so it rebases once. Its earlier "zero disagreements over 41,807 obligations" predates contract validation and the merges, so it is not a current number |
@@ -3714,6 +3715,34 @@ typed `legacyNameOnly -> needs_recheck` disposition. The real cross-package coll
 fail under the old identity, refuse under legacy evidence, and close only under the correctly scoped
 definition; removing either package scope or implementation scope is mutation-killed independently.
 
+**R-0004 closure boundary — exact selection, not model faithfulness:** R-0004 finishes the current
+transition without absorbing the complete model/interface language of R-0482. Proof authors select
+an opaque generated `ImplementationReference`; they never write a package identity, implementation
+digest, or display-name attachment. `PFnDef` remains a mathematical proof model and contains no
+source facts it cannot derive. The compiler recomputes the authoritative `DefinitionIdentity` and
+requires exact agreement with the selected reference. Missing, stale, malformed, duplicated,
+ambiguous, forged and legacy name-only references refuse or become `needs_recheck` according to
+their typed disposition. Successful recomputation preserves provenance—`generatorAsserted` does
+not become `compilerLinked` merely because two uses of the canonical formula agree.
+
+R-0004 MUST retain these five results separately through reports, roots and receipts:
+
+```text
+implementation_selection   exact | stale | missing | ambiguous | legacy
+model_correspondence       proved | checked | assumed | missing | stale | ambiguous |
+                           unsupported
+logical_validity           certificate_replayed | kernel_replayed | solver_trusted |
+                           assumed | missing | invalid
+dependency_closure         complete | incomplete | stale | ambiguous | unclassified
+policy_acceptance          accepted | rejected | needs_recheck
+```
+
+An exact implementation selection secures the endpoint of a correspondence claim; it does not
+prove the arrow from model to implementation. R-0004 may close with model correspondence explicitly
+`assumed` or `missing` where that is the honest current state. It may not derive correspondence from
+a matching digest, a generated symbol, a matching name, kernel validity of a theorem over PExpr, or
+complete dependency closure. R-0482 owns the richer relation/evidence system.
+
 **Resolution refusals are closure data, not report decoration:** zero/ambiguous/malformed external
 rows, entry-provenance failures and table-digest mismatches must enter the typed
 `CorrespondenceResult` consumed by roots and receipts. Rediscovering and appending them to a shadow
@@ -5586,8 +5615,11 @@ After R-0004 stabilizes its identities, migrate by semantic owner rather than by
 
 ```text
 Concrete/Evidence/
-├── Identity/        PackageIdentity, DefinitionIdentity, typed digest domains
+├── Identity/        PackageIdentity, DefinitionIdentity, ModelIdentity,
+│                    ContractIdentity, PropositionIdentity, typed digest domains
 ├── Subject/         implementation and proof-subject preimages/digests
+├── Attestation/     implementation references, models, relation/scope/evidence
+├── Contract/        exported behavior/effect/frame/resource interfaces
 ├── Dependency/      typed edges, classification, table bindings, correspondence, roots
 ├── Receipt/         envelope, replay binding, environment identities, serialization
 └── Policy/          assumptions, trust/advisories, multidimensional acceptance
@@ -5686,6 +5718,312 @@ R-0481 is complete only when all of the following are true:
 **The governing rule:** organize by semantic subject, represent temporal authority explicitly, and
 make every structural boundary executable. A cleaner tree without unique fact ownership and gates
 is not completion; it is future archaeology with better folder names.
+
+### Task R-0482
+
+**Model attestations, exported interfaces, and proof-aware package linking.**
+
+**Scheduling:** immediately after R-0004 makes scoped implementation selection authoritative and
+connects dependency roots without a mixed `CallableId`/`DefinitionIdentity` period. Design and
+hostile fixtures may be prepared earlier; no R-0482 result is authoritative until R-0004 replay,
+receipt and adversarial closure is complete. This task is deliberately separate so R-0004 remains
+finite rather than becoming the entire future verification language.
+
+**Critical-path firewall:** record and review this architecture now, but do not begin its production
+types, relation algebra, package linker, or status migration until R-0004's authority-transition
+gate and mandatory red-team slice close and the pinned checker/toolchain advisory fire drill is
+resolved. Only the two-arrow invariant, corrected attachment key, default-missing obligation rule,
+and reuse of differential correspondence machinery may constrain current R-0004 work. Attractive
+follow-on architecture is not permission to delay the first authoritative adversarial verdict.
+
+**Objective:** make the relationship among a mathematical model, an exact implementation, an
+exported behavioral interface, a proved proposition and an accepting policy explicit and
+machine-checkable. The authoring promise is:
+
+> Proof authors define or select a mathematical model, select an opaque generated implementation
+> reference, state the exact relation and claim scope, and provide correspondence evidence. The
+> compiler recomputes implementation identity, validates the attachment, keeps contract/model/body
+> dependencies separate, and refuses every missing, stale, ambiguous, downgraded or cross-package
+> association.
+
+#### Two arrows, neither substituting for the other
+
+```text
+PFnDef / ModelIdentity
+       |  model-correspondence evidence
+       v
+DefinitionIdentity / exact source implementation
+
+PFnDef / canonical proposition
+       |  certificate or kernel/solver proof
+       v
+claimed logical property
+```
+
+The generated implementation reference identifies the endpoint of the first arrow. It does not
+prove the arrow. A kernel-valid theorem over a model proves the second arrow only. Reports,
+receipts and policy retain both results independently.
+
+#### Required typed objects
+
+**`ModelIdentity`:** identity of the mathematical semantics being used, distinct from both the
+implementation and the theorem proposition. It binds model schema, canonical model digest,
+parameterization, logical dependencies and model codec/toolchain identity. A proof-script-only
+change does not move it; a semantic model change does.
+
+**`ImplementationReference`:** opaque generated selector for an exact `DefinitionIdentity`:
+package, module, declaration and authoritative implementation digest. Its constructor is private.
+Authors select a generated typed symbol; they never transcribe its components. Compiler
+recomputation is mandatory and a mismatch refuses.
+
+**`ModelAttestation`:** the complete attachment, containing implementation reference, model
+identity, relation kind, claim scope, provenance and correspondence disposition. Required relation
+kinds are at least:
+
+```text
+implements
+refines
+equivalent
+abstracts
+contract_only
+```
+
+These are not aliases. A one-direction refinement cannot be rendered or consumed as equivalence.
+Trust is an evidence mode/disposition, not a semantic relation kind; a trusted model remains an
+assumption even when the implementation reference is exact.
+
+**`ExportedContract`:** the package/caller interface, with a distinct `ContractIdentity`, covering:
+
+```text
+functional behavior
+effects and capabilities
+reads set
+modifies/frame set
+failure behavior
+termination disposition
+resource contract
+assumptions and trusted boundaries
+```
+
+Every component records whether it is authored, inferred-exact, inferred-conservative,
+runtime-checked, assumed or missing. Conservative inference is safe but weaker and must never
+render identically to an exact or proved fact.
+
+#### Attachment cardinality
+
+Concrete deliberately does not impose F*'s one-interface/one-implementation restriction. One
+implementation may have several legitimate claim scopes; one model may be reused across several
+implementations; platform implementations may share one contract; and several proof modes may be
+possible. The authoritative key is:
+
+```text
+(DefinitionIdentity, ModelIdentity, ClaimScope)
+```
+
+Relation kind and evidence mode are payload under a coherence rule, not key fields. Otherwise an
+`equivalent` and `refines` row—or trusted and proved rows—could silently coexist as two answers for
+one attachment. Zero matches is missing; more than one active row for the key is ambiguous—even if
+byte-identical—and refuses. A stronger relation explicitly supersedes or retires the weaker active
+row; it does not shadow it. The relation algebra records only valid entailments (at minimum,
+`equivalent` entails its directional refinements, and a suitable refinement may satisfy a selected
+`contract_only` claim). `implements`/`abstracts` direction and contract satisfaction remain explicit
+rather than being forced into an unsound total order. Evidence-mode downgrade is trust
+widening/laundering and requires an explicit transition, never coexistence.
+
+#### Authoring surface and evidence modes
+
+The intended source/proof distinction is explicit at authorship rather than reconstructed by a
+report:
+
+```text
+certificate_by      independently checkable certificate
+proof_object_by     retained/replayable proof object
+trusted_proof_by    explicit trusted proof attachment
+assume              explicit assumption
+```
+
+Exact syntax is a language-design decision, but these modes remain distinct types/dispositions.
+No general `proof_by` fallback may silently choose among them. Generated reference use is
+conceptually:
+
+```lean
+def model : PFnDef := { ... }
+def table : FnTable :=
+  FnTable.ofAttested [AttestedPFnDef.of model GeneratedImplementations.package_module_fn]
+```
+
+Raw package names, paths, digests and display strings are not author inputs. Failure to generate or
+resolve the symbol is a typed refusal, never a placeholder authors repair by copying hex.
+
+#### Correspondence dispositions
+
+Model correspondence is independently retained as:
+
+```text
+proved
+checked
+assumed
+missing
+stale
+ambiguous
+unsupported
+```
+
+Attaching a model creates a named correspondence obligation whose default state is `missing`; it
+does not discharge one and silence is never `assumed`. Following Why3's safe default, abstract
+assumptions become obligations unless the author explicitly uses the assumption/trusted surface.
+Runtime checks or finite exhaustive validation may earn `checked` only under their declared domain.
+Signature agreement, identity agreement and proof validity do not earn `proved`.
+
+**Near-term evidence path:** reuse the existing differential-lowering/reference-evaluator machinery
+to compare the PFnDef model with implementation semantics. Exhaustive comparison earns `checked`
+only over a declared finite domain; sampled comparison over infinite domains records its sample
+strategy, seed/domain and translation-assurance strength and remains weaker. This is correspondence
+evidence, not a kernel proof, and producer/shared-evaluator trust remains visible. A mismatch emits a
+counterexample and refuses current correspondence. This turns the new axis into evidence rather
+than bookkeeping without pretending sampling proves universal equivalence.
+
+#### Three dependency strengths
+
+Replace the eventual two-way contract/body simplification with three exact dependency kinds:
+
+```text
+contract edge        depends on ContractIdentity and exported evidence
+model edge           depends on ModelIdentity and correspondence evidence
+implementation edge  depends on exact DefinitionIdentity/body semantics
+```
+
+`trusted` and non-current `missing`/`unclassified` remain explicit. A contract-preserving body
+change does not stale contract callers. It does stale implementation-edge callers. A model change
+stales model-edge callers even when the executable body is unchanged. Edge kind is derived from
+what the theorem/consumer actually uses, never selected as a freshness optimization flag.
+
+#### Proof-aware package linking is partial
+
+Define package evidence composition as a checked partial operation:
+
+```text
+linkEvidence : EvidenceBundle -> EvidenceBundle -> Except LinkRefusal EvidenceBundle
+```
+
+The linker refuses at least:
+
+- duplicate or colliding definition identities;
+- incompatible exported contracts or claim scopes;
+- schema/codec/rule-set incompatibility;
+- trust widening or assumption deletion/conflict;
+- model/implementation substitution;
+- ambiguous attestations;
+- missing, stale or incomplete dependency closure;
+- contract evidence weaker than the consumer policy requires.
+
+Composition is not list concatenation followed by hashing. It preserves identity uniqueness,
+propagates trust/assumptions monotonically, recomputes dependency closure/root, and records which
+contract/model/implementation relation justified each imported claim. The package manager rejects
+an upgrade that weakens a required contract even if ABI and names are unchanged.
+
+#### Receipt and artifact bindings
+
+Extend the canonical evidence schema and receipt with independently typed fields for:
+
+```text
+implementationReference
+modelIdentity
+relationKind
+claimScope
+correspondenceEvidence
+contractIdentity
+propositionIdentity
+policyIdentity / rule-set identity
+```
+
+Receipts continue to bind theorem artifact, tables, environment/toolchain, dependency root, trust
+and assumptions. A valid certificate copied to another implementation, model, proposition,
+contract or policy refuses. Advisory/revocation state remains a validation-time registry input,
+not a retroactively mutable receipt field.
+
+#### Required adversarial matrix
+
+Every item below has a positive control and a production-consumer mutation; a synthetic validator
+probe alone is insufficient:
+
+1. correct implementation, wrong model;
+2. correct model, wrong implementation;
+3. same callable/module name in another package, and the same declared package name/version from a
+   different registry, repository, source namespace or origin identity;
+4. same body with changed signature, capability, generic or contract facts;
+5. same implementation with narrower claim scope;
+6. refinement relabeled as equivalence;
+7. trusted attachment relabeled as proved;
+8. model changed while proof artifact remains fixed;
+9. proof artifact changed while proposition/model remains fixed;
+10. contract preserved while body changes—contract callers remain current;
+11. model changed while contract remains equivalent—model callers stale;
+12. one implementation with two legitimate claim scopes—both remain representable;
+13. duplicate attachment for the same full key—ambiguous refusal;
+14. package link with conflicting exported contracts;
+15. certificate/receipt copied under another policy or rule set;
+16. forged or manually constructed implementation reference—construction failure;
+17. inferred-conservative dependency/effect presented as exact;
+18. vacuous or empty exported contract receiving a strong proved presentation;
+19. package scope removed from identity;
+20. implementation scope removed from identity;
+21. stale generated reference with a fresh proof;
+22. model/body correspondence removed while logical proof remains valid;
+23. implementation/model/contract identities swapped independently;
+24. duplicate, surplus or unmatched package-link evidence discarded by filtering.
+
+#### Documentation and reporting requirements
+
+The normative object model lives in `docs/verification/EVIDENCE_ARCHITECTURE.md`; status vocabulary
+in `VERIFICATION_STATUS.md`; author meaning in `PROOF_CONTRACT.md`; author procedure in
+`PROOF_WORKFLOW.md`; hostile cases in `THREAT_MODEL.md`; product invariant in
+`VERIFICATION_CHARTER.md`; proposition boundary in `VERIFICATION_IR.md`; shipped limitations in
+`CLAIMS_TODAY.md`; theorem categories in `PROOF_THEOREM_SHAPES.md`; feature admission in
+`docs/project/DESIGN_POLICY.md`. No roadmap-only architecture counts as implemented or normative.
+
+Reports expose at least these independent dimensions:
+
+```text
+implementation_selection
+model_correspondence
+logical_validity
+dependency_closure
+policy_acceptance
+```
+
+No single `proved`/green value may erase a weaker dimension. A kernel CVE can degrade logical
+validity without rewriting selection/correspondence/closure; a source change can stale selection or
+correspondence without claiming the old theorem became logically false.
+
+#### Sequencing and exit gates
+
+1. finish R-0004 exact implementation-reference migration and reach identity-safe 10/10;
+2. make correspondence completeness mandatory for root usability and connect roots to verdicts;
+3. finish the total contract-callable model fragment; an attested model that may diverge, trap, or
+   invoke trusted execution cannot serve as logical contract semantics without an explicit weaker
+   disposition;
+4. introduce `ModelIdentity` with canonical sensitivity/invariance gates;
+5. introduce `ModelAttestation`, explicit relation algebra, named default-missing correspondence
+   obligations and differential checked correspondence;
+6. generate author-facing typed references and remove raw attachment inputs;
+7. complete R-0473/R-0474 typed contract records, identity-safe substitution, `old`, and frame/
+   `modifies`; `ExportedContract` cannot honestly precede that substrate;
+8. introduce `ExportedContract`/`ContractIdentity` with functional/effect/frame/failure/termination/
+   resource components and provenance;
+9. migrate dependency material to contract/model/implementation kinds;
+10. implement partial package-evidence linking and behavioral compatibility checks;
+11. extend canonical artifacts, receipts and standalone verifier;
+12. run and mutation-kill the complete adversarial matrix;
+13. publish a multi-implementation package whose body can change without staling contract-only
+    consumers, while model/body consumers stale exactly as specified.
+
+**Done when:** all identities are typed and domain-separated; authors write no raw identity/digest;
+every attachment states relation/scope/mode; correspondence and logical validity are independently
+replayable; exported contracts compose across packages; the partial linker refuses every unmatched
+or weakened case; dependency strength produces the intended freshness behavior; receipts bind
+code/model/proposition/contract/policy separately; and all twenty-four attacks are killed by the
+production path without collapsing evidence into one status.
 
 ### Task R-0479
 
