@@ -2560,9 +2560,26 @@ check_report "$TESTDIR/report_evidence_check_length.con" effects \
     "evidence: check_length file wrong evidence counts"
 
 # --- decode_header: proved parser-core function ---
+# 3 proved -> 2 proved ON 2026-08-15, and this is the intended consequence of R-0004 package 2's
+# authority transition rather than a regression.
+#
+# `decode_header` calls `parse_byte` and `check_length`, and its (hardcoded, backward-compatibility)
+# proof link names `Concrete.Proof.proofFnsExt` — a table with ZERO canonical entries. A table with
+# no entries can describe no definitions, so it cannot say that the theorem is about THIS program's
+# `parse_byte` rather than another program's function of the same name. Both body edges are therefore
+# unjustified and the verdict is `correspondence_unjustified`, not `proved`.
+#
+# The two leaf functions stay proved, and should: their own fingerprints match their own bodies and
+# neither has an outgoing edge.
+#
+# CLOSING IT MEANS POPULATING AND ATTESTING `proofFnsExt`, which needs a manifest row, which needs a
+# fixture subject that claims it. `tests/programs/` is deliberately OUTSIDE the attested population:
+# these are compiler test inputs, not evidence-corpus fixtures, and their proof links are documented
+# here as backward compatibility. So the honest state for this file today is a claim the authority
+# pass refuses — which is what the counts now say.
 check_report "$TESTDIR/proof_decode_header.con" effects \
-    "3 proved, 1 enforced" \
-    "evidence: decode_header file has 3 proved + 1 enforced" \
+    "2 proved, 2 enforced" \
+    "evidence: decode_header file has 2 proved + 2 enforced (decode_header's closure is unjustified)" \
     "evidence: decode_header file wrong evidence counts"
 
 check_report "$TESTDIR/proof_decode_header.con" effects \
