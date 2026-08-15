@@ -504,9 +504,13 @@ add "manifest-duplicate-path-live" "scripts/gen/attestation_manifest.sh" "check_
 # (table, package, module, decl). Dropping PACKAGE from it conflates same-named declarations across
 # different packages — precisely the `main.validate_header` collision that motivated scoped identity —
 # so distinct implementations in distinct packages register as one key with several implementations.
+# Retargeted to the awk grouping. The first version altered a `cut` field set and SURVIVED, because
+# the old grep-based detection went silently inert when the key changed — it found nothing and
+# reported no conflicts. That survival was a finding about the CHECK, and the check was rewritten to
+# group over the whole key instead of reconstructing and grepping it.
 add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
-  $'CONFLICTS="$(cut -f1-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do' \
-  $'CONFLICTS="$(cut -f1,3-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do'
+  $'CONFLICTS="$(awk -F\'\\t\' \'{ key = $1 FS $2 FS $3 FS $4; if (!(key in seen)) { seen[key] = $5 }' \
+  $'CONFLICTS="$(awk -F\'\\t\' \'{ key = $1 FS $3 FS $4; if (!(key in seen)) { seen[key] = $5 }'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0

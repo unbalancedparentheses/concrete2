@@ -79,25 +79,13 @@ DUPES="$(sort "$TMP/pairs.tsv" | uniq -d | wc -l)"
 # CONFLICTING: one (table, package, module, decl) attested to DIFFERENT implementations. This is the
 # dangerous one: both mappings look valid, and a converter taking either would attest a table to an
 # implementation the subject does not have.
-CONFLICTS="$(cut -f1-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do
-  n="$(grep -cP "^$(printf '%s' "$key" | sed 's/[][\.*^$/]/\\&/g')\t" "$TMP/pairs.tsv" 2>/dev/null || echo 0)"
-  impls="$(grep -P "^$(printf '%s' "$key" | sed 's/[][\.*^$/]/\\&/g')\t" "$TMP/pairs.tsv" 2>/dev/null | cut -f5 | sort -u | wc -l)"
-  [ "${impls:-1}" -gt 1 ] && echo "$key"
-done | grep -c . || true)"
-# MEASURED 2026-08-14: this is NOT a mapping conflict, it is a PACKAGE COLLAPSE, and calling it a
-# conflict would refuse legitimate data while leaving the real defect unnamed. `composition` and
-# `composition_trusted_helper` are different programs that declare the same package name and the same
-# module inventory, so `packageIdentityOf` — whose `contentRoot` is derived from module NAMES —
-# assigns them ONE package identity. Their `calls.combine` implementations differ, which is correct
-# and is exactly what `DefinitionIdentity` separates.
-#
-# So the mapping is fine and the package identity is too weak. Reported as a named condition, because
-# a converter is safe here (the identities differ) while the collapse still needs closing: binding
-# module CONTENT rather than module names in `contentRoot`.
-if [ "${CONFLICTS:-0}" -gt 0 ]; then
-  echo "# NOTE: ${CONFLICTS} package-collapse key(s) — same package identity, same declaration," >&2
-  echo "#       different implementations. DefinitionIdentity separates them; contentRoot does not." >&2
-fi
+# Grouped with awk over the WHOLE key, rather than reconstructing a key string and grepping for it.
+# The grep version went SILENTLY INERT when the key's field set changed — it found nothing and
+# reported no conflicts — so a mutation that altered the key survived. A check that answers "no
+# problems" when it has stopped looking is the failure mode this codebase keeps finding.
+CONFLICTS="$(awk -F'\t' '{ key = $1 FS $2 FS $3 FS $4; if (!(key in seen)) { seen[key] = $5 }
+                            else if (seen[key] != $5) { bad[key] = 1 } }
+                          END { n = 0; for (k in bad) n++; print n }' "$TMP/pairs.tsv")"
 
 # SURPLUS: a table attested by no classification row at all. Such a mapping authorises material
 # nothing references, which is evidence supplied to an operation that did not request it.
