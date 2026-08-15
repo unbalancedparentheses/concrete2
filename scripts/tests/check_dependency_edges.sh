@@ -1520,6 +1520,23 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# AN EMPTY TABLE IS VACUOUSLY ATTESTED, NOT LEGACY. `FnTable.empty` has no entries, so there is
+# nothing to attest and membership is empty for every callee — a complete answer, not a missing one.
+# Thirteen packages share that single constant, so it cannot be attested per-package; treating it as
+# legacy would refuse every subject naming it while nothing about it remains to establish.
+probe "an EMPTY table yields empty membership, not a legacy refusal" "true" '
+#eval (scopedEntryEvidence (FnTable.empty)).toOption == some []'
+# ...and a table WITH entries but no attestations is still legacy, so the exemption is about
+# emptiness rather than about missing attestations.
+probe "a table WITH entries but no attestations is still legacy" "true" '
+#eval
+  let d : PFnDef := { identity := .semantic (CallableId.ofUser "m" "f"), operationalKey := "f",
+                      sourceBodyDigest := some { value := "496808fdd594d5047f23e823bc26b69c" },
+                      params := [], body := PExpr.lit (PVal.int 0) }
+  match scopedEntryEvidence ({ entries := #[d], globals := fun _ => none } : FnTable) with
+  | .error ScopedMembershipRefusal.legacyUnattested => true
+  | _ => false'
+
 # === SCOPED MEMBERSHIP (the join's replacement key) ============================================
 # `tableEntryEvidence` keys on `CallableId`, a source NAME. `scopedEntryEvidence` asks the same
 # question of the four-component identity. A table with no attestations is LEGACY — it evaluates, but

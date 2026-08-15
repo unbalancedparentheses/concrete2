@@ -255,6 +255,16 @@ def scopedEntryEvidence (t : FnTable)
   -- checking emptiness first would report `legacyUnattested` for a table someone DID attest, sending
   -- a reader to write attestations that already exist.
   if t.attestationFailures > 0 then .error (.attestationIncomplete t.attestationFailures)
+  -- AN EMPTY TABLE IS VACUOUSLY ATTESTED, not legacy. `FnTable.empty` has no entries, so there is
+  -- nothing to attest and membership is empty for every callee — which is a complete answer, not a
+  -- missing one. Thirteen packages share that single constant, so it cannot be attested per-package
+  -- anyway; treating it as `legacyUnattested` would refuse every subject that names it while there
+  -- is nothing about it left to establish.
+  --
+  -- Checked BEFORE the attestation test: a table with entries and no attestations is legacy, and a
+  -- table with neither is empty. Collapsing those would either refuse an empty table or admit an
+  -- unattested one.
+  else if t.entries.isEmpty then .ok []
   else if t.attested.isEmpty then .error .legacyUnattested
   else
     let rows ← t.attested.toList.foldlM (init := ([] : List ScopedEntryEvidence))
