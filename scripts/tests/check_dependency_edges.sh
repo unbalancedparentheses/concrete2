@@ -1558,6 +1558,10 @@ probe "fixedCapacityFns is ATTESTED and yields 4 scoped entries" "some 4" \
 '#eval (scopedEntryEvidence fixedCapacityFns).toOption.map (·.length)'
 probe "parseValidateFns is ATTESTED and yields 3 scoped entries" "some 3" \
 '#eval (scopedEntryEvidence parseValidateFns).toOption.map (·.length)'
+# ONE model, TWO scoped entries — the same `ctCompareFn` attested to two packages whose
+# implementations differ. If scoped identity ever collapsed to the model, this would read 1.
+probe "ctTagFns attests ONE model to TWO packages and yields 2 scoped entries" "some 2" \
+'#eval (scopedEntryEvidence ctTagFns).toOption.map (·.length)'
 
 # NO CONVERTED TABLE MAY BE DELTA-UNFOLDED BY A PROOF — mechanical, replacing a claim I made three
 # times from a grep and got wrong twice.
@@ -1574,7 +1578,7 @@ probe "parseValidateFns is ATTESTED and yields 3 scoped entries" "some 3" \
 probe "no converted table has an equation lemma (no proof delta-unfolds an attested table)" "true" \
 '#eval show MetaM Bool from do
    let env ← getEnv
-   let tables := [`Concrete.Proof.cryptoFns, `Concrete.Proof.elfFns,
+   let tables := [`Concrete.Proof.cryptoFns, `Concrete.Proof.ctTagFns, `Concrete.Proof.elfFns,
                   `Concrete.Proof.fixedCapacityFns, `Concrete.Proof.parseValidateFns]
    return tables.all (fun t => !(env.contains (t ++ `eq_1)) && !(env.contains (t ++ `eq_def)))'
 # NON-VACUITY: the check must be able to SEE such a lemma. `pureCoreFns` is delta-unfolded by

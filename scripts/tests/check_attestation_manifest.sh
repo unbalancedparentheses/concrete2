@@ -181,6 +181,10 @@ def attestationSites : List (String × FnTable) :=
 #eval show IO Unit from do
   for (n, t) in attestationSites do
     IO.println s!"SITE {n} attested={t.attested.size} failures={t.attestationFailures} entries={t.entries.size}"
+    -- The identities a site ACTUALLY selected, so a check can ask what was omitted rather than only
+    -- what was declared. Package and declaration are enough to name a manifest row.
+    for (_, d) in t.attested do
+      IO.println s!"BOUND {n} {d.packageIdentity} {d.declarationIdentity}"
 LEAN
 
 SITES="$(lake env lean "$TMP/attested.lean" 2>&1)"
@@ -203,7 +207,15 @@ site_field() { printf '%s' "$SITES" | grep -E "^SITE $1 " | grep -oE "$2=[0-9]+"
 #   does not model that implementation. Attestation BINDS and does not check faithfulness, so
 #   selecting the reference would make the table describe a function it does not describe, and
 #   nothing downstream would catch it.
-EXCLUSIONS="Concrete.Proof.elfFns:d7eed9438112e0d817a3a15812018938:validate_header"
+#
+#   ctTagFns / evidence_classes/stale_proof / ct_compare — a DRIFTED implementation. Same linked
+#   theorem, but the body starts `diff` at 1 instead of 0, and the compiler says so itself:
+#   `--report proof-status` reports SPEC DRIFT, "the theorem is about a different function than the
+#   source". Attesting it would bind the model to an implementation it does not model, and nothing
+#   would catch it — `scopedEntryEvidence` recomputes the digest of the MODEL's body, never the
+#   implementation's. The manifest still offers the row (see the drift-classifier check below).
+EXCLUSIONS="Concrete.Proof.elfFns:d7eed9438112e0d817a3a15812018938:validate_header
+Concrete.Proof.ctTagFns:13c8e4151b399c089fad1a4124686597:ct_compare"
 
 for ex in $EXCLUSIONS; do
   extbl="${ex%%:*}"; rest="${ex#*:}"; expkg="${rest%%:*}"; exdecl="${rest##*:}"
@@ -216,7 +228,7 @@ done
 
 # CONVERTED SET, EXACT. Converting a table is a deliberate step, so it is stated here; a table that
 # starts reporting attestations without this list being updated is an unreviewed conversion.
-CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns"
+CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.ctTagFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns"
 
 if [ -n "$SITES" ]; then
   ACTUALLY_ATTESTED="$(printf '%s' "$SITES" | grep -vE 'attested=0 ' | awk '{print $2}' | sort | tr '\n' ' ')"
@@ -254,6 +266,59 @@ if [ -n "$SITES" ]; then
     fi
   done
 fi
+
+# === A DRIFTED IMPLEMENTATION MUST NEVER BE ATTESTED ============================================
+#
+# The manifest excludes drift fixtures by GREPPING THEIR HEADERS for "DRIFTED variant". That is a
+# second, weaker producer of a fact the compiler already computes, and it has a live miss:
+# `examples/evidence_classes/stale_proof` declares "the body has DRIFTED", does not match the
+# pattern, and its row IS offered for attestation. Attesting it would bind a model to an
+# implementation it does not model — and no downstream check would catch that, because
+# `scopedEntryEvidence` recomputes the digest of the MODEL's body, never the implementation's.
+#
+# So the verdict is re-derived from the compiler here: any manifest row whose fixture reports SPEC
+# DRIFT must be a DECLARED exclusion at its table site. This does not repair the manifest's
+# classifier — that is a package-1 decision — it stops the conversion path from consuming its miss.
+echo "=== drifted implementations are never attested ==="
+
+DRIFTED_SRCS=""
+for src in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | sed -E 's/.*\(([^)]*)\)$/\1/' | sort -u); do
+  # CAPTURE FIRST, THEN GREP. `if binary … | grep -q` reads correctly and is WRONG under
+  # `set -o pipefail`: the compiler exits non-zero on a fixture with a proof defect — which is
+  # every fixture this check is looking for — so pipefail returns that failure and the branch is
+  # never taken. The first version of this check reported "no fixture reports spec drift" while the
+  # same grep matched by hand. A check that answers "nothing found" because it stopped looking is
+  # exactly the defect this gate was written for, one level up.
+  ps_out="$("$ROOT_DIR/.lake/build/bin/concrete" "$src" --report proof-status 2>&1)"
+  case "$ps_out" in *"spec drift"*) DRIFTED_SRCS="$DRIFTED_SRCS $src" ;; esac
+done
+
+if [ -n "$DRIFTED_SRCS" ]; then
+  ok "the compiler reports spec drift for:$DRIFTED_SRCS (so this check has a live case)"
+else
+  no "no manifest fixture reports spec drift — either the corpus lost its drift fixture or the report changed, and this check is now vacuous"
+fi
+
+for src in $DRIFTED_SRCS; do
+  while read -r row; do
+    [ -n "$row" ] || continue
+    rtbl="${row%% <-*}"; rrest="${row#* <- }"; rpkg="${rrest%%/*}"
+    rmoddecl="${rrest%% *}"; rmoddecl="${rmoddecl#*/}"; rdecl="${rmoddecl#*.}"
+    # DECLARED and OMITTED are different facts, and only the second is the one that matters. An
+    # earlier version of this check asked only whether the row appeared in EXCLUSIONS, which a table
+    # could satisfy while ALSO selecting the reference — declared excluded and bound anyway. So the
+    # binding is read from the table site itself.
+    if printf '%s' "$SITES" | grep -qE "^BOUND $rtbl $rpkg $rdecl$"; then
+      no "drifted row $rtbl/$rdecl ($src) IS BOUND at the table site — the model is attested to an implementation the compiler says it does not describe"
+    elif printf '%s\n' $EXCLUSIONS | grep -qx "$rtbl:$rpkg:$rdecl"; then
+      ok "drifted row $rtbl/$rdecl ($src) is omitted at the table site AND declared as an exclusion"
+    else
+      no "drifted row $rtbl/$rdecl ($src) is unbound but undeclared — say why it is excluded, or the next conversion will silently pick it up"
+    fi
+  done <<EOF_ROWS
+$(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | grep -F "($src)")
+EOF_ROWS
+done
 
 # === THE MANIFEST'S POPULATION IS SUBJECTS; THE JOIN'S POPULATION IS CALLEES ====================
 #

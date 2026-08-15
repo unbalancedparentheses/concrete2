@@ -538,6 +538,22 @@ add "attestation-conversion-complete-parsevalidate" "Concrete/Proof/Proof.lean" 
   $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_420510fb_validate_header_fields\n    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version' \
   $'    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version'
 
+# R-0004 package 2. A DRIFTED IMPLEMENTATION ATTESTED. This is the exclusion that is NOT a
+# judgement call: `evidence_classes/stale_proof` links the same theorem while its body starts `diff`
+# at 1, and the compiler reports SPEC DRIFT for it. The mutation selects that manifest row anyway —
+# which is what a conversion driven mechanically off the manifest would do, since the manifest's
+# header-grep drift classifier does not exclude it. Killed by the drift check, which re-derives the
+# verdict from the compiler rather than from the fixture's prose.
+#
+# It SWAPS a legitimate reference for the drifted one rather than adding it, deliberately: adding
+# would also break the row/attestation arithmetic, so the kill could come from the reconciliation
+# and the drift check would never be exercised. With the swap the counts still reconcile (3 rows =
+# 2 attested + 1 declared exclusion) and only the drift check can catch it — and only because it
+# reads what the table site BOUND, not what the exclusion list DECLARED.
+add "attestation-never-binds-drifted-impl" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
+  $'    , AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_404dc2c1_ct_compare ]' \
+  $'    , AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_13c8e415_ct_compare ]'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

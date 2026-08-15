@@ -2605,7 +2605,27 @@ def ctTagFnsGlobals : String → Option PFnDef
     existing proof rewrites with `ctTagFnsGlobals`; `dispatchResolves` checks the
     two agree, so the root commits to the mapping evaluation actually uses. -/
 def ctTagFns : FnTable :=
-  { entries := #[ctCompareFn], globals := ctTagFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 5). ONE model, TWO implementations in two packages:
+  -- `constant_time_tag` and the `demo` module of `evidence_classes/partial_contract`, whose bodies
+  -- are identical and whose implementation identities differ because contracts are part of the
+  -- implementation. That is legitimate reuse and the reason attestation is per (model, package).
+  --
+  -- THE THIRD MANIFEST ROW IS EXCLUDED, AND IT IS A DIFFERENT KIND OF EXCLUSION FROM `elfFns`'s.
+  -- `evidence_classes/stale_proof` links the same theorem, but its body DRIFTED — `diff` starts at
+  -- 1 instead of 0 — and the compiler says so itself: `--report proof-status` reports SPEC DRIFT,
+  -- "the theorem is about a different function than the source". Attesting it would bind this model
+  -- to an implementation it demonstrably does not model, and no existing check would catch it:
+  -- `scopedEntryEvidence` recomputes the digest of the MODEL's body, never the implementation's.
+  --
+  -- The manifest still OFFERS that row, because its drift exclusion greps fixture headers for
+  -- "DRIFTED variant" and this fixture's header says "the body has DRIFTED" instead. That gap is a
+  -- finding about the manifest, not a judgement to leave in a comment: the gate now requires every
+  -- row from a spec-drifted fixture to be a DECLARED exclusion, re-deriving the drift verdict from
+  -- the compiler rather than from prose.
+  FnTable.withAttestations
+    { entries := #[ctCompareFn], globals := ctTagFnsGlobals }
+    [ AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_6ef4fa5e_ct_compare
+    , AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_404dc2c1_ct_compare ]
 
 -- Keeps `simp only [eval, ctTagFns_globals, ctTagFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `ctTagFns`. The old `def ctTagFns : FnTable | "x" => …` produced equation lemmas
