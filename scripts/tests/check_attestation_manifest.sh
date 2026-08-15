@@ -392,6 +392,36 @@ else
   no "dependency population moved: $DEPREQ = $DEPATT + $DEPREF, was 42 = 41 + 1 — say which edge appeared or disappeared"
 fi
 
+# MEMBERSHIP PROVENANCE, THE HONEST VERSION. "Attested" is one word for three different claims, and
+# the weakest of them — an exact identity whose table could not be read at all — must not be reported
+# with the same word as membership verified against a table the compiler holds and recomputed.
+#
+# `unresolved` is 0 TODAY because `shaFns` was added to the classification generator's external
+# tables, so every table a theorem names can now answer membership. That is a real improvement rather
+# than a typed excuse: the ignorance was removed instead of being labelled. The path itself stays
+# controlled by the unknown-table probes in `check_dependency_edges.sh`, which is where a synthetic
+# unreadable table lives — this gate measures the corpus, and the corpus no longer has one.
+DEPVC="$(field dependency_membership_verified_compiler)"
+DEPVG="$(field dependency_membership_verified_asserted)"
+DEPUN="$(field dependency_membership_unresolved)"
+if [ "$DEPATT" = "$(( DEPVC + DEPVG + DEPUN ))" ]; then
+  ok "every attestation carries a membership state ($DEPATT = $DEPVC compiler-linked + $DEPVG generator-asserted + $DEPUN unresolved)"
+else
+  no "attestations do not reconcile by membership state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
+fi
+if [ "$DEPVC" = "18" ] && [ "$DEPVG" = "23" ] && [ "$DEPUN" = "0" ]; then
+  ok "membership states are exactly 18 compiler-linked / 23 generator-asserted / 0 unresolved"
+else
+  no "membership states moved: $DEPVC / $DEPVG / $DEPUN, was 18/23/0 — a table changed provenance, or one stopped being readable"
+fi
+# BOTH VERIFIED KINDS MUST BE LIVE. If generator-asserted fell to zero the distinction would be
+# untested; if compiler-linked did, the strongest evidence class would have quietly disappeared.
+if [ "$DEPVC" -gt 0 ] 2>/dev/null && [ "$DEPVG" -gt 0 ] 2>/dev/null; then
+  ok "both membership provenances are live, so the distinction is exercised rather than declared"
+else
+  no "one membership provenance has no case ($DEPVC compiler-linked, $DEPVG generator-asserted) — the distinction is untested"
+fi
+
 for pair in "dependency_duplicate_mappings:$DEPDUP" "dependency_conflicts:$DEPCON" "dependency_without_identity:$DEPNOID"; do
   k="${pair%%:*}"; v="${pair##*:}"
   if [ "$v" = "0" ]; then ok "$k = 0"; else no "$k = $v — a real defect, not noise"; fi
@@ -416,8 +446,8 @@ if printf '%s' "$OUT" | grep -q 'combineFns <- .*calls.dbl.*binding_role=depende
 else
   no "composition_unlinked_helper/calls.dbl has no dependency attestation — this control lost its case"
 fi
-if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null \
-     | grep -q 'shadow correspondence: matched=0 missing=1'; then
+PP_SUBJECT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null || true)"
+if printf '%s' "$PP_SUBJECT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=1'; then
   ok "exact dependency selection did NOT make the misattached subject correspond (identity is not justification)"
 else
   no "proof_pressure/validate_header changed disposition after dependency references were added — an identity was taken for a justification"

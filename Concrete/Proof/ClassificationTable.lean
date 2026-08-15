@@ -207,7 +207,8 @@ def validateRawRow : String × String × String × List (String × String) × Bo
     other is trusted. -/
 def externalTableEntries : List (String × String × List (String × String × String)) :=
 [
-  ("Examples.ProofPatterns.Proofs.combineFns", "1393cec60470308d80326ce29c170734", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")])
+  ("Examples.ProofPatterns.Proofs.combineFns", "1393cec60470308d80326ce29c170734", [("calls", "dbl", "b78225e71dcabeba3282cf29cdc93ef5"), ("calls", "inc", "547e67b5f2b072131034d8cec278c032")]),
+  ("Examples.HmacSha256.Proofs.shaFns", "d65913cd6b4bd885964048049b0afc75", [("hmac_sha256", "big_sigma0", "3ab667a7aa7008cf6f2b0410906846fc"), ("hmac_sha256", "big_sigma1", "5eba5036845c396a1525f1552acc5ce9"), ("hmac_sha256", "block_to_words", "224375466a2d80c59a71920a1caf490e"), ("hmac_sha256", "block_to_words_at", "f3752e9a1e0c1684752788d52f862e2e"), ("hmac_sha256", "ch", "81002eaa06b8442660382499ad6b3a51"), ("hmac_sha256", "maj", "3e7f5397ade0a4c3d133d5f48328de94"), ("hmac_sha256", "rotr", "c930744af4cdf9af471921965c0991a2"), ("hmac_sha256", "sha256_compress_at", "41a4d518a4d1c212fe9497b2cf258e7b"), ("hmac_sha256", "sha256_hash", "0df3d0146c48c1d9feefaf63c7355ee9"), ("hmac_sha256", "sha256_init", "6a966052949f39009ae27d6e18fbb38e"), ("hmac_sha256", "sha256_k", "a4726fb469497e7733a03c39ed145ff2"), ("hmac_sha256", "sha256_round", "13fe613e1d54ede8cacb86345780b26b"), ("hmac_sha256", "sha256_schedule", "0d08dda9f27ef3f7d9de6b9a8a0e2442"), ("hmac_sha256", "small_sigma0", "346c88e7b30d01981384dc8ddd142835"), ("hmac_sha256", "small_sigma1", "9b64d43896c89316c83ac438d21f9b92"), ("hmac_sha256", "state_to_bytes", "00bb5f1fe704e930efbb13c7755c353c")])
 ]
 
 /-- Why a theorem has no usable classification. NAMED, because `DependencyClosure`

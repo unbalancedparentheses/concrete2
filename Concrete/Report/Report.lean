@@ -2147,9 +2147,23 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
               -- table is a different answer — "cannot tell" is not "does not contain", and refusing
               -- on it would manufacture a refusal from the compiler's own reach rather than from the
               -- data. The identity claim is about the CALLEE and stays true either way.
-              match Proof.tableContainsCallee tbl callee with
-              | .ok false => some (hdr ++ s!"\trefused\ttableModelMissing\t{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}\t{calleeName}\n")
-              | _ => some (hdr ++ s!"\tattested\t-\t{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}\n")))
+              --
+              -- AND THE MEMBERSHIP PROVENANCE IS CARRIED, not collapsed into the word "attested".
+              -- Three states, because they are three different claims: membership VERIFIED against a
+              -- table the compiler holds and whose body digests it recomputed; membership verified
+              -- against GENERATOR-ASSERTED rows, which bind a name to digests nobody re-derived from
+              -- a body; and membership UNRESOLVED, where the identity is exact and the table could
+              -- not be read at all. Reporting the third with the same word as the first is the
+              -- laundering this whole slice exists to prevent.
+              let idFields := s!"{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}"
+              match Proof.entryEvidenceWithProvenance tbl with
+              | .error w =>
+                  some (hdr ++ s!"\tattested\tmembership=unresolved:{w.explain}\t{idFields}\n")
+              | .ok (prov, rows) =>
+                  if Proof.entryEvidenceContains rows callee then
+                    some (hdr ++ s!"\tattested\tmembership=verified:{prov.render}\t{idFields}\n")
+                  else
+                    some (hdr ++ s!"\trefused\ttableModelMissing\t{idFields}\t{calleeName}\n")))
   )
   let rows := pc.entries.map (fun e =>
     let thm := Concrete.theoremNameOf pc e.qualName

@@ -103,7 +103,7 @@ echo
 # EVERY REQUEST IS EMITTED, whatever its disposition, and the whole population is emitted rather than
 # the subset lacking a subject row: a callee gaining a proof link must not make its dependency
 # request disappear, or the denominator shrinks when the corpus improves.
-DEPREQ=0; DEPATT=0; DEPREF=0; DEPNOID=0
+DEPREQ=0; DEPATT=0; DEPREF=0; DEPNOID=0; DEPVC=0; DEPVG=0; DEPUN=0
 : > "$TMP/deppairs.tsv"
 : > "$TMP/depatt.txt"
 : > "$TMP/depref.txt"
@@ -130,7 +130,18 @@ while IFS= read -r line; do
     echo "$tbl !! $pkg/$mod.$decl  binding_role=dependency  refusal=$kind  # requested by $cname [$consumer] ($src)" >> "$TMP/depref.txt"
   else
     DEPATT=$((DEPATT+1))
-    echo "$tbl <- $pkg/$mod.$decl impl=$impl  binding_role=dependency  # requested by $cname [$consumer] ($src)" >> "$TMP/depatt.txt"
+    # MEMBERSHIP PROVENANCE IS CARRIED THROUGH, never summarised away. `verified:compiler-linked` is
+    # membership checked against a table the compiler holds and whose body digests it recomputed;
+    # `verified:generator-asserted` is checked against rows nobody re-derived from a body; and
+    # `unresolved:…` is an exact identity whose table could not be read at all. One word for all
+    # three would report the weakest as the strongest.
+    case "$kind" in
+      membership=verified:compiler-linked)    DEPVC=$((DEPVC+1)) ;;
+      membership=verified:generator-asserted) DEPVG=$((DEPVG+1)) ;;
+      membership=unresolved:*)                DEPUN=$((DEPUN+1)) ;;
+      *) refuse "dependency attestation for $mod.$decl carries an unrecognised membership state '$kind'" ;;
+    esac
+    echo "$tbl <- $pkg/$mod.$decl impl=$impl  binding_role=dependency  $kind  # requested by $cname [$consumer] ($src)" >> "$TMP/depatt.txt"
   fi
 done < "$TMP/deprows.tsv"
 
@@ -199,6 +210,12 @@ echo "dependency_refusals     = $DEPREF"
 echo "dependency_duplicate_mappings = $DEPDUPES"
 echo "dependency_conflicts    = ${DEPCONFLICTS:-0}"
 echo "dependency_without_identity = $DEPNOID"
+echo "dependency_membership_verified_compiler  = $DEPVC"
+echo "dependency_membership_verified_asserted  = $DEPVG"
+echo "dependency_membership_unresolved         = $DEPUN"
+if [ "$DEPATT" -ne $(( DEPVC + DEPVG + DEPUN )) ]; then
+  refuse "dependency attestations do not reconcile by membership state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
+fi
 # EVERY REQUEST ENDS SOMEWHERE. Same typed-reconciliation discipline as the subject rows: a request
 # that is neither attested nor refused would be a silently dropped edge.
 if [ "$DEPREQ" -ne $(( DEPATT + DEPREF )) ]; then

@@ -112,8 +112,14 @@ def sourceLinkedThms : List Name :=
   -- is in scope and no `evalExpr` is involved. The list is explicit for the same reason the
   -- compiler's dispatch is: a name-keyed lookup that guessed would bind the wrong table.
   IO.println "-- EXTERNAL"
+  -- EVERY out-of-build table a theorem names, not just the one that was noticed first. `shaFns` was
+  -- absent, so `tableContainsCallee` could not answer for it at all — and "cannot tell" was being
+  -- folded into "attested" at the dependency-request boundary, which reports an UNCHECKED membership
+  -- with the same word as a checked one. Emitting its entries makes the question answerable, which
+  -- is strictly better than typing the ignorance.
   let externals : List (String × FnTable) :=
-    [("Examples.ProofPatterns.Proofs.combineFns", Examples.ProofPatterns.Proofs.combineFns)]
+    [ ("Examples.ProofPatterns.Proofs.combineFns", Examples.ProofPatterns.Proofs.combineFns)
+    , ("Examples.HmacSha256.Proofs.shaFns", Examples.HmacSha256.Proofs.shaFns) ]
   let mut elits : List String := []
   for (nm, t) in externals do
     let mut rows : List String := []
