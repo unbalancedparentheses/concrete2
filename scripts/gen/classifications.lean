@@ -121,6 +121,7 @@ def sourceLinkedThms : List Name :=
     [ ("Examples.ProofPatterns.Proofs.combineFns", Examples.ProofPatterns.Proofs.combineFns)
     , ("Examples.HmacSha256.Proofs.shaFns", Examples.HmacSha256.Proofs.shaFns) ]
   let mut elits : List String := []
+  let mut slits : List String := []
   for (nm, t) in externals do
     let mut rows : List String := []
     for d in t.canonicalEntries.toList do
@@ -136,4 +137,19 @@ def sourceLinkedThms : List Name :=
       | .error w => throwError s!"external table {nm}: {w.explain}"
     let dg := entryTableDigest nm ev
     elits := elits ++ [s!"  (\"{nm}\", \"{dg}\", [" ++ String.intercalate ", " rows ++ "])"]
+    -- THE SCOPED MEMBERSHIP OF AN OUT-OF-BUILD TABLE, crossing as data for the same reason its
+    -- entries do. Once the evidence join keys on `DefinitionIdentity`, "does this table hold an
+    -- attested entry with THIS definition" has to be answerable for every table a theorem names —
+    -- and the compiler cannot hold `combineFns` or `shaFns`. Emitted from the table's own
+    -- `attested` array, so it is the same binding the site made, not a re-derivation.
+    let mut srows : List String := []
+    for (m, d) in t.attested.toList do
+      match m.sourceBodyDigest with
+      | some sbd =>
+        srows := srows ++ [s!"(\"{d.packageIdentity}\", \"{d.moduleIdentity}\", \"{d.declarationIdentity}\", \"{d.implementationIdentity}\", \"{sbd.value}\")"]
+      | none =>
+        throwError s!"external table {nm} attests a model with no source-body provenance — refusing to emit membership that cannot be re-checked"
+    slits := slits ++ [s!"  (\"{nm}\", [" ++ String.intercalate ", " srows ++ "])"]
   IO.println (String.intercalate ",\n" elits)
+  IO.println "-- EXTERNAL-SCOPED"
+  IO.println (String.intercalate ",\n" slits)

@@ -130,16 +130,17 @@ while IFS= read -r line; do
     echo "$tbl !! $pkg/$mod.$decl  binding_role=dependency  refusal=$kind  # requested by $cname [$consumer] ($src)" >> "$TMP/depref.txt"
   else
     DEPATT=$((DEPATT+1))
-    # MEMBERSHIP PROVENANCE IS CARRIED THROUGH, never summarised away. `verified:compiler-linked` is
-    # membership checked against a table the compiler holds and whose body digests it recomputed;
-    # `verified:generator-asserted` is checked against rows nobody re-derived from a body; and
-    # `unresolved:…` is an exact identity whose table could not be read at all. One word for all
-    # three would report the weakest as the strongest.
+    # MODEL-PRESENCE PROVENANCE IS CARRIED THROUGH, never summarised away — and it is MODEL presence,
+    # not scoped membership. `present:compiler-linked` was checked against a table the compiler holds
+    # and whose body digests it recomputed; `present:generator-asserted` against rows nobody
+    # re-derived from a body; `unresolved:…` is an exact identity whose table could not be read.
+    # Scoped membership is the evidence join's question and is deliberately NOT asked here: a table
+    # cannot be attested until its references exist, and they come from this manifest.
     case "$kind" in
-      membership=verified:compiler-linked)    DEPVC=$((DEPVC+1)) ;;
-      membership=verified:generator-asserted) DEPVG=$((DEPVG+1)) ;;
-      membership=unresolved:*)                DEPUN=$((DEPUN+1)) ;;
-      *) refuse "dependency attestation for $mod.$decl carries an unrecognised membership state '$kind'" ;;
+      model=present:compiler-linked)    DEPVC=$((DEPVC+1)) ;;
+      model=present:generator-asserted) DEPVG=$((DEPVG+1)) ;;
+      model=unresolved:*)               DEPUN=$((DEPUN+1)) ;;
+      *) refuse "dependency attestation for $mod.$decl carries an unrecognised model state '$kind'" ;;
     esac
     echo "$tbl <- $pkg/$mod.$decl impl=$impl  binding_role=dependency  $kind  # requested by $cname [$consumer] ($src)" >> "$TMP/depatt.txt"
   fi
@@ -210,11 +211,11 @@ echo "dependency_refusals     = $DEPREF"
 echo "dependency_duplicate_mappings = $DEPDUPES"
 echo "dependency_conflicts    = ${DEPCONFLICTS:-0}"
 echo "dependency_without_identity = $DEPNOID"
-echo "dependency_membership_verified_compiler  = $DEPVC"
-echo "dependency_membership_verified_asserted  = $DEPVG"
-echo "dependency_membership_unresolved         = $DEPUN"
+echo "dependency_model_present_compiler  = $DEPVC"
+echo "dependency_model_present_asserted  = $DEPVG"
+echo "dependency_model_unresolved        = $DEPUN"
 if [ "$DEPATT" -ne $(( DEPVC + DEPVG + DEPUN )) ]; then
-  refuse "dependency attestations do not reconcile by membership state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
+  refuse "dependency attestations do not reconcile by model state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
 fi
 # EVERY REQUEST ENDS SOMEWHERE. Same typed-reconciliation discipline as the subject rows: a request
 # that is neither attested nor refused would be a silently dropped edge.

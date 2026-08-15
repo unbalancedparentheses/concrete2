@@ -1751,10 +1751,15 @@ private def shadowBodyV2Line : Option Proof.EvidenceBodyDraftV2 → String
     subject can root while corresponding badly, and conflating the two is how a weaker fact gets
     reported as a stronger one. -/
 private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId) : String :=
-  let inp := Concrete.correspondenceInputOf pc pc.callGraph id
+  match Concrete.correspondenceInputOf pc pc.callGraph id with
+  -- A SUBJECT WITHOUT A SCOPED IDENTITY CANNOT BE CORRESPONDED, and that is reported as its own
+  -- state rather than as a correspondence failure: nothing about its edges or witnesses was ever
+  -- examined, so `usable=no` with empty sets would describe an operation that did not happen.
+  | .error w => s!"REFUSED (subject has no scoped identity: {w.explain})"
+  | .ok inp =>
   let r := Proof.correspond inp
   let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
-  if inp.requestedEdges.isEmpty then "none (no outgoing edge)"
+  if inp.requestedEdges.isEmpty && inp.unscopedEdges.isEmpty then "none (no outgoing edge)"
   -- NO CLAIM is not an unjustified claim. A subject with no linked theorem asserts nothing about
   -- its dependencies, so there is nothing for correspondence to justify, and reporting `usable=no`
   -- would count "nobody proved this" as "this proof is unsound". `fixed_capacity.validate_message`
@@ -1769,8 +1774,13 @@ private def shadowCorrespondenceLine (pc : Concrete.ProofCore) (id : CallableId)
   else
     let refusals := r.resolverRefusals.map (·.explain)
     let refusalNote := if refusals.isEmpty then "" else s!" | table refusals: {" ; ".intercalate refusals}"
+    -- UNSCOPED EDGES ARE REPORTED SEPARATELY. They are inside `malformed` for the verdict, and
+    -- named here because "this edge could not be keyed" sends a reader somewhere entirely different
+    -- from "this edge has no witness".
+    let unscopedNote := if inp.unscopedEdges.isEmpty then ""
+                        else s!" unscoped={inp.unscopedEdges.length}"
     let sets := s!"matched={r.matched.length} missing={r.missing.length} " ++
-                s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}"
+                s!"ambiguous={r.ambiguous.length} surplus={r.surplus.length} malformed={r.malformed.length}{unscopedNote}"
     s!"{sets} usable={if r.usable inp.requestedEdges.length then "yes" else "no"}{refusalNote}"
 
 /-- The CALL-GRAPH view of a subject's outgoing edges — the source `dependencyRootMaterial`
@@ -2148,20 +2158,26 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
               -- on it would manufacture a refusal from the compiler's own reach rather than from the
               -- data. The identity claim is about the CALLEE and stays true either way.
               --
-              -- AND THE MEMBERSHIP PROVENANCE IS CARRIED, not collapsed into the word "attested".
-              -- Three states, because they are three different claims: membership VERIFIED against a
-              -- table the compiler holds and whose body digests it recomputed; membership verified
-              -- against GENERATOR-ASSERTED rows, which bind a name to digests nobody re-derived from
-              -- a body; and membership UNRESOLVED, where the identity is exact and the table could
-              -- not be read at all. Reporting the third with the same word as the first is the
-              -- laundering this whole slice exists to prevent.
+              -- WHAT THIS CHECKS IS MODEL PRESENCE, and the wording says so. It asks whether the
+              -- table holds a MODEL of that declaration — a name-level question — NOT whether it
+              -- holds an attested entry with this scoped identity. That stronger question is the
+              -- evidence join's, and it must not be asked here: a table cannot be attested until
+              -- its references exist, and its references come from this manifest, so a scoped check
+              -- at this point would refuse every reference needed to escape the bootstrap.
+              --
+              -- The provenance of the model check is still carried, because a model found in a
+              -- table the compiler HOLDS and whose body digests it recomputed is a different fact
+              -- from one found in generator-asserted rows, and both differ from a table that could
+              -- not be read at all. One word for three claims is the laundering this slice exists
+              -- to prevent — and calling any of them "membership verified" would overstate all
+              -- three, since membership is scoped and this is not.
               let idFields := s!"{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}"
               match Proof.entryEvidenceWithProvenance tbl with
               | .error w =>
-                  some (hdr ++ s!"\tattested\tmembership=unresolved:{w.explain}\t{idFields}\n")
+                  some (hdr ++ s!"\tattested\tmodel=unresolved:{w.explain}\t{idFields}\n")
               | .ok (prov, rows) =>
                   if Proof.entryEvidenceContains rows callee then
-                    some (hdr ++ s!"\tattested\tmembership=verified:{prov.render}\t{idFields}\n")
+                    some (hdr ++ s!"\tattested\tmodel=present:{prov.render}\t{idFields}\n")
                   else
                     some (hdr ++ s!"\trefused\ttableModelMissing\t{idFields}\t{calleeName}\n")))
   )

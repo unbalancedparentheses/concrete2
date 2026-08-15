@@ -150,13 +150,55 @@ def entryEvidenceWithProvenance (name : String)
 def entryEvidenceForTable (name : String) : Except TableResolveRefusal (List TableEntryEvidence) :=
   (entryEvidenceWithProvenance name).map (·.2)
 
-/-- Does the named table contain this callee, by IDENTITY?
+/-- The SCOPED membership of a named table, or a named refusal.
 
-    The question the correspondence join needs and could not previously ask. Returns the refusal
-    rather than a Bool when the table cannot be read: "no" and "cannot tell" are different answers,
-    and collapsing them would let an unreadable table read as a genuine absence — which is the
-    direction that silently narrows a dependency closure. -/
-def tableContainsCallee (name : String) (callee : CallableId)
+    THE JOIN KEY IS A `DefinitionIdentity`, so this is the question the evidence join asks and
+    `tableContainsCallee` cannot answer: that one keys on a source NAME, which denotes different
+    functions in different programs.
+
+    Two routes, and the difference is retained rather than smoothed over. An IN-COMPILER table is
+    held by value, so its attestations are read directly and every body digest is recomputed from
+    the actual `PFnDef.body` by `scopedEntryEvidence`. An OUT-OF-BUILD table cannot be held without
+    an import cycle, so its site's attestations cross as generator-asserted data — the identities are
+    the ones the site bound, but nothing here re-derives them from a body.
+
+    A table that is neither is a REFUSAL, never an empty membership: "holds nothing" and "cannot be
+    read" are different answers, and returning the first for the second is how an unreadable
+    dependency silently reads as an absent one. -/
+def scopedEntryEvidenceForTable (name : String)
+    : Except TableResolveRefusal (List ScopedEntryEvidence) :=
+  match tableByName name with
+  | some t =>
+    match scopedEntryEvidence t with
+    | .ok rows => .ok rows
+    | .error w => .error (.externalRowMalformed name w.explain)
+  | none =>
+    match externalScopedEntries.filter (fun e => e.1 == name) with
+    | [] => .error (.unknownTable name)
+    | [(_, rows)] =>
+      rows.foldlM (init := ([] : List ScopedEntryEvidence)) (fun acc (pkg, mod, decl, impl, sbd) =>
+        match DefinitionIdentity.of? pkg mod decl impl with
+        | .error w => .error (.externalRowMalformed name w.explain)
+        | .ok d    => .ok (acc ++ [{ definition := d, sourceBodyDigest := sbd }]))
+    | _ => .error (.externalRowAmbiguous name)
+
+/-- Does the named table hold a MODEL of this declaration, by NAME?
+
+    **NOT THE EVIDENCE JOIN, and it must never become it again.** This asks a name-level question,
+    and a source name denotes different functions in different programs: `elf_header` and
+    `main_drifted` declare the same `main.check_magic`, and this returns `true` for both. The
+    evidence join asks `scopedEntryEvidenceForTable` + `scopedEvidenceContains` instead, which
+    compares all four identity components — and when that replaced this function, four edges of a
+    drifted program stopped being justified by another program's table.
+
+    What remains legitimate here is the BOOTSTRAP question: can this table ever bind a reference for
+    this declaration? The attestation manifest asks it, because a table cannot be attested until its
+    references exist and the references come from the manifest — a scoped check at that point would
+    refuse every reference needed to escape the bootstrap. The rename says which question it is.
+
+    Returns the refusal rather than a Bool when the table cannot be read: "no" and "cannot tell" are
+    different answers, and collapsing them would let an unreadable table read as a genuine absence. -/
+def tableHoldsModelNamed (name : String) (callee : CallableId)
     : Except TableResolveRefusal Bool :=
   (entryEvidenceForTable name).map (fun rows => entryEvidenceContains rows callee)
 

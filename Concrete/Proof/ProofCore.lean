@@ -1826,6 +1826,13 @@ structure ProofCoreExcluded where
       became a `missing` edge instead of a `trusted` one. Fixed here rather than by teaching the
       edge layer to re-derive it, which would have been a second producer of an identity. -/
   callableId  : CallableId
+  /-- The SCOPED identity, built by the same producer and the same rule as `ProofCoreEntry`'s.
+      A trusted helper is excluded from the proof entries and is still a real callable other
+      functions depend on: once the evidence join keys on `DefinitionIdentity`, an excluded callee
+      without one cannot be keyed at all, and its dependents' edges would fall to a refusal for a
+      reason that has nothing to do with them. `Except`, so a genuinely underivable identity is a
+      named refusal rather than a fabricated value. -/
+  definitionIdentity : Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity
   fn          : CFnDef
   fingerprint : String
   eligibility : EligibilityEntry
@@ -2429,8 +2436,23 @@ private partial def extractModule
       -- carries WHICH spec, the entry carries HOW MUCH of it the proof covers.
       let scope? := (registry.find? (fun re => re.function == qualName)).map (·.coverage)
       facts?.bind (fun fx => proofSubjectDigestV2 fx evBody? (sa.map (·.specId.name)) scope?)
+    -- ONE PRODUCER for the scoped identity, used by both the entry and excluded paths. Written as a
+    -- local so the excluded branches cannot drift from the entry rule — they did once already, when
+    -- `callableId` was retained here and the identity was not.
+    let scopedIdentityOf : Unit → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity :=
+      fun _ =>
+        match facts?, evBody? with
+        | some fx, some d =>
+          if !fx.isComplete then .error (.legacyNameOnly cid.render)
+          else match Proof.validate d with
+            | .error _ => .error (.legacyNameOnly cid.render)
+            | .ok complete =>
+              Proof.DefinitionIdentity.of? packageIdentity.digest cid.defModule cid.declName
+                (implementationDigest fx complete)
+        | _, _ => .error (.legacyNameOnly cid.render)
     if elig.isTrusted then
-      (accE, accX ++ [{ qualName, bareName, callableId := cid, fn := f, fingerprint := fp
+      (accE, accX ++ [{ qualName, bareName, callableId := cid
+                       , definitionIdentity := scopedIdentityOf (), fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc
                        , spec := sa : ProofCoreExcluded }])
     else if elig.eligible then
@@ -2455,16 +2477,7 @@ private partial def extractModule
       -- scoped identity and the entry carries the refusal instead. `implementationDigest` is used
       -- rather than the V1 body digest because the latter binds only the body — a signature,
       -- capability or contract change would otherwise read as the same definition.
-      let definitionIdentity :=
-        match facts?, evBody? with
-        | some fx, some d =>
-          if !fx.isComplete then .error (.legacyNameOnly cid.render)
-          else match Proof.validate d with
-            | .error _ => .error (.legacyNameOnly cid.render)
-            | .ok complete =>
-              Proof.DefinitionIdentity.of? packageIdentity.digest cid.defModule cid.declName
-                (implementationDigest fx complete)
-        | _, _ => .error (.legacyNameOnly cid.render)
+      let definitionIdentity := scopedIdentityOf ()
       (accE ++ [{ definitionIdentity, qualName, bareName, callableId := cid,
                    declFacts := facts?, evidenceBody := evBody?,
                    constBindings := m.constBindings,
@@ -2474,7 +2487,8 @@ private partial def extractModule
                  , eligibility := elig, loc := elig.loc
                  , spec := sa : ProofCoreEntry }], accX)
     else
-      (accE, accX ++ [{ qualName, bareName, callableId := cid, fn := f, fingerprint := fp
+      (accE, accX ++ [{ qualName, bareName, callableId := cid
+                       , definitionIdentity := scopedIdentityOf (), fn := f, fingerprint := fp
                        , eligibility := elig, loc := elig.loc
                        , spec := sa : ProofCoreExcluded }])
   ) ([], [])
@@ -3081,67 +3095,84 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
 
     CANDIDATE WITNESSES are derived from the subject's classification row: a row naming table `T`
     justifies an edge to each callee `T` actually contains, which is the question
-    `tableContainsCallee` made answerable. A table that cannot be resolved contributes NO witnesses,
+    `scopedEntryEvidenceForTable` answers. A table that cannot be resolved contributes NO witnesses,
     so its edges fall to `missing` rather than being quietly justified — the fail-closed direction.
 
     SHADOW. Nothing consumes this. -/
 def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
-    : Proof.CorrespondenceInput :=
+    : Except Proof.DefinitionIdentityRefusal Proof.CorrespondenceInput := do
   let nodes := dependencyNodesOf pc graph
-  let requested := match nodes.find? (fun n => n.id == id) with
+  -- THE SUBJECT IS KEYED BY ITS SCOPED IDENTITY, and a subject without one cannot be corresponded
+  -- at all. `Except` rather than a fabricated key: the whole point of the migration is that no
+  -- evidence operation proceeds on a name.
+  let subjEntry := pc.entries.find? (fun e => e.callableId == id)
+  let subject ← match subjEntry with
+    | none   => .error (.legacyNameOnly id.render)
+    | some e => e.definitionIdentity
+  -- ONE PRODUCER for a callee's scoped identity: entries first, then excluded records. Both now
+  -- carry one, built by the same rule at the extraction boundary — a trusted helper is excluded
+  -- from the proof entries and is still a real definition its dependents point at.
+  let scopedOf : CallableId → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity :=
+    fun c =>
+      match pc.entries.find? (fun e => e.callableId == c) with
+      | some e => e.definitionIdentity
+      | none   =>
+        match pc.excluded.find? (fun x => x.callableId == c) with
+        | some x => x.definitionIdentity
+        | none   => .error (.legacyNameOnly c.render)
+  let rawEdges := match nodes.find? (fun n => n.id == id) with
     | none   => []
-    | some n => n.edges.eraseDups.map (fun (k, tgt) =>
-        ({ callee := tgt, kind := k } : Proof.RequestedEdge))
-  let qual := (pc.entries.find? (fun e => e.callableId == id)).map (·.qualName) |>.getD ""
+    | some n => n.edges.eraseDups
+  -- AN EDGE WHOSE CALLEE HAS NO SCOPED IDENTITY IS CARRIED, NOT DROPPED. Dropping it would leave
+  -- every result set empty while the closure covered less than the compiler asked for — the
+  -- fail-open shape `filterMap` produced one layer up and this design exists to refuse.
+  let requested := rawEdges.filterMap (fun (k, tgt) =>
+    match scopedOf tgt with
+    | .ok d    => some ({ callee := d, label := tgt, kind := k } : Proof.RequestedEdge)
+    | .error _ => none)
+  let unscoped := rawEdges.filterMap (fun (k, tgt) =>
+    match scopedOf tgt with
+    | .ok _    => none
+    | .error w => some (tgt, k, w))
+  let qual := subjEntry.map (·.qualName) |>.getD ""
   let thm := theoremNameOf pc qual
-  -- A WITNESS PER REQUESTED EDGE THE TABLE COVERS — not per table entry. Deriving one witness per
-  -- entry was wrong and the corpus said so immediately: it manufactured `surplus` for every
-  -- implementation a table holds that this caller does not reach, which is precisely the case the
-  -- design decision excludes ("a function table may legitimately contain implementations not
-  -- reached by this caller"). Surplus must mean the theorem claims a dependency the compiler graph
-  -- does not have, and a table entry nobody calls is not that claim.
   -- A TRUSTED edge is justified by the DECLARED TRUST BOUNDARY, not by table membership. Its
   -- witness comes from the exclusion record that made it trusted — asking a classification row to
-  -- justify it would be asking the wrong producer, and before this the kinds disagreed and the
-  -- edge was reported `malformed`. The trust is a compiler fact and does not depend on how the
-  -- caller was proved.
+  -- justify it would be asking the wrong producer. The trust is a compiler fact and does not depend
+  -- on how the caller was proved.
   let trustedWitnesses := requested.filterMap (fun r =>
     if r.kind == Proof.DependencyEdge.trusted then
-      some ({ subject := id, target := .edgeTo r.callee, kind := .trusted
+      some ({ subject := subject, target := .edgeTo r.callee, kind := .trusted
             , source := "declared-trusted-boundary" } : Proof.EdgeWitness)
     else none)
+  -- MEMBERSHIP IS SCOPED. The deleted `tableContainsCallee` asked whether a table held a callee by NAME;
+  -- `scopedEvidenceContains` asks whether it holds an ATTESTED entry with that exact definition
+  -- identity — package, module, declaration and implementation. This is where the attestations
+  -- become load-bearing: a table that models a same-named function from another program no longer
+  -- justifies this program's edge, and an unattested table justifies nothing at all because
+  -- `scopedEntryEvidence` refuses it rather than returning a name-keyed answer.
   let tableWitnesses := match Proof.validatedRowOf thm with
     | .error _ => []
     | .ok row  => requested.filterMap (fun r =>
-        -- Trusted edges are already witnessed above; a table must not also claim them, or one edge
-        -- would carry two justifications and correctly read as `ambiguous`.
         if r.kind == Proof.DependencyEdge.trusted then none else
-        -- The row justifies this edge when SOME table it names actually contains the callee. A
-        -- table that cannot be resolved contributes nothing, so its edges fall to `missing`.
-        -- NOT `.toOption.getD false`. That collapsed a table-resolution REFUSAL into "this callee
-        -- is not a member", which are different facts: one says the table does not hold it, the
-        -- other says we could not read the table. Both leave the edge unwitnessed and therefore
-        -- `missing`, so the verdict is unchanged — but the REASON was destroyed, and a reader
-        -- diagnosing an unjustified edge could not tell a genuine absence from an unreadable
-        -- dependency. The refusals are surfaced by `tableResolutionRefusalsOf` below.
         if row.tables.any (fun (tn, _) =>
-             match Proof.tableContainsCallee tn r.callee with
-             | .ok b    => b
+             match Proof.scopedEntryEvidenceForTable tn with
+             | .ok rows => Proof.scopedEvidenceContains rows r.callee
              | .error _ => false)
-        then some ({ subject := id, target := .edgeTo r.callee, kind := row.edge, source := thm }
+        then some ({ subject := subject, target := .edgeTo r.callee, kind := row.edge, source := thm }
                     : Proof.EdgeWitness)
         else none)
   let witnesses := trustedWitnesses ++ tableWitnesses
-  -- The refusals are collected HERE, where the tables are named, and travel in the input. Recomputing
-  -- them at the report would be a second producer of the same fact.
+  -- The refusals are collected HERE, where the tables are named, and travel in the input.
+  -- Recomputing them at the report would be a second producer of the same fact.
   let refusals := match Proof.validatedRowOf thm with
     | .error _ => []
     | .ok row  => row.tables.filterMap (fun (tn, _) =>
         match Proof.entryEvidenceForTable tn with
         | .error w => some w
         | .ok _    => none)
-  { subject := id, requestedEdges := requested, candidateWitnesses := witnesses
-  , resolverRefusals := refusals }
+  .ok { subject := subject, requestedEdges := requested, unscopedEdges := unscoped
+      , candidateWitnesses := witnesses, resolverRefusals := refusals }
 
 /-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
 
@@ -3149,6 +3180,11 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
     but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
     dependency. Reported beside the correspondence line rather than folded into it. -/
 def tableResolutionRefusalsOf (pc : ProofCore) (graph : CallGraph) (id : CallableId) : List String :=
-  (correspondenceInputOf pc graph id).resolverRefusals.map (·.explain)
+  -- A SUBJECT WITHOUT A SCOPED IDENTITY HAS NO CORRESPONDENCE OPERATION AT ALL, so it has no table
+  -- refusals either — reporting an empty list here says "none encountered", and the reason the
+  -- subject could not be corresponded is reported by the correspondence line itself.
+  match correspondenceInputOf pc graph id with
+  | .error _ => []
+  | .ok i    => i.resolverRefusals.map (·.explain)
 
 end Concrete

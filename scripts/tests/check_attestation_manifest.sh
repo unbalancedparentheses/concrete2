@@ -441,7 +441,8 @@ else
   no "dependency population moved: $DEPREQ = $DEPATT + $DEPREF, was 42 = 41 + 1 — say which edge appeared or disappeared"
 fi
 
-# MEMBERSHIP PROVENANCE, THE HONEST VERSION. "Attested" is one word for three different claims, and
+# MODEL-PRESENCE PROVENANCE, THE HONEST VERSION — and it is model presence, not scoped membership,
+# which is the evidence join's question. "Attested" is one word for three different claims, and
 # the weakest of them — an exact identity whose table could not be read at all — must not be reported
 # with the same word as membership verified against a table the compiler holds and recomputed.
 #
@@ -450,25 +451,25 @@ fi
 # than a typed excuse: the ignorance was removed instead of being labelled. The path itself stays
 # controlled by the unknown-table probes in `check_dependency_edges.sh`, which is where a synthetic
 # unreadable table lives — this gate measures the corpus, and the corpus no longer has one.
-DEPVC="$(field dependency_membership_verified_compiler)"
-DEPVG="$(field dependency_membership_verified_asserted)"
-DEPUN="$(field dependency_membership_unresolved)"
+DEPVC="$(field dependency_model_present_compiler)"
+DEPVG="$(field dependency_model_present_asserted)"
+DEPUN="$(field dependency_model_unresolved)"
 if [ "$DEPATT" = "$(( DEPVC + DEPVG + DEPUN ))" ]; then
-  ok "every attestation carries a membership state ($DEPATT = $DEPVC compiler-linked + $DEPVG generator-asserted + $DEPUN unresolved)"
+  ok "every attestation carries a model-presence state ($DEPATT = $DEPVC compiler-linked + $DEPVG generator-asserted + $DEPUN unresolved)"
 else
-  no "attestations do not reconcile by membership state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
+  no "attestations do not reconcile by model state: $DEPATT != $DEPVC + $DEPVG + $DEPUN"
 fi
 if [ "$DEPVC" = "18" ] && [ "$DEPVG" = "23" ] && [ "$DEPUN" = "0" ]; then
-  ok "membership states are exactly 18 compiler-linked / 23 generator-asserted / 0 unresolved"
+  ok "model-presence states are exactly 18 compiler-linked / 23 generator-asserted / 0 unresolved"
 else
-  no "membership states moved: $DEPVC / $DEPVG / $DEPUN, was 18/23/0 — a table changed provenance, or one stopped being readable"
+  no "model-presence states moved: $DEPVC / $DEPVG / $DEPUN, was 18/23/0 — a table changed provenance, or one stopped being readable"
 fi
 # BOTH VERIFIED KINDS MUST BE LIVE. If generator-asserted fell to zero the distinction would be
 # untested; if compiler-linked did, the strongest evidence class would have quietly disappeared.
 if [ "$DEPVC" -gt 0 ] 2>/dev/null && [ "$DEPVG" -gt 0 ] 2>/dev/null; then
-  ok "both membership provenances are live, so the distinction is exercised rather than declared"
+  ok "both model-presence provenances are live, so the distinction is exercised rather than declared"
 else
-  no "one membership provenance has no case ($DEPVC compiler-linked, $DEPVG generator-asserted) — the distinction is untested"
+  no "one model-presence provenance has no case ($DEPVC compiler-linked, $DEPVG generator-asserted) — the distinction is untested"
 fi
 
 for pair in "dependency_duplicate_mappings:$DEPDUP" "dependency_conflicts:$DEPCON" "dependency_without_identity:$DEPNOID"; do

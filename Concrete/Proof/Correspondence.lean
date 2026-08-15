@@ -1,5 +1,6 @@
 import Concrete.Proof.DependencyEdge
 import Concrete.Proof.TableResolve
+import Concrete.Proof.DefinitionIdentity
 
 /-!
 # Per-edge correspondence — the closed join
@@ -37,7 +38,16 @@ namespace Concrete.Proof
     to different callees are different requests, and matching on kind alone is the caller-wide
     labelling this work exists to replace. -/
 structure RequestedEdge where
-  callee : CallableId
+  /-- WHICH DEFINITION the edge points at, all four identity components. This is the join key, and
+      it replaced a `CallableId` — a source NAME, which denotes different functions in different
+      programs. `elf_header` and `proof_pressure` both define `main.validate_header` and both render
+      `v1:user:main.validate_header`; a shared proof table could justify one program's edge with the
+      other program's implementation on name agreement alone. -/
+  callee : DefinitionIdentity
+  /-- The compiler-local NAME, for diagnosis only. NEVER compared: it exists so a refusal can say
+      which edge failed in terms a reader recognises. Comparing it would restore the join this type
+      migration removed. -/
+  label  : CallableId
   kind   : DependencyEdge
   /-- A dynamically-indexed dependency. Its justification is whole-table material, because a
       dynamic index can reach ANY entry, so the dependency is on all of it. -/
@@ -56,7 +66,7 @@ deriving Repr, BEq
 /-- What a witness claims to justify. -/
 inductive WitnessTarget where
   /-- A specific call edge, by callee identity. -/
-  | edgeTo (callee : CallableId)
+  | edgeTo (callee : DefinitionIdentity)
   /-- Whole-table material for a dynamic edge. ONE justification with the entire table as its
       required material — entries inside are NOT independently expected to match call edges, and
       must not produce per-entry surplus. -/
@@ -67,7 +77,7 @@ deriving Repr, BEq
 structure EdgeWitness where
   /-- The subject this witness was returned FOR. Checked before the join: a witness naming another
       subject has failed identity validation and is not merely unused. -/
-  subject : CallableId
+  subject : DefinitionIdentity
   target  : WitnessTarget
   kind    : DependencyEdge
   /-- The theorem this witness came from, for diagnosis. Never an identity. -/
@@ -77,16 +87,27 @@ deriving Repr, BEq
 /-- A witness that cannot enter the join, with the exact field that failed. -/
 inductive WitnessRefusal where
   /-- Returned for a different subject than the one being corresponded. -/
-  | subjectMismatch (expected : CallableId) (found : CallableId)
+  | subjectMismatch (expected : DefinitionIdentity) (found : DefinitionIdentity)
   /-- Targets a requested callee, but claims a different edge KIND than the compiler recorded.
       This is the `mismatched` set at the witness level: the edge is real and the claim about it
       is wrong, which is different from having no witness at all. -/
-  | kindMismatch (callee : CallableId) (requested : DependencyEdge) (claimed : DependencyEdge)
+  | kindMismatch (callee : DefinitionIdentity) (requested : DependencyEdge) (claimed : DependencyEdge)
+  /-- A requested edge whose callee HAS NO SCOPED IDENTITY, so it cannot be keyed at all.
+
+      Not `missing`. Missing says the compiler asked for a justification and none was offered;
+      this says the request could not be formed, because the callee's implementation identity was
+      never derivable. Collapsing the two would report an unkeyable edge as an unjustified one and
+      send a reader looking for a witness that was never the problem. -/
+  | unscopedCallee (callee : CallableId) (kind : DependencyEdge) (why : DefinitionIdentityRefusal)
 deriving Repr, BEq
 
 def WitnessRefusal.explain : WitnessRefusal → String
-  | .subjectMismatch e f => s!"witness for '{f.render}' offered while corresponding '{e.render}'"
-  | .kindMismatch c r cl => s!"'{c.render}' is a {r.canonical} edge but its witness claims {cl.canonical}"
+  | .subjectMismatch e f =>
+      s!"witness for '{f.localName}' offered while corresponding '{e.localName}'"
+  | .kindMismatch c r cl =>
+      s!"'{c.localName}' is a {r.canonical} edge but its witness claims {cl.canonical}"
+  | .unscopedCallee c k w =>
+      s!"'{c.render}' ({k.canonical} edge) has no scoped identity: {w.explain} — the request cannot be keyed"
 
 /-- One requested edge with the single valid witness that justifies it. -/
 structure EdgeJustification where
@@ -96,8 +117,14 @@ deriving Repr, BEq
 
 /-- The closed correspondence request. -/
 structure CorrespondenceInput where
-  subject            : CallableId
+  subject            : DefinitionIdentity
   requestedEdges     : List RequestedEdge
+  /-- Edges the compiler HAS whose callee has no scoped identity. They cannot become
+      `RequestedEdge`s — that type's key is a `DefinitionIdentity` and there is none — but they must
+      not vanish either: an edge dropped before the join is a dependency the closure never examined
+      while every set reads empty. They are carried, counted in the denominator, and block
+      usability. -/
+  unscopedEdges      : List (CallableId × DependencyEdge × DefinitionIdentityRefusal) := []
   candidateWitnesses : List EdgeWitness
   /-- Tables the witness builder NAMED but could not read, as typed refusals.
 
@@ -126,7 +153,10 @@ structure CorrespondenceResult where
     for dynamic ones. A `wholeTable` witness answers a DYNAMIC request and nothing else. -/
 def witnessTargets (r : RequestedEdge) (w : EdgeWitness) : Bool :=
   match w.target with
-  | .edgeTo c => !r.dynamic && c == r.callee
+  -- `sameDefinition`, which compares ALL FOUR components. `==` on the structure would be the same
+  -- comparison today, and `sameDefinition` is used because it is the operation that MEANS "these
+  -- are the same definition" — a future component added to the structure must go through it.
+  | .edgeTo c => !r.dynamic && c.sameDefinition r.callee
   | .wholeTable tn td =>
     -- BOTH the table identity and its digest must be the expected ones. A dynamic request with NO
     -- expectation recorded matches nothing: an edge whose required material is unstated cannot be
@@ -141,8 +171,8 @@ def correspond (i : CorrespondenceInput) : CorrespondenceResult :=
   -- STEP 1: identity validation. A witness for another subject never enters the join, and is NOT
   -- counted as surplus — surplus means "belonged to this operation and matched nothing", which is
   -- a different fact from "was never ours".
-  let wrongSubject := i.candidateWitnesses.filter (fun w => w.subject != i.subject)
-  let ours := i.candidateWitnesses.filter (fun w => w.subject == i.subject)
+  let wrongSubject := i.candidateWitnesses.filter (fun w => !w.subject.sameDefinition i.subject)
+  let ours := i.candidateWitnesses.filter (fun w => w.subject.sameDefinition i.subject)
   let subjectRefusals := wrongSubject.map (fun w => WitnessRefusal.subjectMismatch i.subject w.subject)
   -- STEP 2: exact join, per requested edge.
   let perEdge := i.requestedEdges.map (fun r => (r, ours.filter (witnessTargets r)))
@@ -168,8 +198,12 @@ def correspond (i : CorrespondenceInput) : CorrespondenceResult :=
   -- witness whether any request took it — never by pre-filtering the candidate list, which would
   -- make surplus vanish rather than be reported.
   let surplus := ours.filter (fun w => !(i.requestedEdges.any (fun r => witnessTargets r w)))
+  -- UNSCOPED EDGES ARE MALFORMED, NOT MISSING. The distinction is the point: the compiler has the
+  -- edge and could not key it, which is a different failure from having a key and no witness.
+  let unscopedRefusals := i.unscopedEdges.map (fun (c, k, w) => WitnessRefusal.unscopedCallee c k w)
   { matched := matched, missing := missing, ambiguous := ambiguous, surplus := surplus
-  , malformed := subjectRefusals ++ kindRefusals, resolverRefusals := i.resolverRefusals }
+  , malformed := subjectRefusals ++ kindRefusals ++ unscopedRefusals
+  , resolverRefusals := i.resolverRefusals }
 
 /-- Usable only when every set is empty and the count is exact.
 

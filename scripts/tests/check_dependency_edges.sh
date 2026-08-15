@@ -1387,18 +1387,18 @@ probe "a real table resolves to its entries" "true" '
       | .ok rows => !rows.isEmpty
       | .error _ => false'
 probe "membership answers TRUE for a callee the table holds" "true" '
-#eval match tableContainsCallee "Concrete.Proof.proofFns" (CallableId.ofUser "main" "parse_byte") with
+#eval match tableHoldsModelNamed "Concrete.Proof.proofFns" (CallableId.ofUser "main" "parse_byte") with
       | .ok b => b
       | .error _ => false'
 # ...and FALSE for one it does not, so the answer is not constant.
 probe "membership answers FALSE for a callee the table lacks" "true" '
-#eval match tableContainsCallee "Concrete.Proof.proofFns" (CallableId.ofUser "main" "no_such") with
+#eval match tableHoldsModelNamed "Concrete.Proof.proofFns" (CallableId.ofUser "main" "no_such") with
       | .ok b => !b
       | .error _ => false'
 # A table the compiler cannot read REFUSES rather than answering "no". "Absent" and "cannot tell"
 # are different, and collapsing them silently narrows a dependency closure.
 probe "a wholly unknown table refuses BY NAME rather than answering absent" "true" '
-#eval match tableContainsCallee "No.Such.Table" (CallableId.ofUser "m" "x") with
+#eval match tableHoldsModelNamed "No.Such.Table" (CallableId.ofUser "m" "x") with
       | .error (TableResolveRefusal.unknownTable _) => true
       | _ => false'
 
@@ -1550,6 +1550,23 @@ echo "=== scoped definition identity ==="
 #
 # `cryptoFns`: 5 attestations for 4 models, `check_nonce` once per consuming package.
 # `elfFns`: 5 attestations for 5 models; the sixth manifest row is the named exclusion.
+# NO NAME-KEYED FALLBACK REMAINS IN THE EVIDENCE JOIN. The scoped lookup and the name-level one
+# DISAGREE on the corpus — `elfFns` holds a model named `main.check_magic`, and does not hold an
+# attested entry for the drifted program's `main.check_magic` — so this is a live discrimination
+# rather than two functions that happen to agree. If the join ever fell back to the name question,
+# this pair would stop disagreeing and four edges of a different program would be justified again.
+probe "the scoped and name-level questions genuinely disagree (no fallback could be silent)" "true" \
+'#eval
+  match DefinitionIdentity.of? "952c39a88d54fd7a59f8cf449ffc4b07" "main" "check_magic"
+          "a774a2e10d4c812456c99912239a7a81" with
+  | .error _ => false
+  | .ok driftedId =>
+    let byName := (tableHoldsModelNamed "Concrete.Proof.elfFns" (CallableId.ofUser "main" "check_magic")).toOption == some true
+    let byIdentity := match scopedEntryEvidenceForTable "Concrete.Proof.elfFns" with
+                      | .ok rows => scopedEvidenceContains rows driftedId
+                      | .error _ => false
+    byName && !byIdentity'
+
 probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
 probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
@@ -1978,12 +1995,28 @@ probe "the identity digest separates packages" "true" "
 # What is claimed here is the join and its refusals, not corpus coverage.
 echo "=== per-edge correspondence: the closed join ==="
 
+# THE SYNTHETIC IDENTITIES ARE SCOPED NOW. Every key in this join is a `DefinitionIdentity`, so the
+# controls build one: same package and module, different declarations and implementations. `did` is
+# total here only because the components are literals known to validate — the production path takes
+# the `Except` and refuses.
 CORR='
-  let subj := CallableId.ofUser "m" "caller"
-  let cA := CallableId.ofUser "m" "a"
-  let cB := CallableId.ofUser "m" "b"
-  let reqA : RequestedEdge := { callee := cA, kind := .body }
-  let reqB : RequestedEdge := { callee := cB, kind := .body }
+  let P := "pkg0123456789abcdef0123456789abcd"
+  let withIds : (DefinitionIdentity → DefinitionIdentity → DefinitionIdentity → Bool) → Bool :=
+    fun k =>
+      match DefinitionIdentity.of? P "m" "caller" "00000000000000000000000000000000",
+            DefinitionIdentity.of? P "m" "a" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            DefinitionIdentity.of? P "m" "b" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" with
+      | .ok s, .ok a, .ok b => k s a b
+      -- A CONTROL THAT CANNOT BUILD ITS OWN IDENTITIES FAILS. There is no total constructor and
+      -- none is wanted: the probe reports false rather than inventing a value, which is the same
+      -- discipline the production path follows.
+      | _, _, _ => false
+  withIds fun subj cA cB =>
+  let did := fun (d i : String) => (DefinitionIdentity.of? P "m" d i).toOption.getD subj
+  let lA := CallableId.ofUser "m" "a"
+  let lB := CallableId.ofUser "m" "b"
+  let reqA : RequestedEdge := { callee := cA, label := lA, kind := .body }
+  let reqB : RequestedEdge := { callee := cB, label := lB, kind := .body }
   let wA : EdgeWitness := { subject := subj, target := .edgeTo cA, kind := .body }
   let wB : EdgeWitness := { subject := subj, target := .edgeTo cB, kind := .body }'
 
@@ -1995,7 +2028,7 @@ probe "an exact one-to-one join is usable" "true" "
 # ONE EXTRA UNRELATED WITNESS -> exactly one named surplus.
 probe "one extra unrelated witness produces exactly ONE named surplus" "true" "
 #eval$CORR
-  let extra : EdgeWitness := { subject := subj, target := .edgeTo (CallableId.ofUser \"m\" \"z\"), kind := .body }
+  let extra : EdgeWitness := { subject := subj, target := .edgeTo (did \"z\" \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\"), kind := .body }
   let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wA, extra] }
   r.surplus.length == 1 && !(r.usable 1)"
 
@@ -2009,7 +2042,7 @@ probe "removing the extra witness restores usability" "true" "
 # surplus means \"belonged to this operation and matched nothing\", a different fact from \"was never ours\".
 probe "a witness for the correct callee but WRONG subject is refused by name, not consumed" "true" "
 #eval$CORR
-  let wrong : EdgeWitness := { subject := CallableId.ofUser \"m\" \"other\", target := .edgeTo cA, kind := .body }
+  let wrong : EdgeWitness := { subject := did \"other\" \"cccccccccccccccccccccccccccccccc\", target := .edgeTo cA, kind := .body }
   let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [wrong] }
   r.malformed.length == 1 && r.surplus.isEmpty && r.missing.length == 1 && !(r.usable 1)"
 
@@ -2045,7 +2078,7 @@ probe "a same-kind PERMUTATION legitimately corresponds (the meaningful swaps ar
 probe "a dynamic whole-table witness is consumed once, with no per-entry surplus" "true" "
 #eval$CORR
   -- the request now states WHICH table and which digest it expects; without that it matches nothing
-  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+  let dyn : RequestedEdge := { callee := cA, label := lA, kind := .body, dynamic := true
                              , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
   let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
   let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [tbl] }
@@ -2055,14 +2088,14 @@ probe "a dynamic whole-table witness is consumed once, with no per-entry surplus
 # the edge. Before this the exemption that stops per-entry surplus also stopped any checking.
 probe "a whole-table witness for the WRONG table does not justify a dynamic edge" "true" "
 #eval$CORR
-  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+  let dyn : RequestedEdge := { callee := cA, label := lA, kind := .body, dynamic := true
                              , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
   let other : EdgeWitness := { subject := subj, target := .wholeTable \"OtherTbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
   let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [other] }
   !(r.usable 1) && r.surplus.length == 1"
 probe "a whole-table witness with a STALE digest does not justify a dynamic edge" "true" "
 #eval$CORR
-  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true
+  let dyn : RequestedEdge := { callee := cA, label := lA, kind := .body, dynamic := true
                              , expectedTable := some (\"Tbl\", \"7bcec2d7871f93204b26e2bf83d5acf1\") }
   let stale : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"00000000000000000000000000000000\", kind := .body }
   let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [stale] }
@@ -2071,7 +2104,7 @@ probe "a whole-table witness with a STALE digest does not justify a dynamic edge
 # unstated must not be justified by material merely claiming to be whole-table.
 probe "a dynamic request with no expected table matches nothing" "true" "
 #eval$CORR
-  let dyn : RequestedEdge := { callee := cA, kind := .body, dynamic := true }
+  let dyn : RequestedEdge := { callee := cA, label := lA, kind := .body, dynamic := true }
   let tbl : EdgeWitness := { subject := subj, target := .wholeTable \"Tbl\" \"7bcec2d7871f93204b26e2bf83d5acf1\", kind := .body }
   let r := correspond { subject := subj, requestedEdges := [dyn], candidateWitnesses := [tbl] }
   !(r.usable 1)"
@@ -2139,10 +2172,17 @@ echo "  correspondence: $C_USABLE/$C_EDGED edge-bearing subjects fully correspon
 # `fixed_capacity.validate_message` is that case — eligible, 11 outgoing edges, no `#[proof_by]`
 # anywhere — and it is owned by proof linkage, not by this layer.
 C_NOCLAIM="$(printf '%s' "$CORR_LINES" | grep -c 'no claim' || true)"
-if [ "$C_EDGED" = "10" ] && [ "$C_USABLE" = "9" ] && [ "$C_NOCLAIM" = "1" ]; then
-  ok "9 of 10 claiming subjects fully correspond, 1 makes no claim (exact, not ratcheted)"
+# 9/10 -> 8/10 ON 2026-08-15 WHEN THE JOIN BECAME SCOPED, and the lost subject is a WIN rather than a
+# regression: `elf_header/src/main_drifted.con` is a DIFFERENT PROGRAM that shares every declaration
+# name with `elf_header`. Its edges matched `elfFns` under the `CallableId` join because the names
+# agreed; under `DefinitionIdentity` they do not, because the package component differs
+# (952c39a8… vs 543bfb75…) — the cross-program substitution this migration exists to close, caught
+# on a real fixture rather than a synthetic one. The denominator is unchanged; one more subject is
+# now correctly refused.
+if [ "$C_EDGED" = "10" ] && [ "$C_USABLE" = "8" ] && [ "$C_NOCLAIM" = "1" ]; then
+  ok "8 of 10 claiming subjects fully correspond, 2 correctly refuse, 1 makes no claim (exact, not ratcheted)"
 else
-  no "corpus correspondence moved to $C_USABLE/$C_EDGED claiming (+$C_NOCLAIM no-claim; was 9/10 +1) — say which subjects changed and why"
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED claiming (+$C_NOCLAIM no-claim; was 8/10 +1) — say which subjects changed and why"
 fi
 
 # "NO CLAIM" MUST NOT BECOME A HIDING PLACE. A subject WITH a linked theorem whose classification is
@@ -2153,7 +2193,9 @@ fi
 # the report — a first version used `grep -A2` and missed the correspondence line entirely, passing
 # a check it never performed.
 VH="$(printf '%s' "$CORR_LINES" | grep -c 'usable=no' || true)"
-if [ "$VH" = "1" ]; then
+# TWO now, and each is pinned BY NAME below: a count alone would let one correct refusal be traded
+# for a new incorrect one without moving the number.
+if [ "$VH" = "2" ]; then
   ok "a subject WITH a theorem but unusable justification still reports usable=no (no-claim is not a hiding place)"
   # AND THE REFUSAL IS CORRECT, not a gap to close. `proof_pressure`'s `validate_header` calls
   # `check_nonce` and is linked to `Examples.ElfHeader.Proofs.validate_header_correct`, whose table
@@ -2167,6 +2209,16 @@ if [ "$VH" = "1" ]; then
     no "proof_pressure/validate_header no longer refuses with missing=1 — if the fixture's proof link was repaired, update this; if the join was loosened, revert it"
   else
     ok "proof_pressure/validate_header still refuses (misattached proof link, correctly caught)"
+  fi
+  # THE SECOND REFUSAL IS THE CROSS-PROGRAM SUBSTITUTION, and it exists only because the join is
+  # scoped. `main_drifted` declares the same functions as `elf_header` in a different program; every
+  # one of its four body edges pointed at an `elfFns` entry by NAME. Now the package component
+  # separates them and all four fall to `missing`. If this ever reads `usable=yes`, the join has
+  # gone back to matching names.
+  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=4'; then
+    no "elf_header/main_drifted no longer refuses with missing=4 — a different program's edges are being justified by elfFns again"
+  else
+    ok "elf_header/main_drifted refuses all 4 edges (cross-program substitution, caught by scope)"
   fi
 else
   no "no subject reports usable=no while having a linked theorem — the no-claim exemption may have widened"
