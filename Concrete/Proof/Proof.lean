@@ -2,6 +2,7 @@ import Concrete.Elab.Core
 import Concrete.Proof.SimpAttr
 import Concrete.Resolve.CallableId
 import Concrete.Proof.DefinitionIdentity
+import Concrete.Proof.GeneratedAttestations
 
 namespace Concrete.Proof
 
@@ -499,6 +500,17 @@ def FnTable.withAttestations (t : FnTable) (entries : List AttestedPFnDef) : FnT
     attested := (entries.filterMap (fun e =>
       e.attested.toOption.map (fun d => (e.model, d)))).toArray
   , attestationFailures := (entries.filter (fun e => e.attested.toOption.isNone)).length }
+
+/-! Attesting a table changes only its evidence material. These projections are `@[simp]` because the
+    proof corpus reduces through `globals` and `entries` — `simp only [eval, fooFns_globals, …]` — and
+    a structure update that blocks that reduction breaks proofs whose STATEMENTS never changed. That
+    is the invariant this whole conversion is required to preserve, and it failed on
+    `CryptoVerify/Proofs.lean` the moment the first table was attested. -/
+@[simp] theorem FnTable.withAttestations_globals (t : FnTable) (es : List AttestedPFnDef) :
+    (FnTable.withAttestations t es).globals = t.globals := rfl
+
+@[simp] theorem FnTable.withAttestations_entries (t : FnTable) (es : List AttestedPFnDef) :
+    (FnTable.withAttestations t es).entries = t.entries := rfl
 
 /-- Bind a model to a generated implementation reference. -/
 def AttestedPFnDef.of (model : PFnDef)
@@ -1783,7 +1795,19 @@ def cryptoFnsGlobals : String → Option PFnDef
     is asserted rather than imposed. `globals` kept so existing proofs still
     rewrite, and `dispatchResolves` checks the two agree. -/
 def cryptoFns : FnTable :=
-  { entries := #[checkNonceFn, computeTagFn, verifyMessageFn, verifyTagFn], globals := cryptoFnsGlobals }
+  -- ATTESTED (R-0004 package 2). `withAttestations` is a structure update, so `entries`, `globals`
+  -- and the `rfl` simp lemma below are untouched — only evidence material is added.
+  --
+  -- FIVE attestations for FOUR models: `check_nonce` is attested TWICE, once per consuming package
+  -- (crypto_verify and proof_pressure). That is not a duplicate — the identities differ in their
+  -- package component — and collapsing them to one is exactly what scoped identity exists to prevent.
+  FnTable.withAttestations
+    { entries := #[checkNonceFn, computeTagFn, verifyMessageFn, verifyTagFn], globals := cryptoFnsGlobals }
+    [ AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_860da3fd_check_nonce
+    , AttestedPFnDef.of computeTagFn    GeneratedAttestations.cryptoFns_860da3fd_compute_tag
+    , AttestedPFnDef.of verifyMessageFn GeneratedAttestations.cryptoFns_860da3fd_verify_message
+    , AttestedPFnDef.of verifyTagFn     GeneratedAttestations.cryptoFns_860da3fd_verify_tag
+    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_d7eed943_check_nonce ]
 
 -- Keeps `simp only [eval, cryptoFns_globals, cryptoFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `cryptoFns`. The old `def cryptoFns : FnTable | "x" => …` produced equation lemmas

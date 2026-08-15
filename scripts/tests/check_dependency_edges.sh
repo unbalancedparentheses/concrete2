@@ -126,7 +126,11 @@ echo "=== corpus split, pinned ==="
 # Pinned so a change in how theorems are written, or in the classifier, has to be
 # looked at rather than absorbed. 0 of these are ambiguous, which is why no
 # tie-break rule exists: none is needed.
-probe "the corpus splits 113 contract / 166 body" "113/166" \
+# 166 -> 168 on 2026-08-15, and the two are named rather than absorbed: `withAttestations_globals`
+# and `withAttestations_entries`, the projection lemmas added so the proof corpus still reduces
+# through an ATTESTED table. Both mention `FnTable`, so the classifier counts them. They are
+# `rfl` projections and assert nothing about any implementation.
+probe "the corpus splits 113 contract / 168 body" "113/168" \
 '#eval show MetaM Unit from do
    let env ← getEnv
    let mut nc := 0; let mut nb := 0
