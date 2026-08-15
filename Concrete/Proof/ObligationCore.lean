@@ -208,6 +208,9 @@ def ofProofStatus (e : Report.ProofStatusEntry) : Obligation :=
     -- purpose of the status is that this claim contributes no proved evidence.
     -- A release gate reading the ledger must see the containment, not a pass.
     | .depsNotCurrent => ("dependency_not_current", "deps_not_current")
+    -- ITS OWN LEDGER KIND. Folding it into `dependency_not_current` would tell a release gate that
+    -- a callee needs re-verification, when what is missing is this claim's per-edge justification.
+    | .correspondenceUnjustified => ("dependency_closure_unjustified", "correspondence_unjustified")
     | .notProved   => ("missing_theorem",   "missing")
     | .blocked     => ("blocked_proof",     "unproven")
     | .notEligible => ("ineligible_construct", "ineligible")
@@ -220,6 +223,9 @@ def ofProofStatus (e : Report.ProofStatusEntry) : Obligation :=
     | .depsNotCurrent =>
       if e.notCurrentDeps.isEmpty then "reaches a dependency that is not current"
       else s!"reaches non-current dependencies: {", ".intercalate e.notCurrentDeps}"
+    | .correspondenceUnjustified =>
+      if e.notCurrentDeps.isEmpty then "dependency closure has no validated per-edge justification"
+      else s!"unjustified dependency edges: {", ".intercalate e.notCurrentDeps}"
     | .proved      =>
       let base := if e.proofName.isEmpty then "in-source proof link is fresh" else s!"proved by {e.proofName}"
       if e.trustedDeps.isEmpty then base

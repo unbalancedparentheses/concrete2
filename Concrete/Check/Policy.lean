@@ -200,6 +200,13 @@ private def enforceRequireProofs (pc : ProofCore) : Diagnostics :=
     | .depsNotCurrent => some (mkDiag
         s!"'{o.functionId.qualName}' reaches a dependency that is not current, so it contributes no proved evidence"
         "make the dependencies current (re-verify their fingerprints, attach their proofs, or mark a boundary trusted), or change [policy] require-proofs")
+    -- REQUIRE-PROOFS MUST NOT BE SATISFIED BY AN UNJUSTIFIED CLOSURE. The subject is fresh and the
+    -- callees are current, which is exactly what makes this case easy to wave through: without its
+    -- own arm the catch-all below would have treated it as acceptable, and a policy gate would pass
+    -- on a claim whose dependency justification was never established.
+    | .correspondenceUnjustified => some (mkDiag
+        s!"'{o.functionId.qualName}' has no validated per-edge justification for its dependency closure, so it contributes no proved evidence"
+        "attest the entries of the table its theorem names, or repair a proof link that names a table describing a different program's function; or change [policy] require-proofs")
     | .proved | .ineligible | .trusted => none
 
 /-- Reject vacuous contracts. A function whose precondition is unsatisfiable has

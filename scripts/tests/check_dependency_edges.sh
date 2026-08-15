@@ -348,6 +348,28 @@ else
 fi
 # trust must be visible, and separately from the root
 
+# === THE AUTHORITY PASS IS LIVE, AND IT IS NOT VACUOUS =========================================
+# A friendly verdict must survive its dependency JUSTIFICATION, not only its own freshness and its
+# callees' currency. `main_drifted` is the measured case: FIVE `proved` verdicts before the pass,
+# FOUR after. The one that fell is its only subject with outgoing edges, every one of which pointed
+# at another program's implementation and was justified by name agreement alone.
+#
+# The other four must STAY proved: leaf functions whose own fingerprints match their own bodies, and
+# a closure with no edges is vacuously justified. Both halves are asserted, because a pass that
+# downgraded everything would satisfy the first alone.
+DRIFT_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
+DRIFT_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
+if [ "$DRIFT_UNJUST" = "1" ]; then
+  ok "a cross-program closure is DOWNGRADED in production (correspondence_unjustified, not proved)"
+else
+  no "main_drifted reports $DRIFT_UNJUST unjustified closures (expected 1) — the authority pass stopped consuming correspondence"
+fi
+if [ "$DRIFT_PROVED" = "4" ]; then
+  ok "the four edge-free subjects stay proved (a vacuous closure is justified, not downgraded)"
+else
+  no "main_drifted reports $DRIFT_PROVED proved (expected 4) — the pass is downgrading claims whose closures are empty"
+fi
+
 echo ""
 echo "=== NOT YET INTEGRATED — tripwires, so this cannot read as slice 6 done ==="
 # The root is a standalone function. Until ProofCore builds nodes from real
@@ -2583,12 +2605,16 @@ else
   no "$NREF root refusal(s), but only $NNAMED name the identity/edge responsible"
 fi
 
-# The root must NOT reach any verdict yet. This is the step-4 containment, and it is the same
-# check the subject digest has: shadow means computed, not consulted.
+# THE ROOT IS STILL SHADOW; CORRESPONDENCE IS NOT. Those are different dimensions and the
+# containment now applies to exactly one of them: `applyCorrespondenceAuthority` consumes the scoped
+# JOIN, while `dependencyRootMaterial` still decides nothing. Keeping the tripwire on the root means
+# a later step cannot wire it in silently, and the check is deliberately about the STATUS DERIVATION
+# rather than about the authority pass — a root reaching per-entry status derivation would bypass the
+# composition entirely.
 if grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
-  no "a dependency root reaches deriveObligationStatus — step 6 has begun without steps 5 and 7"
+  no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
-  ok "no dependency root reaches status derivation — still shadow"
+  ok "no dependency root reaches status derivation — roots remain shadow while correspondence is authoritative"
 fi
 
 GATE_DONE=1

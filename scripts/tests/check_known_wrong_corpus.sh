@@ -64,7 +64,11 @@ printf '%s' "$("$COMPILER" "$H23" --report multi-kernel 2>/dev/null)" \
 # And the release gate. Display without enforcement is how the first fix would have been
 # half a fix: the report read 'assumed' while `check` still exited 0.
 H23DIR="$TMP/h23policy"; mkdir -p "$H23DIR/src"; cp "$H23" "$H23DIR/src/main.con"
-printf '[policy]\nforbid-assume = true\n' > "$H23DIR/Concrete.toml"
+# A VALID MANIFEST, not just a policy stanza. Package identity became REQUIRED at the ProofCore
+# boundary (a manifest with no declared name refuses the load), so this fixture project stopped
+# loading at all and the assertion below was reporting a policy failure for a manifest reason. The
+# fixture was wrong, not the rule — write the section the loader requires.
+printf '[package]\nname = "h23_policy_fixture"\nversion = "0.1.0"\n\n[policy]\nforbid-assume = true\n' > "$H23DIR/Concrete.toml"
 # Captured, not piped: `check` exits non-zero BECAUSE the gate fired, and under
 # `set -o pipefail` that non-zero propagates past a matching grep and reads as FAIL.
 P23="$( cd "$H23DIR" && "$COMPILER" check src/main.con 2>&1 )"

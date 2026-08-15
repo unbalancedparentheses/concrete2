@@ -941,6 +941,11 @@ inductive ProofState where
       current, so the claim contributes no proved evidence. Distinct from `stale`
       and `unbound`, which are both statements about THIS body. -/
   | depsNotCurrent
+  /-- Subject fresh, dependencies current, and the dependency closure has no validated per-edge
+      JUSTIFICATION: some edge lacks a witness naming that exact implementation, or a table the
+      linked theorem names could not be read. A statement about the evidence, not about this body
+      or any callee's freshness. -/
+  | correspondenceUnjustified
 
 /-- Canonical string for a ProofState. Uses the same terminology as
     ObligationStatus.canonical to prevent cross-surface drift. -/
@@ -948,6 +953,7 @@ def ProofState.canonical : ProofState → String
   | .unbound        => "unbound"
   | .needsRecheck   => "needs_recheck"
   | .depsNotCurrent => "deps_not_current"
+  | .correspondenceUnjustified => "correspondence_unjustified"
   | .proved     => "proved"
   | .stale      => "stale"
   | .notProved  => "missing"
@@ -986,6 +992,7 @@ private def obligationStatusToProofState : Concrete.ObligationStatus → ProofSt
   | .unbound => .unbound
   | .needsRecheck => .needsRecheck
   | .depsNotCurrent => .depsNotCurrent
+  | .correspondenceUnjustified => .correspondenceUnjustified
   | .proved => .proved
   | .stale => .stale
   | .missing => .notProved
@@ -1120,6 +1127,14 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     let coverageTag := if e.coverage.isEmpty then "" else s!"\n\n  coverage: {e.coverage}"
     let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
     s!"-- dependency not current {String.ofList (List.replicate 34 '-')} {locStr}\n\n  `{e.qualName}` cannot contribute proved evidence: it reaches a dependency that is not current.{snippet}\n\n  not current:\n{depLines}\n\n  This function's own subject is FRESH — the problem is downstream. Make the\n  listed dependencies current and this claim recovers on its own.{coverageTag}{originLine}\n\n  hint: Re-verify and update those fingerprints, attach their missing proofs, or mark a boundary trusted."
+  | .correspondenceUnjustified =>
+    -- NAME THE EDGES, for the same reason `depsNotCurrent` names the dependencies: "the closure is
+    -- unjustified" without saying which edge is unactionable, and the fix is in the EVIDENCE rather
+    -- than in this body or in a callee.
+    let edgeLines := String.intercalate "\n" (e.notCurrentDeps.map fun d => s!"    - {d}")
+    let coverageTag := if e.coverage.isEmpty then "" else s!"\n\n  coverage: {e.coverage}"
+    let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
+    s!"-- dependency closure unjustified {String.ofList (List.replicate 26 '-')} {locStr}\n\n  `{e.qualName}` cannot contribute proved evidence: its dependency closure has no validated per-edge justification.{snippet}\n\n  unjustified:\n{edgeLines}\n\n  This function's own subject is FRESH and its dependencies ARE current. What is\n  missing is the justification: every edge must be witnessed by exactly one entry\n  naming that exact implementation — package, module, declaration and body — in a\n  table the linked theorem names.{coverageTag}{originLine}\n\n  hint: Attest the table's entries, or repair a proof link naming a table that describes a different program's function."
   | .notProved =>
     s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` is eligible for proof but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
   | .blocked =>
@@ -4524,6 +4539,9 @@ private def collectTraceEntries
         -- Not "proved": that is the entire point of the status. Traceability
         -- must not launder a contained claim into evidence.
         | .depsNotCurrent => "deps_not_current"
+        -- Not "proved" either, and for a strictly stronger reason: the closure's justification was
+        -- never established, so traceability must not present it as evidence.
+        | .correspondenceUnjustified => "correspondence_unjustified"
         | .notProved => "enforced"
         | .blocked => "blocked"
         | .notEligible => "reported"
