@@ -462,9 +462,12 @@ add "manifest-drift-classified" "scripts/gen/attestation_manifest.sh" "check_att
 # R-0004 attestation provenance. PACKAGE COLLAPSE: `contentRoot` binds module CONTENT. The mutation
 # reverts it to module NAMES ONLY, which is the state that collapsed `composition` and
 # `composition_trusted_helper` — two different programs — into one package identity.
+# The mutation makes CONTENT contribute nothing while keeping every binding live. A first version
+# deleted `srcPart` from the concatenation, which left it unused and failed the build on a lint — the
+# harness correctly called that INVALID, because a mutation that cannot compile tests nothing.
 add "package-identity-binds-content" "Concrete/Proof/DefinitionIdentity.lean" "check_attestation_manifest.sh" yes \
-  $'    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))' \
-  $'    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods))'
+  $'    let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""\n    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))' \
+  $'    let srcPart := srcs.foldl (fun a _ => a) ""\n    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
