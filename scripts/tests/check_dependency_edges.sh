@@ -1582,6 +1582,15 @@ probe "an unkeyable edge is carried, named, and blocks usability" "true" \
                                              DefinitionIdentityRefusal.legacyNameOnly "v1:user:m.ghost")] }
     r.malformed.length == 1 && r.missing.isEmpty && !(r.usable 0)'
 
+# AN UNREADABLE TABLE REFUSES, and the refusal is what makes its edges fall to `missing` rather than
+# being justified. No corpus case exercises this branch — every table a theorem names is now readable
+# — which is precisely why it is asserted directly: a mutation against it survived for that reason,
+# and a branch with no live case needs a control rather than an untestable mutation.
+probe "an unknown table REFUSES scoped membership, it does not answer empty" "true" \
+'#eval match scopedEntryEvidenceForTable "No.Such.Table" with
+   | .error (TableResolveRefusal.unknownTable _) => true
+   | _ => false'
+
 probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
 probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \

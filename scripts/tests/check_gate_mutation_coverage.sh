@@ -614,11 +614,17 @@ add "scoped-join-carries-unkeyable-edges" "Concrete/Proof/Correspondence.lean" "
   $'  let unscopedRefusals := i.unscopedEdges.map (fun (c, k, w) => WitnessRefusal.unscopedCallee c k w)' \
   $'  let unscopedRefusals : List WitnessRefusal := []'
 
-# MISATTACHMENT: a theorem whose table does not model the callee. Making an unreadable or
-# model-less table justify the edge anyway restores `proof_pressure`'s false correspondence.
-add "scoped-join-refuses-unresolvable-table" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
-  $'             | .ok rows => Proof.scopedEvidenceContains rows r.callee\n             | .error _ => false' \
-  $'             | .ok rows => Proof.scopedEvidenceContains rows r.callee\n             | .error _ => true'
+# MISATTACHMENT: a theorem whose table does not hold the callee's definition. Making membership
+# answer `true` regardless restores `proof_pressure`'s false correspondence AND `main_drifted`'s.
+#
+# THE FIRST VERSION OF THIS MUTATION SURVIVED, and the survival was a finding about the CORPUS: it
+# made an UNREADABLE table justify its edges, and every table this corpus names is now readable, so
+# the branch it flipped has no live case. That is why the unreadable-table refusal is asserted
+# directly by a probe instead — a branch with no corpus case needs a control, not a mutation that
+# silently tests nothing.
+add "scoped-join-membership-answers-identity" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
+  $'def scopedEvidenceContains (rows : List ScopedEntryEvidence) (d : DefinitionIdentity) : Bool :=\n  rows.any (fun r => r.definition.sameDefinition d)' \
+  $'def scopedEvidenceContains (rows : List ScopedEntryEvidence) (d : DefinitionIdentity) : Bool :=\n  let _ := d\n  !rows.isEmpty'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
