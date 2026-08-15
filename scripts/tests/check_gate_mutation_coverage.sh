@@ -451,6 +451,21 @@ add "excluded-identity-retained" "Concrete/Proof/ProofCore.lean" "check_dependen
   $'    | none => (pc.excluded.find? (fun x => x.qualName == qn)).map (\u00b7.callableId)' \
   $'    | none => none'
 
+# R-0004 attestation provenance. DRIFT SELECTION: the classifier matches a fixture's own header
+# (`// … DRIFTED variant`) rather than its filename, so a renamed drift fixture stays classified. The
+# mutation breaks the match, which lets a DRIFTED implementation be attested — the hazard that
+# actually occurred when `proofFns` references resolved to `main_drifted.con`.
+add "manifest-drift-classified" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'DRIFT="$(grep -rlE \'^// .*DRIFTED variant\' examples --include=\'*.con\' 2>/dev/null | sort)"' \
+  $'DRIFT="$(grep -rlE \'^// .*NO_SUCH_MARKER\' examples --include=\'*.con\' 2>/dev/null | sort)"'
+
+# R-0004 attestation provenance. PACKAGE COLLAPSE: `contentRoot` binds module CONTENT. The mutation
+# reverts it to module NAMES ONLY, which is the state that collapsed `composition` and
+# `composition_trusted_helper` — two different programs — into one package identity.
+add "package-identity-binds-content" "Concrete/Proof/DefinitionIdentity.lean" "check_attestation_manifest.sh" yes \
+  $'    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))' \
+  $'    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods))'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
