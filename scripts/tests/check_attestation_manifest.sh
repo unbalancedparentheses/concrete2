@@ -231,7 +231,12 @@ done
 CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.ctTagFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns"
 
 if [ -n "$SITES" ]; then
-  ACTUALLY_ATTESTED="$(printf '%s' "$SITES" | grep -vE 'attested=0 ' | awk '{print $2}' | sort | tr '\n' ' ')"
+  # ANCHORED ON `SITE`. Unanchored, this also matched the `BOUND` lines added later — one line per
+  # attestation — so every converted table appeared once per attestation and the set comparison
+  # failed with a list that looked like corruption. A filter that happens to work because of what
+  # the input does not yet contain is a defect waiting for the input to grow, which it did within
+  # the hour.
+  ACTUALLY_ATTESTED="$(printf '%s' "$SITES" | grep '^SITE ' | grep -vE 'attested=0 ' | awk '{print $2}' | sort | tr '\n' ' ')"
   if [ "$ACTUALLY_ATTESTED" = "$(printf '%s\n' $CONVERTED | sort | tr '\n' ' ')" ]; then
     ok "the converted set is exactly: $CONVERTED"
   else
@@ -265,6 +270,26 @@ if [ -n "$SITES" ]; then
       no "$tbl does NOT reconcile: $ROWS_T manifest rows, $ATT_T attested, $EXC_T named exclusion(s) — an unexplained gap is an under-attested table that reads as converted"
     fi
   done
+fi
+
+# EVERY SUBJECT ROW HAS EXACTLY ONE DISPOSITION, and the four add up to the frozen 48. Conversion
+# progress was being described in prose as a per-table list, which drifted the moment a table moved:
+# a roadmap paragraph read 14 selected / 1 excluded / 13 vacuous / 20 pending after
+# `parseValidateFns` landed, when the measurement was 17/1/13/17. Counting the rows is the only way
+# the four stay consistent, so they are computed and reconciled here instead.
+SEL=0; EXC=0; VAC=0; PEND=0
+for tbl in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1}' | sort -u); do
+  ROWS_T="$(printf '%s' "$OUT" | grep -c "^$tbl <- " || true)"
+  ATT_T="$(site_field "$tbl" attested)"; ENT_T="$(site_field "$tbl" entries)"
+  EXC_T="$(printf '%s\n' $EXCLUSIONS | grep -c "^$tbl:" || true)"
+  if [ "$ENT_T" = "0" ]; then VAC=$((VAC + ROWS_T))
+  elif [ "${ATT_T:-0}" = "0" ]; then PEND=$((PEND + ROWS_T))
+  else SEL=$((SEL + ATT_T)); EXC=$((EXC + EXC_T)); fi
+done
+if [ "$(( SEL + EXC + VAC + PEND ))" = "$MAPPED" ]; then
+  ok "subject-row disposition reconciles: $SEL selected + $EXC excluded + $VAC vacuous + $PEND pending = $MAPPED"
+else
+  no "subject-row disposition does NOT reconcile: $SEL + $EXC + $VAC + $PEND != $MAPPED — a row has two dispositions or none"
 fi
 
 # === A DRIFTED IMPLEMENTATION MUST NEVER BE ATTESTED ============================================
