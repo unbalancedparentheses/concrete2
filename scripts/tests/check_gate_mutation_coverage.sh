@@ -563,6 +563,22 @@ add "attestation-dependency-reference-bound" "Concrete/Proof/Proof.lean" "check_
   $'    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_420510fb_compute_checksum\n    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header' \
   $'    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header'
 
+# R-0004 package 2. THE ENTRANCE ASSERTION MUST BE ABLE TO SAY NO. It exists to be red until the flip
+# is safe, and a completion gate that cannot fail is worse than none — it converts an unchecked
+# assumption into a green check. The mutation returns one table to the unattested state, which is
+# precisely the condition the flip must not proceed over.
+add "atomic-flip-entrance-refuses-pending" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
+  $'  FnTable.withAttestations\n    { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }' \
+  $'  FnTable.withAttestations\n    { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }\n    []\n  |>.withAttestations'
+
+# ...and it must also refuse a table whose bound references are not LOAD-BEARING. Binding an
+# attestation the scoped lookup cannot answer with would satisfy "pending is zero" while carrying
+# nothing: the mutation attests a model the table does not hold, which `scopedEntryEvidence` refuses
+# as `attestedModelNotInTable` — so the membership no longer equals the bound count.
+add "atomic-flip-entrance-refuses-inert-binding" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
+  $'    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_543bfb75_check_class' \
+  $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_543bfb75_check_class
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
