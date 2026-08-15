@@ -118,6 +118,20 @@ else
   no "two derivations of the manifest DIFFER — identity computation is not deterministic, so no conversion driven by it can be trusted"
 fi
 
+# POSITIVE CONTROL FOR LEGITIMATE REUSE. Every refusal above is about rejecting bad mappings, and a
+# manifest that rejected everything would satisfy all of them. So: one model, reused across several
+# scoped packages, must be ACCEPTED — the same model attested to different implementations is exactly
+# what scoped identity exists to permit, and refusing it would reimpose the CallableId collapse.
+#
+# Asserted on the shared table with the most reuse, and on the manifest completing at all: if reuse
+# were being refused, the generator would exit non-zero and this count would be 1.
+REUSED_OK="$(printf '%s' "$OUT" | grep -c '^Concrete.Proof.FnTable.empty <-' || true)"
+if [ "$REUSED_OK" -ge 10 ] 2>/dev/null; then
+  ok "a reused model is ACCEPTED across $REUSED_OK scoped packages (reuse is permitted, not refused)"
+else
+  no "the most-reused table produced only $REUSED_OK attestations — legitimate reuse is being refused, which reimposes the CallableId collapse"
+fi
+
 # THE KNOWN MISATTACHMENT REMAINS VISIBLE. `proof_pressure` borrows theorems from two other packages,
 # which is the defect correspondence already refuses; the manifest must not quietly normalise it.
 PP_TABLES="$(printf '%s' "$OUT" | grep 'proof_pressure' | awk '{print $1}' | sort -u | grep -c . || true)"

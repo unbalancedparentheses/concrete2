@@ -491,6 +491,23 @@ add "manifest-no-silent-filtering" "scripts/gen/attestation_manifest.sh" "check_
   $'  if [ "$tables" = "-" ] || [ -z "$tables" ]; then UNTABLED=$((UNTABLED+1)); continue; fi' \
   $'  if [ "$tables" = "-" ] || [ -z "$tables" ]; then continue; fi'
 
+# R-0004 attestation provenance. THE DUPLICATE PATH IS LIVE. Deleting the duplicate check could not
+# kill — duplicates are 0 in this corpus, so removing a check with no live case is undetectable, the
+# same vacuity that retargeted the surplus control. So the mutation makes the emitter record each
+# mapping TWICE, which must be caught as a duplicate. A duplicate matters because it means one input
+# row was counted twice, and every denominator built on it is then wrong.
+add "manifest-duplicate-path-live" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'    printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' "$t" "$pkg" "$mod" "$decl" "$impl" "$src" >> "$TMP/pairs.tsv"' \
+  $'    printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' "$t" "$pkg" "$mod" "$decl" "$impl" "$src" >> "$TMP/pairs.tsv"; printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' "$t" "$pkg" "$mod" "$decl" "$impl" "$src" >> "$TMP/pairs.tsv"'
+
+# R-0004 attestation provenance. SAME-NAME CROSS-PACKAGE SUBSTITUTION. The conflict key is
+# (table, package, module, decl). Dropping PACKAGE from it conflates same-named declarations across
+# different packages — precisely the `main.validate_header` collision that motivated scoped identity —
+# so distinct implementations in distinct packages register as one key with several implementations.
+add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'CONFLICTS="$(cut -f1-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do' \
+  $'CONFLICTS="$(cut -f1,3-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
