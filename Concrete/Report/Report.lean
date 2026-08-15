@@ -2112,8 +2112,19 @@ def bodyBytesReport (pc : Concrete.ProofCore) : String :=
     Only `body` edges qualify. A `contract` edge holds for any table meeting its hypotheses and a
     `trusted` edge is witnessed by the declared boundary, so neither needs an exact implementation. -/
 def attestationJoinReport (pc : Concrete.ProofCore) : String :=
-  let idOfEntry : CallableId → Option Concrete.ProofCoreEntry := fun cid =>
-    pc.entries.find? (fun e => e.callableId == cid)
+  -- BOTH POPULATIONS. Excluded records now carry a scoped identity too, and searching only
+  -- `entries` reported a callee that HAS one as `calleeWithoutIdentity` — a manufactured refusal,
+  -- which is worse than none because it reads as a finding. The same two-population lookup
+  -- `dependencyNodesOf` performs, for the same reason: a trusted or ineligible helper is excluded
+  -- from the proof entries and is still a real definition an edge points at.
+  let identityOfCallee : CallableId → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity :=
+    fun cid =>
+      match pc.entries.find? (fun e => e.callableId == cid) with
+      | some e => e.definitionIdentity
+      | none   =>
+        match pc.excluded.find? (fun x => x.callableId == cid) with
+        | some x => x.definitionIdentity
+        | none   => .error (.legacyNameOnly cid.render)
   let tablesOf : String → List String := fun qn =>
     let thm := Concrete.theoremNameOf pc qn
     match Proof.validatedRowOf thm with
@@ -2145,12 +2156,9 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
           if kind != Proof.DependencyEdge.body then none else
           let hdr := s!"dependency\tbinding_role=dependency\t{consumer}\t{consumerName}\t{tbl}"
           let calleeName := s!"{callee.defModule}.{callee.declName}"
-          match idOfEntry callee with
-          | none => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
-          | some ce =>
-            match ce.definitionIdentity with
-            | .error _ => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
-            | .ok d =>
+          match identityOfCallee callee with
+          | .error _ => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
+          | .ok d =>
               -- A TABLE THAT CAN BE READ AND DOES NOT HOLD THE CALLEE IS A NAMED MISMATCH, not a
               -- reference. `elfFns` resolves and holds no `check_nonce` model: the request cannot be
               -- satisfied by any identity, because the table has nothing to attest. An UNREADABLE

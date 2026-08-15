@@ -3165,10 +3165,17 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
   let witnesses := trustedWitnesses ++ tableWitnesses
   -- The refusals are collected HERE, where the tables are named, and travel in the input.
   -- Recomputing them at the report would be a second producer of the same fact.
+  -- THE REFUSALS COME FROM THE SAME RESOLVER THE WITNESSES DO. They were collected through the
+  -- UNSCOPED `entryEvidenceForTable` while witnesses were derived from the SCOPED one, and the two
+  -- can disagree: a table whose entries read fine but whose ATTESTATIONS are missing or broken
+  -- resolves unscoped and refuses scoped. With several tables named by one theorem, another table
+  -- could then justify the edge while the broken attestation produced no refusal at all — so a
+  -- subject could be `usable` with one of its named tables silently unexamined. Asking the scoped
+  -- resolver closes that: whatever the witness derivation could not read is reported.
   let refusals := match Proof.validatedRowOf thm with
     | .error _ => []
     | .ok row  => row.tables.filterMap (fun (tn, _) =>
-        match Proof.entryEvidenceForTable tn with
+        match Proof.scopedEntryEvidenceForTable tn with
         | .error w => some w
         | .ok _    => none)
   .ok { subject := subject, requestedEdges := requested, unscopedEdges := unscoped
