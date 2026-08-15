@@ -33,6 +33,7 @@ DRIFT="$(grep -rlE '^// .*DRIFTED variant' examples --include='*.con' 2>/dev/nul
 # One row per claiming subject: identity, package, module, decl, implementation, theorem, tables.
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 : > "$TMP/rows.tsv"
+: > "$TMP/deprows.tsv"
 SUBJECTS=0; NOID=0; SCANNED=0; EXCLUDED=0
 while IFS= read -r con; do
   SCANNED=$((SCANNED+1))
@@ -41,6 +42,15 @@ while IFS= read -r con; do
   if [ "$isdrift" = yes ]; then EXCLUDED=$((EXCLUDED+1)); continue; fi
   while IFS= read -r line; do
     case "$line" in \#*|"") continue ;; esac
+    # ROLE-SPLIT AT THE DOOR. The report carries two populations and the subject accounting is
+    # FROZEN at 86/48, so a dependency row must never reach the subject counters — that is the whole
+    # reason the role column exists, and inferring the population from a row's shape is what it
+    # exists to prevent.
+    case "$line" in
+      dependency*)
+        printf '%s\t%s\n' "$line" "$con" >> "$TMP/deprows.tsv"
+        continue ;;
+    esac
     printf '%s\t%s\n' "$line" "$con" >> "$TMP/rows.tsv"
     SUBJECTS=$((SUBJECTS+1))
     case "$line" in *"NO-IDENTITY"*) NOID=$((NOID+1)) ;; esac
@@ -70,7 +80,77 @@ while IFS=$'\t' read -r _tag ident pkg mod decl impl thm tables src; do
 done < "$TMP/rows.tsv"
 echo
 
-# --- exact join refusals -------------------------------------------------------------------------
+# --- dependency attestations: one exact implementation per requested body-edge callee ------------
+#
+# THE POPULATION CORRESPONDENCE ACTUALLY JOINS OVER. A subject row exists because a fixture links a
+# proof to a declaration; a body edge exists because that declaration CALLS another one. Those are
+# different sets, and the difference was invisible while the join matched on `CallableId`: a callee
+# with no proof link of its own matched on NAME and reported `usable=yes`, with nothing to attest a
+# table entry to.
+#
+# THE SUBJECT SECTION ABOVE IS BYTE-STABLE AND STRICTLY SUBJECT-ONLY. `table_attestations` stays 48.
+# The `binding_role` field lives in the compiler report for BOTH populations; it is written into the
+# manifest only here, because adding it to the subject lines would change the frozen output.
+#
+# A DEPENDENCY ATTESTATION IS AN IDENTITY, NOT A JUSTIFICATION. It states which implementation an
+# edge points at. It is not proof linkage, not model faithfulness, and not root availability — an
+# unlinked helper with an exact reference still has no usable proof node.
+#
+# THE KEY IS (consumer, table, callee), produced by the compiler. Keyed by (fixture, callee) instead,
+# `proof_pressure.check_nonce` would look satisfied by its `cryptoFns` row while the theorem claiming
+# `validate_header` requests `elfFns` — the exact misattachment this work exists to keep visible.
+#
+# EVERY REQUEST IS EMITTED, whatever its disposition, and the whole population is emitted rather than
+# the subset lacking a subject row: a callee gaining a proof link must not make its dependency
+# request disappear, or the denominator shrinks when the corpus improves.
+DEPREQ=0; DEPATT=0; DEPREF=0; DEPNOID=0
+: > "$TMP/deppairs.tsv"
+: > "$TMP/depatt.txt"
+: > "$TMP/depref.txt"
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  src="$(printf '%s' "$line" | awk -F'\t' '{print $NF}')"
+  consumer="$(printf '%s' "$line" | awk -F'\t' '{print $3}')"
+  cname="$(printf '%s' "$line" | awk -F'\t' '{print $4}')"
+  tbl="$(printf '%s' "$line" | awk -F'\t' '{print $5}')"
+  disp="$(printf '%s' "$line" | awk -F'\t' '{print $6}')"
+  kind="$(printf '%s' "$line" | awk -F'\t' '{print $7}')"
+  ident="$(printf '%s' "$line" | awk -F'\t' '{print $8}')"
+  pkg="$(printf '%s' "$line" | awk -F'\t' '{print $9}')"
+  mod="$(printf '%s' "$line" | awk -F'\t' '{print $10}')"
+  decl="$(printf '%s' "$line" | awk -F'\t' '{print $11}')"
+  impl="$(printf '%s' "$line" | awk -F'\t' '{print $12}')"
+  DEPREQ=$((DEPREQ+1))
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$consumer" "$tbl" "$pkg" "$mod" "$decl" "$impl" >> "$TMP/deppairs.tsv"
+  if [ "$ident" = "NO-IDENTITY" ]; then
+    DEPNOID=$((DEPNOID+1)); DEPREF=$((DEPREF+1))
+    echo "$tbl !! $mod.$decl  binding_role=dependency  refusal=$kind  # requested by $cname ($src)" >> "$TMP/depref.txt"
+  elif [ "$disp" = "refused" ]; then
+    DEPREF=$((DEPREF+1))
+    echo "$tbl !! $pkg/$mod.$decl  binding_role=dependency  refusal=$kind  # requested by $cname [$consumer] ($src)" >> "$TMP/depref.txt"
+  else
+    DEPATT=$((DEPATT+1))
+    echo "$tbl <- $pkg/$mod.$decl impl=$impl  binding_role=dependency  # requested by $cname [$consumer] ($src)" >> "$TMP/depatt.txt"
+  fi
+done < "$TMP/deprows.tsv"
+
+echo "[dependency-attestations]"
+sort "$TMP/depatt.txt"
+echo
+echo "[dependency-refusals]"
+sort "$TMP/depref.txt"
+echo
+
+# DUPLICATE and CONFLICTING, on the dependency key exactly as on the subject key. A duplicate means
+# one request was counted twice; a conflict means one (consumer, table, callee) resolved to two
+# different implementations, which is the shape where either could be selected and one is wrong.
+DEPDUPES="$(sort "$TMP/deppairs.tsv" | uniq -d | wc -l)"
+DEPCONFLICTS="$(awk -F'\t' '{ key = $1 FS $2 FS $3 FS $4 FS $5; if (!(key in seen)) { seen[key] = $6 }
+                                else if (seen[key] != $6) { bad[key] = 1 } }
+                              END { n = 0; for (k in bad) n++; print n }' "$TMP/deppairs.tsv")"
+[ "${DEPCONFLICTS:-0}" -eq 0 ] || refuse "$DEPCONFLICTS dependency conflict(s) — one (consumer, table, callee) with two implementations"
+
+# --- exact join refusals ---# --- exact join refusals -------------------------------------------------------------------------
 # DUPLICATE: the identical mapping emitted twice. Harmless-looking, but it means one input row was
 # counted twice, so every denominator built on it is wrong.
 DUPES="$(sort "$TMP/pairs.tsv" | uniq -d | wc -l)"
@@ -110,6 +190,20 @@ echo "table_attestations      = $MAPPED"
 echo "duplicate_mappings      = $DUPES"
 echo "package_collapse_keys   = ${CONFLICTS:-0}"  # same pkg+decl, different impl
 echo "surplus_tables          = $SURPLUS"
+# SEPARATE COUNTERS, deliberately. Dependency rows must not inflate `table_attestations`: the 86/48
+# subject accounting is frozen, and a population that silently joined it would make the frozen
+# denominator meaningless.
+echo "dependency_requests     = $DEPREQ"
+echo "dependency_attestations = $DEPATT"
+echo "dependency_refusals     = $DEPREF"
+echo "dependency_duplicate_mappings = $DEPDUPES"
+echo "dependency_conflicts    = ${DEPCONFLICTS:-0}"
+echo "dependency_without_identity = $DEPNOID"
+# EVERY REQUEST ENDS SOMEWHERE. Same typed-reconciliation discipline as the subject rows: a request
+# that is neither attested nor refused would be a silently dropped edge.
+if [ "$DEPREQ" -ne $(( DEPATT + DEPREF )) ]; then
+  refuse "dependency requests do not reconcile: $DEPREQ != $DEPATT + $DEPREF"
+fi
 ACCOUNTED=$(( NOID + UNTABLED ))
 WITH_TABLE=$(( SUBJECTS - ACCOUNTED ))
 echo "subjects_with_table     = $WITH_TABLE"

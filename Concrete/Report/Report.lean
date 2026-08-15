@@ -2086,8 +2086,71 @@ def bodyBytesReport (pc : Concrete.ProofCore) : String :=
 
     One row per subject with a scoped identity, carrying its selected theorem and the tables that
     theorem names. Subjects WITHOUT a scoped identity are emitted too, as `NO-IDENTITY`, because a
-    silently shorter file makes a missing subject indistinguishable from an absent one. -/
+    silently shorter file makes a missing subject indistinguishable from an absent one.
+
+    TWO POPULATIONS, AND THE ROLE COLUMN KEEPS THEM APART. `subject` rows are the ones above: a
+    declaration some fixture links a proof to. `dependency` rows are the requested BODY-edge callees
+    of those subjects — the population correspondence actually joins over, which is not the same set.
+    A callee with no proof link of its own has no subject row, so nothing could attest a table entry
+    to it, while the `CallableId` join matched it on NAME and reported `usable=yes`.
+
+    A DEPENDENCY ROW IS AN IDENTITY, NOT A JUSTIFICATION. It says exactly which implementation an
+    edge points at. It does not claim proof linkage, model faithfulness, or root availability, which
+    is why its theorem column is `-` and why the role must never be inferred from the row's shape:
+    giving an unlinked helper an exact reference must not make its missing proof node usable.
+
+    Only `body` edges qualify. A `contract` edge holds for any table meeting its hypotheses and a
+    `trusted` edge is witnessed by the declared boundary, so neither needs an exact implementation. -/
 def attestationJoinReport (pc : Concrete.ProofCore) : String :=
+  let idOfEntry : CallableId → Option Concrete.ProofCoreEntry := fun cid =>
+    pc.entries.find? (fun e => e.callableId == cid)
+  let tablesOf : String → List String := fun qn =>
+    let thm := Concrete.theoremNameOf pc qn
+    match Proof.validatedRowOf thm with
+    | .error _ => []
+    | .ok row  => row.tables.map (·.1)
+  -- Requested body-edge callees, from the SAME producer the root and correspondence read
+  -- (`dependencyNodesOf`). Deriving them a second way here is how two answers appear.
+  --
+  -- ONE ROW PER REQUEST, and the request is keyed by (CONSUMING SUBJECT, TABLE, CALLEE). Keying by
+  -- (fixture, callee) is not strong enough and hides the exact defect this work exists to catch:
+  -- `proof_pressure.check_nonce` has a perfectly good identity under `cryptoFns`, while the theorem
+  -- claiming `validate_header` requests `elfFns` — a row elsewhere cannot satisfy this request.
+  --
+  -- THE WHOLE POPULATION IS EMITTED, not the subset that lacks a subject row. A callee gaining a
+  -- proof link would otherwise make its dependency request DISAPPEAR, which is a denominator that
+  -- shrinks when the corpus improves — the shape that makes coverage unfalsifiable.
+  let depRows := (Concrete.dependencyNodesOf pc pc.callGraph).flatMap (fun n =>
+    match pc.entries.find? (fun e => e.callableId == n.id) with
+    | none => []
+    | some subj =>
+      let tables := tablesOf subj.qualName
+      if tables.isEmpty then [] else
+      let consumer := match subj.definitionIdentity with
+        | .ok d  => d.digest
+        | .error _ => "NO-IDENTITY"
+      let consumerName := s!"{subj.callableId.defModule}.{subj.callableId.declName}"
+      tables.flatMap (fun tbl =>
+        n.edges.filterMap (fun (kind, callee) =>
+          if kind != Proof.DependencyEdge.body then none else
+          let hdr := s!"dependency\tbinding_role=dependency\t{consumer}\t{consumerName}\t{tbl}"
+          let calleeName := s!"{callee.defModule}.{callee.declName}"
+          match idOfEntry callee with
+          | none => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
+          | some ce =>
+            match ce.definitionIdentity with
+            | .error _ => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
+            | .ok d =>
+              -- A TABLE THAT CAN BE READ AND DOES NOT HOLD THE CALLEE IS A NAMED MISMATCH, not a
+              -- reference. `elfFns` resolves and holds no `check_nonce` model: the request cannot be
+              -- satisfied by any identity, because the table has nothing to attest. An UNREADABLE
+              -- table is a different answer — "cannot tell" is not "does not contain", and refusing
+              -- on it would manufacture a refusal from the compiler's own reach rather than from the
+              -- data. The identity claim is about the CALLEE and stays true either way.
+              match Proof.tableContainsCallee tbl callee with
+              | .ok false => some (hdr ++ s!"\trefused\ttableModelMissing\t{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}\t{calleeName}\n")
+              | _ => some (hdr ++ s!"\tattested\t-\t{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}\n")))
+  )
   let rows := pc.entries.map (fun e =>
     let thm := Concrete.theoremNameOf pc e.qualName
     let tables := match Proof.validatedRowOf thm with
@@ -2102,9 +2165,12 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
     | .error w =>
       s!"subject\tNO-IDENTITY\t-\t{e.callableId.defModule}\t{e.callableId.declName}\t-" ++
       s!"\t{thmStr}\t{tableStr}\t{w.explain}\n")
-  "# subject<TAB>identity<TAB>package<TAB>module<TAB>decl<TAB>implementation<TAB>theorem<TAB>tables\n"
+  "# role<TAB>identity<TAB>package<TAB>module<TAB>decl<TAB>implementation<TAB>theorem<TAB>tables\n"
+    ++ "# role is `subject` (proof-linked declaration) or `dependency` (requested body-edge callee).\n"
+    ++ "# A dependency row states WHICH implementation an edge points at. It is not proof linkage.\n"
     ++ String.join rows
-    ++ s!"# subjects={pc.entries.length}\n"
+    ++ String.join depRows
+    ++ s!"# subjects={pc.entries.length} dependency_rows={depRows.length}\n"
 
 /-- Emit GENERATED implementation references for a program's proof-linked definitions.
 

@@ -244,7 +244,11 @@ if [ -n "$SITES" ]; then
   fi
 
   for tbl in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1}' | sort -u); do
-    ROWS_T="$(printf '%s' "$OUT" | grep -c "^$tbl <- " || true)"
+    # SUBJECT ROWS ONLY. The reconciliation is about the frozen subject accounting; dependency rows
+    # are a separate population with separate counters, and letting them into this count made every
+    # converted table read as under-attested the moment the population landed.
+    ROWS_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -vc 'role=dependency' || true)"
+    DEP_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -c 'role=dependency' || true)"
     ATT_T="$(site_field "$tbl" attested)"
     ENT_T="$(site_field "$tbl" entries)"
     FAIL_T="$(site_field "$tbl" failures)"
@@ -265,7 +269,7 @@ if [ -n "$SITES" ]; then
     elif [ "$FAIL_T" != "0" ]; then
       no "$tbl has $FAIL_T generated reference(s) that failed validation — needs_recheck, not a conversion"
     elif [ "$ROWS_T" = "$(( ATT_T + EXC_T ))" ]; then
-      ok "$tbl reconciles: $ROWS_T manifest rows = $ATT_T attested + $EXC_T named exclusion(s)"
+      ok "$tbl reconciles: $ROWS_T subject rows = $ATT_T attested + $EXC_T named exclusion(s)${DEP_T:+, plus $DEP_T dependency reference(s) not yet bound}"
     else
       no "$tbl does NOT reconcile: $ROWS_T manifest rows, $ATT_T attested, $EXC_T named exclusion(s) — an unexplained gap is an under-attested table that reads as converted"
     fi
@@ -279,7 +283,7 @@ fi
 # the four stay consistent, so they are computed and reconciled here instead.
 SEL=0; EXC=0; VAC=0; PEND=0
 for tbl in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1}' | sort -u); do
-  ROWS_T="$(printf '%s' "$OUT" | grep -c "^$tbl <- " || true)"
+  ROWS_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -vc 'role=dependency' || true)"
   ATT_T="$(site_field "$tbl" attested)"; ENT_T="$(site_field "$tbl" entries)"
   EXC_T="$(printf '%s\n' $EXCLUSIONS | grep -c "^$tbl:" || true)"
   if [ "$ENT_T" = "0" ]; then VAC=$((VAC + ROWS_T))
@@ -345,63 +349,99 @@ $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | grep -F "($src)")
 EOF_ROWS
 done
 
-# === THE MANIFEST'S POPULATION IS SUBJECTS; THE JOIN'S POPULATION IS CALLEES ====================
+# === SUBJECT ROWS AND DEPENDENCY REQUESTS =======================================================
 #
-# Found while converting `parseValidateFns`, which has EIGHT entries and only THREE manifest rows.
-# That is not an under-attested table: the manifest emits a row per SUBJECT — a declaration some
-# fixture links a proof to — while correspondence asks about the CALLEES of a subject's body. A
-# callee that carries no proof link of its own is a real, matched, `body` edge today and has no
-# manifest row, so no generated reference exists and no table entry can be attested to it.
+# The manifest carries TWO populations, kept apart by `binding_role`. `subject` rows are declarations
+# a fixture links a proof to; `dependency` rows are the requested BODY-edge callees of those
+# subjects — the population correspondence actually joins over, which is not the same set.
 #
-# This matters for the flip and for nothing before it: the `CallableId` join matches these edges on
-# NAME and reports `usable=yes`. A scoped join that requires an attested entry per callee would stop
-# matching them. So the gap is measured here, exactly, rather than discovered when correspondence
-# drops — and it is pinned so it cannot grow while attention is elsewhere.
-echo "=== subject population vs callee population ==="
+# THE SUBJECT SECTION IS FROZEN AND BYTE-STABLE. Dependency rows have their own counters and must
+# never reach `table_attestations`, or the 86/48 denominator stops meaning anything.
+#
+# THIS REPLACED A SECOND PRODUCER. An earlier version re-derived the callee population in shell, by
+# running the compiler per fixture and grepping `shadow edgeKinds` — the two-answers defect the
+# manifest generator exists to avoid, one layer up. It also keyed on (fixture, callee), which is too
+# weak: `proof_pressure.check_nonce` has a good identity under `cryptoFns` while the theorem claiming
+# `validate_header` requests `elfFns`, so a row elsewhere read as satisfying this request. The key is
+# now (consumer, table, callee) and the compiler produces it.
+echo "=== subject rows and dependency requests ==="
 
-printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED \
-  | awk -F'[()]' '{src=$(NF-1); split($1,a," "); split(a[3],b,"/"); split(b[2],c,"."); print src"\t"c[2]}' \
-  | sort -u > "$TMP/subjects.tsv"
+DEPREQ="$(field dependency_requests)"
+DEPATT="$(field dependency_attestations)"
+DEPREF="$(field dependency_refusals)"
+DEPDUP="$(field dependency_duplicate_mappings)"
+DEPCON="$(field dependency_conflicts)"
+DEPNOID="$(field dependency_without_identity)"
 
-: > "$TMP/callees.tsv"
-for src in $(cut -f1 "$TMP/subjects.tsv" | sort -u); do
-  "$ROOT_DIR/.lake/build/bin/concrete" "$src" --report subject-facts 2>/dev/null \
-    | grep '^  shadow edgeKinds:' \
-    | grep -oE 'v1:user:[A-Za-z0-9_]+\.[A-Za-z0-9_]+=body' \
-    | sed -E 's/v1:user:[A-Za-z0-9_]+\.([A-Za-z0-9_]+)=body/\1/' \
-    | sort -u | sed "s|^|$src\t|" >> "$TMP/callees.tsv"
+if [ -n "$DEPREQ" ] && [ "$DEPREQ" -gt 0 ] 2>/dev/null; then
+  ok "$DEPREQ dependency requests emitted (the population is live, not an empty section)"
+else
+  no "no dependency requests — the compiler stopped emitting the dependency role, or the role split broke"
+fi
+
+# TYPED RECONCILIATION, exactly as for subject rows: every request ends attested or NAMED-refused.
+if [ "$DEPREQ" = "$(( DEPATT + DEPREF ))" ]; then
+  ok "every dependency request is accounted for exactly once ($DEPREQ = $DEPATT attested + $DEPREF refused)"
+else
+  no "dependency requests do not reconcile: $DEPREQ != $DEPATT + $DEPREF — a request was dropped"
+fi
+
+if [ "$DEPREQ" = "42" ] && [ "$DEPATT" = "41" ] && [ "$DEPREF" = "1" ]; then
+  ok "dependency population is exactly 42 requests = 41 attested + 1 refused"
+else
+  no "dependency population moved: $DEPREQ = $DEPATT + $DEPREF, was 42 = 41 + 1 — say which edge appeared or disappeared"
+fi
+
+for pair in "dependency_duplicate_mappings:$DEPDUP" "dependency_conflicts:$DEPCON" "dependency_without_identity:$DEPNOID"; do
+  k="${pair%%:*}"; v="${pair##*:}"
+  if [ "$v" = "0" ]; then ok "$k = 0"; else no "$k = $v — a real defect, not noise"; fi
 done
 
-comm -23 <(sort -u "$TMP/callees.tsv") <(sort -u "$TMP/subjects.tsv") > "$TMP/uncovered.tsv"
-UNCOVERED="$(grep -c . "$TMP/uncovered.tsv" || true)"
-TOTAL_CALLEES="$(sort -u "$TMP/callees.tsv" | grep -c . || true)"
-
-# NON-VACUITY FIRST: if no body-edge callee were found at all, the comparison would report a
-# perfect zero gap while measuring nothing.
-if [ "$TOTAL_CALLEES" -ge 20 ] 2>/dev/null; then
-  ok "$TOTAL_CALLEES distinct (fixture, body-edge callee) pairs measured — the comparison has input"
+# THE ONE REFUSAL IS THE ONE THAT MUST STAY. `elfFns` resolves and holds no `check_nonce` model, so
+# `proof_pressure.validate_header`'s request cannot be satisfied by ANY identity — and specifically
+# not by the perfectly good `check_nonce` row that exists under `cryptoFns`. If this ever reads
+# `attested`, the request key collapsed back to something weaker than (consumer, table, callee).
+if printf '%s' "$OUT" | grep -q '^Concrete.Proof.elfFns !! .*check_nonce.*refusal=tableModelMissing.*requested by main.validate_header'; then
+  ok "the table/model mismatch is a NAMED refusal (a cryptoFns row cannot satisfy an elfFns request)"
 else
-  no "only $TOTAL_CALLEES body-edge callee pairs found — the edge extraction stopped working, so the gap below means nothing"
+  no "the elfFns/check_nonce request is no longer a named tableModelMissing refusal — either the fixture was repaired, or the request key weakened"
 fi
 
-# EXACT, with the breakdown, because a bare 14 hides which fixture moved.
-UNCOV_HMAC="$(grep -c 'hmac_sha256' "$TMP/uncovered.tsv" || true)"
-UNCOV_PV="$(grep -c 'parse_validate' "$TMP/uncovered.tsv" || true)"
-UNCOV_UNLINKED="$(grep -c 'composition_unlinked_helper' "$TMP/uncovered.tsv" || true)"
-if [ "$UNCOVERED" = "14" ] && [ "$UNCOV_HMAC" = "8" ] && [ "$UNCOV_PV" = "5" ] && [ "$UNCOV_UNLINKED" = "1" ]; then
-  ok "KNOWN GAP, pinned: $UNCOVERED of $TOTAL_CALLEES body-edge callees have no manifest row (hmac_sha256 8, parse_validate 5, composition_unlinked_helper 1)"
+# AND AN EXACT REFERENCE IS NOT A JUSTIFICATION. `composition_unlinked_helper`'s `calls.dbl` IS
+# attested — exact implementation selection is available to an unlinked helper — while its subject
+# must keep refusing, because selection says which implementation an edge points at and never that
+# the edge is justified.
+if printf '%s' "$OUT" | grep -q 'combineFns <- .*calls.dbl.*binding_role=dependency'; then
+  ok "an unlinked helper's callee DOES receive exact selection (identity is available to it)"
 else
-  no "the subject/callee gap moved to $UNCOVERED (hmac_sha256 $UNCOV_HMAC, parse_validate $UNCOV_PV, unlinked $UNCOV_UNLINKED), was 14 (8/5/1) — if the manifest population changed, say so; if a fixture changed, say which:"
-  sed 's/^/      /' "$TMP/uncovered.tsv" | head -20
+  no "composition_unlinked_helper/calls.dbl has no dependency attestation — this control lost its case"
+fi
+if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null \
+     | grep -q 'shadow correspondence: matched=0 missing=1'; then
+  ok "exact dependency selection did NOT make the misattached subject correspond (identity is not justification)"
+else
+  no "proof_pressure/validate_header changed disposition after dependency references were added — an identity was taken for a justification"
 fi
 
-# AND THE CONSEQUENCE IS STATED, not left implicit: these edges correspond TODAY. The number is the
-# size of the correspondence loss a scoped join would take if it required an attested entry per
-# callee and the manifest population were not extended first.
-if [ "$UNCOVERED" -gt 0 ] 2>/dev/null; then
-  ok "the gap is live (>0), so the flip cannot treat 'every table converted' as 'every edge attestable'"
+# EVERY ATTESTATION ROW IS SELECTABLE. References are generated from BOTH attestation sections and
+# deduped on (table, package, module, declaration, implementation), so the emitted symbol count must
+# equal the number of distinct keys. A shorter file means some row has no reference an author could
+# select — the silent gap the generated surface exists to prevent — and a longer one means the
+# dedupe is dropping a real distinction.
+KEYS="$(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1, $3, $4}' | sort -u | grep -c . || true)"
+REFS="$(grep -c '^def ' Concrete/Proof/GeneratedAttestations.lean || true)"
+if [ "$REFS" = "$KEYS" ]; then
+  ok "generated references cover every distinct (table, package, module, decl, implementation) key: $REFS"
 else
-  no "the gap is 0 — either the manifest population was extended (update this) or the measurement broke"
+  no "generated references are $REFS but the manifest has $KEYS distinct keys — regenerate scripts/gen/attestation_refs.sh"
+fi
+# NON-VACUITY of the dedupe: the two populations DO overlap, so refs must be fewer than rows. If they
+# were equal, either nothing is shared (and the dedupe is untested) or the dedupe stopped running.
+ROWS_BOTH="$(printf '%s' "$OUT" | grep -c ' <- ' || true)"
+if [ "$KEYS" -lt "$ROWS_BOTH" ] 2>/dev/null; then
+  ok "the populations overlap as expected: $ROWS_BOTH attestation rows collapse to $KEYS distinct references"
+else
+  no "no overlap between subject and dependency attestations ($ROWS_BOTH rows, $KEYS keys) — the dedupe is untested"
 fi
 
 echo "ATTESTATION-MANIFEST: PASS=$PASS FAIL=$FAIL"

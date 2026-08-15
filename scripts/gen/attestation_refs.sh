@@ -35,7 +35,19 @@ OUT="Concrete/Proof/GeneratedAttestations.lean"
   echo
   echo "namespace Concrete.Proof.GeneratedAttestations"
   echo
-  printf '%s\n' "$MAN" | grep ' <- ' | grep -v EXCLUDED | while read -r line; do
+  # BOTH ATTESTATION SECTIONS. Subject rows and dependency attestations are different populations
+  # with different meanings — one is a proof-linked declaration, the other is the exact implementation
+  # a body edge points at — but an author selects a reference the same way for either, so the surface
+  # is one file. Refusal rows (`!!`) are not references and are not emitted: a request the manifest
+  # refused has nothing to select.
+  #
+  # DEDUPED on (table, package, module, declaration, implementation). The same callee is legitimately
+  # both a subject of its table and the target of a body edge, and emitting the symbol twice would not
+  # compile. Deduping on anything less would silently drop a real distinction: two packages, or two
+  # implementations of one declaration, are different references and must both exist.
+  printf '%s\n' "$MAN" | grep ' <- ' | grep -v EXCLUDED \
+    | awk '{ key = $1 FS $3 FS $4; if (!(key in seen)) { seen[key] = 1; print } }' \
+    | while read -r line; do
     tbl="${line%% <-*}"
     rest="${line#* <- }"
     pkgdecl="${rest%% *}"

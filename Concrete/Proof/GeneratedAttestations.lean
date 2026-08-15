@@ -109,5 +109,37 @@ def cryptoFns_d7eed943_check_nonce : Except DefinitionIdentityRefusal Definition
   DefinitionIdentity.of? "d7eed9438112e0d817a3a15812018938" "main" "check_nonce" "0a3ca2002a335ffd62b6cd22edad6146"
 def elfFns_d7eed943_validate_header : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "d7eed9438112e0d817a3a15812018938" "main" "validate_header" "84329dda14c4d9302270a3c20ac18dc3"
+def parseValidateFns_420510fb_compute_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "compute_checksum" "c721ca16b467550acd17663a705264ba"
+def parseValidateFns_420510fb_validate_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "validate_checksum" "8ec0a8624d33f1d624f9c67b544221c0"
+def parseValidateFns_420510fb_validate_msg_type : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "validate_msg_type" "6cb688bcfaafa530ef3ef85942060cb2"
+def parseValidateFns_420510fb_validate_payload_len : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "validate_payload_len" "4c20bb22a0c4d96a48ef4abcc4b0dd0f"
+def parseValidateFns_420510fb_validate_total_len : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "validate_total_len" "867ba31c93068cc4a2e4f29d41424155"
+def shaFns_b74a17cb_big_sigma0 : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "big_sigma0" "2fc56fcc1fe1179b08d9634389f4e6da"
+def shaFns_b74a17cb_big_sigma1 : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "big_sigma1" "bf9e5f67627630de3db89a6a505259bb"
+def shaFns_b74a17cb_block_to_words_at : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "block_to_words_at" "db8c024f5788e80b30e6997a0e84f903"
+def shaFns_b74a17cb_block_to_words : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "block_to_words" "2566f0877ae2ddb261ffb5ffe3d745ff"
+def shaFns_b74a17cb_ch : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "ch" "3e315e17b9a1420dc0c9c4988af52511"
+def shaFns_b74a17cb_maj : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "maj" "24c6e19e81df257bf73ad1a67b7d9d44"
+def shaFns_b74a17cb_sha256_init : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "sha256_init" "1cbbcac2dedb20c50ca91b1953ab562f"
+def shaFns_b74a17cb_sha256_k : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "sha256_k" "a857c18a4abd382142dd072913aa3e6f"
+def shaFns_b74a17cb_small_sigma0 : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "small_sigma0" "e153ac437b8dbdd5315d8728fde99e3b"
+def shaFns_b74a17cb_small_sigma1 : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "b74a17cbd6583570de17d117d122e45b" "hmac_sha256" "small_sigma1" "ebdbe65affa2c57d59b8906600aa02f4"
+def combineFns_d9933ee2_dbl : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "d9933ee23eb7a3569c662bfcfb96d998" "calls" "dbl" "c3f254410bdebc8d14050f5087629bf0"
 
 end Concrete.Proof.GeneratedAttestations
