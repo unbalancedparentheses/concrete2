@@ -585,6 +585,41 @@ add "atomic-flip-entrance-refuses-inert-binding" "Concrete/Proof/Proof.lean" "ch
   $'    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_543bfb75_check_class' \
   $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_543bfb75_check_class'
 
+
+# ---------------------------------------------------------------------------
+# R-0004 package 2: THE SCOPED JOIN'S FIVE ATTACK CLASSES. The flip replaced a name-keyed evidence
+# join with an identity-keyed one; each mutation below removes one component of that identity or one
+# of the join's refusals, and each must be caught by a control that exists on the real corpus where
+# one exists, and synthetically where the corpus has no case.
+# ---------------------------------------------------------------------------
+
+# COLLISION: two programs declaring the same functions. Dropping the PACKAGE component makes
+# `main_drifted`'s edges match `elfFns` again — the exact substitution the flip closed, measured on
+# a real fixture rather than argued.
+add "scoped-identity-compares-package" "Concrete/Proof/DefinitionIdentity.lean" "check_dependency_edges.sh" yes \
+  $'  a.packageIdentity == b.packageIdentity\n    && a.moduleIdentity == b.moduleIdentity' \
+  $'  a.moduleIdentity == b.moduleIdentity'
+
+# SUBSTITUTION: the same declaration in the same package with a DIFFERENT body. The corpus has no
+# such pair — that would be one program compiled twice — so the control is synthetic, and dropping
+# the implementation component must still be caught.
+add "scoped-identity-compares-implementation" "Concrete/Proof/DefinitionIdentity.lean" "check_dependency_edges.sh" yes \
+  $'    && a.declarationIdentity == b.declarationIdentity\n    && a.implementationIdentity == b.implementationIdentity' \
+  $'    && a.declarationIdentity == b.declarationIdentity'
+
+# OMISSION: an edge the compiler HAS whose callee cannot be keyed. Dropping it before the join leaves
+# every result set empty while the closure covers less than was asked — fail-open, and invisible
+# without a control, since the corpus currently has no unkeyable edge.
+add "scoped-join-carries-unkeyable-edges" "Concrete/Proof/Correspondence.lean" "check_dependency_edges.sh" yes \
+  $'  let unscopedRefusals := i.unscopedEdges.map (fun (c, k, w) => WitnessRefusal.unscopedCallee c k w)' \
+  $'  let unscopedRefusals : List WitnessRefusal := []'
+
+# MISATTACHMENT: a theorem whose table does not model the callee. Making an unreadable or
+# model-less table justify the edge anyway restores `proof_pressure`'s false correspondence.
+add "scoped-join-refuses-unresolvable-table" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'             | .ok rows => Proof.scopedEvidenceContains rows r.callee\n             | .error _ => false' \
+  $'             | .ok rows => Proof.scopedEvidenceContains rows r.callee\n             | .error _ => true'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

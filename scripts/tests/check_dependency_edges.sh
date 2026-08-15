@@ -1567,6 +1567,21 @@ probe "the scoped and name-level questions genuinely disagree (no fallback could
                       | .error _ => false
     byName && !byIdentity'
 
+# AN UNSCOPED EDGE BLOCKS USABILITY, and is reported as MALFORMED rather than MISSING. There is no
+# live case on this corpus — every callee has a scoped identity — so the control is synthetic, and it
+# has to exist: an edge the compiler HAS and cannot key must not be dropped before the join, which
+# would leave every set empty while the closure covered less than was asked.
+probe "an unkeyable edge is carried, named, and blocks usability" "true" \
+'#eval
+  match DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "caller"
+          "00000000000000000000000000000000" with
+  | .error _ => false
+  | .ok subj =>
+    let r := correspond { subject := subj, requestedEdges := [], candidateWitnesses := []
+                        , unscopedEdges := [(CallableId.ofUser "m" "ghost", DependencyEdge.body,
+                                             DefinitionIdentityRefusal.legacyNameOnly "v1:user:m.ghost")] }
+    r.malformed.length == 1 && r.missing.isEmpty && !(r.usable 0)'
+
 probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
 probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
