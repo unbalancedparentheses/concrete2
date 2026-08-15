@@ -469,6 +469,28 @@ add "package-identity-binds-content" "Concrete/Proof/DefinitionIdentity.lean" "c
   $'    let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""\n    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))' \
   $'    let srcPart := srcs.foldl (fun a _ => a) ""\n    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))'
 
+# R-0004 attestation provenance. OMISSION OF THE SOURCE-LINKED POPULATION. The manifest scans fixtures
+# carrying `#[proof_by]`/`#[ensures_proof]`; dropping that population leaves only whatever the other
+# path reaches. Killed by the exact row/attestation denominators, which is the point of pinning them.
+add "manifest-source-population" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'done < <(grep -rlE \'#\\[(proof_by|ensures_proof)\\(\' examples --include=\'*.con\' 2>/dev/null | sort)' \
+  $'done < <(grep -rlE \'#\\[(proof_by)\\(\' examples --include=\'*.con\' 2>/dev/null | grep -v ensures | sort)'
+
+# R-0004 attestation provenance. DISCARDED SURPLUS. A table attested but referenced by no
+# classification row authorises material nothing asked for. The mutation drops the check, so surplus
+# stops being reported — the shape where a manifest quietly authorises more than the corpus requests.
+add "manifest-surplus-refused" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'  printf \'%s\\n\' "$KNOWN_TABLES" | grep -qx "$t" || { refuse "table \'$t\' is attested but referenced by no classification row (surplus)"; SURPLUS=$((SURPLUS+1)); }' \
+  $'  printf \'%s\\n\' "$KNOWN_TABLES" | grep -qx "$t" || true'
+
+# R-0004 attestation provenance. SILENT FILTERING of subjects that have no identity or no table. Both
+# counts must stay EXPLICIT: a subject dropped from the denominator is indistinguishable from one that
+# never existed, which is the laundering the typed reconciliation exists to prevent. The mutation
+# stops counting untabled subjects, so the reconciliation no longer balances.
+add "manifest-no-silent-filtering" "scripts/gen/attestation_manifest.sh" "check_attestation_manifest.sh" no \
+  $'  if [ "$tables" = "-" ] || [ -z "$tables" ]; then UNTABLED=$((UNTABLED+1)); continue; fi' \
+  $'  if [ "$tables" = "-" ] || [ -z "$tables" ]; then continue; fi'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

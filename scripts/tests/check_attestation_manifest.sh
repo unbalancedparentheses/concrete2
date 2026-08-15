@@ -79,27 +79,43 @@ else
   no "no drift fixture was excluded — a drifted implementation could be attested"
 fi
 
-# REUSE IS REPRESENTED, NOT COLLAPSED. A single mapping for a shared table would silently strip
-# scoped evidence from every consuming package but one.
+# REUSE IS REPRESENTED, NOT COLLAPSED.
 #
-# TEN, not the eight I first recorded. That eight came from a table→package map built on the
-# `#[proof_by]` population ALONE, which missed `evidence_classes/proved_by_lean` and `hmac_sha256`
-# — both reach `FnTable.empty` through IN-REPO theorems. The same union defect, counted a third time.
-#
-# The stronger property is the one asserted second: 10 consuming fixtures yield 10 distinct package
-# identities, one-to-one. Equal counts mean no two fixtures collapsed into one package and no fixture
-# split into two, which is what a content-bound `contentRoot` should produce.
+# THE INVARIANT IS THE ONE-TO-ONE MAPPING, not the number. Every consuming fixture must yield exactly
+# one scoped package identity, and no two fixtures may share one. That property holds whatever the
+# corpus contains: it fails if two programs collapse into a package (the defect closed in b3007c64)
+# and it fails if one program splits across several. It is asserted FIRST for that reason.
 EMPTY_PKGS="$(printf '%s' "$OUT" | grep '^Concrete.Proof.FnTable.empty <-' | awk '{print $3}' | cut -d/ -f1 | sort -u | grep -c . || true)"
 EMPTY_SRCS="$(printf '%s' "$OUT" | grep '^Concrete.Proof.FnTable.empty <-' | sed -E 's/.*\(([^)]*)\)$/\1/' | sort -u | grep -c . || true)"
-if [ "$EMPTY_PKGS" = "10" ]; then
-  ok "FnTable.empty is attested to 10 distinct packages (reuse represented, not collapsed)"
+if [ "$EMPTY_PKGS" = "$EMPTY_SRCS" ] && [ "$EMPTY_SRCS" -gt 1 ]; then
+  ok "INVARIANT: a shared table's $EMPTY_SRCS consuming fixtures map one-to-one onto scoped packages"
 else
-  no "FnTable.empty is attested to $EMPTY_PKGS packages (expected 10) — reuse is being collapsed or over-counted"
+  no "one-to-one broken: $EMPTY_SRCS consuming fixtures, $EMPTY_PKGS package identities — fixtures are collapsing into one package or splitting across several"
 fi
-if [ "$EMPTY_PKGS" = "$EMPTY_SRCS" ]; then
-  ok "…and its $EMPTY_SRCS consuming fixtures map one-to-one onto packages (no collapse, no split)"
+
+# TODAY'S CORPUS DENOMINATOR, which is a different kind of claim. 10 is what this corpus currently
+# contains; it is NOT architectural truth, and it moves whenever a fixture is added or removed. It is
+# pinned so such a move is stated rather than absorbed — not because 10 means anything by itself.
+#
+# (It was 8 in my own earlier note, taken from a map built on the `#[proof_by]` population alone;
+# `evidence_classes/proved_by_lean` and `hmac_sha256` reach this table through IN-REPO theorems.)
+if [ "$EMPTY_PKGS" = "10" ]; then
+  ok "corpus denominator: FnTable.empty is attested to 10 packages (today's measurement, not an invariant)"
 else
-  no "FnTable.empty has $EMPTY_SRCS consuming fixtures but $EMPTY_PKGS packages — fixtures are collapsing into one package or splitting into several"
+  no "FnTable.empty denominator moved to $EMPTY_PKGS (was 10) — say which fixture was added or removed"
+fi
+
+# RECOMPUTED AGAINST CURRENT FACTS. The manifest is derived, not stored, so its identities are only
+# as trustworthy as the derivation is REPRODUCIBLE. A second run over the same tree must be
+# byte-identical: if identity computation ever became order-dependent, environment-dependent or
+# otherwise nondeterministic, the manifest would still look well-formed while attesting different
+# identities on different runs — and a conversion driven by one run would disagree with the compiler
+# on the next.
+OUT2="$(bash scripts/gen/attestation_manifest.sh 2>/dev/null)"
+if [ "$OUT" = "$OUT2" ]; then
+  ok "a second derivation is byte-identical (identities are reproducible, not merely produced)"
+else
+  no "two derivations of the manifest DIFFER — identity computation is not deterministic, so no conversion driven by it can be trusted"
 fi
 
 # THE KNOWN MISATTACHMENT REMAINS VISIBLE. `proof_pressure` borrows theorems from two other packages,
