@@ -626,6 +626,14 @@ add "scoped-join-membership-answers-identity" "Concrete/Proof/DependencyEdge.lea
   $'def scopedEvidenceContains (rows : List ScopedEntryEvidence) (d : DefinitionIdentity) : Bool :=\n  rows.any (fun r => r.definition.sameDefinition d)' \
   $'def scopedEvidenceContains (rows : List ScopedEntryEvidence) (d : DefinitionIdentity) : Bool :=\n  let _ := d\n  !rows.isEmpty'
 
+
+# AUTHORITY: a friendly verdict must survive its dependency justification. The mutation makes the
+# authority pass accept every subject, which is the state the corpus was in before it was wired —
+# and `main_drifted`'s cross-program closure reports `proved` again.
+add "authority-consumes-correspondence" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true\n      else (Proof.correspond i).usable i.requestedEdges.length' \
+  $'      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true\n      else true'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
