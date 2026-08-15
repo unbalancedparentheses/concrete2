@@ -185,6 +185,15 @@ def attestationSites : List (String × FnTable) :=
     -- what was declared. Package and declaration are enough to name a manifest row.
     for (_, d) in t.attested do
       IO.println s!"BOUND {n} {d.packageIdentity} {d.declarationIdentity}"
+    -- The declarations this table actually MODELS. A reference for a declaration the table has no
+    -- model of cannot be bound at all — `withAttestations` needs a `PFnDef` to bind — and that is
+    -- normal: a proof table models the callees a proof unfolds, and the SUBJECT of that proof need
+    -- not be among them. Emitting the model names lets the reconciliation separate "cannot bind"
+    -- from "chose not to bind", which are different facts with different consequences.
+    for d in t.entries do
+      match d.identity.id? with
+      | some cid => IO.println s!"MODEL {n} {cid.declName}"
+      | none     => IO.println s!"MODEL {n} «no-identity»"
 LEAN
 
 SITES="$(lake env lean "$TMP/attested.lean" 2>&1)"
@@ -228,7 +237,7 @@ done
 
 # CONVERTED SET, EXACT. Converting a table is a deliberate step, so it is stated here; a table that
 # starts reporting attestations without this list being updated is an unreviewed conversion.
-CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.ctTagFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns"
+CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.ctTagFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns Examples.HmacSha256.Proofs.shaFns Examples.ProofPatterns.Proofs.combineFns"
 
 if [ -n "$SITES" ]; then
   # ANCHORED ON `SITE`. Unanchored, this also matched the `BOUND` lines added later — one line per
@@ -259,6 +268,18 @@ if [ -n "$SITES" ]; then
     ENT_T="$(site_field "$tbl" entries)"
     FAIL_T="$(site_field "$tbl" failures)"
     EXC_T="$(printf '%s\n' $EXCLUSIONS | grep -c "^$tbl:" || true)"
+    # STRUCTURALLY UNBINDABLE: a reference for a declaration this table holds no model of. Nothing
+    # can be bound to it — `withAttestations` needs a `PFnDef` — and that is not a gap: a proof table
+    # models the callees a proof unfolds, and the subject of that proof need not be among them.
+    # `calls.combine` is the case: `combineFns` models `inc` and `dbl`, never `combine` itself.
+    NOMODEL_T=0
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      rdecl="${r##*.}"
+      printf '%s' "$SITES" | grep -qxF "MODEL $tbl $rdecl" || NOMODEL_T=$((NOMODEL_T+1))
+    done <<EOF_REFS
+$(printf '%s' "$OUT" | grep "^$tbl <- " | awk '{print $3}' | sort -u)
+EOF_REFS
     if [ -z "$ATT_T" ]; then
       no "$tbl is in the manifest but not in the table-site list — it would be silently exempt from this reconciliation"
     elif [ "$ENT_T" = "0" ]; then
@@ -274,10 +295,10 @@ if [ -n "$SITES" ]; then
       ok "$tbl is PENDING conversion (0 of $ROWS_T references bound; it refuses as legacy, which is honest)"
     elif [ "$FAIL_T" != "0" ]; then
       no "$tbl has $FAIL_T generated reference(s) that failed validation — needs_recheck, not a conversion"
-    elif [ "$ROWS_T" = "$(( ATT_T + EXC_T ))" ]; then
-      ok "$tbl reconciles: $ROWS_T distinct references ($SUBJ_T subject rows, $DEP_T dependency rows) = $ATT_T bound + $EXC_T named exclusion(s)"
+    elif [ "$ROWS_T" = "$(( ATT_T + EXC_T + NOMODEL_T ))" ]; then
+      ok "$tbl reconciles: $ROWS_T distinct references ($SUBJ_T subject rows, $DEP_T dependency rows) = $ATT_T bound + $EXC_T named exclusion(s) + $NOMODEL_T with no model in this table"
     else
-      no "$tbl does NOT reconcile: $ROWS_T distinct references, $ATT_T bound, $EXC_T named exclusion(s) — an unbound reference is a definition the table could describe exactly and does not"
+      no "$tbl does NOT reconcile: $ROWS_T distinct references, $ATT_T bound, $EXC_T named exclusion(s), $NOMODEL_T with no model — an unbound reference to a model the table HOLDS is a definition it could describe exactly and does not"
     fi
   done
 fi
@@ -291,7 +312,7 @@ fi
 # against subject rows broke as soon as a table bound DEPENDENCY references too: `parseValidateFns`
 # holds 8 attestations against 3 subject rows and read as over-attested, which is not a defect but a
 # second population. A row's disposition is a property of that row.
-SEL=0; EXC=0; VAC=0; PEND=0
+SEL=0; EXC=0; VAC=0; PEND=0; NOMODEL=0
 while IFS= read -r row; do
   [ -n "$row" ] || continue
   rtbl="${row%% <-*}"; rrest="${row#* <- }"; rpkg="${rrest%%/*}"
@@ -299,16 +320,30 @@ while IFS= read -r row; do
   rent="$(site_field "$rtbl" entries)"
   if [ "${rent:-0}" = "0" ]; then VAC=$((VAC+1))
   elif printf '%s\n' $EXCLUSIONS | grep -qx "$rtbl:$rpkg:$rdecl"; then EXC=$((EXC+1))
+  elif ! printf '%s' "$SITES" | grep -qxF "MODEL $rtbl $rdecl"; then NOMODEL=$((NOMODEL+1))
   elif printf '%s' "$SITES" | grep -qE "^BOUND $rtbl $rpkg $rdecl$"; then SEL=$((SEL+1))
   else PEND=$((PEND+1)); fi
 done <<EOF_ROWS
 $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | grep -v 'binding_role=dependency')
 EOF_ROWS
-if [ "$(( SEL + EXC + VAC + PEND ))" = "$MAPPED" ]; then
-  ok "subject-row disposition reconciles: $SEL selected + $EXC excluded + $VAC vacuous + $PEND pending = $MAPPED"
+if [ "$(( SEL + EXC + VAC + NOMODEL + PEND ))" = "$MAPPED" ]; then
+  ok "subject-row disposition reconciles: $SEL selected + $EXC excluded + $VAC vacuous + $NOMODEL no-model + $PEND pending = $MAPPED"
 else
-  no "subject-row disposition does NOT reconcile: $SEL + $EXC + $VAC + $PEND != $MAPPED — a row has two dispositions or none"
+  no "subject-row disposition does NOT reconcile: $SEL + $EXC + $VAC + $NOMODEL + $PEND != $MAPPED — a row has two dispositions or none"
 fi
+
+# AND NO NAMED EXCLUSION MAY BE A RESTATEMENT OF A STRUCTURAL FACT. An exclusion is a DECISION about
+# a reference the table could have bound; if the table holds no model of that declaration, there was
+# never anything to decide, and calling it an exclusion would dress a structural impossibility up as
+# a judgement — which is how a real misattachment could later hide among them.
+for ex in $EXCLUSIONS; do
+  extbl="${ex%%:*}"; exdecl="${ex##*:}"
+  if printf '%s' "$SITES" | grep -qxF "MODEL $extbl $exdecl"; then
+    ok "exclusion $extbl/$exdecl is a real decision: the table HOLDS that model and does not bind it"
+  else
+    no "exclusion $extbl/$exdecl restates a structural fact — the table has no such model, so nothing was excluded"
+  fi
+done
 
 # === A DRIFTED IMPLEMENTATION MUST NEVER BE ATTESTED ============================================
 #

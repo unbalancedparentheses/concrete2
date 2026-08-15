@@ -479,7 +479,33 @@ def shaFnsGlobals : String → Option PFnDef
 /-- MIGRATED: entries populated, canonical order (alphabetical by declName,
     which is rendered-CallableId order within one module). -/
 def shaFns : FnTable :=
-  { entries := #[shaBigSigma0Fn, shaBigSigma1Fn, shaBlockToWordsFn, shaBlockToWordsAtFn, shaChFn, shaMajFn, shaRotrFn, shaCompressAtFn, shaHashFn, shaInitFn, shaKFn, shaRoundFn, shaScheduleFn, shaSmallSigma0Fn, shaSmallSigma1Fn, shaStateToBytesFn], globals := shaFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 8). Out-of-build, selecting from the same
+  -- `Concrete.Proof.GeneratedAttestations` producer as every in-build site — see `combineFns` for
+  -- why a second generated file under `proofs/` is not an option.
+  --
+  -- FIFTEEN attestations for sixteen models, and the two ends of that gap are different facts.
+  -- `rotr` is a model with NO reference: nothing in the corpus requests it as a proof-linked subject
+  -- or a body edge of one, so there is nothing to bind it to — a model may legitimately exist ahead
+  -- of a request. `sha256_compress` and `hmac_sha256` are the reverse: references this table holds
+  -- no model of, which is structural (the compress proof unfolds `sha256_compress_at`, and
+  -- `hmac_sha256` is a subject whose own table need not contain it).
+  FnTable.withAttestations
+    { entries := #[shaBigSigma0Fn, shaBigSigma1Fn, shaBlockToWordsFn, shaBlockToWordsAtFn, shaChFn, shaMajFn, shaRotrFn, shaCompressAtFn, shaHashFn, shaInitFn, shaKFn, shaRoundFn, shaScheduleFn, shaSmallSigma0Fn, shaSmallSigma1Fn, shaStateToBytesFn], globals := shaFnsGlobals }
+    [ AttestedPFnDef.of shaBigSigma0Fn     Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_big_sigma0
+    , AttestedPFnDef.of shaBigSigma1Fn     Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_big_sigma1
+    , AttestedPFnDef.of shaBlockToWordsFn  Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_block_to_words
+    , AttestedPFnDef.of shaBlockToWordsAtFn Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_block_to_words_at
+    , AttestedPFnDef.of shaChFn            Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_ch
+    , AttestedPFnDef.of shaMajFn           Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_maj
+    , AttestedPFnDef.of shaCompressAtFn    Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_compress_at
+    , AttestedPFnDef.of shaHashFn          Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_hash
+    , AttestedPFnDef.of shaInitFn          Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_init
+    , AttestedPFnDef.of shaKFn             Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_k
+    , AttestedPFnDef.of shaRoundFn         Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_round
+    , AttestedPFnDef.of shaScheduleFn      Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_sha256_schedule
+    , AttestedPFnDef.of shaSmallSigma0Fn   Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_small_sigma0
+    , AttestedPFnDef.of shaSmallSigma1Fn   Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_small_sigma1
+    , AttestedPFnDef.of shaStateToBytesFn  Concrete.Proof.GeneratedAttestations.shaFns_b74a17cb_state_to_bytes ]
 
 -- Keeps `simp only [eval, shaFns_globals, shaFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `shaFns`. The old `def shaFns : FnTable | "x" => …` produced equation lemmas

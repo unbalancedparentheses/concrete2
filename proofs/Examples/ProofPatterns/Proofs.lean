@@ -149,7 +149,29 @@ def combineFnsGlobals : String → Option PFnDef
     CallableId). `globals` kept so the existing `simp [combineFnsGlobals]` proofs
     still rewrite. -/
 def combineFns : FnTable :=
-  { entries := #[dblFn, incFn], globals := combineFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 8). An OUT-OF-BUILD table, and it selects from the SAME
+  -- producer every in-build site uses: `proofs/` already imports `Concrete.Proof.Proof`, so
+  -- `Concrete.Proof.GeneratedAttestations` is in scope and the dependency direction is valid. A
+  -- second generated file under `proofs/` would be a second producer of implementation identity,
+  -- which is the defect R-0004 exists to remove — the table being defined outside the compiler
+  -- changes where it lives, not where its identities come from.
+  --
+  -- FIVE attestations of TWO models across three packages. `composition_trusted_helper` binds only
+  -- `inc`, because there `dbl` is a TRUSTED helper: its edge is witnessed by the declared trust
+  -- boundary rather than by table membership, so the manifest requests no reference for it.
+  --
+  -- The manifest also offers three `calls.combine` references this table CANNOT bind, and that is
+  -- structural rather than a gap: `combineFns` models the callees `combine`'s proof unfolds, and the
+  -- subject of a proof need not appear in its own table. The reconciliation separates "cannot bind"
+  -- from "chose not to bind" by asking the site which declarations it models, so this needs no
+  -- exclusion entry — and an exclusion here would dress an impossibility up as a judgement.
+  FnTable.withAttestations
+    { entries := #[dblFn, incFn], globals := combineFnsGlobals }
+    [ AttestedPFnDef.of dblFn Concrete.Proof.GeneratedAttestations.combineFns_214cb623_dbl
+    , AttestedPFnDef.of incFn Concrete.Proof.GeneratedAttestations.combineFns_214cb623_inc
+    , AttestedPFnDef.of incFn Concrete.Proof.GeneratedAttestations.combineFns_9077cfbf_inc
+    , AttestedPFnDef.of dblFn Concrete.Proof.GeneratedAttestations.combineFns_d9933ee2_dbl
+    , AttestedPFnDef.of incFn Concrete.Proof.GeneratedAttestations.combineFns_d9933ee2_inc ]
 
 -- Keeps `simp only [eval, combineFns_globals, combineFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `combineFns`. The old `def combineFns : FnTable | "x" => …` produced equation lemmas

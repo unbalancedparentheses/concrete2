@@ -1595,13 +1595,29 @@ probe "attesting preserves entries and globals dispatch" "true" \
 '#eval fixedCapacityFns.entries.size == 4
    && (fixedCapacityFns.globals "ring_push").isSome
    && (fixedCapacityFns.globals "nope").isNone'
-# NON-VACUITY of the pair above: an unconverted table must still REFUSE, or "attested" would be
-# indistinguishable from "the check accepts anything". `combineFns` is out of the compiler build and
-# not yet converted.
-probe "an unconverted table still refuses as legacy" "true" \
-'#eval match scopedEntryEvidence Examples.ProofPatterns.Proofs.combineFns with
+# NON-VACUITY of the probes above: some table must still REFUSE, or "attested" would be
+# indistinguishable from "the check accepts anything".
+#
+# THE CONTROL MOVED, and the move is the point. It used to be `combineFns`, which is now converted —
+# every manifest-backed table is. The remaining live case is `proofFns`: it appears in NO manifest
+# row, because no fixture subject claims its theorems, so nothing can attest it and it must stay
+# evidence-ineligible rather than acquiring a fallback. That is entrance condition 3, asserted here
+# rather than described.
+probe "a table with NO manifest row still refuses as legacy" "true" \
+'#eval match scopedEntryEvidence proofFns with
    | .error ScopedMembershipRefusal.legacyUnattested => true
    | _ => false'
+# ...and the other two no-manifest tables reach the same disposition by a different route: they hold
+# no entries at all, so their membership is empty for every callee. Empty membership justifies
+# nothing, which is what evidence-ineligible has to mean — it is not a weaker form of attested.
+probe "the entry-less no-manifest tables yield empty membership, justifying nothing" "true" \
+'#eval
+  match DefinitionIdentity.of? "p" "m" "d" "496808fdd594d5047f23e823bc26b69c" with
+  | .error _ => false
+  | .ok anyId =>
+    (scopedEntryEvidence proofFnsExt).toOption == some []
+      && (scopedEntryEvidence pureCoreFns).toOption == some []
+      && !(scopedEvidenceContains ((scopedEntryEvidence proofFnsExt).toOption.getD []) anyId)'
 
 # AN EMPTY TABLE IS VACUOUSLY ATTESTED, NOT LEGACY. `FnTable.empty` has no entries, so there is
 # nothing to attest and membership is empty for every callee — a complete answer, not a missing one.
