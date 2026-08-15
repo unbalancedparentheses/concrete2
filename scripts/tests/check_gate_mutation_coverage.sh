@@ -522,6 +522,14 @@ add "attestation-conversion-complete" "Concrete/Proof/Proof.lean" "check_attesta
   $'    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_543bfb75_check_data\n    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic' \
   $'    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic'
 
+# ...and the same mutation PER CONVERTED TABLE, because the reconciliation is per table: a version
+# that only reconciled the table someone happened to mutate would leave every other conversion
+# unmeasured. `elfFns` above has a named exclusion, so its arithmetic is rows = attested + 1;
+# `fixedCapacityFns` has none, so it is the control for the simple case rows = attested.
+add "attestation-conversion-complete-fixedcapacity" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
+  $'    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push' \
+  $'    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

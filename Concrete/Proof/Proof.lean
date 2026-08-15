@@ -2389,7 +2389,17 @@ def fixedCapacityFnsGlobals : String → Option PFnDef
 /-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
     entries in canonical order (asserted by `entriesSorted`, not imposed). -/
 def fixedCapacityFns : FnTable :=
-  { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 3). Structure update, as for `cryptoFns` and `elfFns`.
+  --
+  -- FOUR attestations for four models, one consuming package, no reuse and no exclusion: this is
+  -- the simple shape, chosen third BECAUSE its proof carried the delta-unfolding hazard `elfFns`
+  -- exposed — one variable at a time.
+  FnTable.withAttestations
+    { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }
+    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_214c7171_compute_tag
+    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_214c7171_ring_contains
+    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new
+    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push ]
 
 -- Keeps `simp only [eval, fixedCapacityFns_globals, fixedCapacityFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `fixedCapacityFns`. The old `def fixedCapacityFns : FnTable | "x" => …` produced equation lemmas

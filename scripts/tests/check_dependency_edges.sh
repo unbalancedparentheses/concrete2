@@ -138,7 +138,14 @@ echo "=== corpus split, pinned ==="
 # Nothing was proved less: the theorem's statement is unchanged and its proof still closes. The
 # count is sensitive to which defs happen to acquire equation lemmas, which is worth knowing about
 # a pinned number — it moves for reasons that are not always about the corpus.
-probe "the corpus splits 113 contract / 167 body" "113/167" \
+#
+# 167 -> 166 for the same reason one table later: `Concrete.Proof.fixedCapacityFns.eq_1`, when
+# `ring_push_then_contains_correct` stopped passing the table to `simp`. MEASURED which lemmas
+# remain rather than assumed: `cryptoFns.eq_1`, `parseValidateFns.eq_1` and `pureCoreFns.eq_1` are
+# still generated — by the `by decide` completeness examples in `ProofSoundness.lean`, which force
+# the table open, NOT by any corpus proof. So the two mechanisms that mint these lemmas are a simp
+# set naming the def and a `decide` reducing it, and only the first was ever a digest hazard.
+probe "the corpus splits 113 contract / 166 body" "113/166" \
 '#eval show MetaM Unit from do
    let env ← getEnv
    let mut nc := 0; let mut nb := 0
@@ -1543,6 +1550,13 @@ probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
 probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence elfFns).toOption.map (·.length)'
+probe "fixedCapacityFns is ATTESTED and yields 4 scoped entries" "some 4" \
+'#eval (scopedEntryEvidence fixedCapacityFns).toOption.map (·.length)'
+# ...and attesting changed NOTHING the corpus evaluates through: same entries, same dispatch.
+probe "attesting preserves entries and globals dispatch" "true" \
+'#eval fixedCapacityFns.entries.size == 4
+   && (fixedCapacityFns.globals "ring_push").isSome
+   && (fixedCapacityFns.globals "nope").isNone'
 # NON-VACUITY of the pair above: an unconverted table must still REFUSE, or "attested" would be
 # indistinguishable from "the check accepts anything". `combineFns` is out of the compiler build and
 # not yet converted.

@@ -76,7 +76,7 @@ theorem ring_push_then_contains_correct
   simp (config := { maxSteps := 1000000 })
        [ringContainsExpr, eval, eval.evalWhileStep, eval.evalFields,
         eval.lookupField, eval.lookupIndex,
-        fixedCapacityFns, fixedCapacityFnsGlobals, Env.bind, evalBinOp]
+        fixedCapacityFns_globals, fixedCapacityFnsGlobals, Env.bind, evalBinOp]
 
 set_option linter.unusedSimpArgs false in
 /-- `ring_push` on the canonical empty RingBuf (head=0, count=0,

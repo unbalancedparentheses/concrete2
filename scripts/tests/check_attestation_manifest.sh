@@ -216,7 +216,7 @@ done
 
 # CONVERTED SET, EXACT. Converting a table is a deliberate step, so it is stated here; a table that
 # starts reporting attestations without this list being updated is an unreviewed conversion.
-CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.elfFns"
+CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns"
 
 if [ -n "$SITES" ]; then
   ACTUALLY_ATTESTED="$(printf '%s' "$SITES" | grep -vE 'attested=0 ' | awk '{print $2}' | sort | tr '\n' ' ')"
