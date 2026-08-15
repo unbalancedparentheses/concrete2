@@ -392,6 +392,7 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
     -- synthesized. Computed HERE, above `pc`, because `extractProofCore` requires it — it was
     -- previously computed at the return statement, which is below this binding.
     let packageIdentity := Proof.packageIdentityOf tomlContent (merged.modules.map (·.name)) depNames
+                             (allSrcMap.map (·.2))
     let pcE := extractProofCore? validCore packageIdentity simpleLocMap registry
     -- A project whose manifest declares no name yields no scoped identity and therefore no
     -- ProofCore. Refusing the LOAD is correct: every downstream consumer of this context treats

@@ -108,11 +108,19 @@ def PackageIdentity.synthetic (contentDigest : String)
     Refuses an empty inventory: a compilation with no modules has no content to identify, and a
     constant fallback would make every such compilation the same package. -/
 def PackageIdentity.syntheticForModules (moduleNames : List String)
+    (moduleSources : List String := [])
     : Except PackageIdentityRefusal PackageIdentity :=
   if moduleNames.isEmpty then .error (.emptyComponent "moduleInventory")
   else
+    -- CONTENT, not just names, for the same reason `packageIdentityOf` binds it: measured on the
+    -- corpus, `composition` and `composition_trusted_helper` are different programs whose module
+    -- INVENTORY is identical (`calls`), so a name-only synthetic identity assigned them one package.
+    -- Sources are digested and sorted by CONTENT, never by path, so ordering cannot reintroduce
+    -- checkout dependence.
     let mods := (moduleNames.mergeSort (· ≤ ·)).foldl (fun a m => a ++ s!"|M{m.length}:{m}") ""
-    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods))
+    let srcs := (moduleSources.map Concrete.shortHash).mergeSort (· ≤ ·)
+    let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""
+    PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))
 
 /-- Canonical rendering, length-prefixed per component. -/
 def PackageIdentity.canonical (p : PackageIdentity) : String :=
@@ -161,7 +169,8 @@ def packageField (content : String) (field : String) : Option String :=
     origin in `Concrete.toml`, which is a manifest surface change and therefore a decision rather
     than an implementation detail. -/
 def packageIdentityOf (tomlContent : String) (moduleNames : List String)
-    (depNames : List String) : Except PackageIdentityRefusal PackageIdentity :=
+    (depNames : List String) (moduleSources : List String := [])
+    : Except PackageIdentityRefusal PackageIdentity :=
   match packageField tomlContent "name" with
   | none =>
     -- A project with no declared name gets no identity, and therefore no scoped evidence. Refusing
@@ -172,7 +181,18 @@ def packageIdentityOf (tomlContent : String) (moduleNames : List String)
     let deps := (depNames.mergeSort (· ≤ ·)).foldl (fun a d => a ++ s!"|D{d.length}:{d}") ""
     let mods := (moduleNames.mergeSort (· ≤ ·)).foldl (fun a m => a ++ s!"|M{m.length}:{m}") ""
     let origin := Concrete.shortHash s!"pkgOriginV1:N{declared.length}:{declared}|V{version.length}:{version}{deps}"
-    let root := Concrete.shortHash s!"pkgRootV1:{mods}"
+    -- CONTENT, not just names. `contentRoot` used module NAMES alone, and the corpus showed what
+    -- that costs: `composition` and `composition_trusted_helper` are DIFFERENT PROGRAMS declaring
+    -- the same package name and the same module inventory, so they collapsed to ONE package
+    -- identity. Their implementations differ, so `DefinitionIdentity` still separated them — but a
+    -- package identity that cannot tell two programs apart is not a package identity.
+    --
+    -- Sources are digested by CONTENT and sorted by content, never by path: sorting by path would
+    -- reintroduce checkout dependence through the ordering, which is the same defect the
+    -- location-dependence refusal exists to prevent.
+    let srcs := (moduleSources.map Concrete.shortHash).mergeSort (· ≤ ·)
+    let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""
+    let root := Concrete.shortHash s!"pkgRootV1:{mods}{srcPart}"
     PackageIdentity.of? declared origin root
 
 /-- Why a definition identity could not be formed. -/

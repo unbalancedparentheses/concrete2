@@ -1628,10 +1628,19 @@ if [ -n "$C_IMPL" ] && [ "$C_IMPL" != "$D_IMPL" ]; then
 else
   no "canonical and drifted parse_byte share an implementation identity ($C_IMPL) — drift substitution would NOT be caught"
 fi
-if [ "$C_PKG" = "$D_PKG" ]; then
-  ok "…and they share a PACKAGE identity, so the implementation component is what catches it (not package scope)"
+# STRENGTHENED 2026-08-14, and this gate is why the change was noticed rather than assumed. It
+# previously asserted that canonical and drifted SHARE a package identity, because `contentRoot` was
+# derived from module NAMES and both are module `main`. `contentRoot` now binds module CONTENT — a
+# change made to close a package collapse found in the corpus (`composition` and
+# `composition_trusted_helper` are different programs that collapsed to one identity) — so the two
+# variants now differ in package identity as well as implementation.
+#
+# Drift is therefore caught by BOTH components. Asserted as inequality rather than relaxed to "don't
+# care": if they ever collapse again, that is a regression in package identity and this says so.
+if [ "$C_PKG" != "$D_PKG" ]; then
+  ok "…and they also differ in PACKAGE identity, since contentRoot binds module content"
 else
-  no "canonical and drifted now differ in PACKAGE identity ($C_PKG vs $D_PKG) — if contentRoot changed, the generator's assumptions changed with it"
+  no "canonical and drifted share a PACKAGE identity ($C_PKG) — contentRoot has stopped binding content, and two different programs would collapse"
 fi
 
 # === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================

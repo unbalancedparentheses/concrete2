@@ -457,7 +457,7 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
     -- "unidentified" fallback would be shared by every such compilation, reintroducing the
     -- collision this migration removes.
     let pc ← match extractProofCore? validCore
-        (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+        (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
         simpleLocMap registry with
       | .ok pc => pure pc
       | .error w => IO.eprintln s!"error: {w.explain}"; return 1
@@ -1530,7 +1530,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     -- "unidentified" fallback would be shared by every such compilation, reintroducing the
     -- collision this migration removes.
     let pc ← match extractProofCore? fullValidCore
-        (Proof.PackageIdentity.syntheticForModules (fullValidCore.coreModules.map (·.name)))
+        (Proof.PackageIdentity.syntheticForModules (fullValidCore.coreModules.map (·.name)) [source])
         simpleLocMap registry with
       | .ok pc => pure pc
       | .error w => IO.eprintln s!"error: {w.explain}"; return 1
@@ -2936,7 +2936,7 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     match ← loadProject root with
     | .error exitCode => return exitCode
     | .ok ctx =>
-      let { validCore, parsed, allSrcMap, depNames, .. } := ctx
+      let { validCore, parsed, allSrcMap, depNames, packageIdentity, .. } := ctx
       -- Drop dependency modules (std etc.) so the report focuses on
       -- user-package code.
       let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
@@ -2953,7 +2953,10 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
       -- "unidentified" fallback would be shared by every such compilation, reintroducing the
       -- collision this migration removes.
       let pc ← match extractProofCore? fullUserValidCore
-          (Proof.PackageIdentity.syntheticForModules (fullUserValidCore.coreModules.map (·.name)))
+          -- PROJECT path, not standalone: use the identity `loadProject` already computed from the
+          -- manifest rather than synthesizing one. Synthesizing here would be a second producer of
+          -- package identity for a package that has a declared one.
+          packageIdentity
           simpleLocMap with
         | .ok pc => pure pc
         | .error w => IO.eprintln s!"error: {w.explain}"; return 1
@@ -2979,7 +2982,7 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
       -- "unidentified" fallback would be shared by every such compilation, reintroducing the
       -- collision this migration removes.
       let pc ← match extractProofCore? validCore
-          (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+          (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
           simpleLocMap with
         | .ok pc => pure pc
         | .error w => IO.eprintln s!"error: {w.explain}"; return 1
@@ -3455,7 +3458,7 @@ def main (args : List String) : IO UInt32 := do
         -- "unidentified" fallback would be shared by every such compilation, reintroducing the
         -- collision this migration removes.
         let pc ← match extractProofCore? validCore
-            (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)))
+            (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
             simpleLocMap registry with
           | .ok pc => pure pc
           | .error w => IO.eprintln s!"error: {w.explain}"; return 1
