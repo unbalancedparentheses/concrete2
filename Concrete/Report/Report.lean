@@ -2071,6 +2071,41 @@ def bodyBytesReport (pc : Concrete.ProofCore) : String :=
       | .ok complete => s!"{hdr}\n  {Proof.bodyBytesV2 complete}"
   s!"=== Canonical body bytes ({pc.entries.length} entries) ===\n" ++ "\n".intercalate rows ++ "\n"
 
+/-- The AUTHORITATIVE join material for attestation, one row per claiming subject.
+
+    The compiler emits this; the manifest generator JOINS it. That division is the point. A shell
+    generator that derived package identity from directory layout would be a SECOND producer of
+    implementation identity — reintroducing two answers at the moment R-0004 exists to eliminate
+    them — and it would answer a different question from the one the `ProofCore` boundary already
+    answers.
+
+    So package scope comes from the compiler-produced proof SUBJECT, never from a theorem's
+    filesystem location. An in-repo theorem does not need a package of its own: the attestation
+    target is the implementation subject CONSUMING that theorem and table, and that subject has a
+    package because every subject does.
+
+    One row per subject with a scoped identity, carrying its selected theorem and the tables that
+    theorem names. Subjects WITHOUT a scoped identity are emitted too, as `NO-IDENTITY`, because a
+    silently shorter file makes a missing subject indistinguishable from an absent one. -/
+def attestationJoinReport (pc : Concrete.ProofCore) : String :=
+  let rows := pc.entries.map (fun e =>
+    let thm := Concrete.theoremNameOf pc e.qualName
+    let tables := match Proof.validatedRowOf thm with
+      | .error _ => []
+      | .ok row  => row.tables.map (·.1)
+    let tableStr := if tables.isEmpty then "-" else ",".intercalate tables
+    let thmStr := if thm.isEmpty then "-" else thm
+    match e.definitionIdentity with
+    | .ok d =>
+      s!"subject\t{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}" ++
+      s!"\t{d.implementationIdentity}\t{thmStr}\t{tableStr}\n"
+    | .error w =>
+      s!"subject\tNO-IDENTITY\t-\t{e.callableId.defModule}\t{e.callableId.declName}\t-" ++
+      s!"\t{thmStr}\t{tableStr}\t{w.explain}\n")
+  "# subject<TAB>identity<TAB>package<TAB>module<TAB>decl<TAB>implementation<TAB>theorem<TAB>tables\n"
+    ++ String.join rows
+    ++ s!"# subjects={pc.entries.length}\n"
+
 /-- Emit GENERATED implementation references for a program's proof-linked definitions.
 
     The proof-author surface. A `PFnDef` cannot derive an implementation identity — it has no typed

@@ -1,113 +1,92 @@
 #!/usr/bin/env bash
-# Attestation manifest: which SOURCE package each evidence-bearing proof table describes.
+# Attestation manifest: which SUBJECT each evidence-bearing proof table is attested to.
 #
-# THE PREREQUISITE FOR THE TABLE CONVERSION, and it exists because two attempts to derive this by
-# hand produced confident wrong answers:
+# THIS SCRIPT IS ORCHESTRATION, NOT AN IDENTITY PRODUCER — and that distinction is the whole design.
+# An earlier version derived package identity from directory layout in shell. That would have made it
+# a SECOND producer of implementation identity, reintroducing two answers at the exact moment R-0004
+# exists to eliminate them, and it answered a different question from the one the `ProofCore`
+# boundary already answers.
 #
-#   * a table→package map built from `#[proof_by]` links alone MISSED `proofFns` entirely, because
-#     `proofFns` is named by in-repo theorems rather than by source attributes;
-#   * generating references for `proofFns` resolved to `thesis_demo/src/main_drifted.con`, a DRIFT
-#     fixture whose digests are deliberately stale — a conversion against it would have baked drifted
-#     identities into the table and passed every structural check.
+# So identity comes from `--report attestation-join`, which the compiler emits from the same facts it
+# uses at that boundary. This script only JOINS those rows against the table inventory.
 #
-# So the manifest is derived from BOTH attachment populations and classifies drift fixtures as NAMED
-# exclusions rather than filtering them out. A filter makes a wrong conversion indistinguishable from
-# a correct one; a named exclusion makes it a stated fact.
+# PACKAGE SCOPE COMES FROM THE CONSUMING SUBJECT, never from a theorem's filesystem location. An
+# in-repo theorem needs no package of its own: the attestation target is the implementation subject
+# consuming that theorem and table, and every subject has a package because the boundary requires one.
 #
-# REFUSES rather than guesses. Missing, duplicate, ambiguous, conflicting and surplus mappings all
-# refuse, and a table never selects a mapping because a callable NAME matches.
-#
-# Output: a manifest on stdout. Refusals go to stderr and set a non-zero exit.
+# DENOMINATORS ARE TYPED. Every input row ends mapped, explicitly excluded, or refused — so "31 vs 43"
+# becomes a reconciliation rather than two counters that happen to differ.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
+BIN=".lake/build/bin/concrete"
+[ -x "$BIN" ] || { echo "FATAL: build first (missing $BIN)" >&2; exit 1; }
 
-CT="Concrete/Proof/ClassificationTable.lean"
 REFUSALS=0
 refuse() { echo "REFUSE: $1" >&2; REFUSALS=$((REFUSALS+1)); }
 
-# --- population A: source-linked proof attributes, per fixture ----------------------------------
-# Keyed by fixture so a theorem's PACKAGE is known, not just its name.
-declare -A THM_FIXTURES=()
+# --- drift fixtures: CLASSIFIED by their own header, not by filename -----------------------------
+# A renamed drift fixture stays classified; an innocent `*_drifted` name is not misclassified.
+DRIFT="$(grep -rlE '^// .*DRIFTED variant' examples --include='*.con' 2>/dev/null | sort)"
+
+# --- the compiler's join rows, per fixture ------------------------------------------------------
+# One row per claiming subject: identity, package, module, decl, implementation, theorem, tables.
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+: > "$TMP/rows.tsv"
+SUBJECTS=0; NOID=0; SCANNED=0; EXCLUDED=0
 while IFS= read -r con; do
-  # The package is the directory holding Concrete.toml, not the file's directory.
-  pkgdir="$(dirname "$con")"; while [ "$pkgdir" != "." ] && [ ! -f "$pkgdir/Concrete.toml" ]; do pkgdir="$(dirname "$pkgdir")"; done
-  [ -f "$pkgdir/Concrete.toml" ] || continue
-  while IFS= read -r thm; do
-    [ -n "$thm" ] || continue
-    THM_FIXTURES["$thm"]="${THM_FIXTURES[$thm]:-} $con"
-  done < <(grep -ohE '#\[(proof_by|ensures_proof)\(([A-Za-z0-9_.]+)\)\]' "$con" 2>/dev/null \
-             | sed -E 's/.*\(([^)]*)\)\]/\1/' | sort -u)
-done < <(find examples -name '*.con' | sort)
-
-# --- population B: Lean-side classification rows ------------------------------------------------
-# CLASSIFICATION rows only. The same file also carries EXTERNAL table rows, whose first field is a
-# TABLE name — conflating the two is how `combineFns` first appeared in a list of theorems.
-CLASS_ROWS="$(grep -oE '^  \("[A-Za-z0-9_.]+", "(body|contract|trusted|missing|unclassified)"' "$CT" \
-                | sed -E 's/^  \("([^"]+)".*/\1/' | sort -u)"
-EXTERNAL_ROWS="$(grep -oE '^  \("[A-Za-z0-9_.]+", "[0-9a-f]{32}", \[' "$CT" \
-                   | sed -E 's/^  \("([^"]+)".*/\1/' | sort -u)"
-
-# --- drift fixtures: CLASSIFIED, not filtered ---------------------------------------------------
-# Named by their own header rather than inferred from a filename alone, so a drift fixture that is
-# renamed is still classified and a normal file named `*_drifted` is not misclassified.
-DRIFT_FIXTURES="$(grep -rlE '^// .*DRIFTED variant' examples --include='*.con' 2>/dev/null | sort)"
+  SCANNED=$((SCANNED+1))
+  isdrift=no
+  for d in $DRIFT; do [ "$con" = "$d" ] && isdrift=yes; done
+  if [ "$isdrift" = yes ]; then EXCLUDED=$((EXCLUDED+1)); continue; fi
+  while IFS= read -r line; do
+    case "$line" in \#*|"") continue ;; esac
+    printf '%s\t%s\n' "$line" "$con" >> "$TMP/rows.tsv"
+    SUBJECTS=$((SUBJECTS+1))
+    case "$line" in *"NO-IDENTITY"*) NOID=$((NOID+1)) ;; esac
+  done < <("$BIN" "$con" --report attestation-join 2>/dev/null || true)
+done < <(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' 2>/dev/null | sort)
 
 echo "# GENERATED by scripts/gen/attestation_manifest.sh. Do not edit."
-echo "# Derived from BOTH attachment populations; drift fixtures are named exclusions."
+echo "# Identity is produced by the COMPILER (--report attestation-join); this joins, it does not derive."
 echo
 echo "[drift-exclusions]"
-if [ -z "$DRIFT_FIXTURES" ]; then
-  refuse "no drift fixtures classified — thesis_demo and crypto_verify each carry one, so an empty set means the classifier stopped matching"
-else
-  for d in $DRIFT_FIXTURES; do echo "excluded = \"$d\"  # declares itself a DRIFTED variant"; done
-fi
+for d in $DRIFT; do echo "excluded = \"$d\"  # declares itself a DRIFTED variant"; done
 echo
 
-# --- the mapping: table -> the packages whose theorems name it ----------------------------------
-echo "[table-mappings]"
-MAPPED=0
-for thm in $CLASS_ROWS; do
-  tables="$(grep -F "(\"$thm\"," "$CT" | grep -oE '\("[A-Za-z][A-Za-z.]*", "[0-9a-f]{32}"\)' \
-              | grep -oE '"[A-Za-z][A-Za-z.]*"' | tr -d '"' | sort -u)"
-  [ -n "$tables" ] || continue
-  fixtures="${THM_FIXTURES[$thm]:-}"
-  # A theorem in NEITHER population would be surplus; one in B only is an in-repo theorem, which is
-  # legitimate and must be stated rather than dropped.
-  if [ -z "$fixtures" ]; then
-    for t in $tables; do echo "$t <- in-repo theorem $thm  # no source-linked fixture"; MAPPED=$((MAPPED+1)); done
-    continue
-  fi
-  for f in $fixtures; do
-    isdrift=no
-    for d in $DRIFT_FIXTURES; do [ "$f" = "$d" ] && isdrift=yes; done
-    for t in $tables; do
-      if [ "$isdrift" = yes ]; then
-        echo "$t <- EXCLUDED $f  # drift fixture, via $thm"
-      else
-        echo "$t <- $f  # via $thm"
-      fi
-      MAPPED=$((MAPPED+1))
-    done
+# --- the mapping: table -> attested subject ------------------------------------------------------
+echo "[table-attestations]"
+MAPPED=0; UNTABLED=0
+while IFS=$'\t' read -r _tag ident pkg mod decl impl thm tables src; do
+  [ "$ident" = "NO-IDENTITY" ] && continue
+  if [ "$tables" = "-" ] || [ -z "$tables" ]; then UNTABLED=$((UNTABLED+1)); continue; fi
+  IFS=',' read -ra TS <<< "$tables"
+  for t in "${TS[@]}"; do
+    echo "$t <- $pkg/$mod.$decl impl=$impl  # via $thm ($src)"
+    MAPPED=$((MAPPED+1))
   done
-done
+done < "$TMP/rows.tsv"
 echo
 
-# --- self-declared denominator, reconciled against BOTH inventories -----------------------------
-NA="$(printf '%s\n' "${!THM_FIXTURES[@]}" | grep -c . || true)"
-NB="$(printf '%s\n' "$CLASS_ROWS" | grep -c . || true)"
-NEXT="$(printf '%s\n' "$EXTERNAL_ROWS" | grep -c . || true)"
-echo "[denominator]"
-echo "source_linked_theorems = $NA"
-echo "classification_rows    = $NB"
-echo "external_table_rows    = $NEXT"
-echo "mappings_emitted       = $MAPPED"
-echo "drift_fixtures         = $(printf '%s\n' "$DRIFT_FIXTURES" | grep -c . || true)"
+# --- typed reconciliation: every input row ends mapped, excluded, or refused ---------------------
+echo "[reconciliation]"
+echo "fixtures_scanned        = $SCANNED"
+echo "fixtures_excluded_drift = $EXCLUDED"
+echo "subject_rows            = $SUBJECTS"
+echo "subjects_no_identity    = $NOID"
+echo "subjects_without_table  = $UNTABLED"
+echo "table_attestations      = $MAPPED"
+ACCOUNTED=$(( NOID + UNTABLED ))
+WITH_TABLE=$(( SUBJECTS - ACCOUNTED ))
+echo "subjects_with_table     = $WITH_TABLE"
 
-# A population that vanishes must REFUSE, not silently shrink the manifest.
-[ "$NA" -gt 0 ] || refuse "source-linked population is EMPTY — either the attributes changed or the scan broke"
-[ "$NB" -gt 0 ] || refuse "classification population is EMPTY — either the table changed or the row shape did"
-[ "$MAPPED" -gt 0 ] || refuse "no table mappings emitted — the manifest would authorise nothing"
+# Every subject row must be accounted for exactly once: no identity, no table, or attested.
+if [ "$SUBJECTS" -ne $(( NOID + UNTABLED + WITH_TABLE )) ]; then
+  refuse "subject rows do not reconcile: $SUBJECTS != $NOID + $UNTABLED + $WITH_TABLE"
+fi
+[ "$SUBJECTS" -gt 0 ] || refuse "no subject rows — either the corpus scan or the compiler report broke"
+[ "$MAPPED" -gt 0 ]   || refuse "no table attestations emitted — the manifest would authorise nothing"
+[ -n "$DRIFT" ]       || refuse "no drift fixtures classified — the classifier stopped matching"
 
 if [ "$REFUSALS" -gt 0 ]; then
   echo "MANIFEST REFUSED: $REFUSALS problem(s)" >&2

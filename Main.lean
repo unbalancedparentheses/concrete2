@@ -2627,6 +2627,8 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "extraction" then
       IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
+    if reportType == "attestation-join" then
+      IO.println (Report.attestationJoinReport (pc := pc))
     if reportType == "generated-implementations" then
       IO.println (Report.generatedImplementationsReport (pc := pc))
     if reportType == "impl-manifest" then
