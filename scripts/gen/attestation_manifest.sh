@@ -57,16 +57,59 @@ echo
 # --- the mapping: table -> attested subject ------------------------------------------------------
 echo "[table-attestations]"
 MAPPED=0; UNTABLED=0
+: > "$TMP/pairs.tsv"
 while IFS=$'\t' read -r _tag ident pkg mod decl impl thm tables src; do
   [ "$ident" = "NO-IDENTITY" ] && continue
   if [ "$tables" = "-" ] || [ -z "$tables" ]; then UNTABLED=$((UNTABLED+1)); continue; fi
   IFS=',' read -ra TS <<< "$tables"
   for t in "${TS[@]}"; do
     echo "$t <- $pkg/$mod.$decl impl=$impl  # via $thm ($src)"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$t" "$pkg" "$mod" "$decl" "$impl" "$src" >> "$TMP/pairs.tsv"
     MAPPED=$((MAPPED+1))
   done
 done < "$TMP/rows.tsv"
 echo
+
+# --- exact join refusals -------------------------------------------------------------------------
+# DUPLICATE: the identical mapping emitted twice. Harmless-looking, but it means one input row was
+# counted twice, so every denominator built on it is wrong.
+DUPES="$(sort "$TMP/pairs.tsv" | uniq -d | wc -l)"
+[ "$DUPES" -eq 0 ] || refuse "$DUPES duplicate identical mapping(s) — an input row was counted twice"
+
+# CONFLICTING: one (table, package, module, decl) attested to DIFFERENT implementations. This is the
+# dangerous one: both mappings look valid, and a converter taking either would attest a table to an
+# implementation the subject does not have.
+CONFLICTS="$(cut -f1-4 "$TMP/pairs.tsv" | sort | uniq -d | while read -r key; do
+  n="$(grep -cP "^$(printf '%s' "$key" | sed 's/[][\.*^$/]/\\&/g')\t" "$TMP/pairs.tsv" 2>/dev/null || echo 0)"
+  impls="$(grep -P "^$(printf '%s' "$key" | sed 's/[][\.*^$/]/\\&/g')\t" "$TMP/pairs.tsv" 2>/dev/null | cut -f5 | sort -u | wc -l)"
+  [ "${impls:-1}" -gt 1 ] && echo "$key"
+done | grep -c . || true)"
+# MEASURED 2026-08-14: this is NOT a mapping conflict, it is a PACKAGE COLLAPSE, and calling it a
+# conflict would refuse legitimate data while leaving the real defect unnamed. `composition` and
+# `composition_trusted_helper` are different programs that declare the same package name and the same
+# module inventory, so `packageIdentityOf` — whose `contentRoot` is derived from module NAMES —
+# assigns them ONE package identity. Their `calls.combine` implementations differ, which is correct
+# and is exactly what `DefinitionIdentity` separates.
+#
+# So the mapping is fine and the package identity is too weak. Reported as a named condition, because
+# a converter is safe here (the identities differ) while the collapse still needs closing: binding
+# module CONTENT rather than module names in `contentRoot`.
+if [ "${CONFLICTS:-0}" -gt 0 ]; then
+  echo "# NOTE: ${CONFLICTS} package-collapse key(s) — same package identity, same declaration," >&2
+  echo "#       different implementations. DefinitionIdentity separates them; contentRoot does not." >&2
+fi
+
+# SURPLUS: a table attested by no classification row at all. Such a mapping authorises material
+# nothing references, which is evidence supplied to an operation that did not request it.
+# Digits are part of table names — `Examples.HmacSha256.Proofs.shaFns`. An earlier character class
+# of `[A-Za-z][A-Za-z.]*` excluded them and reported a real table as SURPLUS, which is a refusal
+# manufactured by the checker rather than found in the data.
+KNOWN_TABLES="$(grep -oE '\("[A-Za-z][A-Za-z0-9._]*", "[0-9a-f]{32}"\)' Concrete/Proof/ClassificationTable.lean \
+                  | grep -oE '"[A-Za-z][A-Za-z0-9._]*"' | tr -d '"' | sort -u)"
+SURPLUS=0
+for t in $(cut -f1 "$TMP/pairs.tsv" | sort -u); do
+  printf '%s\n' "$KNOWN_TABLES" | grep -qx "$t" || { refuse "table '$t' is attested but referenced by no classification row (surplus)"; SURPLUS=$((SURPLUS+1)); }
+done
 
 # --- typed reconciliation: every input row ends mapped, excluded, or refused ---------------------
 echo "[reconciliation]"
@@ -76,6 +119,9 @@ echo "subject_rows            = $SUBJECTS"
 echo "subjects_no_identity    = $NOID"
 echo "subjects_without_table  = $UNTABLED"
 echo "table_attestations      = $MAPPED"
+echo "duplicate_mappings      = $DUPES"
+echo "package_collapse_keys   = ${CONFLICTS:-0}"  # same pkg+decl, different impl
+echo "surplus_tables          = $SURPLUS"
 ACCOUNTED=$(( NOID + UNTABLED ))
 WITH_TABLE=$(( SUBJECTS - ACCOUNTED ))
 echo "subjects_with_table     = $WITH_TABLE"
