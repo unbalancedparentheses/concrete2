@@ -2139,7 +2139,7 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
   -- A SUBJECT WITHOUT A SCOPED IDENTITY GETS NO NODE. It cannot be keyed, and a node keyed by name
   -- is exactly what this migration removes; `dependencyRootMaterial` then refuses `missingStart`
   -- for it, which is the honest answer — nothing about its closure was established.
-  pc.entries.filterMap fun e =>
+  (pc.entries.filterMap fun e =>
     match e.definitionIdentity with
     | .error _ => none
     | .ok selfId =>
@@ -2175,7 +2175,28 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
       | .error _ => some (labelOf cn, if trustedNames.contains cn then Proof.DependencyEdge.trusted
                                       else callerEdge)
     some { id := selfId, label := e.callableId, digest := e.subjectDigest
-         , edges := edges, unscoped := unscoped }
+         , edges := edges, unscoped := unscoped }) ++
+  -- EXCLUDED DEFINITIONS GET NODES TOO, and their absence was a real defect: an edge to a TRUSTED
+  -- helper resolved to an identity with no node, so `dependencyRootMaterial` refused the whole
+  -- closure with `unresolvedEdge`. `composition_trusted_helper`'s `calls.combine` is the measured
+  -- case — a subject that corresponds perfectly and could not root, for a reason that has nothing to
+  -- do with its evidence. Correspondence learned to consult both populations when the same defect hit
+  -- it; the root layer never did.
+  --
+  -- THE DIGEST IS THE FINGERPRINT, because an excluded definition has no proof SUBJECT — that is
+  -- what excluding it means — and a node needs a body-identifying digest to serialize. The
+  -- fingerprint identifies the body, which is the question the root asks. It is not presented as a
+  -- proof subject anywhere: `carriesTrust` still qualifies a closure that crosses a trusted
+  -- boundary, and status containment independently refuses a caller reaching anything that is not
+  -- current, so nothing is laundered by making the closure computable.
+  pc.excluded.filterMap fun x =>
+    match x.definitionIdentity with
+    | .error _ => none
+    | .ok xid =>
+      -- An excluded definition's own outgoing edges are not traversed: it has no theorem, so nothing
+      -- types them. It is a LEAF in the evidence closure, which is exactly what a boundary is.
+      some { id := xid, label := x.callableId, digest := some x.fingerprint
+           , edges := [], unscoped := [] }
 
 /-- The closed correspondence request for one subject, built from what the compiler actually has.
 
@@ -2312,6 +2333,25 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
     What was wrong was never their freshness — it was the COMPOSED claim over edges the old join
     matched on a source name. -/
 def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCore :=
+  -- ROOT MATERIAL IS THE SECOND DIMENSION, and it answers a different question from correspondence.
+  -- Corresponding says every edge has exactly one validated justification; rooting says the closure
+  -- can be COMPUTED at all — no duplicate identity, no absent subject digest, no edge that is not
+  -- current for dependents, no callee without a node, no unkeyable edge. A subject can correspond
+  -- while its closure cannot be serialized, and a receipt over such a closure would bind material
+  -- that was never assembled.
+  --
+  -- ON TODAY'S CORPUS THIS CONJUNCT REFUSES NOTHING THAT CORRESPONDENCE DOES NOT ALREADY REFUSE, and
+  -- saying so is the point: it is consumed, and it is currently redundant. Measured — with the root
+  -- requirement the verdict census is 37 proved / 1 unjustified, identical to correspondence alone.
+  -- It is wired anyway because the conditions it checks are ones correspondence never asks about,
+  -- and the alternative is adding the check after the first receipt is minted over a closure that
+  -- could not be assembled. Its refusal conditions are controlled synthetically in
+  -- `check_dependency_edges.sh`; the redundancy itself is pinned there too, so a corpus that starts
+  -- exercising it is noticed rather than absorbed.
+  let rooted : ProofCoreEntry → Bool := fun e =>
+    match e.definitionIdentity with
+    | .error _ => false
+    | .ok d    => (Proof.dependencyRootMaterial (dependencyNodesOf pc graph) d).toOption.isSome
   let justified : ProofCoreEntry → Bool := fun e =>
     match correspondenceInputOf pc graph e.callableId with
     -- A SUBJECT WITH NO SCOPED IDENTITY CANNOT BE JUSTIFIED. Fail closed: nothing about its closure
@@ -2328,7 +2368,7 @@ def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCor
       if o.status != .proved then o else
       match pc.entries.find? (fun e => e.qualName == o.functionId.qualName) with
       | none   => o
-      | some e => if justified e then o else { o with status := .correspondenceUnjustified } }
+      | some e => if justified e && rooted e then o else { o with status := .correspondenceUnjustified } }
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=

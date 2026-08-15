@@ -382,6 +382,29 @@ if [ "$CORPUS_PROVED" = "37" ] && [ "$CORPUS_UNJUST" = "1" ]; then
 else
   no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 37/1) — say which subject changed and why"
 fi
+# THE ROOT DIMENSION IS CONSUMED AND CURRENTLY REDUNDANT, and the redundancy is pinned rather than
+# left to be discovered. Every subject whose root refuses is already either not `proved` or refused
+# by correspondence, so requiring the root downgrades nobody extra — measured, not assumed. If this
+# count ever diverges, the root has started deciding something on its own and that deserves a look
+# rather than a silent absorption.
+ROOTREF=0
+for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
+  ROOTREF=$((ROOTREF + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -c REFUSED || true)))
+done
+if [ "$ROOTREF" = "13" ]; then
+  ok "13 subjects roots refuse, none of them proved — the root conjunct is consumed and currently redundant"
+else
+  no "root refusals moved to $ROOTREF (was 13) — if a proved subject now fails to root, the root dimension has become load-bearing and should be described as such"
+fi
+# ...and a TRUSTED callee must have a node. Its absence refused `calls.combine`'s whole closure for a
+# reason that had nothing to do with its evidence: excluded definitions carry scoped identities and
+# were still missing from the node set.
+if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -q REFUSED; then
+  no "composition_trusted_helper still cannot root — an edge to a trusted callee has no node again"
+else
+  ok "a closure crossing a TRUSTED boundary roots (excluded definitions have nodes)"
+fi
+
 DRIFT_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
 DRIFT_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
 if [ "$DRIFT_UNJUST" = "1" ]; then
