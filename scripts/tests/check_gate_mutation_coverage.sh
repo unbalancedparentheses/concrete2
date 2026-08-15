@@ -577,7 +577,7 @@ add "atomic-flip-entrance-refuses-pending" "Concrete/Proof/Proof.lean" "check_at
 # as `attestedModelNotInTable` — so the membership no longer equals the bound count.
 add "atomic-flip-entrance-refuses-inert-binding" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
   $'    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_543bfb75_check_class' \
-  $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_543bfb75_check_class
+  $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_543bfb75_check_class'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
