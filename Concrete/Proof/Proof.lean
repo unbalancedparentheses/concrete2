@@ -1948,7 +1948,29 @@ def elfFnsGlobals : String → Option PFnDef
     is asserted rather than imposed. `globals` kept so existing proofs still
     rewrite, and `dispatchResolves` checks the two agree. -/
 def elfFns : FnTable :=
-  { entries := #[checkClassFn, checkDataFn, checkMagicFn, checkVersionFn, validateHeaderFn], globals := elfFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 2). Structure update, as for `cryptoFns`: entries, globals and
+  -- the `rfl` lemma below are untouched.
+  --
+  -- FIVE attestations for FIVE models, and the manifest offers a SIXTH that is deliberately NOT
+  -- selected: `elfFns_d7eed943_validate_header`, binding this table's `validateHeaderFn` to
+  -- `proof_pressure`'s `main.validate_header`. That row exists because the fixture carries
+  -- `#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]`, and that link IS the known
+  -- misattachment: `proof_pressure`'s `validate_header` calls `check_nonce`, which this table does
+  -- not hold, so this model does not model that implementation. Selecting the reference would bind
+  -- the table to a function it does not describe — the attestation only BINDS, it does not check
+  -- faithfulness, so nothing downstream would catch it.
+  --
+  -- The omission is not left to this comment: `check_attestation_manifest.sh` reconciles manifest
+  -- rows against attestations per table and requires every gap to be a NAMED exclusion, so an
+  -- under-attested table cannot pass as a converted one. If the fixture's proof link is ever
+  -- repaired the row leaves the manifest and this exclusion goes with it.
+  FnTable.withAttestations
+    { entries := #[checkClassFn, checkDataFn, checkMagicFn, checkVersionFn, validateHeaderFn], globals := elfFnsGlobals }
+    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_543bfb75_check_class
+    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_543bfb75_check_data
+    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic
+    , AttestedPFnDef.of checkVersionFn    GeneratedAttestations.elfFns_543bfb75_check_version
+    , AttestedPFnDef.of validateHeaderFn  GeneratedAttestations.elfFns_543bfb75_validate_header ]
 
 -- Keeps `simp only [eval, elfFns_globals, elfFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `elfFns`. The old `def elfFns : FnTable | "x" => …` produced equation lemmas

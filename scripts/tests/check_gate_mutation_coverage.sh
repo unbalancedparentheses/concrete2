@@ -512,6 +512,16 @@ add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check
   $'CONFLICTS="$(awk -F\'\\t\' \'{ key = $1 FS $2 FS $3 FS $4; if (!(key in seen)) { seen[key] = $5 }' \
   $'CONFLICTS="$(awk -F\'\\t\' \'{ key = $1 FS $3 FS $4; if (!(key in seen)) { seen[key] = $5 }'
 
+# R-0004 package 2. PARTIAL CONVERSION THAT READS AS A FINISHED ONE. A table site selects generated
+# references by hand, so it can select FEWER than the manifest offers — and nothing about the result
+# looks unfinished: the table reports `attested`, `scopedEntryEvidence` returns rows, and the
+# definitions nobody selected are simply not described. The mutation drops one of `elfFns`'s five
+# attestations, which must be caught by the per-table reconciliation (manifest rows = attested +
+# NAMED exclusions), not by a count that only has to be nonzero.
+add "attestation-conversion-complete" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
+  $'    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_543bfb75_check_data\n    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic' \
+  $'    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

@@ -130,7 +130,15 @@ echo "=== corpus split, pinned ==="
 # and `withAttestations_entries`, the projection lemmas added so the proof corpus still reduces
 # through an ATTESTED table. Both mention `FnTable`, so the classifier counts them. They are
 # `rfl` projections and assert nothing about any implementation.
-probe "the corpus splits 113 contract / 168 body" "113/168" \
+#
+# 168 -> 167 later the same day, and the one is `Concrete.Proof.elfFns.eq_1` — an EQUATION LEMMA
+# Lean generates on demand for a def used by name in a simp set. `validate_header_correct` stopped
+# passing `elfFns` to `simp_all` (it reduces through the `@[simp] elfFns_globals` projection
+# instead), so nothing forces the lemma into existence and the classifier no longer sees it.
+# Nothing was proved less: the theorem's statement is unchanged and its proof still closes. The
+# count is sensitive to which defs happen to acquire equation lemmas, which is worth knowing about
+# a pinned number — it moves for reasons that are not always about the corpus.
+probe "the corpus splits 113 contract / 167 body" "113/167" \
 '#eval show MetaM Unit from do
    let env ← getEnv
    let mut nc := 0; let mut nb := 0
@@ -1524,10 +1532,30 @@ probe "the checked-in external row passes the real validator" "true" '
 # coincide, implementations differ.
 echo "=== scoped definition identity ==="
 
+# THE CONVERTED TABLES PASS THE EVIDENCE BOUNDARY, which is a different claim from "attestations were
+# selected". `check_attestation_manifest.sh` reconciles the SELECTION against the manifest; this asks
+# whether `scopedEntryEvidence` — recomputed body digests, model-in-table, no duplicate identity —
+# actually accepts what was selected. A table can carry five attestations and still refuse.
+#
+# `cryptoFns`: 5 attestations for 4 models, `check_nonce` once per consuming package.
+# `elfFns`: 5 attestations for 5 models; the sixth manifest row is the named exclusion.
+probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
+'#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
+probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
+'#eval (scopedEntryEvidence elfFns).toOption.map (·.length)'
+# NON-VACUITY of the pair above: an unconverted table must still REFUSE, or "attested" would be
+# indistinguishable from "the check accepts anything". `combineFns` is out of the compiler build and
+# not yet converted.
+probe "an unconverted table still refuses as legacy" "true" \
+'#eval match scopedEntryEvidence Examples.ProofPatterns.Proofs.combineFns with
+   | .error ScopedMembershipRefusal.legacyUnattested => true
+   | _ => false'
+
 # AN EMPTY TABLE IS VACUOUSLY ATTESTED, NOT LEGACY. `FnTable.empty` has no entries, so there is
 # nothing to attest and membership is empty for every callee — a complete answer, not a missing one.
-# Thirteen packages share that single constant, so it cannot be attested per-package; treating it as
-# legacy would refuse every subject naming it while nothing about it remains to establish.
+# TEN packages share that single constant (13 attestation rows across them), so it cannot be attested
+# per-package; treating it as legacy would refuse every subject naming it while nothing about it
+# remains to establish.
 probe "an EMPTY table yields empty membership, not a legacy refusal" "true" '
 #eval (scopedEntryEvidence (FnTable.empty)).toOption == some []'
 # ...and a table WITH entries but no attestations is still legacy, so the exemption is about

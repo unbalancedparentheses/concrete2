@@ -257,9 +257,10 @@ def scopedEntryEvidence (t : FnTable)
   if t.attestationFailures > 0 then .error (.attestationIncomplete t.attestationFailures)
   -- AN EMPTY TABLE IS VACUOUSLY ATTESTED, not legacy. `FnTable.empty` has no entries, so there is
   -- nothing to attest and membership is empty for every callee — which is a complete answer, not a
-  -- missing one. Thirteen packages share that single constant, so it cannot be attested per-package
-  -- anyway; treating it as `legacyUnattested` would refuse every subject that names it while there
-  -- is nothing about it left to establish.
+  -- missing one. TEN packages share that single constant (13 attestation rows across them; the
+  -- earlier note said "thirteen packages" and was counting rows), so it cannot be attested
+  -- per-package anyway; treating it as `legacyUnattested` would refuse every subject that names it
+  -- while there is nothing about it left to establish.
   --
   -- Checked BEFORE the attestation test: a table with entries and no attestations is legacy, and a
   -- table with neither is empty. Collapsing those would either refuse an empty table or admit an
