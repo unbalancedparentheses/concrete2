@@ -66,48 +66,61 @@ structure DepNode where
       representation, two callables can share one, and a rename must not move a
       node. Keyed on the canonical rendering so comparison is the identity's own
       notion of equality rather than an arbitrary string's. -/
-  id      : CallableId
+  id      : DefinitionIdentity
+  /-- The compiler-local NAME, for diagnosis only. NEVER compared — comparison is on `id`. A
+      dependency root that keyed on this would justify one program's closure with another program's
+      nodes whenever the names agreed, which is the defect the correspondence join already closed
+      and this boundary was still open to. -/
+  label   : CallableId
   digest  : Option String
-  /-- Typed edges to semantic identities, for the same reason. -/
-  edges   : List (DependencyEdge × CallableId)
-deriving Repr, Inhabited
+  /-- Typed edges to SCOPED identities, for the same reason. -/
+  edges   : List (DependencyEdge × DefinitionIdentity)
+  /-- Edges whose callee has no scoped identity. Carried, never dropped: a root computed over a
+      closure missing an edge is a confident answer over material it never saw. Any non-empty list
+      REFUSES the root. -/
+  unscoped : List (CallableId × DependencyEdge) := []
+deriving Repr
 
 /-- Canonical rendering, for SERIALIZATION and DIAGNOSTICS only. Lookup and
     deduplication compare `CallableId` directly; routing them through this would
     reinstate the rendered string as operational identity. -/
-def DepNode.render (d : DepNode) : String := d.id.render
+def DepNode.render (d : DepNode) : String := d.id.canonical
 
 /-- Why a root could not be built. Carried rather than collapsed to `none`, so a
     caller can say WHICH fail-closed condition fired instead of reporting a
     generic absence. -/
 inductive DepRootError where
-  | missingStart (id : CallableId)
-  | duplicateId (id : CallableId)
-  | incompleteDigest (id : CallableId)
-  | unresolvedEdge (from_ to_ : CallableId)
-  | missingEdge (from_ to_ : CallableId)
+  | missingStart (id : DefinitionIdentity)
+  | duplicateId (id : DefinitionIdentity)
+  | incompleteDigest (id : DefinitionIdentity)
+  | unresolvedEdge (from_ to_ : DefinitionIdentity)
+  | missingEdge (from_ to_ : DefinitionIdentity)
+  /-- An edge whose callee has no scoped identity at all. Distinct from `unresolvedEdge`, which is
+      an edge to an identity with no node: here there is no identity to look up. -/
+  | unscopedEdge (from_ : DefinitionIdentity) (to_ : CallableId)
 deriving Repr
 
 /-- Rendering happens HERE and nowhere else in this module: a diagnostic is the
     one place a name is the right answer. -/
 def DepRootError.explain : DepRootError → String
-  | .missingStart id      => s!"no node for start identity '{id.render}'"
-  | .duplicateId id       => s!"duplicate node identity '{id.render}'"
-  | .incompleteDigest id  => s!"'{id.render}' has no subject digest"
-  | .unresolvedEdge f t   => s!"'{f.render}' depends on '{t.render}', which has no node"
-  | .missingEdge f t      => s!"'{f.render}' has a non-current edge (`missing` or `unclassified`) to '{t.render}'"
+  | .missingStart id      => s!"no node for start identity '{id.localName}'"
+  | .duplicateId id       => s!"duplicate node identity '{id.localName}'"
+  | .incompleteDigest id  => s!"'{id.localName}' has no subject digest"
+  | .unresolvedEdge f t   => s!"'{f.localName}' depends on '{t.localName}', which has no node"
+  | .missingEdge f t      => s!"'{f.localName}' has a non-current edge (`missing` or `unclassified`) to '{t.localName}'"
+  | .unscopedEdge f t     => s!"'{f.localName}' depends on '{t.render}', which has no scoped identity"
 
 /-- Identities reachable from `start` over typed edges.
 
     Bounded by the node count: each round adds at least one identity or stops, and
     there are finitely many. That bound is what makes recursion terminate rather
     than diverge. -/
-def reachableFrom (nodes : List DepNode) (start : CallableId) : List CallableId :=
-  let succs := fun (n : CallableId) =>
-    match nodes.find? (fun d => d.id == n) with
+def reachableFrom (nodes : List DepNode) (start : DefinitionIdentity) : List DefinitionIdentity :=
+  let succs := fun (n : DefinitionIdentity) =>
+    match nodes.find? (fun d => d.id.sameDefinition n) with
     | some d => d.edges.map Prod.snd
     | none   => []
-  let rec go (fuel : Nat) (frontier acc : List CallableId) : List CallableId :=
+  let rec go (fuel : Nat) (frontier acc : List DefinitionIdentity) : List DefinitionIdentity :=
     match fuel with
     | 0 => acc
     | Nat.succ f =>
@@ -145,7 +158,7 @@ deriving Repr, BEq, Inhabited
     identity (first-match lookup would hide the conflict); an absent OR EMPTY
     subject digest; an edge to an identity with no node; an edge typed
     `missing`. -/
-def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
+def dependencyRootMaterial (nodes : List DepNode) (id : DefinitionIdentity)
     : Except DepRootError DependencyRootMaterial := do
   -- Comparison and deduplication are on the IDENTITY, not on a rendering. An
   -- earlier version stored `CallableId` and then keyed every lookup on
@@ -158,7 +171,7 @@ def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
   let start ← match nodes.find? (fun d => d.id == id) with
     | some d => pure d
     | none   => throw (.missingStart id)
-  let digestOf := fun (n : CallableId) => do
+  let digestOf := fun (n : DefinitionIdentity) => do
     match nodes.find? (fun d => d.id == n) with
     | none   => throw (.unresolvedEdge id n)
     | some d => match d.digest with
@@ -168,7 +181,7 @@ def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
   -- `.render` appears from here on ONLY to impose a total order and to build the
   -- serialization. Those are the two places a canonical spelling is the point.
   let allNodes := (id :: reachableFrom nodes id).eraseDups.mergeSort
-    (fun a b => a.render ≤ b.render)
+    (fun a b => a.canonical ≤ b.canonical)
   let closure := allNodes.filter (· != id)
   let mut parts : List String := []
   let mut trust := false
@@ -177,11 +190,18 @@ def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
       | some d => pure d
       | none   => throw (.unresolvedEdge id n)
     let nDigest ← digestOf n
-    let nr := n.render
+    -- AN UNKEYABLE EDGE REFUSES THE ROOT. It cannot be traversed and must not be skipped: a closure
+    -- computed without it is a confident answer over material the compiler never examined. Checked
+    -- per node in the closure, not only at the start, because a dependency's unkeyable edge makes
+    -- the dependant's closure incomplete just as surely.
+    match node.unscoped with
+    | (c, _) :: _ => throw (.unscopedEdge n c)
+    | [] => pure ()
+    let nr := n.canonical
     parts := parts ++ [s!"N{nr.length}:{nr}:{nDigest.length}:{nDigest}"]
     -- edges deduplicated as TYPED pairs, then ordered for serialization
     let sorted := node.edges.eraseDups.mergeSort
-      fun a b => (a.1.canonical ++ a.2.render) ≤ (b.1.canonical ++ b.2.render)
+      fun a b => (a.1.canonical ++ a.2.canonical) ≤ (b.1.canonical ++ b.2.canonical)
     for (k, tgt) in sorted do
       -- Refuse on any edge that is not current for dependents, rather than on `missing` alone.
       -- The literal check admitted `unclassified` the moment that constructor existed: an edge
@@ -191,7 +211,7 @@ def dependencyRootMaterial (nodes : List DepNode) (id : CallableId)
       if !k.isCurrentForDependents then throw (.missingEdge n tgt)
       let tgtDigest ← digestOf tgt
       if k == DependencyEdge.trusted then trust := true
-      let tr := tgt.render
+      let tr := tgt.canonical
       parts := parts ++
         [s!"E{k.canonical.length}:{k.canonical}:{tr.length}:{tr}:{tgtDigest.length}:{tgtDigest}"]
   return { preimage := "depRootPreimageV2:" ++ s!"o{ownDigest.length}:{ownDigest}"

@@ -24,6 +24,13 @@ probe() {
 import Concrete
 import Examples
 open Lean Meta Concrete Concrete.Proof
+-- TEST IDENTITIES. \`DefinitionIdentity\` has no total constructor and must not acquire one, so a
+-- probe that needs scoped identities builds them through \`of?\` and matches on the result. The
+-- implementation component is a real digest of the declaration name, so distinct declarations get
+-- distinct identities without any literal hex in the probe.
+def tPkg : String := Concrete.shortHash "test-package"
+def tid? (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? tPkg m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
 $body
 LEAN
   local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
@@ -67,7 +74,11 @@ probe "unclassified is DISTINCT from missing" "true" \
   && DependencyEdge.unclassified.canonical != DependencyEdge.missing.canonical'
 # And the root must refuse it, not traverse it as validated.
 probe "a root refuses an UNCLASSIFIED edge" "true" \
-'#eval (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.unclassified, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] (CallableId.ofUser "m" "a")) matches Except.error _'
+'#eval
+  match tid? "m" "a", tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    ((dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.unclassified, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode) i_m_a).toOption.isNone)
+  | _, _ => false'
 probe "only trusted propagates trust" "true" \
 '#eval (DependencyEdge.all.filter DependencyEdge.propagatesTrust) == [DependencyEdge.trusted]'
 probe "trusted is current AND propagates — both, not either" "true" \
@@ -165,82 +176,144 @@ probe "the corpus splits 113 contract / 164 body" "113/164" \
 
 echo ""
 echo "=== dependency roots: fail closed on every incomplete input ==="
-GRAPH='def g : List DepNode :=
-  [ { id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }
-  , { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [(DependencyEdge.body, CallableId.ofUser "m" "c")] }
-  , { id := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }
-  , { id := CallableId.ofUser "m" "d", digest := some "DD", edges := [(DependencyEdge.body, CallableId.ofUser "m" "e")] }
-  , { id := CallableId.ofUser "m" "e", digest := some "DE", edges := [(DependencyEdge.body, CallableId.ofUser "m" "d")] } ]
-def g2 : List DepNode := g.map fun n => if n.id.declName == "c" then { n with digest := some "X" } else n
+GRAPH='def P : String := "pkg0123456789abcdef0123456789abcd"
+def impl (c : Char) : String := String.mk (List.replicate 32 c)
+-- THE SYNTHETIC GRAPH IS SCOPED NOW, because `DepNode` is. There is no total constructor for a
+-- `DefinitionIdentity` and none is wanted, so the fixture binds all six ids in one match and hands
+-- them to the probe body; a fixture that cannot build its own identities reports false rather than
+-- inventing one, which is the same discipline the production path follows.
+def withG (k : DefinitionIdentity → DefinitionIdentity → DefinitionIdentity → DefinitionIdentity →
+               DefinitionIdentity → List DepNode → List DepNode → Bool) : Bool :=
+  match DefinitionIdentity.of? P "m" "a" (impl (Char.ofNat 97)),
+        DefinitionIdentity.of? P "m" "b" (impl (Char.ofNat 98)),
+        DefinitionIdentity.of? P "m" "c" (impl (Char.ofNat 99)),
+        DefinitionIdentity.of? P "m" "d" (impl (Char.ofNat 100)),
+        DefinitionIdentity.of? P "m" "e" (impl (Char.ofNat 101)) with
+  | .ok ia, .ok ib, .ok ic, .ok idd, .ok ie =>
+    let g : List DepNode :=
+      [ { id := ia, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, ib)] }
+      , { id := ib, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [(DependencyEdge.body, ic)] }
+      , { id := ic, label := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }
+      , { id := idd, label := CallableId.ofUser "m" "d", digest := some "DD", edges := [(DependencyEdge.body, ie)] }
+      , { id := ie, label := CallableId.ofUser "m" "e", digest := some "DE", edges := [(DependencyEdge.body, idd)] } ]
+    let g2 := g.map fun n => if n.label.declName == "c" then { n with digest := some "X" } else n
+    k ia ib ic idd ie g g2
+  | _, _, _, _, _ => false
 '
-probe "a mutual cycle terminates" "true" "$GRAPH"'#eval (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption.isSome'
-probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval
-  ((reachableFrom g (CallableId.ofUser "m" "d")).map (·.render)).mergeSort (· ≤ ·)
-    == ((reachableFrom g (CallableId.ofUser "m" "e")).map (·.render)).mergeSort (· ≤ ·)'
-probe "cycle members do NOT share a root (they are different subjects)" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption != (dependencyRootMaterial g (CallableId.ofUser "m" "e")).toOption'
-probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption != (dependencyRootMaterial g2 (CallableId.ofUser "m" "a")).toOption'
-probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval
-  (dependencyRootMaterial g (CallableId.ofUser "m" "d")).toOption == (dependencyRootMaterial g2 (CallableId.ofUser "m" "d")).toOption'
+probe "a mutual cycle terminates" "true" "$GRAPH"'#eval withG fun _ia _ib _ic idd _ie g _g2 =>
+  (dependencyRootMaterial g idd).toOption.isSome'
+probe "cycle members share a closure (entry point is not semantic)" "true" "$GRAPH"'#eval withG fun _ia _ib _ic idd ie g _g2 =>
+  ((reachableFrom g idd).map (·.canonical)).mergeSort (· ≤ ·)
+    == ((reachableFrom g ie).map (·.canonical)).mergeSort (· ≤ ·)'
+probe "cycle members do NOT share a root (they are different subjects)" "true" "$GRAPH"'#eval withG fun _ia _ib _ic idd ie g _g2 =>
+  (dependencyRootMaterial g idd).toOption != (dependencyRootMaterial g ie).toOption'
+probe "a deep callee edit moves the dependent root" "true" "$GRAPH"'#eval withG fun ia _ib _ic _idd _ie g g2 =>
+  (dependencyRootMaterial g ia).toOption != (dependencyRootMaterial g2 ia).toOption'
+probe "an unrelated subtree is unaffected" "true" "$GRAPH"'#eval withG fun _ia _ib _ic idd _ie g g2 =>
+  (dependencyRootMaterial g idd).toOption == (dependencyRootMaterial g2 idd).toOption'
 
 # FAIL-CLOSED CONDITIONS. Each previously produced a confident value from
 # incomplete information; each must now REFUSE, with the reason carried.
 probe "a missing start is refused" "missingStart" \
-'#eval repr (dependencyRootMaterial [] (CallableId.ofUser "m" "ghost"))'
+'#eval
+  match tid? "m" "ghost" with
+  | some i_m_ghost =>
+    repr (dependencyRootMaterial [] i_m_ghost)
+  | _ => "probe could not build test identities"'
 probe "an unresolved edge is refused, not bound as unknown" "unresolvedEdge" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "ghost")] }] (CallableId.ofUser "m" "a"))'
+'#eval
+  match tid? "m" "a", tid? "m" "ghost" with
+  | some i_m_a, some i_m_ghost =>
+    repr (dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_ghost)] }] : List DepNode) i_m_a)
+  | _, _ => "probe could not build test identities"'
 probe "a duplicate identity is refused" "duplicateId" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "1", edges := [] }, { id := CallableId.ofUser "m" "a", digest := some "2", edges := [] }] (CallableId.ofUser "m" "a"))'
+'#eval
+  match tid? "m" "a" with
+  | some i_m_a =>
+    repr (dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "1", edges := [] }, { id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "2", edges := [] }] : List DepNode) i_m_a)
+  | _ => "probe could not build test identities"'
 probe "an absent subject digest is refused" "incompleteDigest" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := none, edges := [] }] (CallableId.ofUser "m" "a"))'
+'#eval
+  match tid? "m" "a" with
+  | some i_m_a =>
+    repr (dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := none, edges := [] }] : List DepNode) i_m_a)
+  | _ => "probe could not build test identities"'
 probe 'a missing-typed edge is refused' "missingEdge" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.missing, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] (CallableId.ofUser "m" "a"))'
+'#eval
+  match tid? "m" "a", tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    repr (dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.missing, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode) i_m_a)
+  | _, _ => "probe could not build test identities"'
 # THE EDGE KIND IS IN THE BYTES. Traversing typed edges and then serializing only
 # identities threw the typing away: contract and body produced the same preimage.
 probe "changing an edge kind changes the preimage" "true" \
 '#eval
-  let c : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.contract, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  let b : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  (dependencyRootMaterial c (CallableId.ofUser "m" "a")).toOption != (dependencyRootMaterial b (CallableId.ofUser "m" "a")).toOption'
+  match tid? "m" "a", tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let c : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.contract, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    let b : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    (dependencyRootMaterial c i_m_a).toOption != (dependencyRootMaterial b i_m_a).toOption
+  | _, _ => false'
 # an EMPTY digest is as incomplete as an absent one
 probe "an empty-string digest is refused" "incompleteDigest" \
-'#eval repr (dependencyRootMaterial [{ id := CallableId.ofUser "m" "a", digest := some "", edges := [] }] (CallableId.ofUser "m" "a"))'
+'#eval
+  match tid? "m" "a" with
+  | some i_m_a =>
+    repr (dependencyRootMaterial ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "", edges := [] }] : List DepNode) i_m_a)
+  | _ => "probe could not build test identities"'
 # trust travels WITH the material, not beside it
 probe "trust is carried in the returned structure" "true" \
 '#eval
-  let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.trusted, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  ((dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption.map (·.carriesTrust)) == some true'
+  match tid? "m" "a", tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let g : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.trusted, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    ((dependencyRootMaterial g i_m_a).toOption.map DependencyRootMaterial.carriesTrust) == some true
+  | _, _ => false'
 # CANONICAL SET SEMANTICS. reachableFrom returns the start when the start is in a
 # cycle, and `id :: closure` then listed it twice — a self-recursive subject got a
 # different preimage for the same dependency set.
 probe "a self-recursive node is serialized exactly once" "true" \
 '#eval
-  let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "a")] }]
-  match (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption with
-  | some m => ((m.preimage.splitOn ("N" ++ toString (CallableId.ofUser "m" "a").render.length ++ ":" ++ (CallableId.ofUser "m" "a").render ++ ":")).length - 1) == 1
-  | none   => false'
+  match tid? "m" "a" with
+  | some i_m_a =>
+    let g : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_a)] }] : List DepNode)
+    match (dependencyRootMaterial g i_m_a).toOption with
+    | some m =>
+      let c := i_m_a.canonical
+      ((m.preimage.splitOn ("N" ++ toString c.length ++ ":" ++ c ++ ":")).length - 1) == 1
+    | none   => false
+  | _ => false'
 # Calling one callee twice does not change the dependency SET, so it must not
 # change the root.
 probe "a duplicated edge does not change the root" "true" \
 '#eval
-  let one : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  let two : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b"), (DependencyEdge.body, CallableId.ofUser "m" "b")] }, { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  (dependencyRootMaterial one (CallableId.ofUser "m" "a")).toOption == (dependencyRootMaterial two (CallableId.ofUser "m" "a")).toOption'
+  match tid? "m" "a", tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let one : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    let two : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b), (DependencyEdge.body, i_m_b)] }, { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    (dependencyRootMaterial one i_m_a).toOption == (dependencyRootMaterial two i_m_a).toOption
+  | _, _ => false'
 # IDENTITY, NOT SPELLING. Two callables with the same declName in different
 # modules are different nodes; a raw-string graph could not tell them apart.
 probe "same declName in different modules are different nodes" "duplicateId" \
-'#eval repr (dependencyRootMaterial
-  [{ id := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
-  ,{ id := CallableId.ofUser "m1" "f", digest := some "D2", edges := [] }]
-  (CallableId.ofUser "m1" "f"))'
+'#eval
+  match tid? "m1" "f" with
+  | some i_m1_f =>
+    repr (dependencyRootMaterial
+    ([{ id := i_m1_f, label := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
+    ,{ id := i_m1_f, label := CallableId.ofUser "m1" "f", digest := some "D2", edges := [] }] : List DepNode)
+    i_m1_f)
+  | _ => "probe could not build test identities"'
 probe "...and distinct modules do NOT collide" "true" \
 '#eval
-  let g : List DepNode :=
-    [{ id := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
-    ,{ id := CallableId.ofUser "m2" "f", digest := some "D2", edges := [] }]
-  (dependencyRootMaterial g (CallableId.ofUser "m1" "f")).toOption
-    != (dependencyRootMaterial g (CallableId.ofUser "m2" "f")).toOption'
+  match tid? "m1" "f", tid? "m2" "f" with
+  | some i_m1_f, some i_m2_f =>
+    let g : List DepNode :=
+    ([{ id := i_m1_f, label := CallableId.ofUser "m1" "f", digest := some "D1", edges := [] }
+    ,{ id := i_m2_f, label := CallableId.ofUser "m2" "f", digest := some "D2", edges := [] }] : List DepNode)
+    (dependencyRootMaterial g i_m1_f).toOption
+    != (dependencyRootMaterial g i_m2_f).toOption
+  | _, _ => false'
 # THE PUBLIC API MUST REJECT A STRING START AT COMPILE TIME. Storing CallableId
 # while keying every lookup on `.render` would keep rendered strings as the
 # operational identity under a typed wrapper — the defect the type exists to
@@ -256,14 +329,17 @@ else
   ok "a String start identity does not compile; the API takes CallableId"
 fi
 # ...and traversal returns identities, not renderings.
-probe "reachableFrom returns CallableIds" "true" "$GRAPH"'#eval
-  ((reachableFrom g (CallableId.ofUser "m" "a")).map (·.declName)).contains "c"'
+probe "reachableFrom returns scoped identities" "true" "$GRAPH"'#eval withG fun ia _ib _ic _idd _ie g _g2 =>
+  ((reachableFrom g ia).map (·.declarationIdentity)).contains "c"'
 # Lookup must compare identities. Two ids equal as VALUES must resolve to the
 # same node even when constructed separately.
 probe "lookup is by identity value, not by a shared rendering" "true" \
 '#eval
-  let g : List DepNode := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [] }]
-  (dependencyRootMaterial g (CallableId.ofUser "m" "a")).toOption.isSome'
+  match tid? "m" "a" with
+  | some i_m_a =>
+    let g : List DepNode := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [] }] : List DepNode)
+    (dependencyRootMaterial g i_m_a).toOption.isSome
+  | _ => false'
 # There must be no public fail-OPEN way to ask the trust question.
 if grep -q "def closureCarriesTrust" "$ROOT_DIR/Concrete/Proof/DependencyRoot.lean"; then
   no "closureCarriesTrust still answers over an unvalidated graph — a fail-open twin of the validated path"
@@ -1271,25 +1347,35 @@ expect_no_compile "CompleteImplementation cannot be constructed directly" '
 # the record exists to prevent, and the one it can actually see.
 probe "facts describing ANOTHER callable are refused" "true" '
 #eval
-  let fx : Proof.CheckedDeclFacts := { id := CallableId.ofUser "m" "g" }
-  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
-  | .ok body => (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
-  | .error _ => false'
+  match tid? "m" "g",
+        tid? "m" "f" with
+  | some i_m_g, some i_m_f =>
+    let _ := (i_m_g, i_m_f)
+    let fx : Proof.CheckedDeclFacts := { id := CallableId.ofUser "m" "g" }
+    match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+    | .ok body => (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
+    | .error _ => false
+  | _, _ => false
+'
 
 # INCOMPLETE FACTS. A digest over incomplete facts is a digest over an unknown, so it must not be
 # mintable at all -- refusing later would mean the value existed in the meantime.
 probe "INCOMPLETE facts are refused" "true" '
 #eval
-  -- `covered := false` is what makes these facts incomplete: default facts ARE complete
-  -- (`isComplete = id.isComplete && contracts.covered`, both true by default), so an id alone
-  -- would have tested the id check a second time rather than completeness.
-  let fx : Proof.CheckedDeclFacts :=
+  match tid? "m" "f" with
+  | some i_m_f =>
+    -- `covered := false` is what makes these facts incomplete: default facts ARE complete
+    -- (`isComplete = id.isComplete && contracts.covered`, both true by default), so an id alone
+    -- would have tested the id check a second time rather than completeness.
+    let fx : Proof.CheckedDeclFacts :=
     { id := CallableId.ofUser "m" "f", contracts := { covered := false } }
-  match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
-  -- The `!fx.isComplete` conjunct keeps this from passing for the wrong reason.
-  | .ok body => (!fx.isComplete)
-      && (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
-  | .error _ => false'
+    match Proof.validate ({} : Proof.EvidenceBodyDraftV2) with
+    -- The `!fx.isComplete` conjunct keeps this from passing for the wrong reason.
+    | .ok body => (!fx.isComplete)
+    && (CompleteImplementation.of? (CallableId.ofUser "m" "f") fx body (PExpr.lit (PVal.int 0))).isNone
+    | .error _ => false
+  | _ => false
+'
 
 expect_no_compile "the manifest cannot be constructed directly" '
 #eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")'
@@ -2258,9 +2344,12 @@ fi
 # ...and the trusted helper resolves to a TRUSTED edge with its real identity, not merely to
 # something non-unresolved.
 TH="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow edgeKinds:' | grep 'calls.combine' || true)"
-TH2="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep -c 'v1:user:calls.dbl=trusted' || true)"
+# RENDERED BY LOCAL NAME NOW, because the edge carries a scoped identity and `v1:user:…` is a
+# `CallableId` rendering. The identity is what the node compares; the diagnostic prints what a reader
+# recognises. Still asserting BOTH halves — the right callee and the right kind.
+TH2="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep -c 'calls.dbl=trusted' || true)"
 if [ "$TH2" -ge 1 ]; then
-  ok "the trusted helper resolves to 'v1:user:calls.dbl=trusted' — right identity AND right kind"
+  ok "the trusted helper resolves to 'calls.dbl=trusted' — right callee AND right kind"
 else
   no "the trusted helper does not resolve to a trusted edge on its real identity"
 fi
@@ -2325,56 +2414,83 @@ echo "=== root determinism and sensitivity ==="
 # different sequence describe the same program.
 probe "EDGE order does not change the root" "true" '
 #eval
-  let n := fun (es) => [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := es },
-                        { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] },
-                        { id := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }]
-  let e1 := [(DependencyEdge.body, CallableId.ofUser "m" "b"), (DependencyEdge.body, CallableId.ofUser "m" "c")]
-  let e2 := [(DependencyEdge.body, CallableId.ofUser "m" "c"), (DependencyEdge.body, CallableId.ofUser "m" "b")]
-  match dependencyRootMaterial (n e1) (CallableId.ofUser "m" "a"),
-        dependencyRootMaterial (n e2) (CallableId.ofUser "m" "a") with
-  | Except.ok x, Except.ok y => x.preimage == y.preimage
-  | _, _ => false'
+  match tid? "m" "a",
+        tid? "m" "b",
+        tid? "m" "c" with
+  | some i_m_a, some i_m_b, some i_m_c =>
+    let n := fun (es) => ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := es },
+                           { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] },
+                           { id := i_m_c, label := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }] : List DepNode)
+    let e1 := [(DependencyEdge.body, i_m_b), (DependencyEdge.body, i_m_c)]
+    let e2 := [(DependencyEdge.body, i_m_c), (DependencyEdge.body, i_m_b)]
+    match dependencyRootMaterial (n e1) (i_m_a),
+    dependencyRootMaterial (n e2) (i_m_a) with
+    | Except.ok x, Except.ok y => x.preimage == y.preimage
+    | _, _ => false
+  | _, _, _ => false
+'
 
 # NODE-LIST order is enumeration order — how the compiler happened to walk its own entries.
 probe "NODE-LIST order does not change the root" "true" '
 #eval
-  let a := { id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] }
-  let b := { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }
-  match dependencyRootMaterial [a, b] (CallableId.ofUser "m" "a"),
-        dependencyRootMaterial [b, a] (CallableId.ofUser "m" "a") with
-  | Except.ok x, Except.ok y => x.preimage == y.preimage
-  | _, _ => false'
+  match tid? "m" "a",
+        tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let a : DepNode := { id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b)] }
+    let b : DepNode := { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }
+    match dependencyRootMaterial [a, b] (i_m_a),
+    dependencyRootMaterial [b, a] (i_m_a) with
+    | Except.ok x, Except.ok y => x.preimage == y.preimage
+    | _, _ => false
+  | _, _ => false
+'
 
 # TRUST PROPAGATES MONOTONICALLY: a trusted edge anywhere in the closure qualifies the root, and
 # nothing downstream can unset it. Non-monotone trust would let a claim be laundered clean by
 # adding a dependency.
 probe "trust propagates from a DEEP dependency, not just a direct one" "true" '
 #eval
-  let ns := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] },
-             { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [(DependencyEdge.trusted, CallableId.ofUser "m" "c")] },
-             { id := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }]
-  match dependencyRootMaterial ns (CallableId.ofUser "m" "a") with
-  | Except.ok m => m.requiresTrustQualification
-  | Except.error _ => false'
+  match tid? "m" "a",
+        tid? "m" "b",
+        tid? "m" "c" with
+  | some i_m_a, some i_m_b, some i_m_c =>
+    let ns := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b)] },
+    { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [(DependencyEdge.trusted, i_m_c)] },
+    { id := i_m_c, label := CallableId.ofUser "m" "c", digest := some "DC", edges := [] }] : List DepNode)
+    match dependencyRootMaterial ns (i_m_a) with
+    | Except.ok m => m.requiresTrustQualification
+    | Except.error _ => false
+  | _, _, _ => false
+'
 
 probe "an untrusted closure does NOT acquire trust qualification" "true" '
 #eval
-  let ns := [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, CallableId.ofUser "m" "b")] },
-             { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  match dependencyRootMaterial ns (CallableId.ofUser "m" "a") with
-  | Except.ok m => !m.requiresTrustQualification
-  | Except.error _ => false'
+  match tid? "m" "a",
+        tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let ns := ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(DependencyEdge.body, i_m_b)] },
+    { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    match dependencyRootMaterial ns (i_m_a) with
+    | Except.ok m => !m.requiresTrustQualification
+    | Except.error _ => false
+  | _, _ => false
+'
 
 # The EDGE KIND is in the bytes: swapping contract for body over the same targets must move the
 # root, or typing the edges bought nothing.
 probe "changing an edge KIND moves the root" "true" '
 #eval
-  let n := fun (k) => [{ id := CallableId.ofUser "m" "a", digest := some "DA", edges := [(k, CallableId.ofUser "m" "b")] },
-                       { id := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }]
-  match dependencyRootMaterial (n DependencyEdge.body) (CallableId.ofUser "m" "a"),
-        dependencyRootMaterial (n DependencyEdge.contract) (CallableId.ofUser "m" "a") with
-  | Except.ok x, Except.ok y => x.preimage != y.preimage
-  | _, _ => false'
+  match tid? "m" "a",
+        tid? "m" "b" with
+  | some i_m_a, some i_m_b =>
+    let n := fun (k) => ([{ id := i_m_a, label := CallableId.ofUser "m" "a", digest := some "DA", edges := [(k, i_m_b)] },
+    { id := i_m_b, label := CallableId.ofUser "m" "b", digest := some "DB", edges := [] }] : List DepNode)
+    match dependencyRootMaterial (n DependencyEdge.body) (i_m_a),
+    dependencyRootMaterial (n DependencyEdge.contract) (i_m_a) with
+    | Except.ok x, Except.ok y => x.preimage != y.preimage
+    | _, _ => false
+  | _, _ => false
+'
 
 # === SHADOW INTEGRATION (slice 6, step 4) ====================================================
 # Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and

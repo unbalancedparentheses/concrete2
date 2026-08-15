@@ -1812,7 +1812,14 @@ private def shadowGraphEdgesLine (pc : Concrete.ProofCore) (qn : String) : Strin
     cause says which wall, and that list is the remaining work. -/
 private def shadowDepRootLine (pc : Concrete.ProofCore) (id : CallableId) : String :=
   let nodes := Concrete.dependencyNodesOf pc pc.callGraph
-  match Proof.dependencyRootMaterial nodes id with
+  -- THE ROOT IS KEYED BY THE SCOPED IDENTITY. A subject without one has no node and therefore no
+  -- root — reported as its own refusal rather than as a computation that failed, because nothing
+  -- about its closure was ever examined.
+  match (pc.entries.find? (fun e => e.callableId == id)).map (·.definitionIdentity) with
+  | none => "REFUSED (no entry for this subject)"
+  | some (Except.error w) => s!"REFUSED (subject has no scoped identity: {w.explain})"
+  | some (Except.ok sid) =>
+  match Proof.dependencyRootMaterial nodes sid with
   | .error e => s!"REFUSED ({e.explain})"
   | .ok m =>
     let trust := if m.requiresTrustQualification then " [carries trust]" else ""
@@ -2048,14 +2055,18 @@ private def shadowEdgeKinds (pc : Concrete.ProofCore) (e : Concrete.ProofCoreEnt
   -- Reading the node set fixes the class of bug rather than the instance: a hand-coded second
   -- opinion about a kind cannot drift from the real one if there is no second opinion.
   let nodes := Concrete.dependencyNodesOf pc pc.callGraph
-  match nodes.find? (fun n => n.id == e.callableId) with
+  match nodes.find? (fun n => n.label == e.callableId) with
   | none => "ABSENT (no dependency node)"
   | some n =>
-    if n.edges.isEmpty then "none (no outgoing edge)"
+    if n.edges.isEmpty && n.unscoped.isEmpty then "none (no outgoing edge)"
     else
       let sorted := n.edges.eraseDups.mergeSort
-        (fun a b => (a.2.render ++ a.1.canonical) ≤ (b.2.render ++ b.1.canonical))
-      let parts := sorted.map (fun (k, tgt) => s!"{tgt.render}={k.canonical}")
+        (fun a b => (a.2.canonical ++ a.1.canonical) ≤ (b.2.canonical ++ b.1.canonical))
+      -- Rendered by LOCAL NAME, which is what a reader recognises; the identity is what the node
+      -- compares. An unkeyable edge is listed too, marked, because a diagnostic that omits it
+      -- reports a shorter edge set than the compiler actually has.
+      let parts := sorted.map (fun (k, tgt) => s!"{tgt.localName}={k.canonical}")
+        ++ n.unscoped.map (fun (c, k) => s!"{c.render}={k.canonical}«unscoped»")
       let nonCurrent := (sorted.filter (fun (k, _) => !k.isCurrentForDependents)).length
       let trustedN := (sorted.filter (fun (k, _) => k == Proof.DependencyEdge.trusted)).length
       s!"{", ".intercalate parts}"
@@ -2112,19 +2123,6 @@ def bodyBytesReport (pc : Concrete.ProofCore) : String :=
     Only `body` edges qualify. A `contract` edge holds for any table meeting its hypotheses and a
     `trusted` edge is witnessed by the declared boundary, so neither needs an exact implementation. -/
 def attestationJoinReport (pc : Concrete.ProofCore) : String :=
-  -- BOTH POPULATIONS. Excluded records now carry a scoped identity too, and searching only
-  -- `entries` reported a callee that HAS one as `calleeWithoutIdentity` — a manufactured refusal,
-  -- which is worse than none because it reads as a finding. The same two-population lookup
-  -- `dependencyNodesOf` performs, for the same reason: a trusted or ineligible helper is excluded
-  -- from the proof entries and is still a real definition an edge points at.
-  let identityOfCallee : CallableId → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity :=
-    fun cid =>
-      match pc.entries.find? (fun e => e.callableId == cid) with
-      | some e => e.definitionIdentity
-      | none   =>
-        match pc.excluded.find? (fun x => x.callableId == cid) with
-        | some x => x.definitionIdentity
-        | none   => .error (.legacyNameOnly cid.render)
   let tablesOf : String → List String := fun qn =>
     let thm := Concrete.theoremNameOf pc qn
     match Proof.validatedRowOf thm with
@@ -2142,7 +2140,7 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
   -- proof link would otherwise make its dependency request DISAPPEAR, which is a denominator that
   -- shrinks when the corpus improves — the shape that makes coverage unfalsifiable.
   let depRows := (Concrete.dependencyNodesOf pc pc.callGraph).flatMap (fun n =>
-    match pc.entries.find? (fun e => e.callableId == n.id) with
+    match pc.entries.find? (fun e => e.callableId == n.label) with
     | none => []
     | some subj =>
       let tables := tablesOf subj.qualName
@@ -2152,42 +2150,30 @@ def attestationJoinReport (pc : Concrete.ProofCore) : String :=
         | .error _ => "NO-IDENTITY"
       let consumerName := s!"{subj.callableId.defModule}.{subj.callableId.declName}"
       tables.flatMap (fun tbl =>
-        n.edges.filterMap (fun (kind, callee) =>
+        n.edges.filterMap (fun (kind, d) =>
           if kind != Proof.DependencyEdge.body then none else
           let hdr := s!"dependency\tbinding_role=dependency\t{consumer}\t{consumerName}\t{tbl}"
-          let calleeName := s!"{callee.defModule}.{callee.declName}"
-          match identityOfCallee callee with
-          | .error _ => some (hdr ++ s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{callee.defModule}\t{callee.declName}\t-\n")
-          | .ok d =>
-              -- A TABLE THAT CAN BE READ AND DOES NOT HOLD THE CALLEE IS A NAMED MISMATCH, not a
-              -- reference. `elfFns` resolves and holds no `check_nonce` model: the request cannot be
-              -- satisfied by any identity, because the table has nothing to attest. An UNREADABLE
-              -- table is a different answer — "cannot tell" is not "does not contain", and refusing
-              -- on it would manufacture a refusal from the compiler's own reach rather than from the
-              -- data. The identity claim is about the CALLEE and stays true either way.
-              --
-              -- WHAT THIS CHECKS IS MODEL PRESENCE, and the wording says so. It asks whether the
-              -- table holds a MODEL of that declaration — a name-level question — NOT whether it
-              -- holds an attested entry with this scoped identity. That stronger question is the
-              -- evidence join's, and it must not be asked here: a table cannot be attested until
-              -- its references exist, and its references come from this manifest, so a scoped check
-              -- at this point would refuse every reference needed to escape the bootstrap.
-              --
-              -- The provenance of the model check is still carried, because a model found in a
-              -- table the compiler HOLDS and whose body digests it recomputed is a different fact
-              -- from one found in generator-asserted rows, and both differ from a table that could
-              -- not be read at all. One word for three claims is the laundering this slice exists
-              -- to prevent — and calling any of them "membership verified" would overstate all
-              -- three, since membership is scoped and this is not.
-              let idFields := s!"{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}"
-              match Proof.entryEvidenceWithProvenance tbl with
-              | .error w =>
-                  some (hdr ++ s!"\tattested\tmodel=unresolved:{w.explain}\t{idFields}\n")
-              | .ok (prov, rows) =>
-                  if Proof.entryEvidenceContains rows callee then
-                    some (hdr ++ s!"\tattested\tmodel=present:{prov.render}\t{idFields}\n")
-                  else
-                    some (hdr ++ s!"\trefused\ttableModelMissing\t{idFields}\t{calleeName}\n")))
+          -- THE NODE ALREADY CARRIES THE SCOPED IDENTITY. It used to be re-resolved here from a
+          -- `CallableId`, which was a second answer to a question `dependencyNodesOf` had already
+          -- answered — and it searched one population, so an excluded callee that HAS an identity
+          -- was reported as having none.
+          let calleeName := d.localName
+          let idFields := s!"{d.digest}\t{d.packageIdentity}\t{d.moduleIdentity}\t{d.declarationIdentity}\t{d.implementationIdentity}"
+          match Proof.entryEvidenceWithProvenance tbl with
+          | .error w =>
+              some (hdr ++ s!"\tattested\tmodel=unresolved:{w.explain}\t{idFields}\n")
+          | .ok (prov, rows) =>
+              if rows.any (fun r => r.callee.declName == d.declarationIdentity
+                                     && r.callee.defModule == d.moduleIdentity) then
+                some (hdr ++ s!"\tattested\tmodel=present:{prov.render}\t{idFields}\n")
+              else
+                some (hdr ++ s!"\trefused\ttableModelMissing\t{idFields}\t{calleeName}\n"))
+        ++ n.unscoped.filterMap (fun (c, kind) =>
+          -- AN UNKEYABLE EDGE IS STILL A REQUEST. Omitting it would shrink the denominator by
+          -- exactly the edges that cannot be satisfied.
+          if kind != Proof.DependencyEdge.body then none else
+          some (s!"dependency\tbinding_role=dependency\t{consumer}\t{consumerName}\t{tbl}" ++
+                s!"\trefused\tcalleeWithoutIdentity\tNO-IDENTITY\t-\t{c.defModule}\t{c.declName}\t-\n")))
   )
   let rows := pc.entries.map (fun e =>
     let thm := Concrete.theoremNameOf pc e.qualName

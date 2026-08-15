@@ -2101,13 +2101,31 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
   -- still has a semantic identity, and resolving only against `entries` reported it as
   -- `«unresolved»`. Entries are consulted FIRST so an eligible function can never be shadowed by
   -- an excluded record of the same name.
-  let idOf : String → Option CallableId := fun qn =>
+  -- BOTH POPULATIONS, AND BOTH SCOPED. A callee excluded from the proof entries — a trusted helper,
+  -- most often — is still a real definition, and it now carries the same scoped identity an entry
+  -- does. Entries are consulted FIRST so an eligible function can never be shadowed by an excluded
+  -- record of the same name.
+  let scopedOf : String → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity := fun qn =>
+    match pc.entries.find? (fun e => e.qualName == qn) with
+    | some e => e.definitionIdentity
+    | none   =>
+      match pc.excluded.find? (fun x => x.qualName == qn) with
+      | some x => x.definitionIdentity
+      | none   => .error (.legacyNameOnly qn)
+  let labelOf : String → CallableId := fun qn =>
     match (pc.entries.find? (fun e => e.qualName == qn)).map (·.callableId) with
-    | some cid => some cid
-    | none => (pc.excluded.find? (fun x => x.qualName == qn)).map (·.callableId)
+    | some cid => cid
+    | none => ((pc.excluded.find? (fun x => x.qualName == qn)).map (·.callableId)).getD
+                (CallableId.ofUser "«unresolved»" qn)
   let trustedNames := pc.excluded.filterMap fun x =>
     if x.eligibility.isTrusted then some x.qualName else none
-  pc.entries.map fun e =>
+  -- A SUBJECT WITHOUT A SCOPED IDENTITY GETS NO NODE. It cannot be keyed, and a node keyed by name
+  -- is exactly what this migration removes; `dependencyRootMaterial` then refuses `missingStart`
+  -- for it, which is the honest answer — nothing about its closure was established.
+  pc.entries.filterMap fun e =>
+    match e.definitionIdentity with
+    | .error _ => none
+    | .ok selfId =>
     let callees := (graph.find? (fun g => g.1 == e.qualName)).map (·.2) |>.getD []
     -- THE CALLER'S OWN THEOREM types its outgoing edges. `classifyTheorem` answers about a
     -- theorem: a `body` theorem depends on exact callee implementations, a `contract` theorem
@@ -2120,23 +2138,27 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
     let thm := theoremNameOf pc e.qualName
     let callerEdge := if thm.isEmpty then Proof.DependencyEdge.unclassified
                       else Proof.classifiedEdgeOf thm
-    -- EVERY call-graph edge is represented. This was a `filterMap` dropping unresolved callees,
-    -- which is fail-open in the worst way: the computed root then covers LESS than the actual
-    -- dependency closure while looking like a complete answer. A dependency you cannot resolve
-    -- is not a dependency you do not have.
+    -- EVERY call-graph edge is represented, and an unkeyable one is CARRIED rather than dropped.
+    -- Dropping was fail-open in the worst way: the computed root then covers LESS than the actual
+    -- dependency closure while looking like a complete answer. A dependency you cannot resolve is
+    -- not a dependency you do not have.
     --
-    -- An unresolved callee becomes an edge to an identity with NO NODE, which
-    -- `dependencyRootMaterial` refuses as `.unresolvedEdge`, naming the target. The refusal is
-    -- the point: the root must not be computable while part of the closure is unknown.
-    let edges := callees.map fun cn =>
-      match idOf cn with
-      | some cid => (if trustedNames.contains cn then Proof.DependencyEdge.trusted
-                     else callerEdge, cid)
-      | none =>
-        -- Synthesized from the unresolved NAME purely so the refusal can name it. No node will
-        -- carry this id, which is exactly what makes the root refuse rather than traverse.
-        (Proof.DependencyEdge.missing, CallableId.ofUser "«unresolved»" cn)
-    { id := e.callableId, digest := e.subjectDigest, edges := edges }
+    -- The previous version synthesized a fake `CallableId` for the unresolved case so the refusal
+    -- could name it. That is not available for a `DefinitionIdentity` — the constructor is private
+    -- and there is nothing to forge from — which is a better outcome: the edge goes into `unscoped`,
+    -- and `dependencyRootMaterial` refuses the root by naming it.
+    let edges := callees.filterMap fun cn =>
+      match scopedOf cn with
+      | .ok d => some (if trustedNames.contains cn then Proof.DependencyEdge.trusted
+                       else callerEdge, d)
+      | .error _ => none
+    let unscoped := callees.filterMap fun cn =>
+      match scopedOf cn with
+      | .ok _    => none
+      | .error _ => some (labelOf cn, if trustedNames.contains cn then Proof.DependencyEdge.trusted
+                                      else callerEdge)
+    some { id := selfId, label := e.callableId, digest := e.subjectDigest
+         , edges := edges, unscoped := unscoped }
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -3112,28 +3134,32 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
   -- ONE PRODUCER for a callee's scoped identity: entries first, then excluded records. Both now
   -- carry one, built by the same rule at the extraction boundary — a trusted helper is excluded
   -- from the proof entries and is still a real definition its dependents point at.
-  let scopedOf : CallableId → Except Proof.DefinitionIdentityRefusal Proof.DefinitionIdentity :=
-    fun c =>
-      match pc.entries.find? (fun e => e.callableId == c) with
-      | some e => e.definitionIdentity
-      | none   =>
-        match pc.excluded.find? (fun x => x.callableId == c) with
-        | some x => x.definitionIdentity
-        | none   => .error (.legacyNameOnly c.render)
-  let rawEdges := match nodes.find? (fun n => n.id == id) with
-    | none   => []
-    | some n => n.edges.eraseDups
-  -- AN EDGE WHOSE CALLEE HAS NO SCOPED IDENTITY IS CARRIED, NOT DROPPED. Dropping it would leave
-  -- every result set empty while the closure covered less than the compiler asked for — the
-  -- fail-open shape `filterMap` produced one layer up and this design exists to refuse.
-  let requested := rawEdges.filterMap (fun (k, tgt) =>
-    match scopedOf tgt with
-    | .ok d    => some ({ callee := d, label := tgt, kind := k } : Proof.RequestedEdge)
-    | .error _ => none)
-  let unscoped := rawEdges.filterMap (fun (k, tgt) =>
-    match scopedOf tgt with
-    | .ok _    => none
-    | .error w => some (tgt, k, w))
+  -- The compiler-local NAME for a scoped identity, for diagnosis only. Looked up in both
+  -- populations, and falling back to the identity's own local rendering when neither holds it.
+  let labelFor : Proof.DefinitionIdentity → CallableId := fun d =>
+    let match? := (pc.entries.find? (fun e =>
+        match e.definitionIdentity with
+        | .ok ed => ed.sameDefinition d
+        | .error _ => false)).map (·.callableId)
+    match match? with
+    | some cid => cid
+    | none =>
+      match (pc.excluded.find? (fun x =>
+        match x.definitionIdentity with
+        | .ok xd => xd.sameDefinition d
+        | .error _ => false)).map (·.callableId) with
+      | some cid => cid
+      | none => CallableId.ofUser d.moduleIdentity d.declarationIdentity
+  -- THE NODE IS THE ONE PRODUCER, and it is already scoped: `dependencyNodesOf` resolves every
+  -- callee's identity once. Re-resolving here would be a second answer to the same question.
+  let node := nodes.find? (fun n => n.id.sameDefinition subject)
+  let requested := (node.map (·.edges) |>.getD []).eraseDups.map (fun (k, tgt) =>
+    ({ callee := tgt, label := labelFor tgt, kind := k } : Proof.RequestedEdge))
+  -- AN EDGE WHOSE CALLEE HAS NO SCOPED IDENTITY IS CARRIED, NOT DROPPED, with the same refusal the
+  -- root reports. Dropping it would leave every result set empty while the closure covered less
+  -- than the compiler asked for.
+  let unscoped := (node.map (·.unscoped) |>.getD []).map (fun (c, k) =>
+    (c, k, Proof.DefinitionIdentityRefusal.legacyNameOnly c.render))
   let qual := subjEntry.map (·.qualName) |>.getD ""
   let thm := theoremNameOf pc qual
   -- A TRUSTED edge is justified by the DECLARED TRUST BOUNDARY, not by table membership. Its
