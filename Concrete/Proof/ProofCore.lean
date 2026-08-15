@@ -2291,17 +2291,26 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
     is built from the assembled `ProofCore` and the obligations are generated before it exists.
     Inlining a second, lighter correspondence derivation there would be two answers to one question.
 
-    IT CHANGES A REAL PRODUCTION VERDICT, and I expected it not to. Surveying `--report proof-status`
-    over the fixtures with proof links showed only `unbound` and `stale`, so the pass was written
-    believing it would be exercised by controls rather than by the corpus. Measured directly instead:
-    `examples/elf_header/src/main_drifted.con` reported FIVE `proved` verdicts before this pass and
-    FOUR after. The one that fell is `main.validate_header` — the only subject there with outgoing
-    edges, every one of which pointed at another program's implementation and was justified by name
-    agreement alone.
+    IT DISCRIMINATES BETWEEN TWO PROGRAMS THAT SHARE A THEOREM, and the corpus has both sides.
 
-    The other four stay `proved` and should: they are leaf functions whose own fingerprints match
-    their own bodies, and a closure with no edges is vacuously justified. What was wrong was never
-    their freshness — it was the COMPOSED claim over edges the old join matched on a source name. -/
+    `elf_header/main.con`'s `main.validate_header` is `proved` and STAYS proved: four outgoing body
+    edges, each witnessed by an `elfFns` entry attested to that exact implementation.
+    `elf_header/main_drifted.con`'s `main.validate_header` — same declaration name, same linked
+    theorem, same table — is downgraded to `correspondence_unjustified`, because its edges point at a
+    different program's implementations and were justified by name agreement alone. Measured by
+    building with and without this pass: that fixture reported FIVE `proved` before and FOUR after.
+
+    TWO CORRECTIONS TO MY OWN RECORD, both from one bad measurement. I surveyed the corpus with a
+    pattern that matched `-- proof link unbound` and `-- proof stale` but not `-- proved` — no space
+    after "proof" — read "nothing is currently proved", and wrote this comment saying the pass would
+    change no verdict and be exercised only by controls. The corpus actually holds 37 `proved`
+    verdicts, exactly one of which this pass removes. So: it is not vacuous, and its POSITIVE
+    direction has a live case too, which the earlier wording implied it did not.
+
+    The four other `proved` verdicts in the drifted fixture stay, and should: leaf functions whose
+    own fingerprints match their own bodies, and a closure with no edges is vacuously justified.
+    What was wrong was never their freshness — it was the COMPOSED claim over edges the old join
+    matched on a source name. -/
 def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCore :=
   let justified : ProofCoreEntry → Bool := fun e =>
     match correspondenceInputOf pc graph e.callableId with

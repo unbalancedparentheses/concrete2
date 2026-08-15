@@ -357,6 +357,31 @@ fi
 # The other four must STAY proved: leaf functions whose own fingerprints match their own bodies, and
 # a closure with no edges is vacuously justified. Both halves are asserted, because a pass that
 # downgraded everything would satisfy the first alone.
+# THE POSITIVE SIDE OF THE SAME PAIR, and it is the control that matters most: `elf_header/main.con`
+# and `main_drifted.con` declare the same functions, link the SAME theorem, and name the SAME table.
+# One is proved with four justified edges; the other is downgraded. A pass that could only refuse
+# would satisfy every assertion below except this one.
+REAL_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
+REAL_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
+if [ "$REAL_PROVED" = "5" ] && [ "$REAL_UNJUST" = "0" ]; then
+  ok "the REAL program keeps all 5 proved verdicts, including the edge-bearing one (justification accepted)"
+else
+  no "elf_header/main.con reports $REAL_PROVED proved / $REAL_UNJUST unjustified (expected 5/0) — the authority pass is refusing a justified closure"
+fi
+# CORPUS-WIDE, so the pass cannot be quietly downgrading elsewhere. 37 proved with exactly one
+# unjustified closure; a first measurement of this used a pattern that matched `-- proof link
+# unbound` but not `-- proved`, reported "nothing is proved", and produced a false claim that the
+# authority pass changed no verdict.
+CORPUS_PROVED=0; CORPUS_UNJUST=0
+for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
+  CORPUS_PROVED=$((CORPUS_PROVED + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)))
+  CORPUS_UNJUST=$((CORPUS_UNJUST + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)))
+done
+if [ "$CORPUS_PROVED" = "37" ] && [ "$CORPUS_UNJUST" = "1" ]; then
+  ok "corpus-wide: 37 proved, exactly 1 closure unjustified (the authority pass is selective, not blunt)"
+else
+  no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 37/1) — say which subject changed and why"
+fi
 DRIFT_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
 DRIFT_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
 if [ "$DRIFT_UNJUST" = "1" ]; then
