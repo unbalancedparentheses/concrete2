@@ -62,7 +62,7 @@ theorem validate_header_fields_success
             validatePayloadLenFn, validatePayloadLenExpr,
             validateTotalLenFn, validateTotalLenExpr,
             validateChecksumFn, validateChecksumExpr,
-            eval, eval.evalArgs, parseValidateFns, parseValidateFnsGlobals,
+            eval, eval.evalArgs, parseValidateFns_globals, parseValidateFnsGlobals,
             Env.bind, evalBinOp, bindArgs, BEq.beq]
 
 set_option linter.unusedSimpArgs false in

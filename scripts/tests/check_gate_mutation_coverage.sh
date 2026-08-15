@@ -530,6 +530,14 @@ add "attestation-conversion-complete-fixedcapacity" "Concrete/Proof/Proof.lean" 
   $'    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push' \
   $'    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push'
 
+# R-0004 package 2, and the same family for the table whose manifest rows are FEWER than its entries.
+# `parseValidateFns` has 8 entries and 3 rows, so a reader could mistake a dropped attestation for
+# the known subject/callee shortfall. The reconciliation is against the MANIFEST, not the entry
+# count, so dropping one still fails: 3 rows, 2 attested, 0 named exclusions.
+add "attestation-conversion-complete-parsevalidate" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
+  $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_420510fb_validate_header_fields\n    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version' \
+  $'    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

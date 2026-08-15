@@ -139,13 +139,17 @@ echo "=== corpus split, pinned ==="
 # count is sensitive to which defs happen to acquire equation lemmas, which is worth knowing about
 # a pinned number — it moves for reasons that are not always about the corpus.
 #
-# 167 -> 166 for the same reason one table later: `Concrete.Proof.fixedCapacityFns.eq_1`, when
-# `ring_push_then_contains_correct` stopped passing the table to `simp`. MEASURED which lemmas
-# remain rather than assumed: `cryptoFns.eq_1`, `parseValidateFns.eq_1` and `pureCoreFns.eq_1` are
-# still generated — by the `by decide` completeness examples in `ProofSoundness.lean`, which force
-# the table open, NOT by any corpus proof. So the two mechanisms that mint these lemmas are a simp
-# set naming the def and a `decide` reducing it, and only the first was ever a digest hazard.
-probe "the corpus splits 113 contract / 166 body" "113/166" \
+# 167 -> 166 for the same reason one table later (`fixedCapacityFns.eq_1`), 166 -> 165 for
+# `parseValidateFns.eq_1`, and 165 -> 164 for `cryptoFns.eq_1`.
+#
+# I WAS WRONG ABOUT WHERE THESE COME FROM, and the correction is why the invariant below exists.
+# I attributed the surviving lemmas to the `by decide` completeness examples in
+# `ProofSoundness.lean`. They are not the cause: `parseValidateFns.eq_1` vanished the moment its
+# simp site was repointed, while its `decide` examples were untouched. Every one of these lemmas
+# came from a simp set naming the def — including two sites my line-anchored grep never saw,
+# because the table name sat on a CONTINUATION line. `pureCoreFns.eq_1` remains, from
+# `proofs/Examples/PureCore/Proofs.lean`; that table is not manifest-backed and is not converted.
+probe "the corpus splits 113 contract / 164 body" "113/164" \
 '#eval show MetaM Unit from do
    let env ← getEnv
    let mut nc := 0; let mut nb := 0
@@ -1552,6 +1556,33 @@ probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence elfFns).toOption.map (·.length)'
 probe "fixedCapacityFns is ATTESTED and yields 4 scoped entries" "some 4" \
 '#eval (scopedEntryEvidence fixedCapacityFns).toOption.map (·.length)'
+probe "parseValidateFns is ATTESTED and yields 3 scoped entries" "some 3" \
+'#eval (scopedEntryEvidence parseValidateFns).toOption.map (·.length)'
+
+# NO CONVERTED TABLE MAY BE DELTA-UNFOLDED BY A PROOF — mechanical, replacing a claim I made three
+# times from a grep and got wrong twice.
+#
+# A `simp` set naming a table def makes Lean mint that def's EQUATION LEMMA and lets the table's
+# definitional shape enter the proof term. Attesting then moves the THEOREM's artifact digest, not
+# just the table's — which is precisely what an artifact digest is supposed to mean, so the fix is
+# to stop the dependency rather than to accept the churn. Step 1 reported "theorem artifact digests
+# unchanged" while `verify_message_composed_correct` had in fact moved 2b1b47d5… -> 9d62ecbf…,
+# because `CryptoVerify/Proofs.lean` named `cryptoFns` on a continuation line my grep did not match.
+#
+# The presence of `<table>.eq_1` in the environment IS that dependency, so it is checked directly
+# instead of grepped. A proof that reduces through the `@[simp] …_globals` projection mints nothing.
+probe "no converted table has an equation lemma (no proof delta-unfolds an attested table)" "true" \
+'#eval show MetaM Bool from do
+   let env ← getEnv
+   let tables := [`Concrete.Proof.cryptoFns, `Concrete.Proof.elfFns,
+                  `Concrete.Proof.fixedCapacityFns, `Concrete.Proof.parseValidateFns]
+   return tables.all (fun t => !(env.contains (t ++ `eq_1)) && !(env.contains (t ++ `eq_def)))'
+# NON-VACUITY: the check must be able to SEE such a lemma. `pureCoreFns` is delta-unfolded by
+# `proofs/Examples/PureCore/Proofs.lean` and is not manifest-backed, so it is the live positive case.
+probe "the equation-lemma check is non-vacuous (pureCoreFns still has one)" "true" \
+'#eval show MetaM Bool from do
+   let env ← getEnv
+   return env.contains `Concrete.Proof.pureCoreFns.eq_1'
 # ...and attesting changed NOTHING the corpus evaluates through: same entries, same dispatch.
 probe "attesting preserves entries and globals dispatch" "true" \
 '#eval fixedCapacityFns.entries.size == 4

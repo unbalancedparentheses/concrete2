@@ -2222,7 +2222,23 @@ def parseValidateFnsGlobals : String → Option PFnDef
 /-- MIGRATED (R-0004 step 5). Identity/key/digest adopted from the generator;
     entries in canonical order (asserted by `entriesSorted`, not imposed). -/
 def parseValidateFns : FnTable :=
-  { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
+  -- ATTESTED (R-0004 package 2, step 4). Structure update, as for the three before it.
+  --
+  -- THREE attestations for EIGHT entries, and the shortfall is not an omission at this site: the
+  -- manifest offers exactly three rows for this table, because its population is SUBJECTS — the
+  -- declarations some fixture links a proof to — and only `parse_header`, `validate_header_fields`
+  -- and `validate_version` carry a proof link. The other five models describe CALLEES that no
+  -- theorem claims directly, so no generated reference exists for them.
+  --
+  -- That gap is measured and pinned by `check_attestation_manifest.sh`, not left here: those five
+  -- callees are matched edges TODAY under the `CallableId` join, and a scoped join that needs an
+  -- attested entry per callee would stop matching them. The manifest population is a flip-design
+  -- question, so this site attests what the manifest offers and nothing more.
+  FnTable.withAttestations
+    { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
+    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header
+    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_420510fb_validate_header_fields
+    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version ]
 
 -- Keeps `simp only [eval, parseValidateFns_globals, parseValidateFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `parseValidateFns`. The old `def parseValidateFns : FnTable | "x" => …` produced equation lemmas

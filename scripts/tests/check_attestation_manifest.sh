@@ -216,7 +216,7 @@ done
 
 # CONVERTED SET, EXACT. Converting a table is a deliberate step, so it is stated here; a table that
 # starts reporting attestations without this list being updated is an unreviewed conversion.
-CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns"
+CONVERTED="Concrete.Proof.cryptoFns Concrete.Proof.elfFns Concrete.Proof.fixedCapacityFns Concrete.Proof.parseValidateFns"
 
 if [ -n "$SITES" ]; then
   ACTUALLY_ATTESTED="$(printf '%s' "$SITES" | grep -vE 'attested=0 ' | awk '{print $2}' | sort | tr '\n' ' ')"
@@ -253,6 +253,65 @@ if [ -n "$SITES" ]; then
       no "$tbl does NOT reconcile: $ROWS_T manifest rows, $ATT_T attested, $EXC_T named exclusion(s) — an unexplained gap is an under-attested table that reads as converted"
     fi
   done
+fi
+
+# === THE MANIFEST'S POPULATION IS SUBJECTS; THE JOIN'S POPULATION IS CALLEES ====================
+#
+# Found while converting `parseValidateFns`, which has EIGHT entries and only THREE manifest rows.
+# That is not an under-attested table: the manifest emits a row per SUBJECT — a declaration some
+# fixture links a proof to — while correspondence asks about the CALLEES of a subject's body. A
+# callee that carries no proof link of its own is a real, matched, `body` edge today and has no
+# manifest row, so no generated reference exists and no table entry can be attested to it.
+#
+# This matters for the flip and for nothing before it: the `CallableId` join matches these edges on
+# NAME and reports `usable=yes`. A scoped join that requires an attested entry per callee would stop
+# matching them. So the gap is measured here, exactly, rather than discovered when correspondence
+# drops — and it is pinned so it cannot grow while attention is elsewhere.
+echo "=== subject population vs callee population ==="
+
+printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED \
+  | awk -F'[()]' '{src=$(NF-1); split($1,a," "); split(a[3],b,"/"); split(b[2],c,"."); print src"\t"c[2]}' \
+  | sort -u > "$TMP/subjects.tsv"
+
+: > "$TMP/callees.tsv"
+for src in $(cut -f1 "$TMP/subjects.tsv" | sort -u); do
+  "$ROOT_DIR/.lake/build/bin/concrete" "$src" --report subject-facts 2>/dev/null \
+    | grep '^  shadow edgeKinds:' \
+    | grep -oE 'v1:user:[A-Za-z0-9_]+\.[A-Za-z0-9_]+=body' \
+    | sed -E 's/v1:user:[A-Za-z0-9_]+\.([A-Za-z0-9_]+)=body/\1/' \
+    | sort -u | sed "s|^|$src\t|" >> "$TMP/callees.tsv"
+done
+
+comm -23 <(sort -u "$TMP/callees.tsv") <(sort -u "$TMP/subjects.tsv") > "$TMP/uncovered.tsv"
+UNCOVERED="$(grep -c . "$TMP/uncovered.tsv" || true)"
+TOTAL_CALLEES="$(sort -u "$TMP/callees.tsv" | grep -c . || true)"
+
+# NON-VACUITY FIRST: if no body-edge callee were found at all, the comparison would report a
+# perfect zero gap while measuring nothing.
+if [ "$TOTAL_CALLEES" -ge 20 ] 2>/dev/null; then
+  ok "$TOTAL_CALLEES distinct (fixture, body-edge callee) pairs measured — the comparison has input"
+else
+  no "only $TOTAL_CALLEES body-edge callee pairs found — the edge extraction stopped working, so the gap below means nothing"
+fi
+
+# EXACT, with the breakdown, because a bare 14 hides which fixture moved.
+UNCOV_HMAC="$(grep -c 'hmac_sha256' "$TMP/uncovered.tsv" || true)"
+UNCOV_PV="$(grep -c 'parse_validate' "$TMP/uncovered.tsv" || true)"
+UNCOV_UNLINKED="$(grep -c 'composition_unlinked_helper' "$TMP/uncovered.tsv" || true)"
+if [ "$UNCOVERED" = "14" ] && [ "$UNCOV_HMAC" = "8" ] && [ "$UNCOV_PV" = "5" ] && [ "$UNCOV_UNLINKED" = "1" ]; then
+  ok "KNOWN GAP, pinned: $UNCOVERED of $TOTAL_CALLEES body-edge callees have no manifest row (hmac_sha256 8, parse_validate 5, composition_unlinked_helper 1)"
+else
+  no "the subject/callee gap moved to $UNCOVERED (hmac_sha256 $UNCOV_HMAC, parse_validate $UNCOV_PV, unlinked $UNCOV_UNLINKED), was 14 (8/5/1) — if the manifest population changed, say so; if a fixture changed, say which:"
+  sed 's/^/      /' "$TMP/uncovered.tsv" | head -20
+fi
+
+# AND THE CONSEQUENCE IS STATED, not left implicit: these edges correspond TODAY. The number is the
+# size of the correspondence loss a scoped join would take if it required an attested entry per
+# callee and the manifest population were not extended first.
+if [ "$UNCOVERED" -gt 0 ] 2>/dev/null; then
+  ok "the gap is live (>0), so the flip cannot treat 'every table converted' as 'every edge attestable'"
+else
+  no "the gap is 0 — either the manifest population was extended (update this) or the measurement broke"
 fi
 
 echo "ATTESTATION-MANIFEST: PASS=$PASS FAIL=$FAIL"

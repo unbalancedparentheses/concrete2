@@ -105,7 +105,7 @@ theorem verify_message_composed_correct
             verifyTagFn, verifyTagExpr,
             checkNonceFn, checkNonceExpr,
             computeTagFn, computeTagExpr,
-            eval, eval.evalArgs, cryptoFns, cryptoFnsGlobals,
+            eval, eval.evalArgs, cryptoFns_globals, cryptoFnsGlobals,
             Env.bind, evalBinOp, bindArgs, BEq.beq]
 
 /-- Full contract for check_nonce: returns 1 iff nonce ∈ [1, max_nonce], 0 otherwise.
