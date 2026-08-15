@@ -3576,7 +3576,15 @@ generated-only constructor unnecessary. Do not implement it.
 
 **Mutations KILLED:** `manifest-drift-classified` (breaks the header match, letting a drifted implementation be attested — the hazard that actually occurred) and `package-identity-binds-content` (reverts `contentRoot` to names). The second was first written INVALID — it left a binding unused and failed on a lint — and the harness reported that rather than counting it as coverage.
 
-**STILL OPEN in the generator:** recomputation of identities against current facts; mutation controls for omission of either attachment population, duplicate/conflicting/surplus mappings, and same-name substitution.
+**RECOMPUTATION AND MUTATIONS LANDED 2026-08-15.** The gate now asserts the INVARIANT first — every consuming fixture yields exactly one scoped package identity, none shared — with 10 pinned separately and explicitly labelled as today's corpus denominator rather than architectural truth. Recomputation added: a second derivation must be byte-identical, since the manifest is derived rather than stored and nondeterminism would leave it well-formed while attesting different identities per run.
+
+**Five manifest/provenance mutations KILLED:** `manifest-drift-classified`, `package-identity-binds-content`, `manifest-no-silent-filtering`, `classification-union-both-populations`, `manifest-surplus-path-live`.
+
+**TWO MUTATIONS SURVIVED FIRST AND WERE RETARGETED — both survivals were findings.** Dropping `ensures_proof` from the fixture scan could never kill, because ZERO fixtures use it without `proof_by`; the union of the two populations actually happens in `scripts/gen/classifications.lean`, so the mutation moved there. Deleting the surplus check survived because surplus is 0 in this corpus — removing a check with no live case is undetectable — so the mutation now breaks the check's INPUT to force the path to execute.
+
+**A REAL CONSEQUENCE CAUGHT BY A GATE:** `FnTable` gaining `attested`/`attestationFailures` changed its TYPE, so theorems mentioning it re-elaborated and their table digests moved (`proofFns` 6fe095a9… → e41b73d6…). CLASSIFICATION-FRESHNESS went red and the table was regenerated; theorem artifact digests were unchanged, which is the expected shape.
+
+**STILL OPEN in the generator:** mutations for duplicate and conflicting mappings separately, and same-name cross-package / same-name-different-implementation substitution; plus a positive control that a legitimate reused model across scoped packages stays accepted.
 
 ~~Earlier status:~~ generator started Derives mappings from BOTH populations and classifies drift by the fixture's own header (not filename), so a renamed drift fixture stays classified. Three drift fixtures found (crypto_verify, elf_header, thesis_demo), each emitted as `EXCLUDED` WITH the theorem that reached it. Distinguishes classification rows from EXTERNAL table rows — conflating them is how `combineFns`, a table, first appeared in a list of theorems. The three in-repo theorems my earlier map missed are now mapped, and the known misattachment is visible: `proof_pressure` maps to BOTH `cryptoFns` and `elfFns`.
 
