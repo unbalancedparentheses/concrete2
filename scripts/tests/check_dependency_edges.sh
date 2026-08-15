@@ -1607,6 +1607,33 @@ probe "attesting a model the table contains is accepted" "true" '
   let idA := DefinitionIdentity.of? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "calls" "inc" "7afedf51e742f4ce04201459a3965bc8"
   (scopedEntryEvidence (FnTable.withAttestations { entries := #[m], globals := fun _ => none } [AttestedPFnDef.of m idA])).toOption.isSome'
 
+# === DRIFT SUBSTITUTION IS CAUGHT (attestation-manifest acceptance condition) ==================
+# `thesis_demo/src/main_drifted.con` resolved as the reference source for `proofFns` when the
+# conversion was attempted, so "substituting main_drifted.con is mutation-killed" is a live hazard
+# rather than a hypothetical. Verifiable now, before the generator exists.
+#
+# MEASURED, AND THE RESULT IS NARROWER THAN IT SOUNDS: the canonical and drifted variants share a
+# PACKAGE identity — both are module `main` under one `Concrete.toml`, and `contentRoot` is derived
+# from module NAMES — so package scope does NO work here. The drift is caught by the IMPLEMENTATION
+# component alone. Stated because a reader could otherwise assume package scope is what separates
+# them, and build a generator that relies on it.
+CANON="$("$ROOT_DIR/.lake/build/bin/concrete" examples/thesis_demo/src/main.con --report generated-implementations 2>/dev/null || true)"
+DRIFT="$("$ROOT_DIR/.lake/build/bin/concrete" examples/thesis_demo/src/main_drifted.con --report generated-implementations 2>/dev/null || true)"
+C_IMPL="$(printf '%s' "$CANON" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | tail -1)"
+D_IMPL="$(printf '%s' "$DRIFT" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | tail -1)"
+C_PKG="$(printf '%s' "$CANON" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | head -1)"
+D_PKG="$(printf '%s' "$DRIFT" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | head -1)"
+if [ -n "$C_IMPL" ] && [ "$C_IMPL" != "$D_IMPL" ]; then
+  ok "the drifted variant yields a DIFFERENT implementation identity (substitution is caught)"
+else
+  no "canonical and drifted parse_byte share an implementation identity ($C_IMPL) — drift substitution would NOT be caught"
+fi
+if [ "$C_PKG" = "$D_PKG" ]; then
+  ok "…and they share a PACKAGE identity, so the implementation component is what catches it (not package scope)"
+else
+  no "canonical and drifted now differ in PACKAGE identity ($C_PKG vs $D_PKG) — if contentRoot changed, the generator's assumptions changed with it"
+fi
+
 # === ATTESTED TABLE ENTRIES (the author-facing boundary) ======================================
 # A `PFnDef` is a mathematical MODEL: no typed signature, no capabilities, no generics, no contracts,
 # so it cannot derive the authoritative implementation identity and must not pretend to. The binding
