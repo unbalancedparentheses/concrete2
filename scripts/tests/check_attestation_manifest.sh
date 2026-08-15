@@ -244,11 +244,17 @@ if [ -n "$SITES" ]; then
   fi
 
   for tbl in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1}' | sort -u); do
-    # SUBJECT ROWS ONLY. The reconciliation is about the frozen subject accounting; dependency rows
-    # are a separate population with separate counters, and letting them into this count made every
-    # converted table read as under-attested the moment the population landed.
-    ROWS_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -vc 'role=dependency' || true)"
-    DEP_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -c 'role=dependency' || true)"
+    # THE DISTINCT REFERENCE SET, over BOTH populations. A table site selects generated symbols, and
+    # a symbol exists per (table, package, module, declaration, implementation) whether the row that
+    # produced it was a subject or a dependency. So the load-bearing invariant is that every
+    # reference a table has is either BOUND at its site or a NAMED exclusion — an unbound reference
+    # is a definition the table could describe exactly and does not.
+    #
+    # Counting subject rows against attestations was wrong the moment dependency references were
+    # bound: `parseValidateFns` holds 8 attestations against 3 subject rows, which is correct.
+    ROWS_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | awk '{print $3, $4}' | sort -u | grep -c . || true)"
+    SUBJ_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -vc 'binding_role=dependency' || true)"
+    DEP_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -c 'binding_role=dependency' || true)"
     ATT_T="$(site_field "$tbl" attested)"
     ENT_T="$(site_field "$tbl" entries)"
     FAIL_T="$(site_field "$tbl" failures)"
@@ -260,18 +266,18 @@ if [ -n "$SITES" ]; then
       # callee. The manifest still lists its rows, and they are correctly unattestable — one shared
       # `def` cannot carry one scoped identity per consuming package.
       if [ "$ATT_T" = "0" ]; then
-        ok "$tbl has no entries: $ROWS_T manifest row(s) are vacuously attested, nothing to bind"
+        ok "$tbl has no entries: $ROWS_T reference(s) are vacuously attested, nothing to bind"
       else
         no "$tbl has no entries but carries $ATT_T attestation(s) — it is attesting models it does not hold"
       fi
     elif [ "$ATT_T" = "0" ]; then
-      ok "$tbl is PENDING conversion (0 of $ROWS_T rows attested; it refuses as legacy, which is honest)"
+      ok "$tbl is PENDING conversion (0 of $ROWS_T references bound; it refuses as legacy, which is honest)"
     elif [ "$FAIL_T" != "0" ]; then
       no "$tbl has $FAIL_T generated reference(s) that failed validation — needs_recheck, not a conversion"
     elif [ "$ROWS_T" = "$(( ATT_T + EXC_T ))" ]; then
-      ok "$tbl reconciles: $ROWS_T subject rows = $ATT_T attested + $EXC_T named exclusion(s)${DEP_T:+, plus $DEP_T dependency reference(s) not yet bound}"
+      ok "$tbl reconciles: $ROWS_T distinct references ($SUBJ_T subject rows, $DEP_T dependency rows) = $ATT_T bound + $EXC_T named exclusion(s)"
     else
-      no "$tbl does NOT reconcile: $ROWS_T manifest rows, $ATT_T attested, $EXC_T named exclusion(s) — an unexplained gap is an under-attested table that reads as converted"
+      no "$tbl does NOT reconcile: $ROWS_T distinct references, $ATT_T bound, $EXC_T named exclusion(s) — an unbound reference is a definition the table could describe exactly and does not"
     fi
   done
 fi
@@ -279,17 +285,25 @@ fi
 # EVERY SUBJECT ROW HAS EXACTLY ONE DISPOSITION, and the four add up to the frozen 48. Conversion
 # progress was being described in prose as a per-table list, which drifted the moment a table moved:
 # a roadmap paragraph read 14 selected / 1 excluded / 13 vacuous / 20 pending after
-# `parseValidateFns` landed, when the measurement was 17/1/13/17. Counting the rows is the only way
-# the four stay consistent, so they are computed and reconciled here instead.
+# `parseValidateFns` landed, when the measurement was 17/1/13/17.
+#
+# DECIDED PER ROW BY WHAT THE SITE ACTUALLY BOUND, not by comparing counts. Counting attestations
+# against subject rows broke as soon as a table bound DEPENDENCY references too: `parseValidateFns`
+# holds 8 attestations against 3 subject rows and read as over-attested, which is not a defect but a
+# second population. A row's disposition is a property of that row.
 SEL=0; EXC=0; VAC=0; PEND=0
-for tbl in $(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | awk '{print $1}' | sort -u); do
-  ROWS_T="$(printf '%s' "$OUT" | grep "^$tbl <- " | grep -vc 'role=dependency' || true)"
-  ATT_T="$(site_field "$tbl" attested)"; ENT_T="$(site_field "$tbl" entries)"
-  EXC_T="$(printf '%s\n' $EXCLUSIONS | grep -c "^$tbl:" || true)"
-  if [ "$ENT_T" = "0" ]; then VAC=$((VAC + ROWS_T))
-  elif [ "${ATT_T:-0}" = "0" ]; then PEND=$((PEND + ROWS_T))
-  else SEL=$((SEL + ATT_T)); EXC=$((EXC + EXC_T)); fi
-done
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
+  rtbl="${row%% <-*}"; rrest="${row#* <- }"; rpkg="${rrest%%/*}"
+  rmoddecl="${rrest%% *}"; rmoddecl="${rmoddecl#*/}"; rdecl="${rmoddecl#*.}"
+  rent="$(site_field "$rtbl" entries)"
+  if [ "${rent:-0}" = "0" ]; then VAC=$((VAC+1))
+  elif printf '%s\n' $EXCLUSIONS | grep -qx "$rtbl:$rpkg:$rdecl"; then EXC=$((EXC+1))
+  elif printf '%s' "$SITES" | grep -qE "^BOUND $rtbl $rpkg $rdecl$"; then SEL=$((SEL+1))
+  else PEND=$((PEND+1)); fi
+done <<EOF_ROWS
+$(printf '%s' "$OUT" | grep ' <- ' | grep -v EXCLUDED | grep -v 'binding_role=dependency')
+EOF_ROWS
 if [ "$(( SEL + EXC + VAC + PEND ))" = "$MAPPED" ]; then
   ok "subject-row disposition reconciles: $SEL selected + $EXC excluded + $VAC vacuous + $PEND pending = $MAPPED"
 else

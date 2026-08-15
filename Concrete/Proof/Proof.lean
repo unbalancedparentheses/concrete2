@@ -2224,20 +2224,27 @@ def parseValidateFnsGlobals : String → Option PFnDef
 def parseValidateFns : FnTable :=
   -- ATTESTED (R-0004 package 2, step 4). Structure update, as for the three before it.
   --
-  -- THREE attestations for EIGHT entries, and the shortfall is not an omission at this site: the
-  -- manifest offers exactly three rows for this table, because its population is SUBJECTS — the
-  -- declarations some fixture links a proof to — and only `parse_header`, `validate_header_fields`
-  -- and `validate_version` carry a proof link. The other five models describe CALLEES that no
-  -- theorem claims directly, so no generated reference exists for them.
+  -- EIGHT attestations for eight entries, drawn from BOTH manifest populations. Three are SUBJECT
+  -- rows: `parse_header`, `validate_header_fields` and `validate_version` carry proof links. The
+  -- other five are DEPENDENCY rows — models of callees no theorem claims directly, which are
+  -- nonetheless requested body edges of the two subjects that do. Attesting only the subjects left
+  -- this table describing three of the eight definitions it holds, while the `CallableId` join
+  -- matched all eight on NAME and reported `usable=yes`.
   --
-  -- That gap is measured and pinned by `check_attestation_manifest.sh`, not left here: those five
-  -- callees are matched edges TODAY under the `CallableId` join, and a scoped join that needs an
-  -- attested entry per callee would stop matching them. The manifest population is a flip-design
-  -- question, so this site attests what the manifest offers and nothing more.
+  -- A DEPENDENCY ATTESTATION BINDS AN IDENTITY AND NOTHING ELSE. `validate_checksum` is now exactly
+  -- one implementation rather than a name; it is still not proof-linked, still makes no claim, and
+  -- still supplies no logical validity. The role lives in the manifest, and this site does not
+  -- record which population a reference came from — precisely so nobody can read a stronger claim
+  -- out of the selection.
   FnTable.withAttestations
     { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
-    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header
+    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_420510fb_compute_checksum
+    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header
+    , AttestedPFnDef.of validateChecksumFn     GeneratedAttestations.parseValidateFns_420510fb_validate_checksum
     , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_420510fb_validate_header_fields
+    , AttestedPFnDef.of validateMsgTypeFn      GeneratedAttestations.parseValidateFns_420510fb_validate_msg_type
+    , AttestedPFnDef.of validatePayloadLenFn   GeneratedAttestations.parseValidateFns_420510fb_validate_payload_len
+    , AttestedPFnDef.of validateTotalLenFn     GeneratedAttestations.parseValidateFns_420510fb_validate_total_len
     , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version ]
 
 -- Keeps `simp only [eval, parseValidateFns_globals, parseValidateFnsGlobals]` working WITHOUT delta-unfolding

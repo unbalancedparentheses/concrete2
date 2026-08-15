@@ -554,6 +554,15 @@ add "attestation-never-binds-drifted-impl" "Concrete/Proof/Proof.lean" "check_at
   $'    , AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_404dc2c1_ct_compare ]' \
   $'    , AttestedPFnDef.of ctCompareFn GeneratedAttestations.ctTagFns_13c8e415_ct_compare ]'
 
+# R-0004 package 2. A DEPENDENCY REFERENCE LEFT UNBOUND. The subject/dependency split only matters if
+# an unbound reference is caught, and the earlier reconciliation could not see one: it compared
+# attestations against SUBJECT rows, so dropping a dependency binding left the counts agreeing. The
+# reconciliation now runs over the distinct reference set for each table, so a model the table could
+# describe exactly and does not is a failure.
+add "attestation-dependency-reference-bound" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
+  $'    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_420510fb_compute_checksum\n    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header' \
+  $'    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

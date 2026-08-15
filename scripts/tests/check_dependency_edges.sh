@@ -1556,7 +1556,10 @@ probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence elfFns).toOption.map (·.length)'
 probe "fixedCapacityFns is ATTESTED and yields 4 scoped entries" "some 4" \
 '#eval (scopedEntryEvidence fixedCapacityFns).toOption.map (·.length)'
-probe "parseValidateFns is ATTESTED and yields 3 scoped entries" "some 3" \
+# EIGHT, not three: this table binds its DEPENDENCY references too, so every model it holds is bound
+# to exactly one implementation. Three of the eight are proof-linked subjects and five are requested
+# body-edge callees; the count is the whole entry set precisely because the join asks about callees.
+probe "parseValidateFns binds all 8 entries (subject AND dependency references)" "some 8" \
 '#eval (scopedEntryEvidence parseValidateFns).toOption.map (·.length)'
 # ONE model, TWO scoped entries — the same `ctCompareFn` attested to two packages whose
 # implementations differ. If scoped identity ever collapsed to the model, this would read 1.
