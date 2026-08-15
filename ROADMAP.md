@@ -3630,6 +3630,18 @@ generated-only constructor unnecessary. Do not implement it.
 
 **Invariants held across step 4:** manifest 86 = 0 + 38 + 48, correspondence 9/10 + 1 no-claim, entries 8, globals still dispatch, `scopedEntryEvidence parseValidateFns` 3/3. Mutation `attestation-conversion-complete-parsevalidate` KILLED — the reconciliation is against the MANIFEST, not the entry count, so 3 rows vs 2 attested still fails. Gates: build clean, DEPENDENCY-EDGES 281/0, ATTESTATION-MANIFEST 27/0, CLASSIFICATION-FRESHNESS 2/0, GATE-MUTATION-COVERAGE 50 families.
 
+**STEP 5 LANDED 2026-08-15 — `ctTagFns` attested, and a drifted implementation refused.** ONE model, THREE manifest rows, TWO attested. `ctCompareFn` is bound to `constant_time_tag` and to the `demo` module of `evidence_classes/partial_contract`, whose bodies are identical and whose implementation identities differ because contracts are part of the implementation — legitimate reuse, and the sharpest available control that scoped identity has not collapsed to the model (`scopedEntryEvidence ctTagFns` returns 2, not 1). Theorem digests unchanged: those proofs already reduce through `ctTagFns_globals`.
+
+**THE THIRD ROW WOULD HAVE BOUND THE MODEL TO A DRIFTED IMPLEMENTATION.** `examples/evidence_classes/stale_proof` links the same theorem while its body starts `diff` at 1 instead of 0, and the compiler already says so: `--report proof-status` reports SPEC DRIFT, "the theorem is about a different function than the source". Nothing downstream would have caught it — `scopedEntryEvidence` recomputes the digest of the MODEL's body, never the implementation's — so a conversion driven mechanically off the manifest would have baked a drifted identity into the table and looked correct.
+
+**AND THE MANIFEST OFFERS THAT ROW.** Its drift exclusion greps fixture headers for `DRIFTED variant`; this fixture's header says "the body has DRIFTED" and does not match. Prose is a second, weaker producer of a fact the compiler computes. **Not repaired in the manifest — package 1 is frozen and its classifier is a design decision — but the conversion path no longer consumes the miss:** the gate re-derives the drift verdict from the compiler and requires every row from a spec-drifted fixture to be OMITTED at its table site. Mutation `attestation-never-binds-drifted-impl` swaps a legitimate reference for the drifted one (rather than adding it, so the counts still reconcile and only the drift check can fire) — KILLED, verified by hand to fail on exactly that assertion.
+
+**TWO DEFECTS IN MY OWN CHECKS, both found while writing them, both the class this work exists to catch.** (1) The drift scan reported "no fixture reports spec drift" while the same grep matched by hand: `if binary … | grep -q` is wrong under `set -o pipefail`, because the compiler exits non-zero on exactly the fixtures being looked for, so the branch was never taken — a check answering "nothing found" because it stopped looking. (2) The first version asked only whether a row was DECLARED in the exclusion list, which a table could satisfy while also selecting the reference. Declared and omitted are different facts; the site probe now emits what each table actually BOUND and the check reads that.
+
+**A THIRD, in the same hour: the converted-set filter was `grep -vE 'attested=0 '` over the whole site probe**, which worked only because every line began with `SITE`. The same commit added one `BOUND` line per attestation and the comparison broke. `b2a3c5c6` claims ATTESTATION-MANIFEST 30/0; the gate was RED at 29/1 when it was written, because I read a narrowed slice of the output and not the total. Corrected in `a885738e`.
+
+**Invariants held across step 5:** manifest 86 = 0 + 38 + 48, correspondence 9/10 + 1 no-claim, entries 1, one model yields TWO scoped entries. Gates: build clean, DEPENDENCY-EDGES 282/0, ATTESTATION-MANIFEST 31/0, CLASSIFICATION-FRESHNESS 2/0, GATE-MUTATION-COVERAGE 51 families.
+
 **CONVERSION LEDGER (authoritative owner: `scripts/tests/check_attestation_manifest.sh`).** The roadmap no longer maintains independent counts for table conversion. A table is exactly one of: converted, vacuously complete, pending, no manifest row, or externally blocked. The gate's `attestationSites` list is the sole source of build-visible sites.
 
 | table | manifest rows | `FnTable.entries` | status | notes |
@@ -3642,24 +3654,39 @@ generated-only constructor unnecessary. Do not implement it.
 | `Concrete.Proof.elfFns` | 6 | 5 | converted | 5 attestations + 1 named exclusion (`proof_pressure` `validate_header`) |
 | `Concrete.Proof.parseValidateFns` | 3 | 8 | converted | 3 rows for 8 entries — the five unattested models describe CALLEES no theorem claims; see the subject/callee gap below |
 | `Concrete.Proof.fixedCapacityFns` | 4 | 4 | converted | same proof-term independence fix as `elfFns`: `ring_push_then_contains_correct` no longer delta-unfolds the table |
-| `Concrete.Proof.ctTagFns` | 3 | 1 | pending | refuses as legacy |
-| `Examples.ProofPatterns.Proofs.combineFns` | 7 | 2 | pending | out-of-build table; generator can emit entry evidence |
-| `Examples.HmacSha256.Proofs.shaFns` | 7 | 16 | pending | out-of-build table; generated references must be reachable from `proofs/` |
+| `Concrete.Proof.ctTagFns` | 3 | 1 | converted | 2 attestations of ONE model in two packages + 1 named exclusion: `evidence_classes/stale_proof` is a DRIFTED implementation the compiler reports as spec drift |
+| `Examples.ProofPatterns.Proofs.combineFns` | 7 | 2 | **BLOCKED — do not convert** | out-of-build table, and blocked on the dependency-row population below, not on plumbing. It selects from `Concrete.Proof.GeneratedAttestations` like every other site: `proofs/` already imports `Concrete.Proof.Proof`, so the direction is valid and NO second generated file or producer may be created under `proofs/` |
+| `Examples.HmacSha256.Proofs.shaFns` | 7 | 16 | **BLOCKED — do not convert** | same as `combineFns`, and it carries 8 of the 14 uncovered callee pairs |
 
 Denominators (measured by the gate, not maintained separately in prose):
 - **11** build-visible attestation sites (`attestationSites`).
-- **48** manifest-backed table rows (`table_attestations`), accounting for the 86 subject rows. Current conversion accounting is exact: **14 selected + 1 named exclusion + 13 vacuous-empty + 20 pending = 48**. At atomic entrance it must be **34 selected + 1 named exclusion + 13 vacuous-empty + 0 pending = 48**.
+- **48** manifest-backed table rows (`table_attestations`), accounting for the 86 subject rows. Conversion accounting is now COMPUTED BY THE GATE from the rows, not maintained here: after `ctTagFns` it is **19 selected + 2 named exclusions + 13 vacuous-empty + 14 pending = 48**. (Two prose figures were wrong before the check existed: `14 + 1 + 13 + 20` was recorded after `parseValidateFns` when the measurement was `17 + 1 + 13 + 17`. That is why the four are derived rather than written.) At atomic entrance it must be **32 selected + 2 named exclusions + 13 vacuous-empty + 0 pending = 48**.
 - **42** proof-table entries (sum of `FnTable.entries.size` across the 11 sites).
 - **29** proof-model literals (`PFnDef`) remain mathematical models by design. This is an inventory, not atomic-flip edit work: exact identity lives in companion attestations and at evidence-consumer boundaries.
 
 **ATOMIC-FLIP ENTRANCE GATE.** Before the `CallableId` join is replaced by `DefinitionIdentity`, the following must hold:
 1. Pending conversion is **zero**. Every nonempty manifest-backed table is in the converted set and reconciles as manifest rows = attestations selected + named exclusions.
-2. The exact manifest snapshot is unchanged: **86 subject rows = 0 no-identity + 38 without table + 48 manifest-backed**, with the conversion split exactly **34 selected + 1 named exclusion + 13 vacuous-empty + 0 pending**.
+2. The exact manifest snapshot is unchanged: **86 subject rows = 0 no-identity + 38 without table + 48 manifest-backed**, with the conversion split exactly **32 selected + 2 named exclusions + 13 vacuous-empty + 0 pending**, reconciled by the gate rather than restated.
 3. No-manifest tables (`proofFns`, `proofFnsExt`, `pureCoreFns`) remain explicitly evidence-ineligible: they evaluate, but `legacyUnattested` prevents them from justifying an edge or entering a root, with no name-keyed fallback. A positive control keeps their evaluation usable; a negative control proves they cannot supply evidence.
 4. Correspondence is still **9/10 claiming subjects + 1 no-claim**, roots **62/64**.
 5. Scoped package/implementation collision controls pass (no shared package identity, no duplicate scoped definitions).
 6. A dedicated executable completion assertion checks items 1–3 and is mutation-killed by restoring any pending table, partially selecting a table, or admitting a no-manifest table. The ordinary `check_attestation_manifest.sh` progress reconciliation is deliberately green while pending tables honestly report zero, so its current success alone is NOT the entrance signal.
 7. The ordinary attestation-manifest, dependency-edge, classification-freshness, subject-facts, implementation-manifest and one-producer gates remain green.
+8. **All 34 body-edge callee pairs have exact scoped references, and dependency-reference gaps are zero.** Conditions 1–2 are about SUBJECT rows and are necessary but not sufficient: every table can be converted while 14 body edges remain unattestable.
+9. **Removing any one of the 14 new dependency references makes the scoped correspondence join REFUSE.** A reference set that is present but not load-bearing would satisfy condition 8 without carrying it.
+10. **The 86/48 subject denominator is unchanged by the new population.** Dependency rows must not inflate the subject accounting.
+11. **No converted table has an equation lemma** (`check_dependency_edges.sh`), so no proof term depends on a table's definitional shape. This stays part of EVERY conversion, not just the ones where a digest happened to move.
+
+**MANIFEST POPULATION — DECIDED 2026-08-15, and it is the design blocker `parseValidateFns` exposed.** The manifest carries TWO populations, explicitly separated by a ROLE field so a dependency row can never masquerade as a proof-linked subject:
+
+| population | contents | accounting |
+|---|---|---|
+| **subject rows** | a declaration some fixture links a proof to | the FROZEN 86/48 accounting, unchanged |
+| **dependency rows** | one exact implementation reference for every requested body-edge callee | the 14 currently-uncovered pairs become rows here |
+
+**The dimensions stay separate.** Exact selection of an implementation is not proof linkage, is not model faithfulness, and is not root availability. Concretely: giving `composition_unlinked_helper`'s callee an exact scoped reference must NOT make its missing proof node usable — that fixture exists to have an unlinked helper, and a dependency reference says "this is exactly which implementation the edge points at", never "this edge is justified".
+
+**`combineFns` and `shaFns` are NOT to be converted until this population exists.** They are the two out-of-build tables and carry 14 of the remaining rows, and `shaFns` alone carries 8 of the 14 uncovered callee pairs; converting them first would mean converting against the population that is about to change. When they are converted they select from `Concrete.Proof.GeneratedAttestations` exactly as the in-build sites do — `proofs/` already imports `Concrete.Proof.Proof`, so the dependency direction is valid, and **no second generated file or producer may be created under `proofs/`**, which would reintroduce the two-producer defect R-0004 exists to remove.
 
 **THEN PACKAGE 3 — durability:** replay-backed receipts, 44-link migration, coverage baseline, reproducibility, Slice 8.
 
