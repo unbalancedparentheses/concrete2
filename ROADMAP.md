@@ -3570,7 +3570,13 @@ generated-only constructor unnecessary. Do not implement it.
 
 **A refusal I manufactured, corrected:** `HmacSha256.Proofs.shaFns` was reported SURPLUS because the table-name character class excluded DIGITS. A refusal produced by the checker rather than found in the data is worse than none, since it reads as a finding.
 
-**STILL OPEN in the generator:** recomputation of identities against current facts, and mutation controls (drift selection, omission of either population, duplicate/conflicting/surplus, package collapse, same-name substitution).
+**GATED AND MUTATION-COVERED 2026-08-14.** `check_attestation_manifest.sh` (11/0, `make test-attestation-manifest`) pins the manifest on the real corpus with EXACT values — a rising mapping count is not automatically good, since it can mean a drift fixture stopped being excluded. Asserts: generator completes without refusing; every subject row accounted for exactly once (86 = 0 + 38 + 48); duplicates/collapses/surplus each zero; drift excluded BY NAME; reuse represented; the `proof_pressure` misattachment still visible.
+
+**A THIRD UNDERCOUNT FROM THE SAME DEFECT, found while writing the gate:** I asserted `FnTable.empty` maps to 8 packages, from the `#[proof_by]`-only map. It is **10** — `evidence_classes/proved_by_lean` and `hmac_sha256` reach it through in-repo theorems. The gate now also asserts the stronger property: 10 consuming fixtures ↔ 10 distinct package identities, ONE-TO-ONE, which would have caught the package collapse directly rather than through a downstream symptom.
+
+**Mutations KILLED:** `manifest-drift-classified` (breaks the header match, letting a drifted implementation be attested — the hazard that actually occurred) and `package-identity-binds-content` (reverts `contentRoot` to names). The second was first written INVALID — it left a binding unused and failed on a lint — and the harness reported that rather than counting it as coverage.
+
+**STILL OPEN in the generator:** recomputation of identities against current facts; mutation controls for omission of either attachment population, duplicate/conflicting/surplus mappings, and same-name substitution.
 
 ~~Earlier status:~~ generator started Derives mappings from BOTH populations and classifies drift by the fixture's own header (not filename), so a renamed drift fixture stays classified. Three drift fixtures found (crypto_verify, elf_header, thesis_demo), each emitted as `EXCLUDED` WITH the theorem that reached it. Distinguishes classification rows from EXTERNAL table rows — conflating them is how `combineFns`, a table, first appeared in a list of theorems. The three in-repo theorems my earlier map missed are now mapped, and the known misattachment is visible: `proof_pressure` maps to BOTH `cryptoFns` and `elfFns`.
 
