@@ -567,9 +567,15 @@ add "attestation-dependency-reference-bound" "Concrete/Proof/Proof.lean" "check_
 # is safe, and a completion gate that cannot fail is worse than none — it converts an unchecked
 # assumption into a green check. The mutation returns one table to the unattested state, which is
 # precisely the condition the flip must not proceed over.
+#
+# THE FIRST VERSION OF THIS MUTATION SURVIVED, and the survival was a finding about the mutation
+# rather than about the gate: it appended `[] |>.withAttestations` before the real list, so the table
+# was attested with nothing and then attested again with everything — a no-op. The harness reported
+# SURVIVED, which is the honest answer for a mutation that changed no behaviour. It now empties the
+# attestation list outright, which is the actual unattested state.
 add "atomic-flip-entrance-refuses-pending" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
-  $'  FnTable.withAttestations\n    { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }' \
-  $'  FnTable.withAttestations\n    { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }\n    []\n  |>.withAttestations'
+  $'    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_214c7171_compute_tag\n    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_214c7171_ring_contains\n    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push ]' \
+  $'    []'
 
 # ...and it must also refuse a table whose bound references are not LOAD-BEARING. Binding an
 # attestation the scoped lookup cannot answer with would satisfy "pending is zero" while carrying
