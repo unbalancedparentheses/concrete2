@@ -2203,10 +2203,19 @@ C_NOCLAIM="$(printf '%s' "$CORR_LINES" | grep -c 'no claim' || true)"
 # (952c39a8… vs 543bfb75…) — the cross-program substitution this migration exists to close, caught
 # on a real fixture rather than a synthetic one. The denominator is unchanged; one more subject is
 # now correctly refused.
-if [ "$C_EDGED" = "10" ] && [ "$C_USABLE" = "8" ] && [ "$C_NOCLAIM" = "1" ]; then
-  ok "8 of 10 claiming subjects fully correspond, 2 correctly refuse, 1 makes no claim (exact, not ratcheted)"
+# 8/10 -> 8/9 ON 2026-08-15 WHEN THE MISATTACHED FIXTURE WAS REPAIRED. `proof_pressure`'s
+# `validate_header` carried a `#[proof_by]` naming a theorem about `elf_header`'s identically-named
+# function; the claim was DELETED rather than repointed, because no theorem proves that body. It
+# therefore leaves the claiming denominator and joins the no-claim set — "nobody proved this" is a
+# different fact from "this proof is unsound", and the repair moves it to the honest one.
+#
+# THE ONE REMAINING REFUSAL IS PERMANENT AND CORRECT: `main_drifted` is a drift fixture whose whole
+# purpose is to differ from the program its theorem is about. 9/9 is NOT the target — repairing it
+# would delete the control.
+if [ "$C_EDGED" = "9" ] && [ "$C_USABLE" = "8" ] && [ "$C_NOCLAIM" = "2" ]; then
+  ok "8 of 9 claiming subjects fully correspond, 1 correctly refuses (a drift fixture), 2 make no claim"
 else
-  no "corpus correspondence moved to $C_USABLE/$C_EDGED claiming (+$C_NOCLAIM no-claim; was 8/10 +1) — say which subjects changed and why"
+  no "corpus correspondence moved to $C_USABLE/$C_EDGED claiming (+$C_NOCLAIM no-claim; was 8/9 +2) — say which subjects changed and why"
 fi
 
 # "NO CLAIM" MUST NOT BECOME A HIDING PLACE. A subject WITH a linked theorem whose classification is
@@ -2219,23 +2228,12 @@ fi
 VH="$(printf '%s' "$CORR_LINES" | grep -c 'usable=no' || true)"
 # TWO now, and each is pinned BY NAME below: a count alone would let one correct refusal be traded
 # for a new incorrect one without moving the number.
-if [ "$VH" = "2" ]; then
+if [ "$VH" = "1" ]; then
   ok "a subject WITH a theorem but unusable justification still reports usable=no (no-claim is not a hiding place)"
-  # AND THE REFUSAL IS CORRECT, not a gap to close. `proof_pressure`'s `validate_header` calls
-  # `check_nonce` and is linked to `Examples.ElfHeader.Proofs.validate_header_correct`, whose table
-  # `elfFns` holds check_class/check_data/check_magic/check_version/validate_header — no
-  # `check_nonce`. The theorem is about a DIFFERENT function that shares the qualified name
-  # `main.validate_header`. Correspondence caught a misattached proof link, which is what it is for.
-  #
-  # So 10/10 requires repairing the FIXTURE, not the compiler, and this must not be "fixed" by
-  # loosening the join. Pinned as a known-correct refusal so it cannot silently become usable.
-  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=1'; then
-    no "proof_pressure/validate_header no longer refuses with missing=1 — if the fixture's proof link was repaired, update this; if the join was loosened, revert it"
-  else
-    ok "proof_pressure/validate_header still refuses (misattached proof link, correctly caught)"
-  fi
-  # THE SECOND REFUSAL IS THE CROSS-PROGRAM SUBSTITUTION, and it exists only because the join is
-  # scoped. `main_drifted` declares the same functions as `elf_header` in a different program; every
+  # THE SURVIVING REFUSAL IS THE CROSS-PROGRAM SUBSTITUTION, and it is permanent by design.
+  # `proof_pressure`'s misattachment — the refusal this control used to watch — was REPAIRED on
+  # 2026-08-15 by deleting its false `#[proof_by]`, so it is no longer a claiming subject at all.
+  # It exists only because the join is scoped: `main_drifted` declares the same functions as `elf_header` in a different program; every
   # one of its four body edges pointed at an `elfFns` entry by NAME. Now the package component
   # separates them and all four fall to `missing`. If this ever reads `usable=yes`, the join has
   # gone back to matching names.
@@ -2426,10 +2424,13 @@ done
 # `trusted` IS current for dependents, so the count fell by exactly one and no `missing` edge
 # remains in the corpus. 11 `unclassified` edges are left, all in subjects whose theorems have no
 # usable classification.
-if [ "$NONCUR" = "11" ]; then
-  ok "the corpus contains exactly 11 non-current edges (11 unclassified, 0 missing) — the check above is non-vacuous"
+# 11 -> 12 ON 2026-08-15: `proof_pressure.validate_header` lost its proof link, so its outgoing edge
+# to `check_nonce` has no classification and is `unclassified` rather than `body`. An unclassified
+# edge is correctly not current — the subject makes no claim now, so nothing types its dependencies.
+if [ "$NONCUR" = "12" ]; then
+  ok "the corpus contains exactly 12 non-current edges (12 unclassified, 0 missing) — the check above is non-vacuous"
 else
-  no "non-current edge count moved to $NONCUR (was 11, all unclassified) — if the hand-back classified more, update this and say so"
+  no "non-current edge count moved to $NONCUR (was 12, all unclassified) — if the hand-back classified more, update this and say so"
 fi
 
 DR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot:' || true)"

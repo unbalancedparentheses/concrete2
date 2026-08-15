@@ -1801,13 +1801,19 @@ def cryptoFns : FnTable :=
   -- FIVE attestations for FOUR models: `check_nonce` is attested TWICE, once per consuming package
   -- (crypto_verify and proof_pressure). That is not a duplicate — the identities differ in their
   -- package component — and collapsing them to one is exactly what scoped identity exists to prevent.
+  --
+  -- THE PROOF_PRESSURE REFERENCE MOVED (d7eed943… -> c3c51f90…) when that fixture's misattached
+  -- `#[proof_by]` was deleted. Package identity binds module CONTENT, deliberately: editing a
+  -- program makes it a different package for evidence purposes, which is the property that stops a
+  -- drifted copy inheriting an attestation. The build broke on the stale symbol rather than
+  -- silently keeping the old identity, which is the intended failure mode.
   FnTable.withAttestations
     { entries := #[checkNonceFn, computeTagFn, verifyMessageFn, verifyTagFn], globals := cryptoFnsGlobals }
     [ AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_860da3fd_check_nonce
     , AttestedPFnDef.of computeTagFn    GeneratedAttestations.cryptoFns_860da3fd_compute_tag
     , AttestedPFnDef.of verifyMessageFn GeneratedAttestations.cryptoFns_860da3fd_verify_message
     , AttestedPFnDef.of verifyTagFn     GeneratedAttestations.cryptoFns_860da3fd_verify_tag
-    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_d7eed943_check_nonce ]
+    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_c3c51f90_check_nonce ]
 
 -- Keeps `simp only [eval, cryptoFns_globals, cryptoFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `cryptoFns`. The old `def cryptoFns : FnTable | "x" => …` produced equation lemmas

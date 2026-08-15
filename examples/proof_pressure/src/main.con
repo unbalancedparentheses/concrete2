@@ -6,7 +6,8 @@
 // Each function targets a specific proof obligation state:
 //
 //   1. check_nonce        → proved     (conditional-heavy validator)
-//   2. validate_header    → proved     (helper-composition, calls check_nonce)
+//   2. validate_header    → missing    (helper-composition, calls check_nonce;
+//                                      its `#[proof_by]` was MISATTACHED and removed)
 //   3. compute_checksum   → stale      (registry fingerprint is outdated)
 //   4. format_result      → ineligible (has Console capability)
 //   5. clamp_value        → missing    (pure, extractable, no registry entry)
@@ -17,7 +18,7 @@
 //
 // Expected proof status report:
 //   check_nonce       — proved
-//   validate_header   — proved
+//   validate_header   — not proved (missing)
 //   compute_checksum  — stale
 //   format_result     — not eligible
 //   clamp_value       — not proved (missing)
@@ -45,14 +46,28 @@ fn check_nonce(nonce: Int, max_nonce: Int) -> Int {
     }
 }
 
-// ---- 2. PROVED: helper-composition ----
+// ---- 2. UNPROVED: helper-composition with a MISATTACHED link, removed ----
 // Validates a header by calling check_nonce and checking a version field.
-// Exercises proved-function dependency tracking.
-// Registry entry has correct fingerprint.
+// Exercises proved-function dependency tracking: its callee `check_nonce` IS
+// proved, and this function's own claim is now absent rather than false.
+//
+// IT USED TO CARRY `#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]`,
+// and that link was wrong. That theorem is about `elf_header`'s `validate_header`,
+// which checks ELF magic/class/data/version bytes; this one checks a nonce and a
+// version field and calls `check_nonce`. The two share nothing but a qualified
+// name, and the link passed every name-based check for months.
+//
+// Correspondence caught it: `elfFns` holds no `check_nonce` model, so the edge had
+// no justification. The scoped join then proved the refusal was about identity
+// rather than luck. Repaired by DELETING THE CLAIM, not by attaching a different
+// theorem — no theorem proves this body, and inventing a link to the nearest
+// plausible one is the defect being repaired.
+//
+// The header block above still lists this function as "proved" in the six-state
+// tour; it is now "missing", which is the honest state for a function nobody
+// proved.
 
 #[spec(validate_header.spec)]
-#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]
-#[proof_fingerprint("c7e023240bd950d3a3e81876df3b62b3")]
 fn validate_header(nonce: Int, max_nonce: Int, version: Int) -> Int {
     let nonce_result: Int = check_nonce(nonce, max_nonce);
     if nonce_result != 1 {

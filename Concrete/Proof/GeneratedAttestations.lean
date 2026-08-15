@@ -105,10 +105,8 @@ def empty_f73c96ca_add_three : Except DefinitionIdentityRefusal DefinitionIdenti
   DefinitionIdentity.of? "f73c96cae96244c655c80e8fa3b71de1" "straight_line" "add_three" "dc6d724c16bea86f3f371ddf2162119b"
 def empty_a3999206_scale_by_two : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "a3999206c965ceb418691a7c1bd64ea5" "workspace" "scale_by_two" "5dbfd1f078e081530352591407626e2c"
-def cryptoFns_d7eed943_check_nonce : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "d7eed9438112e0d817a3a15812018938" "main" "check_nonce" "0a3ca2002a335ffd62b6cd22edad6146"
-def elfFns_d7eed943_validate_header : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "d7eed9438112e0d817a3a15812018938" "main" "validate_header" "84329dda14c4d9302270a3c20ac18dc3"
+def cryptoFns_c3c51f90_check_nonce : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "c3c51f90d5b4b40ee490fbf65cd954ef" "main" "check_nonce" "0a3ca2002a335ffd62b6cd22edad6146"
 def parseValidateFns_420510fb_compute_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "420510fbf08b6471c94320463350511d" "parse_validate" "compute_checksum" "c721ca16b467550acd17663a705264ba"
 def parseValidateFns_420510fb_validate_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=

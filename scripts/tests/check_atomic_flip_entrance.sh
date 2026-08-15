@@ -92,8 +92,12 @@ else no "$BROKEN table(s) carry failed generated references — needs_recheck, n
 echo "=== condition 2: the frozen subject snapshot is unchanged ==="
 ROWS="$(field subject_rows)"; NOID="$(field subjects_no_identity)"
 UNTABLED="$(field subjects_without_table)"; MAPPED="$(field table_attestations)"
-if [ "$ROWS" = "86" ] && [ "$NOID" = "0" ] && [ "$UNTABLED" = "38" ] && [ "$MAPPED" = "48" ]; then
-  ok "subject accounting is exactly 86 = 0 + 38 + 48"
+# 86 = 0 + 38 + 48 -> 0 + 39 + 47 on 2026-08-15, by a DELIBERATE fixture repair rather than by the
+# dependency population: `proof_pressure.validate_header`'s misattached `#[proof_by]` was deleted, so
+# the subject no longer has a table. The 86 is unchanged, which is the point — the declaration still
+# exists; what left is a false claim.
+if [ "$ROWS" = "86" ] && [ "$NOID" = "0" ] && [ "$UNTABLED" = "39" ] && [ "$MAPPED" = "47" ]; then
+  ok "subject accounting is exactly 86 = 0 + 39 + 47"
 else
   no "subject accounting moved: $ROWS = $NOID + $UNTABLED + $MAPPED — the dependency population must not touch it"
 fi
@@ -115,11 +119,15 @@ leanq "true" "the no-manifest tables still evaluate (ineligible for evidence, no
 '#eval (proofFns.globals "parse_byte").isSome'
 
 echo "=== condition 4: correspondence and roots are unmoved ==="
-CORR="$("$BIN" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=1' || true)"
+# THE CONTROL IS THE DRIFT FIXTURE NOW. `proof_pressure`'s misattachment was repaired deliberately on
+# 2026-08-15 (its false `#[proof_by]` deleted), so it no longer claims anything. `main_drifted` is
+# the permanent case: a DIFFERENT PROGRAM sharing every declaration name with `elf_header`, whose
+# four body edges the scoped join refuses and the name-keyed one accepted.
+CORR="$("$BIN" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
 if [ "$CORR" -ge 1 ] 2>/dev/null; then
-  ok "the known misattachment still refuses (matched=0 missing=1)"
+  ok "the cross-program substitution still refuses (matched=0 missing=4)"
 else
-  no "proof_pressure/validate_header no longer refuses — repair it deliberately, do not let a flip absorb it"
+  no "elf_header/main_drifted no longer refuses — a different program's edges are being justified again"
 fi
 
 echo "=== condition 8: every dependency request ends attested or named-refused ==="

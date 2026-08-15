@@ -55,10 +55,15 @@ else
 fi
 
 # THE MEASURED STATE. Exact, because a rise can mean a drift fixture stopped being excluded.
-if [ "$ROWS" = "86" ] && [ "$MAPPED" = "48" ] && [ "$UNTABLED" = "38" ] && [ "$NOID" = "0" ]; then
-  ok "corpus accounting is exactly rows=86 attested=48 untabled=38 no-identity=0"
+# 48 -> 47 ON 2026-08-15, DELIBERATELY: `proof_pressure.validate_header` carried a MISATTACHED
+# `#[proof_by]` naming a theorem about `elf_header`'s identically-named function. The claim was
+# deleted rather than repointed — no theorem proves that body — so the subject moved from
+# "has a table" to "has no table". The 86 total is unchanged because the declaration still exists;
+# what left is a claim that was false.
+if [ "$ROWS" = "86" ] && [ "$MAPPED" = "47" ] && [ "$UNTABLED" = "39" ] && [ "$NOID" = "0" ]; then
+  ok "corpus accounting is exactly rows=86 attested=47 untabled=39 no-identity=0"
 else
-  no "corpus accounting moved: rows=$ROWS attested=$MAPPED untabled=$UNTABLED no-identity=$NOID (was 86/48/38/0) — say which subjects changed and why"
+  no "corpus accounting moved: rows=$ROWS attested=$MAPPED untabled=$UNTABLED no-identity=$NOID (was 86/47/39/0) — say which subjects changed and why"
 fi
 
 # NO SILENT DEFECTS. Each of these has been zero since the collapse was closed; a non-zero value is a
@@ -136,13 +141,16 @@ else
   no "the most-reused table produced only $REUSED_OK attestations — legitimate reuse is being refused, which reimposes the CallableId collapse"
 fi
 
-# THE KNOWN MISATTACHMENT REMAINS VISIBLE. `proof_pressure` borrows theorems from two other packages,
-# which is the defect correspondence already refuses; the manifest must not quietly normalise it.
+# THE REPAIRED MISATTACHMENT STAYS REPAIRED.
+# 2 -> 1 ON 2026-08-15: the fixture WAS repaired. `proof_pressure` borrowed theorems from two
+# packages; the `elf_header` borrowing was a misattachment and its claim is deleted. The remaining
+# borrowing is legitimate — its `check_nonce` really is the function `Examples.CryptoVerify` proves,
+# byte-identical body and all — so one borrowed table is the correct state, not a residue.
 PP_TABLES="$(printf '%s' "$OUT" | grep 'proof_pressure' | awk '{print $1}' | sort -u | grep -c . || true)"
-if [ "$PP_TABLES" = "2" ]; then
-  ok "proof_pressure still attests 2 tables (the borrowed-theorem misattachment stays visible)"
+if [ "$PP_TABLES" = "1" ]; then
+  ok "proof_pressure attests 1 table (the legitimate cryptoFns reuse; the misattachment is gone)"
 else
-  no "proof_pressure attests $PP_TABLES table(s) (expected 2) — if the fixture was repaired, update this; if the manifest normalised it, that is a defect"
+  no "proof_pressure attests $PP_TABLES table(s) (expected 1) — a borrowed-theorem link changed"
 fi
 
 # === CONVERSION RECONCILIATION (package 2) ======================================================
@@ -223,8 +231,11 @@ site_field() { printf '%s' "$SITES" | grep -E "^SITE $1 " | grep -oE "$2=[0-9]+"
 #   source". Attesting it would bind the model to an implementation it does not model, and nothing
 #   would catch it — `scopedEntryEvidence` recomputes the digest of the MODEL's body, never the
 #   implementation's. The manifest still offers the row (see the drift-classifier check below).
-EXCLUSIONS="Concrete.Proof.elfFns:d7eed9438112e0d817a3a15812018938:validate_header
-Concrete.Proof.ctTagFns:13c8e4151b399c089fad1a4124686597:ct_compare"
+# The `elfFns` / `proof_pressure` / `validate_header` exclusion was REMOVED on 2026-08-15 — not
+# because the rule relaxed, but because the fixture was repaired: its misattached `#[proof_by]` is
+# gone, so the manifest no longer offers the row and an exclusion for it would be stale. This is the
+# path the "declared exclusion must be a REAL manifest row" check exists to force.
+EXCLUSIONS="Concrete.Proof.ctTagFns:13c8e4151b399c089fad1a4124686597:ct_compare"
 
 for ex in $EXCLUSIONS; do
   extbl="${ex%%:*}"; rest="${ex#*:}"; expkg="${rest%%:*}"; exdecl="${rest##*:}"
@@ -435,10 +446,14 @@ else
   no "dependency requests do not reconcile: $DEPREQ != $DEPATT + $DEPREF — a request was dropped"
 fi
 
-if [ "$DEPREQ" = "42" ] && [ "$DEPATT" = "41" ] && [ "$DEPREF" = "1" ]; then
-  ok "dependency population is exactly 42 requests = 41 attested + 1 refused"
+# 42 = 41 + 1 -> 41 = 41 + 0. The single refusal was `proof_pressure.validate_header -> elfFns ->
+# check_nonce`, and it disappeared with the misattached claim that produced it. The refusal PATH is
+# now controlled synthetically in `check_dependency_edges.sh`: a branch whose only corpus case has
+# been repaired needs a control, or the next regression restores it silently.
+if [ "$DEPREQ" = "41" ] && [ "$DEPATT" = "41" ] && [ "$DEPREF" = "0" ]; then
+  ok "dependency population is exactly 41 requests = 41 attested + 0 refused"
 else
-  no "dependency population moved: $DEPREQ = $DEPATT + $DEPREF, was 42 = 41 + 1 — say which edge appeared or disappeared"
+  no "dependency population moved: $DEPREQ = $DEPATT + $DEPREF, was 41 = 41 + 0 — say which edge appeared or disappeared"
 fi
 
 # MODEL-PRESENCE PROVENANCE, THE HONEST VERSION — and it is model presence, not scoped membership,
@@ -477,14 +492,13 @@ for pair in "dependency_duplicate_mappings:$DEPDUP" "dependency_conflicts:$DEPCO
   if [ "$v" = "0" ]; then ok "$k = 0"; else no "$k = $v — a real defect, not noise"; fi
 done
 
-# THE ONE REFUSAL IS THE ONE THAT MUST STAY. `elfFns` resolves and holds no `check_nonce` model, so
-# `proof_pressure.validate_header`'s request cannot be satisfied by ANY identity — and specifically
-# not by the perfectly good `check_nonce` row that exists under `cryptoFns`. If this ever reads
-# `attested`, the request key collapsed back to something weaker than (consumer, table, callee).
-if printf '%s' "$OUT" | grep -q '^Concrete.Proof.elfFns !! .*check_nonce.*refusal=tableModelMissing.*requested by main.validate_header'; then
-  ok "the table/model mismatch is a NAMED refusal (a cryptoFns row cannot satisfy an elfFns request)"
+# THE MISATTACHMENT IS REPAIRED, AND ITS ABSENCE IS ASSERTED. `proof_pressure.validate_header` no
+# longer claims `Examples.ElfHeader.Proofs.validate_header_correct`; if that link ever returns, the
+# manifest offers an `elfFns` row for a `check_nonce` edge again and this catches it.
+if printf '%s' "$OUT" | grep -q 'elfFns.*check_nonce'; then
+  no "the elfFns/check_nonce request is back — proof_pressure's misattached proof link has returned"
 else
-  no "the elfFns/check_nonce request is no longer a named tableModelMissing refusal — either the fixture was repaired, or the request key weakened"
+  ok "no elfFns/check_nonce request exists (the misattached claim stays deleted)"
 fi
 
 # AND AN EXACT REFERENCE IS NOT A JUSTIFICATION. `composition_unlinked_helper`'s `calls.dbl` IS
@@ -496,11 +510,15 @@ if printf '%s' "$OUT" | grep -q 'combineFns <- .*calls.dbl.*binding_role=depende
 else
   no "composition_unlinked_helper/calls.dbl has no dependency attestation — this control lost its case"
 fi
-PP_SUBJECT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_pressure/src/main.con --report subject-facts 2>/dev/null || true)"
-if printf '%s' "$PP_SUBJECT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=1'; then
-  ok "exact dependency selection did NOT make the misattached subject correspond (identity is not justification)"
+# THE CONTROL MOVED TO THE DRIFT FIXTURE, because the misattachment it used to watch was repaired.
+# `main_drifted` is a DIFFERENT PROGRAM sharing every declaration name with `elf_header`; every one
+# of its four body edges has an exact dependency reference, and none of them corresponds. Exact
+# selection says which implementation an edge points at and never that the edge is justified.
+DRIFT_SUBJECT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null || true)"
+if printf '%s' "$DRIFT_SUBJECT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=4'; then
+  ok "exact dependency selection did NOT make a different program's edges correspond (identity is not justification)"
 else
-  no "proof_pressure/validate_header changed disposition after dependency references were added — an identity was taken for a justification"
+  no "elf_header/main_drifted changed disposition — an identity was taken for a justification"
 fi
 
 # EVERY ATTESTATION ROW IS SELECTABLE. References are generated from BOTH attestation sections and
