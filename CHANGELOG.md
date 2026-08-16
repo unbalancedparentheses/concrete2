@@ -10,6 +10,46 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Package 3: Kernel Replay Becomes A Service, And Minting Requires It
+
+_Compiler and gates, 2026-08-16. No production verdict changed._
+
+**"Did the kernel accept this?" now has an answerer.** The check lived inline in `compileAndReport`,
+entangled with that function's JSON parameter, and every failure path printed and returned an exit
+code — so nothing else could ask it. It is now one producer,
+`ReplayRequest -> IO (Except ReplayRefusal ReplayResult)`: typed inputs, every failure class returned
+as a value, the environment retained alongside the verdict, and no evidence side effects. An empty
+request REFUSES rather than reporting a vacuous success, because `List.all` is true over an empty
+list and a vacuous "everything was accepted" is the one answer a minting authority must never get.
+`make test-replay-producer`, 23/0.
+
+**Minting a receipt without a replay no longer typechecks.** `mint?` took the theorem artifact and
+the toolchain as plain strings, so any caller could name a theorem nobody had replayed, under a
+toolchain nothing had run, and get a well-formed receipt. The rule is now a construction chain rather
+than a predicate — `replay` is the only producer of `ReplayResult`, which is the only source of
+`SuccessfulReplay`, which `mint` requires — and the artifact and toolchain are taken from the run
+rather than from parameters. Validation split out as pure `ReceiptMaterial.of?`, so the 36 existing
+receipt probes stayed cheap; the ones that genuinely exercise a receipt now replay a theorem first.
+
+Four ways a completed run still witnesses nothing: a verdict that was not `accepted` (an
+accepted-but-unbound claim records freshness against nothing), an interrupted run, a theorem absent
+from the request, and a workspace resolved from the caller's directory rather than the input.
+
+**This is authority, not issuance.** Nothing in the production pipeline mints, so no stored receipt
+affects any status. Ten mutation families cover the extraction step; the chain itself cannot be
+mutation-tested, because a mutation that opens it stops compiling.
+
+**A defect the extraction surfaced.** `generalFailure` was computed after the fallback that marked
+every target failed, so it was unreachably false: the `env_failure` status and the transcript
+disclosure were dead code, and a file that did not compile was reported as every theorem
+individually "not found" — the same misdiagnosis the workspace-resolution fix exists to prevent.
+
+**A gap it did not fix.** A package whose entry point is `src/lib.con` cannot be loaded as a project,
+so it has no package identity and no scoped evidence. `std` is that shape; nine of its proof links
+read as unjustified, and `check_purecore_proofs.sh` is red at 19/20. Verified as pre-existing against
+a build without this session's changes. An entry-point fallback was implemented and reverted for
+turning a loud error into a silent zero-function success.
+
 ### R-0004 Package 3 Opening: Receipts Bind The Closure, Evidence Is Reproducible
 
 _Compiler and gates, 2026-08-16. No production verdict changed._
