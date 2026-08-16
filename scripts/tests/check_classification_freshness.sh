@@ -65,7 +65,16 @@ if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then
   # freshness check that stops looking where the new information is.
   CHECKED="$(grep -oE '^  \(".*\),?$' Concrete/Proof/ClassificationTable.lean | sed 's/,$//' | sort || true)"
   LIVE="$(grep -oE '^  \(".*\),?$' "$FRESH" | sed 's/,$//' | sort || true)"
-  if [ -z "$LIVE" ]; then
+  # BOTH SIDES MUST BE NON-EMPTY. Guarding only `LIVE` left the other half of the comparison
+  # unguarded, and it fired for real on 2026-08-16: four NUL bytes landed inside string literals in
+  # the checked-in file, `grep` classified it as a binary file, `-o` returned nothing, and the gate
+  # reported "STALE classification table" — sending the reader to regenerate a table that was
+  # perfectly current. Lean had compiled it without complaint, because a NUL inside a string literal
+  # is legal. An empty extraction is a FAILURE TO READ, which is a different fact from staleness and
+  # has a different repair.
+  if [ -z "$CHECKED" ]; then
+    no "extracted NO rows from Concrete/Proof/ClassificationTable.lean — the file could not be read as text (a NUL byte makes grep treat it as binary). This is not staleness; check the file's bytes."
+  elif [ -z "$LIVE" ]; then
     no "the generator produced no rows — cannot establish table freshness, which is not the same as the table being fresh"
   elif [ "$CHECKED" = "$LIVE" ]; then
     ok "the checked-in classification table matches a fresh derivation ($(printf '%s\n' "$LIVE" | wc -l) rows)"

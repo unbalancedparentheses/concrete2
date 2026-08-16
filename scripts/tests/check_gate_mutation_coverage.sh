@@ -755,6 +755,23 @@ add "mint-artifact-comes-from-token" "Concrete/Proof/Receipt.lean" "check_depend
   '  , theoremArtifact := sr.theoremName' \
   '  , theoremArtifact := m.dependencyRoot'
 
+# R-0004 package 3: production receipt issuance.
+
+# THE GATE THAT CAUGHT A REAL BUG THE DAY ISSUANCE LANDED. Without it, `elf_header_drifted` — a
+# DIFFERENT program sharing every declaration name with `elf_header` — received four receipts, two
+# for `stale` claims whose bodies had changed since their proofs were linked. The token says the
+# kernel accepted a THEOREM; it says nothing about whether that theorem still proves THIS body.
+add "issue-requires-proved-status" "Concrete/Proof/Issue.lean" "check_receipt_issuance.sh" yes \
+  'if obl.status != .proved then throw (.notProved subject obl.status.canonical)' \
+  'if false then throw (.notProved subject obl.status.canonical)'
+
+# TRUST MUST NOT BE DROPPED ON THE WAY INTO THE RECEIPT. Issuing with no boundaries named while the
+# closure crosses one turns a qualified claim into an unqualified one — the exact laundering the
+# qualification exists to prevent.
+add "issue-carries-trusted-boundaries" "Concrete/Proof/Issue.lean" "check_receipt_issuance.sh" yes \
+  '  let boundaries := trustedDepsOf subject' \
+  '  let boundaries : List String := []'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

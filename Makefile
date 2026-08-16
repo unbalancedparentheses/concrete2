@@ -194,6 +194,9 @@ test-coverage-baseline: build ## R-0004 package 3: eligibility-denominated cover
 test-replay-producer: build ## R-0004 package 3: kernel replay is one typed producer whose failures are values
 	bash scripts/tests/check_replay_producer.sh
 
+test-receipt-issuance: build ## R-0004 package 3: production receipt issuance follows the composed authority verdict
+	bash scripts/tests/check_receipt_issuance.sh
+
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
 	bash scripts/tests/check_evidence_reproducibility.sh
 
