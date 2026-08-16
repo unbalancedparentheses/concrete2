@@ -470,22 +470,42 @@ if [ "$CONSBAD" = "0" ]; then
 else
   no "$CONSBAD fixture(s) report PROVED-ROOTS — a proved verdict is resting on a closure that does not compute"
 fi
-# NON-VACUITY: the invariant must be able to fire. A `proved` obligation whose root refuses is
-# constructed directly, because the corpus has none — which is the redundancy pinned above.
-probe "PROVED-ROOTS can fire (a proved obligation over a refusing closure is caught)" "true" \
-'#eval
-  match DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "solo"
-          "00000000000000000000000000000000",
-        DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "ghost"
-          "11111111111111111111111111111111" with
-  | .ok solo, .ok ghost =>
-    -- One node with a BODY edge to an identity no node carries: the exact shape a proved subject
-    -- with an unresolvable dependency would have.
-    let g : List DepNode :=
-      [{ id := solo, label := CallableId.ofUser "m" "solo", digest := some "D"
-       , edges := [(DependencyEdge.body, ghost)] }]
-    (dependencyRootMaterial g solo).toOption.isNone
-  | _, _ => false'
+# NON-VACUITY, THROUGH THE INVARIANT ITSELF. The first version called `dependencyRootMaterial`
+# directly and asserted it refuses — which proves the root builder refuses, not that
+# `checkProofCoreConsistency` notices. Removing `provedRoots` from the invariant list would have left
+# it green. This builds a ProofCore holding a `proved` obligation whose only edge is unkeyable, runs
+# `selfCheck`, and requires a PROVED-ROOTS violation among the results.
+probe "PROVED-ROOTS fires from selfCheck on a proved obligation whose closure refuses" "provedRoots=1" \
+'def tPk : String := Concrete.shortHash "proved-roots-control"
+def tI (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? tPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def fnS (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def elG (q : String) : EligibilityEntry :=
+  { qualName := q, eligible := true, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := false, loc := none }
+#eval show IO Unit from do
+  match tI "m" "caller", (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.caller", bareName := "caller"
+      , callableId := CallableId.ofUser "m" "caller", fn := fnS "caller"
+      , extracted := none, unsupported := [], fingerprint := "FP"
+      , params := [], eligibility := elG "m.caller", loc := none, spec := none
+      , subjectDigest := some "D" }
+    -- `proved`, with a call to a name no entry and no excluded record carries: the edge is unkeyable,
+    -- so the node holds it in `unscoped` and the closure refuses. Exactly the shape the invariant
+    -- exists to catch, and one the corpus does not contain.
+    let obl : Obligation :=
+      { functionId := { qualName := "m.caller", fingerprint := "FP" }, bareName := "caller"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.caller", ["m.ghost"])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    let vs := pc.selfCheck
+    IO.println s!"provedRoots={(vs.filter (·.invariant == "PROVED-ROOTS")).length}"
+  | _, _ => IO.println "could not build the control"'
 
 # ONLY TRUSTED EXCLUSIONS BECOME NODES, checked by CALLING `dependencyNodesOf`. The previous probe
 # asserted two facts about `isCurrentForDependents` and never touched the node builder, so removing

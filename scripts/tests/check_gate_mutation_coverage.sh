@@ -645,6 +645,15 @@ add "root-leaf-only-trusted-exclusions" "Concrete/Proof/ProofCore.lean" "check_d
   $'    if !x.eligibility.isTrusted then none else' \
   $'    if false then none else'
 
+
+# R-0004 package 2. THE PROVED-ROOTS INVARIANT MUST BE LOAD-BEARING. It is expected to hold vacuously
+# on this corpus — every subject whose root refuses is already not `proved` — so the only way to know
+# it works is to remove it and watch a control go red. The mutation drops it from the violation list
+# that `selfCheck` returns, which is exactly how it would be lost in a refactor.
+add "proved-roots-invariant-reported" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'  oblKnown ++ oblStatus ++ provedRoots ++ provedExtracted ++ provedFp ++ staleFp' \
+  $'  oblKnown ++ oblStatus ++ provedExtracted ++ provedFp ++ staleFp'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
