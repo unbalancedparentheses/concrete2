@@ -2,6 +2,39 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# ============================================================================
+# COMPLETION IS ASSERTED, NOT INFERRED FROM OUTPUT.
+#
+# This suite runs under `set -e`, so any unhandled failure ends it mid-run — and when that happened
+# (a fixture moved and two paths went stale), the run simply STOPPED. No summary, no error banner,
+# and a reader grepping for `passed:` and `^FAIL` saw exactly what a clean run looks like: nothing.
+# An absent summary is a louder signal than a failing test, and it was being read as silence. I
+# reported "1699 passed" from a stale run for several rounds because of it.
+#
+# Two mechanisms, because output alone cannot be trusted:
+#   1. A machine-readable summary FILE, written only on normal completion. Consumers read the file,
+#      not the stream — stdout/stderr interleaving can corrupt a PASS line mid-word, which has
+#      already produced phantom failures in another sandbox.
+#   2. An EXIT trap that fires when the file was never written, printing an unmistakable banner and
+#      exiting 97 — a code no assertion produces, so "died early" cannot be confused with "failed".
+SUMMARY_FILE="${TEST_SUMMARY_FILE:-$ROOT_DIR/.test-summary}"
+rm -f "$SUMMARY_FILE"
+SUMMARY_WRITTEN=0
+on_exit() {
+  local rc=$?
+  if [ "$SUMMARY_WRITTEN" -ne 1 ]; then
+    echo "" >&2
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+    echo "!! TEST RUN DID NOT COMPLETE — no summary was produced (exit $rc)." >&2
+    echo "!! The suite ended before its final tally, so PASS lines above cover" >&2
+    echo "!! only the tests that ran. This is NOT a passing run and must never" >&2
+    echo "!! be read as one." >&2
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+    exit 97
+  fi
+}
+trap on_exit EXIT
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/selfprint.sh"
 cd "$ROOT_DIR"
 
@@ -11078,7 +11111,19 @@ fi
 # Clean up any stray compiled binaries left in tests/programs/ (extensionless files)
 find "$TESTDIR" -maxdepth 1 -type f ! -name '*.*' -delete 2>/dev/null || true
 
+# THE SUMMARY FILE IS THE AUTHORITATIVE RESULT. Written last, so its presence means the run reached
+# the end; its contents are key=value so no consumer needs to parse prose.
+{
+  echo "completed=1"
+  echo "passed=$PASS"
+  echo "failed=$FAIL"
+  echo "skipped=${SKIP:-0}"
+  echo "mode=$MODE"
+} > "$SUMMARY_FILE"
+SUMMARY_WRITTEN=1
+
 echo ""
+echo "  summary written to $SUMMARY_FILE (completed=1 passed=$PASS failed=$FAIL)"
 if [ "$FAIL" -gt 0 ]; then
     exit 1
 fi

@@ -140,3 +140,8 @@ tests/programs/adversarial_policy_deny_pass/adversarial_policy_deny_pass
 tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .mutation.lock/
 .mutbak
+
+# Machine-readable result of the last `run_tests.sh`. Written only on normal completion, so its
+# ABSENCE means the run died mid-way — which is why consumers read this file rather than parsing
+# output that stdout/stderr interleaving can corrupt.
+.test-summary
