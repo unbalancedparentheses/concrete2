@@ -73,13 +73,15 @@ The cross-cutting dependency order inside those unlocks is:
    bytes it names for their explicitly admitted fragment, not the compiler's internal `TermIR`;
    unsupported contract/state constructs refuse or require a new schema rather than freezing an
    incomplete internal representation;
-6. finish typed contracts, capture-safe substitution, `old`/frame semantics, and the checked total
-   contract fragment;
+6. freeze evidence-affecting language features until R-0004 Slice 8 closes; after closure, land the
+   typed contract substrate, then `old`/frame/`modifies` semantics for a narrow two-state record and
+   array model, then ghost locals and parameters, then `#[decreases]` and the checked total-function
+   category, then the spec standard library, and only then richer/relational logic;
 7. land declaration-isolated measurement and the shared non-vacuous assertion library;
 8. build R-0353 Layer 0, then add certificate profiles only as their probes succeed;
 9. shadow-compare compiler and independent verifier, export proof-aware package interfaces, and
    complete independent hostile review before the verifier becomes authoritative; and
-10. expand heap, resource, relational, recursion, and richer-logic support only on those foundations.
+10. expand heap, resource, and relational support only on those foundations.
 
 This is a dependency chain, not a second execution queue: urgent correctness defects may insert
 ahead of it, and the status board remains the owner of current work.
@@ -115,9 +117,10 @@ ahead of it, and the status board remains the owner of current work.
 The architecture package is not prepared merely because its two normative documents exist. Before
 implementation relies on them, close these documentation and drift boundaries:
 
-1. **Ratified decisions:** add durable `docs/project/DECISIONS.md` entries for the five-object evidence
-   model; the task/attempt/session/receipt/policy/cache separation; immutable receipt versus
-   time-relative policy decision; Concrete ownership of the evidence formats and Why3 non-goal;
+1. **Ratified decisions:** add durable `docs/project/DECISIONS.md` entries for the five identity
+   domains and the separate evidence dimensions and lifecycle artifacts; the task/attempt/session/
+   receipt/policy/cache separation; immutable receipt versus time-relative policy decision; Concrete
+   ownership of the evidence formats and Why3 non-goal;
    whole-checker fail-closed revocation; VIR as the portable proposition inside the canonical
    verification-task envelope; in-toto/DSSE as transport rather than semantic owner; explicit
    proof-authoring modes; and the checked `total fn` contract-callable category. Each entry names
@@ -4154,6 +4157,14 @@ this roadmap; Package 3 applies it as follows:
   Ten mutation families, all KILLED. **This is authority, not issuance:** nothing in the production
   pipeline mints yet, so no stored receipt affects any status.
 
+- **[shipped] Production receipt issuance** (`make test-receipt-issuance`, 11/0): `--report receipts`
+  mints from real kernel replay — `elf_header` 5 issued / 0 withheld — and derives none of its four
+  inputs itself. Every withholding names its cause. **Gated on the composed authority verdict**, which
+  it was not on the day it landed: the drift fixture received four receipts, two for `stale` claims
+  whose bodies had changed since their proofs were linked. Now 2 issued / 3 withheld there.
+  **Still not consumed:** receipts are not stored and no status reads them, so this is issuance, not
+  evidence in use.
+
 **Defects found and fixed while doing the above:**
 
 - **`generalFailure` was unreachable dead code.** `--report check-proofs` computed it AFTER a
@@ -4164,6 +4175,27 @@ this roadmap; Package 3 applies it as follows:
   is a request field.
 - **Backticks inside double-quoted gate messages are command substitution.** Found twice in one day;
   a failure message could silently lose the text a reader needs. Two remaining instances escaped.
+- **A gate mis-diagnosed an unreadable file as a stale one.** Four NUL bytes inside string literals in
+  `ClassificationTable.lean` made `grep` treat it as binary; `-o` returned nothing, and
+  `check_classification_freshness.sh` reported "STALE classification table" for a table that was
+  current. It guarded the generator's side of the comparison for emptiness and not the checked-in
+  side. Lean compiled the file without complaint — a NUL inside a string literal is legal. Both sides
+  guarded now; every tracked `.lean`/`.sh`/`.con`/`.md`/`.toml` swept for NUL bytes, none remain.
+
+**Two limits of the issued receipts, recorded rather than papered over:**
+
+- `importsId` is meant to bind the transitive import surface. The compiler cannot compute the Lean
+  import closure, so it binds `classificationSurfaceDigest` — every classified theorem, its artifact
+  digest and its table digests. A proof that changes which ambient lemma it invokes, without moving
+  its own artifact digest or its tables, moves nothing there.
+- **Nothing in a receipt identifies which proof library was replayed.** The surface digest is compiled
+  into the binary, so replaying against a workspace whose theorems differ would move no field.
+  Refusing a caller-resolved workspace is what currently stands in for that missing binding, and it
+  is a mitigation, not a binding.
+
+**A vertical-slice bullet that cannot be tested because its subject does not exist:** "cache
+disabled/corrupted without changing authority". There is no proof cache in the codebase — `ProofCache`
+is a ratified design decision, not an implementation — so any such test would pass vacuously today.
 
 **Found, NOT fixed, and newly scoped — a library package cannot carry proof evidence:**
 
@@ -4216,12 +4248,14 @@ This gate is also not in `run_tests.sh`, which is why the demotion went unmeasur
    explicitly defers precision to R-0473/R-0474 and removes it from R-0004's closure list. “Blocked
    on a corpus case” is not a durable third state. Full `old`, frame/`modifies`, rich state models and
    the total contract language remain outside Package 3.
-5. **[pending, externally blocked] Complete the ninth table before the final migration.** Land
-   mutable-borrow ProofCore extraction using the narrowest sound value-state model, migrate
+5. **[pending, externally blocked] Complete the ninth table before the final migration.** Either
+   land mutable-borrow ProofCore extraction using the narrowest sound value-state model, migrate
    `proofFnsExt`'s three entries, and replace its tripwire with positive extraction/evaluation/kernel-
-   replay correspondence. Unsupported reborrow shapes refuse rather than forcing a general heap
-   calculus into R-0004. Other Package 3 work continues while the prerequisite is blocked, but
-   formal closure does not.
+   replay correspondence; or explicitly classify those three links as `unsupported`/`needs_recheck`,
+   remove their ability to provide authority, and defer broader memory semantics. Unsupported reborrow
+   shapes refuse rather than forcing a general heap calculus into R-0004. Other Package 3 work
+   continues while the prerequisite is blocked, but formal closure does not wait indefinitely for an
+   unrelated language-semantics blocker.
 6. **[pending] Slice 7b — exact 44-link migration and atomic V2 activation.** Produce the dry-run
    manifest, replay every eligible link, issue receipts only from success, map legacy/incomplete
    evidence to `needs_recheck`, explain every V1/V2 difference, and flip without a mixed fallback or
@@ -4235,21 +4269,27 @@ This gate is also not in `run_tests.sh`, which is why the demotion went unmeasur
    forged, duplicate, ambiguous and cross-package evidence; contract-hypothesis deletion/widening;
    trust deletion/laundering; opaque or unreplayed theorems; copied receipts; partial/defaulted
    decoding; schema and policy/receipt confusion; dependency/environment changes; cache-as-evidence;
-   contradictory/vacuous proof contexts; and implementation material unused by the proof. Keep
-   production weakening mutations, permanent hostile fixtures, one end-to-end multi-module project,
-   semantic proof-dependency/smoke diagnostics where available, and an independent non-author attack
-   packet. Every successful attack becomes a permanent named regression.
+   contradictory/vacuous proof contexts; implementation material unused by the proof; and receipt
+   persistence failures — partial/truncated writes, non-atomic installation, rollback, duplicate IDs,
+   oversized/noncanonical decoding, and crash between replay and completion. Keep production weakening
+   mutations, permanent hostile fixtures, one end-to-end multi-module project, semantic proof-
+   dependency/smoke diagnostics where available, and an independent non-author attack packet. Every
+   successful attack becomes a permanent named regression.
 
-> **R-0004 closes when Slice 8 completes and no hostile control can make a non-current claim appear
-> current.** The current subject, exact claim and dependency root, explicit trust/assumptions and
-> environment, and successful replay receipt must all survive the production consumer together.
+> **R-0004 closes when Slice 8 completes, no hostile control can make a non-current claim appear
+> current, and valid replayed claims remain current under benign checkout, path, cache, and
+> dependency-preserving changes.** The current subject, exact claim and dependency root, explicit
+> trust/assumptions and environment, and successful replay receipt must all survive the production
+> consumer together. "No hostile control can succeed" is necessary but not sufficient: a path that
+> refuses every claim is not evidence that the path accepts valid claims.
 
-**Product hand-off after R-0004:** Task R-0353 consumes the stabilized subject, dependency-root
-and replay-receipt schemas in a small standalone verifier. It is deliberately not another R-0004
-slice: R-0004 makes the evidence path honest; R-0353 makes that evidence independently consumable
-without trusting Concrete's compiler or report pipeline. Prototype codec/root work may begin in
-shadow, but no verifier result becomes authoritative until R-0004's replay, migration and
-adversarial boundaries close.
+**Product hand-off after R-0004:** R-0004 makes the evidence path honest and replay-independent of
+producer state: a receipt can be re-verified from the stored artifact, the exact subject, and the
+public task schema. R-0353 provides a separately implemented consumer for that evidence; it is
+deliberately not another R-0004 slice. R-0353 makes the evidence independently consumable without
+trusting Concrete's compiler or report pipeline. Prototype codec/root work may begin in shadow, but
+no verifier result becomes authoritative until R-0004's replay, migration and adversarial
+boundaries close.
 
 #### Historical record and detailed slice traceability
 
