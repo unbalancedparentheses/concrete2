@@ -2929,6 +2929,47 @@ fi
 # saying "roots remain shadow", which stopped being true when the authority pass began requiring a
 # computable closure — two claims about one thing, in two places, disagreeing.)
 
+# === THE CONTRACT-PRECISION DEFERRAL, MADE FALSIFIABLE ======================================
+#
+# A `contract` dependency edge means the caller's proof holds for ANY table meeting its hypotheses,
+# so an implementation change to the callee should NOT stale the caller. Today it does: a contract
+# edge is witnessed exactly as a body edge, justified only when the table holds that exact
+# implementation. That is STRICTLY STRONGER than the contract question, so nothing is unsound — it
+# is conservative, and it is not contract composition.
+#
+# THE DECISION (2026-08-16): precise contract witnesses move to the typed-contract milestone and
+# leave R-0004's closure list. Not because no corpus case exists, but because this roadmap's own
+# dependency order forbids building it now — evidence-affecting language features are frozen until
+# Slice 8 closes, the typed contract substrate lands after R-0004, and binding evidence to today's
+# untyped `requires`/`ensures` string encoding would freeze an incomplete internal representation,
+# which the same order explicitly refuses.
+#
+# A DEFERRAL WITHOUT A TRIPWIRE IS A DEFERRAL THAT GOES STALE SILENTLY. The premise is measurable:
+# the corpus contains no contract dependency edge, so the imprecision is currently unreachable. The
+# day one appears, this goes red and the decision gets revisited rather than quietly continuing.
+echo "=== contract-precision deferral: the premise is still true ==="
+C_EDGES=0; B_EDGES=0
+for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
+  KINDS="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+           | grep -oE 'shadow edgeKinds: [^[]*' || true)"
+  # `grep -o` exits 1 on no match, and under `pipefail` that trips the ERR trap — so the counter
+  # would abort the gate on the very corpus state it exists to confirm. Captured, then counted.
+  C_EDGES=$(( C_EDGES + $( { grep -o '=contract' <<<"$KINDS" || true; } | wc -l ) ))
+  B_EDGES=$(( B_EDGES + $( { grep -o '=body' <<<"$KINDS" || true; } | wc -l ) ))
+done
+# NON-VACUITY FIRST. A counter that finds nothing would report zero contract edges whatever the
+# corpus held, so the body count has to prove the measurement works before the zero means anything.
+if [ "$B_EDGES" -gt 0 ]; then
+  ok "the edge-kind census is live ($B_EDGES body edges counted)"
+else
+  no "the edge-kind census found NO edges at all — the contract count below is vacuous"
+fi
+if [ "$C_EDGES" = "0" ]; then
+  ok "no contract dependency edge exists in the corpus, so the conservative witnessing is unreachable"
+else
+  no "$C_EDGES contract dependency edge(s) now exist — the contract-precision deferral rests on there being none. Revisit the decision recorded in ROADMAP.md before this gate is made green again."
+fi
+
 GATE_DONE=1
 echo ""
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
