@@ -16,6 +16,14 @@ constraints, and deferred tails with a real pull trigger.
 
 ## How To Read This Roadmap
 
+Decision and delivery status use this lightweight key. These labels describe lifecycle, not proof
+strength, and therefore do not form another assurance ladder:
+
+- **[ratified]** — the design decision is made; implementation may still be absent;
+- **[shipped]** — the implementation is complete through its stated production gate;
+- **[pending]** — active or queued work whose exit condition is not yet met; and
+- **[historical]** — superseded material retained only for rationale or traceability.
+
 ### Capability Unlocks — The Stable Product Map
 
 The task catalog below is deliberately detailed and the execution queue changes as defects are
@@ -58,10 +66,15 @@ The cross-cutting dependency order inside those unlocks is:
 
 1. run the Lean #14576 upgrade/revocation fire drill without blessing unexplained proof drift;
 2. finish R-0004 correspondence, authority transition, replay migration, and adversarial closure;
-3. introduce typed digest/identity boundaries and the five-object evidence model in shadow;
-4. separate immutable replay receipts from advisory-aware policy decisions;
-5. freeze VIR v1 semantics and canonical bytes;
-6. finish typed contracts, capture-safe substitution, and the checked total contract fragment;
+3. preserve the Concrete-owned separation between verification task, proof attempt, mutable proof
+   session, immutable replay receipt, time-relative policy decision, and disposable proof cache;
+4. introduce the remaining typed digest/identity boundaries and five evidence objects in shadow;
+5. version and freeze the canonical `VerificationTask` envelope and the canonical VIR proposition
+   bytes it names for their explicitly admitted fragment, not the compiler's internal `TermIR`;
+   unsupported contract/state constructs refuse or require a new schema rather than freezing an
+   incomplete internal representation;
+6. finish typed contracts, capture-safe substitution, `old`/frame semantics, and the checked total
+   contract fragment;
 7. land declaration-isolated measurement and the shared non-vacuous assertion library;
 8. build R-0353 Layer 0, then add certificate profiles only as their probes succeed;
 9. shadow-compare compiler and independent verifier, export proof-aware package interfaces, and
@@ -71,16 +84,44 @@ The cross-cutting dependency order inside those unlocks is:
 This is a dependency chain, not a second execution queue: urgent correctness defects may insert
 ahead of it, and the status board remains the owner of current work.
 
+### Ratified evidence ownership and backend decisions
+
+- **[ratified] Concrete owns the evidence lifecycle formats.** `VerificationTask`, `ProofAttempt`,
+  `ProofSession`, `ReplayReceipt`, `PolicyDecision`, and `ProofCache` remain distinct. A session is
+  mutable development history; a receipt is an immutable statement that exact retained material was
+  successfully replayed; a policy decision is the current interpretation of that receipt against
+  freshly recomputed source/dependency/advisory facts; a cache is disposable acceleration and never
+  evidence. R-0004 need not ship a general session UI, but it must not collapse these authority
+  stages while wiring replay-backed receipts.
+- **[ratified] Why3 is a comparative reference, not a supported backend.** Why3 remains useful prior
+  art for VC generation, transformations, prover dispatch, obsolete attempts, and replay. Concrete
+  will not promise WhyML export, consume Why3 sessions as authority, add a Why3 build/runtime
+  dependency, or make Why3 drivers/results part of a friendly verdict. Concrete's evidence model
+  requires ownership of task, attempt, receipt, and policy formats; outsourcing them to Why3
+  sessions would reopen the portability and trust-collapsing boundary R-0004 exists to close.
+- **[ratified] The public replay/evidence compatibility boundary is a versioned canonical
+  verification task, whose proposition boundary is canonical VIR—not internal `TermIR`.** Internal
+  compiler representations may evolve while producing equivalent canonical tasks and VIR. Task
+  identity binds the exact subject and proposition, admitted contract/hypothesis and state-model
+  identities, and the generator/rule-set identity.
+- **[ratified] Receipt transport does not own receipt semantics.** Concrete defines typed receipt
+  fields and canonical semantic bytes. The intended external wrapper is an in-toto Statement and
+  the intended signature envelope is DSSE; neither JSON field order nor the wrapper becomes an
+  identity producer. Signing is not an R-0004 closure requirement. A SLSA-style verification
+  summary corresponds to a retained `PolicyDecision`, not to the immutable `ReplayReceipt`.
+
 ### Architecture-preparation closure
 
 The architecture package is not prepared merely because its two normative documents exist. Before
 implementation relies on them, close these documentation and drift boundaries:
 
 1. **Ratified decisions:** add durable `docs/project/DECISIONS.md` entries for the five-object evidence
-   model, immutable receipt versus time-relative policy decision, whole-checker fail-closed
-   revocation, VIR as the portable proposition boundary, explicit proof-authoring modes, and the
-   checked `total fn` contract-callable category. Each entry names rejected alternatives and what
-   evidence would justify reopening it.
+   model; the task/attempt/session/receipt/policy/cache separation; immutable receipt versus
+   time-relative policy decision; Concrete ownership of the evidence formats and Why3 non-goal;
+   whole-checker fail-closed revocation; VIR as the portable proposition inside the canonical
+   verification-task envelope; in-toto/DSSE as transport rather than semantic owner; explicit
+   proof-authoring modes; and the checked `total fn` contract-callable category. Each entry names
+   rejected alternatives and what evidence would justify reopening it.
 2. **Historical record:** add a `CHANGELOG.md` entry labelled design/roadmap only. It must state
    that typed evidence, VIR v1, proof modes, the standalone verifier, total functions, and advisory
    policy are targets rather than shipped guarantees.
@@ -106,11 +147,12 @@ implementation relies on them, close these documentation and drift boundaries:
    mutation registry, documentation index, and roadmap together. It does not advance any
    implementation authority state.
 
-After R-0004 closes, implementation proceeds in bounded migrations: typed identity wrappers;
-five evidence objects in shadow; structured old/new comparison; receipt/policy separation; VIR v1
-types and canonical bytes; explicit proof-authoring modes; checked total contract functions; then
-R-0353 Layer 0. Each increment migrates one real consumer, kills a production mutation, records the
-corpus denominator, and deletes its flattened predecessor only after shadow agreement.
+After R-0004 closes, implementation proceeds in bounded migrations: remaining typed identity
+wrappers; five evidence objects in shadow; structured old/new comparison; the already-ratified
+receipt/policy separation; versioned canonical `VerificationTask` and VIR types/bytes; explicit
+proof-authoring modes; checked total contract functions; then R-0353 Layer 0. Each increment
+migrates one real consumer, kills a production mutation, records the corpus denominator, and
+deletes its flattened predecessor only after shadow agreement.
 
 **Immediate release/evidence blocker:** complete R-0208's Lean #14576 fire drill before the next
 new authoritative evidence transition, receipt migration, checker graduation, or public proof-
@@ -1165,7 +1207,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. The authority pass's live control is `tests/programs/proof_decode_header.con`, whose hardcoded link names a table with zero entries. **Package 3 is next: replay-backed receipts, corpus migration, coverage baseline, reproducibility, Slice 8.** Formal closure remains blocked on mutable-borrow ProofCore extraction |
+| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. **Package 3 ACTIVE:** the structural receipt now binds root, theorem artifact and trust boundaries; project/path-independent material is gated 5/0; the first coverage baseline is 35/91. Still pending are the typed replay producer and replay-authorized minting, one production receipt consumer, exact 44-link migration/V2 activation, fresh-checkout reproducibility, contract-witness precision or explicit deferral, Slice 8, and the externally blocked mutable-borrow/ninth-table prerequisite. |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -1751,11 +1793,16 @@ If one process change survives all of the above:
 
 Every hole listed here would have been caught at the moment it was opened.
 
-## Parity with Why3, and where this can be better
+## Why3 as a comparative reference, not a backend target
 
-A full inventory rather than a wishlist: what Why3 has, what exists here, and the three places
-this design is already ahead. Written because "as good as Why3" needs a checklist to be a goal
-instead of a slogan.
+**[ratified] Concrete does not support Why3 as a backend.** This inventory records useful prior art
+and missing verification-language capabilities; it is not a WhyML compatibility plan, a promise to
+consume Why3 sessions, or permission for Why3 results to enter Concrete authority. Concrete owns
+the canonical task, attempt, session, receipt, policy, and cache formats described above. Where a
+Why3 mechanism is useful, reproduce the property through those Concrete-owned types.
+
+The table is therefore a comparative checklist rather than a parity target: what Why3 demonstrates,
+what exists here, and which gaps matter independently for Concrete's own product.
 
 ### What Why3 has, and where this stands
 
@@ -1776,7 +1823,9 @@ instead of a slogan.
 | theory/module system, cloning | ✗ | a spec stdlib with refinement |
 | standard theories (int, list, map, set, bitvector) | ✗ | a spec stdlib — nothing exists |
 | counterexamples from models | ✓ `counterexample` status with source-mapped values | — |
-| proof sessions / replay | ✓ fingerprints, staleness, `--replay` | — |
+| developer fingerprints / staleness / VC replay command | partial: present, but not one typed theorem-replay producer | extract the typed producer and keep rendering outside it |
+| authoritative theorem replay receipts | ✗ no production minting, storage, migration, or consumer | R-0004 Package 3; Why3 sessions are not the format |
+| mutable proof-session history and obsolete attempts | ✗ | Concrete-owned `ProofSession`, after the receipt authority path; not an R-0004 UI blocker |
 | **realizations** (theories proved in Coq/Isabelle) | ✗ | H19 is the same gap wearing a different name |
 | extraction to OCaml/C | ✓ compiles to LLVM — see below | — |
 
@@ -1827,7 +1876,7 @@ flaw*, not adding a guarantee Why3 lacks — so once the generator lands it shou
 redundancy check, not defended as permanent scaffolding. Recording the expected demotion now,
 because a register that quietly outlives its cause is how a metric turns into a ritual.
 
-### Ordering to reach parity
+### Ordering for Concrete's own verification stack
 
 1. **VC generator** (design written) — closes the largest structural gap and subsumes H19.
 2. **`old` / two-state postconditions** — a ceiling, not a feature: without it specs cannot
@@ -3642,7 +3691,14 @@ generated-only constructor unnecessary. Do not implement it.
 
 **Invariants held across step 5:** manifest 86 = 0 + 38 + 48, correspondence 9/10 + 1 no-claim, entries 1, one model yields TWO scoped entries. Gates: build clean, DEPENDENCY-EDGES 282/0, ATTESTATION-MANIFEST 31/0, CLASSIFICATION-FRESHNESS 2/0, GATE-MUTATION-COVERAGE 51 families.
 
-**PACKAGE 2 IS THROUGH ITS AUTHORITY TRANSITION AS OF 2026-08-15.** Steps 6-10 landed in one working session and the sections below are the record. Read this paragraph first, because several statements further down were written while the work was ahead rather than behind: **every manifest-backed table is converted (pending = 0), the evidence join is keyed on `DefinitionIdentity` with no name-keyed fallback, dependency roots are keyed the same way, and the `proof_pressure` misattachment is repaired.** What remains open is AUTHORITY, not identity: scoped correspondence and roots are still SHADOW, and no production `proved` verdict consumes them.
+**PACKAGE 2 CLOSED 2026-08-16.** Steps 6-11 landed across the authority transition and the sections
+below preserve that record. Read this paragraph first, because several statements further down were
+written while the work was ahead rather than behind: **every manifest-backed table is converted
+(pending = 0); the evidence join, table membership and dependency roots are keyed on
+`DefinitionIdentity` with no name-keyed fallback; the `proof_pressure` misattachment is contained;
+and scoped correspondence plus computable roots are consumed by production verdicts through the
+composed authority pass.** Package 3 owns replay-backed receipts, migration, reproducibility and
+adversarial closure; those remaining boundaries do not reopen Package 2.
 
 **STEP 6 — THE DEPENDENCY POPULATION.** The manifest carries two populations separated by `binding_role`. Subject rows are declarations a fixture links a proof to; dependency rows are the requested BODY-edge callees of those subjects, keyed by (consuming subject, table, callee) and produced by the compiler. Keying by (fixture, callee) is too weak and hides the exact defect this work exists to catch — `check_nonce` has a good identity under `cryptoFns` while the theorem claiming `validate_header` requested `elfFns`. The subject section stays byte-identical and `table_attestations` stays subject-only. References are generated from both attestation sections and deduped on (table, package, module, declaration, implementation).
 
@@ -3678,7 +3734,14 @@ Both drift fixtures now live in their own packages (`elf_header_drifted`, `crypt
 
 **PACKAGE 2 IS CLOSED 2026-08-16.** Delivered: the identity boundary (evidence join, table membership and dependency roots all keyed on `DefinitionIdentity`, no name-keyed fallback), the correspondence authority, the root dimension, and one package-identity producer across every CLI path. Measured at closure: 35 proved / 0 unjustified in `examples/`, 13 subject roots refusing with none of them proved, 86 = 0 + 39 + 47 subject rows, 41 dependency requests all attested.
 
-**WHAT IS STILL OPEN, stated plainly:** no replay receipt binds any of this, and the corpus has not been migrated. Receipts, migration, coverage baseline, reproducibility and Slice 8 red-teaming are Package 3. The root conjunct is consumed but redundant on this corpus; `proof_pressure.validate_header` is contained rather than closed (a false claim deleted, not a valid proof supplied); and the authority pass's only live corpus control lives in `tests/programs/`, which is deliberately outside the attested population.
+**WHAT IS STILL OPEN, stated plainly:** the structural receipt binds root/artifact/trust material,
+but no production kernel replay mints or authorizes one and the corpus has not been migrated. Exact
+44-link migration/V2 activation, repository-root and fresh-checkout replay, contract-witness precision
+or explicit deferral, the externally blocked ninth table, and Slice 8 red-teaming are Package 3. The
+35/91 coverage baseline and local path-independent material are closed. The root conjunct is consumed
+but redundant on this corpus; `proof_pressure.validate_header` is contained rather than closed (a
+false claim deleted, not a valid proof supplied); and the authority pass's only live corpus control
+lives in `tests/programs/`, which is deliberately outside the attested population.
 
 **CONVERSION LEDGER (authoritative owner: `scripts/tests/check_attestation_manifest.sh`).** The roadmap no longer maintains independent counts for table conversion. A table is exactly one of: converted, vacuously complete, pending, no manifest row, or externally blocked. The gate's `attestationSites` list is the sole source of build-visible sites.
 
@@ -3986,9 +4049,10 @@ root and receipt, and removing or substituting the declaration is mutation-kille
 
 #### Authority transition: dependency-aware verdicts
 
-**Status:** PARTIALLY DISCHARGED 2026-08-15/16 — production `proved` now depends on correspondence
-and on a computable closure. The list below is the original gate; the boxes record what is and is not
-established, and the unticked items are Package 3's work rather than blockers that were skipped.
+**Status:** PACKAGE 2 DISCHARGED 2026-08-16 — production `proved` now depends on correspondence and
+on a computable closure. The list below is the original gate; its one `[~]` records conservative
+contract witnessing whose precision decision belongs to Package 3, not a skipped Package 2
+authority boundary.
 
 - [x] implementation-manifest provenance is closed by construction;
 - [x] the manifest denominator is exact and every refusal is named;
@@ -4027,61 +4091,114 @@ established, and the unticked items are Package 3's work rather than blockers th
 - [x] ProofCore and Report consume the same validated root (`dependencyNodesOf` is a registered
       single producer, checked by `check_one_producer.sh`);
 - [x] no legacy name-keyed, advisory or root-optional path can emit `proved`;
-- [x] activation changed only measured cases: `main_drifted`'s composed claim, and
-      `tests/programs/proof_decode_header.con`, whose table holds zero entries. Both were measured by
-      building with and without the pass.
+- [x] the production authority consumer has a live refusal control in
+      `tests/programs/proof_decode_header.con`, whose table holds zero entries. The earlier claimed
+      `main_drifted` movement was invalidated by the fixture-package/identity correction above and is
+      not counted as a control.
 
-**What that leaves:** contract-witness PRECISION (the conservative form is in place and fail-closed),
-and receipts, which bind none of this yet. Both are Package 3. Closing contract precision honestly
-needs a corpus case first — a contract-classified theorem linked to a function that has callees —
-because without one the implementation could not be falsified.
+**Standing Package 2 caveats carried into Package 3, not hidden reopeners:** the root conjunct is
+consumed but redundant on the current corpus; `proof_pressure.validate_header` is contained by
+removing its false claim rather than closed with a theorem for its actual body; and the authority
+pass's only live refusal control is outside the attested fixture population. Slice 7 must preserve
+the positive path, and Slice 8 must supply hostile production-consumer coverage inside the
+authoritative evidence population.
 
-#### Remaining milestones after the authority transition
+**What that leaves:** contract-witness PRECISION (the conservative implementation binding is in
+place and fail-closed), production replay-authorized receipt issuance and consumption, the exact
+44-link migration/V2 activation, fresh-checkout reproducibility, the externally blocked ninth table,
+and Slice 8. The receipt STRUCTURE now binds the closure/artifact/trust material; that is not a
+replay-backed receipt until the production replay path is its only minting authority.
 
-1. **Replayable receipts and migration.** Progress 2026-08-16:
-   - [x] **the receipt binds what the criterion names** — subject, theorem artifact, dependency root,
-         table material, trust/assumptions, schema and environment. Root, artifact and trust were
-         added on 2026-08-16; every one participates in `isCurrentAgainst`, because a field in the
-         envelope and absent from the comparison reads as bound while binding nothing.
-   - [x] **project-root and path-independent reproducibility** (`make test-evidence-reproducibility`,
-         5/0): the same program compiled from a different absolute path and a different directory
-         name yields byte-identical attestation join, dependency roots and correspondence, with a
-         one-byte content mutation as the non-vacuity control and a determinism check beside it.
-   - [x] **the first eligibility-denominated coverage baseline** (`make test-coverage-baseline`,
-         5/0): **35 of 91 eligible claims proved**, with the remainder named exactly — 31 no-proof,
-         15 unbound, 5 stale, 4 dependency-not-current, 1 blocked, 0 unjustified — over a denominator
-         that reconciles against the reported lines, and excluding 15 ineligible and 9 trusted, which
-         are not proof failures. The gate also asserts the report still discloses that it does NOT
-         run the kernel, so the baseline cannot be read as replay coverage.
-   - [ ] mint a receipt only after successful KERNEL REPLAY. Nothing calls `mint?` today: receipts are
-         not issued, stored, or consumed, and no claim depends on one.
+#### Package 3 — durable replay authority and migration
 
-         **The design is settled and the seam is identified; the refactor is not done.** Kernel replay
-         exists and works (`--report check-proofs`, measured 5 verified / 0 failed on `elf_header`),
-         and it already draws the distinction receipts need: a theorem whose claim has NO stored
-         proof subject type-checks but is bucketed as `unboundChecked`, never `verified`, because the
-         freshness check would compare the body with itself. A receipt may be minted from `verified`
-         and never from `unboundChecked`.
+**User-visible exit story.** An external user can receive a Concrete package and its evidence,
+replay it independently, upgrade or replace a dependency, and see exactly which claims remain
+current, which became non-current, why, and which trust/assumptions remain. No friendly verdict may
+depend on compiler display text, cache presence, an absent completion marker, or an unreplayed
+artifact.
 
-         What blocks it is that the replay invocation is INLINE in `compileAndReport`, entangled with
-         that function's `reportJson` parameter, and its failure paths PRINT rather than return. The
-         correct change is to extract a `replayLinkedTheorems : … → IO ReplayOutcome` producer — one
-         answer to "did the kernel accept this", consumed by both `check-proofs` and a new
-         `--report receipts` — which requires first converting those print-and-return paths into
-         typed refusals. That is a contained piece of work on the CLI's most complex function and it
-         deserves its own pass with its own verification; attempted at the end of a long session it
-         would have left a half-extracted producer inside `main`, which is a worse state than a clean
-         boundary with an accurate ledger. **`prove --replay` is NOT a shortcut**: it discharges VC
-         obligations through omega/bv_decide and never touches Lean theorem replay.
-   - [ ] migrate all 44 stored links; convert legacy or incomplete evidence to `needs_recheck`.
-   - [ ] repository-root and clean-checkout reproducibility, which need a build from a fresh clone
-         rather than a copied fixture.
-2. **Externally blocked ninth table:** complete mutable-borrow ProofCore extraction, migrate the
-   final table and replace its tripwire with positive extraction/evaluation/replay correspondence.
-3. **Adversarial closure:** attack omission, stale and forged artifacts, ambiguity, duplicate
-   evidence, trust laundering, opaque theorems, collision/schema confusion, partial receipts,
-   dependency changes and environment changes. Every successful attack becomes a named hole and
-   permanent regression gate. Require an independent non-author attack contribution.
+**Authority stages used by this package.** The general ownership decision appears near the top of
+this roadmap; Package 3 applies it as follows:
+
+| object | status in Package 3 | authority rule |
+|---|---|---|
+| `VerificationTask` | **[ratified], canonical production construction pending** | immutable exact subject/contract-state/rule-set envelope whose proposition is canonical VIR; internal `TermIR` is not its public schema |
+| `ProofAttempt` | **[pending]** | one typed theorem-replay execution, including every refusal; rendering and exit-code projection are consumers |
+| `ProofSession` | **[ratified], post-authority UX** | mutable attempt history and obsolete-state tracking; not a receipt and not an R-0004 UI requirement |
+| `ReplayReceipt` | **[pending] production; [shipped] structural binding core** | minted only from a successful replay plus complete task/closure/environment material |
+| `PolicyDecision` | **[ratified], full typed implementation owned by R-0440** | fresh source/correspondence/dependency/advisory facts plus receipt plus policy; a stored receipt alone is never current status |
+| `ProofCache` | **[ratified] disposable** | performance only; a hit, miss, corrupt entry, or disabled cache cannot mint or upgrade evidence |
+
+**Progress already closed 2026-08-16:**
+
+- **[shipped] Receipt field coverage:** subject, theorem artifact, dependency root, table material,
+  trust/assumptions, schema and environment are present; root, artifact and trust participate in
+  `isCurrentAgainst`. This closes structural binding only, not replay issuance.
+- **[shipped] Project/path-independent material** (`make test-evidence-reproducibility`, 5/0): a
+  different absolute path and directory name produce byte-identical attestation join, dependency
+  roots and correspondence; a one-byte content mutation is the non-vacuity control.
+- **[shipped] Eligibility baseline** (`make test-coverage-baseline`, 5/0): **35 of 91 eligible claims
+  proved**; 31 no-proof, 15 unbound, 5 stale, 4 dependency-not-current, 1 blocked and 0 unjustified;
+  15 ineligible and 9 trusted are excluded rather than counted as proof failures. The report says it
+  does not run the kernel, so this is not replay coverage.
+
+**Current critical path, in order:**
+
+1. **[pending] Extract one typed theorem-replay producer.** Replace the inline, print-and-return
+   invocation in `compileAndReport` with the equivalent of
+   `ReplayRequest -> IO (Except ReplayRefusal ReplayResult)`. It takes typed inputs rather than the
+   CLI's JSON/rendering parameter, returns every failure class, and retains theorem/artifact/checker/
+   import material. `check-proofs`, receipt issuance, migration, and tests consume it; rendering,
+   diagnostics and exit codes stay outside. The producer has no receipt side effects: it returns a
+   successful replay value or a typed refusal, and the next authority stage decides whether a
+   receipt can be minted. Kernel replay already works (5 verified / 0 failed on `elf_header`) and
+   already keeps `unboundChecked` out of `verified`. **`prove --replay` is not a shortcut**: it
+   discharges VC obligations and does not replay linked Lean theorems.
+2. **[pending] Make successful replay the only receipt-minting authority.** Invalid construction is
+   unrepresentable: unchecked facts cannot become a receipt; only `SuccessfulReplay` plus a complete
+   `VerificationTask`, dependency/trust material and production-derived environment may mint one.
+   Production mutations remove replay, convert failure to success, omit root/artifact/trust, or
+   accept an interrupted run; the status consumer, not a helper probe, must kill each.
+3. **[pending] Slice 7a — one vertical production receipt.** Exercise one ordinary success, one
+   stale/substitution refusal and one transitive trusted-boundary case through task -> replay attempt
+   -> receipt -> fresh-facts/policy composition -> `proof-status`. Cache off and corrupt-cache runs
+   agree on authority. **Receipt portability checkpoint:** a receipt produced in one checkout replays
+   successfully in a fresh checkout at a different absolute path with cache disabled.
+4. **[pending] Decide and control exact contract witnesses.** Package 2's implementation-scoped
+   witness is conservative and safe. Package 3 either adds the smallest real production fixture
+   that distinguishes contract from body dependence — same contract/different implementation keeps
+   a contract consumer current; changed contract makes it non-current; a body consumer still moves
+   with the implementation — and then binds exact `ContractIdentity` plus imported hypotheses, or
+   explicitly defers precision to R-0473/R-0474 and removes it from R-0004's closure list. “Blocked
+   on a corpus case” is not a durable third state. Full `old`, frame/`modifies`, rich state models and
+   the total contract language remain outside Package 3.
+5. **[pending, externally blocked] Complete the ninth table before the final migration.** Land
+   mutable-borrow ProofCore extraction using the narrowest sound value-state model, migrate
+   `proofFnsExt`'s three entries, and replace its tripwire with positive extraction/evaluation/kernel-
+   replay correspondence. Unsupported reborrow shapes refuse rather than forcing a general heap
+   calculus into R-0004. Other Package 3 work continues while the prerequisite is blocked, but
+   formal closure does not.
+6. **[pending] Slice 7b — exact 44-link migration and atomic V2 activation.** Produce the dry-run
+   manifest, replay every eligible link, issue receipts only from success, map legacy/incomplete
+   evidence to `needs_recheck`, explain every V1/V2 difference, and flip without a mixed fallback or
+   copied hashes. The exact 44-link denominator remains authoritative.
+7. **[pending] Slice 7c — complete reproducibility and coverage.** Preserve the 35/91 baseline and
+   existing 5/0 path-independence, then add repository-root/project-root, clean/fresh checkout,
+   different checkout path, cache cold/warm/missing/corrupt, toolchain/import change, interrupted
+   producer, and absent-summary controls. Every authoritative run writes a typed completion artifact;
+   absence is failure, never silence interpreted as success.
+8. **[pending] Slice 8 — adversarial closure of the production consumer.** Attack omitted, stale,
+   forged, duplicate, ambiguous and cross-package evidence; contract-hypothesis deletion/widening;
+   trust deletion/laundering; opaque or unreplayed theorems; copied receipts; partial/defaulted
+   decoding; schema and policy/receipt confusion; dependency/environment changes; cache-as-evidence;
+   contradictory/vacuous proof contexts; and implementation material unused by the proof. Keep
+   production weakening mutations, permanent hostile fixtures, one end-to-end multi-module project,
+   semantic proof-dependency/smoke diagnostics where available, and an independent non-author attack
+   packet. Every successful attack becomes a permanent named regression.
+
+> **R-0004 closes when Slice 8 completes and no hostile control can make a non-current claim appear
+> current.** The current subject, exact claim and dependency root, explicit trust/assumptions and
+> environment, and successful replay receipt must all survive the production consumer together.
 
 **Product hand-off after R-0004:** Task R-0353 consumes the stabilized subject, dependency-root
 and replay-receipt schemas in a small standalone verifier. It is deliberately not another R-0004
@@ -4096,6 +4213,11 @@ The remaining material in R-0004 preserves investigations, rejected hypotheses, 
 commit-level measurements and the original eight-slice plan. It is intentionally not the current
 execution dashboard. When historical prose conflicts with the canonical map above, update or
 archive the prose; never create another competing "authoritative current state" block.
+
+> **[historical] The following Package 3 sequencing and risk estimates were written before the
+> Concrete-owned task/attempt/session/receipt/policy/cache model and the current replay-minting seam
+> were ratified. They are preserved for context and do not describe current work.** Current status,
+> ordering and closure are owned only by the Package 3 block above.
 
 > **HEADLINE STATUS — 2026-08-09 (`902ab601`, audited against code and executable gates). This
 > is a historical snapshot and is superseded by the canonical trust-boundary map above.**
@@ -4148,7 +4270,7 @@ and V2 is refrozen. Removed rather than left standing, because a stale caveat ab
 non-determinism is exactly the sentence someone would quote to justify not trusting the digest.)*
 
 **SCHEMA FROZEN** (2026-08-09): `check_subject_facts.sh` pins the digest of a fixed input, so any change to the composition fails the gate. The correct response is never to update the constant — it is to bump `subjectV2:` to `subjectV3:`, so stored values read as a DIFFERENT SCHEMA (`needs_recheck`) rather than comparing unequal and reading as `stale`. Verified by mutation: adding a component moved the value and the gate fired. Slice 5's subject work is COMPLETE; what remains in the slice is the migration, which is step 7 |
-> | 6 | **CLOSED 2026-08-16** — one ProofCore producer feeds ProofCore/report dependency-root measurement, both keyed on `DefinitionIdentity`. Roots are CONSUMED by production verdicts through the composed authority pass, with invariant `PROVED-ROOTS` asserting no `proved` subject fails to root. Measured: 13 subject roots refuse, none of them proved — the conjunct is consumed and currently redundant, and the redundancy is pinned. (This row read "active / shadow, 62/64 subjects root" until 2026-08-16; that figure predates the identity migration, the fixture-package split and the authority pass.) The closed correspondence join and all six refusal classes are synthetically gated; compiler-linked table resolution covers 8/9 referenced identities. Real-subject input construction, `combineFns`, production-consumer mutations and verdict integration remain open. No root may affect production status yet |
+> | 6 | **CLOSED 2026-08-16** — one ProofCore producer feeds ProofCore/report dependency-root measurement, both keyed on `DefinitionIdentity`. Roots are CONSUMED by production verdicts through the composed authority pass, with invariant `PROVED-ROOTS` asserting no `proved` subject fails to root. Measured: 13 subject roots refuse, none of them proved — the conjunct is consumed and currently redundant, and the redundancy is pinned. (This row read "active / shadow, 62/64 subjects root" until 2026-08-16; that figure predates the identity migration, the fixture-package split and the authority pass.) The closed correspondence join and all six refusal classes are production-fed; external table evidence, trust propagation, production-consumer mutations and verdict integration are closed. |
 > | 7 | receipt issuance and corpus migration **not started** |
 > | 8 | adversarial validation of the authoritative pipeline **not started**; R-0004 cannot close without it |
 >
@@ -4284,14 +4406,14 @@ has landed while the slice's user-visible outcome remains incomplete.
 | --- | --- | --- | --- |
 | 1 | executable witnesses | **LANDED** | Preserve the positive controls and convert each defect tripwire when its owning slice closes. |
 | 2 | missing-fingerprint containment | **LANDED** | Preserve the fail-closed controls through the V2 migration. |
-| 3 | dependency containment | **LANDED** | Preserve the conservative downgrade until slice 6 replaces its name-keyed material with typed validated material. |
-| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — proof-table migration is 8 of 9 tables (42 of 45 entries), whole-table binding, validated receipt core and environment-ID helpers landed** | Derive real production environment inputs; add root, theorem/artifact, replay and trust/assumption fields; canonical serialization, validated decoding and storage; connect one production consumer; register production-consumer mutations. This 8/9 denominator is proof-table migration; its ninth table is blocked on mutable-borrow ProofCore extraction and must not be confused with Slice 6's 8/9 runtime table-resolution inventory. |
+| 3 | dependency containment | **LANDED** | Preserve the conservative downgrade and its controls through replay-backed V2 activation. |
+| 4 | replay/table foundation and receipt-envelope plumbing | **ACTIVE — proof-table migration is 8 of 9 tables (42 of 45 entries); receipt core binds root, theorem artifact and trust plus the earlier subject/table/environment material** | Extract typed theorem replay; make success its only minting authority; derive production environment inputs; add canonical serialization, validated decoding/storage and one production consumer; kill every weakening there. The ninth table remains blocked on mutable-borrow ProofCore extraction. |
 | 5 | complete semantic `ProofSubjectDigest` | **FOUNDATION COMPLETE — deterministic V2 refrozen; exact manifest CLOSED 44/44** | Keep V2 shadow until Slice 7 successfully replays and migrates every link. Preserve semantic-change and invariance controls. Activation, not subject definition, remains. |
-| 6 | deterministic transitive dependency material/root | **CLOSED 2026-08-16 — the correspondence join is keyed on `DefinitionIdentity`, fed from the real corpus, and CONSUMED by production verdicts; every manifest-backed table is attested so runtime resolution covers every referenced identity; roots are consumed with `PROVED-ROOTS` enforcing that no proved subject fails to root** | Construct and measure correspondence for every real proved subject; resolve the named external `combineFns` table without an ad hoc fallback; retain all refusal sets; mutation-kill the production consumer; represent trusted/excluded boundaries; reach zero proved-subject refusals; then make status composition require the validated root and retire old name-keyed/advisory routes. This 8/9 denominator is runtime resolution, not Slice 4's 42/45 proof-table migration. |
-| 7 | receipt issuance, honest corpus migration, and coverage baseline | **PENDING** | Replay the corpus; issue receipts; account for every stored proof link in the migration manifest; activate V2 freshness; publish the eligibility-denominated coverage baseline; prove clean-machine and root/project invocation parity. R-0004 deliberately remains open until the ninth table's mutable-borrow prerequisite lands. |
+| 6 | deterministic transitive dependency material/root | **CLOSED 2026-08-16 — the correspondence join is keyed on `DefinitionIdentity`, fed from the real corpus and CONSUMED by production verdicts; roots are consumed with `PROVED-ROOTS`; trust propagates transitively and is disclosed at every status** | Preserve the production controls and pinned root redundancy through receipt activation; no old name-keyed/advisory route may return. |
+| 7 | receipt issuance, honest corpus migration, and coverage baseline | **ACTIVE — structural receipt field coverage, local path-independence 5/0 and coverage 35/91 landed; no production minting or consumer** | Complete 7a vertical replay receipt, ninth-table prerequisite, 7b exact 44-link migration/V2 activation, and 7c fresh-checkout/root/cache reproducibility. R-0004 remains open until all complete. |
 | 8 | adversarial validation of the authoritative evidence path | **PENDING — mandatory completion slice** | After Slice 7 makes the path real, attack subject/link/dependency/receipt/migration/reproducibility/presentation boundaries with mutation gates, permanent adversarial fixtures, and one hostile multi-module project. Require an independent non-author attack contribution. No attack may produce friendly `proved` without a current complete subject, exact claim and dependency root, explicit trust/assumptions and environment, and successful kernel replay. |
 
-**Historical completion estimate as of 2026-08-09.** Roughly 70–75% of the architecture existed, but only
+**[historical] Completion estimate as of 2026-08-09.** Roughly 70–75% of the architecture existed, but only
 slices 1–3 are formally closed and the authoritative evidence path is nearer 50–60%. Remaining
 work is integration-heavy: clean the duplicated manifest gate, integrate dependency roots,
 complete and consume replay receipts, migrate the corpus, finish the externally blocked ninth
@@ -4300,7 +4422,7 @@ result. Slice 6, receipt/corpus migration and Slice 8 are the highest-risk work.
 cleanup pass, and the external mutable-borrow extraction prerequisite prevents
 formal closure even if slices 4–6 otherwise finish.
 
-**Critical path.** Remove the duplicate manifest-gate block → integrate deterministic dependency
+**[historical] Former critical path as of 2026-08-09.** Remove the duplicate manifest-gate block → integrate deterministic dependency
 roots in shadow → make a valid root mandatory in production status composition and kill the
 omission mutation → complete/serialize/decode the receipt and derive real environment facts →
 replay and migrate all 44 links → land mutable-borrow extraction and migrate the ninth table →
@@ -5398,12 +5520,21 @@ true together:
 - direct, transitive, and recursive dependencies produce the correct typed
   edges and deterministic validated dependency material/root, with dynamic
   access binding the whole canonical table rather than a guessed subset;
+- contract dependence is either bound to the exact callee contract and imported hypotheses through
+  a live production case (same contract/body change stays current; contract change does not), or is
+  explicitly unsupported and owned by R-0473/R-0474; the conservative implementation-bound form
+  cannot silently be described as precise contract composition;
 - every friendly `proved_by_lean` claim has a current complete subject, a
   current dependency root, and a successful replay receipt with theorem,
   toolchain, schema, and workspace/import-closure identity;
+- one typed theorem-replay producer returns success/refusal data rather than printing, and successful
+  replay plus a complete canonical task is the only authority that can mint a receipt;
 - the receipt has versioned canonical serialization and validated decoding, compares its edge kind
   and every bound field through one typed disposition, and cannot be directly constructed,
   defaulted, decoded or deserialized into a partial current-looking value;
+- current proof status composes freshly recomputed source/correspondence/dependency/advisory facts
+  with the immutable receipt and policy; a stored receipt or cache entry alone never produces a
+  current verdict;
 - legacy body fingerprints and old receipt schemas become `needs_recheck` and
   cannot upgrade themselves by copying a newly computed hash;
 - shadow-mode comparison has zero unexplained V1/V2 disagreements, every
@@ -5413,16 +5544,18 @@ true together:
   missing, unbound, stale, dependency-not-current, failed, or trusted;
 - root/project-directory invocation and clean-machine replay agree, generated
   artifacts are deterministic, and every weakening mutation above is killed;
-  and
+- every authoritative run produces a typed completion artifact; an interrupted producer or absent
+  summary is a distinct failure rather than empty output interpreted as success;
 - the first eligibility-denominated proof-coverage baseline is published with
   stable discharge-route and blocker classifications; and
 - Slice 8's independent red-team packet, production-consumer mutation suite, permanent hostile
   fixtures and end-to-end adversarial project all pass, with no stale, incomplete, misbound,
-  dependency-incomplete, unreplayed, trust-widened, schema-confused or cross-project evidence able
-  to produce a friendly `proved` verdict.
+  dependency-incomplete, unreplayed, trust-widened, contract-widened, vacuous, schema/policy-confused,
+  cache-derived or cross-project evidence able to produce a friendly `proved` verdict.
 
-**Completion-gate audit — 2026-08-08.** Green helper gates do not imply these end-to-end
-conditions are green; several current tests are deliberate tripwires proving the live gap remains.
+**Completion-gate audit — current through 2026-08-16.** Green helper gates do not imply these
+end-to-end conditions are green; structural receipt controls remain deliberately unable to mint or
+authorize evidence until the production replay path lands.
 
 | completion condition | audited state |
 |---|---|
@@ -5430,13 +5563,16 @@ conditions are green; several current tests are deliberate tripwires proving the
 | generated evidence-bearing tables | **PARTIAL** — 8/9 migrated, 42/45 entries; `proofFnsExt` blocked on mutable-borrow extraction; final bar still forbids hand-written evidence-bearing tables |
 | final semantic subject and invariance | **FOUNDATION COMPLETE, ACTIVATION PENDING** — deterministic refrozen V2 binds declaration facts, structural body, selected spec and claim scope; semantic/invariance controls pass. It remains shadow-only until replay-backed Slice 7 migration |
 | exhaustive producer coverage | **STRONG SHADOW FOUNDATION** — 452 subjects threaded, 441 covered, 0 absent, 11 named fail-closed refusals; authoritative subject still does not consume these bytes |
-| typed deterministic dependencies | **CLOSED 2026-08-16** — ProofCore and reports share one node/root producer, keyed on `DefinitionIdentity`; roots are consumed by production verdicts and 13 refuse, none of them proved; the closed correspondence join and all six named refusal classes are synthetically gated; runtime resolution covers 8/9 referenced table identities. Real-subject correspondence population, the external `combineFns` case, trusted-boundary representation, production-consumer mutations and verdict integration remain open |
-| friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — validated core plus deterministic environment-ID helper functions exist; no production-derived environment facts, dependency root/theorem/artifact/replay/trust fields, serialization, storage, issuance or status consumer |
+| typed deterministic dependencies | **CLOSED 2026-08-16** — ProofCore and reports share one node/root producer keyed on `DefinitionIdentity`; correspondence and computable roots are consumed by production verdicts; 13 roots refuse and none belongs to a proved subject. `PROVED-ROOTS` now constructs a proved obligation with an unkeyable edge through real `selfCheck`, and its `.take 0` production mutation is killed. |
+| monotone trust/assumption propagation | **CLOSED 2026-08-16** — `composition_deep_trust` proves a two-hop `outer -> middle -> leaf` boundary reaches the root even though `outer` does not name it; narrowing to direct callees is mutation-killed; disclosure occurs at every status rather than only under `proved`. |
+| contract-witness precision | **PARTIAL / FAIL-CLOSED** — contract/body witness kinds cannot substitute for each other, but the current corpus has zero contract edges and contract requests conservatively bind exact implementation identity. Add the minimal production case and exact contract/hypothesis identity or explicitly defer precision to R-0473/R-0474. |
+| friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — the private structural core now binds dependency root, theorem artifact and trust boundaries in addition to subject/table/environment material, and every field participates in currency. No production-derived successful replay mints, stores or authorizes a receipt; no status consumes one. |
 | legacy/schema migration | **MANIFEST CLOSED, REPLAY/MIGRATION NOT STARTED** — `needs_recheck` vocabulary and exact 44-row input exist; no replay-backed V2 rewrite or authoritative activation yet |
 | exact migration manifest | **CLOSED 44/44** — compiler emits one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. Cleanup owed: remove the duplicated obsolete exact-join/35-row-ratchet block from `check_migration_manifest.sh` |
 | repository replay into receipts | **NOT STARTED** |
-| reproducibility and weakening mutations | **PARTIAL** — cwd parity and deterministic helper material gated; clean-machine receipt replay and receipt production-consumer mutations absent |
-| eligibility-denominated coverage baseline | **NOT STARTED** |
+| reproducibility and weakening mutations | **PARTIAL** — project/path-independent material is 5/0 with content-mutation non-vacuity; repository-root/project-root, fresh checkout, cache and production receipt replay remain absent. |
+| run-completion integrity | **CLOSED 2026-08-16** — the fast suite writes a machine-readable summary with `completed=1`; death before the summary emits a banner and exits 97, distinct from assertion failures, so an absent summary cannot look green. |
+| eligibility-denominated coverage baseline | **CLOSED 2026-08-16: 35/91** — every remainder is named and reconciled; the baseline explicitly does not claim kernel replay coverage. |
 | adversarial validation of authoritative path (Slice 8) | **NOT STARTED** — cannot begin meaningfully until Slice 7 activates the production path; mandatory for closure |
 
 This table is the acceptance view. The roughly-70% headline describes implementation foundation,
