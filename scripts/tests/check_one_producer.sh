@@ -105,8 +105,14 @@ owners "classifiedEdgeOf" 'classifiedEdgeOf' \
   'Concrete/Proof/ClassificationTable.lean Concrete/Proof/ProofCore.lean'
 
 # The node/edge set. Both the root builder and the report must read ONE set of nodes.
+#
+# `Concrete/Proof/Issue.lean` joined on 2026-08-16 and is a CONSUMER, not a second producer: receipt
+# issuance needs the dependency root a claim rests on, and it obtains the nodes by CALLING this
+# rather than rebuilding a node set of its own. That distinction is the whole point of the gate —
+# a receipt computed over a different node set than the status report reads would be evidence about
+# a closure nobody else believes in.
 owners "dependencyNodesOf" 'dependencyNodesOf' \
-  'Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
+  'Concrete/Proof/Issue.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
 
 # The currency decision. A second opinion on "is this edge current" is a fail-open waiting to
 # happen — this predicate was `| _ => true` once, which made `unclassified` current by default.

@@ -2894,8 +2894,14 @@ def compileAndReport (inputPath : String) (reportType : String)
             ", \"origin\": ", q origin, ", \"status\": ", q (statusOf thm oblStatus),
             ", \"source_line\": ", toString (lineOf fn), "}"]
         let refChecks := refinementTargets.map fun t =>
+          -- NOT `.getD "proved"`. Every refinement target comes from an obligation that has a
+          -- status, so the fallback is unreachable — which is exactly why defaulting it to a real
+          -- status is wrong: on the day it IS reached it would report a claim as proved because
+          -- nothing was found. `unknown` is outside the status vocabulary and cannot be mistaken
+          -- for one. Caught by check_one_producer.sh, which forbids defaulting a fact to a valid
+          -- value of itself.
           checkObj t.subject t.theoremName "refinement" t.origin.canonical
-            ((statusByTheorem.find? (·.1 == t.theoremName)).map (·.2) |>.getD "proved")
+            ((statusByTheorem.find? (·.1 == t.theoremName)).map (·.2) |>.getD "unknown")
         let ensChecks := ensuresThms.map fun (fn, thm) => checkObj fn thm "ensures" "source_linked" "proved"
         let allObjs := refChecks ++ ensChecks
         let leanErr := if generalFailure || !failed.isEmpty then String.ofList (combined.toList.take 800) else ""
