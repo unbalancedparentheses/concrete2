@@ -669,6 +669,43 @@ add "trust-propagates-transitively" "Concrete/Proof/ProofCore.lean" "check_depen
   $'    (reachableFrom self).filter fun c =>\n      c != self && (match statusOf c with\n                    | some .trusted => true\n                    | _ => false)' \
   $'    (directCalleesOf self).filter fun c =>\n      c != self && (match statusOf c with\n                    | some .trusted => true\n                    | _ => false)'
 
+# ---------------------------------------------------------------------------
+# R-0004 package 3: the kernel-replay producer. Each family below targets a boundary where the
+# producer's answer stops being usable as evidence and becomes merely output.
+
+# THE FLAG THAT WAS ALREADY DEAD ONCE. The inline version computed `generalFailure` AFTER filling
+# `failed` with every target, so it was unreachably false and a file that did not compile was
+# reported as every theorem individually "not found". Pinning it: if the whole-file failure stops
+# being detected, every target silently becomes an individual verdict again.
+add "replay-general-failure-detected" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  'let generalFailure := result.exitCode != 0 && named.isEmpty' \
+  'let generalFailure := false'
+
+# AN EMPTY REQUEST MUST REFUSE. `List.all` is true over an empty list, so dropping this guard hands
+# a minting authority a vacuous "everything was accepted" — the single most dangerous answer this
+# producer can give.
+add "replay-empty-request-refused" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  'if req.targets.isEmpty then throw .noTargets' \
+  'if false then throw .noTargets'
+
+# ACCEPTED-BUT-UNBOUND IS NOT ACCEPTED. Collapsing the two is exactly the summing that once read
+# "11 verified" on a program with 11 unbound claims.
+add "replay-unbound-not-accepted" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  $'      else match t.binding with\n        | .unbound => .acceptedUnbound\n        | .bound   => .accepted' \
+  $'      else match t.binding with\n        | .unbound => .accepted\n        | .bound   => .accepted'
+
+# A GENERAL FAILURE MUST FAIL CLOSED. Without the `!r.generalFailure` conjunct, a run in which the
+# file never compiled reports every target as acceptable, because none was individually rejected.
+add "replay-accepted-fails-closed" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  $'  !r.generalFailure\n    && r.checks.all (fun c => c.verdict == .accepted || c.verdict == .acceptedUnbound)' \
+  $'  r.checks.all (fun c => c.verdict == .accepted || c.verdict == .acceptedUnbound)'
+
+# AN UNNAMED TARGET WOULD REPORT AS ACCEPTED WITHOUT BEING CHECKED: the empty needle matches the
+# transcript everywhere. A false pass is the worst failure mode available to this producer.
+add "replay-unnamed-target-refused" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  'if t.subject.trimAscii.isEmpty || t.theoremName.trimAscii.isEmpty then' \
+  'if false then'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

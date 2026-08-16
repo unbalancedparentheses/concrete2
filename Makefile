@@ -191,6 +191,9 @@ test-attestation-manifest: build ## Attestation manifest: table -> attested subj
 test-coverage-baseline: build ## R-0004 package 3: eligibility-denominated coverage, every disposition named
 	bash scripts/tests/check_coverage_baseline.sh
 
+test-replay-producer: build ## R-0004 package 3: kernel replay is one typed producer whose failures are values
+	bash scripts/tests/check_replay_producer.sh
+
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
 	bash scripts/tests/check_evidence_reproducibility.sh
 
