@@ -4000,7 +4000,13 @@ established, and the unticked items are Package 3's work rather than blockers th
 - [x] body witnesses bind exact implementation identities — the join key is `DefinitionIdentity`,
       all four components, with no name-keyed fallback anywhere in the evidence path;
 - [ ] contract witnesses bind exact callee contracts/hypotheses;
-- [ ] trust and assumptions propagate monotonically through the full closure;
+- [x] trust and assumptions propagate monotonically through the full closure — measured on
+      `composition_deep_trust` (`outer -> middle -> leaf`), where `outer` mentions no trusted
+      function in its own body and still discloses `calls.leaf`. Mutation
+      `trust-propagates-transitively` narrows the computation to direct callees and is KILLED. The
+      disclosure also moved OUT of the `proved` branch: a boundary is a property of the closure, not
+      of the verdict, and hiding it until a claim turns green meant an author fixed a fingerprint and
+      discovered an assumption that was always there;
 - [x] zero proved-subject root refusals, asserted as compiler invariant `PROVED-ROOTS` rather than by
       correlating report surfaces. **NOT 64/64 root coverage**: 13 subject roots refuse, every one of
       them on a subject that is not `proved`, and the redundancy that makes this hold is pinned;
@@ -4013,8 +4019,8 @@ established, and the unticked items are Package 3's work rather than blockers th
       `tests/programs/proof_decode_header.con`, whose table holds zero entries. Both were measured by
       building with and without the pass.
 
-**What that leaves:** contract-witness binding and monotone trust/assumption propagation are the two
-substantive unticked items, and receipts bind none of this yet. Those are Package 3.
+**What that leaves:** contract-witness binding is the one substantive unticked item, and receipts bind
+none of this yet. Those are Package 3.
 
 #### Remaining milestones after the authority transition
 
