@@ -14,63 +14,118 @@ PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
-# std is a package; reports need a de-packaged copy of its source tree.
-cp -r std/src "$TMP/std"
+# std IS A PACKAGE AND IS NOW COMPILED AS ONE. This gate used to copy `std/src` to a temp directory
+# and compile the loose tree, because `loadProject` refused a package whose entry is `src/lib.con`.
+# That workaround DESTROYED the package identity, which is the thing scoped evidence depends on — so
+# after the Package 2 authority transition every std subject carried a source name only and its
+# correspondence and dependency root refused. The 11-proved figure this gate asserted was obtainable
+# only by bypassing scoped evidence.
+#
+# The underlying bug (a package injected as its own dependency) was fixed 2026-08-16, so the copy is
+# gone and std is compiled in place.
+st=$("$C" std/src/lib.con --report proof-status 2>&1)
 
-# 1. the link is registered and fingerprint-fresh
-st=$("$C" "$TMP/std/lib.con" --report proof-status 2>&1)
-grep -q '✓ `std.option.option_Option_unwrap_or` — proof matches current body' <<<"$st" \
-  && ok "unwrap_or: registered + fingerprint-fresh" \
-  || no "unwrap_or: proof link missing or stale"
-
-# 1b. slice 1+2 surface: Option/Result laws + numeric checked helpers,
-#     each linked and fresh
-for fn in std.option.option_Option_map std.result.result_Result_map \
-          std.result.result_Result_map_err \
+# WHAT THESE LINKS ARE WORTH NOW, re-pinned 2026-08-16 to the measured truth rather than to a number
+# that was only obtainable by bypassing scoped evidence.
+#
+# Nine of the eleven links report `dependency closure unjustified`. That is DELIBERATE and it is not
+# a regression from the package fix: their theorems depend on `pureCoreFns`, which carries no
+# manifest row and therefore describes no definitions and justifies nothing — the same disposition
+# Package 2 gave `proofFns` and `proofFnsExt`. A table without a manifest row cannot witness a
+# per-edge justification, so a claim resting on one cannot be proved. Asserting these nine as
+# `proved` would require re-adopting the de-packaged compilation that made the refusal invisible.
+#
+# The two base64 links DO prove, and they are the live positive control: without them "nine are
+# unjustified" would also be satisfied by std carrying no evidence at all.
+for fn in std.option.option_Option_unwrap_or std.option.option_Option_map \
+          std.result.result_Result_map std.result.result_Result_map_err \
           std.numeric.numeric_NonZeroU32_try_new \
           std.numeric.numeric_NonZeroU32_try_from_u64 \
           std.numeric.numeric_NonZeroU64_try_new \
           std.numeric.numeric_Port_try_new \
-          std.numeric.numeric_Port_try_from_u32 \
-          std.base64.base64_char_of \
-          std.base64.base64_val_of; do
-  grep -q "✓ \`$fn\` — proof matches current body" <<<"$st" \
-    && ok "$fn: registered + fingerprint-fresh" \
-    || no "$fn: proof link missing or stale"
+          std.numeric.numeric_Port_try_from_u32; do
+  grep -q "\`$fn\` cannot contribute proved evidence" <<<"$st" \
+    && ok "$fn: unjustified because pureCoreFns has no manifest row (expected)" \
+    || no "$fn: no longer reports an unjustified closure — if pureCoreFns was converted, re-pin these nine to proved"
 done
+for fn in std.base64.base64_char_of std.base64.base64_val_of; do
+  grep -q "✓ \`$fn\` — proof matches current body" <<<"$st" \
+    && ok "$fn: registered + fingerprint-fresh (the control the nine above are measured against)" \
+    || no "$fn: proof link missing or stale — the unjustified assertions above are now vacuous"
+done
+
+# THE TRIPWIRE ON THE DEFERRAL. The nine are unjustified only while `pureCoreFns` is unconverted.
+# The day it gains a manifest row this must go red, so the std arc is re-pinned rather than quietly
+# staying at two.
+if "$C" examples/elf_header/src/main.con --report subject-facts >/dev/null 2>&1; then
+  PCF="$(cat > "$TMP/pcf.lean" <<'LEAN'
+import Concrete
+open Concrete.Proof
+#eval (scopedEntryEvidence pureCoreFns).toOption == some []
+LEAN
+  lake env lean "$TMP/pcf.lean" 2>&1 || true)"
+  if grep -q 'true' <<<"$PCF"; then
+    ok "TRIPWIRE: pureCoreFns still has empty scoped membership, so the nine cannot be justified yet"
+  else
+    no "pureCoreFns now carries scoped membership — the nine std links must be re-pinned to proved"
+  fi
+fi
 
 # 1c. every std proved link is SPEC-DRIFT-COVERED — the specs table is keyed
 #     by qualified name and proof-status witnesses the lookup (a mis-keyed
 #     spec silently skips the drift check; slice 2 made that state visible).
 drift_ok=$(grep -c "spec: drift-checked" <<<"$st")
 drift_no=$(grep -c "spec: NOT drift-covered" <<<"$st")
-[ "$drift_ok" -eq 11 ] && [ "$drift_no" -eq 0 ] \
-  && ok "drift coverage: all 11 std links drift-checked, none uncovered" \
-  || no "drift coverage: expected 11 drift-checked / 0 uncovered, got $drift_ok/$drift_no"
+# Drift coverage is reported for links that can carry evidence, so it follows the nine into the
+# unjustified state. Pinned at the measured 2 with 0 UNCOVERED: an uncovered link would be a
+# mis-keyed spec silently skipping its drift check, which is a different and real defect.
+[ "$drift_ok" -eq 2 ] && [ "$drift_no" -eq 0 ] \
+  && ok "drift coverage: both justifiable std links are drift-checked, none uncovered" \
+  || no "drift coverage: expected 2 drift-checked / 0 uncovered, got $drift_ok/$drift_no"
 
 # 2. the Lean kernel verifies the referenced theorems (import-reachable)
-cp=$("$C" "$TMP/std/lib.con" --report check-proofs 2>&1)
-grep -q '✓ std.option.option_Option_unwrap_or — Examples.PureCore.Proofs.option_unwrap_or_correct' <<<"$cp" \
-  && ok "unwrap_or: kernel-verified via Examples.PureCore.Proofs" \
-  || no "unwrap_or: kernel check failed or theorem unreachable"
-grep -q '✓ std.option.option_Option_map — Examples.PureCore.Proofs.option_map_correct' <<<"$cp" \
-  && ok "option.map: kernel-verified" \
-  || no "option.map: kernel check failed or theorem unreachable"
-grep -q '✓ std.result.result_Result_map — Examples.PureCore.Proofs.result_map_correct' <<<"$cp" \
-  && ok "result.map: kernel-verified" \
-  || no "result.map: kernel check failed or theorem unreachable"
-grep -q '✓ std.result.result_Result_map_err — Examples.PureCore.Proofs.result_map_err_correct' <<<"$cp" \
-  && ok "result.map_err: kernel-verified" \
-  || no "result.map_err: kernel check failed or theorem unreachable"
+cp=$("$C" std/src/lib.con --report check-proofs 2>&1)
+if grep -q '✓ std.option.option_Option_unwrap_or — Examples.PureCore.Proofs.option_unwrap_or_correct' <<<"$cp"; then
+  no "std.option.option_Option_unwrap_or is kernel-verified again — it was unjustified, so re-pin the std arc"
+elif grep -q 'Examples.PureCore.Proofs.option_unwrap_or_correct' <<<"$cp"; then
+  no "std.option.option_Option_unwrap_or entered the replay set but did not verify — that is a real kernel failure"
+else
+  ok "std.option.option_Option_unwrap_or: not replayed, because an unjustified claim is not a replay target"
+fi
+if grep -q '✓ std.option.option_Option_map — Examples.PureCore.Proofs.option_map_correct' <<<"$cp"; then
+  no "std.option.option_Option_map is kernel-verified again — it was unjustified, so re-pin the std arc"
+elif grep -q 'Examples.PureCore.Proofs.option_map_correct' <<<"$cp"; then
+  no "std.option.option_Option_map entered the replay set but did not verify — that is a real kernel failure"
+else
+  ok "std.option.option_Option_map: not replayed, because an unjustified claim is not a replay target"
+fi
+if grep -q '✓ std.result.result_Result_map — Examples.PureCore.Proofs.result_map_correct' <<<"$cp"; then
+  no "std.result.result_Result_map is kernel-verified again — it was unjustified, so re-pin the std arc"
+elif grep -q 'Examples.PureCore.Proofs.result_map_correct' <<<"$cp"; then
+  no "std.result.result_Result_map entered the replay set but did not verify — that is a real kernel failure"
+else
+  ok "std.result.result_Result_map: not replayed, because an unjustified claim is not a replay target"
+fi
+if grep -q '✓ std.result.result_Result_map_err — Examples.PureCore.Proofs.result_map_err_correct' <<<"$cp"; then
+  no "std.result.result_Result_map_err is kernel-verified again — it was unjustified, so re-pin the std arc"
+elif grep -q 'Examples.PureCore.Proofs.result_map_err_correct' <<<"$cp"; then
+  no "std.result.result_Result_map_err entered the replay set but did not verify — that is a real kernel failure"
+else
+  ok "std.result.result_Result_map_err: not replayed, because an unjustified claim is not a replay target"
+fi
 for pair in "numeric_NonZeroU32_try_new:numeric_try_new_correct" \
             "numeric_NonZeroU32_try_from_u64:nonzero_u32_try_from_u64_correct" \
             "numeric_NonZeroU64_try_new:numeric_try_new_correct" \
             "numeric_Port_try_new:numeric_try_new_correct" \
             "numeric_Port_try_from_u32:port_try_from_u32_correct"; do
   fn=${pair%%:*}; thm=${pair##*:}
-  grep -q "✓ std.numeric.$fn — Examples.PureCore.Proofs.$thm" <<<"$cp" \
-    && ok "$fn: kernel-verified" \
-    || no "$fn: kernel check failed or theorem unreachable"
+  if grep -q "✓ std.numeric.$fn — Examples.PureCore.Proofs.$thm" <<<"$cp"; then
+    no "$fn is kernel-verified again — it was unjustified, so re-pin the std arc"
+  elif grep -q "Examples.PureCore.Proofs.$thm" <<<"$cp"; then
+    no "$fn entered the replay set but did not verify — that is a real kernel failure"
+  else
+    ok "$fn: not replayed, because an unjustified claim is not a replay target"
+  fi
 done
 grep -q '✓ std.base64.base64_char_of — Examples.PureCore.Proofs.base64_char_of_correct' <<<"$cp" \
   && ok "base64.char_of: kernel-verified" \
@@ -78,13 +133,21 @@ grep -q '✓ std.base64.base64_char_of — Examples.PureCore.Proofs.base64_char_
 grep -q '✓ std.base64.base64_val_of — Examples.PureCore.Proofs.base64_val_of_correct' <<<"$cp" \
   && ok "base64.val_of: kernel-verified" \
   || no "base64.val_of: kernel check failed or theorem unreachable"
-grep -q 'Summary: 11 verified, 0 failed' <<<"$cp" \
-  && ok "check-proofs: exactly 11 verified, zero failures" \
-  || no "check-proofs count drifted or reports failures"
+# EXACTLY the two justifiable links, and ZERO failures. The count moved from 11 to 2 when std began
+# compiling as a package: nine claims rest on `pureCoreFns`, which has no manifest row, so they are
+# not replay targets. Zero failures still matters — a link that entered the set and was refused is a
+# real kernel failure, distinct from one that was never asked about.
+grep -q 'Summary: 2 verified, 0 failed' <<<"$cp" \
+  && ok "check-proofs: exactly 2 verified, zero failures" \
+  || no "check-proofs count drifted or reports failures: $(grep -o 'Summary:.*' <<<"$cp" | head -1)"
 
 # 3. MUTATION: a body change must go STALE (evidence is load-bearing)
-perl -0pi -e 's/Option::None => \{ return default; \},/Option::None => { let d2: T = default; return d2; },/' "$TMP/std/option.con"
-mst=$("$C" "$TMP/std/lib.con" --report proof-status 2>&1)
+# The mutation needs a WRITABLE copy, and it must be a copy of the PACKAGE — `Concrete.toml` and
+# all — because a loose source tree has no package identity and would reproduce the very bypass
+# this gate stopped relying on.
+cp -r std "$TMP/stdpkg"
+perl -0pi -e 's/Option::None => \{ return default; \},/Option::None => { let d2: T = default; return d2; },/' "$TMP/stdpkg/src/option.con"
+mst=$("$C" "$TMP/stdpkg/src/lib.con" --report proof-status 2>&1)
 grep -q 'stale fingerprint for .std.option.option_Option_unwrap_or' <<<"$mst" \
   && ok "mutation: body change flagged stale (fingerprint machinery live)" \
   || no "mutation: body change NOT flagged — evidence is decorative"
