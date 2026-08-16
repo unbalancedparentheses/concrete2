@@ -2667,29 +2667,87 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "lean-stubs" then
       IO.println (Report.leanStubsReport pc (registry := registry))
       return 0
+    if reportType == "receipts" then
+      -- PRODUCTION RECEIPT ISSUANCE. Until this existed, `ProofEvidenceReceipt` was a well-tested
+      -- helper type: the envelope was closed and the minting authority was closed, and nothing in
+      -- the pipeline ever minted one. This is the path from "the kernel accepted this" to a
+      -- receipt, and it derives none of its four inputs itself — each comes from the single
+      -- producer that already answers that question elsewhere, and each refuses on its own terms.
+      match ← Proof.replay
+          { inputPath := inputPath
+          , fallbackDir := "."
+          , imports := ["Concrete", "Examples"]
+          , targets := Proof.replayTargetsOf pc } with
+      | .error .noTargets =>
+        IO.println "=== Replay Receipts ===\n\nNo claims with proof links to replay, so nothing to issue."
+        return 0
+      | .error refusal =>
+        -- NO KERNEL RAN. Issuing nothing is correct; reporting it as "no receipts" would be the
+        -- same sentence a fully-refused corpus produces, so the obstacle is named instead.
+        IO.println s!"=== Replay Receipts ===\n\nerror: {refusal.explain}"
+        return 1
+      | .ok res =>
+      -- The environment identities issuance cannot derive for itself. The TOOLCHAIN half is
+      -- deliberately absent: it comes from the replay that actually ran, so a caller cannot name a
+      -- checker other than the one that checked.
+      let compilerVersion ← compilerIdentity
+      let workspaceId := match packageIdentity with
+        | .ok p => p.digest
+        | .error _ => ""
+      -- WHAT THIS BINDS AND WHAT IT DOES NOT. `importsId` is meant to be the transitive import
+      -- surface. The compiler cannot compute the Lean import closure — it imports neither the proof
+      -- modules nor `Examples`, which is why classification is checked-in data — so this is the
+      -- surface it can bind honestly: every classified theorem, its artifact digest, and its table
+      -- digests. A proof that changes which ambient lemma it invokes without moving its own
+      -- artifact digest or its tables moves nothing here. That is a recorded limit, not a claim.
+      let importsId := Proof.importsIdOf [("Concrete.Proof.ClassificationTable",
+                                            Proof.classificationSurfaceDigest)]
+      let statusEntries := Report.proofStatusEntries validCore.coreModules locMap registry pc
+      -- Keyed on the qualified name, which is what `ProofStatusEntry` carries. Trust comes from
+      -- the same producer the status report reads; recomputing it here would be a second answer to
+      -- "which boundaries does this rest on", and the receipt would be the copy nobody re-checks.
+      let trustedDepsOf := fun (qn : String) =>
+        (statusEntries.find? (fun s => s.qualName == qn)).map (·.trustedDeps) |>.getD []
+      let outcomes := Proof.issueAll pc res
+        { compilerVersion, workspaceId, importsId } trustedDepsOf
+      let issued := Proof.IssueOutcome.issued outcomes
+      let withheld := Proof.IssueOutcome.withheld outcomes
+      let mut out := "=== Replay Receipts ===\n"
+      out := out ++ s!"\nWorkspace: {res.environment.workspace}"
+      out := out ++ (if res.environment.workspaceFromInput then " (from input)\n" else " (from working directory)\n")
+      out := out ++ s!"Toolchain: {res.environment.toolchain}\n"
+      if !issued.isEmpty then
+        out := out ++ s!"\n  Issued ({issued.length}):\n"
+        for o in issued do
+          match o.result with
+          | .ok r =>
+            let trust := if r.carriesTrust then s!" ASSUMING {", ".intercalate r.trustedBoundaries}" else ""
+            out := out ++ s!"    + {o.subject} — {r.theoremArtifact}{trust}\n"
+            out := out ++ s!"        subject={r.subjectDigest} root={Concrete.shortHash r.dependencyRoot} edge={r.edge.canonical}\n"
+          | .error _ => pure ()
+      -- EVERY WITHHOLDING NAMES ITS CAUSE. "No receipt" and "receipt withheld because X" are
+      -- different facts, and only the second is actionable.
+      if !withheld.isEmpty then
+        out := out ++ s!"\n  Withheld ({withheld.length}):\n"
+        for o in withheld do
+          match o.result with
+          | .error e => out := out ++ s!"    - {o.subject} [{e.canonical}] {e.explain}\n"
+          | .ok _ => pure ()
+      out := out ++ s!"\nSummary: {issued.length} issued, {withheld.length} withheld"
+      -- ISSUANCE IS NOT STATUS. A receipt records that a kernel accepted a theorem against stated
+      -- material; it does not by itself make a claim current, and nothing consumes these yet.
+      out := out ++ "\n  NOTE: receipts are not stored and no status consumes them yet."
+      IO.println out
+      return 0
     if reportType == "check-proofs" then
       -- WHICH claims to replay is a policy question, and it stays here. WHETHER the kernel accepted
       -- them is answered by the single producer `Concrete.Proof.replay`; this report renders that
       -- answer and re-derives none of it. Before the extraction the check was inline, entangled with
       -- `reportJson`, and its failure paths printed — so no other caller (receipt minting, the link
       -- migration, `concrete check`) could ask the question without writing a second answer to it.
-      let refinementTargets : List Proof.ReplayTarget := pc.obligations.filterMap fun o =>
-        match o.spec with
-        | some s =>
-          -- `unbound` is replayable too, and must be: kernel replay is how a
-          -- link WITHOUT a stored subject earns one. Excluding it would leave
-          -- no path from unbound to bound — you could never obtain the receipt
-          -- the fingerprint is supposed to record.
-          if o.status == .proved || o.status == .stale || o.status == .unbound then
-            some { subject := o.functionId.qualName, theoremName := s.proofName
-                 , kind := .refinement
-                 , origin := if s.source == .registry then .sourceLinked else .hardcoded
-                 -- An unbound claim has no stored subject digest, so nothing detects a changed
-                 -- body. Carried in the TYPE so acceptance of the theorem cannot be summed into
-                 -- coverage of the claim.
-                 , binding := if o.status == .unbound then .unbound else .bound }
-          else none
-        | none => none
+      -- ONE producer for "which claims to replay", shared with receipt issuance: replaying a
+      -- different set than issuance asks about would withhold receipts silently.
+      let refinementTargets := Proof.replayTargetsOf pc
       -- Source-contract discharge theorems (the `ensures_proof` naming the theorem that proves an
       -- `#[ensures(...)]` obligation) are replayed too, so an obligation reported `proved_by_lean`
       -- is backed by a real kernel check.

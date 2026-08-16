@@ -319,4 +319,32 @@ def classifiedEdgeOf (thm : String) : DependencyEdge :=
 def classifiedDigestOf (thm : String) : Option String :=
   (validatedRowOf thm).toOption.map (·.digest)
 
+/-- A digest over the whole checked-in proof surface: every theorem, its edge, its artifact digest
+    and the digests of the tables it depends on.
+
+    WHAT IT IS FOR. A replay receipt binds `importsId` — "the transitive import surface", so that a
+    change to something the proof could see makes the receipt non-current. The compiler cannot
+    compute the LEAN import closure: it imports neither `Concrete`'s proof modules nor `Examples`,
+    which is the whole reason this table exists as checked-in data. This is what it can compute
+    honestly — the surface it does hold, over content rather than paths, so it is identical from any
+    checkout.
+
+    WHAT IT IS NOT, stated because a receipt that overclaims what it binds is worse than one that
+    binds less: it does NOT cover Lean lemmas outside this table. A proof that changes which
+    `Mathlib`-style helper it invokes, without changing its own artifact digest or its tables, moves
+    nothing here. The artifact digest catches a changed proof TERM, and the table digests catch a
+    changed dependency; a changed ambient environment that alters neither is outside what any
+    compiler-side value can currently detect. Recorded as a known limit of `importsId`, not papered
+    over with a value that merely looks like a closure digest.
+
+    Ordering is normalized, for the reason receipt table bindings are: the generator's row order is
+    deterministic and not meaningful, and a surface digest that moved when two rows swapped would
+    report drift that did not happen. -/
+def classificationSurfaceDigest : String :=
+  Concrete.shortHash (String.intercalate "\n"
+    ((classificationTable.map fun (n, tag, dig, tbls, q) =>
+        String.join [ n, " ", tag, " ", dig, " "
+                    , String.intercalate "," ((tbls.map fun (t, d) => t ++ "=" ++ d).mergeSort (· ≤ ·))
+                    , " ", toString q ]).mergeSort (· ≤ ·)))
+
 end Concrete.Proof
