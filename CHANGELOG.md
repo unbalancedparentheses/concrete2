@@ -10,6 +10,57 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Packages 1–2: Scoped Definition Identity Becomes Authoritative
+
+_Compiler, gates and corpus, 2026-08-15/16. **Production `proved` verdicts changed.**_
+
+Proof-table membership and the per-edge correspondence join no longer key on a source NAME. Every
+evidence boundary — requested edges, witnesses, table membership, dependency roots — keys on
+`DefinitionIdentity`: package, module, declaration and implementation together, with no name-keyed
+fallback anywhere in the path.
+
+**Attestation.** All nine proof tables are converted. A table binds each of its models to a
+GENERATED reference emitted from compiler facts; nobody transcribes a package identity or a digest.
+The manifest carries two populations kept apart by `binding_role` — SUBJECT rows (a declaration some
+fixture links a proof to, frozen at 86 = 0 + 39 + 47) and DEPENDENCY rows (one exact implementation
+per requested body-edge callee, 41 requests all attested). References are deduped on (table, package,
+module, declaration, implementation) and every one is either bound at a table site, a NAMED
+exclusion, or a declaration the table holds no model of.
+
+**Authority.** A claim may be `proved` only if every compiler edge in its dependency closure is
+witnessed exactly once by an entry naming that exact implementation, AND the closure computes.
+`correspondence_unjustified` is a distinct status through every surface — canonical string, currency
+predicate, diagnostics, report rendering, traceability, obligation ledger and release policy — and is
+not current for dependents, so an unjustified closure cannot become the foundation of another.
+
+**Measured at closure:** 35 proved / 0 unjustified across the fixture corpus; 13 subject roots refuse,
+none of them proved; `tests/programs/proof_decode_header.con` is the live control, its hardcoded link
+naming a table with zero canonical entries.
+
+**Defects this work found in itself,** each fixed and controlled:
+
+- Four CLI paths built package identity independently; one dropped the project's own identity and
+  synthesized one from the invoked file's text, so the same program reported 5 proved through one
+  command and 4 through another.
+- Two drift fixtures sat beside `main.con` in one package, both resolving to module `main`, so the
+  loader picked `main.con` and **their drifted bodies were never analyzed** — reports printed one
+  file's line numbers with another file's semantics. Both now have their own packages and report
+  exactly the stale functions their headers always claimed.
+- The authority downgrade ran after diagnostics and did not propagate, so a caller could stay
+  `proved` over a callee that had just stopped being current.
+- `correspondence_unjustified` was missing from six supposedly exhaustive surfaces, including the
+  `concrete check` exit code — a false green in the command a release gate runs.
+- The classification generator serialized raw attestations, skipping every check that makes the
+  scoped path trustworthy, and freshness regenerates through that same producer.
+- `PackageIdentity` prefix-matched manifest keys (`namespace` answered `name`) and exempted
+  `contentRoot` from the location-dependence check.
+
+**And three checks that could not fail.** A tripwire grepped a symbol renamed two weeks earlier; a
+`grep -q` pipeline raced with SIGPIPE under `pipefail` and failed about one run in three; and the
+test suite, dying mid-run under `set -e`, produced no summary — which reads identically to a clean
+grep. The suite now writes a machine-readable summary file and exits **97** with a banner if it ends
+without one.
+
 ### R-0004 Dependency-Root Status And Refusal Gate Reconciled
 
 _Roadmap and gate only, 2026-08-09. No proof verdict or production consumer changed._
