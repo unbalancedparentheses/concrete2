@@ -84,6 +84,12 @@ def PackageIdentity.of? (declaredName originIdentity contentRoot : String)
   else if contentRoot.isEmpty then .error (.emptyComponent "contentRoot")
   else if looksLocationDependent declaredName then .error (.locationDependent declaredName)
   else if looksLocationDependent originIdentity then .error (.locationDependent originIdentity)
+  -- THE CONTENT ROOT IS CHECKED TOO. It was exempt, and the exemption had no justification: an
+  -- identity is reproducible only if EVERY component is, and a content root carrying a checkout path
+  -- makes the whole identity vary by where the code sits — the exact failure the other two
+  -- components are checked for. Nothing in the corpus supplies a path here today, which is why the
+  -- omission survived; a future producer that did would have been accepted in silence.
+  else if looksLocationDependent contentRoot then .error (.locationDependent contentRoot)
   else .ok (PackageIdentity.mk declaredName originIdentity contentRoot)
 
 /-- The identity for a STANDALONE single-file compilation, derived from canonical content.
@@ -143,7 +149,12 @@ def packageField (content : String) (field : String) : Option String :=
     | l :: rest, inPkg =>
       if l.startsWith "[package]" then go rest true
       else if l.startsWith "[" then go rest false
-      else if inPkg && l.startsWith field then
+      -- THE KEY IS PARSED AND COMPARED EXACTLY, not prefix-matched. `startsWith field` accepted any
+      -- key BEGINNING with the field name, so `namespace = "..."` answered a request for `name` and
+      -- `versioning = "..."` answered `version` — a package identity read from the wrong key, which
+      -- is precisely the silent-substitution class this type exists to close. Section-awareness
+      -- alone was not enough.
+      else if inPkg && ((l.splitOn "=").head?.map (·.trimAscii.toString) == some field) then
         match (l.splitOn "=").getLast? with
         | some v =>
           let t := v.trimAscii.toString

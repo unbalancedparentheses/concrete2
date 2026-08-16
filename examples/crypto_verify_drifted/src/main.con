@@ -1,5 +1,10 @@
 // Toy authenticated-tag model — DRIFTED variant for drift testing
 //
+// ITS OWN PACKAGE, for the same reason `elf_header_drifted` is: this file used to sit beside
+// `main.con` in `examples/crypto_verify/src/`, and both resolve to module `main`. The project loader
+// picked `main.con`, so this file's drifted bodies were never analyzed through the project path —
+// reports printed these line numbers with the other file's semantics.
+//
 // Changes from original:
 //   1. compute_tag uses subtraction instead of addition (breaks tag computation)
 //   2. check_nonce accepts nonce == 0 (off-by-one, weakens validation)

@@ -22,11 +22,14 @@ stated here rather than left to the implementation to imply.
 then is surplus computed. Unknown witnesses are never pre-filtered away — pre-filtering is how
 surplus disappears while appearing handled.
 
-**NOT WIRED TO PRODUCTION.** Nothing calls this yet. It cannot be fed from the real corpus until
-the classification hand-back carries per-table ENTRY evidence (callee identity + body digest); today
-a row names a table and its whole-table digest, so "does table T contain callee C" is unanswerable
-compiler-side. The join and every refusal below are exercised by controls; the corpus wiring is
-separate and is not claimed here.
+**WIRED TO PRODUCTION AS OF 2026-08-15.** `applyCorrespondenceAuthority` consumes this join: a claim
+may be `proved` only if every edge in its closure is justified here. The paragraph that used to sit
+in this place said the opposite — "nothing calls this yet", and that the corpus could not feed it
+until the hand-back carried per-table entry evidence. Both conditions were met and the note was not
+updated, which is exactly the drift the docs-drift gate exists to catch one layer up.
+
+The join is keyed on `DefinitionIdentity`, so "does table T contain callee C" is answered by
+`scopedEntryEvidenceForTable` over attested entries — never by a source name.
 -/
 
 namespace Concrete.Proof

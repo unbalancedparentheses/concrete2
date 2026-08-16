@@ -10,4 +10,3 @@ Read [CLAIMS_TODAY.md](CLAIMS_TODAY.md) first for shipped guarantees, then
 [EVIDENCE_ARCHITECTURE.md](EVIDENCE_ARCHITECTURE.md), and
 [VERIFICATION_IR.md](VERIFICATION_IR.md). Active implementation status remains exclusively in
 [`../../ROADMAP.md`](../../ROADMAP.md).
-

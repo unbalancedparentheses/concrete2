@@ -63,9 +63,8 @@ fn check_nonce(nonce: Int, max_nonce: Int) -> Int {
 // theorem — no theorem proves this body, and inventing a link to the nearest
 // plausible one is the defect being repaired.
 //
-// The header block above still lists this function as "proved" in the six-state
-// tour; it is now "missing", which is the honest state for a function nobody
-// proved.
+// The six-state tour at the top of this file is updated to match: this function
+// is now "missing", which is the honest state for a function nobody proved.
 
 #[spec(validate_header.spec)]
 fn validate_header(nonce: Int, max_nonce: Int, version: Int) -> Int {

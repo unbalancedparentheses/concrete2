@@ -1,5 +1,15 @@
 // ELF header validator — DRIFTED variant for drift testing
 //
+// ITS OWN PACKAGE, and that is load-bearing. This file used to sit in `examples/elf_header/src/`
+// beside `main.con`, and BOTH declared `mod main`. The project loader resolved that module to
+// `main.con`, so this file's bodies were never analyzed through the project path: reports printed
+// this file's line numbers with the other file's semantics, and its `check_magic` showed the real
+// program's implementation digest rather than the `b0 == 0` body below.
+//
+// Moved to its own package so it is genuinely a DIFFERENT PROGRAM that shares every declaration
+// name with `elf_header` — which is what makes it a control for cross-program substitution rather
+// than an alias for the program it is supposed to differ from.
+//
 // Changes from original:
 //   1. check_magic accepts 0x00 instead of 0x7F as first byte (breaks ELF magic)
 //   2. check_version accepts version 0 and 1 (weakens version check)

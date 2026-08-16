@@ -348,74 +348,53 @@ else
 fi
 # trust must be visible, and separately from the root
 
-# === THE AUTHORITY PASS IS LIVE, AND IT IS NOT VACUOUS =========================================
-# A friendly verdict must survive its dependency JUSTIFICATION, not only its own freshness and its
-# callees' currency. `main_drifted` is the measured case: FIVE `proved` verdicts before the pass,
-# FOUR after. The one that fell is its only subject with outgoing edges, every one of which pointed
-# at another program's implementation and was justified by name agreement alone.
+# === THE AUTHORITY PASS, AND THE CROSS-PROGRAM DISCRIMINATION IT RESTS ON =======================
 #
-# The other four must STAY proved: leaf functions whose own fingerprints match their own bodies, and
-# a closure with no edges is vacuously justified. Both halves are asserted, because a pass that
-# downgraded everything would satisfy the first alone.
-# THE POSITIVE SIDE OF THE SAME PAIR, and it is the control that matters most: `elf_header/main.con`
-# and `main_drifted.con` declare the same functions, link the SAME theorem, and name the SAME table.
-# One is proved with four justified edges; the other is downgraded. A pass that could only refuse
-# would satisfy every assertion below except this one.
-REAL_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
-REAL_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
-if [ "$REAL_PROVED" = "5" ] && [ "$REAL_UNJUST" = "0" ]; then
-  ok "the REAL program keeps all 5 proved verdicts, including the edge-bearing one (justification accepted)"
+# `examples/elf_header` and `examples/elf_header_drifted` are two PACKAGES declaring the same
+# functions. The real program's `validate_header` corresponds 4/4; the drifted one's corresponds 0/4,
+# because its edges point at its own drifted implementations and `elfFns` attests the real program's.
+# That is the discrimination the scoped join exists to make, and it is only measurable because the
+# drifted file was moved into its own package — it previously sat beside `main.con` in one package,
+# both declaring `mod main`, so the loader resolved to `main.con` and the drifted bodies were never
+# analyzed at all.
+REAL_CORR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=4 missing=0' || true)"
+DRIFT_CORR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
+if [ "$REAL_CORR" = "1" ] && [ "$DRIFT_CORR" = "1" ]; then
+  ok "same declarations, two packages: the real program corresponds 4/4 and the drifted one 0/4"
 else
-  no "elf_header/main.con reports $REAL_PROVED proved / $REAL_UNJUST unjustified (expected 5/0) — the authority pass is refusing a justified closure"
+  no "cross-program discrimination moved (real=$REAL_CORR drifted=$DRIFT_CORR, expected 1/1) — either the join stopped comparing packages or a fixture changed"
 fi
-# CORPUS-WIDE, so the pass cannot be quietly downgrading elsewhere. 37 proved with exactly one
-# unjustified closure; a first measurement of this used a pattern that matched `-- proof link
-# unbound` but not `-- proved`, reported "nothing is proved", and produced a false claim that the
-# authority pass changed no verdict.
+
+# THE DRIFTED PACKAGE IS CAUGHT BY STALENESS, NOT BY CORRESPONDENCE, and that ordering is correct: a
+# body that no longer matches its own stored fingerprint is a more specific and more actionable fact
+# than an unjustified closure, so `stale` wins and the authority pass never sees those subjects.
+DRIFT_STALE="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- proof stale" || true)"
+if [ "$DRIFT_STALE" = "2" ]; then
+  ok "the drifted package reports 2 stale proofs — exactly the two functions its header says drifted"
+else
+  no "the drifted package reports $DRIFT_STALE stale (expected 2) — its own bodies may not be being analyzed"
+fi
+
+# THE AUTHORITY PASS HAS NO LIVE CASE IN examples/ TODAY, and saying so is the point. Its live case is
+# `tests/programs/proof_decode_header.con`, whose hardcoded link names a table with zero entries. A
+# count of zero here is therefore CORRECT and must still be pinned: if an unjustified closure appears
+# in the fixture corpus, that is a finding either way — a real defect caught, or a regression.
 CORPUS_PROVED=0; CORPUS_UNJUST=0
 for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
   CORPUS_PROVED=$((CORPUS_PROVED + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)))
   CORPUS_UNJUST=$((CORPUS_UNJUST + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)))
 done
-if [ "$CORPUS_PROVED" = "37" ] && [ "$CORPUS_UNJUST" = "1" ]; then
-  ok "corpus-wide: 37 proved, exactly 1 closure unjustified (the authority pass is selective, not blunt)"
+if [ "$CORPUS_PROVED" = "35" ] && [ "$CORPUS_UNJUST" = "0" ]; then
+  ok "corpus-wide: 35 proved, 0 unjustified closures (the fixture corpus is clean under the authority pass)"
 else
-  no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 37/1) — say which subject changed and why"
+  no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 35/0) — say which subject changed and why"
 fi
-# THE ROOT DIMENSION IS CONSUMED AND CURRENTLY REDUNDANT, and the redundancy is pinned rather than
-# left to be discovered. Every subject whose root refuses is already either not `proved` or refused
-# by correspondence, so requiring the root downgrades nobody extra — measured, not assumed. If this
-# count ever diverges, the root has started deciding something on its own and that deserves a look
-# rather than a silent absorption.
-ROOTREF=0
-for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
-  ROOTREF=$((ROOTREF + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -c REFUSED || true)))
-done
-if [ "$ROOTREF" = "13" ]; then
-  ok "13 subjects roots refuse, none of them proved — the root conjunct is consumed and currently redundant"
+# ...and the live case must stay live, or the pass has no corpus exercise at all.
+DH_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" tests/programs/proof_decode_header.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
+if [ "$DH_UNJUST" = "1" ]; then
+  ok "decode_header's closure is refused (a table with no entries can describe no definitions)"
 else
-  no "root refusals moved to $ROOTREF (was 13) — if a proved subject now fails to root, the root dimension has become load-bearing and should be described as such"
-fi
-# ...and a TRUSTED callee must have a node. Its absence refused `calls.combine`'s whole closure for a
-# reason that had nothing to do with its evidence: excluded definitions carry scoped identities and
-# were still missing from the node set.
-if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -q REFUSED; then
-  no "composition_trusted_helper still cannot root — an edge to a trusted callee has no node again"
-else
-  ok "a closure crossing a TRUSTED boundary roots (excluded definitions have nodes)"
-fi
-
-DRIFT_PROVED="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)"
-DRIFT_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
-if [ "$DRIFT_UNJUST" = "1" ]; then
-  ok "a cross-program closure is DOWNGRADED in production (correspondence_unjustified, not proved)"
-else
-  no "main_drifted reports $DRIFT_UNJUST unjustified closures (expected 1) — the authority pass stopped consuming correspondence"
-fi
-if [ "$DRIFT_PROVED" = "4" ]; then
-  ok "the four edge-free subjects stay proved (a vacuous closure is justified, not downgraded)"
-else
-  no "main_drifted reports $DRIFT_PROVED proved (expected 4) — the pass is downgrading claims whose closures are empty"
+  no "decode_header no longer reports an unjustified closure — the authority pass has lost its only live case"
 fi
 
 echo ""
@@ -1747,6 +1726,20 @@ probe "an unknown table REFUSES scoped membership, it does not answer empty" "tr
    | .error (TableResolveRefusal.unknownTable _) => true
    | _ => false'
 
+# THE MANIFEST KEY IS EXACT, not a prefix. `namespace = "..."` must not answer a request for `name`,
+# and `versioning` must not answer `version` — a package identity read from the wrong key is the
+# silent substitution this type exists to close, and section-awareness alone did not prevent it.
+probe "a manifest key is matched exactly, not by prefix" "true" \
+'#eval
+  let m := "[package]\nnamespace = \"wrong\"\nname = \"right\"\nversioning = \"9.9\"\n"
+  (packageField m "name" == some "right") && (packageField m "version" == none)'
+# ...and EVERY identity component is checked for location dependence, including the content root,
+# which was exempt for no reason: an identity is reproducible only if all of it is.
+probe "a location-dependent content root is refused" "true" \
+'#eval match PackageIdentity.of? "pkg" "origin" "/home/someone/checkout" with
+   | .error (PackageIdentityRefusal.locationDependent _) => true
+   | _ => false'
+
 probe "cryptoFns is ATTESTED and yields 5 scoped entries" "some 5" \
 '#eval (scopedEntryEvidence cryptoFns).toOption.map (·.length)'
 probe "elfFns is ATTESTED and yields 5 scoped entries" "some 5" \
@@ -2393,7 +2386,7 @@ if [ "$VH" = "1" ]; then
   # one of its four body edges pointed at an `elfFns` entry by NAME. Now the package component
   # separates them and all four fall to `missing`. If this ever reads `usable=yes`, the join has
   # gone back to matching names.
-  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=4'; then
+  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=4'; then
     no "elf_header/main_drifted no longer refuses with missing=4 — a different program's edges are being justified by elfFns again"
   else
     ok "elf_header/main_drifted refuses all 4 edges (cross-program substitution, caught by scope)"

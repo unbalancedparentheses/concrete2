@@ -10,4 +10,3 @@ Start with [LANGUAGE_INVARIANTS.md](LANGUAGE_INVARIANTS.md),
 [LANGUAGE_SHAPE.md](LANGUAGE_SHAPE.md). Verification-specific contract lowering belongs in
 [`../verification/`](../verification/); ABI and target behavior belong in
 [`../platform/`](../platform/).
-

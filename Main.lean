@@ -439,6 +439,36 @@ def compileAndEmit (inputPath : String) (mode : String) : IO UInt32 := do
 /-- Stable schema version for `concrete prove` machine-readable output. -/
 def proveSchemaVersion : String := "1"
 
+/-- THE ONE PACKAGE IDENTITY PRODUCER for every CLI path.
+
+    Four call sites built this independently — report, query, check and the snapshot/diff path — and
+    three of them synthesized an identity from the INVOKED FILE'S TEXT while the project loader
+    derived one from the manifest. The same program therefore had two identities depending on which
+    command you ran: `elf_header` reported 5 proved through one path and 4 through another, because
+    the generated attestations matched one identity and not the other.
+
+    A manifest in scope wins, because it is the declared identity of the package the definitions
+    belong to. Without one the identity is synthetic over the COMPLETE resolved source map — not the
+    invoked file alone, which made two programs sharing one file the same package.
+
+    Returns the `Except` rather than aborting, so each caller keeps its own refusal reporting. -/
+def resolvePackageIdentity (inputPath : String) (moduleNames : List String) (srcMap : SourceMap)
+    : IO (Except Proof.PackageIdentityRefusal Proof.PackageIdentity) := do
+  match ← findProjectRoot (dirOf inputPath) with
+  | some root =>
+    -- THE PROJECT'S OWN COMPUTATION, not a re-derivation from whatever this command happened to
+    -- load. Package identity binds the MODULE INVENTORY, so computing it from the subset of modules
+    -- one command resolved gives a different answer than computing it from the package — which is
+    -- how `concrete snapshot` and `--report proof-status` disagreed about the same program after the
+    -- first fix. `loadProject` is the producer; everything else asks it.
+    match ← loadProject root with
+    | .ok ctx => return ctx.packageIdentity
+    -- A project that cannot load has no identity to report. Falling back to a synthetic one would
+    -- reintroduce the second producer this function exists to remove, and would silently answer a
+    -- question the project itself could not.
+    | .error _ => return .error (.emptyComponent "project failed to load")
+  | none => return Proof.PackageIdentity.syntheticForModules moduleNames (srcMap.map (·.2))
+
 /-- Run pipeline to needed depth and produce a report. -/
 def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
   let source ← readFile inputPath
@@ -451,14 +481,13 @@ def compileAndQuery (inputPath : String) (query : String) : IO UInt32 := do
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     let registry ← loadRegistryWithLinks inputPath parsed.modules validCore.coreModules
-    -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
-    -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
+    -- ONE PRODUCER: manifest identity when a project is in scope, synthetic over the complete
+    -- resolved source map otherwise. A refusal ABORTS rather than substituting a
     -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
     -- "unidentified" fallback would be shared by every such compilation, reintroducing the
     -- collision this migration removes.
-    let pc ← match extractProofCore? validCore
-        (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
-        simpleLocMap registry with
+    let packageIdentity ← resolvePackageIdentity inputPath (validCore.coreModules.map (·.name)) srcMap
+    let pc ← match extractProofCore? validCore packageIdentity simpleLocMap registry with
       | .ok pc => pure pc
       | .error w => IO.eprintln s!"error: {w.explain}"; return 1
     -- Traceability queries need the backend pipeline
@@ -1494,28 +1523,41 @@ def compileAndReport (inputPath : String) (reportType : String)
   -- (used for pc/registry validation, so sibling-file entries don't
   -- appear "unknown"), scoped covers just the file the user invoked
   -- (used to drive report output). In standalone mode they're identical.
-  let frontendResult : Except UInt32 (ParsedProgram × ValidatedCore × ValidatedCore × SourceMap) ←
+  -- THE PACKAGE IDENTITY TRAVELS WITH THE FRONTEND RESULT, and it must: this path used to destructure
+  -- the project context, DROP `ctx.packageIdentity`, and then synthesize an identity from the invoked
+  -- file's text alone. The same program therefore had two identities — one when checked as a project,
+  -- another when reported as a file — so generated attestations matched one and not the other, and
+  -- `elf_header` reported 5 proved through the file path and 4 through the project path. One producer
+  -- means one answer; carrying it here is what makes that true rather than intended.
+  let frontendResult : Except UInt32
+      (ParsedProgram × ValidatedCore × ValidatedCore × SourceMap ×
+       Except Proof.PackageIdentityRefusal Proof.PackageIdentity) ←
     match ← findProjectRoot inputDir with
     | some root =>
       match ← loadProject root with
       | .error ec => pure (Except.error ec)
       | .ok ctx =>
-        let { validCore, parsed, allSrcMap, depNames, .. } := ctx
+        let { validCore, parsed, allSrcMap, depNames, packageIdentity, .. } := ctx
         let userModules := validCore.coreModules.filter fun m => !depNames.contains m.name
         let fullValidCore : ValidatedCore := { validCore with coreModules := userModules }
         let scopedModules ← scopeUserModulesToFile userModules inputPath root
         let scopedValidCore : ValidatedCore := { validCore with coreModules := scopedModules }
-        pure (Except.ok (parsed, fullValidCore, scopedValidCore, allSrcMap))
+        pure (Except.ok (parsed, fullValidCore, scopedValidCore, allSrcMap, packageIdentity))
     | none =>
       match ← Pipeline.runFrontend inputPath source resolveAllModules with
       | .error ds =>
         IO.eprintln (renderDiagnostics ds (sourceMap := mainSrcMap))
         pure (Except.error 1)
       | .ok (parsed, _, validCore, srcMap) =>
-        pure (Except.ok (parsed, validCore, validCore, srcMap))
+        -- STANDALONE: synthetic over the COMPLETE resolved source map, not the invoked file alone.
+        -- Hashing one file made two programs sharing that file — and differing everywhere else —
+        -- the same package, which is the collision content-binding exists to prevent.
+        pure (Except.ok (parsed, validCore, validCore, srcMap,
+          Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name))
+            (srcMap.map (·.2))))
   match frontendResult with
   | .error ec => return ec
-  | .ok (parsed, fullValidCore, scopedValidCore, srcMap) =>
+  | .ok (parsed, fullValidCore, scopedValidCore, srcMap, packageIdentity) =>
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     -- The registry is the in-source proof links (#[proof_by]/#[spec]/...)
@@ -1529,9 +1571,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
     -- "unidentified" fallback would be shared by every such compilation, reintroducing the
     -- collision this migration removes.
-    let pc ← match extractProofCore? fullValidCore
-        (Proof.PackageIdentity.syntheticForModules (fullValidCore.coreModules.map (·.name)) [source])
-        simpleLocMap registry with
+    let pc ← match extractProofCore? fullValidCore packageIdentity simpleLocMap registry with
       | .ok pc => pure pc
       | .error w => IO.eprintln s!"error: {w.explain}"; return 1
     -- Report output still iterates only the scoped modules.
@@ -2947,9 +2987,8 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
       let fullUserValidCore : ValidatedCore := { validCore with coreModules := userModules }
       let locMap := Report.buildFnLocMap parsed.modules inputPath
       let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
-      -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
-      -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
-      -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+      -- ONE PRODUCER: manifest identity when a project is in scope, synthetic otherwise. A refusal
+      -- ABORTS rather than substituting a placeholder: every definition identity minted from this ProofCore is package-scoped, and an
       -- "unidentified" fallback would be shared by every such compilation, reintroducing the
       -- collision this migration removes.
       let pc ← match extractProofCore? fullUserValidCore
@@ -2976,14 +3015,13 @@ def compileAndCheck (inputPath : String) (checkType : String) : IO UInt32 := do
     | .ok (parsed, _, validCore, _) =>
       let locMap := Report.buildFnLocMap parsed.modules inputPath
       let simpleLocMap := locMap.map fun (e : Report.FnLocEntry) => (e.qualName, (e.file, e.fnSpan.line))
-      -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
-      -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
-      -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+      -- ONE PRODUCER: manifest identity when a project is in scope, synthetic otherwise. A refusal
+      -- ABORTS rather than substituting a placeholder: every definition identity minted from this ProofCore is package-scoped, and an
       -- "unidentified" fallback would be shared by every such compilation, reintroducing the
       -- collision this migration removes.
-      let pc ← match extractProofCore? validCore
-          (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
-          simpleLocMap with
+      let packageIdentity ← resolvePackageIdentity inputPath (validCore.coreModules.map (·.name))
+        [(inputPath, source)]
+      let pc ← match extractProofCore? validCore packageIdentity simpleLocMap with
         | .ok pc => pure pc
         | .error w => IO.eprintln s!"error: {w.explain}"; return 1
       let srcMap : SourceMap := [(inputPath, source)]
@@ -3354,8 +3392,15 @@ def main (args : List String) : IO UInt32 := do
         if depOblCount > 0 then
           IO.println s!"\n({depOblCount} dependency obligations hidden — use --report proof-status for full view)"
         -- Exit code: 0 if all user-package eligible proved, 1 if any stale/missing/blocked
+        -- EVERY NON-CURRENT STATUS COUNTS AS AN ISSUE, enumerated through `isCurrentForDependents`
+        -- rather than by listing three constructors. The list was `stale || missing || blocked`, so
+        -- `concrete check` exited 0 on a project containing an unjustified closure — a false green in
+        -- the command a release gate runs — and would have done the same for `unbound`,
+        -- `needsRecheck` and `depsNotCurrent`. A hand-written subset of a status vocabulary is the
+        -- restated-fact hazard this file keeps finding; derive it from the predicate that already
+        -- decides what may be relied upon.
         let hasIssues := userPc.obligations.any fun o =>
-          o.status == .stale || o.status == .missing || o.status == .blocked
+          !o.status.isCurrentForDependents && o.status != .ineligible
         let hasRegistryErrors := ledger.diagnostics.any (fun d => d.code == "registry" && d.severity == "error")
         return (if hasIssues || hasRegistryErrors then 1 else 0)
   -- concrete diff <old.json> <new.json> [--json]
@@ -3452,14 +3497,13 @@ def main (args : List String) : IO UInt32 := do
         let locMap := Report.buildFnLocMap parsed.modules inp
         let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
         let registry ← loadRegistryWithLinks inp parsed.modules validCore.coreModules
-        -- STANDALONE CLI PATH: no manifest in scope, so the package identity is synthetic over the
-        -- module inventory, via the single producer. A refusal ABORTS rather than substituting a
-        -- placeholder: every definition identity minted from this ProofCore is package-scoped, and an
+        -- ONE PRODUCER: manifest identity when a project is in scope, synthetic otherwise. A refusal
+        -- ABORTS rather than substituting a placeholder: every definition identity minted from this ProofCore is package-scoped, and an
         -- "unidentified" fallback would be shared by every such compilation, reintroducing the
         -- collision this migration removes.
-        let pc ← match extractProofCore? validCore
-            (Proof.PackageIdentity.syntheticForModules (validCore.coreModules.map (·.name)) [source])
-            simpleLocMap registry with
+        let packageIdentity ← resolvePackageIdentity inp (validCore.coreModules.map (·.name))
+          [(inp, source)]
+        let pc ← match extractProofCore? validCore packageIdentity simpleLocMap registry with
           | .ok pc => pure pc
           | .error w => IO.eprintln s!"error: {w.explain}"; return 1
         -- Collect core facts (same as diagnostics-json) plus source-contract facts

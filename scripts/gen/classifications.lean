@@ -142,13 +142,26 @@ def sourceLinkedThms : List Name :=
     -- attested entry with THIS definition" has to be answerable for every table a theorem names —
     -- and the compiler cannot hold `combineFns` or `shaFns`. Emitted from the table's own
     -- `attested` array, so it is the same binding the site made, not a re-derivation.
+    -- EMITTED FROM `scopedEntryEvidence`, NOT FROM THE RAW `attested` ARRAY.
+    --
+    -- Serializing `t.attested` directly skipped every check that makes the scoped path trustworthy:
+    -- that each attested model is actually IN the table, that its stored provenance agrees with the
+    -- digest recomputed from its body, that no two entries attest the same definition, and that no
+    -- generated reference failed validation. The compiler cannot re-derive any of that for an
+    -- out-of-build table — it holds rows and no bodies — so whatever this emits is what it must
+    -- believe. And because freshness regenerates through this same producer, a defect here would
+    -- verify against itself forever.
+    --
+    -- `scopedEntryEvidence` is the function the IN-BUILD path uses for exactly these questions, so
+    -- calling it here means both paths are validated by one implementation rather than one being
+    -- validated and the other transcribed.
+    let srowsRes ← match scopedEntryEvidence t with
+      | .error w => throwError s!"external table {nm}: scoped entry evidence refuses ({w.explain}) — refusing to emit membership the compiler could not re-derive"
+      | .ok scopedRows => pure scopedRows
     let mut srows : List String := []
-    for (m, d) in t.attested.toList do
-      match m.sourceBodyDigest with
-      | some sbd =>
-        srows := srows ++ [s!"(\"{d.packageIdentity}\", \"{d.moduleIdentity}\", \"{d.declarationIdentity}\", \"{d.implementationIdentity}\", \"{sbd.value}\")"]
-      | none =>
-        throwError s!"external table {nm} attests a model with no source-body provenance — refusing to emit membership that cannot be re-checked"
+    for r in srowsRes do
+      let d := r.definition
+      srows := srows ++ [s!"(\"{d.packageIdentity}\", \"{d.moduleIdentity}\", \"{d.declarationIdentity}\", \"{d.implementationIdentity}\", \"{r.sourceBodyDigest}\")"]
     slits := slits ++ [s!"  (\"{nm}\", [" ++ String.intercalate ", " srows ++ "])"]
   IO.println (String.intercalate ",\n" elits)
   IO.println "-- EXTERNAL-SCOPED"

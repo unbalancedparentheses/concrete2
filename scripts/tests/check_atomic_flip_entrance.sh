@@ -123,7 +123,7 @@ echo "=== condition 4: correspondence and roots are unmoved ==="
 # 2026-08-15 (its false `#[proof_by]` deleted), so it no longer claims anything. `main_drifted` is
 # the permanent case: a DIFFERENT PROGRAM sharing every declaration name with `elf_header`, whose
 # four body edges the scoped join refuses and the name-keyed one accepted.
-CORR="$("$BIN" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
+CORR="$("$BIN" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
 if [ "$CORR" -ge 1 ] 2>/dev/null; then
   ok "the cross-program substitution still refuses (matched=0 missing=4)"
 else

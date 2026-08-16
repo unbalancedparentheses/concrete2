@@ -24,6 +24,15 @@ namespace Concrete.Proof
 
 /-- Why a hand-back table name yielded no entries. -/
 inductive TableResolveRefusal where
+  /-- The table IS linked and its SCOPED evidence refuses — attestations missing, duplicated, or
+      disagreeing with the models. Carries the reason verbatim rather than restating it.
+
+      SEPARATE FROM `entriesRefused` and from `externalRowMalformed`, and the distinction was a real
+      diagnostic bug: an in-build table's scoped refusal was reported as an external-row defect, so
+      `cryptoFns` — which the compiler holds by value — told a reader "external row is malformed:
+      'main.check_nonce' is attested twice" and sent them looking for a hand-back row that does not
+      exist. -/
+  | scopedEvidenceRefused (name : String) (why : String)
   /-- The name is not one this compiler links. Either the hand-back names a table defined outside
       the compiler build (as `Examples.ProofPatterns.Proofs.combineFns` is), or the dispatch below
       is stale relative to the generator. Both must refuse: an unreadable table is a dependency
@@ -53,6 +62,7 @@ def TableResolveRefusal.explain : TableResolveRefusal → String
       s!"'{n}' records entry digest {rec} but its entries hash to {rc}"
   | .externalRowAmbiguous n => s!"'{n}' has several external rows — the hand-back is not a function"
   | .externalRowMalformed n w => s!"'{n}' external row is malformed: {w}"
+  | .scopedEvidenceRefused n w => s!"'{n}' scoped entry evidence refuses: {w}"
 
 /-- The hand-back name of every table this compiler links.
 
@@ -171,7 +181,11 @@ def scopedEntryEvidenceForTable (name : String)
   | some t =>
     match scopedEntryEvidence t with
     | .ok rows => .ok rows
-    | .error w => .error (.externalRowMalformed name w.explain)
+    -- `entriesRefused`, not `externalRowMalformed`: this table IS compiler-linked, and reporting its
+    -- scoped-evidence refusal as an external-row defect sent a reader looking for a hand-back row
+    -- that does not exist. Caught when `cryptoFns` — an in-build table — reported
+    -- "external row is malformed: 'main.check_nonce' is attested twice".
+    | .error w => .error (.scopedEvidenceRefused name w.explain)
   | none =>
     match externalScopedEntries.filter (fun e => e.1 == name) with
     | [] => .error (.unknownTable name)

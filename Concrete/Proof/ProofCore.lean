@@ -1581,9 +1581,21 @@ def ObligationStatus.canonical : ObligationStatus → String
     this list had silently omitted `unbound` since that status was introduced,
     and nothing noticed because it has no consumers. A hand-maintained mirror of
     a constructor list is the same restated-fact hazard as the rest of this
-    file's history — derive it. -/
+    file's history — derive it.
+
+    EVERY constructor, and the omissions were real: `needsRecheck` and `correspondenceUnjustified`
+    were both missing, so any consumer enumerating the status vocabulary through this list — a
+    schema, a summary, a policy table — silently did not know they existed. A list that must be
+    exhaustive and is written by hand drifts the moment a constructor is added; `mem_all` below
+    turns that into a compile error instead. -/
 def ObligationStatus.allStatuses : List ObligationStatus :=
-  [.proved, .stale, .missing, .blocked, .ineligible, .trusted, .unbound, .depsNotCurrent]
+  [.proved, .stale, .missing, .blocked, .ineligible, .trusted, .unbound, .needsRecheck,
+   .depsNotCurrent, .correspondenceUnjustified]
+
+/-- COMPLETENESS IS A THEOREM, not a length check. A count agrees with whatever was written; this
+    leaves an unsolved case naming the missing constructor. -/
+theorem ObligationStatus.mem_all (s : ObligationStatus) : s ∈ ObligationStatus.allStatuses := by
+  cases s <;> simp [ObligationStatus.allStatuses]
 
 def ObligationStatus.allCanonical : List String :=
   ObligationStatus.allStatuses.map ObligationStatus.canonical
@@ -1661,6 +1673,12 @@ inductive ProofDiagnosticKind where
       `unboundProofLink`: the obligation status is `depsNotCurrent`, and
       DIAG-STATUS requires the diagnostic to agree with it. -/
   | dependencyNotCurrent
+  /-- The dependency closure has no validated per-edge justification. Its own kind for the same
+      reason as the two above: the obligation status is `correspondenceUnjustified`, DIAG-STATUS
+      requires the diagnostic to agree with it, and reusing `dependencyNotCurrent` here made that
+      invariant fire — while also telling an author that a callee needed re-verification when what
+      was missing was this claim's own justification. -/
+  | dependencyClosureUnjustified
   deriving BEq, Repr
 
 /-- Canonical string for diagnostic kind. Maps to the ObligationStatus
@@ -1676,6 +1694,7 @@ def ProofDiagnosticKind.canonical : ProofDiagnosticKind → String
   | .leanCheckFailure     => "lean_check_failure"
   | .unboundProofLink     => "unbound"
   | .dependencyNotCurrent => "deps_not_current"
+  | .dependencyClosureUnjustified => "correspondence_unjustified"
 
 /-- Stable error code for proof diagnostic kinds. -/
 def ProofDiagnosticKind.code : ProofDiagnosticKind → String
@@ -1689,6 +1708,7 @@ def ProofDiagnosticKind.code : ProofDiagnosticKind → String
   | .leanCheckFailure     => "E0807"
   | .unboundProofLink     => "E0810"
   | .dependencyNotCurrent => "E0811"
+  | .dependencyClosureUnjustified => "E0812"
 
 /-- Severity of a proof diagnostic. -/
 inductive ProofDiagnosticSeverity where
@@ -1736,6 +1756,7 @@ def failureClassOf (kind : ProofDiagnosticKind)
   | .leanCheckFailure     => "lean_check_failure"
   | .unboundProofLink     => "unbound_proof_link"
   | .dependencyNotCurrent => "dependency_not_current"
+  | .dependencyClosureUnjustified => "dependency_closure_unjustified"
   | .ineligible           => (ineligCat.getD .structuralGate).failureClass
 
 /-- Repair class — what action resolves this failure. -/
@@ -1755,6 +1776,7 @@ def repairClassOf (kind : ProofDiagnosticKind)
   -- The repair is downstream: make the dependency current. Nothing about THIS
   -- function needs changing, which is why it is not `record_proof_subject`.
   | .dependencyNotCurrent => "refresh_dependency"
+  | .dependencyClosureUnjustified => "attest_dependency_closure"
   | .ineligible           => (ineligCat.getD .structuralGate).repairClass
 
 /-- A proof-pipeline diagnostic — the canonical format for proof failures,
@@ -2294,81 +2316,6 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
         | .ok _    => none)
   .ok { subject := subject, requestedEdges := requested, unscopedEdges := unscoped
       , candidateWitnesses := witnesses, resolverRefusals := refusals }
-
-/-- THE AUTHORITY PASS: a friendly verdict must survive its own dependency JUSTIFICATION.
-
-    R-0004 package 2, and the point at which the scoped join stops being shadow. A claim may be
-    `proved` only if every compiler edge in its dependency closure is witnessed exactly once by an
-    entry naming that exact implementation — package, module, declaration and body — in a table its
-    linked theorem names. Freshness of this body and currency of its callees are necessary and were
-    never sufficient: that gap is what let a shared proof table justify another program's edges on
-    name agreement alone, measured on `elf_header/main_drifted`.
-
-    APPLIED AFTER the dependency-currency downgrade, deliberately. A stale callee is a more specific
-    and more actionable fact than an unjustified closure, so a claim that is both reports the callee
-    — sending the author to a fingerprint rather than to the evidence.
-
-    A SEPARATE PASS rather than a line inside `generateObligations`, because the correspondence input
-    is built from the assembled `ProofCore` and the obligations are generated before it exists.
-    Inlining a second, lighter correspondence derivation there would be two answers to one question.
-
-    IT DISCRIMINATES BETWEEN TWO PROGRAMS THAT SHARE A THEOREM, and the corpus has both sides.
-
-    `elf_header/main.con`'s `main.validate_header` is `proved` and STAYS proved: four outgoing body
-    edges, each witnessed by an `elfFns` entry attested to that exact implementation.
-    `elf_header/main_drifted.con`'s `main.validate_header` — same declaration name, same linked
-    theorem, same table — is downgraded to `correspondence_unjustified`, because its edges point at a
-    different program's implementations and were justified by name agreement alone. Measured by
-    building with and without this pass: that fixture reported FIVE `proved` before and FOUR after.
-
-    TWO CORRECTIONS TO MY OWN RECORD, both from one bad measurement. I surveyed the corpus with a
-    pattern that matched `-- proof link unbound` and `-- proof stale` but not `-- proved` — no space
-    after "proof" — read "nothing is currently proved", and wrote this comment saying the pass would
-    change no verdict and be exercised only by controls. The corpus actually holds 37 `proved`
-    verdicts, exactly one of which this pass removes. So: it is not vacuous, and its POSITIVE
-    direction has a live case too, which the earlier wording implied it did not.
-
-    The four other `proved` verdicts in the drifted fixture stay, and should: leaf functions whose
-    own fingerprints match their own bodies, and a closure with no edges is vacuously justified.
-    What was wrong was never their freshness — it was the COMPOSED claim over edges the old join
-    matched on a source name. -/
-def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCore :=
-  -- ROOT MATERIAL IS THE SECOND DIMENSION, and it answers a different question from correspondence.
-  -- Corresponding says every edge has exactly one validated justification; rooting says the closure
-  -- can be COMPUTED at all — no duplicate identity, no absent subject digest, no edge that is not
-  -- current for dependents, no callee without a node, no unkeyable edge. A subject can correspond
-  -- while its closure cannot be serialized, and a receipt over such a closure would bind material
-  -- that was never assembled.
-  --
-  -- ON TODAY'S CORPUS THIS CONJUNCT REFUSES NOTHING THAT CORRESPONDENCE DOES NOT ALREADY REFUSE, and
-  -- saying so is the point: it is consumed, and it is currently redundant. Measured — with the root
-  -- requirement the verdict census is 37 proved / 1 unjustified, identical to correspondence alone.
-  -- It is wired anyway because the conditions it checks are ones correspondence never asks about,
-  -- and the alternative is adding the check after the first receipt is minted over a closure that
-  -- could not be assembled. Its refusal conditions are controlled synthetically in
-  -- `check_dependency_edges.sh`; the redundancy itself is pinned there too, so a corpus that starts
-  -- exercising it is noticed rather than absorbed.
-  let rooted : ProofCoreEntry → Bool := fun e =>
-    match e.definitionIdentity with
-    | .error _ => false
-    | .ok d    => (Proof.dependencyRootMaterial (dependencyNodesOf pc graph) d).toOption.isSome
-  let justified : ProofCoreEntry → Bool := fun e =>
-    match correspondenceInputOf pc graph e.callableId with
-    -- A SUBJECT WITH NO SCOPED IDENTITY CANNOT BE JUSTIFIED. Fail closed: nothing about its closure
-    -- was established, and a friendly verdict over it would rest on material never examined.
-    | .error _ => false
-    | .ok i =>
-      -- No outgoing edges means a vacuously justified closure — there is nothing to justify — and
-      -- must not be downgraded. `usable` compares the matched COUNT against the requested count, so
-      -- the empty case is only vacuous here, never a way to pass with dropped requests.
-      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true
-      else (Proof.correspond i).usable i.requestedEdges.length
-  { pc with
-    obligations := pc.obligations.map fun o =>
-      if o.status != .proved then o else
-      match pc.entries.find? (fun e => e.qualName == o.functionId.qualName) with
-      | none   => o
-      | some e => if justified e && rooted e then o else { o with status := .correspondenceUnjustified } }
 
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
@@ -2951,7 +2898,7 @@ private def generateDiagnostics
            , repairClass := repairClassOf .dependencyNotCurrent
            , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .correspondenceUnjustified =>
-      some { kind := .dependencyNotCurrent, severity := .error, function := qn
+      some { kind := .dependencyClosureUnjustified, severity := .error, function := qn
            , message := s!"`{qn}` cannot contribute proved evidence: its dependency closure has no validated per-edge justification."
            , hint := "This function's own subject is fresh and its dependencies are current; what is missing is the JUSTIFICATION. Every compiler edge in the closure must be witnessed by exactly one entry naming that exact implementation — package, module, declaration and body — in a table the linked theorem names. Attest the table's entries, or repair a proof link that names a table describing a different program's function."
            , details := o.notCurrentDeps.map (fun d => s!"edge to `{d}` has no validated justification")
@@ -3007,6 +2954,133 @@ private def generateDiagnostics
            , loc := e.loc }
     else none
   oblDiags ++ unsupDiags
+
+/-- THE AUTHORITY PASS: a friendly verdict must survive its own dependency JUSTIFICATION.
+
+    R-0004 package 2, and the point at which the scoped join stops being shadow. A claim may be
+    `proved` only if every compiler edge in its dependency closure is witnessed exactly once by an
+    entry naming that exact implementation — package, module, declaration and body — in a table its
+    linked theorem names. Freshness of this body and currency of its callees are necessary and were
+    never sufficient: that gap is what let a shared proof table justify another program's edges on
+    name agreement alone, measured on `elf_header/main_drifted`.
+
+    APPLIED AFTER the dependency-currency downgrade, deliberately. A stale callee is a more specific
+    and more actionable fact than an unjustified closure, so a claim that is both reports the callee
+    — sending the author to a fingerprint rather than to the evidence.
+
+    A SEPARATE PASS rather than a line inside `generateObligations`, because the correspondence input
+    is built from the assembled `ProofCore` and the obligations are generated before it exists.
+    Inlining a second, lighter correspondence derivation there would be two answers to one question.
+
+    IT DISCRIMINATES BETWEEN TWO PROGRAMS THAT SHARE A THEOREM, and the corpus has both sides.
+
+    `elf_header/main.con`'s `main.validate_header` is `proved` and STAYS proved: four outgoing body
+    edges, each witnessed by an `elfFns` entry attested to that exact implementation.
+    `elf_header/main_drifted.con`'s `main.validate_header` — same declaration name, same linked
+    theorem, same table — is downgraded to `correspondence_unjustified`, because its edges point at a
+    different program's implementations and were justified by name agreement alone. Measured by
+    building with and without this pass: that fixture reported FIVE `proved` before and FOUR after.
+
+    TWO CORRECTIONS TO MY OWN RECORD, both from one bad measurement. I surveyed the corpus with a
+    pattern that matched `-- proof link unbound` and `-- proof stale` but not `-- proved` — no space
+    after "proof" — read "nothing is currently proved", and wrote this comment saying the pass would
+    change no verdict and be exercised only by controls. The corpus actually holds 37 `proved`
+    verdicts, exactly one of which this pass removes. So: it is not vacuous, and its POSITIVE
+    direction has a live case too, which the earlier wording implied it did not.
+
+    The four other `proved` verdicts in the drifted fixture stay, and should: leaf functions whose
+    own fingerprints match their own bodies, and a closure with no edges is vacuously justified.
+    What was wrong was never their freshness — it was the COMPOSED claim over edges the old join
+    matched on a source name. -/
+def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCore :=
+  -- ROOT MATERIAL IS THE SECOND DIMENSION, and it answers a different question from correspondence.
+  -- Corresponding says every edge has exactly one validated justification; rooting says the closure
+  -- can be COMPUTED at all — no duplicate identity, no absent subject digest, no edge that is not
+  -- current for dependents, no callee without a node, no unkeyable edge. A subject can correspond
+  -- while its closure cannot be serialized, and a receipt over such a closure would bind material
+  -- that was never assembled.
+  --
+  -- ON TODAY'S CORPUS THIS CONJUNCT REFUSES NOTHING THAT CORRESPONDENCE DOES NOT ALREADY REFUSE, and
+  -- saying so is the point: it is consumed, and it is currently redundant. Measured — with the root
+  -- requirement the verdict census is 37 proved / 1 unjustified, identical to correspondence alone.
+  -- It is wired anyway because the conditions it checks are ones correspondence never asks about,
+  -- and the alternative is adding the check after the first receipt is minted over a closure that
+  -- could not be assembled. Its refusal conditions are controlled synthetically in
+  -- `check_dependency_edges.sh`; the redundancy itself is pinned there too, so a corpus that starts
+  -- exercising it is noticed rather than absorbed.
+  let rooted : ProofCoreEntry → Bool := fun e =>
+    match e.definitionIdentity with
+    | .error _ => false
+    | .ok d    => (Proof.dependencyRootMaterial (dependencyNodesOf pc graph) d).toOption.isSome
+  let justified : ProofCoreEntry → Bool := fun e =>
+    match correspondenceInputOf pc graph e.callableId with
+    -- A SUBJECT WITH NO SCOPED IDENTITY CANNOT BE JUSTIFIED. Fail closed: nothing about its closure
+    -- was established, and a friendly verdict over it would rest on material never examined.
+    | .error _ => false
+    | .ok i =>
+      -- No outgoing edges means a vacuously justified closure — there is nothing to justify — and
+      -- must not be downgraded. `usable` compares the matched COUNT against the requested count, so
+      -- the empty case is only vacuous here, never a way to pass with dropped requests.
+      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true
+      else (Proof.correspond i).usable i.requestedEdges.length
+  -- STEP 1: downgrade the claims whose own justification fails.
+  let downgraded := pc.obligations.map fun o =>
+    if o.status != .proved then o else
+    match pc.entries.find? (fun e => e.qualName == o.functionId.qualName) with
+    | none   => o
+    | some e => if justified e && rooted e then o else { o with status := .correspondenceUnjustified }
+  -- STEP 2: PROPAGATE. A caller reaching a newly-unjustified callee is no longer proved either, and
+  -- without this pass it stayed `proved` over a dependency that had just stopped being current —
+  -- the exact containment defect (bug 062) that `depsNotCurrent` was introduced to close, reopened
+  -- from a new direction because the downgrade happened after the containment pass had already run.
+  --
+  -- ONE ROUND SUFFICES, for the same reason it does in `generateObligations`: if X reaches Y and Y
+  -- is downgraded because it reaches a non-current Z, then X reaches Z too and is downgraded by Z
+  -- directly.
+  let statusOf : String → Option ObligationStatus := fun n =>
+    (downgraded.find? fun o => o.functionId.qualName == n).map (·.status)
+  let directCalleesOf : String → List String := fun n =>
+    match graph.find? fun (m, _) => m == n with
+    | some (_, cs) => cs
+    | none => []
+  let reachableFrom : String → List String := fun start =>
+    let rec go (fuel : Nat) (frontier acc : List String) : List String :=
+      match fuel with
+      | 0 => acc
+      | Nat.succ f =>
+        let next := (frontier.flatMap directCalleesOf).eraseDups
+        let fresh := next.filter (fun n => !acc.contains n)
+        if fresh.isEmpty then acc else go f fresh (acc ++ fresh)
+    go (downgraded.length + 1) [start] []
+  let notCurrentOf : String → List String := fun self =>
+    (reachableFrom self).filter fun c =>
+      c != self && (match statusOf c with
+                    | some st => !st.isCurrentForDependents
+                    | none    => false)
+  let propagated0 := downgraded.map fun o =>
+    if o.status != .proved then o else
+      let nc := notCurrentOf o.functionId.qualName
+      if nc.isEmpty then o else { o with status := .depsNotCurrent, notCurrentDeps := nc }
+  -- AND `dependencies` IS RECOMPUTED, because it means "proved callees" and was computed before this
+  -- pass ran. Left stale it listed a callee this pass had just downgraded, which is both a false
+  -- statement to a reader and an INV-9 (DEP-PROVED) violation — a contained claim presented as
+  -- evidence, which is exactly what that invariant exists to catch.
+  let finalStatusOf : String → Option ObligationStatus := fun n =>
+    (propagated0.find? fun o => o.functionId.qualName == n).map (·.status)
+  let propagated := propagated0.map fun o =>
+    { o with dependencies := (directCalleesOf o.functionId.qualName).filter fun c =>
+        finalStatusOf c == some .proved }
+  -- STEP 3: REGENERATE DIAGNOSTICS from the final statuses. They were produced before this pass ran,
+  -- so `--report proof-diagnostics` reported ZERO errors for a subject `--report proof-status`
+  -- called unjustified, and the consistency check saw OBL-STATUS and DEP-PROVED violations between
+  -- two surfaces reading the same artifact. Regenerating here is what makes them one answer.
+  let regenerated := generateDiagnostics propagated pc.entries
+  -- Registry-derived diagnostics are NOT regenerated: they are about attachment integrity, not
+  -- status, and re-deriving them would need the registry this function does not take. They are
+  -- preserved by keeping every diagnostic whose kind `generateDiagnostics` does not emit.
+  let statusKinds := (generateDiagnostics pc.obligations pc.entries).map (·.kind) |>.eraseDups
+  let preserved := pc.diagnostics.filter fun d => !statusKinds.contains d.kind
+  { pc with obligations := propagated, diagnostics := regenerated ++ preserved }
 
 /-- Extract the proof-oriented fragment from validated Core.
     This is the primary entry point for the proof pipeline. -/
@@ -3143,8 +3217,15 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
       -- Re-apply the same rule here rather than exempting the status: an
       -- exemption would stop this invariant checking anything for contained
       -- claims, which are exactly the ones whose status was just recomputed.
-      let expected := if expected0 == .proved && !o.notCurrentDeps.isEmpty
-                      then ObligationStatus.depsNotCurrent else expected0
+      -- The AUTHORITY pass is applied after derivation too, for the same reason and with the same
+      -- treatment: re-apply the rule rather than exempting the status. Exempting would stop this
+      -- invariant checking anything for exactly the claims whose status was just recomputed — and an
+      -- earlier version did exactly that by omission, reporting OBL-STATUS violations against its
+      -- own pipeline for every downgraded subject.
+      let expected1 := if expected0 == .proved && !o.notCurrentDeps.isEmpty
+                       then ObligationStatus.depsNotCurrent else expected0
+      let expected := if expected1 == .proved && o.status == .correspondenceUnjustified
+                      then ObligationStatus.correspondenceUnjustified else expected1
       if o.status != expected then
         some { invariant := "OBL-STATUS", function := qn
              , message := s!"obligation status '{repr o.status}' disagrees with re-derived '{repr expected}'" }
@@ -3271,6 +3352,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         | .staleProof => o.status == .stale
         | .unboundProofLink => o.status == .unbound
         | .dependencyNotCurrent => o.status == .depsNotCurrent
+        | .dependencyClosureUnjustified => o.status == .correspondenceUnjustified
         | .missingProof => o.status == .missing
         | .ineligible => o.status == .ineligible
         | .trusted => o.status == .trusted

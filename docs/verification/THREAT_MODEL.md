@@ -60,7 +60,7 @@ control and a mutation through the production consumer.
 - `concrete diff`: reports `TRUST WEAKENED` with proof_status `proved → stale`
 - `[policy] require-proofs = true`: turns stale proofs into compile errors
 
-**Demo:** `examples/crypto_verify/src/main_drifted.con` — `compute_tag` changed `+` to `-`.
+**Demo:** `examples/crypto_verify_drifted/src/main.con` — `compute_tag` changed `+` to `-`.
 
 ### 2. Authority Escalation
 
@@ -90,7 +90,7 @@ control and a mutation through the production consumer.
 - `concrete diff`: shows the exact Core IR change (`BinOp.gt → BinOp.geq`)
 - Lean proof: the old theorem no longer applies (incorrect for nonce=0)
 
-**Demo:** `examples/crypto_verify/src/main_drifted.con` — `check_nonce` changed `>` to `>=`.
+**Demo:** `examples/crypto_verify_drifted/src/main.con` — `check_nonce` changed `>` to `>=`.
 
 ### 4. Resource Drift
 

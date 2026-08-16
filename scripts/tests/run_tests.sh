@@ -7764,18 +7764,18 @@ drift_check() {
 }
 
 # crypto_verify: proof semantic drift (+ → -, > → >=)
-if [ -f "examples/crypto_verify/src/main.con" ] && [ -f "examples/crypto_verify/src/main_drifted.con" ]; then
+if [ -f "examples/crypto_verify/src/main.con" ] && [ -f "examples/crypto_verify_drifted/src/main.con" ]; then
     drift_check "crypto_verify" \
         "examples/crypto_verify/src/main.con" \
-        "examples/crypto_verify/src/main_drifted.con" \
+        "examples/crypto_verify_drifted/src/main.con" \
         "proved → stale"
 fi
 
 # elf_header: validation weakening (magic byte 127→0, version accepts 0)
-if [ -f "examples/elf_header/src/main.con" ] && [ -f "examples/elf_header/src/main_drifted.con" ]; then
+if [ -f "examples/elf_header/src/main.con" ] && [ -f "examples/elf_header_drifted/src/main.con" ]; then
     drift_check "elf_header" \
         "examples/elf_header/src/main.con" \
-        "examples/elf_header/src/main_drifted.con" \
+        "examples/elf_header_drifted/src/main.con" \
         "proved → stale"
 fi
 

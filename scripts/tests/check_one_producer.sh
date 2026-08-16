@@ -110,8 +110,14 @@ owners "dependencyNodesOf" 'dependencyNodesOf' \
 
 # The currency decision. A second opinion on "is this edge current" is a fail-open waiting to
 # happen — this predicate was `| _ => true` once, which made `unclassified` current by default.
+#
+# `Main.lean` joined the owner set on 2026-08-15 and is a CONSUMER, not a second producer: the
+# `concrete check` exit code used to enumerate three statuses by hand (`stale || missing || blocked`)
+# and therefore exited 0 on a project holding an unjustified closure — a false green in the command a
+# release gate runs, and one that would have repeated for every status added since. It now asks this
+# predicate instead of restating a subset of it, which is the direction this gate wants.
 owners "isCurrentForDependents" 'isCurrentForDependents' \
-  'Concrete/Proof/DependencyEdge.lean Concrete/Proof/DependencyRoot.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
+  'Concrete/Proof/DependencyEdge.lean Concrete/Proof/DependencyRoot.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean Main.lean'
 
 # ================================================================================================
 # R-0479 — A FACT IS NEVER DEFAULTED TO A VALID VALUE OF ITSELF.

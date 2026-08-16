@@ -1176,7 +1176,13 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   -- total is worse than no row, because it reads as a complete census.
   let depsNC := (entries.filter fun e =>
     match e.state with | .depsNotCurrent => true | _ => false).length
-  let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {unboundCnt} unbound, {depsNC} dependency-not-current, {notProved} unproved, {blockedCnt} blocked, {notEligible} ineligible, {trusted} trusted"
+  -- ...and `correspondenceUnjustified` was missing in exactly the same way, one status later: the
+  -- eight-function elf_header report added up to seven. The comment above was already the warning.
+  let unjust := (entries.filter fun e =>
+    match e.state with | .correspondenceUnjustified => true | _ => false).length
+  let needsRe := (entries.filter fun e =>
+    match e.state with | .needsRecheck => true | _ => false).length
+  let summary := s!"Totals: {entries.length} functions — {proved} proved, {stale} stale, {unboundCnt} unbound, {needsRe} needs-recheck, {depsNC} dependency-not-current, {unjust} closure-unjustified, {notProved} unproved, {blockedCnt} blocked, {notEligible} ineligible, {trusted} trusted"
   s!"{header}\n\n{"\n\n".intercalate body}\n\n{summary}\n"
 
 /-- Program-level conformance check against `docs/verification/PROVABLE_V1.md`.
@@ -1235,19 +1241,31 @@ def proofSummaryLine (pc : Concrete.ProofCore) : String :=
   let blocked := (obls.filter fun o => o.status == .blocked).length
   let ineligible := (obls.filter fun o => o.status == .ineligible).length
   let trusted := (obls.filter fun o => o.status == .trusted).length
-  let eligible := proved + stale + missing + blocked
+  -- EVERY NON-PROVED ELIGIBLE STATUS COUNTS TOWARD THE DENOMINATOR. `eligible` was
+  -- `proved + stale + missing + blocked`, so a downgraded claim left the denominator entirely and
+  -- the line read `4/4 proved` for a package holding an unjustified closure — a build summary
+  -- reporting completeness it did not have.
+  let unbound := (obls.filter fun o => o.status == .unbound).length
+  let needsRecheck := (obls.filter fun o => o.status == .needsRecheck).length
+  let depsNC := (obls.filter fun o => o.status == .depsNotCurrent).length
+  let unjust := (obls.filter fun o => o.status == .correspondenceUnjustified).length
+  let eligible := proved + stale + missing + blocked + unbound + needsRecheck + depsNC + unjust
   if eligible == 0 && ineligible == 0 && trusted == 0 then
     "Proofs: no eligible functions"
   else if eligible == 0 then
     s!"Proofs: no eligible functions ({ineligible} ineligible, {trusted} trusted)"
-  else if stale == 0 && missing == 0 && blocked == 0 then
+  else if proved == eligible then
     s!"Proofs: {proved}/{eligible} proved"
   else
     let parts : List String :=
       (if proved != 0 then [s!"{proved} proved"] else []) ++
       (if stale != 0 then [s!"{stale} stale"] else []) ++
       (if missing != 0 then [s!"{missing} missing"] else []) ++
-      (if blocked != 0 then [s!"{blocked} blocked"] else [])
+      (if blocked != 0 then [s!"{blocked} blocked"] else []) ++
+      (if unbound != 0 then [s!"{unbound} unbound"] else []) ++
+      (if needsRecheck != 0 then [s!"{needsRecheck} needs-recheck"] else []) ++
+      (if depsNC != 0 then [s!"{depsNC} dependency-not-current"] else []) ++
+      (if unjust != 0 then [s!"{unjust} closure-unjustified"] else [])
     s!"Proofs: {", ".intercalate parts}"
 
 /-- Actionable "next steps" for the proof workflow — at most 3 items,
@@ -1377,6 +1395,7 @@ private def diagnosticKindLabel : Concrete.ProofDiagnosticKind → String
   | .leanCheckFailure => "lean_check_failure"
   | .unboundProofLink => "unbound_proof_link"
   | .dependencyNotCurrent => "dependency_not_current"
+  | .dependencyClosureUnjustified => "dependency_closure_unjustified"
 
 /-- Render a proof diagnostic severity as a string. -/
 private def diagnosticSeverityLabel : Concrete.ProofDiagnosticSeverity → String
@@ -5682,6 +5701,12 @@ private def buildSummaryFact (facts : List Val) : Val :=
     ("unbound", .num (proofState "unbound")),
     ("blocked", .num (proofState "blocked")),
     ("deps_not_current", .num (proofState "deps_not_current")),
+    -- The same omission, one status later. `correspondence_unjustified` and `needs_recheck` were
+    -- both absent, so a downgraded function was invisible to any consumer summing this object —
+    -- which is how a crypto_verify snapshot reported 2 proved of 5 total with nothing accounting
+    -- for the other two.
+    ("correspondence_unjustified", .num (proofState "correspondence_unjustified")),
+    ("needs_recheck", .num (proofState "needs_recheck")),
     ("eligibility_eligible", .num (eligStatus "eligible")),
     ("eligibility_excluded", .num (eligStatus "excluded")),
     ("eligibility_trusted", .num (eligStatus "trusted")),

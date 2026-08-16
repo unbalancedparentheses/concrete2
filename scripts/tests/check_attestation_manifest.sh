@@ -514,7 +514,7 @@ fi
 # `main_drifted` is a DIFFERENT PROGRAM sharing every declaration name with `elf_header`; every one
 # of its four body edges has an exact dependency reference, and none of them corresponds. Exact
 # selection says which implementation an edge points at and never that the edge is justified.
-DRIFT_SUBJECT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main_drifted.con --report subject-facts 2>/dev/null || true)"
+DRIFT_SUBJECT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null || true)"
 if printf '%s' "$DRIFT_SUBJECT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=4'; then
   ok "exact dependency selection did NOT make a different program's edges correspond (identity is not justification)"
 else
