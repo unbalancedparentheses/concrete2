@@ -137,8 +137,17 @@ echo "=== the ninth table, and why it is not migrated ==="
 #
 # TRIPWIRE: this passes BECAUSE decode_header is still unextractable, and FAILS
 # when it becomes extractable — which is the signal to finish the ninth table.
-if "$CC" examples/packet/src/main.con --report extraction 2>/dev/null \
-   | grep -A2 "packet.decode_header" | grep -q "extraction failed"; then
+#
+# ABSENCE IS NOT UNBLOCKING. The previous form piped straight into `grep -q "extraction failed"`, so
+# if `decode_header` ever stopped appearing in the report at all — renamed, fixture moved, report
+# reshaped — the grep would find nothing and the gate would announce "decode_header now extracts",
+# sending a reader to migrate a table on the strength of a subject that had simply gone missing.
+# Three outcomes, not two.
+DH_BLOCK="$( { "$CC" examples/packet/src/main.con --report extraction 2>/dev/null \
+              | grep -A2 "packet.decode_header" || true; } )"
+if [ -z "$DH_BLOCK" ]; then
+  no "packet.decode_header is ABSENT from the extraction report — this tripwire lost its subject; that is not the same as it becoming extractable"
+elif grep -q "extraction failed" <<<"$DH_BLOCK"; then
   ok "TRIPWIRE: decode_header is still unextractable (mutable borrow), so proofFnsExt stays legacy"
 else
   no "decode_header now extracts — migrate proofFnsExt and replace this tripwire with real coverage"
