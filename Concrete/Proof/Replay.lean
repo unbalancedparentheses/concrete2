@@ -232,7 +232,8 @@ def notAttempted (r : ReplayResult) : List ReplayCheck :=
 
     `acceptedUnbound` counts as accepted HERE because the kernel genuinely accepted the theorem —
     this predicate answers "did the checker complain", not "is this proved". Receipt minting must not
-    use it for the second question; that is what `fullyBound` is for. -/
+    use it for the second question; that is what `fullyBound` is for.
+
     The `!generalFailure` conjunct is REDUNDANT today and kept deliberately: a general failure
     assigns every target `notAttempted`, which already fails the test below. It is defence against a
     future change in verdict assignment, and because it is redundant it cannot be mutation-killed —
