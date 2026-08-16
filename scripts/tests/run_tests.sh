@@ -5843,7 +5843,12 @@ done
 # --- Drift detection tests ---
 
 # Generate drifted snapshot
-$COMPILER snapshot "$CRYPTO_DIR/main_drifted.con" -o "$CRYPTO_SNAP_DIR/drifted.facts.json" 2>/dev/null
+# The drift fixture moved to its OWN PACKAGE on 2026-08-16: it used to sit beside `main.con` here,
+# and both resolve to module `main`, so the project loader picked `main.con` and this file's drifted
+# bodies were never analyzed at all. A path rewrite missed this line because it goes through
+# `$CRYPTO_DIR` rather than a literal — and the resulting missing-file error killed the suite here,
+# silently, for several runs.
+$COMPILER snapshot "$ROOT_DIR/examples/crypto_verify_drifted/src/main.con" -o "$CRYPTO_SNAP_DIR/drifted.facts.json" 2>/dev/null
 
 # Diff detects trust weakening (exit 1)
 diff_out=$($COMPILER diff "$CRYPTO_SNAP_DIR/good.facts.json" "$CRYPTO_SNAP_DIR/drifted.facts.json" 2>&1) && diff_exit=0 || diff_exit=$?
@@ -6118,7 +6123,8 @@ fi
 
 # --- Drift detection tests ---
 
-$COMPILER snapshot "$ELF_DIR/main_drifted.con" -o "$ELF_SNAP_DIR/drifted.json" 2>/dev/null
+# Same move, same reason — see the crypto_verify note above.
+$COMPILER snapshot "$ROOT_DIR/examples/elf_header_drifted/src/main.con" -o "$ELF_SNAP_DIR/drifted.json" 2>/dev/null
 
 # Diff detects trust weakening (exit 1)
 elf_diff=$($COMPILER diff "$ELF_SNAP_DIR/good.json" "$ELF_SNAP_DIR/drifted.json" 2>&1) && elf_diff_exit=0 || elf_diff_exit=$?

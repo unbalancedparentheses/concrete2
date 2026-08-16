@@ -5347,24 +5347,38 @@ def whyCapabilityQuery (modules : List CModule) (locMap : FnLocMap)
   let externLookup := buildExternLookup modules
   let capLookup := buildCapLookup modules
   let trace := traceCapability fnLookup externLookup capLookup locMap fnName cap
+  -- R-0479 REPAIRED 2026-08-16. `transitive` is stated explicitly so the catch-all stops doing
+  -- double duty — it used to be both the real fourth origin and the fallback for an unreadable one,
+  -- turning "the origin key is absent" into a positive claim that the capability arrived
+  -- transitively. But the repair sent the MULTI-STEP case to `origin_unavailable` as well, and a
+  -- multi-step trace is exactly what transitive MEANS. Four assertions failed on traces that were
+  -- entirely correct: `main → uses_alloc → vec_new (intrinsic)` reported "origin unavailable" while
+  -- carrying the intrinsic origin it had just resolved.
+  --
+  -- So the two facts are separated properly. A trace of ONE step reports that step's own origin. A
+  -- trace of SEVERAL steps is transitive IF some step carries a readable origin, and unavailable
+  -- only when none does — which is the case the repair was actually about.
+  let readableOrigin : Val → Bool := fun v =>
+    match v with
+    | .obj kvs =>
+      match kvs.find? (fun (k, _) => k == "origin") with
+      | some (_, .str "declared") | some (_, .str "intrinsic")
+      | some (_, .str "extern") | some (_, .str "transitive") => true
+      | _ => false
+    | _ => false
   let answer :=
     if trace.isEmpty then "not_required"
     else
-      -- Check if first trace step is a declaration (no transitive path)
       match trace with
       | [.obj kvs] =>
         match kvs.find? (fun (k, _) => k == "origin") with
         | some (_, .str "declared") => "declared"
         | some (_, .str "intrinsic") => "intrinsic"
         | some (_, .str "extern") => "extern"
-        -- R-0479: `transitive` is stated EXPLICITLY, so the catch-all stops doing double duty.
-        -- It used to serve as both the real fourth origin and the fallback for an unreadable one,
-        -- which turned "the origin key is absent or the trace is malformed" into a positive claim
-        -- that the capability arrived transitively. `origin_unavailable` is outside the vocabulary
-        -- and so cannot be read as an origin.
         | some (_, .str "transitive") => "transitive"
         | _ => Concrete.originUnavailable
-      | _ => Concrete.originUnavailable
+      | steps =>
+        if steps.any readableOrigin then "transitive" else Concrete.originUnavailable
   let result := Val.obj [
     ("schema_version", .num (Int.ofNat schemaVersion)),
     ("kind", .str "query_answer"),
@@ -5532,7 +5546,18 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
             | some (_, .str o) => o
             -- R-0479: an absent origin key or a non-object trace is not evidence of transitivity.
             | _ => Concrete.originUnavailable
-          | _ => Concrete.originUnavailable
+          -- ...and a MULTI-STEP trace is transitive when some step resolves an origin. Same repair
+          -- as the query path above: "several steps" and "no readable origin" are different facts.
+          | steps =>
+            let readable := steps.any (fun v =>
+              match v with
+              | .obj kvs =>
+                match kvs.find? (fun (k, _) => k == "origin") with
+                | some (_, .str "declared") | some (_, .str "intrinsic")
+                | some (_, .str "extern") | some (_, .str "transitive") => true
+                | _ => false
+              | _ => false)
+            if readable then "transitive" else Concrete.originUnavailable
       .obj [("capability", .str cap), ("origin", .str origin), ("trace", .arr trace)]
     -- Predictable
     let violations := modules.foldl (fun acc m =>
