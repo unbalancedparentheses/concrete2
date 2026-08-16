@@ -768,9 +768,11 @@ add "issue-requires-proved-status" "Concrete/Proof/Issue.lean" "check_receipt_is
 # TRUST MUST NOT BE DROPPED ON THE WAY INTO THE RECEIPT. Issuing with no boundaries named while the
 # closure crosses one turns a qualified claim into an unqualified one — the exact laundering the
 # qualification exists to prevent.
+# Written as an operand change: emptying the binding outright strands `trustedDepsOf` on an
+# unused-binding lint, and a mutation that cannot build is INVALID rather than killed.
 add "issue-carries-trusted-boundaries" "Concrete/Proof/Issue.lean" "check_receipt_issuance.sh" yes \
   '  let boundaries := trustedDepsOf subject' \
-  '  let boundaries : List String := []'
+  '  let boundaries := (trustedDepsOf subject).take 0'
 
 N=${#NAME[@]}
 PASS=0; FAIL=0
