@@ -4054,9 +4054,25 @@ because without one the implementation could not be falsified.
          are not proof failures. The gate also asserts the report still discloses that it does NOT
          run the kernel, so the baseline cannot be read as replay coverage.
    - [ ] mint a receipt only after successful KERNEL REPLAY. Nothing calls `mint?` today: receipts are
-         not issued, stored, or consumed, and no claim depends on one. This is the substantive
-         remaining piece, and it is an architecture question rather than a gap — the compiler cannot
-         replay Lean during a normal compile, so minting belongs to a step that has replay results.
+         not issued, stored, or consumed, and no claim depends on one.
+
+         **The design is settled and the seam is identified; the refactor is not done.** Kernel replay
+         exists and works (`--report check-proofs`, measured 5 verified / 0 failed on `elf_header`),
+         and it already draws the distinction receipts need: a theorem whose claim has NO stored
+         proof subject type-checks but is bucketed as `unboundChecked`, never `verified`, because the
+         freshness check would compare the body with itself. A receipt may be minted from `verified`
+         and never from `unboundChecked`.
+
+         What blocks it is that the replay invocation is INLINE in `compileAndReport`, entangled with
+         that function's `reportJson` parameter, and its failure paths PRINT rather than return. The
+         correct change is to extract a `replayLinkedTheorems : … → IO ReplayOutcome` producer — one
+         answer to "did the kernel accept this", consumed by both `check-proofs` and a new
+         `--report receipts` — which requires first converting those print-and-return paths into
+         typed refusals. That is a contained piece of work on the CLI's most complex function and it
+         deserves its own pass with its own verification; attempted at the end of a long session it
+         would have left a half-extracted producer inside `main`, which is a worse state than a clean
+         boundary with an accurate ledger. **`prove --replay` is NOT a shortcut**: it discharges VC
+         obligations through omega/bv_decide and never touches Lean theorem replay.
    - [ ] migrate all 44 stored links; convert legacy or incomplete evidence to `needs_recheck`.
    - [ ] repository-root and clean-checkout reproducibility, which need a build from a fresh clone
          rather than a copied fixture.
