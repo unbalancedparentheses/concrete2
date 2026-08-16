@@ -4115,9 +4115,16 @@ re-checked, and a stored receipt is a distinct untrusted type with no minting pa
 precision is DEFERRED to the typed-contract milestone with a corpus tripwire, and the ninth table is
 DEFERRED past Slice 8 having been measured to carry no authority — both are off this closure list.
 
-Three items remain: the exact 43-link migration and V2 activation, clean-checkout reproducibility,
-and Slice 8. (The link count is 43, not 44 — measured from the corpus; the prose figure had drifted
-by one, the third such drift this project has caught.)
+Three items remain: V2 ACTIVATION (the dry run is shipped and gated), clean-checkout
+reproducibility, and Slice 8.
+
+**The link count is 44**, counted from CODE and reconciled by `make test-v2-migration-plan` (9/0):
+44 stored fingerprints = 43 plan rows + 1 unreachable (`contract_negatives/invalid_attribute`, whose
+purpose is an invalid attribute), and 43 rows = 33 migrate + 6 replay-refused + 4 stale-with-no-
+honest-value. An intermediate correction to "43" was itself wrong — it came from a grep matching one
+attribute spelling — and the first census read 52 because fixture COMMENTS discuss the attribute.
+That is the fourth prose-for-code confusion this repo has caught in a measurement, and it is why the
+figure now comes from a gate rather than from this sentence.
 
 #### Package 3 — durable replay authority and migration
 
@@ -4172,7 +4179,14 @@ this roadmap; Package 3 applies it as follows:
   Receipts are stored (`--out`) and re-checked on consumption (`--report proof-status --receipts`),
   so this is evidence in use rather than issuance alone.
 
-- **[shipped] Receipt storage and consumption** (`make test-receipt-consumption`, 13/0). The vertical
+- **[shipped] The V1 -> V2 migration dry run** (`make test-v2-migration-plan`, 9/0). Reconciles the
+  whole population, and refuses to manufacture freshness: a STALE link is pinned to a body that no
+  longer exists, so no honest v2 value can be written for it and it becomes `needs_recheck` on
+  activation. The refusal is per-claim — the drift fixture's undrifted claims still migrate.
+- **[shipped] Receipt storage and consumption** (`make test-receipt-consumption`, 14/0). Receipts
+  also bind the PROOF LIBRARY by content digest of its Lean sources, closing the environment
+  authority gap: the same theorem names replayed against a different library previously produced a
+  byte-identical receipt. The vertical
   slice closes: `--report receipts --out <path>` writes, `--report proof-status --receipts <path>`
   reads back and RE-CHECKS. `StoredReceipt` is a deliberately different type from
   `ProofEvidenceReceipt` with no minting path, so a receipt read from a file cannot become evidence —
