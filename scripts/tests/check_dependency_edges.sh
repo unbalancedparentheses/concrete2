@@ -409,14 +409,22 @@ echo "=== ROOT INTEGRATION — asserted, not tripwired ==="
 # A CALL, NOT A MENTION. The first version grepped for the bare name, which also matches the six
 # comments that discuss it — so deleting the production call would have left this green. Anchored to
 # the call expression AND to non-comment lines.
-if grep -v '^[[:space:]]*--' "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -q "Proof.dependencyRootMaterial (dependencyNodesOf"; then
+# CAPTURED, THEN TESTED. `cmd | grep -q` is a SIGPIPE race under `set -o pipefail`: `grep -q` exits
+# the moment it matches, the upstream `grep -v` dies with SIGPIPE, and pipefail reports the pipeline
+# as failed — INTERMITTENTLY, depending on which side wins. This check failed roughly one run in
+# three on an unchanged tree and passed the rest, which is worse than always failing: it reads as
+# flakiness in the suite rather than as a defect in the check. Same shape as the `proof-status |
+# grep -q` bug fixed in the manifest gate; the fix is the same.
+ROOTCALLS="$(grep -v '^[[:space:]]*--' "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
+if printf '%s' "$ROOTCALLS" | grep -q "Proof.dependencyRootMaterial (dependencyNodesOf"; then
   ok "ProofCore CALLS dependencyRootMaterial over the real node set (the authority pass requires a computable closure)"
 else
   no "no non-comment call to dependencyRootMaterial over dependencyNodesOf — the root dimension has been dropped"
 fi
 # ...and the consumption is in the COMPOSITION, not in per-entry status derivation. A root reaching
 # `deriveObligationStatus` would bypass the composed pass entirely.
-if grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
+DERIVE_CTX="$(grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
+if printf '%s' "$DERIVE_CTX" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
   no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
   ok "roots are consumed by the composed authority pass, not by per-entry status derivation"
@@ -519,7 +527,8 @@ def mkEntryC (q d : String) : Option ProofCoreEntry :=
   | _, _, _, _ => IO.println "could not build the control"'
 # ...and a closure crossing a TRUSTED boundary must still root. Its absence refused `calls.combine`
 # entirely, for a reason that had nothing to do with its evidence.
-if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -q REFUSED; then
+TH_ROOTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null || true)"
+if printf '%s' "$TH_ROOTS" | grep -q 'shadow depRoot: REFUSED'; then
   no "composition_trusted_helper cannot root — an edge to a trusted callee has no node again"
 else
   ok "a closure crossing a TRUSTED boundary roots (trusted exclusions are leaf nodes)"
@@ -2513,7 +2522,8 @@ if [ "$VH" = "1" ]; then
   # one of its four body edges pointed at an `elfFns` entry by NAME. Now the package component
   # separates them and all four fall to `missing`. If this ever reads `usable=yes`, the join has
   # gone back to matching names.
-  if ! "$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null | grep -q 'shadow correspondence: matched=0 missing=4'; then
+  DRIFT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null || true)"
+  if ! printf '%s' "$DRIFT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=4'; then
     no "elf_header/main_drifted no longer refuses with missing=4 — a different program's edges are being justified by elfFns again"
   else
     ok "elf_header/main_drifted refuses all 4 edges (cross-program substitution, caught by scope)"
