@@ -660,6 +660,15 @@ add "proved-roots-invariant-reported" "Concrete/Proof/ProofCore.lean" "check_dep
   $'  oblKnown ++ oblStatus ++ provedRoots ++ provedExtracted ++ provedFp ++ staleFp' \
   $'  oblKnown ++ oblStatus ++ (provedRoots.take 0) ++ provedExtracted ++ provedFp ++ staleFp'
 
+
+# R-0004 package 2. TRUST MUST TRAVEL THE WHOLE CLOSURE. The mutation narrows `trustedOf` from the
+# transitive closure to DIRECT callees, which is the shape that looks right and silently drops every
+# boundary more than one hop away. Killed by `composition_deep_trust`, where `outer` reaches the
+# trusted leaf through `middle` and mentions no trusted function itself.
+add "trust-propagates-transitively" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'    (reachableFrom self).filter fun c =>\n      c != self && (match statusOf c with\n                    | some .trusted => true\n                    | _ => false)' \
+  $'    (directCalleesOf self).filter fun c =>\n      c != self && (match statusOf c with\n                    | some .trusted => true\n                    | _ => false)'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

@@ -1053,6 +1053,19 @@ private partial def collectProofStatus
   entries ++ m.submodules.foldl (fun acc sub =>
     acc ++ collectProofStatus pc locMap sub qualPrefix registry) []
 
+/-- The trusted boundaries a claim's closure crosses, rendered for EVERY status that has any.
+
+    It used to appear only under `proved`, and that hid a fact from the readers most likely to act on
+    it. A trusted boundary is a property of the dependency CLOSURE, not of the verdict: a `stale` or
+    `unbound` claim reaching one is resting on the same unproved assumption, and disclosing it only
+    once the claim turns green means an author fixes a fingerprint and DISCOVERS an assumption that
+    was there all along. Monotone propagation is only observable if it is reported wherever it holds.
+
+    Empty for most entries, so it costs nothing where there is no boundary to name. -/
+private def trustedBoundaryLine (e : ProofStatusEntry) : String :=
+  if e.trustedDeps.isEmpty then ""
+  else s!"\n\n  ASSUMES trusted boundaries (not proved): {", ".intercalate e.trustedDeps}"
+
 /-- Render a single proof status entry with Elm-clear formatting. -/
 private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
   let locStr := fmtLoc e.loc
@@ -1078,14 +1091,13 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     -- Honesty line (audit 2026-07-16): this REPORT verifies link presence +
     -- fingerprint freshness only; it does not run the Lean kernel. The
     -- kernel replay is `--report check-proofs` (gated in CI for std).
+    -- The claim is CONDITIONAL when its closure crosses a boundary, and must say so where it is
+    -- read: a reader seeing only "proved" cannot tell that part of the chain is an unproven, audited
+    -- boundary. ONE producer for that line — `trustedBoundaryLine` — so the other statuses report it
+    -- identically rather than each spelling it out.
     let trustLine :=
-      if e.trustedDeps.isEmpty then
-        "\n\n  trust: linked + fingerprint-fresh — kernel replay via `--report check-proofs`"
-      else
-        -- The claim is CONDITIONAL and must say so where it is read. A reader
-        -- seeing only "proved" cannot tell that part of the chain is an
-        -- unproven, audited boundary.
-        s!"\n\n  trust: linked + fingerprint-fresh — kernel replay via `--report check-proofs`\n\n  ASSUMES trusted boundaries (not proved): {", ".intercalate e.trustedDeps}"
+      "\n\n  trust: linked + fingerprint-fresh — kernel replay via `--report check-proofs`"
+        ++ trustedBoundaryLine e
     let specLine :=
       if e.specDriftCovered then "\n\n  spec: drift-checked (Concrete.Proof.specs)"
       else s!"\n\n  spec: NOT drift-covered — no Concrete.Proof.specs entry keyed '{e.qualName}'"
@@ -1162,7 +1174,14 @@ def proofStatusReport (modules : List CModule) (locMap : FnLocMap := [])
   let header := "=== Proof Status Report ==="
   let entries := modules.foldl (fun acc m =>
     acc ++ collectProofStatus pc locMap m "" registry) []
-  let body := entries.map fun e => renderProofStatusEntry e sourceMap
+  -- THE BOUNDARY LINE IS APPENDED FOR EVERY STATUS, once, here. The `proved` branch already
+  -- includes it inline (beside its own trust line, where a reader expects it); every other status
+  -- gets it from this append, so a `stale` or `unbound` claim resting on an unproved boundary
+  -- discloses that fact instead of waiting until it turns green.
+  let body := entries.map fun e =>
+    let rendered := renderProofStatusEntry e sourceMap
+    if e.state matches .proved then rendered
+    else rendered ++ trustedBoundaryLine e
   -- Summary
   let proved := (entries.filter fun e => e.state matches .proved).length
   let stale := (entries.filter fun e => e.state matches .stale).length

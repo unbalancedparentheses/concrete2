@@ -1,0 +1,29 @@
+// proof_patterns: trust travels the FULL closure, not just one hop.
+//
+// A CONTROL for monotone trust propagation. `composition_trusted_helper` proves the one-hop case:
+// a proved function that calls a trusted one states the assumption. It cannot show whether the
+// assumption survives an intermediate hop, and that is the property the authority transition
+// actually requires — "trust and assumptions propagate monotonically through the FULL closure".
+//
+// Shape: outer -> middle -> leaf, with `leaf` trusted. `middle` is proved and assumes `leaf`.
+// `outer` never mentions `leaf` and must still report the assumption, because a claim that dropped
+// it two hops from the boundary would launder exactly what the one-hop qualification prevents: a
+// reader sees a kernel-checked `outer` and cannot tell part of the chain was never proved.
+//
+// Expected: BOTH `middle` and `outer` report proved AND state that they assume `calls.leaf`.
+mod calls {
+    // Audited boundary, deliberately unproved — the same shape as `composition_trusted_helper`'s.
+    trusted fn leaf(x: i32) -> i32 {
+        return x * 2;
+    }
+
+    // One hop from the boundary.
+    fn middle(x: i32) -> i32 {
+        return leaf(x);
+    }
+
+    // TWO hops. Its own body mentions no trusted function at all.
+    fn outer(x: i32) -> i32 {
+        return middle(x) + 1;
+    }
+}

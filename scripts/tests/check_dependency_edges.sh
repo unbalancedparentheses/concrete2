@@ -507,6 +507,27 @@ def elG (q : String) : EligibilityEntry :=
     IO.println s!"provedRoots={(vs.filter (·.invariant == "PROVED-ROOTS")).length}"
   | _, _ => IO.println "could not build the control"'
 
+# TRUST PROPAGATES MONOTONICALLY THROUGH THE FULL CLOSURE, not one hop.
+#
+# `composition_trusted_helper` proves the one-hop case and cannot show more. `composition_deep_trust`
+# is `outer -> middle -> leaf` with `leaf` trusted: `outer`'s own body mentions no trusted function
+# at all, and it must still disclose the assumption. A claim that dropped it two hops from the
+# boundary would launder exactly what the one-hop qualification prevents.
+DEEP_TRUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_deep_trust/src/main.con --report proof-status 2>/dev/null || true)"
+DEEP_N="$(printf '%s' "$DEEP_TRUST" | grep -c 'ASSUMES trusted boundaries (not proved): calls.leaf' || true)"
+if [ "$DEEP_N" = "2" ]; then
+  ok "trust reaches BOTH hops: middle and outer each disclose calls.leaf"
+else
+  no "deep trust disclosed by $DEEP_N of 2 subjects — propagation stopped short of the full closure"
+fi
+# ...and the one-hop case still holds, so the deep control did not replace it.
+ONE_HOP="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report proof-status 2>/dev/null || true)"
+if printf '%s' "$ONE_HOP" | grep -q 'ASSUMES trusted boundaries (not proved): calls.dbl'; then
+  ok "a PROVED claim one hop from a boundary still states its assumption"
+else
+  no "composition_trusted_helper no longer discloses calls.dbl — the proved path lost its qualification"
+fi
+
 # ONLY TRUSTED EXCLUSIONS BECOME NODES, checked by CALLING `dependencyNodesOf`. The previous probe
 # asserted two facts about `isCurrentForDependents` and never touched the node builder, so removing
 # the trusted-only filter would not have moved it. This builds a ProofCore with one entry and two
