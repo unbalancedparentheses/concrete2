@@ -2212,6 +2212,17 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
   -- boundary, and status containment independently refuses a caller reaching anything that is not
   -- current, so nothing is laundered by making the closure computable.
   pc.excluded.filterMap fun x =>
+    -- ONLY A TRUSTED EXCLUSION MAY BE A LEAF BOUNDARY. Every excluded definition carries a scoped
+    -- identity now, and giving them all nodes made closures computable over callees that are
+    -- excluded for reasons carrying no evidence at all — ineligible ones, most of them. A trusted
+    -- boundary is a DECLARED, audited escape hatch and `carriesTrust` qualifies any root that
+    -- crosses it; an ineligible callee is simply unprovable, and a closure over it must refuse
+    -- rather than serialize.
+    --
+    -- The containment pass would independently downgrade such a caller, because `ineligible` is not
+    -- current for dependents — but relying on that would make the root's honesty a consequence of
+    -- another check rather than a property of the root. Fail closed here, and let the two agree.
+    if !x.eligibility.isTrusted then none else
     match x.definitionIdentity with
     | .error _ => none
     | .ok xid =>
@@ -2972,26 +2983,26 @@ private def generateDiagnostics
     is built from the assembled `ProofCore` and the obligations are generated before it exists.
     Inlining a second, lighter correspondence derivation there would be two answers to one question.
 
-    IT DISCRIMINATES BETWEEN TWO PROGRAMS THAT SHARE A THEOREM, and the corpus has both sides.
+    ITS LIVE CASE IS `tests/programs/proof_decode_header.con`, whose hardcoded proof link names
+    `proofFnsExt` — a table with ZERO canonical entries. A table with no entries can describe no
+    definitions, so nothing states that the theorem is about THAT program's `parse_byte`, and both
+    body edges are unjustified. Measured across the fixture corpus: 35 proved, 0 unjustified.
 
-    `elf_header/main.con`'s `main.validate_header` is `proved` and STAYS proved: four outgoing body
-    edges, each witnessed by an `elfFns` entry attested to that exact implementation.
-    `elf_header/main_drifted.con`'s `main.validate_header` — same declaration name, same linked
-    theorem, same table — is downgraded to `correspondence_unjustified`, because its edges point at a
-    different program's implementations and were justified by name agreement alone. Measured by
-    building with and without this pass: that fixture reported FIVE `proved` before and FOUR after.
+    THIS COMMENT PREVIOUSLY CLAIMED SOMETHING FALSE, TWICE, and the corrections are kept because the
+    reasoning matters more than the conclusion.
 
-    TWO CORRECTIONS TO MY OWN RECORD, both from one bad measurement. I surveyed the corpus with a
-    pattern that matched `-- proof link unbound` and `-- proof stale` but not `-- proved` — no space
-    after "proof" — read "nothing is currently proved", and wrote this comment saying the pass would
-    change no verdict and be exercised only by controls. The corpus actually holds 37 `proved`
-    verdicts, exactly one of which this pass removes. So: it is not vacuous, and its POSITIVE
-    direction has a live case too, which the earlier wording implied it did not.
+    First it said the pass would change no verdict, because a corpus survey pattern matched
+    `-- proof link unbound` and `-- proof stale` but not `-- proved` — no space after "proof" — and
+    read "nothing is currently proved".
 
-    The four other `proved` verdicts in the drifted fixture stay, and should: leaf functions whose
-    own fingerprints match their own bodies, and a closure with no edges is vacuously justified.
-    What was wrong was never their freshness — it was the COMPOSED claim over edges the old join
-    matched on a source name. -/
+    Then it credited the pass with catching a cross-program substitution on
+    `elf_header/main_drifted.con`. It had not. That file sat beside `main.con` in ONE package and both
+    resolve to module `main`, so the project loader picked `main.con` and the drifted bodies were
+    never analyzed at all; the refusal came from package identity being synthesized from one file's
+    TEXT while another file's BODIES were analyzed. Both drift fixtures now live in their own packages
+    and are caught by STALENESS — a more specific fact that wins ordering — so this pass never sees
+    them. The cross-program discrimination is real and measured elsewhere: the drifted package's
+    `validate_header` corresponds 0/4 while the real one corresponds 4/4. -/
 def applyCorrespondenceAuthority (pc : ProofCore) (graph : CallGraph) : ProofCore :=
   -- ROOT MATERIAL IS THE SECOND DIMENSION, and it answers a different question from correspondence.
   -- Corresponding says every edge has exactly one validated justification; rooting says the closure
@@ -3241,6 +3252,33 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         else none
       | none => none  -- caught by OBL-KNOWN
 
+  -- INV-PROVED-ROOTS: a `proved` verdict requires a COMPUTABLE dependency closure.
+  --
+  -- This is the invariant `applyCorrespondenceAuthority`'s root conjunct exists to enforce, asserted
+  -- where the producers live rather than by correlating two report surfaces in shell. A gate tried
+  -- the latter first and was INERT: it paired subject headers with `depRoot` lines using `grep -B1`,
+  -- and the two are many lines apart, so it extracted no subject name and reported success on a
+  -- corpus where roots visibly refuse. A structured check cannot drift from the artifact it reads.
+  --
+  -- The root conjunct is currently REDUNDANT on this corpus — every subject whose root refuses is
+  -- already not `proved` — so this invariant is expected to hold vacuously today. That is exactly
+  -- why it belongs here: it is the thing that would notice if it stopped being vacuous.
+  let provedRoots := pc.obligations.filterMap fun o =>
+    if o.status != .proved then none
+    else match pc.findEntry o.functionId.qualName with
+      | none => none
+      | some e =>
+        match e.definitionIdentity with
+        | .error w =>
+          some { invariant := "PROVED-ROOTS", function := o.functionId.qualName
+               , message := s!"obligation is 'proved' but has no scoped identity: {w.explain}" }
+        | .ok d =>
+          match Proof.dependencyRootMaterial (dependencyNodesOf pc pc.callGraph) d with
+          | .ok _ => none
+          | .error re =>
+            some { invariant := "PROVED-ROOTS", function := o.functionId.qualName
+                 , message := s!"obligation is 'proved' but its dependency closure does not compute: {re.explain}" }
+
   -- INV-3: Proved status requires extraction (unless proof source is hardcoded)
   let provedExtracted := pc.obligations.filterMap fun o =>
     if o.status != .proved then none
@@ -3389,7 +3427,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
       some { invariant := "EXCL-OBL", function := x.qualName
            , message := "excluded function has no corresponding obligation — obligation generation may have dropped this function" }
 
-  oblKnown ++ oblStatus ++ provedExtracted ++ provedFp ++ staleFp
+  oblKnown ++ oblStatus ++ provedRoots ++ provedExtracted ++ provedFp ++ staleFp
     ++ entryFp ++ extractUnsup ++ blockedUnsup ++ depProved ++ depStale
     ++ dups.2 ++ diagStatus ++ entryObl ++ excludedObl
 

@@ -634,6 +634,17 @@ add "authority-consumes-correspondence" "Concrete/Proof/ProofCore.lean" "check_d
   $'      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true\n      else (Proof.correspond i).usable i.requestedEdges.length' \
   $'      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then true\n      else true'
 
+
+# R-0004 package 2. THE LEAF-BOUNDARY RULE. Only a TRUSTED exclusion may be a dependency-node leaf:
+# an ineligible callee is unprovable, and a closure over it must refuse rather than serialize. The
+# mutation removes the filter, so every excluded definition becomes a leaf again — killed by the
+# probe that CALLS `dependencyNodesOf` with one trusted and one ineligible exclusion and reads the
+# node set. An earlier probe asserted two facts about `isCurrentForDependents` instead and never
+# touched the node builder, so this mutation would have survived it.
+add "root-leaf-only-trusted-exclusions" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
+  $'    if !x.eligibility.isTrusted then none else' \
+  $'    if false then none else'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

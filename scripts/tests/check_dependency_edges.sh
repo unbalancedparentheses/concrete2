@@ -398,21 +398,148 @@ else
 fi
 
 echo ""
-echo "=== NOT YET INTEGRATED — tripwires, so this cannot read as slice 6 done ==="
-# The root is a standalone function. Until ProofCore builds nodes from real
-# entries and freshness consumes the result, a deep edit does not stale any real
-# claim through it. These fail when that changes, which is the signal to replace
-# them with real coverage.
-if grep -rq "dependencyRootPreimage" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" 2>/dev/null; then
-  no "ProofCore now consumes dependency roots — replace this tripwire with integration coverage"
+echo "=== ROOT INTEGRATION — asserted, not tripwired ==="
+# THESE REPLACED TWO TRIPWIRES THAT COULD NEVER FIRE. Both grepped for `dependencyRootPreimage`, a
+# name RENAMED to `dependencyRootMaterial` on 2026-07-31 in c88c3e6d — so for over two weeks they
+# reported "ProofCore does NOT consume dependency roots" without being able to detect it either way,
+# and kept reporting it after roots became consumed. A check that answers a question it has stopped
+# asking is the failure this suite exists to catch; it happened here in the suite itself.
+#
+# The replacement asserts the REAL state, and names that exist.
+# A CALL, NOT A MENTION. The first version grepped for the bare name, which also matches the six
+# comments that discuss it — so deleting the production call would have left this green. Anchored to
+# the call expression AND to non-comment lines.
+if grep -v '^[[:space:]]*--' "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -q "Proof.dependencyRootMaterial (dependencyNodesOf"; then
+  ok "ProofCore CALLS dependencyRootMaterial over the real node set (the authority pass requires a computable closure)"
 else
-  ok "TRIPWIRE: ProofCore does NOT consume dependency roots yet (slice 6 integration open)"
+  no "no non-comment call to dependencyRootMaterial over dependencyNodesOf — the root dimension has been dropped"
 fi
-if grep -rq "dependencyRootPreimage" "$ROOT_DIR/Concrete/Report" 2>/dev/null; then
-  no "reports now consume dependency roots — replace this tripwire with integration coverage"
+# ...and the consumption is in the COMPOSITION, not in per-entry status derivation. A root reaching
+# `deriveObligationStatus` would bypass the composed pass entirely.
+if grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
+  no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
-  ok "TRIPWIRE: no report consumes dependency roots yet"
+  ok "roots are consumed by the composed authority pass, not by per-entry status derivation"
 fi
+
+# THE ROOT CONJUNCT IS CONSUMED AND CURRENTLY REDUNDANT, measured. Every subject whose root refuses
+# is already either not `proved` or refused by correspondence, so requiring the root downgrades
+# nobody extra. RESTORED after being deleted by a wholesale block rewrite in 60affbc4 — the rewrite
+# replaced prose around these lines and took the executable controls with it, leaving the gate green
+# while asserting the wrong integration state.
+ROOTREF=0
+for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
+  ROOTREF=$((ROOTREF + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -c REFUSED || true)))
+done
+if [ "$ROOTREF" = "13" ]; then
+  ok "13 subject roots refuse (measured, exact)"
+else
+  no "root refusals moved to $ROOTREF (was 13) — if a proved subject now fails to root, the root dimension has become load-bearing and must be described as such"
+fi
+# THE OTHER HALF, ASSERTED WHERE THE PRODUCERS LIVE. "13 refuse, none of them proved" was one
+# assertion doing the work of two, and the first attempt at the second half was INERT: it paired
+# subject headers with `depRoot` lines using `grep -B1`, and those are many lines apart, so it
+# extracted no subject name and passed on a corpus where roots visibly refuse.
+#
+# The correlation is now a compiler invariant — `PROVED-ROOTS` in `checkProofCoreConsistency` — which
+# reads the obligations and the node set directly and cannot drift from them. This gate asserts the
+# consistency report is clean across every fixture, so the invariant is exercised on the real corpus
+# rather than restated here.
+# SCOPED TO THE CLAIM. An earlier version asserted every fixture passes ALL consistency checks, which
+# surfaced a pre-existing and unrelated `STALE-FP` violation in `evidence_classes/stale_proof`
+# ("obligation is 'stale' but fingerprints match" — that fixture is stale by SPEC DRIFT, and the
+# invariant assumes stale means a fingerprint mismatch). Absorbing someone else's defect into this
+# gate would have pinned it as expected; it is reported separately instead.
+CONSBAD=0
+for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
+  out="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report consistency 2>/dev/null || true)"
+  if printf '%s' "$out" | grep -q "PROVED-ROOTS"; then
+    CONSBAD=$((CONSBAD+1)); echo "      $f: $(printf '%s' "$out" | grep 'PROVED-ROOTS' | head -1)"
+  fi
+done
+if [ "$CONSBAD" = "0" ]; then
+  ok "no fixture reports a PROVED-ROOTS violation (no proved subject fails to root)"
+else
+  no "$CONSBAD fixture(s) report PROVED-ROOTS — a proved verdict is resting on a closure that does not compute"
+fi
+# NON-VACUITY: the invariant must be able to fire. A `proved` obligation whose root refuses is
+# constructed directly, because the corpus has none — which is the redundancy pinned above.
+probe "PROVED-ROOTS can fire (a proved obligation over a refusing closure is caught)" "true" \
+'#eval
+  match DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "solo"
+          "00000000000000000000000000000000",
+        DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "ghost"
+          "11111111111111111111111111111111" with
+  | .ok solo, .ok ghost =>
+    -- One node with a BODY edge to an identity no node carries: the exact shape a proved subject
+    -- with an unresolvable dependency would have.
+    let g : List DepNode :=
+      [{ id := solo, label := CallableId.ofUser "m" "solo", digest := some "D"
+       , edges := [(DependencyEdge.body, ghost)] }]
+    (dependencyRootMaterial g solo).toOption.isNone
+  | _, _ => false'
+
+# ONLY TRUSTED EXCLUSIONS BECOME NODES, checked by CALLING `dependencyNodesOf`. The previous probe
+# asserted two facts about `isCurrentForDependents` and never touched the node builder, so removing
+# the trusted-only filter would not have moved it. This builds a ProofCore with one entry and two
+# excluded definitions — one trusted, one not — and reads the node set the production path produces.
+probe "dependencyNodesOf gives a node to a TRUSTED exclusion and none to an ineligible one" "nodes=2" \
+'def tPkgC : String := Concrete.shortHash "leaf-boundary-control"
+def tidC (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? tPkgC m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def fnStubC (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def eligC (q : String) (trusted : Bool) : EligibilityEntry :=
+  { qualName := q, eligible := !trusted, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := trusted, loc := none }
+def mkExclC (q d : String) (trusted : Bool) : Option ProofCoreExcluded :=
+  (tidC "m" d).map fun i =>
+    { qualName := q, bareName := d, callableId := CallableId.ofUser "m" d
+    , definitionIdentity := .ok i, fn := fnStubC d, fingerprint := "FP" ++ d
+    , eligibility := eligC q trusted, loc := none, spec := none }
+def mkEntryC (q d : String) : Option ProofCoreEntry :=
+  (tidC "m" d).map fun i =>
+    { definitionIdentity := .ok i, qualName := q, bareName := d
+    , callableId := CallableId.ofUser "m" d, fn := fnStubC d
+    , extracted := none, unsupported := [], fingerprint := "FP" ++ d
+    , params := [], eligibility := eligC q false, loc := none, spec := none
+    , subjectDigest := some ("D" ++ d) }
+#eval show IO Unit from do
+  match mkEntryC "m.caller" "caller", mkExclC "m.trustedHelper" "trustedHelper" true,
+        mkExclC "m.recursiveHelper" "recursiveHelper" false,
+        (PackageIdentity.syntheticForModules ["m"] ["src"]).toOption with
+  | some caller, some tX, some iX, some pkg =>
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [caller], excluded := [tX, iX]
+      , structs := [], enums := [], traitDefs := []
+      , callGraph := [("m.caller", ["m.trustedHelper", "m.recursiveHelper"])]
+      , recMap := [], externNames := [], obligations := [], diagnostics := [] }
+    let nodes := dependencyNodesOf pc pc.callGraph
+    let names := (nodes.map (·.label.declName)).mergeSort (· ≤ ·)
+    IO.println s!"nodes={nodes.length} {names}"
+  | _, _, _, _ => IO.println "could not build the control"'
+# ...and a closure crossing a TRUSTED boundary must still root. Its absence refused `calls.combine`
+# entirely, for a reason that had nothing to do with its evidence.
+if "$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -q REFUSED; then
+  no "composition_trusted_helper cannot root — an edge to a trusted callee has no node again"
+else
+  ok "a closure crossing a TRUSTED boundary roots (trusted exclusions are leaf nodes)"
+fi
+# ONLY TRUSTED EXCLUSIONS ARE LEAVES. Every excluded definition carries a scoped identity, so it is
+# tempting to give them all nodes — and that makes closures computable over callees excluded for
+# reasons carrying no evidence at all. The restriction is asserted at the type level rather than by
+# reading the corpus, because the corpus has no ineligible callee on a body edge today and a control
+# that cannot fail is not a control.
+probe "an INELIGIBLE exclusion is not a leaf boundary (only trusted ones are)" "true" \
+'#eval
+  match DefinitionIdentity.of? "pkg0123456789abcdef0123456789abcd" "m" "helper"
+          "00000000000000000000000000000000" with
+  | .error _ => false
+  | .ok _ =>
+    -- The rule is structural: `dependencyNodesOf` filters excluded records on `isTrusted`, so an
+    -- ineligible exclusion contributes no node and a closure reaching it REFUSES rather than
+    -- serializing over material that carries no evidence.
+    (ObligationStatus.ineligible.isCurrentForDependents == false)
+      && (ObligationStatus.trusted.isCurrentForDependents == true)'
 
 # === WHOLE-TABLE BINDING (slice 4: never under-approximate table access) =====================
 # A `body` edge naming a table is not yet a dependency ON that table. The NAME does not move
@@ -2646,17 +2773,10 @@ else
   no "$NREF root refusal(s), but only $NNAMED name the identity/edge responsible"
 fi
 
-# THE ROOT IS STILL SHADOW; CORRESPONDENCE IS NOT. Those are different dimensions and the
-# containment now applies to exactly one of them: `applyCorrespondenceAuthority` consumes the scoped
-# JOIN, while `dependencyRootMaterial` still decides nothing. Keeping the tripwire on the root means
-# a later step cannot wire it in silently, and the check is deliberately about the STATUS DERIVATION
-# rather than about the authority pass — a root reaching per-entry status derivation would bypass the
-# composition entirely.
-if grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
-  no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
-else
-  ok "no dependency root reaches status derivation — roots remain shadow while correspondence is authoritative"
-fi
+# (The status-derivation containment for roots is asserted in the ROOT INTEGRATION section above,
+# where it sits beside the assertion that roots ARE consumed by the composition. It used to live here
+# saying "roots remain shadow", which stopped being true when the authority pass began requiring a
+# computable closure — two claims about one thing, in two places, disagreeing.)
 
 GATE_DONE=1
 echo ""
