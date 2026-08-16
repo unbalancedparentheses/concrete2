@@ -197,6 +197,9 @@ test-replay-producer: build ## R-0004 package 3: kernel replay is one typed prod
 test-receipt-issuance: build ## R-0004 package 3: production receipt issuance follows the composed authority verdict
 	bash scripts/tests/check_receipt_issuance.sh
 
+test-receipt-consumption: build ## R-0004 package 3: a stored receipt is untrusted input, re-checked against fresh facts
+	bash scripts/tests/check_receipt_consumption.sh
+
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
 	bash scripts/tests/check_evidence_reproducibility.sh
 

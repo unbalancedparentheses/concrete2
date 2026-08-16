@@ -774,6 +774,33 @@ add "issue-carries-trusted-boundaries" "Concrete/Proof/Issue.lean" "check_receip
   '  let boundaries := trustedDepsOf subject' \
   '  let boundaries := (trustedDepsOf subject).take 0'
 
+# R-0004 package 3: receipt storage and consumption.
+
+# THE BUG THE CORPUS CAUGHT AND THE UNIT PROBE MISSED. `s!"{n}"` renders a `Name` in display form,
+# so a component containing dots came out as «Concrete.Proof.elfFns» and decoded back WITH the
+# guillemets — every receipt disagreed with itself the instant it was written. The round-trip probe
+# used table `A`, too simple to expose it.
+add "receipt-encode-name-unescaped" "Concrete/Proof/Receipt.lean" "check_receipt_consumption.sh" yes \
+  '    ++ (r.tableBindings.map fun (n, d) => s!"table {n.toString false} {d}")' \
+  '    ++ (r.tableBindings.map fun (n, d) => s!"table {n} {d}")'
+
+# PARTIAL DECODING IS THE ATTACK. A decoder that accepts a record with a missing field produces a
+# receipt whose defaulted value compares equal to another default, so two unrelated claims agree.
+add "receipt-decode-refuses-partial" "Concrete/Proof/Receipt.lean" "check_receipt_consumption.sh" yes \
+  $'    | none => Except.error (ReceiptDecodeRefusal.missingField n)\n    | some v => if v.isEmpty then Except.error (.malformedField n v) else Except.ok v' \
+  $'    | none => Except.ok ""\n    | some v => if v.isEmpty then Except.error (.malformedField n v) else Except.ok v'
+
+# SKIPPING AN UNKNOWN KEY makes a newer format — or a smuggled field — look like a clean parse.
+add "receipt-decode-refuses-unknown-key" "Concrete/Proof/Receipt.lean" "check_receipt_consumption.sh" yes \
+  '      else throw (.unknownKey key)' \
+  '      else pure ()'
+
+# SCHEMA IS CHECKED BEFORE CONTENT, so an older envelope reads as a different format rather than as
+# a program that moved.
+add "receipt-decode-checks-schema-first" "Concrete/Proof/Receipt.lean" "check_receipt_consumption.sh" yes \
+  '  if schema != receiptSchemaVersion then throw (.schemaUnreadable schema)' \
+  '  if false then throw (.schemaUnreadable schema)'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

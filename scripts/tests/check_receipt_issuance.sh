@@ -144,12 +144,20 @@ fi
 
 echo "=== the report does not overclaim ==="
 
-# Issuance is not status. Nothing stores these and nothing consumes them, and the report says so —
-# without that line a reader could take "5 issued" for "5 claims are now receipt-backed".
-if grep -q 'receipts are not stored and no status consumes them yet' <<<"$ELF"; then
-  ok "the report discloses that receipts are neither stored nor consumed"
+# ISSUANCE IS NOT STATUS, and the report must say which. Without a disclosure a reader takes
+# "5 issued" for "5 claims are now receipt-backed". Both spellings are asserted, because the honest
+# sentence differs by whether the receipts went anywhere: unstored receipts vanish with the process,
+# and stored ones are bytes that get re-checked rather than believed.
+if grep -q 'not stored. Pass --out' <<<"$ELF"; then
+  ok "an unstored run discloses that nothing was written"
 else
-  no "the disclosure is gone — 'issued' now reads as evidence in use"
+  no "the unstored disclosure is gone — 'issued' now reads as evidence in use"
+fi
+STORED="$("$BIN" examples/elf_header/src/main.con --report receipts --out "$TMP/store.txt" 2>/dev/null || true)"
+if grep -q 'Stored 5 receipt(s)' <<<"$STORED"    && grep -q 'not evidence on its own' <<<"$STORED"; then
+  ok "a stored run names the file AND states that a stored receipt is re-checked, not believed"
+else
+  no "the storage disclosure is missing or the store was not written"
 fi
 
 GATE_DONE=1
