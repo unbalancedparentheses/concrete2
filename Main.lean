@@ -1444,28 +1444,10 @@ def renderContracts (parsedModules : List Concrete.Module) (registry : Concrete.
     ++ Report.renderDiv divObls omegaProved
     ++ Report.renderOverflow ovfObls omegaProved bvProved
 
-/-- Walk up from `path` for the directory holding a Lake workspace.
-
-Kernel replay used to invoke `lake` with no `cwd`, so the workspace came from the
-PROCESS working directory and the verdict depended on where the caller stood
-(R-0004 slice 4). Resolving from the input makes the answer a property of what is
-being checked. Returns `none` rather than guessing a default: a wrong workspace
-would replay against the wrong library and report confident nonsense. -/
-partial def findLakeWorkspace (path : String) : IO (Option System.FilePath) := do
-  let abs ← IO.FS.realPath (System.FilePath.mk path)
-  let rec up (dir : System.FilePath) (fuel : Nat) : IO (Option System.FilePath) := do
-    match fuel with
-    | 0 => return none
-    | fuel + 1 =>
-      if (← (dir / "lakefile.toml").pathExists) || (← (dir / "lakefile.lean").pathExists) then
-        return some dir
-      match dir.parent with
-      | some p => if p == dir then return none else up p fuel
-      | none => return none
-  -- Start at the file's directory; a file path has a parent, a directory is its
-  -- own starting point.
-  let start := if (← abs.isDir) then abs else (abs.parent.getD abs)
-  up start 64
+-- `findLakeWorkspace` moved to `Concrete.Proof.Replay` on 2026-08-16. It is part of answering
+-- "which checker ran", so it belongs with the replay producer rather than beside the CLI: a second
+-- caller needing a workspace would otherwise have copied it, and two answers to "where does this
+-- replay" is exactly the drift slice 4 was about.
 
 /-- Run pipeline and check a profile constraint.
     If the input file lives inside a `Concrete.toml` project, route
@@ -2686,8 +2668,12 @@ def compileAndReport (inputPath : String) (reportType : String)
       IO.println (Report.leanStubsReport pc (registry := registry))
       return 0
     if reportType == "check-proofs" then
-      -- Collect all proof names from obligations with specs attached
-      let proofNames := pc.obligations.filterMap fun o =>
+      -- WHICH claims to replay is a policy question, and it stays here. WHETHER the kernel accepted
+      -- them is answered by the single producer `Concrete.Proof.replay`; this report renders that
+      -- answer and re-derives none of it. Before the extraction the check was inline, entangled with
+      -- `reportJson`, and its failure paths printed — so no other caller (receipt minting, the link
+      -- migration, `concrete check`) could ask the question without writing a second answer to it.
+      let refinementTargets : List Proof.ReplayTarget := pc.obligations.filterMap fun o =>
         match o.spec with
         | some s =>
           -- `unbound` is replayable too, and must be: kernel replay is how a
@@ -2695,113 +2681,65 @@ def compileAndReport (inputPath : String) (reportType : String)
           -- no path from unbound to bound — you could never obtain the receipt
           -- the fingerprint is supposed to record.
           if o.status == .proved || o.status == .stale || o.status == .unbound then
-            some (o.functionId.qualName, s.proofName, s.source, o.status)
+            some { subject := o.functionId.qualName, theoremName := s.proofName
+                 , kind := .refinement
+                 , origin := if s.source == .registry then .sourceLinked else .hardcoded
+                 -- An unbound claim has no stored subject digest, so nothing detects a changed
+                 -- body. Carried in the TYPE so acceptance of the theorem cannot be summed into
+                 -- coverage of the claim.
+                 , binding := if o.status == .unbound then .unbound else .bound }
           else none
         | none => none
-      if proofNames.isEmpty then
+      -- Source-contract discharge theorems (the `ensures_proof` naming the theorem that proves an
+      -- `#[ensures(...)]` obligation) are replayed too, so an obligation reported `proved_by_lean`
+      -- is backed by a real kernel check.
+      let ensuresThms := registry.filterMap fun e => e.ensuresProof.map (e.function, ·)
+      let ensuresTargets : List Proof.ReplayTarget := ensuresThms.map fun (fn, thm) =>
+        { subject := fn, theoremName := thm, kind := .ensures
+        , origin := .sourceLinked, binding := .bound }
+      -- Obligation status is a RENDERING input only: a stale claim whose theorem type-checks is
+      -- reported `stale` rather than `checked`. It is not part of the replay question, so it is not
+      -- part of the request.
+      let statusByTheorem : List (String × String) :=
+        pc.obligations.filterMap fun o => o.spec.map fun s => (s.proofName, o.status.canonical)
+      match ← Proof.replay
+          { inputPath := inputPath
+          , fallbackDir := "."
+          -- The compiler umbrella for infrastructure/refinement theorems, AND the `Examples`
+          -- library for the flagship example-correctness proofs. The example proofs live in their
+          -- own Lake library, so `import Concrete` alone does not make them reachable for `#check`.
+          , imports := ["Concrete", "Examples"]
+          , targets := refinementTargets ++ ensuresTargets } with
+      | .error .noTargets =>
         if reportJson then
           IO.println "{\n  \"schema_version\": \"1\",\n  \"all_checked\": true,\n  \"checks\": [],\n  \"lean_error\": \"\",\n  \"summary\": {\"verified\": 0, \"failed\": 0, \"total\": 0}\n}"
         else
           IO.println "=== Lean Proof Kernel Check ===\n\nNo proved, stale, or unbound obligations with proof names to check."
         return 0
-      -- Generate temp Lean file with #check for each theorem
-      let tmpDir ← IO.Process.output { cmd := "mktemp", args := #["-d"] }
-      let tmpPath := tmpDir.stdout.trimAscii.toString ++ "/check_proofs.lean"
-      -- Import the compiler umbrella (`Concrete`) for infrastructure/refinement
-      -- theorems, AND the `Examples` library for the flagship example-correctness
-      -- proofs (`Examples.<Ex>.Proofs.*`). The example proofs were moved out of the
-      -- compiler lib into their own `Examples` Lake library, so `import Concrete`
-      -- alone no longer makes them reachable for `#check`; this proof-check target
-      -- is the one place that legitimately imports the example proof code.
-      let mut leanSrc := "import Concrete\nimport Examples\n\n"
-      leanSrc := leanSrc ++ "-- Auto-generated by `concrete --report check-proofs`\n"
-      leanSrc := leanSrc ++ "-- Verifies that referenced Lean theorems exist and type-check.\n\n"
-      for (fn, proofName, _, _) in proofNames do
-        leanSrc := leanSrc ++ s!"-- {fn}\n#check @{proofName}\n\n"
-      -- Also kernel-check source-contract discharge theorems (the `ensures_proof`
-      -- naming the theorem that proves a `#[ensures(...)]` obligation), so an
-      -- obligation reported `proved_by_lean` is backed by a real kernel check.
-      let ensuresThms := registry.filterMap fun e => e.ensuresProof.map (e.function, ·)
-      for (fn, thm) in ensuresThms do
-        leanSrc := leanSrc ++ s!"-- {fn} (ensures)\n#check @{thm}\n\n"
-      IO.FS.writeFile ⟨tmpPath⟩ leanSrc
-      -- Resolve the proof workspace from the INPUT, not the process working
-      -- directory (R-0004 slice 4). `lake` finds its workspace by walking up
-      -- from wherever it is invoked, so with no `cwd` set this verdict depended
-      -- on where the user happened to stand: the same file by absolute path gave
-      -- "3 verified, 0 failed" from the repo root and "0 verified, 3 failed"
-      -- from /tmp. Worse, it blamed each theorem with `theorem_lookup` — the
-      -- theorems were fine; the workspace was never found.
-      -- Input first, then the caller's own directory. Resolving ONLY from the
-      -- input was too strict and broke a legitimate case: a tool that copies
-      -- sources to a temp dir and replays them from inside the repo (which is
-      -- how check_purecore_proofs.sh exercises std). Such an input has no
-      -- workspace of its own, and the caller's workspace is then the only
-      -- available answer — refusing it made 12 real, kernel-verified std proofs
-      -- report as unreachable.
-      --
-      -- The cwd-independence property is preserved where it means something: an
-      -- input that HAS a workspace always resolves to that one, so the same file
-      -- gives the same verdict from anywhere. Only an input with no workspace
-      -- falls back, and the report names which workspace was used so the answer
-      -- is never anonymous.
-      let wsFromInput ← findLakeWorkspace inputPath
-      let wsRoot ← match wsFromInput with
-        | some w => pure (some w)
-        | none   => findLakeWorkspace "."
-      match wsRoot with
-      | none =>
-        -- Say what is actually wrong. Reporting N missing theorems for one
-        -- missing workspace sends the reader to look for the wrong thing.
-        let msg := s!"cannot locate a Lake workspace for '{inputPath}' (no lakefile.toml or lakefile.lean in any parent directory), so the Lean theorems it references cannot be replayed"
+      | .error refusal =>
+        -- Every remaining refusal means NO KERNEL RAN. Say what is actually wrong: reporting N
+        -- missing theorems for one missing workspace sends the reader to look for the wrong thing.
+        let msg := refusal.explain
         if reportJson then
-          IO.println s!"\{\n  \"schema_version\": \"1\",\n  \"all_checked\": false,\n  \"checks\": [],\n  \"lean_error\": \"{msg}\",\n  \"summary\": \{\"verified\": 0, \"failed\": 0, \"total\": 0}\n}"
+          IO.println s!"\{\n  \"schema_version\": \"1\",\n  \"all_checked\": false,\n  \"checks\": [],\n  \"refusal\": \"{refusal.canonical}\",\n  \"lean_error\": \"{msg}\",\n  \"summary\": \{\"verified\": 0, \"failed\": 0, \"total\": 0}\n}"
         else
           IO.println s!"=== Lean Proof Kernel Check ===\n\nerror: {msg}"
         return 1
-      | some ws =>
-      -- Invoke lake env lean to check the file, from the resolved workspace.
-      let result ← IO.Process.output {
-        cmd := "lake"
-        args := #["env", "lean", tmpPath]
-        cwd := ws
-        env := #[("LAKE_TERM_ANSI", "0")]
-      }
-      -- Parse results: Lean may put errors on stdout or stderr
-      let combined := result.stdout.trimAscii.toString ++ "\n" ++ result.stderr.trimAscii.toString
-      let mut verified : List String := []
-      let mut failed : List (String × String) := []
-      -- `unbound` links are deliberately INCLUDED above (kernel replay is how a link
-      -- without a stored subject earns one), but a type-checking theorem does not make
-      -- the CLAIM proved: with no stored proof-subject digest the freshness check
-      -- compares the body with itself, so nothing detects a changed body. Counting
-      -- those as "verified" is the claim outrunning its evidence — on
-      -- examples/hmac_sha256 it read "11 verified" while ProofCore was simultaneously
-      -- emitting 11 "this claim is unbound, not proved" errors. Bucketed separately so
-      -- the summary cannot say verified when it means only type-checked.
-      let mut unboundChecked : List String := []
-      for (fn, proofName, _, oblStatus) in proofNames do
-        -- Check if this proof name produced an error (Lean uses backticks in error messages)
-        let errNeedle := s!"`{proofName}`"
-        let stderrParts := combined.splitOn errNeedle
-        let hasError := stderrParts.length != 1
-        if hasError then
-          failed := failed ++ [(fn, proofName)]
-        else if oblStatus.canonical == "unbound" then
-          unboundChecked := unboundChecked ++ [fn]
-        else
-          verified := verified ++ [fn]
-      -- If exit code non-zero but no specific failures found, mark all as failed
-      if result.exitCode != 0 && failed.isEmpty then
-        for (fn, proofName, _, _) in proofNames do
-          if !failed.any (fun (f, _) => f == fn) then
-            failed := failed ++ [(fn, proofName)]
-        verified := []
-      let generalFailure := result.exitCode != 0 && failed.isEmpty
-      let tc ← try
-        let tcContent ← IO.FS.readFile ⟨"lean-toolchain"⟩
-        pure tcContent.trimAscii.toString
-      catch _ => pure "unknown"
+      | .ok res =>
+      -- `ensures` checks are deliberately kept OUT of the verified/failed counts, which have always
+      -- been refinement-only; they are rendered in their own section below.
+      let refs := fun (cs : List Proof.ReplayCheck) => cs.filter (·.target.kind == .refinement)
+      let verified := (refs res.accepted).map (·.target.subject)
+      let unboundChecked := (refs res.acceptedUnbound).map (·.target.subject)
+      let failed := (refs res.rejected).map fun c => (c.target.subject, c.target.theoremName)
+      let notAttempted := (refs res.notAttempted).map (·.target.subject)
+      let generalFailure := res.generalFailure
+      let combined := res.transcript
+      let tc := res.environment.toolchain
+      let ws := res.environment.workspace
+      let wsFromInput := res.environment.workspaceFromInput
+      let theoremOf := fun (fn : String) =>
+        (refinementTargets.find? (·.subject == fn)).map (·.theoremName) |>.getD "?"
       -- --json: structured whole-file proof-check summary (human output unchanged).
       if reportJson then
         let q := Report.jsonStr
@@ -2818,8 +2756,9 @@ def compileAndReport (inputPath : String) (reportType : String)
           String.join ["    {\"function\": ", q fn, ", \"theorem\": ", q thm, ", \"obligation_kind\": ", q kind,
             ", \"origin\": ", q origin, ", \"status\": ", q (statusOf thm oblStatus),
             ", \"source_line\": ", toString (lineOf fn), "}"]
-        let refChecks := proofNames.map fun (fn, pn, src, st) =>
-          checkObj fn pn "refinement" (if src == .registry then "source_linked" else "hardcoded") st.canonical
+        let refChecks := refinementTargets.map fun t =>
+          checkObj t.subject t.theoremName "refinement" t.origin.canonical
+            ((statusByTheorem.find? (·.1 == t.theoremName)).map (·.2) |>.getD "proved")
         let ensChecks := ensuresThms.map fun (fn, thm) => checkObj fn thm "ensures" "source_linked" "proved"
         let allObjs := refChecks ++ ensChecks
         let leanErr := if generalFailure || !failed.isEmpty then String.ofList (combined.toList.take 800) else ""
@@ -2830,8 +2769,7 @@ def compileAndReport (inputPath : String) (reportType : String)
           "  \"lean_error\": ", q leanErr,
           ",\n  \"summary\": {\"verified\": ", toString verified.length,
           ", \"unbound\": ", toString unboundChecked.length, ", \"failed\": ", toString failed.length,
-          ", \"total\": ", toString (proofNames.length + ensuresThms.length), "}\n}"])
-        let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
+          ", \"total\": ", toString (refinementTargets.length + ensuresThms.length), "}\n}"])
         return (if failed.isEmpty && !generalFailure then 0 else 1)
       -- Render report
       let mut out := "=== Lean Proof Kernel Check ===\n"
@@ -2839,21 +2777,20 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- the receipt, and a verdict that does not say where it was produced
       -- cannot be audited — especially in the fallback case above.
       out := out ++ s!"\nWorkspace: {ws}"
-      out := out ++ (if wsFromInput.isSome then " (from input)\n" else " (from working directory; the input is outside any workspace)\n")
+      out := out ++ (if wsFromInput then " (from input)\n" else " (from working directory; the input is outside any workspace)\n")
       out := out ++ s!"\nToolchain: "
       out := out ++ tc ++ "\n"
       if !verified.isEmpty then
         out := out ++ s!"\n  Kernel-verified ({verified.length}):\n"
         for fn in verified do
-          let proofName := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.1) |>.getD "?"
-          let source := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.2.1) |>.getD .hardcoded
-          let sourceTag := if source == .registry then "registry" else "hardcoded"
-          out := out ++ s!"    ✓ {fn} — {proofName} ({sourceTag})\n"
+          let sourceTag :=
+            if (refinementTargets.find? (·.subject == fn)).map (·.origin) == some .sourceLinked
+            then "registry" else "hardcoded"
+          out := out ++ s!"    ✓ {fn} — {theoremOf fn} ({sourceTag})\n"
       if !unboundChecked.isEmpty then
         out := out ++ s!"\n  Type-checked but UNBOUND — not proved ({unboundChecked.length}):\n"
         for fn in unboundChecked do
-          let proofName := (proofNames.find? fun (f, _, _, _) => f == fn).map (·.2.1) |>.getD "?"
-          out := out ++ s!"    ? {fn} — {proofName} (no stored proof-subject digest; add #[proof_fingerprint(\"...\")])\n"
+          out := out ++ s!"    ? {fn} — {theoremOf fn} (no stored proof-subject digest; add #[proof_fingerprint(\"...\")])\n"
       if !failed.isEmpty then
         out := out ++ s!"\n  Failed ({failed.length}):\n"
         for (fn, proofName) in failed do
@@ -2864,8 +2801,17 @@ def compileAndReport (inputPath : String) (reportType : String)
           let mark := if (combined.splitOn s!"`{thm}`").length != 1 then "✗" else "✓"
           out := out ++ s!"    {mark} {fn} — ensures discharged by {thm}\n"
       if generalFailure then
-        out := out ++ s!"\n  Lean check failed (exit code {result.exitCode}):\n"
+        -- THE FILE DID NOT COMPILE, so no theorem has an individual verdict. Naming them as
+        -- individually failed — which is what this report did while `generalFailure` was
+        -- unreachable — blames artifacts that were very likely fine and sends the reader to look
+        -- for the wrong thing. They are listed as NOT ATTEMPTED, and the transcript is shown
+        -- because it is the only diagnosis available.
+        out := out ++ s!"\n  Lean check failed as a whole (exit code {res.exitCode}) — no theorem was individually judged:\n"
         out := out ++ s!"    {combined.take 500}\n"
+        if !notAttempted.isEmpty then
+          out := out ++ s!"\n  NOT ATTEMPTED ({notAttempted.length}) — the file did not compile, so these were never judged:\n"
+          for fn in notAttempted do
+            out := out ++ s!"    · {fn} — {theoremOf fn}\n"
       -- Generate taxonomy diagnostics for failures
       let checkDiags := Concrete.checkProofResultsToDiagnostics
         (failed.map fun (fn, pn) => (fn, pn, true))
@@ -2883,14 +2829,14 @@ def compileAndReport (inputPath : String) (reportType : String)
       if !unboundChecked.isEmpty then
         out := out ++ s!"; {unboundChecked.length} unbound (type-checked, NOT proved)"
       if generalFailure then
-        out := out ++ " (general compilation error)"
+        -- "0 verified, 0 failed" alone reads like nothing was wrong. Say how many claims went
+        -- unjudged, so the zero cannot be mistaken for a clean run.
+        out := out ++ s!" (general compilation error; {notAttempted.length} NOT ATTEMPTED)"
       if !unboundChecked.isEmpty then
         -- Enforcement lives in the policy gate, which fails closed on `.unbound`
         -- (E0612). Say so, so a reader does not mistake exit 0 here for "shippable".
         out := out ++ "\n  NOTE: an unbound claim is not evidence. `[policy] require-proofs`"
         out := out ++ " rejects these (E0612)."
-      -- Clean up temp dir
-      let _ ← IO.Process.output { cmd := "rm", args := #["-rf", tmpDir.stdout.trimAscii.toString] }
       IO.println out
       return (if failed.isEmpty && !generalFailure then 0 else 1)
     if reportType == "diagnostics-json" then
