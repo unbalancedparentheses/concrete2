@@ -172,6 +172,34 @@ else
   no "could not find the literal to edit — this control lost its target"
 fi
 
+echo "=== a changed PROOF LIBRARY invalidates its receipts ==="
+
+# THE AUTHORITY GAP THIS CLOSES. Until 2026-08-16 `importsId` bound a digest of the compiler's own
+# checked-in classification table — compiled into the binary — so replaying the same theorem NAMES
+# against a DIFFERENT proof library produced a byte-identical receipt. Nothing in the evidence said
+# whose theorems had been accepted. Path independence did not help: both runs were equally
+# path-independent and equally anonymous about the library.
+#
+# The probe ADDS a file rather than editing one, so no existing source is ever left modified if this
+# gate is interrupted. An orphan `.lean` is not imported and so is not built, but it IS part of the
+# library's content, which is precisely what the receipt now binds.
+PROBE="$ROOT_DIR/Concrete/Proof/ZZ_receipt_closure_probe.lean"
+rm -f "$PROBE"
+LIB_BEFORE="$(tally "$(consume "$TMP/r.txt" "$SRC")")"
+printf -- '-- transient probe file for check_receipt_consumption.sh\n' > "$PROBE"
+LIB_AFTER="$(tally "$(consume "$TMP/r.txt" "$SRC")")"
+rm -f "$PROBE"
+LIB_RESTORED="$(tally "$(consume "$TMP/r.txt" "$SRC")")"
+if [ "$LIB_BEFORE" != "5 current, 0 not current, 0 unreadable" ]; then
+  no "the proof-library control had no current receipts to start from — it would be vacuous"
+elif ! grep -qE '^0 current, 5 not current' <<<"$LIB_AFTER"; then
+  no "changing the PROOF LIBRARY left the receipts current ($LIB_AFTER) — nothing binds whose theorems were accepted"
+elif [ "$LIB_RESTORED" != "5 current, 0 not current, 0 unreadable" ]; then
+  no "receipts did not recover when the library was restored ($LIB_RESTORED) — the binding is not a function of content"
+else
+  ok "changing the proof library invalidates its receipts, and restoring it makes them current again"
+fi
+
 GATE_DONE=1
 echo "RECEIPT-CONSUMPTION: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

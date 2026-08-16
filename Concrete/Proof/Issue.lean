@@ -77,6 +77,11 @@ inductive IssueRefusal where
       to a theorem that proved the previous one is precisely the forgery a receipt exists to
       prevent, so the composed authority verdict gates issuance. -/
   | notProved (subject : String) (status : String)
+  /-- The replay found no proof library at all, so nothing identifies whose theorems were accepted.
+      A receipt binding an empty import closure would compare equal to any other receipt binding an
+      empty one — the same "empty string is not unknown" failure the environment identities refuse
+      on. -/
+  | noImportClosure (subject : String)
   /-- Every input was present and the material was still rejected — a table named but unbound,
       digests that do not correspond to their tables, an empty environment identity, or a trust
       claim inconsistent with its boundaries. -/
@@ -90,6 +95,7 @@ def IssueRefusal.canonical : IssueRefusal → String
   | .noSubjectDigest _  => "no_subject_digest"
   | .noScopedIdentity ..=> "no_scoped_identity"
   | .rootRefused ..     => "dependency_root_refused"
+  | .noImportClosure _  => "no_import_closure"
   | .notProved ..       => "claim_not_proved"
   | .materialRefused _  => "receipt_material_refused"
 
@@ -100,6 +106,7 @@ def IssueRefusal.explain : IssueRefusal → String
   | .noSubjectDigest s    => s!"'{s}' has no complete subject digest to establish evidence against"
   | .noScopedIdentity s w => s!"'{s}' has no scoped identity: {w}"
   | .rootRefused s w      => s!"'{s}' has no computable dependency root: {w}"
+  | .noImportClosure s    => s!"'{s}': the replay found no proof library, so nothing identifies whose theorems were accepted"
   | .notProved s st       => s!"'{s}' is '{st}', not 'proved' — the kernel accepted a theorem, which says nothing about whether it still proves this body"
   | .materialRefused s    => s!"'{s}' assembled material that the receipt envelope refused"
 
@@ -163,6 +170,7 @@ def issueFor (pc : ProofCore) (res : ReplayResult) (env : IssueEnvironment)
   let some obl := pc.obligations.find? (fun o => o.functionId.qualName == subject)
     | throw (.noProofLink subject)
   if obl.status != .proved then throw (.notProved subject obl.status.canonical)
+  if res.environment.importDigests.isEmpty then throw (.noImportClosure subject)
   let sr ← (SuccessfulReplay.of? res thm).mapError (IssueRefusal.replay thm)
   let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)
   let some subjDigest := e.subjectDigest | throw (.noSubjectDigest subject)
@@ -311,5 +319,95 @@ def withheld (os : List IssueOutcome) : List IssueOutcome :=
   os.filter fun o => match o.result with | .ok _ => false | .error _ => true
 
 end IssueOutcome
+
+
+
+/-! ## The V1 -> V2 subject-digest migration (R-0004 package 3)
+
+Every stored `#[proof_fingerprint]` in the corpus is a V1 value: a body-only fingerprint that answers
+a weaker question than the V2 subject digest, which also binds the declaration's signature, contracts,
+capabilities and constant environment. Activating V2 makes every stored V1 value NOT COMPARABLE at
+once — correctly, since it was established against a different question — so activation without
+migration would turn the whole corpus `needs_recheck` in a single commit.
+
+The migration is therefore: replay each link, and for those the kernel accepts AND whose own body is
+still the one their proof was pinned to, record the V2 digest computed FROM THE PROGRAM.
+
+WHAT CANNOT BE MIGRATED, and why it matters more than what can. A STALE link is pinned to a body that
+no longer exists. There is no honest V2 value to write for it: recording the CURRENT digest would
+assert that a proof was established against a body it was never checked against — manufacturing
+freshness, which is the exact forgery this whole package exists to prevent. Such a link keeps its V1
+value and becomes `needs_recheck` on activation, which is the truthful verdict: recorded under an
+older envelope, body since moved, re-verify and re-record.
+-/
+
+/-- What the migration would do to one stored fingerprint. -/
+inductive MigrationDisposition where
+  /-- Body still matches what the proof was pinned to, and the kernel accepts the theorem: record
+      the computed V2 digest. -/
+  | migrate (v2 : String)
+  /-- Already a V2 value; nothing to do. -/
+  | alreadyV2
+  /-- The body has moved since the proof was pinned. NO honest V2 value exists — writing the current
+      digest would manufacture freshness. Stays V1 and becomes `needs_recheck` on activation. -/
+  | staleNoHonestValue
+  /-- The kernel does not accept this link's theorem, so nothing should be recorded for it. -/
+  | replayRefused (why : String)
+  /-- No V2 digest is computable for this subject: facts absent or incomplete. -/
+  | noSubjectDigest
+  deriving Repr
+
+def MigrationDisposition.canonical : MigrationDisposition → String
+  | .migrate _           => "migrate"
+  | .alreadyV2           => "already_v2"
+  | .staleNoHonestValue  => "stale_no_honest_value"
+  | .replayRefused _     => "replay_refused"
+  | .noSubjectDigest     => "no_subject_digest"
+
+structure MigrationRow where
+  subject     : String
+  status      : String
+  stored      : String
+  disposition : MigrationDisposition
+  deriving Repr
+
+/-- The migration plan over every claim that carries a stored fingerprint.
+
+    ONE ROW PER STORED FINGERPRINT, refusals included, because "43 = migrated + refused" is the only
+    form in which this plan can be checked. A plan that listed only what it would change would be
+    indistinguishable from a plan that silently skipped things. -/
+def migrationPlan (pc : ProofCore) (res : ReplayResult) : List MigrationRow :=
+  pc.entries.filterMap fun e =>
+    match e.spec with
+    | none => none
+    | some spec =>
+      match spec.expectedHash with
+      | none => none
+      | some stored =>
+        if stored.isEmpty then none else
+        let status := (pc.obligations.find? (fun o => o.functionId.qualName == e.qualName)).map
+                        (·.status.canonical) |>.getD "unknown"
+        let disp :=
+          if "v2:".isPrefixOf stored then MigrationDisposition.alreadyV2
+          -- STALENESS IS CHECKED BEFORE REPLAY, and the order matters: a stale claim's theorem may
+          -- well still typecheck, so asking the kernel first and recording on acceptance is exactly
+          -- how the current body would acquire a proof it never had.
+          else if status == "stale" then .staleNoHonestValue
+          else match SuccessfulReplay.of? res spec.proofName with
+            | .error w => .replayRefused w.canonical
+            | .ok _ => match e.subjectDigest with
+              | none => .noSubjectDigest
+              | some d => .migrate ("v2:" ++ Concrete.shortHash d)
+        some { subject := e.qualName, status, stored, disposition := disp }
+
+namespace MigrationRow
+
+def migrating (rs : List MigrationRow) : List MigrationRow :=
+  rs.filter fun r => match r.disposition with | .migrate _ => true | _ => false
+
+def refused (rs : List MigrationRow) : List MigrationRow :=
+  rs.filter fun r => match r.disposition with | .migrate _ => false | .alreadyV2 => false | _ => true
+
+end MigrationRow
 
 end Concrete.Proof

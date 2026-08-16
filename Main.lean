@@ -2651,14 +2651,19 @@ def compileAndReport (inputPath : String) (reportType : String)
         let workspaceId := match packageIdentity with
           | .ok p => p.digest
           | .error _ => ""
-        let importsId := Proof.importsIdOf [("Concrete.Proof.ClassificationTable",
-                                              Proof.classificationSurfaceDigest)]
         -- The CURRENT checker, asked without paying for a kernel run — the same producer `replay`
-        -- resolves through, so "which toolchain" has one answer.
-        let toolchain := match ← Proof.resolveChecker
-            { inputPath := inputPath, fallbackDir := ".", imports := [], targets := [] } with
-          | some (_, _, tc) => tc
+        -- resolves through, so "which toolchain" and "which proof library" each have one answer.
+        let checkerNow ← Proof.resolveChecker
+          { inputPath := inputPath, fallbackDir := "."
+          , imports := ["Concrete", "Examples"], targets := [] }
+        let toolchain := match checkerNow with
+          | some (_, e) => e.toolchain
           | none => "unknown"
+        -- THE PROOF LIBRARY, BY CONTENT. A receipt that did not identify whose theorems were
+        -- accepted could be replayed against a different library and still read current.
+        let importsId := match checkerNow with
+          | some (_, e) => Proof.importsIdOf e.importDigests
+          | none => ""
         let statusEntries := Report.proofStatusEntries validCore.coreModules locMap registry pc
         let trustedDepsOf := fun (qn : String) =>
           (statusEntries.find? (fun s => s.qualName == qn)).map (·.trustedDeps) |>.getD []
@@ -2765,14 +2770,12 @@ def compileAndReport (inputPath : String) (reportType : String)
       let workspaceId := match packageIdentity with
         | .ok p => p.digest
         | .error _ => ""
-      -- WHAT THIS BINDS AND WHAT IT DOES NOT. `importsId` is meant to be the transitive import
-      -- surface. The compiler cannot compute the Lean import closure — it imports neither the proof
-      -- modules nor `Examples`, which is why classification is checked-in data — so this is the
-      -- surface it can bind honestly: every classified theorem, its artifact digest, and its table
-      -- digests. A proof that changes which ambient lemma it invokes without moving its own
-      -- artifact digest or its tables moves nothing here. That is a recorded limit, not a claim.
-      let importsId := Proof.importsIdOf [("Concrete.Proof.ClassificationTable",
-                                            Proof.classificationSurfaceDigest)]
+      -- THE PROOF LIBRARY THE KERNEL ACTUALLY READ, by content, from the replay that just ran.
+      -- Until 2026-08-16 this bound the compiler's checked-in classification table, which is
+      -- compiled into the binary — so replaying the same theorem NAMES against a different proof
+      -- library produced a byte-identical receipt, and nothing in the evidence said whose theorems
+      -- had been accepted. That was an authority gap, not a documentation one.
+      let importsId := Proof.importsIdOf res.environment.importDigests
       let statusEntries := Report.proofStatusEntries validCore.coreModules locMap registry pc
       -- Keyed on the qualified name, which is what `ProofStatusEntry` carries. Trust comes from
       -- the same producer the status report reads; recomputing it here would be a second answer to

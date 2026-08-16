@@ -1,3 +1,4 @@
+import Concrete.Proof.Digest
 /-
   Kernel replay as a typed service (R-0004 package 3).
 
@@ -190,7 +191,27 @@ structure ReplayEnvironment where
       that depended on where the caller happened to stand. -/
   workspaceFromInput : Bool
   toolchain         : String
+  /-- The libraries the request ASKED to import, by name. -/
   imports           : List String
+  /-- The libraries the replay actually found, by CONTENT: one digest per Lean source file, sorted
+      by module path.
+
+      THIS IS THE PROOF LIBRARY'S IDENTITY, and its absence was an authority gap rather than a
+      documentation one. `importsId` is meant to bind the transitive import surface; before
+      2026-08-16 the receipt bound a digest of the compiler's own checked-in classification table,
+      which is compiled into the binary — so replaying the same theorem names against a DIFFERENT
+      proof library produced a byte-identical receipt. Nothing in the evidence identified whose
+      theorems had been accepted.
+
+      Digested from SOURCE rather than from `.olean` files on purpose: object files are not
+      guaranteed byte-reproducible across machines, and a receipt whose currency depended on that
+      would fail clean-checkout reproducibility for reasons unrelated to the program. Source is
+      reproducible by construction, and it is what the theorems actually are.
+
+      WHAT IT STILL DOES NOT BIND, stated because a receipt that overclaims is worse than one that
+      binds less: anything outside the workspace. Lean core is pinned by `toolchain`; a proof
+      reaching some other external library is not covered here. -/
+  importDigests     : List (String × String)
   deriving BEq, Repr
 
 /-- What a completed replay produced. It records what happened, INCLUDING failure — a report that
@@ -369,6 +390,34 @@ def resolveWorkspace (req : ReplayRequest) : IO (Option (System.FilePath × Bool
   | some w => return some (w, true)
   | none   => return (← findLakeWorkspace req.fallbackDir).map (·, false)
 
+/-- The content digest of a proof library inside a workspace: one entry per Lean source file,
+    keyed by workspace-relative path and sorted, so the value is a property of the LIBRARY and not of
+    where the checkout sits.
+
+    An import name maps to `<ws>/<Name>.lean` (the library root) plus `<ws>/<Name>/**.lean`. A name
+    that resolves to nothing contributes nothing — and an EMPTY closure is what the minting path
+    refuses on, since a receipt binding no library identifies no library. -/
+def importClosureOf (ws : System.FilePath) (imports : List String)
+    : IO (List (String × String)) := do
+  let mut out : List (String × String) := []
+  for lib in imports do
+    let root := ws / (lib ++ ".lean")
+    let dir := ws / lib
+    let mut files : List System.FilePath := []
+    if ← root.pathExists then files := files ++ [root]
+    if ← dir.isDir then
+      let walked ← System.FilePath.walkDir dir
+      files := files ++ (walked.toList.filter fun f => f.toString.endsWith ".lean")
+    for f in files do
+      let content ← try IO.FS.readFile f catch _ => pure ""
+      -- Keyed by the path RELATIVE to the workspace: an absolute path would make the digest a
+      -- property of the checkout, which is the location-dependence this exists to avoid.
+      let pfx := ws.toString ++ "/"
+      let fs := f.toString
+      let rel := if fs.startsWith pfx then String.ofList (fs.toList.drop pfx.length) else fs
+      out := out ++ [(rel, Concrete.shortHash content)]
+  return out.mergeSort (fun a b => a.1 ≤ b.1)
+
 /-- The checker that WOULD run for this input: its workspace and its toolchain, without running it.
 
     ONE PRODUCER, used by `replay` and by every consumer that has to compare a stored receipt
@@ -380,7 +429,7 @@ def resolveWorkspace (req : ReplayRequest) : IO (Option (System.FilePath × Bool
     The toolchain is read from the RESOLVED WORKSPACE rather than the process directory: it describes
     the checker that would run for this input, and reading it from elsewhere would name a different
     one. -/
-def resolveChecker (req : ReplayRequest) : IO (Option (System.FilePath × Bool × String)) := do
+def resolveChecker (req : ReplayRequest) : IO (Option (System.FilePath × ReplayEnvironment)) := do
   match ← resolveWorkspace req with
   | none => return none
   | some (ws, fromInput) =>
@@ -388,7 +437,9 @@ def resolveChecker (req : ReplayRequest) : IO (Option (System.FilePath × Bool �
         let c ← IO.FS.readFile (ws / "lean-toolchain")
         pure c.trimAscii.toString
       catch _ => pure "unknown"
-    return some (ws, fromInput, toolchain)
+    let digests ← importClosureOf ws req.imports
+    return some (ws, { workspace := ws.toString, workspaceFromInput := fromInput
+                     , toolchain, imports := req.imports, importDigests := digests })
 
 /-- The generated Lean file for a request. Pure, so a test can assert what would be checked without
     running a kernel, and so the same bytes are reproducible from the request alone. -/
@@ -428,7 +479,7 @@ def replay (req : ReplayRequest) : IO (Except ReplayRefusal ReplayResult) := do
   match req.validate with
   | .error e => return .error e
   | .ok () =>
-  let some (ws, fromInput, toolchain) ← resolveChecker req
+  let some (ws, env) ← resolveChecker req
     | return .error (.noWorkspace req.inputPath req.fallbackDir)
   -- Scratch file. Failure here is a refusal: nothing was checked.
   let scratchDir ← try
@@ -467,10 +518,6 @@ def replay (req : ReplayRequest) : IO (Except ReplayRefusal ReplayResult) := do
         | .unbound => .acceptedUnbound
         | .bound   => .accepted
     { target := t, verdict }
-  return .ok
-    { environment :=
-        { workspace := ws.toString, workspaceFromInput := fromInput
-        , toolchain := toolchain, imports := req.imports }
-    , checks, exitCode := result.exitCode, generalFailure, transcript }
+  return .ok { environment := env, checks, exitCode := result.exitCode, generalFailure, transcript }
 
 end Concrete.Proof
