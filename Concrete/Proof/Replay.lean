@@ -193,11 +193,16 @@ structure ReplayEnvironment where
   imports           : List String
   deriving BEq, Repr
 
-/-- What a completed replay produced. Construction is unrestricted here because this structure is a
-    REPORT, not evidence: it records what happened, including failure. The constraint that matters —
-    that only a successful replay can support a receipt — belongs on the minting side, which consumes
-    this. Making the report itself refuse to describe a failed run would just hide failures. -/
+/-- What a completed replay produced. It records what happened, INCLUDING failure — a report that
+    refused to describe a failed run would just hide failures.
+
+    The constructor is PRIVATE, and that is the load-bearing part. `replay` is the only producer, so
+    a `ReplayResult` is a claim that a kernel actually ran. Without this, anything could assemble a
+    result whose every verdict said `accepted` and hand it to the minting authority, which is the
+    forged-replay bypass the whole chain exists to close: the type would be documenting a hole rather
+    than preventing one. Projections stay public; only construction is closed. -/
 structure ReplayResult where
+  private mk ::
   environment    : ReplayEnvironment
   checks         : List ReplayCheck
   exitCode       : UInt32
@@ -253,6 +258,79 @@ def verdictFor (r : ReplayResult) (theoremName : String) : Option ReplayVerdict 
   (r.checks.find? (·.target.theoremName == theoremName)).map (·.verdict)
 
 end ReplayResult
+
+/-! ### The minting token
+
+Receipts may be minted from a successful replay and from nothing else. That rule is enforced by
+making the WITNESS of a successful replay a type that cannot be assembled — not by a predicate a
+caller is asked to check first, because a predicate can be forgotten and a forgotten predicate is
+indistinguishable from a satisfied one. -/
+
+/-- Everything that stops a completed replay from witnessing one theorem's acceptance. -/
+inductive ReplayEvidenceRefusal where
+  /-- The theorem was not in the request, so this run says nothing about it. Distinct from a
+      rejection: silence is not a verdict. -/
+  | notReplayed (theoremName : String)
+  /-- The kernel reached a verdict, and it was not `accepted`. Carries which one, because
+      `acceptedUnbound` and `rejected` are refused for opposite reasons and a caller repairing the
+      cause needs to know which. -/
+  | notAccepted (theoremName : String) (verdict : ReplayVerdict)
+  /-- The file did not compile, so no verdict in this run means anything. -/
+  | underGeneralFailure
+  /-- The workspace was resolved from the caller's directory rather than from the input. A receipt is
+      durable evidence that must be re-checkable from the artifact alone, and a verdict that depended
+      on where the caller happened to stand is not a property of the program — it is exactly the
+      location-dependence slice 4 removed. Replaying such an input is still legitimate and still
+      reported; what it may not do is mint. -/
+  | fallbackWorkspace (workspace : String)
+  deriving BEq, Repr
+
+def ReplayEvidenceRefusal.canonical : ReplayEvidenceRefusal → String
+  | .notReplayed _       => "not_replayed"
+  | .notAccepted ..      => "not_accepted"
+  | .underGeneralFailure => "under_general_failure"
+  | .fallbackWorkspace _ => "fallback_workspace"
+
+def ReplayEvidenceRefusal.explain : ReplayEvidenceRefusal → String
+  | .notReplayed t =>
+      s!"'{t}' was not part of this replay, so the run says nothing about it"
+  | .notAccepted t v =>
+      s!"the kernel's verdict for '{t}' was '{v.canonical}', not 'accepted'"
+  | .underGeneralFailure =>
+      "the replayed file did not compile, so no verdict in this run witnesses anything"
+  | .fallbackWorkspace w =>
+      s!"the workspace '{w}' was resolved from the caller's directory rather than from the input, so "
+      ++ "the verdict is not a property of the program alone and may not be minted into a receipt"
+
+/-- The kernel accepted THIS theorem, in THIS environment.
+
+    PRIVATE CONSTRUCTOR, and no `Inhabited`: `of?` is the only way to obtain one, and it requires a
+    `ReplayResult` — which `replay` is the only producer of. That is the whole chain. `unchecked
+    facts -> receipt` does not merely refuse at runtime; it does not typecheck, because there is no
+    way to name the token without having run a kernel.
+
+    `acceptedUnbound` is deliberately NOT enough. The kernel genuinely accepted the theorem, but the
+    claim has no stored proof-subject digest, so a receipt minted from it would record freshness
+    against nothing. -/
+structure SuccessfulReplay where
+  private mk ::
+  theoremName : String
+  subject     : String
+  environment : ReplayEnvironment
+  deriving Repr
+
+/-- Extract the witness for one theorem from a completed replay, or say why not. -/
+def SuccessfulReplay.of? (r : ReplayResult) (theoremName : String)
+    : Except ReplayEvidenceRefusal SuccessfulReplay := do
+  if r.generalFailure then throw .underGeneralFailure
+  let some c := r.checks.find? (·.target.theoremName == theoremName)
+    | throw (.notReplayed theoremName)
+  if c.verdict != .accepted then throw (.notAccepted theoremName c.verdict)
+  if !r.environment.workspaceFromInput then
+    throw (.fallbackWorkspace r.environment.workspace)
+  return { theoremName := c.target.theoremName
+         , subject := c.target.subject
+         , environment := r.environment }
 
 /-! ### The producer -/
 

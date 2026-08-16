@@ -51,8 +51,8 @@ import Concrete.Proof.Correspondence
 import Concrete.Proof.TableResolve
 import Concrete.Proof.ClassificationTable
 import Concrete.Proof.DependencyEdges
-import Concrete.Proof.Receipt
 import Concrete.Proof.Replay
+import Concrete.Proof.Receipt
 import Concrete.ProofKit
 import Concrete.Proof.ProofSoundness
 import Concrete.Proof.Sha256Spec

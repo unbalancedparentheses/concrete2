@@ -1,4 +1,5 @@
 import Concrete.Proof.DependencyEdges
+import Concrete.Proof.Replay
 open Concrete in
 
 /-! # The proof-evidence receipt envelope (R-0004 slice 4)
@@ -172,7 +173,38 @@ def importsIdOf (imports : List (String × String)) : String :=
     which is the intended behaviour and the reason the field exists. -/
 def receiptSchemaVersion : String := "receiptV1"
 
-/-- Mint a receipt, or refuse.
+/-- Receipt material that has passed every field and consistency check, and nothing more.
+
+    THIS IS NOT A RECEIPT, and the separation is the point. Validating the material a receipt would
+    record is a different question from whether a kernel ever accepted the theorem, and fusing them
+    into one function meant the second question had no answerer at all: `mint?` took the theorem
+    artifact as a plain `String`, so any caller could name a theorem nobody had replayed and receive
+    a well-formed receipt for it.
+
+    So the two are split. `ReceiptMaterial.of?` answers "is this material complete and
+    self-consistent" — pure, cheap, and the subject of most of the tests. `ProofEvidenceReceipt.mint`
+    answers "may this become evidence", and it is total: by the time it is called there is nothing
+    left to refuse, because it can only be reached holding a `SuccessfulReplay`.
+
+    Private constructor for the same reason the receipt has one: `of?` really is the only producer,
+    and validated material that could be assembled directly would validate nothing. -/
+structure ReceiptMaterial where
+  private mk ::
+  subjectDigest     : String
+  edge              : DependencyEdge
+  tableBindings     : List (Name × String)
+  dependencyRoot    : String
+  carriesTrust      : Bool
+  trustedBoundaries : List String
+  /-- The COMPILER's version only. The Lean toolchain half of the identity is not accepted here —
+      it comes from the environment the kernel actually ran in, via the minting token, so a receipt
+      cannot name a toolchain other than the one that checked it. -/
+  compilerVersion   : String
+  workspaceId       : String
+  importsId         : String
+  deriving Repr
+
+/-- Validate receipt material, or refuse.
 
     Refuses — returning `none` rather than a degraded receipt — when:
 
@@ -183,11 +215,11 @@ def receiptSchemaVersion : String := "receiptV1"
     * any environment identity is empty. An empty string is not "unknown", it is a value that
       compares equal to another empty string — so two proofs established under different
       toolchains would agree. Refusing is the only reading that does not invent agreement. -/
-def ProofEvidenceReceipt.mint?
+def ReceiptMaterial.of?
     (subjectDigest? : Option String) (ev : EdgeEvidence)
-    (dependencyRoot theoremArtifact : String)
+    (dependencyRoot : String)
     (carriesTrust : Bool) (trustedBoundaries : List String)
-    (toolchainId workspaceId importsId : String) : Option ProofEvidenceReceipt := do
+    (compilerVersion workspaceId importsId : String) : Option ReceiptMaterial := do
   let subj ← subjectDigest?
   -- An EMPTY subject is not a subject. `none` was refused and `some ""` was not, which is the
   -- same hole as an empty environment identity: "" is a value that compares equal to another
@@ -213,11 +245,16 @@ def ProofEvidenceReceipt.mint?
   -- A duplicate binding for one table means the evidence disagrees with itself about that
   -- table's digest, and picking one would make the receipt depend on list order.
   else if (ev.tableDigests.map (toString ·.1)).eraseDups.length != ev.tableDigests.length then none
-  else if toolchainId.isEmpty || workspaceId.isEmpty || importsId.isEmpty then none
-  -- THE ROOT AND THE ARTIFACT ARE REQUIRED, on the same reasoning as the environment identities: an
-  -- empty string is not "unknown", it is a value that compares equal to another empty string, so two
-  -- claims established over different closures — or from different proof terms — would agree.
-  else if dependencyRoot.isEmpty || theoremArtifact.isEmpty then none
+  else if compilerVersion.isEmpty || workspaceId.isEmpty || importsId.isEmpty then none
+  -- THE ROOT IS REQUIRED, on the same reasoning as the environment identities: an empty string is
+  -- not "unknown", it is a value that compares equal to another empty string, so two claims
+  -- established over different closures would agree.
+  --
+  -- The THEOREM ARTIFACT is no longer checked here, and its absence is not an omission: the artifact
+  -- is taken from the minting token rather than from a parameter, and a token cannot exist for an
+  -- unnamed theorem — `ReplayRequest.validate` refuses a target with an empty name before any kernel
+  -- runs. A whole class of runtime check became structurally unreachable.
+  else if dependencyRoot.isEmpty then none
   -- A TRUST CLAIM MUST BE CONSISTENT WITH ITS EVIDENCE. `carriesTrust` with no boundary named is a
   -- qualification a reader cannot act on; boundaries named while the flag is false is a receipt
   -- disagreeing with itself about whether the claim is conditional.
@@ -231,13 +268,41 @@ def ProofEvidenceReceipt.mint?
     -- constants in a different order would report drift that did not happen.
     let bindings := (ev.tableDigests.filterMap fun (n, d?) => d?.map fun d => (n, d))
                     |>.mergeSort (fun a b => toString a.1 ≤ toString b.1)
-    some { schemaVersion := receiptSchemaVersion
-         , subjectDigest := subj
+    some { subjectDigest := subj
          , edge := ev.edge
          , tableBindings := bindings
-         , dependencyRoot, theoremArtifact, carriesTrust
+         , dependencyRoot, carriesTrust
          , trustedBoundaries := trustedBoundaries.mergeSort (· ≤ ·)
-         , toolchainId, workspaceId, importsId }
+         , compilerVersion, workspaceId, importsId }
+
+/-- Mint a receipt. The ONLY producer of `ProofEvidenceReceipt`.
+
+    TOTAL — it returns a receipt, not an `Option`. Every refusal already happened: the material was
+    validated by `ReceiptMaterial.of?`, and the kernel's acceptance is carried by `SuccessfulReplay`,
+    which cannot be constructed without a `ReplayResult`, which `Concrete.Proof.replay` is the only
+    producer of. That chain is what makes
+
+        unchecked facts -> ProofEvidenceReceipt
+
+    fail to TYPECHECK rather than fail at runtime. There is no argument a caller can pass to claim a
+    kernel ran; the only way to say it is to have done it.
+
+    The artifact and the toolchain are taken from the token rather than from parameters, so a receipt
+    cannot name a theorem other than the one replayed, or a toolchain other than the one that checked
+    it. Those were the two fields a caller could previously simply assert. -/
+def ProofEvidenceReceipt.mint
+    (sr : SuccessfulReplay) (m : ReceiptMaterial) : ProofEvidenceReceipt :=
+  { schemaVersion := receiptSchemaVersion
+  , subjectDigest := m.subjectDigest
+  , edge := m.edge
+  , tableBindings := m.tableBindings
+  , dependencyRoot := m.dependencyRoot
+  , theoremArtifact := sr.theoremName
+  , carriesTrust := m.carriesTrust
+  , trustedBoundaries := m.trustedBoundaries
+  , toolchainId := toolchainIdOf m.compilerVersion sr.environment.toolchain
+  , workspaceId := m.workspaceId
+  , importsId := m.importsId }
 
 /-- Is a stored receipt still current against freshly computed material?
 
