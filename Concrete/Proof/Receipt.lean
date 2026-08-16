@@ -22,13 +22,17 @@ is built so it cannot be:
 
 * `tableBindings : List (Name × String)` — a digest per table, **not** `Option String`. There is
   no way to put an unbound table inside a receipt, so no consumer has to remember to check.
-* the structure constructor is PRIVATE and `Inhabited` is not derived, so `mint?` really is the
+* the structure constructor is PRIVATE and `Inhabited` is not derived, so `mint` really is the
   only way to obtain one. Both were missing in the first version, and the claim below was
   therefore false: a caller could build a receipt with an empty subject and the current schema
   version, and `default` produced one with an empty schema.
-* `mint?` returns `Option` and refuses when any named table is unbound, when the digests do not
-  correspond to the named tables IDENTITY-wise, when a table is bound twice, when the subject
-  digest is absent OR empty, or when an environment identity is empty.
+* `ReceiptMaterial.of?` returns `Option` and refuses when any named table is unbound, when the
+  digests do not correspond to the named tables IDENTITY-wise, when a table is bound twice, when
+  the subject digest is absent OR empty, or when an environment identity is empty.
+* `mint` requires a `SuccessfulReplay`, whose constructor is private and whose only producer needs
+  a `ReplayResult` that only `Concrete.Proof.replay` can produce. So the receipt binds a kernel run
+  the same way it binds a subject: not by recording a claim about one, but by being unable to exist
+  without one.
 
 This is the same move Register C made for status composition and `proofSubjectDigestV2` made for
 incomplete facts: make the bad state unrepresentable rather than merely discouraged. A guard that
@@ -55,10 +59,11 @@ receipt as a failed proof.
 
 ## What this does NOT do
 
-It does not replay anything. Minting a receipt records what evidence was established against; it
-does not establish it. Slice 7 issues receipts only after a successful kernel replay, and this
-type is what that step fills in — a receipt minted without a replay would be a claim about a
-proof nobody ran.
+It does not replay anything, and as of 2026-08-16 it cannot pretend to: minting takes a
+`SuccessfulReplay` token, so a receipt minted without a replay — a claim about a proof nobody ran —
+does not typecheck. What remains open is the other direction: nothing in the production pipeline
+mints yet, so no stored receipt affects any status. Until it does, these are helper materials with
+their authority enforced, not evidence in use.
 -/
 
 namespace Concrete.Proof
@@ -67,10 +72,10 @@ open Lean
 
 /-- A proof-evidence receipt. Every field is bound; there is no partial receipt.
 
-    Construct with `mint?` only — the fields are public for reading and pattern-matching, but
-    building one directly would let a caller assemble the very state `mint?` refuses. -/
+    Construct with `mint` only — the fields are public for reading and pattern-matching, but
+    building one directly would let a caller assemble the very state minting refuses. -/
 structure ProofEvidenceReceipt where
-  /-- PRIVATE constructor. Without it, "mint? is the only constructor" was simply false: any
+  /-- PRIVATE constructor. Without it, "minting is the only constructor" was simply false: any
       caller could assemble a receipt with an empty subject, no bindings and the CURRENT schema
       version — which would then read as comparable. The gate in this repo demonstrated the
       bypass while claiming the invariant held.
@@ -93,7 +98,7 @@ structure ProofEvidenceReceipt where
       receipt cannot rest on that: the same dependency set discovered in a different order
       would serialize differently and compare unequal, reporting drift where there is none.
 
-      So `mint?` sorts by table identity. The consequence to be aware of: order carries no
+      So `ReceiptMaterial.of?` sorts by table identity. The consequence to be aware of: order carries no
       information, and two receipts differing only in the ORDER of the same pairs are the
       same receipt. What order cannot hide is a SWAP — exchanging two tables' digests changes
       which name is paired with which value, and that survives sorting. -/
