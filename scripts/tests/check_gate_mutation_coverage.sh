@@ -677,9 +677,14 @@ add "trust-propagates-transitively" "Concrete/Proof/ProofCore.lean" "check_depen
 # `failed` with every target, so it was unreachably false and a file that did not compile was
 # reported as every theorem individually "not found". Pinning it: if the whole-file failure stops
 # being detected, every target silently becomes an individual verdict again.
+# Written as an OPERAND change rather than a deletion: `let generalFailure := false` cannot compile,
+# because it strands `named` on an unused-binding lint, and a mutation that cannot build is INVALID
+# rather than killed. Inverting the exit-code test reproduces the old broken behaviour directly — a
+# file that failed to compile is judged theorem by theorem, and since it named none of them, every
+# target reads as accepted.
 add "replay-general-failure-detected" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
   'let generalFailure := result.exitCode != 0 && named.isEmpty' \
-  'let generalFailure := false'
+  'let generalFailure := result.exitCode == 0 && named.isEmpty'
 
 # AN EMPTY REQUEST MUST REFUSE. `List.all` is true over an empty list, so dropping this guard hands
 # a minting authority a vacuous "everything was accepted" — the single most dangerous answer this
@@ -694,11 +699,18 @@ add "replay-unbound-not-accepted" "Concrete/Proof/Replay.lean" "check_replay_pro
   $'      else match t.binding with\n        | .unbound => .acceptedUnbound\n        | .bound   => .accepted' \
   $'      else match t.binding with\n        | .unbound => .accepted\n        | .bound   => .accepted'
 
-# A GENERAL FAILURE MUST FAIL CLOSED. Without the `!r.generalFailure` conjunct, a run in which the
-# file never compiled reports every target as acceptable, because none was individually rejected.
-add "replay-accepted-fails-closed" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
-  $'  !r.generalFailure\n    && r.checks.all (fun c => c.verdict == .accepted || c.verdict == .acceptedUnbound)' \
-  $'  r.checks.all (fun c => c.verdict == .accepted || c.verdict == .acceptedUnbound)'
+# WHAT MINTING MAY ACCEPT. `fullyBound` is the predicate a receipt authority asks: every target
+# accepted AND bound. Widening it to admit `acceptedUnbound` is the exact laundering this producer
+# exists to prevent — a claim with no stored subject digest would become mintable.
+#
+# NOT A FAMILY, recorded so its absence is not mistaken for an oversight: dropping the
+# `!r.generalFailure` conjunct from `allAccepted` SURVIVES, and correctly. A general failure assigns
+# every target `notAttempted`, which already fails the `accepted || acceptedUnbound` test, so the
+# conjunct is defence-in-depth against a future change in verdict assignment rather than a live
+# boundary. It cannot be mutation-killed today and a family claiming otherwise would be false.
+add "replay-mintable-requires-bound" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  '  !r.generalFailure && r.checks.all (·.verdict == .accepted)' \
+  '  !r.generalFailure && r.checks.all (fun c => c.verdict == .accepted || c.verdict == .acceptedUnbound)'
 
 # AN UNNAMED TARGET WOULD REPORT AS ACCEPTED WITHOUT BEING CHECKED: the empty needle matches the
 # transcript everywhere. A false pass is the worst failure mode available to this producer.
