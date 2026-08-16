@@ -4038,11 +4038,28 @@ because without one the implementation could not be falsified.
 
 #### Remaining milestones after the authority transition
 
-1. **Replayable receipts and migration:** replay every repository proof; mint a receipt only after
-   successful kernel replay; bind subject, theorem artifact, dependency root, table material,
-   trust/assumptions, schema and environment; migrate all 44 stored links; convert legacy or
-   incomplete evidence to `needs_recheck`; prove repository-root, project-root, clean-checkout and
-   path-independent reproducibility; publish the first eligibility-denominated coverage baseline.
+1. **Replayable receipts and migration.** Progress 2026-08-16:
+   - [x] **the receipt binds what the criterion names** — subject, theorem artifact, dependency root,
+         table material, trust/assumptions, schema and environment. Root, artifact and trust were
+         added on 2026-08-16; every one participates in `isCurrentAgainst`, because a field in the
+         envelope and absent from the comparison reads as bound while binding nothing.
+   - [x] **project-root and path-independent reproducibility** (`make test-evidence-reproducibility`,
+         5/0): the same program compiled from a different absolute path and a different directory
+         name yields byte-identical attestation join, dependency roots and correspondence, with a
+         one-byte content mutation as the non-vacuity control and a determinism check beside it.
+   - [x] **the first eligibility-denominated coverage baseline** (`make test-coverage-baseline`,
+         5/0): **35 of 91 eligible claims proved**, with the remainder named exactly — 31 no-proof,
+         15 unbound, 5 stale, 4 dependency-not-current, 1 blocked, 0 unjustified — over a denominator
+         that reconciles against the reported lines, and excluding 15 ineligible and 9 trusted, which
+         are not proof failures. The gate also asserts the report still discloses that it does NOT
+         run the kernel, so the baseline cannot be read as replay coverage.
+   - [ ] mint a receipt only after successful KERNEL REPLAY. Nothing calls `mint?` today: receipts are
+         not issued, stored, or consumed, and no claim depends on one. This is the substantive
+         remaining piece, and it is an architecture question rather than a gap — the compiler cannot
+         replay Lean during a normal compile, so minting belongs to a step that has replay results.
+   - [ ] migrate all 44 stored links; convert legacy or incomplete evidence to `needs_recheck`.
+   - [ ] repository-root and clean-checkout reproducibility, which need a build from a fresh clone
+         rather than a copied fixture.
 2. **Externally blocked ninth table:** complete mutable-borrow ProofCore extraction, migrate the
    final table and replace its tripwire with positive extraction/evaluation/replay correspondence.
 3. **Adversarial closure:** attack omission, stale and forged artifacts, ambiguity, duplicate
