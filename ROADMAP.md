@@ -4165,6 +4165,16 @@ this roadmap; Package 3 applies it as follows:
   **Still not consumed:** receipts are not stored and no status reads them, so this is issuance, not
   evidence in use.
 
+- **[shipped] Receipt storage and consumption** (`make test-receipt-consumption`, 13/0). The vertical
+  slice closes: `--report receipts --out <path>` writes, `--report proof-status --receipts <path>`
+  reads back and RE-CHECKS. `StoredReceipt` is a deliberately different type from
+  `ProofEvidenceReceipt` with no minting path, so a receipt read from a file cannot become evidence —
+  it can only agree or disagree with material computed fresh. The storage key is untrusted: swapping
+  two receipts under each other's names moves exactly those two. Decoding refuses rather than
+  repairs (missing, duplicate, unknown, unreadable-schema, malformed), and one bad record neither
+  discards the rest nor vanishes. **Three Slice 8 attack classes are closed at the decode boundary**
+  (partial decoding, schema confusion, receipt/claim substitution).
+
 **Defects found and fixed while doing the above:**
 
 - **`generalFailure` was unreachable dead code.** `--report check-proofs` computed it AFTER a
@@ -4175,6 +4185,10 @@ this roadmap; Package 3 applies it as follows:
   is a request field.
 - **Backticks inside double-quoted gate messages are command substitution.** Found twice in one day;
   a failure message could silently lose the text a reader needs. Two remaining instances escaped.
+- **Every receipt disagreed with itself the instant it was written.** `s!"{n}"` renders a `Name` in
+  Lean's display form, so a component containing dots serialized as `«Concrete.Proof.elfFns»` and
+  decoded back WITH the guillemets — the whole store read NOT current. The unit round-trip probe used
+  table `A`, too simple to expose it; the real corpus caught it on the first end-to-end run.
 - **A gate mis-diagnosed an unreadable file as a stale one.** Four NUL bytes inside string literals in
   `ClassificationTable.lean` made `grep` treat it as binary; `-o` returned nothing, and
   `check_classification_freshness.sh` reported "STALE classification table" for a table that was
@@ -4192,6 +4206,10 @@ this roadmap; Package 3 applies it as follows:
   into the binary, so replaying against a workspace whose theorems differ would move no field.
   Refusing a caller-resolved workspace is what currently stands in for that missing binding, and it
   is a mitigation, not a binding.
+
+**Vertical slice status:** successful replay producing a receipt, stale/substituted artifact
+refusing, trusted closure retaining its named boundary, and `proof-status` consuming fresh facts plus
+the receipt are all closed and gated. The fifth bullet is below.
 
 **A vertical-slice bullet that cannot be tested because its subject does not exist:** "cache
 disabled/corrupted without changing authority". There is no proof cache in the codebase — `ProofCache`
