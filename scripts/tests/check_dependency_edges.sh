@@ -657,7 +657,7 @@ probe "a receipt mints from complete evidence (control)" "MINTED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
-  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "lean-4.28" "/ws" "imp1"
+  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "ROOT" "THM" false [] "lean-4.28" "/ws" "imp1"
   IO.println (if r.isSome then "MINTED" else "REFUSED")'
 
 # The whole point. A body edge naming a table it could not bind announces a dependency whose
@@ -666,14 +666,14 @@ probe "an UNBOUND table refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`X, none)], quantifiesOverTable := false }
-  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "lean-4.28" "/ws" "imp1"
+  let r := ProofEvidenceReceipt.mint? (some "v2:abc") ev "ROOT" "THM" false [] "lean-4.28" "/ws" "imp1"
   IO.println (if r.isNone then "REFUSED" else "MINTED")'
 
 probe "an ABSENT subject digest refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
-  let r := ProofEvidenceReceipt.mint? none ev "lean-4.28" "/ws" "imp1"
+  let r := ProofEvidenceReceipt.mint? none ev "ROOT" "THM" false [] "lean-4.28" "/ws" "imp1"
   IO.println (if r.isNone then "REFUSED" else "MINTED")'
 
 # An empty identity is not "unknown" — it is a value, and it compares EQUAL to another empty
@@ -683,15 +683,15 @@ probe "an ABSENT subject digest refuses to mint" "REFUSED" '
 probe "an empty TOOLCHAIN id refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "" "/ws" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "THM" false [] "" "/ws" "i").isNone then "REFUSED" else "MINTED")'
 probe "an empty WORKSPACE id refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "lean" "" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "THM" false [] "lean" "" "i").isNone then "REFUSED" else "MINTED")'
 probe "an empty IMPORTS id refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "lean" "/ws" "").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "THM" false [] "lean" "/ws" "").isNone then "REFUSED" else "MINTED")'
 
 # Schema version is IN the receipt so an older one reads as a different format rather than as a
 # failed comparison — the same reason `v2:` is in the subject digest. Without it the first
@@ -704,7 +704,7 @@ probe "an empty IMPORTS id refuses to mint" "REFUSED" '
 probe "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:a") ev "t" "w" "i" with
+  match ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "THM" false [] "t" "w" "i" with
   | some r => IO.println (if r.comparable then "COMPARABLE" else "INCOMPARABLE")
   | none   => IO.println "MINT-REFUSED"'
 
@@ -713,7 +713,7 @@ probe "a minted receipt carries the table binding it was given" "d1" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:a") ev "t" "w" "i" with
+  match ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "THM" false [] "t" "w" "i" with
   | some r => IO.println (String.intercalate "," (r.tableBindings.map (·.2)))
   | none   => IO.println "REFUSED"'
 
@@ -726,16 +726,16 @@ probe "an unchanged environment is current (control)" "CURRENT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 probe "changing a TABLE BODY makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da-CHANGED")] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da-CHANGED")] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 # The swap. Sorting normalizes ORDER, and must not normalize away WHICH name carries which
@@ -744,8 +744,8 @@ probe "SWAPPING two tables digests makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A, `B]
                            , tableDigests := [(`A, some "da"), (`B, some "db")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "db"), (`B, "da")] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "db"), (`B, "da")] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 # ...while REORDERING the same pairs must NOT. Order is normalized, so it carries no
@@ -754,8 +754,8 @@ probe "REORDERING the same pairs leaves it current" "CURRENT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`B, `A]
                            , tableDigests := [(`B, some "db"), (`A, some "da")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da"), (`B, "db")] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da"), (`B, "db")] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 # The structural table digest is toolchain-relative (recorded limit at tableValueDigest). That
@@ -765,36 +765,36 @@ probe "a TOOLCHAIN change invalidates even with identical table digests" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "tc-NEW" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "ROOT" "THM" false [] "tc-NEW" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 probe "a WORKSPACE change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "tc" "ws-NEW" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" "THM" false [] "tc" "ws-NEW" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 probe "an IMPORT-CLOSURE change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "tc" "ws" "im-NEW" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" "THM" false [] "tc" "ws" "im-NEW" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 probe "a SUBJECT change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s-NEW" .body [] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s-NEW" .body [] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 # A CONTRACT edge names no tables, so it must not acquire a body dependency it does not have.
 probe "a contract edge binds NO tables" "0" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .contract, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
   | some r => IO.println (toString r.tableBindings.length)
   | none => IO.println "MINT-REFUSED"'
 
@@ -803,7 +803,7 @@ probe "fewer digests than names refuses AT MINT" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A, `B]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im").isNone then "REFUSED" else "MINTED")'
 
 # === HOSTILE CONTROLS: the invariant is the TYPE, not the smart constructor =================
 # The first version of this envelope claimed "partial evidence is unrepresentable" while the
@@ -844,20 +844,20 @@ probe "digests for the WRONG table identity refuse to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`Y, some "d")], quantifiesOverTable := false }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 
 probe "a DUPLICATE binding for one table refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X, `X]
                            , tableDigests := [(`X, some "d"), (`X, some "e")], quantifiesOverTable := false }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 
 # `none` was refused and `some ""` was not — the same hole as an empty environment identity.
 # "" is a value, and it compares equal to another "".
 probe "an EMPTY-STRING subject digest refuses to mint" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "") ev "ROOT" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 
 # The EDGE must participate in currency. Its omission was a real hole: a receipt recorded for a
 # `contract` edge read current against `body` material — a claim surviving exactly the
@@ -865,8 +865,8 @@ probe "an EMPTY-STRING subject digest refuses to mint" "REFUSED" '
 probe "an EDGE-KIND change makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (if r.isCurrentAgainst "v2:s" .contract [] "tc" "ws" "im" then "CURRENT" else "NOT")
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .contract [] "ROOT" "THM" false [] "tc" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
 # ONE disposition, not two booleans in the right order. `comparable` then `isCurrentAgainst` was
@@ -875,15 +875,15 @@ probe "an EDGE-KIND change makes the receipt non-current" "NOT" '
 probe "disposition: unchanged material is current" "current" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (toString (repr (r.disposition "v2:s" .body [] "tc" "ws" "im")))
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (toString (repr (r.disposition "v2:s" .body [] "ROOT" "THM" false [] "tc" "ws" "im")))
   | none => IO.println "MINT-REFUSED"'
 
 probe "disposition: moved material is notCurrent (not needsRecheck)" "notCurrent" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  match ProofEvidenceReceipt.mint? (some "v2:s") ev "tc" "ws" "im" with
-  | some r => IO.println (toString (repr (r.disposition "v2:MOVED" .body [] "tc" "ws" "im")))
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "tc" "ws" "im" with
+  | some r => IO.println (toString (repr (r.disposition "v2:MOVED" .body [] "ROOT" "THM" false [] "tc" "ws" "im")))
   | none => IO.println "MINT-REFUSED"'
 
 # === ENVIRONMENT IDENTITIES ==================================================================
@@ -921,10 +921,57 @@ probe "imports id moves when an imported CONTENT digest changes" "true" '
   a == b && a != c'
 
 # End to end: real identities let a receipt mint, which nothing could do before.
+# THE NEW BINDINGS REFUSE ON THE SAME TERMS AS THE OLD ONES. An empty root or artifact is not
+# "unknown": it is a value that compares equal to another empty string, so two claims established
+# over different closures — or from different proof terms — would agree.
+probe "an empty dependency ROOT refuses to mint" "REFUSED" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+probe "an empty THEOREM ARTIFACT refuses to mint" "REFUSED" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "ROOT" "" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+# A TRUST CLAIM MUST AGREE WITH ITS EVIDENCE, both directions: a qualification with no boundary named
+# is unactionable, and boundaries named while the flag is false is a receipt disagreeing with itself.
+probe "carriesTrust with no boundary named refuses" "REFUSED" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "R" "T" true [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+probe "boundaries named while carriesTrust is false refuses" "REFUSED" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "R" "T" false ["m.helper"] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+# ...and the consistent case MINTS, so the refusals above are targeted rather than blanket.
+probe "a qualified receipt mints when flag and boundaries agree" "MINTED" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:a") ev "R" "T" true ["m.helper"] "t" "w" "i").isSome then "MINTED" else "REFUSED")'
+# EVERY NEW FIELD PARTICIPATES IN CURRENCY. A field added to the envelope and left out of the
+# comparison is worse than an absent field: it reads as bound.
+probe "a changed dependency ROOT makes the receipt non-current" "NOT" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT-MOVED" "THM" false [] "t" "w" "i" then "CURRENT" else "NOT")
+  | none => IO.println "REFUSED"'
+probe "a changed THEOREM ARTIFACT makes the receipt non-current" "NOT" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" "THM-REPROVED" false [] "t" "w" "i" then "CURRENT" else "NOT")
+  | none => IO.println "REFUSED"'
+probe "a receipt that gained a trusted boundary is non-current" "NOT" \
+'#eval
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  match ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i" with
+  | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" "THM" true ["m.h"] "t" "w" "i" then "CURRENT" else "NOT")
+  | none => IO.println "REFUSED"'
+
 probe "a receipt mints from produced identities" "MINTED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
-  let r := ProofEvidenceReceipt.mint? (some "v2:s") ev
+  let r := ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false []
              (toolchainIdOf "0.1.0" "lean4:v4.28.0")
              (workspaceIdOf "pkg" ["m1"])
              (importsIdOf [("m1", "d1")])
@@ -944,16 +991,16 @@ fi
 probe "a receipt refuses an UNCLASSIFIED edge" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .unclassified, tables := [], tableDigests := [], quantifiesOverTable := false }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 probe "a receipt refuses a MISSING edge" "REFUSED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .missing, tables := [], tableDigests := [], quantifiesOverTable := false }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isNone then "REFUSED" else "MINTED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i").isNone then "REFUSED" else "MINTED")'
 # ...and a classified edge still mints, or the refusal above is just a broken constructor.
 probe "a CONTRACT edge still mints (the refusals are targeted)" "MINTED" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .contract, tables := [], tableDigests := [], quantifiesOverTable := true }
-  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "t" "w" "i").isSome then "MINTED" else "REFUSED")'
+  IO.println (if (ProofEvidenceReceipt.mint? (some "v2:s") ev "ROOT" "THM" false [] "t" "w" "i").isSome then "MINTED" else "REFUSED")'
 
 # === THE CLASSIFICATION HAND-BACK (slice 6, step 1) ==========================================
 # The compiler cannot classify: the answer comes from a theorem's elaborated type, which exists

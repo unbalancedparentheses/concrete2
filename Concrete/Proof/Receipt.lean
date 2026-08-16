@@ -97,6 +97,24 @@ structure ProofEvidenceReceipt where
       same receipt. What order cannot hide is a SWAP — exchanging two tables' digests changes
       which name is paired with which value, and that survives sorting. -/
   tableBindings : List (Name × String)
+  /-- The DEPENDENCY ROOT this evidence was established over, as the digest of the validated root
+      preimage. Named by the authority criterion and absent until 2026-08-16: without it a receipt
+      binds the tables a theorem mentions and says nothing about the CLOSURE the claim rests on, so
+      a change deep in that closure — a callee's subject digest moving, an edge kind changing — left
+      the receipt reading current. The root already refuses to compute over incomplete material, so
+      binding its digest inherits every one of those refusals. -/
+  dependencyRoot : String
+  /-- The THEOREM ARTIFACT the claim was replayed from. A subject digest says which function was
+      proved; this says which proof term did it. Two different proofs of the same statement are
+      different artifacts, and a receipt that could not tell them apart would survive a proof being
+      replaced by a weaker one that happens to typecheck. -/
+  theoremArtifact : String
+  /-- Whether the closure crosses a trusted boundary, and WHICH boundaries. Carried as data rather
+      than folded into the digest so a consumer can read the assumption without recomputing it: an
+      unconditional `proved_by_lean` and a `proved_by_lean_modulo_trusted` must not be the same
+      receipt with a different summary line. Sorted, for the reason the table bindings are. -/
+  carriesTrust : Bool
+  trustedBoundaries : List String
   toolchainId : String
   workspaceId : String
   importsId : String
@@ -167,6 +185,8 @@ def receiptSchemaVersion : String := "receiptV1"
       toolchains would agree. Refusing is the only reading that does not invent agreement. -/
 def ProofEvidenceReceipt.mint?
     (subjectDigest? : Option String) (ev : EdgeEvidence)
+    (dependencyRoot theoremArtifact : String)
+    (carriesTrust : Bool) (trustedBoundaries : List String)
     (toolchainId workspaceId importsId : String) : Option ProofEvidenceReceipt := do
   let subj ← subjectDigest?
   -- An EMPTY subject is not a subject. `none` was refused and `some ""` was not, which is the
@@ -194,6 +214,14 @@ def ProofEvidenceReceipt.mint?
   -- table's digest, and picking one would make the receipt depend on list order.
   else if (ev.tableDigests.map (toString ·.1)).eraseDups.length != ev.tableDigests.length then none
   else if toolchainId.isEmpty || workspaceId.isEmpty || importsId.isEmpty then none
+  -- THE ROOT AND THE ARTIFACT ARE REQUIRED, on the same reasoning as the environment identities: an
+  -- empty string is not "unknown", it is a value that compares equal to another empty string, so two
+  -- claims established over different closures — or from different proof terms — would agree.
+  else if dependencyRoot.isEmpty || theoremArtifact.isEmpty then none
+  -- A TRUST CLAIM MUST BE CONSISTENT WITH ITS EVIDENCE. `carriesTrust` with no boundary named is a
+  -- qualification a reader cannot act on; boundaries named while the flag is false is a receipt
+  -- disagreeing with itself about whether the claim is conditional.
+  else if carriesTrust != !trustedBoundaries.isEmpty then none
   else
     -- Safe by the guard above: `tablesFullyBound` establishes every digest is `some`, so this
     -- filterMap drops nothing. Written as filterMap rather than `!` so the total function stays
@@ -207,6 +235,8 @@ def ProofEvidenceReceipt.mint?
          , subjectDigest := subj
          , edge := ev.edge
          , tableBindings := bindings
+         , dependencyRoot, theoremArtifact, carriesTrust
+         , trustedBoundaries := trustedBoundaries.mergeSort (· ≤ ·)
          , toolchainId, workspaceId, importsId }
 
 /-- Is a stored receipt still current against freshly computed material?
@@ -224,6 +254,8 @@ def ProofEvidenceReceipt.mint?
 def ProofEvidenceReceipt.isCurrentAgainst
     (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
     (tableBindings : List (Name × String))
+    (dependencyRoot theoremArtifact : String)
+    (carriesTrust : Bool) (trustedBoundaries : List String)
     (toolchainId workspaceId importsId : String) : Bool :=
   let normalized := tableBindings.mergeSort (fun a b => toString a.1 ≤ toString b.1)
   r.subjectDigest == subjectDigest
@@ -232,6 +264,12 @@ def ProofEvidenceReceipt.isCurrentAgainst
     -- that matters — a claim that survives an implementation change it actually depends on.
     && r.edge == edge
     && r.tableBindings == normalized
+    -- EVERYTHING THE RECEIPT BINDS PARTICIPATES, or it is decoration. A field added to the envelope
+    -- and left out of this comparison is worse than an absent field: it reads as bound.
+    && r.dependencyRoot == dependencyRoot
+    && r.theoremArtifact == theoremArtifact
+    && r.carriesTrust == carriesTrust
+    && r.trustedBoundaries == trustedBoundaries.mergeSort (· ≤ ·)
     && r.toolchainId == toolchainId
     && r.workspaceId == workspaceId
     && r.importsId == importsId
@@ -268,9 +306,12 @@ deriving Repr, DecidableEq, Inhabited
 def ProofEvidenceReceipt.disposition
     (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
     (tableBindings : List (Name × String))
+    (dependencyRoot theoremArtifact : String)
+    (carriesTrust : Bool) (trustedBoundaries : List String)
     (toolchainId workspaceId importsId : String) : ReceiptDisposition :=
   if !r.comparable then .needsRecheck
-  else if r.isCurrentAgainst subjectDigest edge tableBindings toolchainId workspaceId importsId
+  else if r.isCurrentAgainst subjectDigest edge tableBindings dependencyRoot theoremArtifact
+      carriesTrust trustedBoundaries toolchainId workspaceId importsId
     then .current else .notCurrent
 
 
