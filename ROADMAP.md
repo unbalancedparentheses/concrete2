@@ -1207,7 +1207,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. **Package 3 ACTIVE:** the structural receipt now binds root, theorem artifact and trust boundaries; project/path-independent material is gated 5/0; the first coverage baseline is 35/91. Still pending are the typed replay producer and replay-authorized minting, one production receipt consumer, exact 44-link migration/V2 activation, fresh-checkout reproducibility, contract-witness precision or explicit deferral, Slice 8, and the externally blocked mutable-borrow/ninth-table prerequisite. |
+| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. **Package 3 ACTIVE:** the structural receipt binds root, theorem artifact and trust boundaries; project/path-independent material is gated 5/0; the coverage baseline is 35/91. Kernel replay is now ONE typed producer (23/0) whose failures are values, and minting is replay-gated at the type level — `unchecked facts -> receipt` does not typecheck, with ten mutation families killed. **Authority, not issuance:** nothing in production mints, so no stored receipt affects any status. Still pending are one production receipt consumer and vertical slice, exact 44-link migration/V2 activation, fresh-checkout reproducibility, contract-witness precision or explicit deferral, Slice 8, and the externally blocked mutable-borrow/ninth-table prerequisite. **Newly scoped:** a library package (`src/lib.con`, no `main.con`) cannot be loaded as a project, so it carries no scoped identity and no proof evidence — `check_purecore_proofs.sh` is red at 19/20 for that reason, verified as pre-existing. |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -4141,10 +4141,54 @@ this roadmap; Package 3 applies it as follows:
   proved**; 31 no-proof, 15 unbound, 5 stale, 4 dependency-not-current, 1 blocked and 0 unjustified;
   15 ineligible and 9 trusted are excluded rather than counted as proof failures. The report says it
   does not run the kernel, so this is not replay coverage.
+- **[shipped] One typed kernel-replay producer** (`make test-replay-producer`, 23/0):
+  `ReplayRequest -> IO (Except ReplayRefusal ReplayResult)`. Typed inputs, every failure class
+  returned rather than printed, environment retained with the verdict, no evidence side effects. An
+  empty request REFUSES rather than returning a vacuous success, because `List.all` is true over an
+  empty list. `findLakeWorkspace` moved out of `Main.lean` with it: one answer to "where does this
+  replay".
+- **[shipped] Replay-gated minting.** `unchecked facts -> ProofEvidenceReceipt` no longer typechecks.
+  `ReplayResult` and `SuccessfulReplay` have private constructors and single producers, and
+  `ProofEvidenceReceipt.mint` is total and takes the token; the artifact and toolchain come FROM the
+  run rather than from parameters a caller chooses. Validation split into pure `ReceiptMaterial.of?`.
+  Ten mutation families, all KILLED. **This is authority, not issuance:** nothing in the production
+  pipeline mints yet, so no stored receipt affects any status.
+
+**Defects found and fixed while doing the above:**
+
+- **`generalFailure` was unreachable dead code.** `--report check-proofs` computed it AFTER a
+  fallback that marked every target failed, so a file that did not compile was reported as every
+  theorem individually "not found" — the same misdiagnosis the workspace-resolution fix exists to
+  prevent. The `env_failure` JSON status and the transcript disclosure had never been reachable.
+  Fixed; such targets are now `notAttempted`, and a positive control exists only because `imports`
+  is a request field.
+- **Backticks inside double-quoted gate messages are command substitution.** Found twice in one day;
+  a failure message could silently lose the text a reader needs. Two remaining instances escaped.
+
+**Found, NOT fixed, and newly scoped — a library package cannot carry proof evidence:**
+
+`loadProject` hardcodes `src/main.con` as the entry point, so a package whose entry is `src/lib.con`
+cannot be loaded as a project at all. Scoped identity comes from the package, so every subject in
+such a package carries a source name only, and after the Package 2 authority transition
+correspondence and dependency roots refuse for all of them. `std` is exactly that shape, and the
+workaround its gate uses — copying `src/` elsewhere and compiling the loose tree — DESTROYS the
+package identity that evidence now depends on.
+
+**Consequence, measured:** `scripts/tests/check_purecore_proofs.sh` is RED at 19/20, with 9 std proof
+links reading "dependency closure has no validated per-edge justification" and drift coverage at 2
+of an expected 11. Verified against a build of the tree WITHOUT this session's changes, so it is a
+standing consequence of the Package 2 authority transition and not a regression from replay work.
+The gate is deliberately left red rather than adjusted to the demoted numbers.
+
+An entry-point fallback to `src/lib.con` was implemented and REVERTED: it let the project load but
+module-to-file scoping still resolved zero functions, converting a loud, correct error into a silent
+vacuous success — worse than the error. The real fix is module-to-file scoping for library layouts.
+This gate is also not in `run_tests.sh`, which is why the demotion went unmeasured; the 204 gates in
+`scripts/tests/` are not all reachable from the fast suite.
 
 **Current critical path, in order:**
 
-1. **[pending] Extract one typed theorem-replay producer.** Replace the inline, print-and-return
+1. **[shipped 2026-08-16] Extract one typed theorem-replay producer.** Replace the inline, print-and-return
    invocation in `compileAndReport` with the equivalent of
    `ReplayRequest -> IO (Except ReplayRefusal ReplayResult)`. It takes typed inputs rather than the
    CLI's JSON/rendering parameter, returns every failure class, and retains theorem/artifact/checker/
@@ -4154,7 +4198,7 @@ this roadmap; Package 3 applies it as follows:
    receipt can be minted. Kernel replay already works (5 verified / 0 failed on `elf_header`) and
    already keeps `unboundChecked` out of `verified`. **`prove --replay` is not a shortcut**: it
    discharges VC obligations and does not replay linked Lean theorems.
-2. **[pending] Make successful replay the only receipt-minting authority.** Invalid construction is
+2. **[shipped 2026-08-16, authority only — issuance still pending] Make successful replay the only receipt-minting authority.** Invalid construction is
    unrepresentable: unchecked facts cannot become a receipt; only `SuccessfulReplay` plus a complete
    `VerificationTask`, dependency/trust material and production-derived environment may mint one.
    Production mutations remove replay, convert failure to success, omit root/artifact/trust, or
