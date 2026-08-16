@@ -3263,7 +3263,12 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
   -- The root conjunct is currently REDUNDANT on this corpus — every subject whose root refuses is
   -- already not `proved` — so this invariant is expected to hold vacuously today. That is exactly
   -- why it belongs here: it is the thing that would notice if it stopped being vacuous.
-  let provedRoots := pc.obligations.filterMap fun o =>
+  -- ANNOTATED, so this list stands on its own. Without the type the record literals below take their
+  -- expected type from the concatenation at the end of the function, which means REMOVING this
+  -- invariant from that concatenation does not compile — and a mutation that cannot compile tests
+  -- nothing. The annotation is what lets the mutation be valid and therefore lets the control prove
+  -- the invariant is load-bearing.
+  let provedRoots : List ConsistencyViolation := pc.obligations.filterMap fun o =>
     if o.status != .proved then none
     else match pc.findEntry o.functionId.qualName with
       | none => none
