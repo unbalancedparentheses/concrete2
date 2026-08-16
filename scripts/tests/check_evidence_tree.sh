@@ -365,7 +365,7 @@ fi
 
 # NON-FORGEABLE. A private constructor is what stops the axes being written by hand.
 if grep -q "private mk ::" Concrete/Proof/EvidenceTree.lean; then
-  ok "SubjectCompletenessV2 has a private constructor; axes come only from `of`"
+  ok "SubjectCompletenessV2 has a private constructor; axes come only from \`of\`"
 else
   no "SubjectCompletenessV2 can be constructed by hand — its inputs could contradict the body"
 fi

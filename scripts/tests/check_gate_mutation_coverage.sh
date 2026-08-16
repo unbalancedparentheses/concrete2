@@ -718,6 +718,43 @@ add "replay-unnamed-target-refused" "Concrete/Proof/Replay.lean" "check_replay_p
   'if t.subject.trimAscii.isEmpty || t.theoremName.trimAscii.isEmpty then' \
   'if false then'
 
+# ---------------------------------------------------------------------------
+# R-0004 package 3: minting authority. `unchecked facts -> receipt` is prevented by a construction
+# chain, not by a runtime check, so most of that property is enforced at compile time and cannot be
+# mutation-tested at all — a mutation opening the chain simply stops building, and a build failure
+# IS the correct kill for a compile-time lock. What CAN be mutated is the extraction step: the
+# conditions under which a completed run is allowed to witness one theorem's acceptance.
+
+# IGNORING A REPLAY FAILURE. Dropping the verdict test hands out a token for a REJECTED theorem —
+# the receipt would record that the kernel accepted a proof it had just refused.
+add "mint-token-requires-acceptance" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  'if c.verdict != .accepted then throw (.notAccepted theoremName c.verdict)' \
+  'if false then throw (.notAccepted theoremName c.verdict)'
+
+# TREATING AN INTERRUPTED REPLAY AS SUCCESS. Under a general failure no verdict means anything;
+# without this guard a file that never compiled would mint for every theorem it named.
+add "mint-token-refuses-interrupted-run" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  'if r.generalFailure then throw .underGeneralFailure' \
+  'if false then throw .underGeneralFailure'
+
+# SILENCE READ AS ACCEPTANCE. A theorem absent from the run has no verdict, and defaulting an
+# absent check to acceptance is how an unreplayed artifact acquires a receipt.
+add "mint-token-refuses-unreplayed" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  $'  let some c := r.checks.find? (·.target.theoremName == theoremName)\n    | throw (.notReplayed theoremName)' \
+  $'  let c := (r.checks.find? (·.target.theoremName == theoremName)).getD\n    { target := { subject := "", theoremName := theoremName, kind := .refinement\n                , origin := .hardcoded, binding := .bound }, verdict := .accepted }'
+
+# LOCATION-DEPENDENT EVIDENCE. A workspace resolved from the caller's directory may replay and may
+# not mint: a receipt must be re-checkable from the artifact alone.
+add "mint-token-refuses-fallback-workspace" "Concrete/Proof/Replay.lean" "check_replay_producer.sh" yes \
+  $'  if !r.environment.workspaceFromInput then\n    throw (.fallbackWorkspace r.environment.workspace)' \
+  $'  if false then\n    throw (.fallbackWorkspace r.environment.workspace)'
+
+# THE ARTIFACT IS THE REPLAYED THEOREM, not something the caller supplies. Sourcing it from the
+# material instead of the token restores exactly the hole the token was introduced to close.
+add "mint-artifact-comes-from-token" "Concrete/Proof/Receipt.lean" "check_dependency_edges.sh" yes \
+  '  , theoremArtifact := sr.theoremName' \
+  '  , theoremArtifact := m.dependencyRoot'
+
 N=${#NAME[@]}
 PASS=0; FAIL=0
 

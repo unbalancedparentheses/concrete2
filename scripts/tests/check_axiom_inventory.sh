@@ -138,7 +138,7 @@ LEAN
 NC_OUT="$( lake env lean "$NC/Bad.lean" 2>&1 || true )"
 NC_AXIOMS="$( printf '%s' "$NC_OUT" | sed -n 's/^.*depends on axioms: \[\(.*\)\]$/\1/p' | tr -d ',' )"
 if [ -z "$NC_AXIOMS" ]; then
-  no "the control produced NO axiom line — `#print axioms` parsing is broken, so the gate above proves nothing"
+  no "the control produced NO axiom line — \`#print axioms\` parsing is broken, so the gate above proves nothing"
 else
   # Run the real classification over it: sorryAx is neither allowlisted nor a
   # native-trust axiom, so it must land in VIOLATIONS.

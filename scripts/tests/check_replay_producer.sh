@@ -211,6 +211,112 @@ else
   ok "the CLI has no second workspace resolver"
 fi
 
+echo "=== a successful replay is the ONLY minting authority ==="
+
+# THE PROPERTY, checked as a COMPILE failure rather than a runtime refusal. `ProofEvidenceReceipt`
+# has a private constructor and one producer, `mint`, whose first argument is a `SuccessfulReplay`.
+# That token has a private constructor and one producer, `of?`, which takes a `ReplayResult` — which
+# also has a private constructor and whose only producer is `replay`. There is therefore no term a
+# caller can write that claims a kernel ran. Asserting this at runtime would be the wrong level: a
+# runtime refusal is a check that can be forgotten, and the point of the chain is that it cannot be.
+cat > "$TMP/nomint.lean" <<'LEAN'
+import Concrete
+open Concrete.Proof
+def ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+-- Assembling the token directly: the constructor is private.
+def forged : SuccessfulReplay :=
+  { theoremName := "Fake.thm", subject := "s"
+  , environment := { workspace := "/ws", workspaceFromInput := true
+                   , toolchain := "lean", imports := [] } }
+LEAN
+if lake env lean "$TMP/nomint.lean" >/dev/null 2>&1; then
+  no "a SuccessfulReplay can be assembled directly — unchecked facts still reach a receipt"
+else
+  ok "a SuccessfulReplay cannot be assembled; only a real replay produces one"
+fi
+
+# ...and the same for the result it is extracted from, or the chain would just move one link along.
+cat > "$TMP/noresult.lean" <<'LEAN'
+import Concrete
+open Concrete.Proof
+def forgedResult : ReplayResult :=
+  { environment := { workspace := "/ws", workspaceFromInput := true
+                   , toolchain := "lean", imports := [] }
+  , checks := [], exitCode := 0, generalFailure := false, transcript := "" }
+LEAN
+if lake env lean "$TMP/noresult.lean" >/dev/null 2>&1; then
+  no "a ReplayResult can be assembled directly — a forged run still mints"
+else
+  ok "a ReplayResult cannot be assembled; the replay producer is its only source"
+fi
+
+# THE POSITIVE CONTROL. Without it the two refusals above would also hold if minting were simply
+# broken. A real replay produces a token, and the receipt records the theorem the KERNEL accepted
+# together with the toolchain it ran under — neither of which is a caller's assertion any more.
+probe "MINTED artifact=Concrete.Proof.parse_byte_correct toolchain=bound" \
+  "a real replay mints, and the receipt takes its artifact and toolchain from the run" \
+'#eval show IO Unit from do
+  let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
+  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [tgt] } with
+  | .error e => IO.println s!"REPLAY-REFUSED {e.canonical}"
+  | .ok r =>
+    match SuccessfulReplay.of? r tgt.theoremName with
+    | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
+    | .ok sr =>
+      match ReceiptMaterial.of? (some "v2:s") ev "ROOT" false [] "cv" "ws" "im" with
+      | none => IO.println "MATERIAL-REFUSED"
+      | some m =>
+        let rc := ProofEvidenceReceipt.mint sr m
+        let bound := rc.toolchainId == toolchainIdOf "cv" sr.environment.toolchain
+        IO.println s!"MINTED artifact={rc.theoremArtifact} toolchain={if bound then "bound" else "invented"}"'
+
+# AN UNBOUND ACCEPTANCE IS NOT A MINTING AUTHORITY. The kernel accepted the theorem; the claim has
+# no stored proof-subject digest, so a receipt minted from it would record freshness against nothing.
+probe "TOKEN-REFUSED not_accepted" "an accepted-but-UNBOUND claim yields no token" \
+'#eval show IO Unit from do
+  let u : ReplayTarget := { tgt with binding := .unbound }
+  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [u] } with
+  | .error e => IO.println s!"REPLAY-REFUSED {e.canonical}"
+  | .ok r =>
+    match SuccessfulReplay.of? r u.theoremName with
+    | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
+    | .ok _ => IO.println "TOKEN-GRANTED (laundering)"'
+
+# AN INTERRUPTED RUN IS NOT A SUCCESSFUL ONE. Under a general failure no verdict means anything, and
+# the token must refuse before it ever looks at an individual check.
+probe "TOKEN-REFUSED under_general_failure" "a run whose file did not compile yields no token" \
+'#eval show IO Unit from do
+  match ← replay { inputPath := "Main.lean", imports := ["NoSuchModule"], targets := [tgt] } with
+  | .error e => IO.println s!"REPLAY-REFUSED {e.canonical}"
+  | .ok r =>
+    match SuccessfulReplay.of? r tgt.theoremName with
+    | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
+    | .ok _ => IO.println "TOKEN-GRANTED (interrupted run treated as success)"'
+
+# SILENCE IS NOT A VERDICT. A theorem absent from the request has no verdict in this run, and
+# treating "no news" as acceptance is how an unreplayed artifact acquires a receipt.
+probe "TOKEN-REFUSED not_replayed" "a theorem that was not part of the run yields no token" \
+'#eval show IO Unit from do
+  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [tgt] } with
+  | .error e => IO.println s!"REPLAY-REFUSED {e.canonical}"
+  | .ok r =>
+    match SuccessfulReplay.of? r "Concrete.Proof.some_other_theorem" with
+    | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
+    | .ok _ => IO.println "TOKEN-GRANTED (silence read as acceptance)"'
+
+# A FALLBACK WORKSPACE MAY REPLAY BUT MAY NOT MINT. A receipt is durable evidence that must be
+# re-checkable from the artifact alone; a verdict that depended on where the caller stood is not a
+# property of the program. Replaying such an input stays legitimate — check_purecore_proofs.sh relies
+# on it — and only the minting step refuses.
+probe "TOKEN-REFUSED fallback_workspace" "a workspace resolved from the caller's directory cannot mint" \
+'#eval show IO Unit from do
+  match ← replay { inputPath := "/tmp", fallbackDir := ".", imports := ["Concrete"], targets := [tgt] } with
+  | .error e => IO.println s!"REPLAY-REFUSED {e.canonical}"
+  | .ok r =>
+    match SuccessfulReplay.of? r tgt.theoremName with
+    | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
+    | .ok _ => IO.println "TOKEN-GRANTED (location-dependent evidence minted)"'
+
 GATE_DONE=1
 echo "REPLAY-PRODUCER: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
