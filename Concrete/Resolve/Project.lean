@@ -291,8 +291,17 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
   let (userDeps, depWarnings) := parseDependencies tomlContent
   for w in depWarnings do IO.eprintln w
 
-  -- Inject builtin std if user didn't declare it explicitly
-  let hasStdDep := userDeps.any fun (name, _) => name == "std"
+  -- Inject builtin std if user didn't declare it explicitly.
+  --
+  -- NOT INTO ITSELF. `std` is a package, and when it is the project being loaded this injected
+  -- `std` became a dependency of `std` — so every one of its modules landed in `depNames`, the
+  -- `userModules` filter (`!depNames.contains m.name`) removed all of them, and the whole proof
+  -- surface answered "0 functions" in silence. That is why a library package appeared to carry no
+  -- scoped identity and no proof evidence: not a scoping gap for libraries in general, but a
+  -- package shadowing itself. Measured on `std` 2026-08-16, which resolved 79 modules and reported
+  -- zero of them.
+  let selfName := (Concrete.Proof.packageField tomlContent "name").getD ""
+  let hasStdDep := selfName == "std" || userDeps.any fun (name, _) => name == "std"
   let deps ← if hasStdDep then
     pure userDeps
   else
@@ -317,17 +326,20 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
       depSrcMap := depSrcMap ++ srcMap
   let tDepsLoaded ← IO.monoMsNow
 
-  -- Load project's main source
-  let mainPath := projectRoot ++ "/src/main.con"
-  let sourceResult ← try
-    let s ← readFile mainPath
-    pure (some s)
-  catch _ => pure none
-  match sourceResult with
+  -- The project's entry source: `src/main.con`, or `src/lib.con` for a library package.
+  let mainCandidate := projectRoot ++ "/src/main.con"
+  let libCandidate := projectRoot ++ "/src/lib.con"
+  let tryRead := fun (p : String) => do
+    try pure (some (← readFile p)) catch _ => pure none
+  let entry ← do
+    match ← tryRead mainCandidate with
+    | some s => pure (some (mainCandidate, s))
+    | none   => pure ((← tryRead libCandidate).map fun s => (libCandidate, s))
+  match entry with
   | none =>
-    IO.eprintln s!"error: cannot read {mainPath}\nhint: projects need a src/main.con entry point"
+    IO.eprintln s!"error: cannot read {mainCandidate}\nhint: projects need a src/main.con entry point (or src/lib.con for a library)"
     return Except.error 1
-  | some source =>
+  | some (mainPath, source) =>
 
   -- Parse the project source
   match Pipeline.parse source with
@@ -382,6 +394,20 @@ partial def loadProject (projectRoot : String) (stripTestFns : Bool := false) : 
       IO.eprintln (renderDiagnostics ds (sourceMap := allSrcMap))
       return Except.error 1
     | .ok validCore =>
+    -- A PROJECT THAT PARSES BUT VALIDATES TO NOTHING IS A REFUSAL, not a report of zero.
+    --
+    -- Found owning the library-package gap (R-0004, 2026-08-16): `std` resolves — 79 modules, 340
+    -- exports, a populated obligation walker — and its VALIDATED core is empty, so every
+    -- proof-surface report answered "0 functions" with no error. Silence there is the worst
+    -- available answer: it reads identically to a package with nothing to prove, which is how a
+    -- whole package can carry no evidence and no one notices.
+    --
+    -- Guarded on `parsed.modules` being non-empty so an genuinely empty source still behaves as
+    -- before rather than acquiring a new failure mode.
+    if validCore.coreModules.isEmpty && !merged.modules.isEmpty then
+      IO.eprintln s!"error: '{mainPath}' parsed {merged.modules.length} module(s) but validated to an empty core, so every proof-surface report would answer 0 without explaining why\nhint: this is a compiler gap, not an empty package — see ROADMAP.md, library-package scoped identity"
+      return Except.error 1
+
     -- Parse the release [policy] once, here, so no command re-derives it.
     let (policy, policyWarnings) := parsePolicy tomlContent
     -- Derive the location map / proof registry / ProofCore once (Phase 4 #1).
