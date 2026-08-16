@@ -109,10 +109,6 @@ inductive ReplayRefusal where
       `checks.all accepted` is `true` over an empty list. Callers that legitimately have nothing to
       do (the CLI, when a program carries no proof links) match this case and say so. -/
   | noTargets
-  /-- Two targets named the same theorem. The per-theorem verdict is read out of one transcript by
-      searching for the theorem's name, so duplicates cannot be told apart and would both inherit
-      whichever verdict the other produced. -/
-  | duplicateTheorem (theoremName : String)
   /-- A target carried an empty subject or theorem name. Such a target cannot be searched for in the
       transcript — the empty needle matches everywhere — so it would silently report as accepted. -/
   | unnamedTarget (subject : String) (theoremName : String)
@@ -132,9 +128,6 @@ def ReplayRefusal.explain : ReplayRefusal → String
       ++ s!"directory of it or of '{fb}'), so the Lean theorems it references cannot be replayed"
   | .noTargets =>
       "no proved, stale, or unbound obligations with proof names to check"
-  | .duplicateTheorem t =>
-      s!"theorem '{t}' appears twice in one replay request; per-theorem verdicts are read by name "
-      ++ "and duplicates cannot be told apart"
   | .unnamedTarget s t =>
       s!"replay target has an empty name (subject='{s}', theorem='{t}'); it cannot be located in the "
       ++ "checker transcript and would report as accepted without being checked"
@@ -145,7 +138,6 @@ def ReplayRefusal.explain : ReplayRefusal → String
 def ReplayRefusal.canonical : ReplayRefusal → String
   | .noWorkspace ..       => "no_workspace"
   | .noTargets            => "no_targets"
-  | .duplicateTheorem _   => "duplicate_theorem"
   | .unnamedTarget ..     => "unnamed_target"
   | .scratchUnavailable _ => "scratch_unavailable"
   | .checkerUnavailable _ => "checker_unavailable"
@@ -449,9 +441,22 @@ def ReplayRequest.source (req : ReplayRequest) : String := Id.run do
     s := s ++ s!"import {i}\n"
   s := s ++ "\n-- Auto-generated kernel replay. Verifies that the referenced Lean theorems exist\n"
   s := s ++ "-- and type-check. Generated from a ReplayRequest; do not edit.\n\n"
+  -- ONE `#check` PER DISTINCT THEOREM. Two subjects may legitimately share one proof — the `ghost`
+  -- fixture exists to show that a ghost binding does not change the extracted body, so both of its
+  -- functions extract identically and link the same theorem.
+  --
+  -- This was briefly a REFUSAL, on the reasoning that duplicates "cannot be told apart" in a
+  -- name-keyed transcript read. That was wrong, and the corpus caught it: they need not be told
+  -- apart. A theorem either typechecks or it does not, independently of which subject links it, so
+  -- both targets receive the same verdict and that verdict is correct for both. The refusal broke
+  -- `--report check-proofs` outright on two fixtures.
+  let mut emitted : List String := []
   for t in req.targets do
+    if emitted.contains t.theoremName then continue
+    emitted := emitted ++ [t.theoremName]
+    let subjects := (req.targets.filter (·.theoremName == t.theoremName)).map (·.subject)
     let tag := match t.kind with | .refinement => "" | .ensures => " (ensures)"
-    s := s ++ s!"-- {t.subject}{tag}\n#check @{t.theoremName}\n\n"
+    s := s ++ s!"-- {", ".intercalate subjects}{tag}\n#check @{t.theoremName}\n\n"
   return s
 
 /-- Structural checks that must hold before a kernel is invoked at all.
@@ -464,10 +469,6 @@ def ReplayRequest.validate (req : ReplayRequest) : Except ReplayRefusal Unit := 
   for t in req.targets do
     if t.subject.trimAscii.isEmpty || t.theoremName.trimAscii.isEmpty then
       throw (.unnamedTarget t.subject t.theoremName)
-  let mut seen : List String := []
-  for t in req.targets do
-    if seen.contains t.theoremName then throw (.duplicateTheorem t.theoremName)
-    seen := t.theoremName :: seen
   return ()
 
 /-- Run the kernel over a request and report what it did.

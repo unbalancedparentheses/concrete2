@@ -130,7 +130,17 @@ def replayTargetsOf (pc : ProofCore) : List ReplayTarget :=
   pc.obligations.filterMap fun o =>
     match o.spec with
     | some s =>
-      if o.status == .proved || o.status == .stale || o.status == .unbound then
+      -- A LINK WITH NO THEOREM NAME IS EXCLUDED HERE, not carried into the request. The request
+      -- refuses an unnamed target — an empty needle matches the transcript everywhere, so it would
+      -- report as accepted without being checked — but refusing on ONE malformed link would take
+      -- every other claim in the file down with it, which is what happened to `proof_pressure`:
+      -- five claims became unreportable because one registry entry had an empty proof name.
+      --
+      -- Excluding it hides nothing. The registry validator already reports that entry by name
+      -- ("registry entry for 'X' has empty proof name") before any of this runs, so the defect is
+      -- diagnosed exactly once, where it belongs.
+      if s.proofName.trimAscii.isEmpty then none
+      else if o.status == .proved || o.status == .stale || o.status == .unbound then
         some { subject := o.functionId.qualName, theoremName := s.proofName
              , kind := .refinement
              , origin := if s.source == .registry then .sourceLinked else .hardcoded
@@ -377,16 +387,23 @@ structure MigrationRow where
     form in which this plan can be checked. A plan that listed only what it would change would be
     indistinguishable from a plan that silently skipped things. -/
 def migrationPlan (pc : ProofCore) (res : ReplayResult) : List MigrationRow :=
+  -- THE STORED FINGERPRINT LIVES ON THE OBLIGATION'S SPEC, NOT THE ENTRY'S. Reading `e.spec` here
+  -- was a SECOND reader of "what is stored", and it disagreed with the one the freshness report
+  -- uses: `proof_patterns/ghost` reported two WOULD-RECHECK subjects while this plan listed none of
+  -- them, so seven fingerprints were silently outside the migration. A plan that cannot see part of
+  -- its own population is worse than no plan.
   pc.entries.filterMap fun e =>
-    match e.spec with
+    match pc.obligations.find? (fun o => o.functionId.qualName == e.qualName) with
     | none => none
-    | some spec =>
+    | some obl =>
+      match obl.spec with
+      | none => none
+      | some spec =>
       match spec.expectedHash with
       | none => none
       | some stored =>
         if stored.isEmpty then none else
-        let status := (pc.obligations.find? (fun o => o.functionId.qualName == e.qualName)).map
-                        (·.status.canonical) |>.getD "unknown"
+        let status := obl.status.canonical
         let disp :=
           if "v2:".isPrefixOf stored then MigrationDisposition.alreadyV2
           -- STALENESS IS CHECKED BEFORE REPLAY, and the order matters: a stale claim's theorem may

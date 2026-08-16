@@ -200,6 +200,9 @@ test-receipt-issuance: build ## R-0004 package 3: production receipt issuance fo
 test-receipt-consumption: build ## R-0004 package 3: a stored receipt is untrusted input, re-checked against fresh facts
 	bash scripts/tests/check_receipt_consumption.sh
 
+test-v2-migration-plan: build ## R-0004 package 3: the V1->V2 migration dry run reconciles and manufactures no freshness
+	bash scripts/tests/check_v2_migration_plan.sh
+
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
 	bash scripts/tests/check_evidence_reproducibility.sh
 

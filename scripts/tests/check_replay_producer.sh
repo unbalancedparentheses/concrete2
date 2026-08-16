@@ -142,13 +142,27 @@ probe "EMPTY-REFUSED no_targets" "an empty request REFUSES rather than reporting
   | .error e => IO.println s!"EMPTY-REFUSED {e.canonical}"
   | .ok r => IO.println s!"EMPTY-ACCEPTED allAccepted={r.allAccepted} (vacuous)"'
 
-# Duplicate theorem names cannot be told apart by a name-keyed read of one transcript: both would
-# inherit whichever verdict the other produced.
-probe "DUP-REFUSED duplicate_theorem" "two targets naming one theorem are refused, not silently merged" \
+# TWO SUBJECTS MAY SHARE ONE PROOF, and both must receive its verdict.
+#
+# This was briefly a REFUSAL, on the reasoning that duplicates "cannot be told apart" in a name-keyed
+# transcript read. That was wrong and the corpus caught it: they need not be told apart, because a
+# theorem either typechecks or it does not, independently of which subject links it. The refusal
+# broke `--report check-proofs` outright on `proof_patterns/ghost` and
+# `proof_patterns/stale_missing_partial`, two fixtures where distinct functions extract identically
+# and legitimately link the same theorem. One `#check` is emitted per DISTINCT theorem.
+probe "SHARED both=accepted checks=2 emitted=1" \
+  "two subjects sharing one theorem both get its verdict, from a single emitted check" \
 '#eval show IO Unit from do
-  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [tgt, tgt] } with
-  | .error e => IO.println s!"DUP-REFUSED {e.canonical}"
-  | .ok _ => IO.println "DUP-ACCEPTED"'
+  let a := tgt
+  let b := { tgt with subject := "elf.other" }
+  let req : ReplayRequest := { inputPath := "Main.lean", imports := ["Concrete"], targets := [a, b] }
+  let emitted := ((req.source.splitOn "#check").length) - 1
+  match ← replay req with
+  | .error e => IO.println s!"SHARED-REFUSED {e.canonical}"
+  | .ok r =>
+    let vs := r.checks.map (·.verdict.canonical)
+    let both := if vs == ["accepted", "accepted"] then "accepted" else String.intercalate "/" vs
+    IO.println s!"SHARED both={both} checks={r.checks.length} emitted={emitted}"'
 
 # An empty needle matches the transcript everywhere, so an unnamed target would report as accepted
 # WITHOUT BEING CHECKED — a false pass, which is the worst available failure mode.
