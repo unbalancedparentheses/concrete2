@@ -152,6 +152,49 @@ elif grep -q "extraction failed" <<<"$DH_BLOCK"; then
 else
   no "decode_header now extracts — migrate proofFnsExt and replace this tripwire with real coverage"
 fi
+
+# === THE NINTH TABLE PROVIDES NO AUTHORITY, MEASURED ==========================================
+#
+# The deadlock this resolves: the required extraction changes proof-model expressiveness, the
+# feature freeze prohibits that before Slice 8, and the ninth table was written as blocking formal
+# closure. It cannot be both frozen and mandatory.
+#
+# DECISION (2026-08-16): the three `proofFnsExt` entries are marked unsupported, the model extension
+# is deferred past Slice 8, and the table leaves R-0004's closure list. That is only honest if the
+# entries carry NO AUTHORITY, so this measures it rather than asserting it. Two independent legs,
+# because either alone could hold for the wrong reason.
+echo "=== the ninth table carries no authority ==="
+
+cat > "$TMP/pfx.lean" <<'LEAN'
+import Concrete
+open Concrete Concrete.Proof
+#eval show IO Unit from do
+  -- A table with no scoped membership describes no definitions, so it can witness no per-edge
+  -- justification and nothing resting on it can be proved.
+  let empty := (scopedEntryEvidence proofFnsExt).toOption == some []
+  IO.println s!"PFX-EMPTY={empty}"
+LEAN
+PFX="$(lake env lean "$TMP/pfx.lean" 2>&1 || true)"
+if grep -q 'PFX-EMPTY=true' <<<"$PFX"; then
+  ok "proofFnsExt has empty scoped membership, so it describes no definitions and justifies nothing"
+else
+  no "proofFnsExt now carries scoped membership — it can justify claims, so the deferral must be revisited: $(tr '\n' ' ' <<<"$PFX" | cut -c1-160)"
+fi
+
+# ...and nothing in the corpus actually rests on it. A table that justifies nothing AND is depended
+# on by nothing is doubly inert; asserting only the first would leave open a claim that fails for
+# some other reason today and starts passing tomorrow.
+PFX_USERS=0
+for f in $(grep -rlE '#\[proof_fingerprint' examples --include='*.con' | sort); do
+  if "$CC" "$f" --report proof-deps 2>/dev/null | grep -q 'proofFnsExt'; then
+    PFX_USERS=$((PFX_USERS+1)); echo "      depends on proofFnsExt: $f"
+  fi
+done
+if [ "$PFX_USERS" -eq 0 ]; then
+  ok "no fingerprinted claim in the corpus depends on proofFnsExt (its three entries gate nothing)"
+else
+  no "$PFX_USERS fingerprinted fixture(s) now depend on proofFnsExt — the ninth table gates real claims again"
+fi
 lean_probe "proofFnsExt is still legacy, so it mints nothing" "true" \
 '#eval proofFnsExt.entries.isEmpty && proofFnsExt.root.isNone'
 
