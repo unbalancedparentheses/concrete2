@@ -10,6 +10,43 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Package 3 Opening: Receipts Bind The Closure, Evidence Is Reproducible
+
+_Compiler and gates, 2026-08-16. No production verdict changed._
+
+**The replay receipt binds what it claims to.** The envelope named four of the seven things the
+authority criterion requires; it now binds the dependency ROOT (as the validated root preimage's
+digest), the THEOREM ARTIFACT, and TRUST as a flag plus the boundaries by name. Without the root a
+receipt bound the tables a theorem mentions and said nothing about the closure the claim rests on;
+without the artifact it survived a proof being replaced by a weaker one that happens to typecheck.
+Every new field participates in the currency comparison — a field in the envelope and absent from the
+comparison reads as bound while binding nothing.
+
+**Evidence is reproducible, measured rather than argued.** The same program compiled from a different
+absolute path and a different directory name yields byte-identical attestation join, dependency roots
+and correspondence, with a one-byte body mutation as the non-vacuity control and a determinism check
+beside it. `make test-evidence-reproducibility`, 5/0.
+
+**The first eligibility-denominated coverage baseline:** 35 of 91 eligible claims proved, with the
+remainder named exactly — 31 no-proof, 15 unbound, 5 stale, 4 dependency-not-current, 1 blocked, 0
+unjustified — over a denominator that reconciles against the reported lines. 15 ineligible and 9
+trusted are excluded, being outside the provable subset and a declared boundary respectively. The
+gate also asserts the report still discloses that it does NOT run the kernel, so the number cannot be
+read as replay coverage. `make test-coverage-baseline`, 5/0.
+
+**Trust travels the whole closure, and says so at every status.** The assumption line used to appear
+only under `proved` — but a trusted boundary is a property of the closure, not of the verdict, so a
+`stale` claim resting on one disclosed nothing until it turned green. Now reported wherever it holds,
+from one producer. A new two-hop fixture (`composition_deep_trust`) shows a subject whose own body
+mentions no trusted function still disclosing the boundary two hops away; the mutation that narrows
+the computation to direct callees dies against it.
+
+**Still open, stated plainly:** nothing mints a receipt. Kernel replay works and already separates
+theorems whose claims have no stored subject from those that do, but the invocation is inline in
+`compileAndReport` and its failure paths print rather than return; extracting one replay producer is
+the next piece. The 44-link migration, repository-root/clean-checkout reproducibility, and adversarial
+closure remain untouched.
+
 ### R-0004 Packages 1–2: Scoped Definition Identity Becomes Authoritative
 
 _Compiler, gates and corpus, 2026-08-15/16. **Production `proved` verdicts changed.**_
