@@ -1464,7 +1464,11 @@ def compileAndReport (inputPath : String) (reportType : String)
     (smtRun : Bool := false) (smtEmit : Bool := false)
     (smtReplay : Bool := false) (emitLeanReplay : Bool := false)
     (smtTimeoutMs : Option Nat := none) (rocqRun : Bool := false)
-    (isaRun : Bool := false) (reqTwoKernels : Bool := false) : IO UInt32 := do
+    (isaRun : Bool := false) (reqTwoKernels : Bool := false)
+    -- Receipt storage. `receiptsOut` is where `--report receipts` writes; `receiptsIn` is the store
+    -- `--report proof-status` reads back and CHECKS. They are separate because writing is an
+    -- authority-bearing act and reading is consuming untrusted bytes.
+    (receiptsOut : Option String := none) (receiptsIn : Option String := none) : IO UInt32 := do
   -- The second-kernel flags only affect the multi-kernel report; warn rather than
   -- silently ignore them elsewhere (finding: silent no-op reads as "it ran").
   -- Three cases, not two. Saying "ignored" for a report that then visibly runs coqc
@@ -2630,6 +2634,73 @@ def compileAndReport (inputPath : String) (reportType : String)
       return 0
     if reportType == "proof-status" then
       IO.println (Report.proofStatusReport validCore.coreModules locMap srcMap (registry := registry) (pc := pc))
+      -- RECEIPT CONSUMPTION. The status above is derived from source facts alone and explicitly does
+      -- NOT mean the kernel re-ran. A stored receipt is the only thing that can say it did — and it
+      -- is untrusted input, so it is re-checked against material computed fresh right now. A receipt
+      -- that disagrees makes nothing current; it is reported as disagreeing, which is a fact worth
+      -- more than its absence.
+      match receiptsIn with
+      | none => pure ()
+      | some path =>
+        let raw ← try pure (some (← IO.FS.readFile ⟨path⟩)) catch _ => pure none
+        match raw with
+        | none => IO.println s!"\n=== Replay Receipts ===\n  error: cannot read receipt store '{path}'"
+        | some contents =>
+        let records := Proof.decodeStore contents
+        let compilerVersion ← compilerIdentity
+        let workspaceId := match packageIdentity with
+          | .ok p => p.digest
+          | .error _ => ""
+        let importsId := Proof.importsIdOf [("Concrete.Proof.ClassificationTable",
+                                              Proof.classificationSurfaceDigest)]
+        -- The CURRENT checker, asked without paying for a kernel run — the same producer `replay`
+        -- resolves through, so "which toolchain" has one answer.
+        let toolchain := match ← Proof.resolveChecker
+            { inputPath := inputPath, fallbackDir := ".", imports := [], targets := [] } with
+          | some (_, _, tc) => tc
+          | none => "unknown"
+        let statusEntries := Report.proofStatusEntries validCore.coreModules locMap registry pc
+        let trustedDepsOf := fun (qn : String) =>
+          (statusEntries.find? (fun s => s.qualName == qn)).map (·.trustedDeps) |>.getD []
+        let env : Proof.IssueEnvironment := { compilerVersion, workspaceId, importsId }
+        let mut lines : List String := []
+        let mut current := 0
+        let mut notCurrent := 0
+        let mut unreadable := 0
+        for (subject, decoded) in records do
+          match decoded with
+          | .error e =>
+            -- A RECORD THAT WILL NOT DECODE IS NOT AN ABSENT RECORD. Reporting nothing here would
+            -- make a corrupted store look like a store with fewer receipts in it.
+            unreadable := unreadable + 1
+            lines := lines ++ [s!"    ? {subject} — unreadable [{e.canonical}] {e.explain}"]
+          | .ok st =>
+            match pc.entries.find? (fun e => e.qualName == subject) with
+            | none =>
+              -- A receipt for a claim this program does not have. Named rather than dropped: it is
+              -- the shape a receipt from another package takes when it lands in this store.
+              notCurrent := notCurrent + 1
+              lines := lines ++ [s!"    ✗ {subject} — no such claim in this program; the receipt describes something else"]
+            | some entry =>
+              match Proof.storedDispositionFor pc env toolchain trustedDepsOf entry st with
+              | .error w =>
+                notCurrent := notCurrent + 1
+                lines := lines ++ [s!"    ✗ {subject} — cannot be checked [{w.canonical}] {w.explain}"]
+              | .ok .current =>
+                current := current + 1
+                let trust := if st.carriesTrust then s!" ASSUMING {", ".intercalate st.trustedBoundaries}" else ""
+                lines := lines ++ [s!"    ✓ {subject} — kernel-replayed, receipt current ({st.theoremArtifact}){trust}"]
+              | .ok .notCurrent =>
+                notCurrent := notCurrent + 1
+                lines := lines ++ [s!"    ✗ {subject} — receipt NOT current: it was established against different material"]
+              | .ok .needsRecheck =>
+                unreadable := unreadable + 1
+                lines := lines ++ [s!"    ? {subject} — receipt written under a different envelope; re-verify and re-record"]
+        IO.println (String.intercalate "\n"
+          ([s!"\n=== Replay Receipts ({path}) ==="] ++ lines
+           ++ [s!"\n  {current} current, {notCurrent} not current, {unreadable} unreadable"
+              , "  A receipt makes a claim kernel-replayed ONLY while it agrees with fresh facts."
+              , "  Status above is derived from source facts and does not itself mean the kernel ran."]))
       return (if hasRegistryErrors then 1 else 0)
     if reportType == "obligations" then
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)
@@ -2734,9 +2805,17 @@ def compileAndReport (inputPath : String) (reportType : String)
           | .error e => out := out ++ s!"    - {o.subject} [{e.canonical}] {e.explain}\n"
           | .ok _ => pure ()
       out := out ++ s!"\nSummary: {issued.length} issued, {withheld.length} withheld"
-      -- ISSUANCE IS NOT STATUS. A receipt records that a kernel accepted a theorem against stated
-      -- material; it does not by itself make a claim current, and nothing consumes these yet.
-      out := out ++ "\n  NOTE: receipts are not stored and no status consumes them yet."
+      match receiptsOut with
+      | some path =>
+        IO.FS.writeFile ⟨path⟩ (Proof.encodeStore outcomes)
+        out := out ++ s!"\n  Stored {issued.length} receipt(s) to {path}."
+        -- WHAT A STORED RECEIPT IS WORTH, said where it is written. It is bytes; anything can write
+        -- them. `--report proof-status --receipts <path>` re-checks each against material computed
+        -- fresh, and a receipt that disagrees makes nothing current.
+        out := out ++ "\n  A stored receipt is not evidence on its own: it is re-checked against"
+        out := out ++ " fresh facts, and only agreement counts."
+      | none =>
+        out := out ++ "\n  NOTE: not stored. Pass --out <path> to write them."
       IO.println out
       return 0
     if reportType == "check-proofs" then
@@ -3788,6 +3867,12 @@ def main (args : List String) : IO UInt32 := do
   | [inputPath, "--report", reportType, "--isabelle"] =>
     compileAndReport inputPath reportType (isaRun := true)
   -- both orders accepted so flag order is not load-bearing
+  -- Receipt storage. Writing is authority-bearing; reading consumes untrusted bytes. Separate flags
+  -- so neither can be mistaken for the other.
+  | [inputPath, "--report", reportType, "--out", path] =>
+    compileAndReport inputPath reportType (receiptsOut := some path)
+  | [inputPath, "--report", reportType, "--receipts", path] =>
+    compileAndReport inputPath reportType (receiptsIn := some path)
   | [inputPath, "--report", reportType, "--rocq", "--isabelle"] =>
     compileAndReport inputPath reportType (rocqRun := true) (isaRun := true)
   | [inputPath, "--report", reportType, "--isabelle", "--rocq"] =>

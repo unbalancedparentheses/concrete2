@@ -99,6 +99,16 @@ def DependencyEdge.canonical : DependencyEdge → String
 def DependencyEdge.all : List DependencyEdge :=
   [.contract, .body, .trusted, .missing, .unclassified]
 
+/-- Parse a canonical tag back to an edge, or `none`.
+
+    DERIVED FROM `all` AND `canonical`, not written as a second table: a hand-maintained inverse
+    would eventually accept a tag the renderer never emits, or refuse one it does — and this is the
+    function a decoder uses on bytes it did not write, so a mismatch there is a parser disagreeing
+    with the serializer about what a receipt says. `none` for anything unrecognized, because an
+    unknown tag is not a default edge. -/
+def DependencyEdge.ofCanonical? (tag : String) : Option DependencyEdge :=
+  DependencyEdge.all.find? (fun e => e.canonical == tag)
+
 /-- Every constructor is in `all`. A THEOREM, not a length assertion in a gate.
 
     `check_dependency_edges.sh` pinned `all.length == 5`, which protects nothing against a sixth

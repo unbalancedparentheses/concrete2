@@ -369,6 +369,27 @@ def resolveWorkspace (req : ReplayRequest) : IO (Option (System.FilePath × Bool
   | some w => return some (w, true)
   | none   => return (← findLakeWorkspace req.fallbackDir).map (·, false)
 
+/-- The checker that WOULD run for this input: its workspace and its toolchain, without running it.
+
+    ONE PRODUCER, used by `replay` and by every consumer that has to compare a stored receipt
+    against current material. A receipt binds the toolchain, so checking whether it is still current
+    means knowing which toolchain is current — and a status report must be able to ask that without
+    paying for a kernel run. Re-reading `lean-toolchain` from somewhere else would be a second answer
+    to "which checker", and the two would eventually disagree about whether a receipt had aged.
+
+    The toolchain is read from the RESOLVED WORKSPACE rather than the process directory: it describes
+    the checker that would run for this input, and reading it from elsewhere would name a different
+    one. -/
+def resolveChecker (req : ReplayRequest) : IO (Option (System.FilePath × Bool × String)) := do
+  match ← resolveWorkspace req with
+  | none => return none
+  | some (ws, fromInput) =>
+    let toolchain ← try
+        let c ← IO.FS.readFile (ws / "lean-toolchain")
+        pure c.trimAscii.toString
+      catch _ => pure "unknown"
+    return some (ws, fromInput, toolchain)
+
 /-- The generated Lean file for a request. Pure, so a test can assert what would be checked without
     running a kernel, and so the same bytes are reproducible from the request alone. -/
 def ReplayRequest.source (req : ReplayRequest) : String := Id.run do
@@ -407,7 +428,7 @@ def replay (req : ReplayRequest) : IO (Except ReplayRefusal ReplayResult) := do
   match req.validate with
   | .error e => return .error e
   | .ok () =>
-  let some (ws, fromInput) ← resolveWorkspace req
+  let some (ws, fromInput, toolchain) ← resolveChecker req
     | return .error (.noWorkspace req.inputPath req.fallbackDir)
   -- Scratch file. Failure here is a refusal: nothing was checked.
   let scratchDir ← try
@@ -430,12 +451,6 @@ def replay (req : ReplayRequest) : IO (Except ReplayRefusal ReplayResult) := do
   let result ← match outcome with
     | .error e => return .error (.checkerUnavailable e)
     | .ok r => pure r
-  -- The toolchain identity, read from the resolved WORKSPACE rather than the process directory: it
-  -- describes the checker that just ran, and reading it from elsewhere would name a different one.
-  let toolchain ← try
-      let c ← IO.FS.readFile (ws / "lean-toolchain")
-      pure c.trimAscii.toString
-    catch _ => pure "unknown"
   -- Lean puts errors on either stream.
   let transcript := result.stdout.trimAscii.toString ++ "\n" ++ result.stderr.trimAscii.toString
   let mentions (needle : String) : Bool := (transcript.splitOn needle).length != 1

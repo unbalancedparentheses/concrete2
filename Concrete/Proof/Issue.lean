@@ -189,6 +189,67 @@ def issueFor (pc : ProofCore) (res : ReplayResult) (env : IssueEnvironment)
     | throw (.materialRefused subject)
   return ProofEvidenceReceipt.mint sr material
 
+/-- The facts a stored receipt must agree with, computed FRESH from the program right now.
+
+    Deliberately the same derivation issuance uses, minus the token. A consumer that re-derived this
+    material separately would be a second answer to "what is this claim resting on", and the two
+    would eventually disagree — with the comparison, not the mint, being the one that decides whether
+    a stored receipt still counts.
+
+    `toolchain` is passed in rather than read here: it comes from `resolveChecker`, the one producer
+    of "which checker would run", so a status report can ask without paying for a kernel run. -/
+def freshFactsFor (pc : ProofCore) (env : IssueEnvironment) (toolchain : String)
+    (trustedDepsOf : String → List String)
+    (e : ProofCoreEntry) : Except IssueRefusal ReceiptFacts := do
+  let subject := e.qualName
+  let some spec := e.spec | throw (.noProofLink subject)
+  let thm := spec.proofName
+  let some obl := pc.obligations.find? (fun o => o.functionId.qualName == subject)
+    | throw (.noProofLink subject)
+  if obl.status != .proved then throw (.notProved subject obl.status.canonical)
+  let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)
+  let some subjDigest := e.subjectDigest | throw (.noSubjectDigest subject)
+  let sid ← match e.definitionIdentity with
+    | .error w => throw (.noScopedIdentity subject w.explain)
+    | .ok i => pure i
+  let nodes := dependencyNodesOf pc pc.callGraph
+  let rootMat ← match dependencyRootMaterial nodes sid with
+    | .error w => throw (.rootRefused subject w.explain)
+    | .ok m => pure m
+  let boundaries := trustedDepsOf subject
+  if rootMat.carriesTrust != !boundaries.isEmpty then throw (.materialRefused subject)
+  let ev := edgeEvidenceOfRow row
+  let some material := ReceiptMaterial.of? (some subjDigest) ev rootMat.preimage
+      rootMat.carriesTrust boundaries env.compilerVersion env.workspaceId env.importsId
+    | throw (.materialRefused subject)
+  return { subjectDigest := material.subjectDigest
+         , edge := material.edge
+         , tableBindings := material.tableBindings
+         , dependencyRoot := material.dependencyRoot
+         -- The artifact a CURRENT receipt would name: the theorem this claim links to now. A stored
+         -- receipt naming a different one was established from a different proof term.
+         , theoremArtifact := thm
+         , carriesTrust := material.carriesTrust
+         , trustedBoundaries := material.trustedBoundaries
+         , toolchainId := toolchainIdOf material.compilerVersion toolchain
+         , workspaceId := material.workspaceId
+         , importsId := material.importsId }
+
+/-- What a stored receipt is worth for one claim, against material computed fresh.
+
+    A STORED RECEIPT NEVER DECIDES ANYTHING ON ITS OWN. It can only agree or disagree with what the
+    program says right now, and this is the only question it is ever asked. A receipt swapped onto
+    another claim's name in the storage file disagrees here, because the comparison reads the subject
+    digest rather than the file key. -/
+def storedDispositionFor (pc : ProofCore) (env : IssueEnvironment) (toolchain : String)
+    (trustedDepsOf : String → List String) (e : ProofCoreEntry)
+    (st : StoredReceipt) : Except IssueRefusal ReceiptDisposition := do
+  let fresh ← freshFactsFor pc env toolchain trustedDepsOf e
+  return if st.facts.isCurrentAgainst fresh.subjectDigest fresh.edge fresh.tableBindings
+              fresh.dependencyRoot fresh.theoremArtifact fresh.carriesTrust fresh.trustedBoundaries
+              fresh.toolchainId fresh.workspaceId fresh.importsId
+         then .current else .notCurrent
+
 /-- Issue over every claim the replay covered, reporting each outcome.
 
     Returns one entry per claim WITH A PROOF LINK, refusals included. A caller that wants only the
@@ -200,6 +261,46 @@ def issueAll (pc : ProofCore) (res : ReplayResult) (env : IssueEnvironment)
     if e.spec.isNone then none
     else some { subject := e.qualName
               , result := issueFor pc res env trustedDepsOf e }
+
+/-! ### The storage file
+
+Records are keyed by subject name, and THE KEY IS NOT TRUSTED. It is how a consumer finds the record
+to check; it is not what makes the record apply. Swapping two receipts under each other's names is a
+substitution the comparison defeats on its own, because `storedDispositionFor` compares the subject
+DIGEST against material computed fresh — the name never enters the verdict. -/
+
+/-- Serialize issued receipts, newest write wins. Withheld claims are deliberately absent: a store
+    that recorded refusals would invite a reader to treat "we know why this failed" as a record of
+    something, and a refusal is precisely the absence of evidence. -/
+def encodeStore (os : List IssueOutcome) : String :=
+  String.intercalate "
+" (os.filterMap fun o =>
+    match o.result with
+    | .ok r => some (s!"== {o.subject}
+" ++ r.encode)
+    | .error _ => none)
+
+/-- Read a storage file back. Each record decodes independently and carries its own refusal, so one
+    corrupt record does not discard the rest — and does not silently vanish either. -/
+def decodeStore (s : String) : List (String × Except ReceiptDecodeRefusal StoredReceipt) := Id.run do
+  let mut out : List (String × Except ReceiptDecodeRefusal StoredReceipt) := []
+  let mut key : Option String := none
+  let mut body : List String := []
+  let flush := fun (k : Option String) (b : List String) =>
+    match k with
+    | none => []
+    | some name => [(name, StoredReceipt.decode (String.intercalate "
+" b))]
+  for line in s.splitOn "
+" do
+    if line.startsWith "== " then
+      out := out ++ flush key body
+      key := some (line.drop 3).trimAscii.toString
+      body := []
+    else if !line.trimAscii.isEmpty then
+      body := body ++ [line]
+  out := out ++ flush key body
+  return out
 
 namespace IssueOutcome
 

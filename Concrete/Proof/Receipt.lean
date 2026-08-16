@@ -309,6 +309,191 @@ def ProofEvidenceReceipt.mint
   , workspaceId := m.workspaceId
   , importsId := m.importsId }
 
+/-! ## Storage: a receipt that has left the process is no longer evidence
+
+A minted `ProofEvidenceReceipt` carries authority, because obtaining one required a kernel run. A
+receipt READ BACK FROM A FILE carries none: the file is ordinary bytes that anything can write.
+Modelling both as the same type would make the forgery trivial — decode a hand-written file and hold
+a value indistinguishable from one the kernel earned.
+
+So they are different types. `StoredReceipt` is what decoding produces, it has no minting path, and
+the only thing it can do is be COMPARED against freshly computed material. That is what "a stored
+receipt alone is never current status" means, expressed so a consumer cannot ignore it. -/
+
+/-- Canonical bytes for a receipt. Field-tagged and line-oriented rather than positional, so a
+    decoder can name a missing field instead of silently shifting every value by one.
+
+    Repeated fields are already sorted inside the receipt, so the bytes are reproducible from the
+    receipt alone. -/
+def ProofEvidenceReceipt.encode (r : ProofEvidenceReceipt) : String :=
+  String.intercalate "\n" (
+    [ s!"schema {r.schemaVersion}"
+    , s!"subject {r.subjectDigest}"
+    , s!"edge {r.edge.canonical}" ]
+    -- UNESCAPED. `s!"{n}"` renders a `Name` in Lean's display form, so a single component
+    -- containing dots comes out as «Concrete.Proof.elfFns» — and decoding read the guillemets back
+    -- as part of the name, so every receipt disagreed with itself the instant it was written. The
+    -- store holds the classification table's STRINGS, which is what `edgeEvidenceOfRow` built these
+    -- names from; it is not a structured Lean name and must not pretend to be.
+    ++ (r.tableBindings.map fun (n, d) => s!"table {n.toString false} {d}")
+    ++ [ s!"root {r.dependencyRoot}"
+       , s!"artifact {r.theoremArtifact}"
+       , s!"trust {if r.carriesTrust then "true" else "false"}" ]
+    ++ (r.trustedBoundaries.map fun b => s!"boundary {b}")
+    ++ [ s!"toolchain {r.toolchainId}"
+       , s!"workspace {r.workspaceId}"
+       , s!"imports {r.importsId}" ])
+
+/-- Why a stored receipt could not be decoded.
+
+    PARTIAL DECODING IS THE ATTACK. A decoder that fills missing fields with defaults produces a
+    receipt that compares equal to another defaulted one, so two unrelated claims agree — the same
+    "empty string is not unknown" failure the mint refusals exist for. Every one of these is a
+    refusal rather than a repair. -/
+inductive ReceiptDecodeRefusal where
+  /-- No `schema` line, or one naming a version this build cannot read. NOT the same as a field
+      mismatch: the format changed, and the program may not have. -/
+  | schemaUnreadable (found : String)
+  /-- A required field is absent. Named, because "malformed receipt" sends a reader to look at the
+      whole file. -/
+  | missingField (name : String)
+  /-- A required field appears twice. Taking either is a decoder choosing which claim to believe. -/
+  | duplicateField (name : String)
+  /-- A line whose key this decoder does not know. Refused rather than skipped: an unknown key is
+      either a newer format or an attempt to smuggle state past the comparison, and skipping makes
+      both look like a clean parse. -/
+  | unknownKey (key : String)
+  /-- A field present but unusable — an empty value, or an edge tag outside the vocabulary. -/
+  | malformedField (name : String) (value : String)
+  deriving BEq, Repr
+
+def ReceiptDecodeRefusal.canonical : ReceiptDecodeRefusal → String
+  | .schemaUnreadable _ => "schema_unreadable"
+  | .missingField _     => "missing_field"
+  | .duplicateField _   => "duplicate_field"
+  | .unknownKey _       => "unknown_key"
+  | .malformedField ..  => "malformed_field"
+
+def ReceiptDecodeRefusal.explain : ReceiptDecodeRefusal → String
+  | .schemaUnreadable f =>
+      s!"stored under schema '{f}', which this build cannot read — re-verify and re-record rather than comparing"
+  | .missingField n     => s!"required field '{n}' is absent; a defaulted value would compare equal to another default"
+  | .duplicateField n   => s!"field '{n}' appears more than once; taking either would be a decoder choosing which claim to believe"
+  | .unknownKey k       => s!"unknown field '{k}' — refusing rather than skipping, since skipping makes a newer format look like a clean parse"
+  | .malformedField n v => s!"field '{n}' carries an unusable value '{v}'"
+
+/-- A receipt read back from storage. NOT evidence.
+
+    Deliberately a different type from `ProofEvidenceReceipt`. Minting one of those required a
+    `SuccessfulReplay`, so holding one means a kernel ran; this came out of a file, and a file is
+    bytes anything can write. There is no function from `StoredReceipt` to `ProofEvidenceReceipt`
+    and there must not be — the way to turn a stored receipt into evidence is to replay and mint a
+    new one.
+
+    Private constructor so `decode` is the only producer, for the same reason it is on the receipt:
+    a value assembled around a failed parse validates nothing. -/
+structure StoredReceipt where
+  private mk ::
+  schemaVersion     : String
+  subjectDigest     : String
+  edge              : DependencyEdge
+  tableBindings     : List (Name × String)
+  dependencyRoot    : String
+  theoremArtifact   : String
+  carriesTrust      : Bool
+  trustedBoundaries : List String
+  toolchainId       : String
+  workspaceId       : String
+  importsId         : String
+  deriving Repr
+
+/-- Decode stored bytes, or refuse and say why. -/
+def StoredReceipt.decode (s : String) : Except ReceiptDecodeRefusal StoredReceipt := do
+  let lines := (s.splitOn "\n").filter (fun l => !l.trimAscii.isEmpty)
+  let mut single : List (String × String) := []
+  let mut tables : List (Name × String) := []
+  let mut boundaries : List String := []
+  for line in lines do
+    let parts := line.trimAscii.toString.splitOn " "
+    match parts with
+    | key :: rest =>
+      let val := " ".intercalate rest
+      if key == "table" then
+        match rest with
+        | n :: d :: _ => tables := tables ++ [(Name.mkSimple n, d)]
+        | _ => throw (.malformedField "table" val)
+      else if key == "boundary" then
+        if val.isEmpty then throw (.malformedField "boundary" val)
+        boundaries := boundaries ++ [val]
+      else if ["schema", "subject", "edge", "root", "artifact", "trust",
+               "toolchain", "workspace", "imports"].contains key then
+        if single.any (·.1 == key) then throw (.duplicateField key)
+        single := single ++ [(key, val)]
+      else throw (.unknownKey key)
+    | [] => pure ()
+  let field := fun (n : String) => (single.find? (·.1 == n)).map (·.2)
+  let some schema := field "schema" | throw (.missingField "schema")
+  -- SCHEMA FIRST, before any content is read. An older envelope is not comparable at all, and
+  -- reporting a field mismatch for it would claim the program moved when the format did.
+  if schema != receiptSchemaVersion then throw (.schemaUnreadable schema)
+  let req := fun (n : String) =>
+    match field n with
+    | none => Except.error (ReceiptDecodeRefusal.missingField n)
+    | some v => if v.isEmpty then Except.error (.malformedField n v) else Except.ok v
+  let subject ← req "subject"
+  let edgeTag ← req "edge"
+  let some edge := DependencyEdge.ofCanonical? edgeTag | throw (.malformedField "edge" edgeTag)
+  let root ← req "root"
+  let artifact ← req "artifact"
+  let trustTag ← req "trust"
+  let carriesTrust ←
+    if trustTag == "true" then pure true
+    else if trustTag == "false" then pure false
+    else throw (.malformedField "trust" trustTag)
+  let toolchain ← req "toolchain"
+  let workspace ← req "workspace"
+  let imports ← req "imports"
+  -- THE SAME CONSISTENCY THE MINT REQUIRES. A stored receipt claiming trust while naming no
+  -- boundary is a qualification a reader cannot act on, and one naming boundaries with the flag
+  -- false disagrees with itself. Re-checked here because these bytes did not come from the mint.
+  if carriesTrust != !boundaries.isEmpty then
+    throw (.malformedField "trust" trustTag)
+  return { schemaVersion := schema, subjectDigest := subject, edge := edge
+         , tableBindings := tables, dependencyRoot := root, theoremArtifact := artifact
+         , carriesTrust, trustedBoundaries := boundaries
+         , toolchainId := toolchain, workspaceId := workspace, importsId := imports }
+
+/-- The fields a currency comparison reads, from either kind of receipt.
+
+    ONE STRUCTURE so the comparison exists ONCE. A minted receipt and a stored one are deliberately
+    different types, and writing the comparison twice would mean the authoritative path and the
+    untrusted-input path could disagree about what "current" means — with the stored side, the one
+    that reads attacker-controlled bytes, being the copy nobody re-checks. -/
+structure ReceiptFacts where
+  subjectDigest     : String
+  edge              : DependencyEdge
+  tableBindings     : List (Name × String)
+  dependencyRoot    : String
+  theoremArtifact   : String
+  carriesTrust      : Bool
+  trustedBoundaries : List String
+  toolchainId       : String
+  workspaceId       : String
+  importsId         : String
+  deriving Repr
+
+def ProofEvidenceReceipt.facts (r : ProofEvidenceReceipt) : ReceiptFacts :=
+  { subjectDigest := r.subjectDigest, edge := r.edge, tableBindings := r.tableBindings
+  , dependencyRoot := r.dependencyRoot, theoremArtifact := r.theoremArtifact
+  , carriesTrust := r.carriesTrust, trustedBoundaries := r.trustedBoundaries
+  , toolchainId := r.toolchainId, workspaceId := r.workspaceId, importsId := r.importsId }
+
+def StoredReceipt.facts (r : StoredReceipt) : ReceiptFacts :=
+  { subjectDigest := r.subjectDigest, edge := r.edge, tableBindings := r.tableBindings
+  , dependencyRoot := r.dependencyRoot, theoremArtifact := r.theoremArtifact
+  , carriesTrust := r.carriesTrust, trustedBoundaries := r.trustedBoundaries
+  , toolchainId := r.toolchainId, workspaceId := r.workspaceId, importsId := r.importsId }
+
 /-- Is a stored receipt still current against freshly computed material?
 
     Schema is checked FIRST and separately: an older envelope is not comparable at all, and
@@ -321,8 +506,8 @@ def ProofEvidenceReceipt.mint
     different toolchain, workspace or import closure moves those identities; a swapped pair of
     table digests changes which name carries which value and survives the sort. Any of them
     means the recorded evidence was established against something other than what is here now. -/
-def ProofEvidenceReceipt.isCurrentAgainst
-    (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
+def ReceiptFacts.isCurrentAgainst
+    (r : ReceiptFacts) (subjectDigest : String) (edge : DependencyEdge)
     (tableBindings : List (Name × String))
     (dependencyRoot theoremArtifact : String)
     (carriesTrust : Bool) (trustedBoundaries : List String)
@@ -343,6 +528,31 @@ def ProofEvidenceReceipt.isCurrentAgainst
     && r.toolchainId == toolchainId
     && r.workspaceId == workspaceId
     && r.importsId == importsId
+
+/-- Thin wrapper: a minted receipt's currency, through the one comparison. -/
+def ProofEvidenceReceipt.isCurrentAgainst
+    (r : ProofEvidenceReceipt) (subjectDigest : String) (edge : DependencyEdge)
+    (tableBindings : List (Name × String))
+    (dependencyRoot theoremArtifact : String)
+    (carriesTrust : Bool) (trustedBoundaries : List String)
+    (toolchainId workspaceId importsId : String) : Bool :=
+  r.facts.isCurrentAgainst subjectDigest edge tableBindings dependencyRoot theoremArtifact
+    carriesTrust trustedBoundaries toolchainId workspaceId importsId
+
+/-- Thin wrapper: a STORED receipt's currency, through the same comparison.
+
+    This is the only thing a stored receipt can do. It cannot become evidence, it cannot be minted
+    from, and it cannot make a claim proved on its own — it can only agree or disagree with material
+    computed fresh from the program right now. A receipt swapped onto another claim's name in the
+    storage file disagrees here, because the subject digest is compared rather than the file key. -/
+def StoredReceipt.isCurrentAgainst
+    (r : StoredReceipt) (subjectDigest : String) (edge : DependencyEdge)
+    (tableBindings : List (Name × String))
+    (dependencyRoot theoremArtifact : String)
+    (carriesTrust : Bool) (trustedBoundaries : List String)
+    (toolchainId workspaceId importsId : String) : Bool :=
+  r.facts.isCurrentAgainst subjectDigest edge tableBindings dependencyRoot theoremArtifact
+    carriesTrust trustedBoundaries toolchainId workspaceId importsId
 
 /-- A stored receipt is comparable only when it was written under this envelope version.
     Distinct from "the contents differ" for the same reason `needsRecheck` is distinct from
