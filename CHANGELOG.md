@@ -10,6 +10,40 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 Package 3: Receipts Become Production Evidence — Issued, Stored, Re-checked
+
+_Compiler and gates, 2026-08-16. `--report receipts` is new; no existing verdict changed._
+
+**The vertical slice closes.** `--report receipts --out <path>` mints from real kernel replay and
+writes; `--report proof-status --receipts <path>` reads back and RE-CHECKS. On `examples/elf_header`:
+5 issued, 0 withheld, then 5 current. Issuance derives none of its four inputs itself — kernel
+acceptance, theorem classification, subject digest, dependency root each come from the single
+producer that already answers that question — and every withholding names its cause.
+
+**A receipt read back from a file is not evidence.** `StoredReceipt` is a deliberately different type
+from `ProofEvidenceReceipt`, with no minting path and no function from one to the other. All it can do
+is agree or disagree with material computed fresh from the program right now. The storage key is
+untrusted: swapping two receipts under each other's names moves exactly those two. Decoding refuses
+rather than repairs — missing, duplicate and unknown fields, unreadable schema, malformed value — so
+partial decoding, schema confusion and receipt/claim substitution are all closed at the boundary.
+
+**Two bugs the corpus caught that unit probes did not.** Issuance minted receipts for `stale` claims
+on the drift fixture: the token says the kernel accepted a THEOREM, not that the theorem still proves
+THIS body. And every receipt disagreed with itself the instant it was written, because a `Name`
+containing dots serialized in display form as `«Concrete.Proof.elfFns»` and decoded back with the
+guillemets — the round-trip probe used table `A`, too simple to expose it.
+
+**Contract-witness precision is deferred, with a tripwire.** Measured: the entire proof-linked corpus
+has 45 body dependency edges, 1 trusted, and ZERO contract edges, and a contract edge is currently
+witnessed as a body edge — strictly stronger, so nothing is unsound. Deferred to the typed-contract
+milestone on this project's own dependency order, which freezes evidence-affecting changes until
+Slice 8 closes and refuses to freeze an incomplete internal representation. `check_dependency_edges.sh`
+now measures the premise and goes red if a contract edge ever appears.
+
+**The ninth table's blocker is identified rather than asserted**, and R-0004 is therefore NOT formally
+complete: `packet.decode_header` needs cursor state threaded through `PExpr`, which has no
+representation for a call returning a value alongside a new state.
+
 ### R-0004 Package 3: Kernel Replay Becomes A Service, And Minting Requires It
 
 _Compiler and gates, 2026-08-16. No production verdict changed._
