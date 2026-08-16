@@ -317,6 +317,45 @@ probe "TOKEN-REFUSED fallback_workspace" "a workspace resolved from the caller's
     | .error e => IO.println s!"TOKEN-REFUSED {e.canonical}"
     | .ok _ => IO.println "TOKEN-GRANTED (location-dependent evidence minted)"'
 
+echo "=== a refused contract-discharge theorem fails the build ==="
+
+# A rejected `ensures_proof` was rendered with an X and then exited 0, so `--report check-proofs`
+# reported SUCCESS on a program whose `#[ensures]` obligation had no accepted proof. The counts are
+# refinement-only by design — gates extract "N verified, M failed" by exact string — so the hole was
+# invisible in every number the report prints.
+#
+# The broken fixture is built in a scratch copy INSIDE the workspace rather than added to the corpus:
+# a permanently-broken example would move the pinned coverage denominators that several other gates
+# assert exactly, to test a property that needs only one run.
+CTRL_DIR="$ROOT_DIR/.ensures-exit-probe"
+rm -rf "$CTRL_DIR"; mkdir -p "$CTRL_DIR"
+cp -r examples/constant_time_tag "$CTRL_DIR/ct"
+CT="$CTRL_DIR/ct/src/main.con"
+
+# POSITIVE CONTROL FIRST: unmodified, the fixture must exit 0. Without it, "the broken one exits 1"
+# is satisfied by check-proofs failing on everything.
+# Guarded with `if`, not a bare call: the ERR trap fires on any non-zero simple command, and a
+# non-zero exit is exactly what the negative below is testing for.
+if "$BIN" "$CT" --report check-proofs >/dev/null 2>&1; then
+  ok "the unmodified fixture still exits 0 (the negative below is measured against this)"
+else
+  no "the unmodified fixture already exits non-zero — the ensures control would be vacuous"
+fi
+
+sed -i 's/#\[ensures_proof(Examples\.ConstantTimeTag\.Proofs\.ct_compare_different_tag_correct)\]/#[ensures_proof(Examples.ConstantTimeTag.Proofs.no_such_discharge_theorem)]/' "$CT"
+if OUT="$("$BIN" "$CT" --report check-proofs 2>&1)"; then RC=0; else RC=$?; fi
+rm -rf "$CTRL_DIR"
+if [ "$RC" -ne 0 ]; then
+  ok "a refused ensures-discharge theorem makes check-proofs exit non-zero"
+else
+  no "an ensures theorem the kernel refused still exits 0 — the report marks it and the build passes"
+fi
+if grep -q 'ensures discharged by' <<<"$OUT"; then
+  ok "...and the refusal is still rendered in the contract-obligations section"
+else
+  no "the ensures section vanished, so the exit code is the only signal left"
+fi
+
 GATE_DONE=1
 echo "REPLAY-PRODUCER: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

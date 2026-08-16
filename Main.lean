@@ -2907,7 +2907,7 @@ def compileAndReport (inputPath : String) (reportType : String)
           ",\n  \"summary\": {\"verified\": ", toString verified.length,
           ", \"unbound\": ", toString unboundChecked.length, ", \"failed\": ", toString failed.length,
           ", \"total\": ", toString (refinementTargets.length + ensuresThms.length), "}\n}"])
-        return (if failed.isEmpty && !generalFailure then 0 else 1)
+        return (if failed.isEmpty && res.rejected.isEmpty && !generalFailure then 0 else 1)
       -- Render report
       let mut out := "=== Lean Proof Kernel Check ===\n"
       -- Name the workspace. Slice 4 needs a deterministic workspace identity in
@@ -2975,7 +2975,12 @@ def compileAndReport (inputPath : String) (reportType : String)
         out := out ++ "\n  NOTE: an unbound claim is not evidence. `[policy] require-proofs`"
         out := out ++ " rejects these (E0612)."
       IO.println out
-      return (if failed.isEmpty && !generalFailure then 0 else 1)
+      -- ENSURES REJECTIONS COUNT TOWARD THE VERDICT. A contract-discharge theorem the kernel
+      -- refused was rendered with an X and then exited 0, so `--report check-proofs` reported
+      -- success on a program whose `#[ensures]` obligation had no accepted proof. The verified/
+      -- failed COUNTS stay refinement-only because gates extract them by exact string; the
+      -- VERDICT is over every target the kernel judged, which is what an exit code is for.
+      return (if failed.isEmpty && res.rejected.isEmpty && !generalFailure then 0 else 1)
     if reportType == "diagnostics-json" then
       IO.println (Report.diagnosticsJson validCore.coreModules locMap (registry := registry) (pc := pc))
       return 0
