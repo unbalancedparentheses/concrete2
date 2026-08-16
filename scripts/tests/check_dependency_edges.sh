@@ -2417,6 +2417,28 @@ probe "duplicating a matched witness produces ambiguity, not match-plus-surplus"
 # swaps are the ones that change an identity or a kind, and those are refused above. Labelled for
 # what it asserts rather than for what was asked, because a probe whose name contradicts its
 # assertion is worse than an absent one.
+# A CONTRACT EDGE IS HELD TO THE IMPLEMENTATION IDENTITY TODAY — conservatively, and deliberately.
+#
+# The authority-transition criterion asks that contract witnesses bind exact callee
+# CONTRACTS/hypotheses. They do not yet: `correspondenceInputOf` derives a witness for a contract
+# edge exactly as for a body edge, from scoped table membership, so the edge is justified only when
+# the table holds that exact IMPLEMENTATION. That is strictly STRONGER than the contract question and
+# therefore fail-closed — a contract proof holds for any implementation meeting the contract, so
+# requiring one particular implementation can refuse a claim that is genuinely justified, but it
+# cannot accept one that is not.
+#
+# The corpus has ZERO contract edges (45 body, 1 trusted, 18 unclassified), so nothing exercises this
+# path end to end. The control below is therefore about the RULE, not about a fixture: a witness
+# whose kind disagrees with the request is refused and its edge left unjustified, which is what stops
+# a contract-classified witness from silently answering a body request or the reverse.
+probe "a contract witness cannot answer a body request, and is named when it tries" "true" "
+#eval$CORR
+  let contractW : EdgeWitness := { subject := subj, target := .edgeTo cA, kind := .contract }
+  let r := correspond { subject := subj, requestedEdges := [reqA], candidateWitnesses := [contractW] }
+  -- The edge falls to \`missing\` AND the witness is named \`malformed\`: one fact about the edge,
+  -- one about the witness, neither standing in for the other.
+  r.missing.length == 1 && r.malformed.length == 1 && !(r.usable 1)"
+
 probe "a same-kind PERMUTATION legitimately corresponds (the meaningful swaps are refused above)" "true" "
 #eval$CORR
   let swapA : EdgeWitness := { subject := subj, target := .edgeTo cB, kind := .body }

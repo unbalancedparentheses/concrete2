@@ -3999,7 +3999,19 @@ established, and the unticked items are Package 3's work rather than blockers th
       ambiguous, missing and malformed are each retained and each block usability);
 - [x] body witnesses bind exact implementation identities — the join key is `DefinitionIdentity`,
       all four components, with no name-keyed fallback anywhere in the evidence path;
-- [ ] contract witnesses bind exact callee contracts/hypotheses;
+- [~] contract witnesses bind exact callee contracts/hypotheses — **CONSERVATIVELY SATISFIED, PRECISION
+      PENDING, and the distinction is deliberate.** A contract edge is witnessed today exactly as a
+      body edge is: from scoped table membership, so it is justified only when the table holds that
+      exact IMPLEMENTATION. That is strictly STRONGER than the contract question and therefore
+      fail-closed — it can refuse a claim that is genuinely justified, never accept one that is not.
+      The precise form (bind the callee's CONTRACT identity, so a body change within the contract
+      does not invalidate the claim while a contract change does) is not implemented.
+      **The corpus has ZERO contract edges** — 45 body, 1 trusted, 18 unclassified — because edge
+      kind comes from the CALLER's theorem and none of the three contract-classified theorems is
+      linked to a function with callees. So this cannot be closed end-to-end here: implementing the
+      precise form would be unfalsifiable on this corpus. What IS controlled is the rule that keeps
+      the two apart — a contract witness cannot answer a body request; its edge falls to `missing`
+      and the witness is separately named `malformed`;
 - [x] trust and assumptions propagate monotonically through the full closure — measured on
       `composition_deep_trust` (`outer -> middle -> leaf`), where `outer` mentions no trusted
       function in its own body and still discloses `calls.leaf`. Mutation
@@ -4019,8 +4031,10 @@ established, and the unticked items are Package 3's work rather than blockers th
       `tests/programs/proof_decode_header.con`, whose table holds zero entries. Both were measured by
       building with and without the pass.
 
-**What that leaves:** contract-witness binding is the one substantive unticked item, and receipts bind
-none of this yet. Those are Package 3.
+**What that leaves:** contract-witness PRECISION (the conservative form is in place and fail-closed),
+and receipts, which bind none of this yet. Both are Package 3. Closing contract precision honestly
+needs a corpus case first — a contract-classified theorem linked to a function that has callees —
+because without one the implementation could not be falsified.
 
 #### Remaining milestones after the authority transition
 
