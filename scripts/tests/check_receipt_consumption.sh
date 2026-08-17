@@ -200,6 +200,29 @@ else
   ok "changing the proof library invalidates its receipts, and restoring it makes them current again"
 fi
 
+echo "=== receipt currency does not depend on the working tree ==="
+
+# A receipt must bind the PROGRAM and its checker, not incidental repository state. Until 2026-08-16
+# it bound `compilerIdentity`, which appends `-dirty` when `git status` is non-empty — computed at
+# REPORT time. Creating any untracked file, anywhere, turned every current receipt non-current.
+#
+# The flag was wrong in BOTH directions, which is why it was removed rather than kept as approximate
+# signal: a binary built from a clean commit stays that binary after the tree is dirtied, and a
+# binary built from a dirty tree reports clean once the tree is cleaned.
+NOISE="$ROOT_DIR/.receipt-worktree-noise"
+rm -rf "$NOISE"
+NOISE_BEFORE="$(tally "$(consume "$TMP/r.txt" "$SRC")")"
+mkdir -p "$NOISE"; printf 'untracked file, unrelated to any program\n' > "$NOISE/noise.txt"
+NOISE_AFTER="$(tally "$(consume "$TMP/r.txt" "$SRC")")"
+rm -rf "$NOISE"
+if [ "$NOISE_BEFORE" != "5 current, 0 not current, 0 unreadable" ]; then
+  no "the worktree-noise control had no current receipts to start from — it would be vacuous"
+elif [ "$NOISE_AFTER" = "$NOISE_BEFORE" ]; then
+  ok "an unrelated untracked file leaves every receipt current"
+else
+  no "an untracked file moved receipt currency ($NOISE_BEFORE -> $NOISE_AFTER) — a receipt is binding repository state, not the program"
+fi
+
 GATE_DONE=1
 echo "RECEIPT-CONSUMPTION: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

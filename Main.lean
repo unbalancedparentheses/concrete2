@@ -102,6 +102,32 @@ def compilerIdentity : IO String := do
   catch _ => pure "unknown"
   return s!"concrete {version} ({commit}) [{toolchain}]"
 
+/-- The compiler identity a RECEIPT binds: version and committed revision, and deliberately NOT the
+    working-tree dirty flag.
+
+    `compilerIdentity` appends `-dirty` when `git status` is non-empty, computed at REPORT time. That
+    is the right signal for a debug bundle and the wrong one for evidence, because it measures
+    something other than what it appears to:
+
+      * a binary built from clean commit A stays binary A after the tree is dirtied by any unrelated
+        file, yet the flag flips and every receipt goes non-current — a false invalidation;
+      * a binary built from a dirty tree that is later cleaned reports clean — a false validation.
+
+    Wrong in both directions, so it is excluded rather than kept as approximate signal. Found by a
+    control that copied a fixture into the repo and watched five current receipts go non-current for
+    a reason unconnected to the program.
+
+    WHAT THIS LEAVES AS A NAMED ASSUMPTION: a compiler built from uncommitted sources is not
+    distinguishable here from one built from the commit it reports. That is a bounded, stated gap,
+    which a flag that lies in both directions was not. -/
+def compilerEvidenceIdentity : IO String := do
+  let version := "0.1.0"
+  let commit ← try
+    let r ← IO.Process.output { cmd := "git", args := #["rev-parse", "--short", "HEAD"] }
+    pure (if r.exitCode == 0 then r.stdout.trimAscii.toString else "unknown")
+  catch _ => pure "unknown"
+  return s!"concrete {version} ({commit})"
+
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
 
@@ -2647,7 +2673,7 @@ def compileAndReport (inputPath : String) (reportType : String)
         | none => IO.println s!"\n=== Replay Receipts ===\n  error: cannot read receipt store '{path}'"
         | some contents =>
         let records := Proof.decodeStore contents
-        let compilerVersion ← compilerIdentity
+        let compilerVersion ← compilerEvidenceIdentity
         let workspaceId := match packageIdentity with
           | .ok p => p.digest
           | .error _ => ""
@@ -2801,7 +2827,7 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- The environment identities issuance cannot derive for itself. The TOOLCHAIN half is
       -- deliberately absent: it comes from the replay that actually ran, so a caller cannot name a
       -- checker other than the one that checked.
-      let compilerVersion ← compilerIdentity
+      let compilerVersion ← compilerEvidenceIdentity
       let workspaceId := match packageIdentity with
         | .ok p => p.digest
         | .error _ => ""
