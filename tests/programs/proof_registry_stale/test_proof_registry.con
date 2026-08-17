@@ -2,7 +2,7 @@
 // so hash(current) != stored → reported stale.
 #[spec(PureAdd.spec_add)]
 #[proof_by(PureAdd.add_comm)]
-#[proof_fingerprint("133cd23f4e38cf84")]
+#[proof_fingerprint("v2:deadbeefdeadbeefdeadbeefdeadbeef")]
 fn pure_add(a: Int, b: Int) -> Int {
     return a + b;
 }

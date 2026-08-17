@@ -6,7 +6,7 @@
 
 #[spec(Nonexistent.Module.fake_spec)]
 #[proof_by(Nonexistent.Module.totally_fake_theorem)]
-#[proof_fingerprint("de2a547f92ade3a8659292ab6adf0eef")]
+#[proof_fingerprint("v2:fff25163361682c3986b813bed064983")]
 fn pure_add(a: Int, b: Int) -> Int {
     return a + b;
 }

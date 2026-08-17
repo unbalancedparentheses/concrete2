@@ -7,6 +7,6 @@ mod cn {
     #[spec(Examples.DoesNotExist.fakeSpec)]
     #[proof_by(Examples.DoesNotExist.fake_theorem)]
     #[proof_coverage(iff)]
-    #[proof_fingerprint("fd447aed1a546581ca6d40049107c5fb")]
+    #[proof_fingerprint("v2:0405edb8693c386b9eeee5599d9328ac")]
     fn f(x: i32) -> i32 { return x; }
 }

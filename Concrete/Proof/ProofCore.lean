@@ -2328,6 +2328,31 @@ def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
   .ok { subject := subject, requestedEdges := requested, unscopedEdges := unscoped
       , candidateWitnesses := witnesses, resolverRefusals := refusals }
 
+/-- What a STORED `#[proof_fingerprint]` is worth against the program right now.
+
+    THREE-VALUED, because two of these are not opposites. Under V2 a stored v1 value is neither
+    fresh nor stale: it answers a weaker question (the body only) and cannot establish V2 freshness
+    at all. Collapsing `notComparable` into `moved` would assert a body change that was never
+    observed; collapsing it into `current` would accept a record that proves nothing.
+
+    ONE PRODUCER, and it had to become one: the status deriver and the registry validator each
+    carried their own copy of this comparison. Flipping only the deriver to V2 left the validator
+    comparing a v2 stored value against a v1 fingerprint, so `elf_header` — a clean fixture, five
+    proved claims — emitted five "stale fingerprint" warnings whose two sides were different kinds
+    of digest. The activation exposed it; the duplication caused it. -/
+inductive StoredFreshness where
+  | current
+  | moved
+  | notComparable
+  deriving BEq, Repr
+
+def storedFreshness (stored : String) (subjectDigestV2 : Option String) : StoredFreshness :=
+  if !("v2:".isPrefixOf stored) then .notComparable
+  else match subjectDigestV2 with
+    -- No computable digest is not agreement: incomplete facts must never read as freshness.
+    | none => .moved
+    | some d => if ("v2:" ++ shortHash d) == stored then .current else .moved
+
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
   let allFns := pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)
@@ -2366,7 +2391,15 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
     match allFps.find? fun (f, _) => f == re.function with
     | some (_, currentFp) =>
       match re.expectedHash with
-      | some h => if shortHash currentFp != h then some (.staleFingerprint re currentFp) else none
+      -- THROUGH THE SHARED RULE. This site used to carry its own copy of the comparison, and after
+      -- V2 activation it was comparing a v2 stored value against a v1 fingerprint — five "stale"
+      -- warnings on a clean fixture whose two sides were different kinds of digest. Only `moved`
+      -- is a stale WARNING: `notComparable` is already reported as `needsRecheck` by the status,
+      -- and repeating it here would double-report one fact in two vocabularies.
+      | some h =>
+        let sd := (pc.entries.find? fun e => e.qualName == re.function).bind (·.subjectDigest)
+        if storedFreshness h sd == StoredFreshness.moved then some (.staleFingerprint re currentFp)
+        else none
       | none   =>
         -- No stored short hash. What that means depends on where the entry came
         -- from, and conflating the two is bug 058: a JSON entry carries a
@@ -2698,7 +2731,11 @@ private partial def extractModule
 private def deriveObligationStatus
     (eligible : Bool) (isTrusted : Bool) (extracted : Bool)
     (specDrifted : Bool)
-    (spec : Option SpecAttachment) (currentFp : String) : ObligationStatus :=
+    (spec : Option SpecAttachment) (currentFp : String)
+    -- V2 ACTIVATION (R-0004 package 3, 2026-08-17). The subject digest the stored value is now
+    -- compared against. `none` means it is not computable — facts absent or incomplete — which
+    -- cannot establish freshness and must not read as agreement.
+    (subjectDigestV2 : Option String := none) : ObligationStatus :=
   -- An in-source link with a stored `#[proof_fingerprint]` compares hash(currentFp)
   -- against that hash; otherwise the full expected fingerprint is compared. This
   -- is what gives source-linked functions staleness detection (their expectedFp
@@ -2714,14 +2751,29 @@ private def deriveObligationStatus
   -- string compare.)
   let isUnbound := fun (a : SpecAttachment) =>
     a.source == .registry && a.expectedHash.isNone
+  -- A STORED VALUE WITHOUT THE `v2:` PREFIX IS A V1 VALUE BY CONSTRUCTION, and the prefix is the
+  -- discriminator precisely because nothing about the value's SHAPE distinguishes them: both are 16
+  -- hex characters. A v1 value answers a weaker question — the body only — and cannot establish v2
+  -- freshness, so it is NOT COMPARABLE rather than mismatched. That is `needsRecheck`, which is a
+  -- claim about the RECORD, not about the program; reporting it as `stale` would assert a body
+  -- change that was never observed.
+  let storedIsV1 := fun (a : SpecAttachment) =>
+    match a.expectedHash with
+    | some h => storedFreshness h subjectDigestV2 == StoredFreshness.notComparable
+    | none   => false
   let isStale := fun (a : SpecAttachment) =>
     match a.expectedHash with
-    | some h => shortHash currentFp != h
+    | some h => storedFreshness h subjectDigestV2 == StoredFreshness.moved
     | none   => a.expectedFp != currentFp
   if isTrusted then .trusted
   else if !eligible then
     match spec with
-    | some a => if isUnbound a then .unbound else if isStale a then .stale else .ineligible
+    -- INELIGIBILITY IS THE DOMINANT FACT for an excluded entry, and under V2 its freshness is not
+    -- decidable at all: `ProofCoreExcluded` carries no subject digest, so the comparison has nothing
+    -- to compare against. Reporting `stale` would assert a body change never observed, and
+    -- `needsRecheck` would foreground a record issue over the reason the claim cannot be proved.
+    -- `unbound` survives because it is about the LINK, not about freshness.
+    | some a => if isUnbound a then .unbound else .ineligible
     | none => .ineligible
   else match spec with
   | some a =>
@@ -2736,6 +2788,10 @@ private def deriveObligationStatus
     -- subject the comparison below is the body against itself, so calling the
     -- result `stale` would claim a body change that was never observed.
     else if isUnbound a then .unbound
+    -- BEFORE the staleness comparison, because the comparison cannot be performed at all against a
+    -- v1 value. Ordering it after would run a v2 digest against a v1 hash and report the guaranteed
+    -- mismatch as a body change.
+    else if storedIsV1 a then .needsRecheck
     else if isStale a then .stale
     else if a.source == .hardcoded then .proved  -- hardcoded proofs done in Lean, extraction not required
     else if !extracted then .blocked
@@ -2760,7 +2816,7 @@ private def generateObligations
         extractedPExpr != normalizePExpr specPExpr
       | _, _ => false  -- no extracted or no registered spec → no drift detectable here
     let status := deriveObligationStatus e.eligibility.eligible
-        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint
+        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest
     let cat := if status == .ineligible
       then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
       else none
@@ -3222,7 +3278,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
           extractedPExpr != normalizePExpr specPExpr
         | _, _ => false
       let expected0 := deriveObligationStatus e.eligibility.eligible
-          e.eligibility.isTrusted e.extracted.isSome specDrifted e.spec e.fingerprint
+          e.eligibility.isTrusted e.extracted.isSome specDrifted e.spec e.fingerprint e.subjectDigest
       -- Dependency containment (R-0004 slice 3) is applied AFTER derivation, so
       -- re-deriving from this function's own facts alone cannot reproduce it.
       -- Re-apply the same rule here rather than exempting the status: an

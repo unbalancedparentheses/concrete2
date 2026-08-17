@@ -1809,11 +1809,11 @@ def cryptoFns : FnTable :=
   -- silently keeping the old identity, which is the intended failure mode.
   FnTable.withAttestations
     { entries := #[checkNonceFn, computeTagFn, verifyMessageFn, verifyTagFn], globals := cryptoFnsGlobals }
-    [ AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_5afbb48c_check_nonce
-    , AttestedPFnDef.of computeTagFn    GeneratedAttestations.cryptoFns_5afbb48c_compute_tag
-    , AttestedPFnDef.of verifyMessageFn GeneratedAttestations.cryptoFns_5afbb48c_verify_message
-    , AttestedPFnDef.of verifyTagFn     GeneratedAttestations.cryptoFns_5afbb48c_verify_tag
-    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_09e15c16_check_nonce ]
+    [ AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_93e60028_check_nonce
+    , AttestedPFnDef.of computeTagFn    GeneratedAttestations.cryptoFns_93e60028_compute_tag
+    , AttestedPFnDef.of verifyMessageFn GeneratedAttestations.cryptoFns_93e60028_verify_message
+    , AttestedPFnDef.of verifyTagFn     GeneratedAttestations.cryptoFns_93e60028_verify_tag
+    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_b494bcc1_check_nonce ]
 
 -- Keeps `simp only [eval, cryptoFns_globals, cryptoFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `cryptoFns`. The old `def cryptoFns : FnTable | "x" => …` produced equation lemmas
@@ -1972,11 +1972,11 @@ def elfFns : FnTable :=
   -- repaired the row leaves the manifest and this exclusion goes with it.
   FnTable.withAttestations
     { entries := #[checkClassFn, checkDataFn, checkMagicFn, checkVersionFn, validateHeaderFn], globals := elfFnsGlobals }
-    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_ee5cad85_check_class
-    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_ee5cad85_check_data
-    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_ee5cad85_check_magic
-    , AttestedPFnDef.of checkVersionFn    GeneratedAttestations.elfFns_ee5cad85_check_version
-    , AttestedPFnDef.of validateHeaderFn  GeneratedAttestations.elfFns_ee5cad85_validate_header ]
+    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_18651c52_check_class
+    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_18651c52_check_data
+    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_18651c52_check_magic
+    , AttestedPFnDef.of checkVersionFn    GeneratedAttestations.elfFns_18651c52_check_version
+    , AttestedPFnDef.of validateHeaderFn  GeneratedAttestations.elfFns_18651c52_validate_header ]
 
 -- Keeps `simp only [eval, elfFns_globals, elfFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `elfFns`. The old `def elfFns : FnTable | "x" => …` produced equation lemmas
@@ -2244,14 +2244,14 @@ def parseValidateFns : FnTable :=
   -- out of the selection.
   FnTable.withAttestations
     { entries := #[computeChecksumFn, parseHeaderFn, validateChecksumFn, validateHeaderFieldsFn, validateMsgTypeFn, validatePayloadLenFn, validateTotalLenFn, validateVersionFn], globals := parseValidateFnsGlobals }
-    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_ceac11a8_compute_checksum
-    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_ceac11a8_parse_header
-    , AttestedPFnDef.of validateChecksumFn     GeneratedAttestations.parseValidateFns_ceac11a8_validate_checksum
-    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_ceac11a8_validate_header_fields
-    , AttestedPFnDef.of validateMsgTypeFn      GeneratedAttestations.parseValidateFns_ceac11a8_validate_msg_type
-    , AttestedPFnDef.of validatePayloadLenFn   GeneratedAttestations.parseValidateFns_ceac11a8_validate_payload_len
-    , AttestedPFnDef.of validateTotalLenFn     GeneratedAttestations.parseValidateFns_ceac11a8_validate_total_len
-    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_ceac11a8_validate_version ]
+    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_f0fac914_compute_checksum
+    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_f0fac914_parse_header
+    , AttestedPFnDef.of validateChecksumFn     GeneratedAttestations.parseValidateFns_f0fac914_validate_checksum
+    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_f0fac914_validate_header_fields
+    , AttestedPFnDef.of validateMsgTypeFn      GeneratedAttestations.parseValidateFns_f0fac914_validate_msg_type
+    , AttestedPFnDef.of validatePayloadLenFn   GeneratedAttestations.parseValidateFns_f0fac914_validate_payload_len
+    , AttestedPFnDef.of validateTotalLenFn     GeneratedAttestations.parseValidateFns_f0fac914_validate_total_len
+    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_f0fac914_validate_version ]
 
 -- Keeps `simp only [eval, parseValidateFns_globals, parseValidateFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `parseValidateFns`. The old `def parseValidateFns : FnTable | "x" => …` produced equation lemmas
@@ -2425,10 +2425,10 @@ def fixedCapacityFns : FnTable :=
   -- exposed — one variable at a time.
   FnTable.withAttestations
     { entries := #[fcTagFn, ringContainsFn, ringNewFn, ringPushFn], globals := fixedCapacityFnsGlobals }
-    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_7ffbd092_compute_tag
-    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_7ffbd092_ring_contains
-    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_7ffbd092_ring_new
-    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_7ffbd092_ring_push ]
+    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_e6397605_compute_tag
+    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_e6397605_ring_contains
+    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_e6397605_ring_new
+    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_e6397605_ring_push ]
 
 -- Keeps `simp only [eval, fixedCapacityFns_globals, fixedCapacityFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `fixedCapacityFns`. The old `def fixedCapacityFns : FnTable | "x" => …` produced equation lemmas

@@ -33,7 +33,7 @@
 
 #[spec(check_nonce.spec)]
 #[proof_by(Examples.CryptoVerify.Proofs.check_nonce_correct)]
-#[proof_fingerprint("f086f6e07241fddc8f6d11f7173b44db")]
+#[proof_fingerprint("v2:4955d6cc09961305512d96a7a054a0f2")]
 fn check_nonce(nonce: Int, max_nonce: Int) -> Int {
     if nonce > 0 {
         if nonce <= max_nonce {
@@ -95,7 +95,7 @@ fn validate_header(nonce: Int, max_nonce: Int, version: Int) -> Int {
 // regeneration would silently un-stale this fixture (see proof_gate.sh).
 #[spec(compute_checksum.spec)]
 #[proof_by(Concrete.Proof.compute_checksum_correct)]
-#[proof_fingerprint("243d15e5b8803dec08c7013c29575b45")]
+#[proof_fingerprint("v2:deadbeefdeadbeefdeadbeefdeadbeef")]
 fn compute_checksum(key: Int, message: Int, salt: Int) -> Int {
     return key * message + salt + 1;
 }

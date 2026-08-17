@@ -3,7 +3,7 @@
 
 #[spec(add_commutativity)]
 #[proof_by(Concrete.Proof.pure_add_correct)]
-#[proof_fingerprint("de2a547f92ade3a8659292ab6adf0eef")]
+#[proof_fingerprint("v2:40abbb4c0f93a96458e8e4db73175690")]
 fn pure_add(a: i64, b: i64) -> i64 {
     return a + b;
 }
@@ -11,7 +11,7 @@ fn pure_add(a: i64, b: i64) -> i64 {
 // STALE: #[proof_fingerprint] is the hash of an old body, so it no longer matches.
 #[spec(sub_identity)]
 #[proof_by(Concrete.Proof.pure_sub_correct)]
-#[proof_fingerprint("d4ec801267181540")]
+#[proof_fingerprint("v2:deadbeefdeadbeefdeadbeefdeadbeef")]
 fn pure_stale(a: i64, b: i64) -> i64 {
     return a - b;
 }

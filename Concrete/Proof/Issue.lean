@@ -140,7 +140,20 @@ def replayTargetsOf (pc : ProofCore) : List ReplayTarget :=
       -- ("registry entry for 'X' has empty proof name") before any of this runs, so the defect is
       -- diagnosed exactly once, where it belongs.
       if s.proofName.trimAscii.isEmpty then none
-      else if o.status == .proved || o.status == .stale || o.status == .unbound then
+      -- WHICH STATUSES ARE WORTH ASKING THE KERNEL ABOUT. Replay answers "does this theorem
+      -- typecheck", which is independent of whether the claim's DEPENDENCIES are current or its
+      -- closure is justified — those are facts about other declarations. Excluding them stranded
+      -- four links in the V1->V2 migration with `not_replayed`: their own bodies are fresh, so
+      -- their fingerprints could migrate honestly, and nothing was asking about their theorems.
+      --
+      -- `stale` is included for a different reason and does NOT lead to migration: its body has
+      -- moved, so the kernel's answer is worth having while no honest v2 value exists to record.
+      else if o.status == .proved || o.status == .stale || o.status == .unbound
+           || o.status == .depsNotCurrent || o.status == .correspondenceUnjustified
+           -- `needsRecheck` is precisely the state the V1->V2 migration exists to clear, so it must
+           -- be replayable: excluding it would make the migration unable to ask about the very
+           -- claims it is for, the moment activation made them all needsRecheck.
+           || o.status == .needsRecheck then
         some { subject := o.functionId.qualName, theoremName := s.proofName
              , kind := .refinement
              , origin := if s.source == .registry then .sourceLinked else .hardcoded
@@ -361,8 +374,6 @@ inductive MigrationDisposition where
   /-- The body has moved since the proof was pinned. NO honest V2 value exists — writing the current
       digest would manufacture freshness. Stays V1 and becomes `needs_recheck` on activation. -/
   | staleNoHonestValue
-  /-- The kernel does not accept this link's theorem, so nothing should be recorded for it. -/
-  | replayRefused (why : String)
   /-- No V2 digest is computable for this subject: facts absent or incomplete. -/
   | noSubjectDigest
   deriving Repr
@@ -371,7 +382,6 @@ def MigrationDisposition.canonical : MigrationDisposition → String
   | .migrate _           => "migrate"
   | .alreadyV2           => "already_v2"
   | .staleNoHonestValue  => "stale_no_honest_value"
-  | .replayRefused _     => "replay_refused"
   | .noSubjectDigest     => "no_subject_digest"
 
 structure MigrationRow where
@@ -386,7 +396,10 @@ structure MigrationRow where
     ONE ROW PER STORED FINGERPRINT, refusals included, because "43 = migrated + refused" is the only
     form in which this plan can be checked. A plan that listed only what it would change would be
     indistinguishable from a plan that silently skipped things. -/
-def migrationPlan (pc : ProofCore) (res : ReplayResult) : List MigrationRow :=
+-- NO `ReplayResult` PARAMETER. The plan is about which body a fingerprint records, which the
+-- compiler answers on its own; taking a replay would have implied the kernel's verdict was an input
+-- to the decision, and it is not.
+def migrationPlan (pc : ProofCore) : List MigrationRow :=
   -- THE STORED FINGERPRINT LIVES ON THE OBLIGATION'S SPEC, NOT THE ENTRY'S. Reading `e.spec` here
   -- was a SECOND reader of "what is stored", and it disagreed with the one the freshness report
   -- uses: `proof_patterns/ghost` reported two WOULD-RECHECK subjects while this plan listed none of
@@ -406,15 +419,34 @@ def migrationPlan (pc : ProofCore) (res : ReplayResult) : List MigrationRow :=
         let status := obl.status.canonical
         let disp :=
           if "v2:".isPrefixOf stored then MigrationDisposition.alreadyV2
-          -- STALENESS IS CHECKED BEFORE REPLAY, and the order matters: a stale claim's theorem may
-          -- well still typecheck, so asking the kernel first and recording on acceptance is exactly
-          -- how the current body would acquire a proof it never had.
+          -- STALENESS IS JUDGED BY V1 RULES, not by the claim's current status, and the plan must
+          -- be STABLE ACROSS ACTIVATION for that reason. Once V2 is live every v1 record reads
+          -- `needsRecheck`, which erases the distinction between "the record is old" and "the body
+          -- moved" — so a plan keyed on status would, the moment it was most needed, cheerfully
+          -- migrate the drifted links and manufacture exactly the freshness it exists to refuse.
+          -- The stored value is a v1 value, so v1 is the question to ask of it.
+          else if Concrete.shortHash e.fingerprint != stored then .staleNoHonestValue
+          -- STALENESS IS CHECKED BEFORE REPLAY: a drifted claim's theorem may well still typecheck,
+          -- so asking the kernel first and recording on acceptance is how a current body would
+          -- acquire a proof it never had.
           else if status == "stale" then .staleNoHonestValue
-          else match SuccessfulReplay.of? res spec.proofName with
-            | .error w => .replayRefused w.canonical
-            | .ok _ => match e.subjectDigest with
-              | none => .noSubjectDigest
-              | some d => .migrate ("v2:" ++ Concrete.shortHash d)
+          -- KERNEL ACCEPTANCE IS DELIBERATELY NOT REQUIRED, and requiring it was a design error.
+          -- A `#[proof_fingerprint]` records WHICH BODY a proof was pinned to. It does not assert
+          -- the proof is valid — that is what replay and receipts are for, on a separate axis and
+          -- with their own refusals. Migrating a fresh body's digest from v1 to v2 re-expresses the
+          -- same fact more precisely; it claims nothing new.
+          --
+          -- Requiring replay stranded every fixture whose linked theorem is FICTIONAL BY DESIGN —
+          -- `tests/programs/*` exist to exercise the status machinery, not to prove anything — and
+          -- would have forced 28 suite expectations to be rewritten around a claim the migration
+          -- was never making.
+          --
+          -- What remains refused is the case that would actually forge something:
+          -- `staleNoHonestValue`, where the body MOVED and recording the current digest would assert
+          -- a pinning that never happened.
+          else match e.subjectDigest with
+            | none => .noSubjectDigest
+            | some d => .migrate ("v2:" ++ Concrete.shortHash d)
         some { subject := e.qualName, status, stored, disposition := disp }
 
 namespace MigrationRow

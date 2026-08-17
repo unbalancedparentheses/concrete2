@@ -2774,18 +2774,10 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- V2 makes all of them not comparable at once, so activation without migration would turn the
       -- corpus `needs_recheck` in a single commit. This says exactly what would be written and what
       -- would not, and reconciles: total = migrate + already_v2 + refused.
-      match ← Proof.replay
-          { inputPath := inputPath, fallbackDir := "."
-          , imports := ["Concrete", "Examples"]
-          , targets := Proof.replayTargetsOf pc } with
-      | .error .noTargets =>
-        IO.println "=== V1 -> V2 Migration Plan ===\n\nNo claims with proof links, so nothing to migrate."
-        return 0
-      | .error refusal =>
-        IO.println s!"=== V1 -> V2 Migration Plan ===\n\nerror: {refusal.explain}"
-        return 1
-      | .ok res =>
-      let rows := Proof.migrationPlan pc res
+      -- NO REPLAY. The plan asks which body a stored fingerprint records; the kernel's verdict on
+      -- the linked theorem is a different question with its own report, and making it an input here
+      -- stranded every fixture whose theorem is fictional by design.
+      let rows := Proof.migrationPlan pc
       let mut out := "=== V1 -> V2 Migration Plan ===\n"
       for r in rows do
         let d := r.disposition
@@ -2794,7 +2786,6 @@ def compileAndReport (inputPath : String) (reportType : String)
           | .alreadyV2 => s!"{r.stored} (already v2)"
           | .staleNoHonestValue =>
             "body has moved since the proof was pinned; NO honest v2 value exists, so this keeps its v1 value and becomes needs_recheck"
-          | .replayRefused w => s!"replay does not witness it ({w})"
           | .noSubjectDigest => "no v2 subject digest is computable"
         out := out ++ s!"  [{d.canonical}] {r.subject} ({r.status}): {detail}\n"
       let mig := (Proof.MigrationRow.migrating rows).length

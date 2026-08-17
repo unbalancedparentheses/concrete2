@@ -3,7 +3,7 @@
 
 #[spec(PureAdd.spec_add)]
 #[proof_by(PureAdd.add_comm)]
-#[proof_fingerprint("de2a547f92ade3a8659292ab6adf0eef")]
+#[proof_fingerprint("v2:47394250fca010d361f59cb719c404ed")]
 fn pure_add(a: Int, b: Int) -> Int {
     return a + b;
 }

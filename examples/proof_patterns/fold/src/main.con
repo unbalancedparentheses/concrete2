@@ -5,7 +5,7 @@ mod fold {
     #[spec(Examples.ProofPatterns.Proofs.sum4Expr)]
     #[proof_by(Examples.ProofPatterns.Proofs.sum4_totals_concrete)]
     #[proof_coverage(point)]
-    #[proof_fingerprint("408e0bd28773a5aedb749482c4934b18")]
+    #[proof_fingerprint("v2:4aed2bc38fef6edd892eda4199035e6c")]
     fn sum4(a: [i32; 4]) -> i32 {
         let mut acc: i32 = 0;
         #[invariant(0 <= i && i <= 4)]
