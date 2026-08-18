@@ -11,7 +11,7 @@ mod base64 {
     #[spec(Concrete.Proof.base64CharOfExpr)]
     #[proof_by(Examples.PureCore.Proofs.base64_char_of_correct)]
     #[proof_coverage(iff)]
-    #[proof_fingerprint("03f8761e89e966746a78db6cec178709")]
+    #[proof_fingerprint("v2:7ee3e9b442c7c72d7bcef43f20564802")]
     // Roundtrip corollary: Examples.PureCore.Proofs.base64_alphabet_roundtrip
     // (val_of(char_of(v)) = v for all 6-bit v) composes this theorem with
     // val_of's over the semantic mirrors.
@@ -26,7 +26,7 @@ mod base64 {
     #[spec(Concrete.Proof.base64ValOfExpr)]
     #[proof_by(Examples.PureCore.Proofs.base64_val_of_correct)]
     #[proof_coverage(iff)]
-    #[proof_fingerprint("970ac36bfb86b9cfdc6e02ee327131a0")]
+    #[proof_fingerprint("v2:f5d49a083d382998eb015eb63d430a43")]
     fn val_of(c: u8) -> u64 {
         if c >= 65 { if c <= 90 { return (c - 65) as u64; } }
         if c >= 97 { if c <= 122 { return (c - 97 + 26) as u64; } }

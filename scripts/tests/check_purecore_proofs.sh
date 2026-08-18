@@ -25,15 +25,25 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # gone and std is compiled in place.
 st=$("$C" std/src/lib.con --report proof-status 2>&1)
 
-# WHAT THESE LINKS ARE WORTH NOW, re-pinned 2026-08-16 to the measured truth rather than to a number
-# that was only obtainable by bypassing scoped evidence.
+# WHAT THESE LINKS ARE WORTH NOW, re-pinned 2026-08-18 to the measured truth.
 #
-# Nine of the eleven links report `dependency closure unjustified`. That is DELIBERATE and it is not
-# a regression from the package fix: their theorems depend on `pureCoreFns`, which carries no
-# manifest row and therefore describes no definitions and justifies nothing — the same disposition
-# Package 2 gave `proofFns` and `proofFnsExt`. A table without a manifest row cannot witness a
-# per-edge justification, so a claim resting on one cannot be proved. Asserting these nine as
-# `proved` would require re-adopting the de-packaged compilation that made the refusal invisible.
+# Nine of the eleven report `needs_recheck`, and the reported reason CHANGED at the V2 activation
+# without the underlying situation improving. They used to report `dependency closure unjustified`:
+# their theorems rest on `pureCoreFns`, which carries no manifest row, describes no definitions and
+# justifies nothing. That is still true. It is simply no longer what gets reported, because the
+# deriver settles comparability BEFORE justification and these nine are no longer comparable at all.
+#
+# Their v2 subject is INCOMPLETE, so no digest is minted and the stored v1 value has nothing to be
+# measured against. Verified, not assumed: `--report subject-facts` gives
+# `numeric_Port_try_new` `shadow bodyV2: REFUSED (1 gap(s): intrinsic cast: target TypeId not
+# minted here)` and `subject digest: INCOMPLETE (no digest minted)`. The structural body producer
+# does not yet cover intrinsic casts, and four of the nine are additionally generic (`/1`, `/2`,
+# `/3`). That is a REMAINING GAP IN THE V2 PRODUCER, recorded here rather than papered over.
+#
+# Both dispositions are non-proved, so nothing false is claimed either way — but the newer one is
+# LESS informative: `needs_recheck` reads as "re-record the fingerprint", and re-recording would not
+# help, because the closure would still be unjustified underneath. Asserting these nine as `proved`
+# would require re-adopting the de-packaged compilation that made the refusal invisible.
 #
 # The two base64 links DO prove, and they are the live positive control: without them "nine are
 # unjustified" would also be satisfied by std carrying no evidence at all.
@@ -44,9 +54,9 @@ for fn in std.option.option_Option_unwrap_or std.option.option_Option_map \
           std.numeric.numeric_NonZeroU64_try_new \
           std.numeric.numeric_Port_try_new \
           std.numeric.numeric_Port_try_from_u32; do
-  grep -q "\`$fn\` cannot contribute proved evidence" <<<"$st" \
-    && ok "$fn: unjustified because pureCoreFns has no manifest row (expected)" \
-    || no "$fn: no longer reports an unjustified closure — if pureCoreFns was converted, re-pin these nine to proved"
+  grep -q "\`$fn\` has a stored proof-subject digest from an EARLIER SCHEMA" <<<"$st" \
+    && ok "$fn: needs_recheck — its v2 subject is INCOMPLETE, so the stored v1 value is not comparable" \
+    || no "$fn: no longer reports needs_recheck — if its v2 subject became computable, re-pin these nine to whatever they now honestly are"
 done
 for fn in std.base64.base64_char_of std.base64.base64_val_of; do
   grep -q "✓ \`$fn\` — proof matches current body" <<<"$st" \
@@ -76,42 +86,81 @@ fi
 #     spec silently skips the drift check; slice 2 made that state visible).
 drift_ok=$(grep -c "spec: drift-checked" <<<"$st")
 drift_no=$(grep -c "spec: NOT drift-covered" <<<"$st")
-# Drift coverage is reported for links that can carry evidence, so it follows the nine into the
-# unjustified state. Pinned at the measured 2 with 0 UNCOVERED: an uncovered link would be a
-# mis-keyed spec silently skipping its drift check, which is a different and real defect.
-[ "$drift_ok" -eq 2 ] && [ "$drift_no" -eq 0 ] \
-  && ok "drift coverage: both justifiable std links are drift-checked, none uncovered" \
-  || no "drift coverage: expected 2 drift-checked / 0 uncovered, got $drift_ok/$drift_no"
+# 2 -> 11 at the V2 activation, and the direction is the point: drift coverage is reported for links
+# that can carry evidence, and the nine moved from `closure unjustified` (which took them out of that
+# set) to `needs_recheck` (which does not). ALL ELEVEN std links are now drift-checked.
+#
+# 0 UNCOVERED is the half that carries the weight and is unchanged. An uncovered link is a mis-keyed
+# spec silently skipping its drift check — a different and real defect — and it is the only outcome
+# here that would mean something had broken. The covered count is pinned exactly so that a DROP is
+# caught too: fewer drift-checked links would mean claims quietly left the evidence-bearing set.
+[ "$drift_ok" -eq 11 ] && [ "$drift_no" -eq 0 ] \
+  && ok "drift coverage: all 11 std links are drift-checked, none uncovered" \
+  || no "drift coverage: expected 11 drift-checked / 0 uncovered, got $drift_ok/$drift_no"
 
 # 2. the Lean kernel verifies the referenced theorems (import-reachable)
+#
+# RE-PINNED 2026-08-18, and the new form is stronger than the one it replaces. These nine used to be
+# absent from the replay set, and the legs asserted that absence. `replayTargetsOf` was widened in
+# 2c921d6d to include `correspondenceUnjustified` and `needsRecheck`, deliberately: replay answers
+# "does this theorem typecheck", which is independent of whether a claim's dependencies are current
+# or its closure is justified — those are facts about OTHER declarations. Excluding them stranded
+# links in the V1->V2 migration with `not_replayed`, unable to ask about the very claims the
+# migration exists to clear.
+#
+# So asserting "not replayed" now asserts a policy that was intentionally abandoned. What must hold
+# instead is the boundary that actually matters, and it is the one this whole effort is about:
+# KERNEL ACCEPTANCE MUST NOT BECOME `proved`. The kernel says a theorem typechecks; it says nothing
+# about whether this function's closure is justified or its stored subject is comparable. Each leg
+# below therefore asserts BOTH halves — the theorem verifies, AND the claim is still not proved —
+# which is a real conjunction that a regression in either direction breaks. The previous form could
+# be satisfied by the replay set going empty for any reason at all.
 cp=$("$C" std/src/lib.con --report check-proofs 2>&1)
+# not_proved <fn> — the claim is absent from the proved set in --report proof-status.
+not_proved() { ! grep -q "✓ \`$1\` — proof matches current body" <<<"$st"; }
 if grep -q '✓ std.option.option_Option_unwrap_or — Examples.PureCore.Proofs.option_unwrap_or_correct' <<<"$cp"; then
-  no "std.option.option_Option_unwrap_or is kernel-verified again — it was unjustified, so re-pin the std arc"
+  if not_proved std.option.option_Option_unwrap_or; then
+    ok "std.option.option_Option_unwrap_or: theorem verifies, and the claim is still NOT proved — kernel acceptance did not become evidence"
+  else
+    no "std.option.option_Option_unwrap_or: kernel acceptance was upgraded into `proved` while its closure is unjustified and its subject incomparable"
+  fi
 elif grep -q 'Examples.PureCore.Proofs.option_unwrap_or_correct' <<<"$cp"; then
   no "std.option.option_Option_unwrap_or entered the replay set but did not verify — that is a real kernel failure"
 else
-  ok "std.option.option_Option_unwrap_or: not replayed, because an unjustified claim is not a replay target"
+  no "std.option.option_Option_unwrap_or is no longer replayed at all — replayTargetsOf must keep asking about needs_recheck claims, or the migration cannot clear them"
 fi
 if grep -q '✓ std.option.option_Option_map — Examples.PureCore.Proofs.option_map_correct' <<<"$cp"; then
-  no "std.option.option_Option_map is kernel-verified again — it was unjustified, so re-pin the std arc"
+  if not_proved std.option.option_Option_map; then
+    ok "std.option.option_Option_map: theorem verifies, and the claim is still NOT proved — kernel acceptance did not become evidence"
+  else
+    no "std.option.option_Option_map: kernel acceptance was upgraded into `proved` while its closure is unjustified and its subject incomparable"
+  fi
 elif grep -q 'Examples.PureCore.Proofs.option_map_correct' <<<"$cp"; then
   no "std.option.option_Option_map entered the replay set but did not verify — that is a real kernel failure"
 else
-  ok "std.option.option_Option_map: not replayed, because an unjustified claim is not a replay target"
+  no "std.option.option_Option_map is no longer replayed at all — replayTargetsOf must keep asking about needs_recheck claims, or the migration cannot clear them"
 fi
 if grep -q '✓ std.result.result_Result_map — Examples.PureCore.Proofs.result_map_correct' <<<"$cp"; then
-  no "std.result.result_Result_map is kernel-verified again — it was unjustified, so re-pin the std arc"
+  if not_proved std.result.result_Result_map; then
+    ok "std.result.result_Result_map: theorem verifies, and the claim is still NOT proved — kernel acceptance did not become evidence"
+  else
+    no "std.result.result_Result_map: kernel acceptance was upgraded into `proved` while its closure is unjustified and its subject incomparable"
+  fi
 elif grep -q 'Examples.PureCore.Proofs.result_map_correct' <<<"$cp"; then
   no "std.result.result_Result_map entered the replay set but did not verify — that is a real kernel failure"
 else
-  ok "std.result.result_Result_map: not replayed, because an unjustified claim is not a replay target"
+  no "std.result.result_Result_map is no longer replayed at all — replayTargetsOf must keep asking about needs_recheck claims, or the migration cannot clear them"
 fi
 if grep -q '✓ std.result.result_Result_map_err — Examples.PureCore.Proofs.result_map_err_correct' <<<"$cp"; then
-  no "std.result.result_Result_map_err is kernel-verified again — it was unjustified, so re-pin the std arc"
+  if not_proved std.result.result_Result_map_err; then
+    ok "std.result.result_Result_map_err: theorem verifies, and the claim is still NOT proved — kernel acceptance did not become evidence"
+  else
+    no "std.result.result_Result_map_err: kernel acceptance was upgraded into `proved` while its closure is unjustified and its subject incomparable"
+  fi
 elif grep -q 'Examples.PureCore.Proofs.result_map_err_correct' <<<"$cp"; then
   no "std.result.result_Result_map_err entered the replay set but did not verify — that is a real kernel failure"
 else
-  ok "std.result.result_Result_map_err: not replayed, because an unjustified claim is not a replay target"
+  no "std.result.result_Result_map_err is no longer replayed at all — replayTargetsOf must keep asking about needs_recheck claims, or the migration cannot clear them"
 fi
 for pair in "numeric_NonZeroU32_try_new:numeric_try_new_correct" \
             "numeric_NonZeroU32_try_from_u64:nonzero_u32_try_from_u64_correct" \
@@ -120,11 +169,15 @@ for pair in "numeric_NonZeroU32_try_new:numeric_try_new_correct" \
             "numeric_Port_try_from_u32:port_try_from_u32_correct"; do
   fn=${pair%%:*}; thm=${pair##*:}
   if grep -q "✓ std.numeric.$fn — Examples.PureCore.Proofs.$thm" <<<"$cp"; then
-    no "$fn is kernel-verified again — it was unjustified, so re-pin the std arc"
+    if not_proved "std.numeric.$fn"; then
+      ok "$fn: theorem verifies, and the claim is still NOT proved — kernel acceptance did not become evidence"
+    else
+      no "$fn: kernel acceptance was upgraded into `proved` while its closure is unjustified and its subject incomparable"
+    fi
   elif grep -q "Examples.PureCore.Proofs.$thm" <<<"$cp"; then
     no "$fn entered the replay set but did not verify — that is a real kernel failure"
   else
-    ok "$fn: not replayed, because an unjustified claim is not a replay target"
+    no "$fn is no longer replayed at all — replayTargetsOf must keep asking about needs_recheck claims"
   fi
 done
 grep -q '✓ std.base64.base64_char_of — Examples.PureCore.Proofs.base64_char_of_correct' <<<"$cp" \
@@ -133,24 +186,53 @@ grep -q '✓ std.base64.base64_char_of — Examples.PureCore.Proofs.base64_char_
 grep -q '✓ std.base64.base64_val_of — Examples.PureCore.Proofs.base64_val_of_correct' <<<"$cp" \
   && ok "base64.val_of: kernel-verified" \
   || no "base64.val_of: kernel check failed or theorem unreachable"
-# EXACTLY the two justifiable links, and ZERO failures. The count moved from 11 to 2 when std began
-# compiling as a package: nine claims rest on `pureCoreFns`, which has no manifest row, so they are
-# not replay targets. Zero failures still matters — a link that entered the set and was refused is a
-# real kernel failure, distinct from one that was never asked about.
-grep -q 'Summary: 2 verified, 0 failed' <<<"$cp" \
-  && ok "check-proofs: exactly 2 verified, zero failures" \
+# 2 -> 11 verified, and ZERO failures. This count went 11 -> 2 when std began compiling as a package
+# (the nine stopped being replay targets), and back to 11 when `replayTargetsOf` was widened to keep
+# asking about `needs_recheck` and `correspondenceUnjustified` claims — without that, the migration
+# could not ask about the very claims it exists to clear.
+#
+# VERIFIED IS NOT PROVED, and the distinction is the whole reason this number is allowed to rise.
+# Eleven theorems typecheck; two claims are proved. The legs above assert exactly that conjunction
+# per function, so a rise here cannot quietly become evidence. Zero failures still matters
+# independently: a link that entered the set and was refused is a real kernel failure, distinct from
+# one that was never asked about.
+grep -q 'Summary: 11 verified, 0 failed' <<<"$cp" \
+  && ok "check-proofs: exactly 11 verified, zero failures (2 of them proved — see the per-function legs)" \
   || no "check-proofs count drifted or reports failures: $(grep -o 'Summary:.*' <<<"$cp" | head -1)"
 
 # 3. MUTATION: a body change must go STALE (evidence is load-bearing)
 # The mutation needs a WRITABLE copy, and it must be a copy of the PACKAGE — `Concrete.toml` and
 # all — because a loose source tree has no package identity and would reproduce the very bypass
 # this gate stopped relying on.
+#
+# THE MUTATION MOVED FROM option_Option_unwrap_or TO base64_char_of, and the reason is the finding
+# rather than a convenience. `unwrap_or` is one of the nine whose v2 subject is INCOMPLETE, so its
+# stored value is not comparable to anything: `storedFreshness` returns `notComparable`, the claim
+# reports `needs_recheck` no matter what the body does, and editing the body changes NOTHING in the
+# report. Asserting "a body edit is flagged stale" there could never pass again, and — worse — an
+# incomparable subject makes any freshness control run against it permanently vacuous.
+#
+# So the control runs on a subject the machinery can actually see. `base64_char_of` has a real v2
+# subject and a migrated v2 stored value, and the edit below moves it, which is what proves the
+# fingerprint path is live rather than decorative.
 cp -r std "$TMP/stdpkg"
-perl -0pi -e 's/Option::None => \{ return default; \},/Option::None => { let d2: T = default; return d2; },/' "$TMP/stdpkg/src/option.con"
+perl -0pi -e 's/if v == 62 \{ return 43; \}/if v == 62 { return 43; } if v == 63 { return 47; }/' "$TMP/stdpkg/src/base64.con"
 mst=$("$C" "$TMP/stdpkg/src/lib.con" --report proof-status 2>&1)
-grep -q 'stale fingerprint for .std.option.option_Option_unwrap_or' <<<"$mst" \
+grep -q "stale fingerprint for .std.base64.base64_char_of" <<<"$mst" \
   && ok "mutation: body change flagged stale (fingerprint machinery live)" \
   || no "mutation: body change NOT flagged — evidence is decorative"
+# AND THE LIMITATION, asserted rather than left as a comment. A body edit to one of the nine is
+# INVISIBLE, because there is no comparable subject to measure it against. That is sound only because
+# those claims are not proved either — an invisible body change under a `proved` claim would be the
+# defect this whole effort exists to prevent. Both halves are checked, so if the nine ever become
+# proved while still incomparable, this fails.
+perl -0pi -e 's/Option::None => \{ return default; \},/Option::None => { let d2: T = default; return d2; },/' "$TMP/stdpkg/src/option.con"
+mst2=$("$C" "$TMP/stdpkg/src/lib.con" --report proof-status 2>&1)
+if grep -q "✓ \`std.option.option_Option_unwrap_or\` — proof matches current body" <<<"$mst2"; then
+  no "an INCOMPARABLE subject reports proved after a body edit — an unseen body change is backing a proved claim"
+else
+  ok "a body edit to an incomparable subject leaves it unproved (invisible, but never credited as proved)"
+fi
 
 # 4. trusted fns stay excluded from proof links (the honesty boundary):
 #    bytes.view carries a kernel-checked MODEL theorem but no registry link.

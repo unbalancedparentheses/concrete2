@@ -84,14 +84,27 @@ fi
 # THE CORPUS ITSELF, because the code above could be correct while nothing had actually migrated.
 # Counted, and the total is asserted non-zero: "no v1 links remain" is vacuously true of a corpus
 # with no links at all, and a vacuous pass here would read exactly like a completed migration.
-fp_tot="$(grep -rhoE 'proof_fingerprint\("[^"]*"\)' examples --include='*.con' | grep -c . || true)"
-fp_v1="$(grep -rhoE 'proof_fingerprint\("[^"]*"\)' examples --include='*.con' | grep -vc '"v2:' || true)"
-if [ "${fp_tot:-0}" -gt 0 ] && [ "${fp_v1:-1}" -eq 0 ]; then
-  ok "CLOSED: all $fp_tot stored proof links in the corpus carry the v2 subject discriminator"
-elif [ "${fp_tot:-0}" -eq 0 ]; then
-  no "no stored proof links found in examples/ — the migration check is vacuous, not satisfied"
+# ALL THREE CORPORA, and this counted only `examples/` until 2026-08-18. That omission was not
+# hypothetical: `std` carried 11 stored links, the migration script scanned `examples tests` and
+# never touched them, and this leg went green while an entire corpus sat unmigrated on the far side
+# of an activation described as atomic. Every std link became `needs_recheck` and the standard
+# library reported ZERO proved functions.
+#
+# The remainder is pinned EXACTLY rather than required to be zero, because ten links genuinely cannot
+# migrate: their v2 subject is INCOMPLETE, so no digest is minted and there is nothing to migrate to.
+# `--report subject-facts` gives the reason per subject, e.g. `shadow bodyV2: REFUSED (1 gap(s):
+# intrinsic cast: target TypeId not minted here)`. That is a real remaining gap in the V2 structural
+# producer, and pinning the number is what keeps it from being forgotten or quietly growing.
+FP_ALL="$(grep -rhoE 'proof_fingerprint\("[^"]*"\)' examples tests std --include='*.con' || true)"
+fp_tot="$(printf '%s\n' "$FP_ALL" | grep -c . || true)"
+fp_v1="$(printf '%s\n' "$FP_ALL" | grep -vc '"v2:' || true)"
+fp_v2=$(( fp_tot - fp_v1 ))
+if [ "${fp_tot:-0}" -eq 0 ]; then
+  no "no stored proof links found in examples/, tests/ or std/ — the migration check is vacuous, not satisfied"
+elif [ "$fp_v2" -eq 55 ] && [ "$fp_v1" -eq 10 ]; then
+  ok "CLOSED: $fp_v2 of $fp_tot stored links carry the v2 discriminator; the $fp_v1 that do not have no computable v2 subject"
 else
-  no "$fp_v1 of $fp_tot stored links are still v1 — the V2 activation is partial, and a v1 value under a v2 authority is needs-recheck, not proved"
+  no "stored-link migration moved: $fp_v2 v2 / $fp_v1 v1 of $fp_tot (expected 55/10). If a link became migratable, migrate it; if one regressed to v1, the activation is being undone"
 fi
 
 # 4. constRef names a constant without binding its MEANING.

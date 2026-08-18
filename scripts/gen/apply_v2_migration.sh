@@ -25,10 +25,17 @@ DRY=1
 [ "${1:-}" = "--write" ] && DRY=0
 
 APPLIED=0; SKIPPED=0
-# BOTH CORPORA. `tests/programs/` fixtures carry stored fingerprints exactly as `examples/` does,
-# and a migration that moved only one of them would leave the suite asserting v1 expectations against
-# a v2 compiler — which is precisely the mixed state atomic activation exists to avoid.
-for f in $(grep -rlE '#\[proof_fingerprint' examples tests --include='*.con' | sort); do
+# ALL THREE CORPORA, and it was two. `tests/programs/` fixtures carry stored fingerprints exactly as
+# `examples/` does, and a migration that moved only one of them would leave the suite asserting v1
+# expectations against a v2 compiler — which is precisely the mixed state atomic activation exists to
+# avoid. That was written, and `std` was still left out.
+#
+# The consequence was not subtle once looked at: std's 11 stored links stayed v1 under a v2
+# authority, so every one of them became `needs_recheck` and the standard library reported ZERO
+# proved functions. The activation was called atomic while a whole corpus sat on the other side of
+# it. Enumerated from the tree rather than named inline for that reason — a corpus that has to be
+# remembered is a corpus that will be forgotten again.
+for f in $(grep -rlE '#\[proof_fingerprint' examples tests std --include='*.con' | sort); do
   plan="$("$BIN" "$f" --report migration 2>/dev/null || true)"
   while IFS= read -r row; do
     [ -z "$row" ] && continue
@@ -39,16 +46,46 @@ for f in $(grep -rlE '#\[proof_fingerprint' examples tests --include='*.con' | s
     if [ -z "$subject" ] || [ -z "$old" ] || [ -z "$new" ]; then
       echo "REFUSE $f: cannot parse plan row: $row" >&2; exit 1
     fi
+    modname="${subject%.*}"; modname="${modname##*.}"
+    # A MULTI-FILE PROJECT'S PLAN COVERS ALL ITS FILES. Every `examples/` project is a single file,
+    # so each plan happened to be about the file it was requested for and this never mattered. `std`
+    # is one project across numeric.con, option.con, result.con and base64.con, so every row was
+    # tried against every file and the script refused on `base64_char_of` while reading numeric.con.
+    #
+    # A row that belongs to a SIBLING file is not an ambiguity, it is simply not this file's row, and
+    # the two must not be conflated: refusing on it would block the migration forever, while treating
+    # a genuine ambiguity as "not mine" would silently skip a link. The discriminator is whether this
+    # file declares the row's module at all. If it does not, the row is someone else's. If it does,
+    # the declaration must resolve uniquely inside it or the script still refuses.
+    if ! grep -qE "^[[:space:]]*mod[[:space:]]+${modname}[[:space:]]*\{" "$f"; then
+      continue
+    fi
     # The declaration line, narrowed by the subject's MODULE. `left.add` and `right.add` are
     # different declarations that may share a v1 fingerprint and never share a v2 one, so the bare
     # name alone is not a key — the script refused on exactly that and this is the fix, not a
     # loosening: the search is still exact, just scoped to the enclosing module.
-    modname="${subject%.*}"; modname="${modname##*.}"
     mapfile -t decl < <(awk -v m="$modname" -v b="$bare" '
       $0 ~ ("^[[:space:]]*mod[[:space:]]+" m "[[:space:]]*\\{") { inmod = 1; depth = 1; next }
       inmod && /\{/ { depth++ }
       inmod && /\}/ { depth--; if (depth <= 0) inmod = 0 }
       inmod && index($0, "fn " b "(") { print NR }' "$f")
+    # STD NAMES ARE MODULE-PREFIX MANGLED. A plan row for std says `std.base64.base64_char_of`,
+    # because the Core name of a submodule function is `<module>_<fn>` — but the SOURCE declares
+    # `fn char_of(`. Searching for `fn base64_char_of(` therefore matched nothing and the script
+    # refused, which is why std was never migrated even once it was scanned.
+    #
+    # Stripped only when the bare name actually carries the enclosing module as a prefix, and the
+    # result must still resolve to exactly ONE declaration inside that module. This is a narrowing of
+    # the same exact search, not a fuzzy fallback: `base64_char_of` -> `char_of` within `mod base64`.
+    if [ "${#decl[@]}" -eq 0 ] && [ "${bare#${modname}_}" != "$bare" ]; then
+      unmangled="${bare#${modname}_}"
+      mapfile -t decl < <(awk -v m="$modname" -v b="$unmangled" '
+        $0 ~ ("^[[:space:]]*mod[[:space:]]+" m "[[:space:]]*\\{") { inmod = 1; depth = 1; next }
+        inmod && /\{/ { depth++ }
+        inmod && /\}/ { depth--; if (depth <= 0) inmod = 0 }
+        inmod && index($0, "fn " b "(") { print NR }' "$f")
+      [ "${#decl[@]}" -eq 1 ] && bare="$unmangled"
+    fi
     # A subject whose module is not a `mod` block (top-level file module) falls back to the
     # whole-file search, which must then be unambiguous on its own.
     if [ "${#decl[@]}" -eq 0 ]; then
