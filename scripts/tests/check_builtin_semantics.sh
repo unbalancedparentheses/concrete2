@@ -204,8 +204,19 @@ EOF
 agree "print_bool/print_char/print_int renderings"
 
 echo "=== inventory pins (drift-by-addition is deliberate, not silent) ==="
-grep -oE '\| "[a-z_0-9]+"' Concrete/Interp/Interp.lean | grep -oE '"[a-z_0-9]+"' | tr -d '"' | sort -u > "$TMP/interp.txt"
-grep -oE 'name := "[a-z_0-9]+"' Concrete/Backend/EmitBuiltins.lean | grep -oE '"[a-z_0-9]+"' | tr -d '"' | sort -u > "$TMP/backend.txt"
+# LC_ALL=C ON EVERY SORT AND ON `comm`, because this comparison is only valid when all three agree
+# on collation. Under en_US.UTF-8 the collator ignores punctuation at the primary level, so
+# `__concrete_check_oom` sorts between `clock_monotonic_ns` and `float_to_string`; under C it sorts
+# first. The pinned list below was written under C, so the gate failed on any developer machine with
+# a UTF-8 locale and passed in a C-locale CI — a verdict that depended on the environment rather than
+# on the code.
+#
+# AND IT WAS NOT MERELY COSMETIC: `comm` assumes its inputs are sorted the way it compares them, and
+# feeding it differently-collated input yields WRONG set differences, not just reordered ones. So the
+# failure mode was not "the list looks shuffled" but "a genuinely unimplemented builtin could go
+# unreported" — the exact thing this pin exists to prevent.
+grep -oE '\| "[a-z_0-9]+"' Concrete/Interp/Interp.lean | grep -oE '"[a-z_0-9]+"' | tr -d '"' | LC_ALL=C sort -u > "$TMP/interp.txt"
+grep -oE 'name := "[a-z_0-9]+"' Concrete/Backend/EmitBuiltins.lean | grep -oE '"[a-z_0-9]+"' | tr -d '"' | LC_ALL=C sort -u > "$TMP/backend.txt"
 # Backend-only = interp-PENDING: the EXPLICIT list. A new backend builtin
 # missing from interp must be added here (deliberately) or implemented.
 cat > "$TMP/pending_expected.txt" <<'EOF'
@@ -221,7 +232,10 @@ string_reserve
 string_substr
 string_to_int
 EOF
-comm -13 "$TMP/interp.txt" "$TMP/backend.txt" > "$TMP/pending_actual.txt"
+# The pinned list is re-sorted under the SAME collation rather than trusted to be in order, so the
+# heredoc above can be maintained in whatever order reads best without silently breaking the compare.
+LC_ALL=C sort -u "$TMP/pending_expected.txt" -o "$TMP/pending_expected.txt"
+LC_ALL=C comm -13 "$TMP/interp.txt" "$TMP/backend.txt" > "$TMP/pending_actual.txt"
 if diff -q "$TMP/pending_expected.txt" "$TMP/pending_actual.txt" >/dev/null; then
   ok "interp-PENDING list is exactly the documented 11 (new builtins must land on both sides or extend this pin)"
 else

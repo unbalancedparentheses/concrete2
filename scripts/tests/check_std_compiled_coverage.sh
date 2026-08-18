@@ -851,10 +851,15 @@ else
 fi
 
 echo "=== fail-closed inventory (derived from std/src) ==="
-derived=$(ls std/src/*.con | xargs -n1 basename | sed 's/\.con$//' | sort)
-accounted=$(printf '%s %s' "$COVERED" "$EXEMPT" | tr ' ' '\n' | sed '/^$/d' | sort)
-missing=$(comm -23 <(printf '%s\n' "$derived") <(printf '%s\n' "$accounted"))
-stale=$(comm -13 <(printf '%s\n' "$derived") <(printf '%s\n' "$accounted"))
+derived=$(ls std/src/*.con | xargs -n1 basename | sed 's/\.con$//' | LC_ALL=C sort)
+accounted=$(printf '%s %s' "$COVERED" "$EXEMPT" | tr ' ' '\n' | sed '/^$/d' | LC_ALL=C sort)
+# Collation is pinned to C for this comparison. `comm` assumes its inputs are sorted the way it
+# compares them, and a UTF-8 collator ignores punctuation at the primary level — so an entry like
+# `__concrete_check_oom` sorts differently under LANG=en_US.UTF-8 than under C, and the set
+# difference comes out WRONG rather than merely reordered. That made one gate's verdict depend on
+# the developer's locale; pinned here so it cannot.
+missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$derived") <(printf '%s\n' "$accounted"))
+stale=$(LC_ALL=C comm -13 <(printf '%s\n' "$derived") <(printf '%s\n' "$accounted"))
 if [ -z "$missing" ] && [ -z "$stale" ]; then
   ok "every std module is covered or explicitly exempt ($(printf '%s\n' "$derived" | wc -l | tr -d ' ') modules)"
 else

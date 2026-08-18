@@ -32,6 +32,18 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # assert_contains <label> <needle> <cmd...>
 assert_contains(){ local l="$1" n="$2"; shift 2; local o; o="$("$@" 2>&1)"
   if grep -qF <<<"$o" -- "$n"; then ok "$l"; else no "$l — missing '$n'"; printf '%s\n' "$o"|sed 's/^/      /'|head -8; fi; }
+# assert_counts <label> "<needle>|<needle>|..." <cmd...>
+# Each needle must appear, asserted SEPARATELY rather than as one contiguous run of the totals line.
+# The totals line legitimately grows: `needs-recheck` was inserted between `unbound` and
+# `dependency-not-current` when the status vocabulary was completed, and every gate matching a
+# contiguous substring broke at once — invisibly, because none of them run in the fast suite. The
+# facts asserted here are identical; what is gone is a dependency on field ORDER, which is not a
+# fact about the program.
+assert_counts(){ local l="$1" ns="$2"; shift 2; local o n miss=""; o="$("$@" 2>&1)"
+  local IFS='|'
+  for n in $ns; do grep -qF <<<"$o" -- "$n" || miss="$miss '$n'"; done
+  unset IFS
+  if [ -z "$miss" ]; then ok "$l"; else no "$l — missing:$miss"; printf '%s\n' "$o"|sed 's/^/      /'|head -8; fi; }
 # assert_absent <label> <needle> <cmd...>
 # Empty output makes an absence assertion vacuous — every needle is absent when there is nothing
 # to search. Treated as a failure for the reason recorded in H27: a positive control in
@@ -81,8 +93,8 @@ assert_json "composition --json proved + stable id" \
 # R-0004 slice 3 they had no links at all, and `combine` reported proved while
 # resting on bodies nothing pinned — the modular contract asserted here is what
 # makes the caller's claim mean something.
-assert_contains "composition: all three functions proved" \
-  "3 proved, 0 stale, 0 unbound, 0 dependency-not-current" \
+assert_counts "composition: all three functions proved" \
+  "3 proved|0 stale|0 unbound|0 dependency-not-current" \
   "$COMPILER" "$CO" --report proof-status
 
 echo "=== composition_unlinked_helper (NEGATIVE twin: one helper has no link) ==="
@@ -91,8 +103,8 @@ echo "=== composition_unlinked_helper (NEGATIVE twin: one helper has no link) ==
 CU="$PP/composition_unlinked_helper/src/main.con"
 assert_contains "unlinked helper: caller is contained, not proved" \
   "dependency not current" "$COMPILER" "$CU" --report proof-status
-assert_contains "unlinked helper: the linked helper stays proved" \
-  "1 proved, 0 stale, 0 unbound, 1 dependency-not-current" \
+assert_counts "unlinked helper: the linked helper stays proved" \
+  "1 proved|0 stale|0 unbound|1 dependency-not-current" \
   "$COMPILER" "$CU" --report proof-status
 # ...and it must name the culprit, or the verdict is not actionable.
 assert_contains "unlinked helper: names the unlinked callee" \
@@ -101,8 +113,8 @@ assert_contains "unlinked helper: names the unlinked callee" \
 echo "=== composition_trusted_helper (trust must not launder through the caller) ==="
 CT="$PP/composition_trusted_helper/src/main.con"
 # Trusted is CURRENT for traversal, so the caller is not contained...
-assert_contains "trusted helper: caller is still proved" \
-  "2 proved, 0 stale, 0 unbound, 0 dependency-not-current" "$COMPILER" "$CT" --report proof-status
+assert_counts "trusted helper: caller is still proved" \
+  "2 proved|0 stale|0 unbound|0 dependency-not-current" "$COMPILER" "$CT" --report proof-status
 # ...but the claim must SAY it is conditional, where it is read.
 assert_contains "trusted helper: the proved claim names its assumption" \
   "ASSUMES trusted boundaries (not proved): calls.dbl" "$COMPILER" "$CT" --report proof-status

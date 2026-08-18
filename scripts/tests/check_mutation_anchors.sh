@@ -52,7 +52,14 @@ if len(files) != len(olds):
 
 stale = []
 for i, (f, o) in enumerate(zip(files, olds), 1):
-    o = o.replace('\\"', '"').replace('\\$', '$').replace('\\\\', '\\')
+    # BASH HONOURS EXACTLY FOUR ESCAPES inside double quotes: \" \$ \\ and \` — and this mirrored
+    # only three. An anchor containing a backtick therefore could never match its file, so the gate
+    # reported "cannot be applied" for a mutation whose target text was present and correct. That is
+    # the worst shape of failure for this particular gate: it exists to detect inert mutations, and a
+    # false report here sends someone to re-anchor source that was never stale. Lean comments quote
+    # identifiers in backticks constantly, so any anchor spanning a doc comment hit it.
+    o = (o.replace('\\"', '"').replace('\\$', '$')
+          .replace('\\`', '`').replace('\\\\', '\\'))
     if not os.path.exists(f):
         stale.append((i, f, "the FILE no longer exists")); continue
     if o not in open(f).read():

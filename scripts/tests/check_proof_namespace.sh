@@ -34,9 +34,14 @@ if grep -rln '^namespace Concrete\.Proof\b' proofs/Examples/ 2>/dev/null | grep 
 fi
 
 # 2. Allowlist subset check on Concrete/Proof/Proof.lean theorems/lemmas.
-current="$(grep -oE "^(theorem|lemma) [A-Za-z0-9_']+" "$PROOF" | awk '{print $2}' | sort -u)"
-allow="$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$ALLOW" | sort -u)"
-newones="$(comm -23 <(printf '%s\n' "$current") <(printf '%s\n' "$allow"))"
+current="$(grep -oE "^(theorem|lemma) [A-Za-z0-9_']+" "$PROOF" | awk '{print $2}' | LC_ALL=C sort -u)"
+allow="$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$ALLOW" | LC_ALL=C sort -u)"
+# Collation is pinned to C for this comparison. `comm` assumes its inputs are sorted the way it
+# compares them, and a UTF-8 collator ignores punctuation at the primary level — so an entry like
+# `__concrete_check_oom` sorts differently under LANG=en_US.UTF-8 than under C, and the set
+# difference comes out WRONG rather than merely reordered. That made one gate's verdict depend on
+# the developer's locale; pinned here so it cannot.
+newones="$(LC_ALL=C comm -23 <(printf '%s\n' "$current") <(printf '%s\n' "$allow"))"
 if [ -n "$newones" ]; then
   echo "FAIL: theorem/lemma(s) in $PROOF not on the allowlist:"
   printf '%s\n' "$newones" | sed 's/^/    /'

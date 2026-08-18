@@ -37,9 +37,14 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # So: re-extract from source and compare against what the generator will actually ask about.
 echo "=== theorem-name inventory is exhaustive ==="
 grep -rhoE '#\[(proof_by|ensures_proof)\(([A-Za-z0-9_.]+)\)\]' examples/ \
-  | sed -E 's/.*\(([^)]*)\)\]/\1/' | sort -u > "$TMP/src_names.txt"
-grep -oE '`[A-Za-z0-9_.]+' scripts/gen/classifications.lean | sed 's/^`//' | sort -u > "$TMP/gen_names.txt"
-MISSING="$(comm -23 "$TMP/src_names.txt" "$TMP/gen_names.txt" || true)"
+  | sed -E 's/.*\(([^)]*)\)\]/\1/' | LC_ALL=C sort -u > "$TMP/src_names.txt"
+grep -oE '`[A-Za-z0-9_.]+' scripts/gen/classifications.lean | sed 's/^`//' | LC_ALL=C sort -u > "$TMP/gen_names.txt"
+# Collation is pinned to C for this comparison. `comm` assumes its inputs are sorted the way it
+# compares them, and a UTF-8 collator ignores punctuation at the primary level — so an entry like
+# `__concrete_check_oom` sorts differently under LANG=en_US.UTF-8 than under C, and the set
+# difference comes out WRONG rather than merely reordered. That made one gate's verdict depend on
+# the developer's locale; pinned here so it cannot.
+MISSING="$(LC_ALL=C comm -23 "$TMP/src_names.txt" "$TMP/gen_names.txt" || true)"
 if [ -z "$MISSING" ]; then
   ok "every source-linked proof name is in the generator's inventory ($(wc -l < "$TMP/src_names.txt") names)"
 else
@@ -63,8 +68,8 @@ if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then
   # quantification, and a regex matching only the first three fields would have compared the
   # theorem/edge/digest while ignoring exactly the dependency evidence this slice added — a
   # freshness check that stops looking where the new information is.
-  CHECKED="$(grep -oE '^  \(".*\),?$' Concrete/Proof/ClassificationTable.lean | sed 's/,$//' | sort || true)"
-  LIVE="$(grep -oE '^  \(".*\),?$' "$FRESH" | sed 's/,$//' | sort || true)"
+  CHECKED="$(grep -oE '^  \(".*\),?$' Concrete/Proof/ClassificationTable.lean | sed 's/,$//' | LC_ALL=C sort || true)"
+  LIVE="$(grep -oE '^  \(".*\),?$' "$FRESH" | sed 's/,$//' | LC_ALL=C sort || true)"
   # BOTH SIDES MUST BE NON-EMPTY. Guarding only `LIVE` left the other half of the comparison
   # unguarded, and it fired for real on 2026-08-16: four NUL bytes landed inside string literals in
   # the checked-in file, `grep` classified it as a binary file, `-o` returned nothing, and the gate

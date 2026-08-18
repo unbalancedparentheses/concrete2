@@ -63,7 +63,7 @@ examples/contract_stability/v1.con skip
 examples/contract_stability/v2.con skip
 examples/crypto_verify/catches/01_alloc_in_pure_core.con expected-error
 examples/crypto_verify/src/main.con compile
-examples/crypto_verify/src/main_drifted.con compile
+examples/crypto_verify_drifted/src/main.con compile
 examples/defer/cleanup_order/src/main.con project-build
 examples/diagnostics_rich/missing_capability.con expected-error
 examples/diagnostics_rich/parser_error.con expected-error
@@ -71,7 +71,7 @@ examples/diagnostics_rich/type_mismatch.con expected-error
 examples/diagnostics_rich/unknown_name.con expected-error
 examples/diagnostics_rich/use_after_move.con expected-error
 examples/elf_header/src/main.con compile
-examples/elf_header/src/main_drifted.con compile
+examples/elf_header_drifted/src/main.con compile
 examples/envcfg/src/main.con project-build
 examples/error_conventions/src/main.con compile
 examples/evidence_classes/assumed_boundary/src/main.con compile
@@ -127,6 +127,7 @@ examples/project/src/mymod/submodule.con project-build
 examples/project/src/other.con project-build
 examples/proof_patterns/array_update/src/main.con skip
 examples/proof_patterns/composition/src/main.con skip
+examples/proof_patterns/composition_deep_trust/src/main.con skip
 examples/proof_patterns/composition_trusted_helper/src/main.con skip
 examples/proof_patterns/composition_unlinked_helper/src/main.con skip
 examples/proof_patterns/fold/src/main.con skip

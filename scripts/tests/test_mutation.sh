@@ -574,10 +574,21 @@ MUT_FILE+=("Concrete/Proof/ProofCore.lean")
 # Both arms replaced together: adding `.stale` to the first line alone leaves it
 # overlapping the second, which Lean rejects structurally rather than any test
 # catching the semantics.
+# RE-ANCHORED, and the anchor now spans the interleaved comments because that is what the arms
+# actually look like. The false arm has grown twice — `needsRecheck` and `correspondenceUnjustified` —
+# and each time the anchor stopped matching, leaving the single-source currency policy with no live
+# mutation. An anchor that must be updated when the vocabulary grows is the correct trade here: the
+# alternative is a looser match that keeps applying to a rule it no longer describes.
 MUT_OLD+=("  | .proved | .trusted => true
-  | .stale | .missing | .blocked | .ineligible | .unbound | .depsNotCurrent => false")
+  -- \`needsRecheck\` is NOT current: the stored digest answers an older, weaker
+  -- question, so nothing downstream may treat this claim as established.
+  | .stale | .missing | .blocked | .ineligible | .unbound | .needsRecheck
+  -- A claim whose own dependency justification was never established is NOT current for anyone
+  -- else's: propagating it would let an unjustified closure become the foundation of a second one.
+  | .depsNotCurrent | .correspondenceUnjustified => false")
 MUT_NEW+=("  | .proved | .trusted | .stale => true -- MUTATION: stale counts as current
-  | .missing | .blocked | .ineligible | .unbound | .depsNotCurrent => false")
+  | .missing | .blocked | .ineligible | .unbound | .needsRecheck
+  | .depsNotCurrent | .correspondenceUnjustified => false")
 MUT_DESC+=("ProofCore: trap inventory of dependency currency admits stale (slice 3)")
 gate_for_last "scripts/tests/check_proof_freshness.sh"
 
@@ -692,9 +703,14 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # drifted from what the compiler extracts — which is its whole job. The field was
 # representable but never emitted for a while; this keeps "emitted" from decaying
 # back into "emitted, but meaningless".
-MUT_FILE+=("Concrete/Report/Report.lean")
-MUT_OLD+=("  let v := Concrete.shortHash (Proof.pexprCanonical (normalizePExpr pexpr))")
-MUT_NEW+=("  let v := Concrete.shortHash (toString (Proof.pexprCanonical (normalizePExpr pexpr)).length) -- MUTATION: digest sees only the body LENGTH")
+# RE-ANCHORED. The computation moved to `Concrete/Proof/BodyIdentity.lean` in bba323ee (the
+# Digest/BodyIdentity split) and this anchor stayed pointing at `Report.lean`, so the mutation could
+# not be applied and the digest below has had NO live mutation coverage since. That is the failure
+# mode check_mutation_anchors.sh exists to report: an unapplied mutation is not a passing mutation,
+# it is an absent one, and it silently withdraws the evidence that the gate is load-bearing.
+MUT_FILE+=("Concrete/Proof/BodyIdentity.lean")
+MUT_OLD+=("  shortHash (Proof.pexprCanonical (normalizePExpr pe))")
+MUT_NEW+=("  shortHash (toString (Proof.pexprCanonical (normalizePExpr pe)).length) -- MUTATION: digest sees only the body LENGTH")
 MUT_DESC+=("Generator: body digest does not depend on the body")
 gate_for_last "scripts/tests/check_callable_identity.sh"
 

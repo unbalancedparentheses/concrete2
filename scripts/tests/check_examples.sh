@@ -56,10 +56,15 @@ no() {
 
 # --- 1. Coverage: every .con under examples/ is in the manifest, and ---
 # --- every manifest path still exists on disk.                       ---
-manifest_paths=$(grep -v '^[[:space:]]*#' "$MANIFEST" | grep -v '^[[:space:]]*$' | awk '{print $1}' | sort)
-disk_paths=$(find examples -name '*.con' | sort)
+manifest_paths=$(grep -v '^[[:space:]]*#' "$MANIFEST" | grep -v '^[[:space:]]*$' | awk '{print $1}' | LC_ALL=C sort)
+disk_paths=$(find examples -name '*.con' | LC_ALL=C sort)
 
-unlisted=$(comm -23 <(echo "$disk_paths") <(echo "$manifest_paths"))
+# Collation is pinned to C for this comparison. `comm` assumes its inputs are sorted the way it
+# compares them, and a UTF-8 collator ignores punctuation at the primary level — so an entry like
+# `__concrete_check_oom` sorts differently under LANG=en_US.UTF-8 than under C, and the set
+# difference comes out WRONG rather than merely reordered. That made one gate's verdict depend on
+# the developer's locale; pinned here so it cannot.
+unlisted=$(LC_ALL=C comm -23 <(echo "$disk_paths") <(echo "$manifest_paths"))
 if [ -n "$unlisted" ]; then
   while IFS= read -r f; do
     no "$f is not listed in $MANIFEST (add it with its expected outcome)"
@@ -68,7 +73,7 @@ else
   ok
 fi
 
-missing=$(comm -13 <(echo "$disk_paths") <(echo "$manifest_paths"))
+missing=$(LC_ALL=C comm -13 <(echo "$disk_paths") <(echo "$manifest_paths"))
 if [ -n "$missing" ]; then
   while IFS= read -r f; do
     no "$f is listed in $MANIFEST but does not exist on disk"

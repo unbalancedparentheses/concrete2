@@ -123,9 +123,16 @@ for h in $OPEN_HOLES; do
   # those assert the hole IS closed, so modal and conditional phrasing is filtered out
   # rather than marked one line at a time. What remains is the assertive form, which is
   # the form that misleads.
+  # NEGATION IS NOT ASSERTION, and leaving it out made this gate report the opposite of the truth.
+  # `VERIFICATION_STATUS.md` said "H25 remains contained, not fixed" — a sentence stating H25 is
+  # OPEN — and the heuristic read `H25 ... fixed`, matched, and accused the file of claiming closure.
+  # Marking that line HOLE-STATUS-OK was the available shortcut and the wrong one: it would except a
+  # CORRECT sentence and leave the heuristic wrong for the next person who writes an accurate one,
+  # turning an opt-out meant for quoting a wrong claim into a place to hide the gate's own defect.
   HITS="$(grep -rniE "\b$h\b[^.]{0,40}(is )?(now )?(closed|fixed|resolved)" $SCAN 2>/dev/null \
           | grep -viE "(must|may|should|will|would|could|once|until|pending|before|when|if) (be |it |the )?(closed|fixed|resolved)" \
           | grep -viE "must be closed|may be fixed|to be (closed|fixed)" \
+          | grep -viE "(not|never|isn't|aren't|un)[ -]*(yet )?(closed|fixed|resolved)" \
           | grep -v "HOLE-STATUS-OK" || true)"
   if [ -n "$HITS" ]; then
     VIOL=1
@@ -134,6 +141,38 @@ for h in $OPEN_HOLES; do
   fi
 done
 [ "$VIOL" -eq 0 ] && ok "no file claims an OPEN hole is closed"
+
+# NON-VACUITY FOR THE FILTER ITSELF. Every exclusion above makes this leg blinder, and the negation
+# exclusion was added because the gate misfired — precisely the circumstance in which it is tempting
+# to widen a filter until the complaint stops. So the filter is run against synthetic text with a
+# known answer: an assertive claim MUST still be caught, and a negated one MUST NOT be. Without this,
+# a filter that had swallowed everything would report "no file claims an OPEN hole is closed" and
+# look identical to a clean tree.
+FILTER_PROBE="$(mktemp -d)"; trap 'rm -rf "$FILTER_PROBE"' EXIT
+h_probe="$(printf '%s' "$OPEN_HOLES" | tr ' ' '\n' | grep -v '^$' | head -1)"
+if [ -n "$h_probe" ]; then
+  printf '%s is now closed and needs no further work.\n' "$h_probe" > "$FILTER_PROBE/assertive.md"
+  printf '%s remains contained, not fixed.\n' "$h_probe" > "$FILTER_PROBE/negated.md"
+  probe_filter() {
+    grep -rniE "\b$h_probe\b[^.]{0,40}(is )?(now )?(closed|fixed|resolved)" "$1" 2>/dev/null \
+      | grep -viE "(must|may|should|will|would|could|once|until|pending|before|when|if) (be |it |the )?(closed|fixed|resolved)" \
+      | grep -viE "must be closed|may be fixed|to be (closed|fixed)" \
+      | grep -viE "(not|never|isn't|aren't|un)[ -]*(yet )?(closed|fixed|resolved)" \
+      | grep -v "HOLE-STATUS-OK" || true
+  }
+  if [ -n "$(probe_filter "$FILTER_PROBE/assertive.md")" ]; then
+    ok "CONTROL: the filter still catches an assertive '$h_probe is now closed'"
+  else
+    no "CONTROL FAILED: the filter no longer catches an assertive closure claim — check 3 is inert and its pass above proves nothing"
+  fi
+  if [ -z "$(probe_filter "$FILTER_PROBE/negated.md")" ]; then
+    ok "CONTROL: the filter correctly ignores a negated '$h_probe ... not fixed'"
+  else
+    no "CONTROL FAILED: the filter still flags a negated claim — an accurate sentence reads as a violation"
+  fi
+else
+  no "no OPEN holes parsed from $KH — check 3 and its controls are vacuous"
+fi
 
 # The OTHER direction, which this gate lacked until 2026-08-03. Closing H23 left
 # `Report.lean` still saying "Not H23 itself, which stays OPEN: nothing populates an   HOLE-STATUS-OK: quoting the wrong claim to correct it
