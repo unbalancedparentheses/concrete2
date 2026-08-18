@@ -208,10 +208,19 @@ else
     fail "evidence bundle should be valid JSON with schema_kind=proof_bundle"
 fi
 
+# `proved` is EXACT, and it moved 2 -> 1 on 2026-08-18. The second proved function was
+# `validate_header`, linked to `Examples.ElfHeader.Proofs.validate_header_correct` — a theorem about
+# elf_header's validate_header, which checks ELF magic/class/data/version bytes, attached to a
+# function that checks a nonce and calls check_nonce. They shared a qualified name and nothing else.
+# The claim was deleted rather than repointed, because no theorem proves that body.
+#
+# Pinned rather than floored precisely because of how this was found: a `>= 2` floor was satisfied
+# by a fraudulent proof for months, and a floor cannot tell a real proof from a misattributed one.
+# An exact value forces the next change to be explained.
 if echo "$bundle_out" | python3 -c "
 import sys,json; d=json.load(sys.stdin)
 s=d['summary']
-assert s['proved'] >= 2
+assert s['proved'] == 1, f\"proved={s['proved']}, expected exactly 1\"
 assert s['total_functions'] >= 7
 assert d['fact_count'] == len(d['facts'])
 assert len(d['registry']) >= 3

@@ -2353,6 +2353,20 @@ def storedFreshness (stored : String) (subjectDigestV2 : Option String) : Stored
     | none => .moved
     | some d => if ("v2:" ++ shortHash d) == stored then .current else .moved
 
+/-- Does this entry CLAIM a proof at all?
+
+    A SPECIFICATION IS NOT A PROOF CLAIM, and conflating the two produced three wrong diagnostics at
+    once. `synthesizeSourceLinks` builds a registry entry for any function carrying a proof-link
+    attribute, and `#[spec(...)]` alone is one — so a function with a specification and no
+    `#[proof_by]` became an entry with an empty proof name. The registry validator then reported it
+    as malformed (`emptyProofName`), reported it as an unbound proof link telling the author to add
+    `#[proof_fingerprint]` to a claim that does not exist, and the deriver reported `unbound`.
+
+    The honest status is `missing`: a function nobody proved. That state is documented, reachable,
+    and exactly what `proof_pressure.validate_header` is supposed to demonstrate after its wrong
+    `#[proof_by]` was deleted — the repair that exposed all of this. -/
+def ProofRegistryEntry.claimsProof (re : ProofRegistryEntry) : Bool := !re.proof.isEmpty
+
 /-- Is the stored link STALE against the current subject — that is, did the thing it records move?
 
     LIFTED TO ONE DEFINITION because it was three. The status deriver, the registry validator and the
@@ -2432,7 +2446,10 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
         -- is a real check; a source-linked entry had its bodyFingerprint
         -- SYNTHESIZED from the body being checked, so the same compare is the
         -- current body against itself and can never fail.
-        if re.sourceLinked then some (.unboundProofSubject re)
+        -- ...and only when the entry CLAIMS a proof. A `#[spec(...)]` with no `#[proof_by]` has no
+        -- link to be unbound, so reporting one told the author to pin a fingerprint for a proof
+        -- that does not exist.
+        if re.sourceLinked && re.claimsProof then some (.unboundProofSubject re)
         else if re.bodyFingerprint != currentFp then some (.staleFingerprint re currentFp)
         else none
     | none => none  -- already caught as unknown
@@ -2452,8 +2469,13 @@ def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List Registry
       else none
     | none => none
   -- Check for empty proof/spec names
+  -- A SPEC-ONLY SOURCE LINK IS LEGITIMATE. An empty proof name is malformed for a JSON registry
+  -- entry, which exists to record a proof; it is the normal shape for an entry synthesized from
+  -- `#[spec(...)]` alone, which records a specification and asserts nothing about a proof. An entry
+  -- claiming neither is still malformed.
   let emptyProofs := registry.filterMap fun re =>
-    if re.proof.isEmpty then some (.emptyProofName re) else none
+    if re.proof.isEmpty && !(re.sourceLinked && !re.spec.isEmpty) then some (.emptyProofName re)
+    else none
   let emptySpecs := registry.filterMap fun re =>
     if re.spec.isEmpty then some (.emptySpecName re) else none
   -- Spec-drift check (Phase 4 item 2): for each registry entry whose
@@ -2803,6 +2825,11 @@ private def deriveObligationStatus
     -- exemplar, whose whole purpose is to demonstrate drift, briefly stopped
     -- demonstrating anything.
     if specDrifted then .stale
+    -- A SPECIFICATION WITHOUT A PROOF NAME IS NOT A PROOF CLAIM, so there is no link to be unbound
+    -- and nothing to be stale against. `missing` is the honest status: a function nobody proved.
+    -- Ordered after drift because drift is affirmative evidence that the recorded spec disagrees
+    -- with the body, which is worth reporting even when no proof was ever claimed.
+    else if a.proofName.isEmpty then .missing
     -- Then unbound, reported as itself rather than as `stale`: with no stored
     -- subject the comparison below is the body against itself, so calling the
     -- result `stale` would claim a body change that was never observed.
