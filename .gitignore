@@ -145,3 +145,5 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 # ABSENCE means the run died mid-way — which is why consumers read this file rather than parsing
 # output that stdout/stderr interleaving can corrupt.
 .test-summary
+.gate.lock/
+.ci-gates-summary

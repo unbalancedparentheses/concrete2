@@ -33,6 +33,14 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 WORKFLOW=".github/workflows/lean_action_ci.yml"
+
+# THE WHOLE PASS HOLDS ONE LOCK. Individual gates take it too, but only those that call
+# `require_fresh_binary`; a grep-only gate does not, so without this a stray run could interleave
+# between this runner's children. Acquiring it here also makes the runner itself refuse to start
+# while anything else is working the tree — which is the failure that made an entire 187-gate pass
+# reconnaissance-only rather than a verdict.
+source "$ROOT_DIR/scripts/tests/lib/fresh.sh"
+_gate_lock_acquire || exit 2
 [ -x ".lake/build/bin/concrete" ] || { echo "error: build first" >&2; exit 2; }
 FILTER="${1:-}"
 JOB=""
