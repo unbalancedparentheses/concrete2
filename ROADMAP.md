@@ -4336,15 +4336,17 @@ This gate is also not in `run_tests.sh`, which is why the demotion went unmeasur
    shapes refuse rather than forcing a general heap calculus into R-0004. Other Package 3 work
    continues while the prerequisite is blocked, but formal closure does not wait indefinitely for an
    unrelated language-semantics blocker.
-6. **[pending] Slice 7b — exact 44-link migration and atomic V2 activation.** Produce the dry-run
-   manifest, replay every eligible link, issue receipts only from success, map legacy/incomplete
-   evidence to `needs_recheck`, explain every V1/V2 difference, and flip without a mixed fallback or
-   copied hashes. The exact 44-link denominator remains authoritative.
-7. **[pending] Slice 7c — complete reproducibility and coverage.** Preserve the 35/91 baseline and
-   existing 5/0 path-independence, then add repository-root/project-root, clean/fresh checkout,
-   different checkout path, cache cold/warm/missing/corrupt, toolchain/import change, interrupted
-   producer, and absent-summary controls. Every authoritative run writes a typed completion artifact;
-   absence is failure, never silence interpreted as success.
+6. **[shipped] Slice 7b — exact 44-link migration and atomic V2 activation.** The dry-run manifest
+   was produced, every eligible link was replayed, receipts were issued only from successful replay,
+   legacy/incomplete evidence was mapped to `needs_recheck`, every V1/V2 difference was explained,
+   and the authoritative subject digest flipped to V2 without a mixed fallback or copied hashes. The
+   exact 44-link denominator remains authoritative.
+7. **[partially shipped] Slice 7c — complete reproducibility and coverage.** The 35/91 baseline and
+   the original 5/0 path-independence are preserved. The clean/fresh-checkout control is registered
+   and gated. Remaining: repository-root/project-root, different checkout path, cache cold/warm/
+   missing/corrupt, toolchain/import change, interrupted producer, and absent-summary controls.
+   Every authoritative run writes a typed completion artifact; absence is failure, never silence
+   interpreted as success.
 8. **[pending] Slice 8 — adversarial closure of the production consumer.** Attack omitted, stale,
    forged, duplicate, ambiguous and cross-package evidence; contract-hypothesis deletion/widening;
    trust deletion/laundering; opaque or unreplayed theorems; copied receipts; partial/defaulted

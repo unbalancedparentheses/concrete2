@@ -365,6 +365,12 @@ inductive ReceiptDecodeRefusal where
   | unknownKey (key : String)
   /-- A field present but unusable — an empty value, or an edge tag outside the vocabulary. -/
   | malformedField (name : String) (value : String)
+  /-- The store holds more than one record for this subject, and they do not agree. Reporting one of
+      them as current would let a reader conclude a claim is receipt-backed from a store that
+      contradicts itself — and a consumer that picked one would be choosing which claim to believe.
+      Zero and several are equally unusable, which is the same disposition `validatedRowOf` gives an
+      ambiguous classification and `duplicateField` gives a repeated field. -/
+  | duplicateRecord (subject : String)
   deriving BEq, Repr
 
 def ReceiptDecodeRefusal.canonical : ReceiptDecodeRefusal → String
@@ -373,6 +379,7 @@ def ReceiptDecodeRefusal.canonical : ReceiptDecodeRefusal → String
   | .duplicateField _   => "duplicate_field"
   | .unknownKey _       => "unknown_key"
   | .malformedField ..  => "malformed_field"
+  | .duplicateRecord _  => "duplicate_record"
 
 def ReceiptDecodeRefusal.explain : ReceiptDecodeRefusal → String
   | .schemaUnreadable f =>
@@ -381,6 +388,9 @@ def ReceiptDecodeRefusal.explain : ReceiptDecodeRefusal → String
   | .duplicateField n   => s!"field '{n}' appears more than once; taking either would be a decoder choosing which claim to believe"
   | .unknownKey k       => s!"unknown field '{k}' — refusing rather than skipping, since skipping makes a newer format look like a clean parse"
   | .malformedField n v => s!"field '{n}' carries an unusable value '{v}'"
+  | .duplicateRecord sub =>
+      s!"the store holds more than one record for '{sub}'; a store that contradicts itself about a "
+      ++ "claim cannot make it current, and picking one would be choosing which to believe"
 
 /-- A receipt read back from storage. NOT evidence.
 

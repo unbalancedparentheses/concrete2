@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Emit `Concrete/BuildIdentity.lean` — the identity of the compiler BUILD, embedded in the binary.
+#
+# WHY EMBEDDED RATHER THAN COMPUTED AT RUN TIME. A receipt must name the compiler that produced it.
+# Three earlier attempts named something else:
+#
+#   `git status --porcelain`  — repository state at REPORT time. Any untracked file invalidated every
+#                               receipt, and a binary built dirty then cleaned reported clean.
+#   `git rev-parse HEAD`      — the checkout at REPORT time. A binary built from commit A claims B the
+#                               moment the checkout moves, and a binary built from uncommitted sources
+#                               claims whatever happens to be checked out.
+#   `sha256sum /proc/self/exe`— the running executable, which is the right OBJECT, but neither
+#                               `/proc/self/exe` nor GNU `sha256sum` exists on macOS, an active CI
+#                               platform. Receipt issuance simply refused there.
+#
+# A digest computed AT BUILD TIME over the compiler's own sources travels with the binary. It is
+# portable, costs nothing at run time, and is a property of the artifact rather than of the tree the
+# artifact is later pointed at. Uncommitted sources are covered for free — the generator digests the
+# working tree, not a commit.
+#
+# WHAT IT DOES NOT COVER, stated because a receipt that overclaims is worse than one that binds less:
+# a binary PATCHED AFTER BUILD keeps the constant its sources produced. This identifies the build, not
+# the bytes on disk. Detecting post-build tampering needs an executable digest, which needs a portable
+# in-process hash of a 178 MB file — not available today.
+#
+# STALENESS IS A GATE FAILURE, not a silent wrong answer: `check_build_identity_freshness.sh`
+# re-derives this and fails on disagreement, the same discipline `ClassificationTable` is held to.
+set -uo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+OUT="Concrete/BuildIdentity.lean"
+
+# The compiler's own sources. `BuildIdentity.lean` is EXCLUDED from its own digest — including it
+# would make the value depend on itself and never reach a fixed point.
+digest_input() {
+  {
+    find Concrete Main.lean -name '*.lean' -type f 2>/dev/null | grep -v 'Concrete/BuildIdentity.lean'
+    echo lakefile.toml
+    echo lean-toolchain
+  } | sort | while read -r f; do
+    [ -f "$f" ] || continue
+    printf '%s\n' "$f"
+    cat "$f"
+  done
+}
+
+# Hashed with the same tool the rest of the repo uses for content digests, so the value is a
+# project-standard 128-bit digest rather than a bespoke one. `sha256sum` here is a BUILD-TIME
+# dependency only — nothing at run time invokes it, which is the portability point.
+if command -v sha256sum >/dev/null 2>&1; then
+  DIGEST="$(digest_input | sha256sum | cut -c1-32)"
+elif command -v shasum >/dev/null 2>&1; then
+  DIGEST="$(digest_input | shasum -a 256 | cut -c1-32)"
+else
+  echo "FATAL: no sha256sum or shasum available to compute the build identity" >&2
+  exit 1
+fi
+
+if [ "${#DIGEST}" -ne 32 ]; then
+  echo "FATAL: build identity digest is ${#DIGEST} chars, expected 32" >&2
+  exit 1
+fi
+
+cat > "$OUT" <<LEAN
+/-!
+# Generated compiler build identity — do not edit
+
+Emitted by \`scripts/gen/build_identity.sh\` from the compiler's own sources. A receipt binds this to
+name the compiler that produced it.
+
+EMBEDDED AT BUILD TIME on purpose. Identities derived from the repository at REPORT time —
+\`git status\`, \`git rev-parse HEAD\` — describe the tree the binary is later pointed at rather than
+the binary, and are wrong in both directions: a binary built from one commit claims another once the
+checkout moves, and a binary built from uncommitted sources claims whatever is checked out. This
+value travels with the artifact.
+
+A run-time digest of the executable would be strictly stronger and is not portable: neither
+\`/proc/self/exe\` nor GNU \`sha256sum\` exists on macOS, which is an active CI platform, and hashing
+a 178 MB binary in-process is not viable with the in-repo SHA-256. **Known limit: a binary patched
+after build keeps the constant its sources produced.** This identifies the BUILD, not the bytes.
+
+Staleness is a gate failure rather than a silent wrong answer:
+\`check_build_identity_freshness.sh\` re-derives this and fails on disagreement.
+-/
+
+namespace Concrete
+
+/-- 128-bit digest over the compiler's own sources at build time. -/
+def buildIdentity : String := "${DIGEST}"
+
+end Concrete
+LEAN
+echo "wrote $OUT (build identity ${DIGEST})"

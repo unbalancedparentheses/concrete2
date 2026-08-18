@@ -100,6 +100,115 @@ else
   diff <(printf '%s' "$FROM_REPO") <(printf '%s' "$FROM_PROJ") | head -6 | sed 's/^/      /' || true
 fi
 
+echo "=== a receipt minted in one checkout is checked against another ==="
+
+# THE CONTROL THIS GATE WAS MISSING. Everything above compares REPORTS between checkouts; none of it
+# minted a receipt in one and consumed it against the other, so the gate could have passed while a
+# receipt minted in checkout A failed against checkout B — which is the property "portable receipt"
+# actually means.
+#
+# The BINARY is deliberately the same in both directions: one compiler, two source checkouts, which
+# is the realistic case. What must not differ is the evidence the two checkouts present.
+"$BIN" examples/elf_header/src/main.con --report receipts --out "$TMP/from_A.txt" >/dev/null 2>&1
+"$BIN" "$TMP/clone/examples/elf_header/src/main.con" --report receipts --out "$TMP/from_B.txt" >/dev/null 2>&1
+
+xtally(){ "$BIN" "$2" --report proof-status --receipts "$1" 2>/dev/null \
+          | grep -oE '[0-9]+ current, [0-9]+ not current, [0-9]+ unreadable' | head -1; }
+
+A_IN_A="$(xtally "$TMP/from_A.txt" "examples/elf_header/src/main.con")"
+if [ "$A_IN_A" = "5 current, 0 not current, 0 unreadable" ]; then
+  ok "receipts minted in checkout A are current in checkout A (the baseline for the cross tests)"
+else
+  no "minting in A is not current in A ($A_IN_A) — the cross-checkout tests would be vacuous"
+fi
+
+# A -> B: minted here, consumed against the clone's sources at a different absolute path.
+A_IN_B="$(xtally "$TMP/from_A.txt" "$TMP/clone/examples/elf_header/src/main.con")"
+if [ "$A_IN_B" = "5 current, 0 not current, 0 unreadable" ]; then
+  ok "a receipt minted in checkout A is CURRENT against checkout B at another absolute path"
+else
+  no "a receipt minted in A is not current in B ($A_IN_B) — receipts are not portable across checkouts"
+fi
+
+# ...and the reverse, because portability that only holds in one direction is an accident.
+B_IN_A="$(xtally "$TMP/from_B.txt" "examples/elf_header/src/main.con")"
+if [ "$B_IN_A" = "5 current, 0 not current, 0 unreadable" ]; then
+  ok "and a receipt minted in checkout B is current against checkout A"
+else
+  no "a receipt minted in B is not current in A ($B_IN_A) — portability holds in only one direction"
+fi
+
+# NON-VACUITY: the cross-checkout comparison must still be able to say NO. A receipt from a different
+# PROGRAM, consumed against this one, must not read current — otherwise "5 current" above would tell
+# us only that the consumer says yes to everything.
+"$BIN" examples/crypto_verify/src/main.con --report receipts --out "$TMP/other_prog.txt" >/dev/null 2>&1
+OTHER="$(xtally "$TMP/other_prog.txt" "$TMP/clone/examples/elf_header/src/main.con")"
+if grep -qE '^0 current' <<<"$OTHER"; then
+  ok "a receipt from a different program is not current in either checkout ($OTHER)"
+else
+  no "a foreign program's receipts read current across checkouts ($OTHER) — the comparison accepts anything"
+fi
+
+echo "=== the compiler identity travels with the binary ==="
+
+# The identity a receipt binds must describe the COMPILER, not the tree it is pointed at. It is a
+# build-time constant, so it is identical from both checkouts — asserted rather than assumed, because
+# an identity derived from ambient repository state would differ here and that is exactly the class of
+# defect this replaced.
+ID_A="$("$BIN" examples/elf_header/src/main.con --report receipts 2>/dev/null \
+        | grep -oE 'build:[0-9a-f]+' | head -1)"
+ID_B="$("$BIN" "$TMP/clone/examples/elf_header/src/main.con" --report receipts 2>/dev/null \
+        | grep -oE 'build:[0-9a-f]+' | head -1)"
+if [ -n "$ID_A" ] && [ "$ID_A" = "$ID_B" ]; then
+  ok "the same binary reports one identity from both checkouts ($ID_A)"
+else
+  no "the compiler identity differs by checkout ('$ID_A' vs '$ID_B') — it is describing the tree, not the binary"
+fi
+# Its VALUE-level properties — freshness, entropy, portability, content-derivation — are asserted
+# behaviourally by check_build_identity_freshness.sh. This gate deliberately does not re-assert them
+# by grepping source text: an earlier control here did exactly that, and a shape assertion cannot
+# notice a production branch becoming unreachable.
+
+GATE_DONE=1; echo "CLEAN-CHECKOUT: PASS=$PASS FAIL=$FAIL"; exit 1
+fi
+# Any uncommitted work would make the clone legitimately differ, so the comparison is only meaningful
+# from a clean tree. Reported rather than silently skipped.
+DIRTY="$(git status --porcelain | grep -vc '^?? ' || true)"
+if [ "$DIRTY" = "0" ]; then
+  ok "the working tree has no uncommitted tracked changes, so the clone is comparable"
+else
+  no "$DIRTY uncommitted tracked change(s): the clone cannot be compared against the working tree"
+fi
+
+for fixture in elf_header crypto_verify proof_patterns/composition; do
+  HERE="$(evidence_of "examples/$fixture/src/main.con")"
+  THERE="$(evidence_of "$TMP/clone/examples/$fixture/src/main.con")"
+  if [ -z "$HERE" ]; then
+    no "$fixture produced no evidence — the comparison would be vacuous"
+  elif [ "$HERE" = "$THERE" ]; then
+    ok "$fixture: a clean checkout yields byte-identical evidence"
+  else
+    no "$fixture: evidence DIFFERS in a clean checkout — something outside committed content is reaching it"
+    diff <(printf '%s' "$HERE") <(printf '%s' "$THERE") | head -6 | sed 's/^/      /' || true
+  fi
+done
+
+echo "=== repository root and project root agree ==="
+
+# `lake` finds its workspace by walking up from wherever it is invoked, and a verdict that depended
+# on where the caller stood is exactly what slice 4 removed. Asserted from BOTH directions rather
+# than assumed from the resolver's code.
+FROM_REPO="$(evidence_of "examples/elf_header/src/main.con")"
+FROM_PROJ="$(cd examples/elf_header && evidence_of "src/main.con")"
+if [ -z "$FROM_REPO" ]; then
+  no "no evidence from the repository root — the comparison would be vacuous"
+elif [ "$FROM_REPO" = "$FROM_PROJ" ]; then
+  ok "invoking from the repository root and from the project root give identical evidence"
+else
+  no "evidence depends on the invoking directory"
+  diff <(printf '%s' "$FROM_REPO") <(printf '%s' "$FROM_PROJ") | head -6 | sed 's/^/      /' || true
+fi
+
 echo "=== the compiler identity is the executable that ran ==="
 
 REPORTED="$("$BIN" examples/elf_header/src/main.con --report receipts 2>/dev/null \

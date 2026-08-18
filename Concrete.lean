@@ -51,6 +51,7 @@ import Concrete.Proof.Correspondence
 import Concrete.Proof.TableResolve
 import Concrete.Proof.ClassificationTable
 import Concrete.Proof.DependencyEdges
+import Concrete.BuildIdentity
 import Concrete.Proof.Replay
 import Concrete.Proof.Receipt
 import Concrete.Proof.Issue

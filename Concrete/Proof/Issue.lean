@@ -331,7 +331,13 @@ def decodeStore (s : String) : List (String × Except ReceiptDecodeRefusal Store
     else if !line.trimAscii.isEmpty then
       body := body ++ [line]
   out := out ++ flush key body
-  return out
+  -- A SUBJECT RECORDED TWICE POISONS BOTH RECORDS. Found by the Slice 8 attack suite: appending a
+  -- contradictory record left the genuine one reading `current` and the forgery reading
+  -- `not current`, so a reader scanning for "current" would conclude the claim was receipt-backed
+  -- from a store that disagrees with itself. Neither may stand.
+  let dupes := (out.map (·.1)).filter (fun k => (out.filter (·.1 == k)).length > 1)
+  return out.map fun (k, r) =>
+    if dupes.contains k then (k, .error (.duplicateRecord k)) else (k, r)
 
 namespace IssueOutcome
 
