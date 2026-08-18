@@ -10,9 +10,14 @@
 # pattern as separate text. Same text is not the same definition: either could be edited alone,
 # and the gates would then silently measure different populations while both reporting a count.
 
-# A stored link is an annotation carrying a hex VALUE. `#[proof_fingerprint(` with no value is
-# not a stored subject — it is a link waiting to be pinned, which is a different state.
-FP_PATTERN='#\[proof_fingerprint\("[a-f0-9]+"\)\]'
+# A stored link is an annotation carrying a VALUE. `#[proof_fingerprint(` with no value is not a
+# stored subject — it is a link waiting to be pinned, which is a different state.
+#
+# THE `v2:` PREFIX IS PART OF THE VALUE. V2 activation (2026-08-17) changed stored values from bare
+# hex to `v2:<hex>`, and a pattern matching only `[a-f0-9]+` stopped selecting ANY migrated fixture.
+# `check_dependency_edges.sh` held four private copies of this regex rather than calling in here, so
+# its corpus went empty and the gate aborted — the precise failure this file's header predicts.
+FP_PATTERN='#\[proof_fingerprint\("(v2:)?[a-f0-9]+"\)\]'
 
 # Files under `examples/` containing at least one stored link.
 fp_files() { grep -rlE "$FP_PATTERN" examples/ 2>/dev/null | sort -u; }

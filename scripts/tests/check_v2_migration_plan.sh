@@ -69,43 +69,59 @@ fi
 echo "=== every row has a disposition, and they reconcile ==="
 
 DISP="$(for f in $FIXTURES; do
-          { "$BIN" "$f" --report migration 2>/dev/null || true; } | { grep -oE '^  \[[a-z_]+\]' || true; }
+          { "$BIN" "$f" --report migration 2>/dev/null || true; } | { grep -oE '^  \[[a-z_0-9]+\]' || true; }
         done | sort | uniq -c)"
 cnt(){ { grep -oE "[0-9]+ +\\[$1\\]" <<<"$DISP" || true; } | { grep -oE '^[0-9]+' || true; } | head -1; }
-MIG="$(cnt migrate)"; REF="$(cnt replay_refused)"; STALE="$(cnt stale_no_honest_value)"
-MIG="${MIG:-0}"; REF="${REF:-0}"; STALE="${STALE:-0}"
-echo "  migrate=$MIG replay_refused=$REF stale_no_honest_value=$STALE"
+MIG="$(cnt migrate)"; ALREADY="$(cnt already_v2)"; STALE="$(cnt stale_no_honest_value)"
+NODIG="$(cnt no_subject_digest)"
+MIG="${MIG:-0}"; ALREADY="${ALREADY:-0}"; STALE="${STALE:-0}"; NODIG="${NODIG:-0}"
+echo "  migrate=$MIG already_v2=$ALREADY stale_no_honest_value=$STALE no_subject_digest=$NODIG"
 
-if [ "$(( MIG + REF + STALE ))" = "$ROWS" ]; then
-  ok "every plan row carries exactly one disposition ($MIG + $REF + $STALE = $ROWS)"
+if [ "$(( MIG + ALREADY + STALE + NODIG ))" = "$ROWS" ]; then
+  ok "every plan row carries exactly one disposition ($MIG + $ALREADY + $STALE + $NODIG = $ROWS)"
 else
-  no "dispositions do not sum to the plan: $MIG + $REF + $STALE != $ROWS"
-fi
-if [ "$MIG" = "33" ] && [ "$REF" = "6" ] && [ "$STALE" = "4" ]; then
-  ok "the plan is exactly 33 migrate / 6 replay-refused / 4 stale-with-no-honest-value"
-else
-  no "the plan moved: $MIG migrate / $REF refused / $STALE stale — say which links changed and why"
+  no "dispositions do not sum to the plan: $MIG + $ALREADY + $STALE + $NODIG != $ROWS"
 fi
 
-echo "=== a stale link is never given a manufactured value ==="
+# ACTIVATION IS COMPLETE, so there is nothing left to migrate. This is the regression leg: a v1
+# value reappearing anywhere — a hand-written fingerprint, a reverted file, a new fixture — shows up
+# here as `migrate` and fails, rather than silently sitting at a weaker digest.
+if [ "$MIG" = "0" ] && [ "$ALREADY" = "$ROWS" ]; then
+  ok "V2 activation is complete: all $ROWS plan rows already carry a v2 value, none left to migrate"
+else
+  no "$MIG link(s) still store a v1 value — activation is no longer complete"
+fi
 
-# THE LOAD-BEARING REFUSAL. `elf_header_drifted` is a different program sharing every declaration
-# name with `elf_header`; two of its functions drifted from what their proofs were pinned to.
-# Recording the current V2 digest for those would assert a proof that was never established against
-# the present body.
-DRIFT="$("$BIN" examples/elf_header_drifted/src/main.con --report migration 2>/dev/null || true)"
-if [ "$( { grep -c '\[stale_no_honest_value\]' <<<"$DRIFT" || true; } )" = "2" ]; then
-  ok "both drifted claims refuse a v2 value, naming that no honest one exists"
+echo "=== a stale link carries a REAL digest, never a manufactured one ==="
+
+# `elf_header_drifted` is a different program sharing every declaration name with `elf_header`; two
+# of its functions drifted from what their proofs were pinned to. Their stored values are the GENUINE
+# pre-drift v2 digests, obtained by reverting the drift, measuring, and restoring it — which is why
+# this fixture still demonstrates STALENESS under V2 rather than degrading to "the record is old".
+DRIFT_ST="$("$BIN" examples/elf_header_drifted/src/main.con --report proof-status 2>/dev/null || true)"
+if [ "$( { grep -cE '^-- proof stale' <<<"$DRIFT_ST" || true; } )" = "2" ]; then
+  ok "the drift fixture reports 2 STALE under v2 — a real digest mismatch, not an unreadable record"
 else
-  no "the drift fixture no longer refuses two stale links: $(grep -c 'stale_no_honest_value' <<<"$DRIFT" || true)"
+  no "the drift fixture no longer reports 2 stale: $(grep -cE '^-- proof stale' <<<"$DRIFT_ST" || true)"
 fi
-# ...and the refusal is TARGETED: the same fixture's undrifted claims still migrate. A plan that
-# refused the whole file would satisfy the leg above while migrating nothing.
-if [ "$( { grep -c '\[migrate\]' <<<"$DRIFT" || true; } )" -ge 1 ]; then
-  ok "the same fixture's undrifted claims still migrate — the refusal is per-claim"
+# ...and TARGETED: its undrifted claims stay proved. A fixture that went entirely stale would satisfy
+# the leg above while telling us nothing about discrimination.
+if [ "$( { grep -cE '^-- proved' <<<"$DRIFT_ST" || true; } )" -ge 2 ]; then
+  ok "the same fixture's undrifted claims stay proved — staleness is per-claim"
 else
-  no "nothing in the drift fixture migrates; the stale refusal is blanket, not targeted"
+  no "nothing in the drift fixture is proved; staleness is blanket, not targeted"
 fi
+# NO SYNTHETIC VALUE MAY SIT WHERE A REAL ONE BELONGS. The two drifted links carry the exact digests
+# `elf_header` records for the same declarations, because the v2 subject digest is package-independent
+# — that equality is what makes them provably the pre-drift bodies rather than invented non-matches.
+for d in a669dd14614bc56a33be35aa10226679 0d368796ab5dee78d031bac527ddeced; do
+  if grep -q "v2:$d" examples/elf_header_drifted/src/main.con \
+     && grep -q "v2:$d" examples/elf_header/src/main.con; then
+    ok "drifted link pinned to the real pre-drift digest ${d:0:8} (identical in the undrifted program)"
+  else
+    no "digest ${d:0:8} is no longer shared between the drifted and undrifted programs — the pin is not a measured pre-drift value"
+  fi
+done
 # No migrated row may carry a v1 value as its target, and every one must be a v2 value.
 BADTARGET="$(for f in $FIXTURES; do
                { "$BIN" "$f" --report migration 2>/dev/null || true; } | { grep '\[migrate\]' || true; }

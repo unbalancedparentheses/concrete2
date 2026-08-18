@@ -12,6 +12,10 @@ set -uo pipefail
 trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${GATE_DONE:-0}" -ne 1 ]; then
   echo "FATAL: unexpected shell failure (exit $rc) — the verdict below is not trustworthy" >&2; exit "$rc"; fi' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# ONE definition of "a stored proof link". This gate previously held four private copies of the
+# regex, and V2 activation invalidated all four at once — the corpus selection went empty and the
+# gate aborted. That is exactly what lib/fingerprints.sh exists to prevent.
+source "$ROOT_DIR/scripts/tests/lib/fingerprints.sh"
 cd "$ROOT_DIR"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
@@ -2279,7 +2283,7 @@ fi
 # `CallableId` rendering and different implementations.
 # Corpus computed locally: this section runs before the correspondence section defines its list, and
 # referencing a variable set later is how the first version of this block aborted the whole gate.
-DEFID_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+DEFID_FILES="$(fp_files)"
 DEFID=""
 for f in $DEFID_FILES; do
   DEFID="$DEFID$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
@@ -2602,7 +2606,7 @@ probe "usability compares the COUNT, so a dropped request cannot pass" "true" "
 # Root coverage says the closure could be computed; correspondence says every edge in it has exactly
 # one validated justification. A subject can root while corresponding badly, so these are reported
 # and pinned apart.
-CORR_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+CORR_FILES="$(fp_files)"
 CORR_LINES=""
 for f in $CORR_FILES; do
   CORR_LINES="$CORR_LINES$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow correspondence:' || true)
@@ -2836,7 +2840,7 @@ probe "changing an edge KIND moves the root" "true" '
 # === SHADOW INTEGRATION (slice 6, step 4) ====================================================
 # Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and
 # REPORTED; it decides nothing yet.
-CORPUS_FILES_EARLY="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+CORPUS_FILES_EARLY="$(fp_files)"
 TMPDISC="$(mktemp)"; trap 'rm -f "$TMPDISC"' EXIT
 
 # ============================================================================================
@@ -2907,7 +2911,7 @@ printf '%s' "$DR" | grep -qE "shadow depRoot: [0-9a-f]{8}" \
 # rooted. A gate pinned to "some fixture still fails" gets falsified by success, which is the
 # wrong shape: the property is that a refusal, IF one occurs, names its edge — and the fail-closed
 # behaviour itself is unit-tested above ("a root refuses an UNCLASSIFIED edge").
-CORPUS_FILES="$(grep -rlE '#\[proof_fingerprint\("[a-f0-9]+"\)\]' examples/ | sort -u)"
+CORPUS_FILES="$(fp_files)"
 CORPUS_REF="$(for f in $CORPUS_FILES; do
   "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true
 done)"

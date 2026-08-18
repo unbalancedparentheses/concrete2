@@ -4115,8 +4115,28 @@ re-checked, and a stored receipt is a distinct untrusted type with no minting pa
 precision is DEFERRED to the typed-contract milestone with a corpus tripwire, and the ninth table is
 DEFERRED past Slice 8 having been measured to carry no authority — both are off this closure list.
 
-Three items remain: V2 ACTIVATION (the dry run is shipped and gated), clean-checkout
-reproducibility, and Slice 8.
+Two items remain: clean-checkout reproducibility and Slice 8.
+
+**[shipped 2026-08-17] Atomic V1 -> V2 activation.** The live freshness verdict now compares the V2
+subject digest. **The corpus census is UNCHANGED** — 35 proved, 5 stale, 4 dependency-not-current,
+15 unbound, 15 ineligible, 32 no-proof, 9 trusted, 1 blocked, identical before and after — which is
+the whole point of migrating first: activation without migration turns 43 links `needs_recheck` in a
+single commit, measured rather than assumed. `make test-v2-migration-plan` 11/0 now asserts
+COMPLETION (nothing left to migrate) and is the regression leg if a v1 value ever reappears.
+
+Atomic because it cannot be otherwise: storing v2 values while the comparison is still v1 marks every
+migrated link stale, so the rewrite, the deriver flip, the regenerated attestation manifest and the
+regenerated classification table are one change. Editing any `.con` file moves its `PackageIdentity`
+— which binds module content — and therefore every `DefinitionIdentity` in that package.
+
+`ObligationStatus.needsRecheck` existed and had never been produced; it is now what a v1 record reads
+as. `elf_header_drifted` still demonstrates genuine v2 staleness because its two links were pinned to
+the REAL pre-drift digests, obtained by reverting the drift, measuring, and restoring it.
+
+Two design errors of mine surfaced during activation and are fixed: migration required kernel
+acceptance (it should not — a fingerprint records WHICH BODY, not whether the proof is valid), and
+staleness had TWO producers, so flipping only the status deriver left the registry validator
+comparing a v2 value against a v1 fingerprint and emitting five spurious warnings on a clean fixture.
 
 **The link count is 44**, counted from CODE and reconciled by `make test-v2-migration-plan` (9/0):
 44 stored fingerprints = 43 plan rows + 1 unreachable (`contract_negatives/invalid_attribute`, whose
