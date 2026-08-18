@@ -77,16 +77,20 @@ if grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean 2>/dev/null; then
 else
   ok "the canonical subject digest cannot include structural body bytes"
 
-# THE PROPERTY, not the proxy. The subject digest may now be built from structural bytes; what
-# must not happen is a STATUS reading it. `deriveObligationStatus` takes the legacy fingerprint
-# and nothing else, so the live verdict cannot move when the structural body does — which is the
-# whole meaning of "still shadow". If subjectDigest ever reaches this call, the migration has
-# begun without its manifest.
-if grep -n "deriveObligationStatus" Concrete/Proof/ProofCore.lean | grep -qv "private def" \
-   && ! grep -A2 "deriveObligationStatus e.eligibility" Concrete/Proof/ProofCore.lean | grep -q "subjectDigest"; then
-  ok "no STATUS derivation consumes the subject digest — the live verdict stays on the legacy fingerprint"
+# THE PROPERTY, not the proxy — INVERTED at the V2 activation (2026-08-17). This asserted that no
+# STATUS reads the subject digest, which was the whole meaning of "still shadow": the live verdict
+# could not move when the structural body did. The migration has since happened deliberately and
+# WITH its manifest (`--report migration`, applied by scripts/gen/apply_v2_migration.sh across all
+# three corpora), so the requirement is now the opposite one.
+#
+# It matters that this is asserted rather than merely stopped being asserted. If `subjectDigest` ever
+# stopped reaching the deriver, freshness would silently fall back to the body-only fingerprint —
+# which is exactly bugs 059 and 060 reopening, since that hash sees neither declared types nor
+# contracts. The former tripwire becomes the guard on the thing it used to forbid.
+if grep -A2 "deriveObligationStatus e.eligibility" Concrete/Proof/ProofCore.lean | grep -q "subjectDigest"; then
+  ok "the status derivation consumes the subject digest — freshness is on V2, not the legacy fingerprint"
 else
-  no "deriveObligationStatus now sees the subject digest — the step-7 migration has started without its manifest"
+  no "deriveObligationStatus no longer receives the subject digest — freshness has fallen back to the body-only fingerprint, which is bugs 059 and 060 reopening"
 fi
 fi
 

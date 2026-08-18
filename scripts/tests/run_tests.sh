@@ -7411,12 +7411,29 @@ echo 'fn main() -> i32 { return 0; }' > "$MAL_DIR/toml_nopkg/src/main.con"
 cat > "$MAL_DIR/toml_nopkg/Concrete.toml" << 'TOMLEOF'
 [dependencies]
 TOMLEOF
-mal_nopkg=$(cd "$MAL_DIR/toml_nopkg" && $ROOT_DIR/$COMPILER build 2>&1)
-if grep <<<"$mal_nopkg" -q "warning.*missing.*\[package\]"; then
-    echo "  ok  malformed: Concrete.toml without [package] produces warning"
+# THE EXIT CODE IS CAPTURED, and that is not incidental. This suite runs under `set -e`, so a bare
+# `x=$(cmd)` whose command exits non-zero ends the ENTIRE trust gate right there — no summary, no
+# failure line, just a truncated log and exit 1. That is what happened here: the whole gate died
+# after "valid bundle passes validation" and reported nothing about the ~4000 lines that follow.
+#
+# A project with no [package] name now REFUSES rather than warning-and-building. That refusal is
+# correct and pre-existing: definition identity is package-scoped, so a manifest that declares no
+# name yields no scoped identity and no ProofCore, and building one would let unscoped definitions
+# participate in evidence. It only became reachable when project detection was repaired — before
+# that, running from inside a project silently fell back to standalone mode and never loaded the
+# manifest at all.
+#
+# So both halves are asserted: the warning still names the problem, and the build refuses.
+mal_nopkg=$(cd "$MAL_DIR/toml_nopkg" && $ROOT_DIR/$COMPILER build 2>&1) && nopkg_exit=0 || nopkg_exit=$?
+if grep <<<"$mal_nopkg" -q "warning.*missing.*\[package\]" && [ "$nopkg_exit" -ne 0 ]; then
+    echo "  ok  malformed: Concrete.toml without [package] warns and refuses (identity is package-scoped)"
     mal_pass=$((mal_pass + 1))
+elif [ "$nopkg_exit" -eq 0 ]; then
+    echo "  FAIL malformed: Concrete.toml without [package] BUILT successfully — an unnamed package has no scoped identity, so its definitions must not reach evidence"
+    mal_fail=$((mal_fail + 1))
 else
-    echo "  FAIL malformed: Concrete.toml without [package] should produce warning"
+    echo "  FAIL malformed: Concrete.toml without [package] refused without naming the reason"
+    echo "    output: $(echo "$mal_nopkg" | awk "NR<=3")"
     mal_fail=$((mal_fail + 1))
 fi
 
@@ -7430,7 +7447,9 @@ name = "test"
 [alien_section]
 foo = "bar"
 TOMLEOF
-mal_unk=$(cd "$MAL_DIR/toml_unk" && $ROOT_DIR/$COMPILER build 2>&1)
+# Exit code captured for the same reason as the [package] case above: an unhandled non-zero here
+# would kill the suite rather than fail this test.
+mal_unk=$(cd "$MAL_DIR/toml_unk" && $ROOT_DIR/$COMPILER build 2>&1) || true
 if grep <<<"$mal_unk" -q "warning.*unrecognized section"; then
     echo "  ok  malformed: Concrete.toml with unknown section produces warning"
     mal_pass=$((mal_pass + 1))
@@ -7697,6 +7716,17 @@ for main_file in examples/*/src/main.con; do
     grep -q '#\[proof_by' "$main_file" || continue
     example_name=$(basename "$(dirname "$(dirname "$main_file")")")
     [ "$example_name" = "proof_pressure" ] && continue
+    # DRIFT FIXTURES ARE SUPPOSED TO BE STALE — that is the entire reason they exist. They used to
+    # live as `<example>/src/main_drifted.con`, which this glob never matched, so the exclusion was
+    # accidental. Each is now its own PACKAGE (a drifted body needs its own package identity), so
+    # `examples/*_drifted/src/main.con` matches and they arrived in this loop reporting exactly the
+    # staleness they are built to demonstrate.
+    #
+    # Classified by the file's own HEADER rather than by its name, which is the rule
+    # scripts/gen/attestation_manifest.sh already applies to the same population: a renamed drift
+    # fixture stays classified, and an innocent `*_drifted` name is not misclassified. Skipping by
+    # directory name would have been one character shorter and wrong in both directions.
+    grep -qE '^// .*DRIFTED variant' "$main_file" && continue
     ps_out=$("$COMPILER" "$main_file" --report proof-status 2>&1) || true
     if grep <<<"$ps_out" -qE "^-- (proof )?stale"; then
         echo "  FAIL stale-proof: $example_name has stale proofs"
@@ -7857,12 +7887,21 @@ else
     evidence_fail=$((evidence_fail + 1))
 fi
 
-# 2. validate_header is proved
-if grep <<<"$pp_out" -B5 "validate_header" | grep -q "^-- proved"; then
-    echo "  ok  pressure-set: validate_header is proved"
+# 2. validate_header has NO proof — the honest state after its wrong link was deleted
+# RE-PINNED 2026-08-18. `validate_header` carried a link to elf_header's
+# `validate_header_correct` — a theorem about ELF magic/class/data/version bytes, on a function
+# that checks a nonce and calls check_nonce. Same qualified name, nothing else in common; it passed
+# every name-based check for months until correspondence caught it. Repaired by DELETING the claim,
+# because no theorem proves that body and attaching the nearest plausible one is the defect being
+# repaired. So the pressure set legitimately has one fewer proved function.
+if grep <<<"$pp_out" -B5 "validate_header" | grep -q "no proof"; then
+    echo "  ok  pressure-set: validate_header has no proof (its misattributed link was deleted)"
     evidence_pass=$((evidence_pass + 1))
+elif grep <<<"$pp_out" -B5 "validate_header" | grep -q "^-- proved"; then
+    echo "  FAIL pressure-set: validate_header is proved again — no theorem proves this body; a link was re-attached"
+    evidence_fail=$((evidence_fail + 1))
 else
-    echo "  FAIL pressure-set: validate_header should be proved"
+    echo "  FAIL pressure-set: validate_header should report no proof"
     evidence_fail=$((evidence_fail + 1))
 fi
 
@@ -7903,11 +7942,11 @@ else
 fi
 
 # 7. Totals line has all 6 states accounted for
-if grep <<<"$pp_out" -q "2 proved.*1 stale.*1 unproved.*1 blocked.*2 ineligible"; then
-    echo "  ok  pressure-set: totals match expected (2 proved, 1 stale, 1 unproved, 1 blocked, 2 ineligible)"
+if grep <<<"$pp_out" -q "1 proved.*1 stale.*2 unproved.*1 blocked.*2 ineligible"; then
+    echo "  ok  pressure-set: totals match expected (1 proved, 1 stale, 2 unproved, 1 blocked, 2 ineligible)"
     evidence_pass=$((evidence_pass + 1))
 else
-    echo "  FAIL pressure-set: totals should be 2 proved, 1 stale, 1 unproved, 1 blocked, 2 ineligible"
+    echo "  FAIL pressure-set: totals should be 1 proved, 1 stale, 2 unproved, 1 blocked, 2 ineligible"
     echo "    got: $(grep <<<"$pp_out" "Totals:")"
     evidence_fail=$((evidence_fail + 1))
 fi
@@ -8006,11 +8045,11 @@ else
 fi
 
 # 17. Obligations totals match proof-status totals
-if grep <<<"$pp_obl" -q "2 proved.*1 stale.*1 missing.*1 blocked.*2 ineligible"; then
-    echo "  ok  pressure-obl: obligation totals match proof-status"
+if grep <<<"$pp_obl" -q "1 proved.*1 stale.*2 missing.*1 blocked.*2 ineligible"; then
+    echo "  ok  pressure-obl: obligation totals match proof-status (1 proved)"
     evidence_pass=$((evidence_pass + 1))
 else
-    echo "  FAIL pressure-obl: obligation totals should match proof-status"
+    echo "  FAIL pressure-obl: obligation totals should be 1 proved, 1 stale, 2 missing, 1 blocked, 2 ineligible"
     echo "    got: $(grep <<<"$pp_obl" "Totals:")"
     evidence_fail=$((evidence_fail + 1))
 fi
@@ -8059,11 +8098,11 @@ else
 fi
 
 # 22. Effects: evidence totals show 2 proved
-if grep <<<"$pp_eff" -q "Evidence: 2 proved"; then
-    echo "  ok  pressure-eff: effects evidence totals show 2 proved"
+if grep <<<"$pp_eff" -q "Evidence: 1 proved"; then
+    echo "  ok  pressure-eff: effects evidence totals show 1 proved"
     evidence_pass=$((evidence_pass + 1))
 else
-    echo "  FAIL pressure-eff: effects evidence should show 2 proved"
+    echo "  FAIL pressure-eff: effects evidence should show 1 proved"
     echo "    got: $(grep <<<"$pp_eff" "Evidence:")"
     evidence_fail=$((evidence_fail + 1))
 fi
@@ -8209,11 +8248,11 @@ fi
 
 # 42. check-proofs: pressure set shows verified + failed
 cp_pp=$($COMPILER examples/proof_pressure/src/main.con --report check-proofs 2>&1) || true
-if grep <<<"$cp_pp" -q "Kernel-verified (2)" && grep <<<"$cp_pp" -q "Failed (1)"; then
-    echo "  ok  check-proofs: pressure set 2 verified, 1 failed"
+if grep <<<"$cp_pp" -q "Kernel-verified (1)" && grep <<<"$cp_pp" -q "Failed (1)"; then
+    echo "  ok  check-proofs: pressure set 1 verified, 1 failed"
     evidence_pass=$((evidence_pass + 1))
 else
-    echo "  FAIL check-proofs: pressure set should have 2 verified, 1 failed"
+    echo "  FAIL check-proofs: pressure set should have 1 verified, 1 failed"
     echo "    got: $(grep <<<"$cp_pp" "Summary:")"
     evidence_fail=$((evidence_fail + 1))
 fi
@@ -9427,14 +9466,14 @@ fi
 # 4. Summary has correct obligation counts
 if echo "$pb_out" | python3 -c "
 import sys,json; d=json.load(sys.stdin); s=d['summary']
-assert s['proved']==2, f'proved={s[\"proved\"]}'
+assert s['proved']==1, f'proved={s[\"proved\"]}'
 assert s['stale']==1, f'stale={s[\"stale\"]}'
-assert s['missing']==1, f'missing={s[\"missing\"]}'
+assert s['missing']==2, f'missing={s[\"missing\"]}'
 assert s['blocked']==1, f'blocked={s[\"blocked\"]}'
 assert s['ineligible']==2, f'ineligible={s[\"ineligible\"]}'
 assert s['total_functions']==7, f'total={s[\"total_functions\"]}'
 " 2>/dev/null; then
-    echo "  ok  bundle: summary obligation counts correct (2 proved, 1 stale, 1 missing, 1 blocked, 2 ineligible)"
+    echo "  ok  bundle: summary obligation counts correct (1 proved, 1 stale, 2 missing, 1 blocked, 2 ineligible)"
     pb_pass=$((pb_pass + 1))
 else
     echo "  FAIL bundle: summary obligation counts incorrect"
@@ -10939,7 +10978,11 @@ fi
 rm -f /tmp/test_sc_pp
 
 # 2. Build summary does not include large stdlib counts (total should be < 20)
-sc_total=$(grep <<<"$sc_summary" -oE '[0-9]+' | paste -sd+ - | bc)
+# SUMMED IN THE SHELL, not with `bc`. `bc` is not part of a base POSIX install and is absent from
+# this environment, so this line exited 127 and — under `set -e` — killed the trust gate outright,
+# roughly 300 assertions before the end. An external tool used for one addition is a whole-suite
+# outage waiting to happen, and arithmetic is something the shell already does.
+sc_total=$(grep <<<"$sc_summary" -oE '[0-9]+' | awk '{t += $1} END {print t+0}')
 if [ "$sc_total" -lt 20 ]; then
     echo "  ok  scoping: build summary total < 20 (user-only, not stdlib)"
     sc_pass=$((sc_pass + 1))
