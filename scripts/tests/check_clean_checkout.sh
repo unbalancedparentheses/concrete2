@@ -39,12 +39,16 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 # The evidence surface. Captured rather than piped: these fixtures exit non-zero when they carry
 # proof defects, and a pipeline exit code must not be allowed to decide the comparison.
+# PATHS ARE NORMALIZED AWAY. Reports name the file they are about, so the raw text necessarily
+# differs between two checkouts — that is the report doing its job, not evidence depending on
+# location. What must not differ is the identities, digests, roots and statuses, so the location is
+# stripped and everything else compared verbatim.
 evidence_of() {
   {
     "$BIN" "$1" --report proof-status    2>/dev/null | grep -E '^-- |proof matches' || true
     "$BIN" "$1" --report subject-facts    2>/dev/null | grep -E 'defIdentity|depRoot|correspondence' || true
     "$BIN" "$1" --report attestation-join 2>/dev/null | grep -E '^(subject|dependency)' || true
-  }
+  } | sed -E 's#[^ ]*/([A-Za-z0-9_.-]+\.con)#\1#g'
 }
 
 echo "=== a clean checkout reproduces the working tree's evidence ==="
@@ -76,7 +80,7 @@ for fixture in elf_header crypto_verify proof_patterns/composition; do
     ok "$fixture: a clean checkout yields byte-identical evidence"
   else
     no "$fixture: evidence DIFFERS in a clean checkout — something outside committed content is reaching it"
-    diff <(printf '%s' "$HERE") <(printf '%s' "$THERE") | head -6 | sed 's/^/      /'
+    diff <(printf '%s' "$HERE") <(printf '%s' "$THERE") | head -6 | sed 's/^/      /' || true
   fi
 done
 
@@ -93,7 +97,7 @@ elif [ "$FROM_REPO" = "$FROM_PROJ" ]; then
   ok "invoking from the repository root and from the project root give identical evidence"
 else
   no "evidence depends on the invoking directory"
-  diff <(printf '%s' "$FROM_REPO") <(printf '%s' "$FROM_PROJ") | head -6 | sed 's/^/      /'
+  diff <(printf '%s' "$FROM_REPO") <(printf '%s' "$FROM_PROJ") | head -6 | sed 's/^/      /' || true
 fi
 
 echo "=== the compiler identity is the executable that ran ==="

@@ -124,7 +124,17 @@ def PackageIdentity.syntheticForModules (moduleNames : List String)
     -- Sources are digested and sorted by CONTENT, never by path, so ordering cannot reintroduce
     -- checkout dependence.
     let mods := (moduleNames.mergeSort (· ≤ ·)).foldl (fun a m => a ++ s!"|M{m.length}:{m}") ""
-    let srcs := (moduleSources.map Concrete.shortHash).mergeSort (· ≤ ·)
+    -- DEDUPLICATED: a package's content is a SET of module contents, not a count of how many times
+    -- an enumerator visited them. Without this the identity depended on the INPUT PATH FORM —
+    -- `concrete src/main.con` from inside a project enumerated the entry file twice (the resolver's
+    -- already-visited list is keyed on the path string, and the relative and resolved forms did not
+    -- match), so the same program yielded a different package identity than the same file named from
+    -- the repository root: 4/4 correspondence one way, 0/4 the other. Measured, not theorised — with
+    -- an ABSOLUTE path the identity was already stable from every directory including `/tmp`.
+    --
+    -- Deduplicating on the DIGEST loses nothing: module names are bound separately, so two distinct
+    -- modules sharing content stay distinguished, while one module counted twice stops moving the root.
+    let srcs := (moduleSources.map Concrete.shortHash).eraseDups.mergeSort (· ≤ ·)
     let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""
     PackageIdentity.synthetic (Concrete.shortHash ("pkgSyntheticV1:" ++ mods ++ srcPart))
 
@@ -201,7 +211,17 @@ def packageIdentityOf (tomlContent : String) (moduleNames : List String)
     -- Sources are digested by CONTENT and sorted by content, never by path: sorting by path would
     -- reintroduce checkout dependence through the ordering, which is the same defect the
     -- location-dependence refusal exists to prevent.
-    let srcs := (moduleSources.map Concrete.shortHash).mergeSort (· ≤ ·)
+    -- DEDUPLICATED: a package's content is a SET of module contents, not a count of how many times
+    -- an enumerator visited them. Without this the identity depended on the INPUT PATH FORM —
+    -- `concrete src/main.con` from inside a project enumerated the entry file twice (the resolver's
+    -- already-visited list is keyed on the path string, and the relative and resolved forms did not
+    -- match), so the same program yielded a different package identity than the same file named from
+    -- the repository root: 4/4 correspondence one way, 0/4 the other. Measured, not theorised — with
+    -- an ABSOLUTE path the identity was already stable from every directory including `/tmp`.
+    --
+    -- Deduplicating on the DIGEST loses nothing: module names are bound separately, so two distinct
+    -- modules sharing content stay distinguished, while one module counted twice stops moving the root.
+    let srcs := (moduleSources.map Concrete.shortHash).eraseDups.mergeSort (· ≤ ·)
     let srcPart := srcs.foldl (fun a d => a ++ "|S" ++ d) ""
     let root := Concrete.shortHash s!"pkgRootV1:{mods}{srcPart}"
     PackageIdentity.of? declared origin root

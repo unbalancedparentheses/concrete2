@@ -180,17 +180,34 @@ def validateToml (content : String) : List String :=
 
 /-- Find Concrete.toml by walking up from a directory. -/
 partial def findProjectRoot (startDir : String) : IO (Option String) := do
-  let tomlPath := startDir ++ "/Concrete.toml"
-  let tomlExists ← try
-    let _ ← IO.FS.readFile ⟨tomlPath⟩
-    pure true
-  catch _ => pure false
-  if tomlExists then
-    return some startDir
-  -- Walk up the ancestor chain until we hit the filesystem root.
-  let parent := dirOf startDir
-  if parent == startDir then return none
-  findProjectRoot parent
+  -- CANONICALISED FIRST, and this is a correctness fix rather than tidiness.
+  --
+  -- `dirOf "src"` is `""`, so walking up from a one-level-deep RELATIVE path went straight to
+  -- `"/Concrete.toml"` — the filesystem root — and never looked at the current directory. Running
+  -- `concrete src/main.con` from inside a project therefore found no project at all and silently
+  -- fell back to STANDALONE analysis: a synthetic package identity, no dependency resolution, and
+  -- evidence that disagreed with the same file named from the repository root. `crypto_verify`
+  -- reported correspondence 4/4 one way and 0/4 the other, and the only difference was where the
+  -- caller stood — the location-dependence slice 4 exists to eliminate.
+  --
+  -- Failing to canonicalise leaves the previous behaviour rather than inventing a root: a directory
+  -- that does not exist has no project, and guessing one would be worse than not finding it.
+  let start ← try
+      pure (← IO.FS.realPath ⟨if startDir.isEmpty then "." else startDir⟩).toString
+    catch _ => pure startDir
+  let rec up (dir : String) (fuel : Nat) : IO (Option String) := do
+    match fuel with
+    | 0 => return none
+    | fuel + 1 =>
+      let tomlExists ← try
+        let _ ← IO.FS.readFile ⟨dir ++ "/Concrete.toml"⟩
+        pure true
+      catch _ => pure false
+      if tomlExists then return some dir
+      let parent := dirOf dir
+      if parent == dir || parent.isEmpty then return none
+      up parent fuel
+  up start 64
 
 /-- Resolve a dependency path relative to the project root. -/
 def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=

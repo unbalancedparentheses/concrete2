@@ -665,6 +665,17 @@ def scopeUserModulesToFile (userModules : List CModule) (inputPath projectRoot :
   match Pipeline.parse source with
   | .error _ => return userModules
   | .ok parsedFile =>
+    -- BOTH SIDES CANONICAL. `filePathToModulePath` compares `inputPath` against
+    -- `projectRoot ++ "/src/"` as a string prefix, so the two must be in the same form.
+    -- `findProjectRoot` now returns a real (absolute) path — it had to, because walking up from a
+    -- one-level-deep relative path skipped the current directory entirely — and that instantly broke
+    -- the comparison here: an absolute root against a relative input never matches, the path-derived
+    -- scoping fell back to bare-name matching, and `src/a/foo.con` and `src/b/foo.con` merged back
+    -- into one module. Canonicalising the input restores the prefix relation instead of reverting
+    -- the walk.
+    let inputPath ← try
+        pure (← IO.FS.realPath ⟨inputPath⟩).toString
+      catch _ => pure inputPath
     let parsedNames := parsedFile.modules.map (·.name)
     -- Path-derived match (preferred — handles duplicate basenames).
     let pathMatched : List CModule :=
