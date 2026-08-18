@@ -1256,16 +1256,16 @@ probe "a real row carries its table identities" "true" '
 # and collapsing "ambiguous" into "take one" is how a conflicting table classifies confidently.
 probe "a theorem appearing TWICE yields no row, even if identical" "true" '
 #eval
-  let dup : List (String × String × String × List (String × String) × Bool) :=
-    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
-     ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false)]
-  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
+  let dup : List (String × String × String × List (String × String) × Bool × List String) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []),
+     ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, [])]
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool × List String) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
 probe "a theorem appearing twice with CONFLICTING rows yields no row" "true" '
 #eval
-  let dup : List (String × String × String × List (String × String) × Bool) :=
-    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false),
-     ("T", "contract", "bfda7f397e3221e757383578b50ee3ff", [], false)]
-  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
+  let dup : List (String × String × String × List (String × String) × Bool × List String) :=
+    [("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []),
+     ("T", "contract", "bfda7f397e3221e757383578b50ee3ff", [], false, [])]
+  (match dup.filter (fun (r : String × String × String × List (String × String) × Bool × List String) => r.1 == "T") with | [row] => (validateRawRow row).toOption | _ => none).isNone'
 
 # The refusal must be NAMED. `absent` and `ambiguous` and `malformed` have different fixes —
 # regenerate the hand-back, resolve a conflict, repair a row — and a single `none` sends a reader
