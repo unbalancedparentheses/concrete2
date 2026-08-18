@@ -1,6 +1,18 @@
 # Bug 060: `#[requires]`/`#[ensures]` are outside the proof fingerprint — a false postcondition stays `proved`
 
-**Status:** Open — third of R-0004's evidence-integrity defect class.
+**Status:** FIXED 2026-08-17 by the R-0004 V2 activation — third of R-0004's evidence-integrity defect class.
+
+Contracts are inside the v2 subject (`CheckedDeclFacts` is captured in Elab BEFORE contract
+erasure, precisely so they survive into the digest). Attaching or changing an `#[ensures]` moves the
+subject, so the stored value no longer describes the claim and the function does not report
+`proved`.
+
+**What is and is not claimed.** The digest binds WHAT WAS CLAIMED, not whether the claim is true —
+only the kernel decides that. So a true and a false postcondition both invalidate the stored
+subject; the fix is that neither can ride an old proof, not that the digest can tell them apart.
+
+**Regression that holds it closed:** `scripts/tests/check_proof_freshness.sh`, the leg labelled
+`060 CLOSED`, which requires that a false `#[ensures]` does not report `proved`.
 **Discovered:** 2026-07-25, filing R-0004's reproducers before implementation.
 **Severity:** the highest of this class. The other two let a stale proof survive;
 this one lets a function advertise a postcondition that is FALSE while the report

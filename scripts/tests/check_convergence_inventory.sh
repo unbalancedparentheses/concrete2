@@ -56,17 +56,42 @@ else
   no "the flat shadow line was removed — without it there is nothing to compare the structural digest against"
 fi
 
-# 3. STILL OPEN, and now the entry that matters most. Structural bytes reach OUTPUT (the
-#    shadow report line) but must reach no VERDICT: the authoritative subject digest stays
-#    V1-frozen through the shadow period.
+# 3. CLOSED by the V2 activation (R-0004 package 3, 2026-08-17). This entry said structural bytes
+#    must reach no VERDICT while V1 was the frozen authoritative domain. That period is over:
+#    `proofSubjectDigestV2` is now the subject a stored link is compared against, and the whole
+#    corpus has been migrated to carry the `v2:` discriminator. Inverted per the pattern entry 1
+#    established — the gap is closed and must STAY closed.
 #
-#    Checked by containment rather than by absence, since absence stopped being true when
-#    entry 2 closed. The exact owner set is asserted in check_shadow_body_v2.sh; here we
-#    assert only that no STATUS depends on them.
-if grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean Concrete/Proof/ProofCore.lean Main.lean 2>/dev/null; then
-  no "bodyBytesV2 reached SubjectFacts, ProofCore or Main — a status may now depend on structural bytes while V1 is still the frozen authoritative domain"
+#    ANCHORED ON CODE, NOT PROSE, which is the specific defect this entry had. Its previous form
+#    grepped `bodyBytesV2` across three files, and the ONLY match in ProofCore.lean was a docstring.
+#    It therefore reported "a status may now depend on structural bytes" on the evidence of a
+#    comment — and it did so at the baseline of this session too, so the inventory had been red, and
+#    wrong, for the whole period it was supposed to be governing.
+if grep -qE '^ *\(subjectDigestV2 : Option String' Concrete/Proof/ProofCore.lean; then
+  ok "CLOSED: the status deriver consumes the V2 subject digest — freshness verdicts derive from it"
 else
-  ok "GAP OPEN: structural body bytes are reported but no verdict derives from them"
+  no "deriveObligationStatus no longer takes subjectDigestV2 — if freshness stopped consuming V2, the migration has been reverted and this inventory must say so"
+fi
+# ONE PRODUCER of the v2 comparison. The `v2:` prefix is the discriminator between a v1 and a v2
+# stored value, so a second place testing it is a second freshness rule — the defect that put a
+# private copy in the consistency checker and made it accuse nine correct `proved` claims.
+v2cmp="$(grep -rc '"v2:"' Concrete/Proof/ProofCore.lean || true)"
+if [ "${v2cmp:-0}" -le 2 ]; then
+  ok "the v2 discriminator is tested in one place ($v2cmp site(s) in ProofCore) — storedFreshness owns it"
+else
+  no "the v2 discriminator is tested in $v2cmp places in ProofCore — a second comparison is a second freshness rule; route it through storedFreshness"
+fi
+# THE CORPUS ITSELF, because the code above could be correct while nothing had actually migrated.
+# Counted, and the total is asserted non-zero: "no v1 links remain" is vacuously true of a corpus
+# with no links at all, and a vacuous pass here would read exactly like a completed migration.
+fp_tot="$(grep -rhoE 'proof_fingerprint\("[^"]*"\)' examples --include='*.con' | grep -c . || true)"
+fp_v1="$(grep -rhoE 'proof_fingerprint\("[^"]*"\)' examples --include='*.con' | grep -vc '"v2:' || true)"
+if [ "${fp_tot:-0}" -gt 0 ] && [ "${fp_v1:-1}" -eq 0 ]; then
+  ok "CLOSED: all $fp_tot stored proof links in the corpus carry the v2 subject discriminator"
+elif [ "${fp_tot:-0}" -eq 0 ]; then
+  no "no stored proof links found in examples/ — the migration check is vacuous, not satisfied"
+else
+  no "$fp_v1 of $fp_tot stored links are still v1 — the V2 activation is partial, and a v1 value under a v2 authority is needs-recheck, not proved"
 fi
 
 # 4. constRef names a constant without binding its MEANING.
@@ -121,10 +146,15 @@ fi
 #    The bytes are accurate to today's semantics and stay. What must not happen is the
 #    order becoming AUTHORITATIVE while undecided, so the close condition is ratification
 #    before the fingerprint migration — asserted below rather than trusted to prose.
-if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md; then
-  ok "GAP OPEN: struct-literal initializer evaluation order is undecided"
+# 5-CLOSED (2026-08-08). The close condition this entry stated was RATIFICATION before the
+#    fingerprint migration, and that is what happened: the matrix records "struct-literal
+#    initializers evaluate in SOURCE order". The entry was never converted when its own condition
+#    was met, so it kept demanding an OPEN section that had correctly become a ratified one — the
+#    gate failing for the one reason it was designed to treat as success.
+if grep -q "RATIFIED: struct-literal initializers evaluate in SOURCE order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md; then
+  ok "CLOSED: struct-literal initializer evaluation order is RATIFIED (source order, 2026-08-08)"
 else
-  no "the struct-literal ordering decision section is gone — it must be RATIFIED in the language reference, not deleted"
+  no "the struct-literal ratification is gone from the matrix — the order is now authoritative in freshness verdicts, so removing its ratification leaves an undecided rule deciding proofs"
 fi
 
 # 5a. The refusal must not be reintroduced as a comment-only guard. Either the producer
@@ -137,32 +167,68 @@ else
   ok "no comment-only struct-literal refusal: the producer's behaviour and its documentation agree"
 fi
 
-# 5b. THE CLOSE CONDITION. While V1 is the authoritative domain the order is only in shadow
-#     bytes. The moment the migration starts, an unratified evaluation order would become
-#     authoritative — so these two facts must not both change without the other.
-if grep -q "OPEN LANGUAGE DECISION: struct-literal initializer evaluation order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md \
-   && grep -q "bodyBytesV2" Concrete/Proof/SubjectFacts.lean 2>/dev/null; then
-  no "structural bytes reached the canonical subject while the struct-literal evaluation order is still UNRATIFIED — decide the order before the migration, not after"
+# 5b. THE CLOSE CONDITION, KEPT AS AN IMPLICATION rather than retired. It was written for the
+#     pre-migration world ("do not let unratified bytes become authoritative"), and simply deleting
+#     it now would discard the guarantee at the moment it started to matter: the bytes ARE
+#     authoritative, so the ratification is load-bearing — removing it would leave an undecided
+#     evaluation order deciding real freshness verdicts.
+#
+#     So the direction is inverted to match: IF the subject digest is authoritative, THEN the order
+#     must be ratified. That keeps failing for the right reason in the world we are actually in,
+#     instead of passing because its first conjunct went false.
+if grep -qE '^ *\(subjectDigestV2 : Option String' Concrete/Proof/ProofCore.lean; then
+  if grep -q "RATIFIED: struct-literal initializers evaluate in SOURCE order" docs/verification/EVIDENCE_PRODUCER_MATRIX.md; then
+    ok "the authoritative subject digest rests on a RATIFIED struct-literal evaluation order"
+  else
+    no "structural bytes are authoritative but the struct-literal evaluation order is not ratified — an undecided rule is deciding freshness verdicts"
+  fi
 else
-  ok "the undecided struct-literal order is confined to shadow bytes"
+  ok "the subject digest is not authoritative, so the struct-literal order is not load-bearing"
 fi
 
 # --- R-0004: freshness, migration, receipts ------------------------------------------
-# 6. Bugs 059/060 remain open: freshness does not consume V2.
+# 6. CLOSED. Bugs 059 (the subject omits declared types) and 060 (contracts sit outside it) were the
+#    two defects the V2 activation existed to fix, and they are fixed: a whole-signature `i32 -> u32`
+#    change and an added `#[ensures]` both stale the claim now. Verified BEHAVIOURALLY by
+#    check_proof_freshness.sh, whose two tripwires fired — they asserted the wrong verdict on
+#    purpose while the defects were open — and were inverted into `059 CLOSED` / `060 CLOSED`.
+#
+#    THIS ENTRY WAS A CONTRADICTORY LEDGER, and it passed while being one: it asserted the corpus
+#    still recorded both bugs OPEN, so it went green precisely because nobody had updated the record
+#    after the fix landed. A gate that passes by confirming a stale claim is worse than one that
+#    fails, because it certifies the staleness.
 for b in 059 060; do
-  if grep -qE "^\s*\[$b\]=.*OPEN" scripts/tests/audit_bug_corpus.sh; then
-    ok "GAP OPEN: bug $b (freshness does not consume the V2 subject) is still recorded OPEN"
+  if grep -qE "^\s*\[$b\]=.*FIXED" scripts/tests/audit_bug_corpus.sh; then
+    ok "CLOSED: bug $b is recorded FIXED — the V2 subject binds what the body-only fingerprint could not"
   else
-    no "bug $b is no longer OPEN in the corpus — if V2 freshness landed, convert its tripwire and update this inventory"
+    no "bug $b is not recorded FIXED in the corpus, but check_proof_freshness.sh asserts its closure — the corpus and the executable evidence disagree"
+  fi
+done
+# AND THE EXECUTABLE SIDE OF THE SAME CLAIM. A corpus line is prose; it is only worth anything while
+# a live leg holds the behaviour. Anchored on the leg labels so deleting the assertions is caught
+# here rather than silently leaving two bugs marked FIXED with nothing testing them.
+for leg in '059 CLOSED' '060 CLOSED'; do
+  if grep -q "$leg" scripts/tests/check_proof_freshness.sh; then
+    ok "the '$leg' regression leg still exists to hold it closed"
+  else
+    no "the '$leg' leg is gone from check_proof_freshness.sh — the corpus claims FIXED with nothing asserting it"
   fi
 done
 
-# 7. V1 remains the authoritative fingerprint domain.
-v1="$(bash scripts/tests/check_v1_fingerprint_golden.sh 2>/dev/null | tail -1 || true)"
+# 7. CONVERTED. V1 is no longer the authoritative domain — V2 is, per entry 3 — but the V1 golden
+#    keeps a different and still-useful job: proving the V1 body-fingerprint corpus did NOT move
+#    while the authority changed underneath it. A migration that silently perturbed the values it
+#    was migrating FROM could not be distinguished from one that migrated them correctly.
+#
+#    STDERR IS NO LONGER DISCARDED. This read only stdout, and the golden prints its FAIL line to
+#    stderr — so a failing sub-gate arrived here as an empty string and was reported as "did not
+#    report — inconclusive". The real failure (a denominator that had moved) was invisible for as
+#    long as it took to run the sub-gate by hand. Silence must never be a gate's evidence.
+v1="$(bash scripts/tests/check_v1_fingerprint_golden.sh 2>&1 | tail -1 || true)"
 case "$v1" in
-  *"77 extracted"*) ok "GAP OPEN: V1 is still the frozen authoritative domain (77 extracted)" ;;
-  "") no "the V1 golden did not report — inconclusive, not progress" ;;
-  *) no "the V1 golden count MOVED ($v1). Either the corpus changed or the migration began; both require an inventory update" ;;
+  *"PASS (77 extracted"*) ok "CLOSED: the frozen V1 corpus is unmoved under V2 authority ($v1)" ;;
+  "") no "the V1 golden produced no output at all — inconclusive, not progress" ;;
+  *) no "the V1 golden did not pass with 77 extracted: '$v1'. Either the V1 corpus moved during the V2 migration, or the golden itself is failing — run scripts/tests/check_v1_fingerprint_golden.sh directly" ;;
 esac
 
 # --- multi-prover: post-R-0004 --------------------------------------------------------

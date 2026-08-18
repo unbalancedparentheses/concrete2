@@ -70,6 +70,36 @@ edit() {
 }
 restore() { cp "$TMP/$1.base" "$TMP/$2/src/main.con"; }
 
+# drop_fingerprint <file> — remove the fixture's stored `#[proof_fingerprint(...)]` line, WHATEVER
+# its value is.
+#
+# The value must not appear in this gate. It used to: the 058 leg anchored on the literal
+# `#[proof_fingerprint("40b964856119044ac9bbec490d2e86ff")]`, and the V2 migration rewrote that value
+# to `v2:18c4b476...` — as migrations are supposed to. The anchor then matched nothing, the edit
+# silently no-opped, the fixture kept its fingerprint, and the leg observed a correctly-`proved`
+# function and reported "058 REGRESSED". A phantom regression is worse than a plain failure: it
+# sends someone to hunt a defect that does not exist, in the one area where a real 058 would matter.
+#
+# What the leg MEANS is "remove the stored subject", not "remove this particular hash", so that is
+# what it now says. Fails loudly if there is not exactly one such line — zero means the fixture
+# changed shape, more than one means the edit is ambiguous, and both must be seen rather than guessed.
+drop_fingerprint() {
+  local f="$1" n
+  n="$(grep -c '#\[proof_fingerprint(' "$f" || true)"
+  if [ "$n" != "1" ]; then
+    no "fixture drift: expected exactly one #[proof_fingerprint] in $(basename "$f"), found $n"
+    return 1
+  fi
+  python3 - "$f" <<'PY'
+import sys, re, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s2 = re.sub(r'[ \t]*#\[proof_fingerprint\([^)]*\)\][ \t]*\n', '', s, count=1)
+if s2 == s: sys.exit(1)
+p.write_text(s2)
+PY
+}
+
 echo "=== CONTROLS: the freshness mechanism works at all ==="
 # If these fail, every "gap still open" leg below is meaningless — a fingerprint
 # that never matches, or never mismatches, would produce the same output.
@@ -88,56 +118,71 @@ echo "=== bug 058 — CONTAINED (slice 2); this leg guards the containment ==="
 # `#[proof_by]` with no `#[proof_fingerprint]` compared the current body with
 # itself and stayed proved forever. It is now `unbound`: not proved, and
 # deliberately not `stale` either, because nothing has been shown to change.
-edit "$LI/src/main.con" '    #[proof_fingerprint("40b964856119044ac9bbec490d2e86ff")]
-' ''
-v="$(verdict "$LI")"
-case "$v" in
-  *unbound*) ok "a proof link with no stored digest is '$v', not proved" ;;
-  *proved*)  no "058 REGRESSED: a proof link with no stored digest reports '$v'" ;;
-  *)         no "058: unexpected verdict '$v' (expected unbound)" ;;
-esac
-OUT="$("$COMPILER" "$LI/src/main.con" --report proof-status 2>&1)"
-grep -q "proof link unbound: no stored proof-subject digest" <<<"$OUT" \
-  && ok "058 reports the exact unbound wording" \
-  || no "058 lost its specified message 'proof link unbound: no stored proof-subject digest'"
+# GUARDED ON THE SETUP SUCCEEDING. If the fingerprint could not be removed, the fixture still HAS a
+# stored subject, so `proved` is the correct verdict and reporting it as an 058 regression is a false
+# accusation manufactured by this gate's own broken setup. A leg whose precondition failed has not
+# observed anything, and "not attempted" is the only honest thing it can say.
+if drop_fingerprint "$LI/src/main.con"; then
+  v="$(verdict "$LI")"
+  case "$v" in
+    *unbound*) ok "a proof link with no stored digest is '$v', not proved" ;;
+    *proved*)  no "058 REGRESSED: a proof link with no stored digest reports '$v'" ;;
+    *)         no "058: unexpected verdict '$v' (expected unbound)" ;;
+  esac
+  OUT="$("$COMPILER" "$LI/src/main.con" --report proof-status 2>&1)"
+  grep -q "proof link unbound: no stored proof-subject digest" <<<"$OUT" \
+    && ok "058 reports the exact unbound wording" \
+    || no "058 lost its specified message 'proof link unbound: no stored proof-subject digest'"
+else
+  no "058 NOT ATTEMPTED: the stored fingerprint could not be removed, so nothing about containment was observed"
+fi
 restore li loop_invariant
 
 echo
-# === SHADOW: what the v2 subject digest WOULD decide (R-0004 step 5) ========================
-# The live verdict compares the body-only fingerprint; the v2 digest covers identity, full
-# typed signature, generics, capabilities and contracts. Switching the comparison would turn
-# 19 currently-proved links into needs_recheck at once, because all 44 stored fingerprints are
-# v1 — that is the step-7 migration, not this slice. So the digest is OBSERVED here while the
-# authoritative path stays put, which is the same discipline the other four shadow axes are under.
+# === LIVE: what the v2 subject digest DOES decide (R-0004, V2 activation 2026-08-17) ========
+# CONVERTED FROM A SHADOW SECTION. These legs were written while the v2 digest was a preview: the
+# live verdict compared the body-only fingerprint, the v2 value was reported as "current would be
+# v2:...", and each leg asserted BOTH that the preview moved AND that the live verdict did NOT —
+# because a live verdict moving would have meant the migration had begun by accident.
 #
-# BOTH HALVES ARE ASSERTED, and that is the point of a shadow leg. Half one: the shadow value
-# moves when signature or contracts move — otherwise the migration would be pointless. Half two:
-# the live verdict does NOT move — otherwise this is no longer shadow and 19 proofs just changed
-# status without the migration.
-shadow_digest() {
+# The migration has since happened deliberately. The preview line is gone, because the value is no
+# longer hypothetical, and every stored link in the corpus carries the `v2:` discriminator. Scraping
+# a line that no longer exists returned the empty string, so every comparison here degenerated to
+# '' vs '' and the section reported seven failures that were all one stale scrape.
+#
+# So both halves invert, and both get STRONGER. Half one now reads the AUTHORITATIVE digest rather
+# than a preview of one. Half two asserts the live verdict DOES move on a signature or contract
+# change — which is the entire point of the activation, and was the thing these legs were previously
+# required to prove had not happened.
+subject_digest() {
   "$COMPILER" "$1/src/main.con" --report subject-facts 2>/dev/null \
-    | grep -oE 'current would be v2:[0-9a-f]+' | head -1 | sed 's/current would be //'
+    | grep -oE '^ *subject digest: [0-9a-f]+' | head -1 | sed 's/.*subject digest: //'
 }
-echo "=== SHADOW(step 5): the v2 subject digest sees what the live fingerprint cannot ==="
-BASE_D="$(shadow_digest "$LI")"
+echo "=== LIVE(V2): the authoritative subject digest sees what the legacy fingerprint cannot ==="
+BASE_D="$(subject_digest "$LI")"
 BASE_V="$(verdict "$LI")"
 if [ -z "$BASE_D" ]; then
-  no "SHADOW: no v2 digest emitted for the baseline — the leg below would prove nothing"
+  no "LIVE(V2): no subject digest emitted for the baseline — every leg below would prove nothing"
 else
-  ok "SHADOW: baseline emits a v2 subject digest ($BASE_D)"
+  ok "LIVE(V2): baseline emits an authoritative subject digest ($BASE_D)"
 fi
 
 # 059 under the v2 digest: the same whole-signature change the tripwire below shows is invisible.
 edit "$LI/src/main.con" 'fn count_up() -> i32 {'                        'fn count_up() -> u32 {'
 edit "$LI/src/main.con" 'let mut acc: i32 = 0;'                         'let mut acc: u32 = 0;'
 edit "$LI/src/main.con" 'for (let mut i: i32 = 0; i < 8; i = i + 1) {'  'for (let mut i: u32 = 0; i < 8; i = i + 1) {'
-SIG_D="$(shadow_digest "$LI")"; SIG_V="$(verdict "$LI")"
+SIG_D="$(subject_digest "$LI")"; SIG_V="$(verdict "$LI")"
 [ -n "$SIG_D" ] && [ "$SIG_D" != "$BASE_D" ] \
-  && ok "SHADOW(059): a whole-signature change MOVES the v2 digest ($BASE_D -> $SIG_D)" \
-  || no "SHADOW(059): the v2 digest did not move on a signature change — it does not cover types"
-[ "$SIG_V" = "$BASE_V" ] \
-  && ok "SHADOW(059): ...and the LIVE verdict is unchanged ('$SIG_V') — still shadow" \
-  || no "SHADOW(059): the live verdict moved to '$SIG_V' — this is no longer shadow; the step-7 migration has begun by accident"
+  && ok "LIVE(059): a whole-signature change MOVES the subject digest ($BASE_D -> $SIG_D)" \
+  || no "LIVE(059): the subject digest did not move on a signature change — it does not cover types"
+# INVERTED AT THE V2 ACTIVATION. This asserted the live verdict must NOT move, because a moving
+# verdict meant the migration had started by accident. It has now started on purpose, so the
+# requirement is the opposite: a type change the legacy body-only fingerprint could never see must
+# now stale the claim. That is bug 059 closing, and this is the assertion that holds it closed.
+case "$SIG_V" in
+  *stale*) ok "LIVE(059): ...and the live verdict goes '$SIG_V' — a type change now stales the claim (059 CLOSED)" ;;
+  *)       no "LIVE(059): a whole-signature change left the live verdict '$SIG_V' — bug 059 has REOPENED: a proof survives a type change" ;;
+esac
 restore li loop_invariant
 
 # 060 under the v2 digest: a TRUE and a FALSE postcondition must not digest alike.
@@ -145,25 +190,29 @@ edit "$LI/src/main.con" '    #[proof_coverage(invariant)]
 ' '    #[proof_coverage(invariant)]
     #[ensures(result == 999)]
 '
-FALSE_D="$(shadow_digest "$LI")"; FALSE_LV="$(verdict "$LI")"
+FALSE_D="$(subject_digest "$LI")"; FALSE_LV="$(verdict "$LI")"
 restore li loop_invariant
 edit "$LI/src/main.con" '    #[proof_coverage(invariant)]
 ' '    #[proof_coverage(invariant)]
     #[ensures(result == 28)]
 '
-TRUE_D="$(shadow_digest "$LI")"
+TRUE_D="$(subject_digest "$LI")"
 restore li loop_invariant
 if [ -n "$FALSE_D" ] && [ -n "$TRUE_D" ] && [ "$FALSE_D" != "$TRUE_D" ]; then
-  ok "SHADOW(060): a TRUE and a FALSE #[ensures] give DIFFERENT v2 digests — contracts are covered"
+  ok "LIVE(060): a TRUE and a FALSE #[ensures] give DIFFERENT subject digests — contracts are covered"
 else
-  no "SHADOW(060): a true and a false postcondition digest alike ('$FALSE_D' vs '$TRUE_D') — contracts are outside the v2 digest"
+  no "LIVE(060): a true and a false postcondition digest alike ('$FALSE_D' vs '$TRUE_D') — contracts are outside the subject digest"
 fi
 [ -n "$FALSE_D" ] && [ "$FALSE_D" != "$BASE_D" ] \
-  && ok "SHADOW(060): ...and adding a contract at all moves it off the baseline" \
-  || no "SHADOW(060): adding an #[ensures] left the digest at the baseline value"
-[ "$FALSE_LV" = "$BASE_V" ] \
-  && ok "SHADOW(060): ...and the LIVE verdict is unchanged ('$FALSE_LV') — still shadow" \
-  || no "SHADOW(060): the live verdict moved to '$FALSE_LV' — no longer shadow"
+  && ok "LIVE(060): ...and adding a contract at all moves it off the baseline" \
+  || no "LIVE(060): adding an #[ensures] left the digest at the baseline value"
+# INVERTED for the same reason as 059. A postcondition is part of what a proof establishes, so
+# changing one must invalidate the claim. It previously could not: contracts sat outside the
+# body-only fingerprint, which is bug 060.
+case "$FALSE_LV" in
+  *stale*) ok "LIVE(060): ...and the live verdict goes '$FALSE_LV' — a contract change now stales the claim (060 CLOSED)" ;;
+  *)       no "LIVE(060): changing a postcondition left the live verdict '$FALSE_LV' — bug 060 has REOPENED: a proof survives a contract change" ;;
+esac
 
 echo
 
@@ -173,18 +222,18 @@ echo
 # digest at all — a body with gaps describes less than the program, so a digest over it is
 # indistinguishable from one over a complete body.
 edit "$LI/src/main.con" 'acc = acc + i;' 'acc = acc + i + 0;'
-BODY_D="$(shadow_digest "$LI")"; BODY_LV="$(verdict "$LI")"
+BODY_D="$(subject_digest "$LI")"; BODY_LV="$(verdict "$LI")"
 [ -n "$BODY_D" ] && [ "$BODY_D" != "$BASE_D" ] \
-  && ok "SHADOW(body): a BODY edit moves the v2 digest ($BASE_D -> $BODY_D)" \
-  || no "SHADOW(body): a body edit left the v2 digest unchanged — the structural body is not bound"
+  && ok "LIVE(body): a BODY edit moves the subject digest ($BASE_D -> $BODY_D)" \
+  || no "LIVE(body): a body edit left the subject digest unchanged — the structural body is not bound"
 # NOT "still shadow" here, and the first draft of this leg got it wrong. "Still shadow" applies
 # to changes the LIVE path cannot see — signature and contracts, which is what 059/060 are
 # about. A BODY edit is precisely what the legacy fingerprint DOES catch, so the live verdict
 # must go stale: that is the control proving the live path works at all, and without it a
 # permanently-broken live comparison would look like successful containment.
 case "$BODY_LV" in
-  *stale*) ok "SHADOW(body): ...and the LIVE verdict correctly goes '$BODY_LV' — the legacy hash sees body edits" ;;
-  *)       no "SHADOW(body): a body edit left the live verdict '$BODY_LV' — the legacy comparison is not working, so the 059/060 tripwires prove nothing" ;;
+  *stale*) ok "LIVE(body): ...and the live verdict correctly goes '$BODY_LV' — body edits are seen" ;;
+  *)       no "LIVE(body): a body edit left the live verdict '$BODY_LV' — the comparison is not working, so the 059/060 legs prove nothing" ;;
 esac
 restore li loop_invariant
 
@@ -197,10 +246,10 @@ restore li loop_invariant
 edit "$LI/src/main.con" 'let mut acc: i32 = 0;' 'let mut total: i32 = 0;'
 edit "$LI/src/main.con" 'acc = acc + i;' 'total = total + i;'
 edit "$LI/src/main.con" 'return acc;' 'return total;'
-RENAME_D="$(shadow_digest "$LI")"
+RENAME_D="$(subject_digest "$LI")"
 [ -n "$RENAME_D" ] && [ "$RENAME_D" = "$BASE_D" ] \
-  && ok "SHADOW(alpha): renaming a local leaves the v2 digest unchanged ($RENAME_D)" \
-  || no "SHADOW(alpha): a local rename moved the digest ($BASE_D -> $RENAME_D) — the subject measures source text, not the program"
+  && ok "LIVE(alpha): renaming a local leaves the subject digest unchanged ($RENAME_D)" \
+  || no "LIVE(alpha): a local rename moved the digest ($BASE_D -> $RENAME_D) — the subject measures source text, not the program"
 restore li loop_invariant
 
 # ORDER-DEPENDENCE TRIPWIRE — a KNOWN-OPEN defect, gated so it cannot be forgotten or silently
@@ -277,26 +326,35 @@ else
   no "SHADOW(body): a subject digested while its structural body was refused — the digest covers gaps"
 fi
 
-echo "=== bug 059 — GAP OPEN: the digest omits declared types ==="
+echo "=== bug 059 — CLOSED by the V2 activation: the subject binds declared types ==="
 # Return type, accumulator and loop counter all change i32 -> u32. Every
 # STATEMENT is textually identical, so a body-only hash sees nothing — but the
 # theorem was proved about the i32 version, where the arithmetic has different
 # overflow behaviour and a different value domain.
+#
+# CONVERTED FROM A TRIPWIRE (V2 activation, 2026-08-17). While the authoritative comparison was the
+# body-only fingerprint this leg asserted the WRONG verdict on purpose — `proved` after a type
+# change — so the open defect stayed observable. The v2 subject digest binds `CheckedDeclFacts`,
+# which carries the full typed signature, so the claim now goes stale. The leg is inverted rather
+# than deleted: the same edit, the opposite expectation, so a reversion is caught by the assertion
+# that proved the fix.
 edit "$LI/src/main.con" 'fn count_up() -> i32 {'                        'fn count_up() -> u32 {'
 edit "$LI/src/main.con" 'let mut acc: i32 = 0;'                         'let mut acc: u32 = 0;'
 edit "$LI/src/main.con" 'for (let mut i: i32 = 0; i < 8; i = i + 1) {'  'for (let mut i: u32 = 0; i < 8; i = i + 1) {'
 v="$(verdict "$LI")"
 case "$v" in
+  *stale*)
+    ok "059 CLOSED: a whole-signature type change reports '$v' — the subject binds declared types" ;;
   *proved*)
-    ok "TRIPWIRE(059): a whole-signature type change still reports '$v' — gap open, as recorded" ;;
-  *stale*|*unbound*)
-    no "TRIPWIRE(059) FIRED: type change now reports '$v'. Bug 059 is FIXED — move this leg to a positive assertion and update docs/bugs/059" ;;
-  *)  no "059: unexpected verdict '$v'" ;;
+    no "059 REOPENED: a whole-signature type change still reports '$v' — a proof about i32 is being credited to u32" ;;
+  *)  no "059: unexpected verdict '$v' (expected stale)" ;;
 esac
 restore li loop_invariant
 
 echo
-echo "=== bug 060 — GAP OPEN: contracts are outside the digest ==="
+echo "=== bug 060 — CLOSED by the V2 activation: contracts are inside the subject ==="
+# CONVERTED FROM A TRIPWIRE for the same reason as 059. A postcondition is part of what a proof
+# establishes, so a proof cannot survive one changing underneath it.
 # Body and types untouched; only the postcondition changes. A TRUE and a FALSE
 # contract must not be indistinguishable — `result == 999` is false (the loop
 # sums 0..7 = 28), and reporting it proved is a claim the compiler cannot back.
@@ -313,14 +371,19 @@ edit "$LI/src/main.con" '    #[proof_coverage(invariant)]
 TRUE_V="$(verdict "$LI")"
 restore li loop_invariant
 
-if [ "$FALSE_V" = "$TRUE_V" ]; then
-  case "$FALSE_V" in
-    *proved*) ok "TRIPWIRE(060): a TRUE and a FALSE #[ensures] are indistinguishable (both '$FALSE_V') — gap open, as recorded" ;;
-    *)        no "060: true and false contracts agree on '$FALSE_V', which is not the recorded 'proved'" ;;
-  esac
-else
-  no "TRIPWIRE(060) FIRED: false='$FALSE_V' vs true='$TRUE_V'. Bug 060 is FIXED — move this leg to a positive assertion and update docs/bugs/060"
-fi
+# BOTH must leave the claim non-proved, and that is the honest bar here. Attaching ANY new
+# `#[ensures]` changes what is being claimed, so the stored subject no longer describes it —
+# whether the new contract happens to be true or false. Requiring the two to DIFFER from each
+# other would demand the digest evaluate the contract, which it does not and must not: it binds
+# what was claimed, and only the kernel decides whether a claim holds.
+case "$FALSE_V" in
+  *proved*) no "060 REOPENED: a FALSE #[ensures] reports '$FALSE_V' — a postcondition the program does not satisfy is being credited as proved" ;;
+  *)        ok "060 CLOSED: adding a false #[ensures] reports '$FALSE_V', not proved — contracts are inside the subject" ;;
+esac
+case "$TRUE_V" in
+  *proved*) no "060: adding a TRUE #[ensures] left the claim '$TRUE_V' — the stored subject did not move when the contract did" ;;
+  *)        ok "060: adding a true #[ensures] also invalidates the stored subject ('$TRUE_V') — the digest binds the claim, not its truth" ;;
+esac
 
 echo
 echo "=== bug 062 — CLOSED by slice 3: containment propagates over the closure ==="

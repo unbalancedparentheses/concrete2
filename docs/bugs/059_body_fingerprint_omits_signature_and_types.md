@@ -1,6 +1,17 @@
 # Bug 059: the proof body fingerprint omits types and signature facts
 
-**Status:** Open — second of R-0004's evidence-integrity defect class.
+**Status:** FIXED 2026-08-17 by the R-0004 V2 activation — second of R-0004's evidence-integrity defect class.
+
+The authoritative freshness comparison is now `proofSubjectDigestV2`, which binds
+`CheckedDeclFacts.canonical` — the full typed signature, generics and bounds, capabilities and
+contracts — rather than the body-only `bodyFingerprint` this bug is about. A whole-signature
+`i32 -> u32` change therefore moves the subject and the claim reports `stale`.
+
+**Regression that holds it closed:** `scripts/tests/check_proof_freshness.sh`, the leg labelled
+`059 CLOSED`. It performs the exact edit in the symptom below and requires `stale`; if the
+authoritative comparison ever reverts to a body-only hash the leg reports `059 REOPENED`. The leg
+was previously a TRIPWIRE asserting the wrong verdict on purpose, and was inverted rather than
+deleted so the same edit still runs.
 **Discovered:** 2026-07-25, filing R-0004's reproducers before implementation.
 
 ## Symptom

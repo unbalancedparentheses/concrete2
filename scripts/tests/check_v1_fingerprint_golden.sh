@@ -10,7 +10,7 @@
 # Two DIFFERENT populations, counted separately because they answer different
 # questions and conflating them was a real error here:
 #   * 77 EXTRACTED functions across eight examples — what the golden hashes;
-#   * 44 STORED #[proof_fingerprint] values — the migration input.
+#   * 43 STORED #[proof_fingerprint] values — the migration input (44 before one wrong link was deleted).
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
 require_fresh_binary || exit 1
@@ -88,8 +88,20 @@ done
 # denominators (23/44/53/67) came to be quoted for the same population.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fingerprints.sh"
 stored="$(fp_count)"
-[ "$stored" = "44" ] && okk "44 stored #[proof_fingerprint] values (V1 migration corpus)" \
-  || note "expected 44 stored fingerprints, found $stored"
+# 44 -> 43 on 2026-08-18, and the reason is recorded because a denominator that moves without one is
+# indistinguishable from a corpus that quietly lost evidence.
+#
+# `proof_pressure.validate_header` carried `#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]`
+# and a stored fingerprint. That link was WRONG: the theorem is about `elf_header`'s
+# `validate_header`, which checks ELF magic/class/data/version bytes, while this function checks a
+# nonce and a version field and calls `check_nonce`. They shared a qualified name and nothing else,
+# and the link passed every name-based check for months until correspondence caught it.
+#
+# It was repaired by DELETING THE CLAIM rather than attaching a different theorem — no theorem proves
+# that body, and substituting the nearest plausible one is the defect being repaired, not a fix. So
+# the population is genuinely one smaller, and the pin says so.
+[ "$stored" = "43" ] && okk "43 stored #[proof_fingerprint] values (V1 migration corpus; 44 before the retargeted link was deleted)" \
+  || note "expected 43 stored fingerprints, found $stored"
 
 # (4) CROSS-VALIDATE the compiler's shortHash against the system SHA-256. Hashing
 # with shasum alone only checks the golden against itself.
@@ -113,5 +125,5 @@ if diff -u "$GOLDEN" "$TMP/current" > "$TMP/diff" 2>&1; then okk "$n V1 fingerpr
 else note "V1 BODY FINGERPRINTS CHANGED — V2 must be built ALONGSIDE V1"; head -20 "$TMP/diff" >&2; fi
 
 echo ""
-[ "$fail" = "0" ] && { echo "V1-FINGERPRINT-GOLDEN: PASS ($n extracted, 44 stored)"; exit 0; }
+[ "$fail" = "0" ] && { echo "V1-FINGERPRINT-GOLDEN: PASS ($n extracted, 43 stored)"; exit 0; }
 echo "V1-FINGERPRINT-GOLDEN: FAIL" >&2; exit 1
