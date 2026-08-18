@@ -4115,7 +4115,31 @@ re-checked, and a stored receipt is a distinct untrusted type with no minting pa
 precision is DEFERRED to the typed-contract milestone with a corpus tripwire, and the ninth table is
 DEFERRED past Slice 8 having been measured to carry no authority — both are off this closure list.
 
-Two items remain: clean-checkout reproducibility and Slice 8.
+One item remains: Slice 8.
+
+**[shipped 2026-08-17] Clean-checkout reproducibility and compiler provenance**
+(`make test-clean-checkout`, 10/0). A real `git clone` into a fresh directory yields byte-identical
+evidence; invocation from the repository root and the project root agree; and the compiler identity a
+receipt binds is the CONTENT OF THE EXECUTABLE THAT RAN, asserted by comparing it against
+`sha256sum` of the running binary.
+
+That identity answers the three cases directly: a binary built from commit A keeps its identity when
+the checkout moves to B; a binary built from uncommitted sources has content no committed build has;
+and a substituted executable at the same reported commit has different content and therefore a
+different identity. An unidentifiable compiler REFUSES to mint rather than recording "unknown", which
+would compare equal to any other "unknown". Known limit: the digest is computed by invoking
+`sha256sum`, so it rests on the same toolchain trust as `lake` and `lean` — it identifies the
+executable against accident and substitution, not against an adversary controlling PATH.
+
+**The gate immediately found a real location-dependence.** `dirOf "src"` is `""`, so
+`findProjectRoot` walked from `src` to the FILESYSTEM ROOT and never checked the current directory:
+running `concrete src/main.con` from inside a project found no project, fell back to standalone
+analysis with a synthetic package identity, and reported correspondence 0/4 where the same file named
+from the repository root reported 4/4. Fixed by canonicalising the walk — which then broke
+path-derived scoping until the input was canonicalised at the comparison too.
+
+**Cache legs remain deferred**, not skipped: `ProofCache` is not implemented, so cold/warm/missing/
+corrupt-cache tests would pass vacuously. They are a ProofCache graduation condition.
 
 **[shipped 2026-08-17] Atomic V1 -> V2 activation.** The live freshness verdict now compares the V2
 subject digest. **The corpus census is UNCHANGED** — 35 proved, 5 stale, 4 dependency-not-current,
