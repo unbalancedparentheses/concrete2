@@ -102,31 +102,67 @@ def compilerIdentity : IO String := do
   catch _ => pure "unknown"
   return s!"concrete {version} ({commit}) [{toolchain}]"
 
-/-- The compiler identity a RECEIPT binds: version and committed revision, and deliberately NOT the
-    working-tree dirty flag.
+/-- Why the running compiler could not be identified. -/
+inductive CompilerIdentityRefusal where
+  /-- The running executable could not be located (no `/proc/self/exe`, or it is unreadable). -/
+  | executableUnlocatable (detail : String)
+  /-- The executable was located and could not be digested. -/
+  | executableUndigestible (detail : String)
+  deriving Repr
 
-    `compilerIdentity` appends `-dirty` when `git status` is non-empty, computed at REPORT time. That
-    is the right signal for a debug bundle and the wrong one for evidence, because it measures
-    something other than what it appears to:
+def CompilerIdentityRefusal.canonical : CompilerIdentityRefusal → String
+  | .executableUnlocatable _  => "executable_unlocatable"
+  | .executableUndigestible _ => "executable_undigestible"
 
-      * a binary built from clean commit A stays binary A after the tree is dirtied by any unrelated
-        file, yet the flag flips and every receipt goes non-current — a false invalidation;
-      * a binary built from a dirty tree that is later cleaned reports clean — a false validation.
+def CompilerIdentityRefusal.explain : CompilerIdentityRefusal → String
+  | .executableUnlocatable d  => s!"cannot locate the running compiler executable: {d}"
+  | .executableUndigestible d => s!"cannot digest the running compiler executable: {d}"
 
-    Wrong in both directions, so it is excluded rather than kept as approximate signal. Found by a
-    control that copied a fixture into the repo and watched five current receipts go non-current for
-    a reason unconnected to the program.
+/-- The compiler identity a RECEIPT binds: the CONTENT of the executable that is running.
 
-    WHAT THIS LEAVES AS A NAMED ASSUMPTION: a compiler built from uncommitted sources is not
-    distinguishable here from one built from the commit it reports. That is a bounded, stated gap,
-    which a flag that lies in both directions was not. -/
-def compilerEvidenceIdentity : IO String := do
+    NOT `git rev-parse HEAD`, and not a working-tree dirty flag. Both describe the repository at
+    REPORT time, which is a different thing from the binary that produced the evidence, and both are
+    wrong in both directions:
+
+      * a binary built from commit A is still that binary after the checkout moves to B, yet a
+        commit-derived identity flips and every receipt goes non-current — a false invalidation;
+      * a binary built from uncommitted sources reports whatever commit is checked out, so a
+        substituted or locally-built executable claims a provenance it does not have — a false
+        validation.
+
+    Digesting the executable answers all three cases directly: the checkout can move without moving
+    the identity, a binary built from uncommitted sources has content no committed build has, and a
+    substituted executable at the same reported commit has different content and therefore a
+    different identity.
+
+    REFUSES RATHER THAN DEGRADING. An unidentifiable compiler yields a refusal, not the string
+    "unknown" — an "unknown" identity compares equal to another "unknown", which is how two receipts
+    from two different compilers would agree.
+
+    KNOWN LIMIT, recorded because a receipt that overclaims is worse than one that binds less: the
+    digest is computed by invoking `sha256sum`, so it rests on the same toolchain trust as `lake` and
+    `lean` themselves. It identifies the executable against accident and substitution, not against an
+    adversary who controls the PATH the compiler runs under. -/
+def compilerEvidenceIdentity : IO (Except CompilerIdentityRefusal String) := do
   let version := "0.1.0"
-  let commit ← try
-    let r ← IO.Process.output { cmd := "git", args := #["rev-parse", "--short", "HEAD"] }
-    pure (if r.exitCode == 0 then r.stdout.trimAscii.toString else "unknown")
-  catch _ => pure "unknown"
-  return s!"concrete {version} ({commit})"
+  let exe ← try
+      pure (Except.ok (← IO.FS.realPath "/proc/self/exe").toString)
+    catch e => pure (Except.error (CompilerIdentityRefusal.executableUnlocatable (toString e)))
+  match exe with
+  | .error r => return .error r
+  | .ok path =>
+    let r ← try
+        pure (Except.ok (← IO.Process.output { cmd := "sha256sum", args := #[path] }))
+      catch e => pure (Except.error (CompilerIdentityRefusal.executableUndigestible (toString e)))
+    match r with
+    | .error e => return .error e
+    | .ok out =>
+      if out.exitCode != 0 then
+        return .error (.executableUndigestible s!"sha256sum exited {out.exitCode}")
+      let digest := String.ofList (out.stdout.trimAscii.toString.toList.take 64)
+      if digest.length != 64 then
+        return .error (.executableUndigestible s!"unexpected digest shape: '{digest}'")
+      return .ok s!"concrete {version} (exe:{String.ofList (digest.toList.take 16)})"
 
 def writeFile (path : String) (content : String) : IO Unit := do
   IO.FS.writeFile ⟨path⟩ content
@@ -2673,7 +2709,12 @@ def compileAndReport (inputPath : String) (reportType : String)
         | none => IO.println s!"\n=== Replay Receipts ===\n  error: cannot read receipt store '{path}'"
         | some contents =>
         let records := Proof.decodeStore contents
-        let compilerVersion ← compilerEvidenceIdentity
+        -- The consumer needs the same identity to compute fresh facts. Without it no stored
+        -- receipt can be CHECKED, which is reported rather than silently read as "not current".
+        match ← compilerEvidenceIdentity with
+        | .error r =>
+          IO.println s!"\n=== Replay Receipts ({path}) ===\n  error: {r.explain}\n  No stored receipt can be checked against fresh facts."
+        | .ok compilerVersion =>
         let workspaceId := match packageIdentity with
           | .ok p => p.digest
           | .error _ => ""
@@ -2818,7 +2859,13 @@ def compileAndReport (inputPath : String) (reportType : String)
       -- The environment identities issuance cannot derive for itself. The TOOLCHAIN half is
       -- deliberately absent: it comes from the replay that actually ran, so a caller cannot name a
       -- checker other than the one that checked.
-      let compilerVersion ← compilerEvidenceIdentity
+      -- AN UNIDENTIFIABLE COMPILER MINTS NOTHING. A receipt whose compiler identity was defaulted
+      -- would compare equal to any other defaulted one, so this is a refusal rather than a fallback.
+      let compilerVersion ← match ← compilerEvidenceIdentity with
+        | .ok v => pure v
+        | .error r =>
+          IO.println s!"=== Replay Receipts ===\n\nerror: {r.explain}\n  No receipt can be issued: a receipt that could not name the compiler that produced it would compare equal to one produced by any other compiler."
+          return 1
       let workspaceId := match packageIdentity with
         | .ok p => p.digest
         | .error _ => ""
@@ -2842,6 +2889,10 @@ def compileAndReport (inputPath : String) (reportType : String)
       out := out ++ s!"\nWorkspace: {res.environment.workspace}"
       out := out ++ (if res.environment.workspaceFromInput then " (from input)\n" else " (from working directory)\n")
       out := out ++ s!"Toolchain: {res.environment.toolchain}\n"
+      -- NAMED, not just bound. The receipt binds a digest of (compiler, toolchain), so without this
+      -- line nothing observable says WHICH compiler produced the evidence — and an identity that
+      -- cannot be read cannot be checked against the executable it claims to describe.
+      out := out ++ s!"Compiler: {compilerVersion}\n"
       if !issued.isEmpty then
         out := out ++ s!"\n  Issued ({issued.length}):\n"
         for o in issued do
