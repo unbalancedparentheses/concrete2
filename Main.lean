@@ -1577,7 +1577,22 @@ def compileAndReport (inputPath : String) (reportType : String)
             (srcMap.map (·.2))))
   match frontendResult with
   | .error ec => return ec
-  | .ok (parsed, fullValidCore, scopedValidCore, srcMap, packageIdentity) =>
+  | .ok (parsed, fullValidCore, scopedValidCore, projSrcMap, packageIdentity) =>
+    -- THE REPORT'S SOURCE MAP MUST CONTAIN THE KEY ITS LOCATION MAP USES. `buildFnLocMap` records
+    -- every function under `inputPath` — the path the user typed — while a project's `allSrcMap` is
+    -- keyed by the resolved, absolute entry path. Those are the same file under two names, and a
+    -- `List` lookup does not know that: every snippet lookup missed, so source snippets and their
+    -- caret lines disappeared from every report in project mode while the locations above them kept
+    -- printing correctly. Invisible, because a missing snippet renders as "".
+    --
+    -- Surfaced by the `findProjectRoot` repair rather than caused by it: before that fix, running
+    -- from inside a project silently fell back to standalone mode, where the one key is `inputPath`
+    -- and the two agreed by accident. Correcting project detection is what made the mismatch reachable.
+    --
+    -- Prepended, so the invoked file resolves under the name the user gave it; the project map still
+    -- backs every other file. Not a fuzzy or suffix-tolerant lookup — that would paper over a real
+    -- key mismatch instead of supplying the key.
+    let srcMap := mainSrcMap ++ projSrcMap
     let locMap := Report.buildFnLocMap parsed.modules inputPath
     let simpleLocMap := locMap.map fun e => (e.qualName, (e.file, e.fnSpan.line))
     -- The registry is the in-source proof links (#[proof_by]/#[spec]/...)

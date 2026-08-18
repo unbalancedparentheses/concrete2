@@ -143,5 +143,5 @@
 
   hint: Address these constraints to make this function eligible for proof.
 
-Totals: 10 functions — 1 proved, 0 stale, 0 unbound, 2 dependency-not-current, 6 unproved, 0 blocked, 1 ineligible, 0 trusted
+Totals: 10 functions — 1 proved, 0 stale, 0 unbound, 0 needs-recheck, 2 dependency-not-current, 0 closure-unjustified, 6 unproved, 0 blocked, 1 ineligible, 0 trusted
 

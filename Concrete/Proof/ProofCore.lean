@@ -2353,6 +2353,31 @@ def storedFreshness (stored : String) (subjectDigestV2 : Option String) : Stored
     | none => .moved
     | some d => if ("v2:" ++ shortHash d) == stored then .current else .moved
 
+/-- Is the stored link STALE against the current subject — that is, did the thing it records move?
+
+    LIFTED TO ONE DEFINITION because it was three. The status deriver, the registry validator and the
+    consistency checker each carried a private copy of this comparison, which is survivable only while
+    they all compare the same two things. The V2 activation broke that: the deriver moved to the
+    subject digest while the consistency checker kept comparing the stored value against
+    `functionId.fingerprint`, the V1 body fingerprint. It then accused nine `proved` obligations of
+    disagreeing fingerprints — obligations whose reported status was correct. A consistency invariant
+    that disagrees with the rule it audits is not a check, it is a second opinion presented as a
+    defect, and the only durable fix is that there be nothing to disagree with. -/
+def specIsStale (a : SpecAttachment) (currentFp : String)
+    (subjectDigestV2 : Option String) : Bool :=
+  match a.expectedHash with
+  | some h => storedFreshness h subjectDigestV2 == StoredFreshness.moved
+  | none   => a.expectedFp != currentFp
+
+/-- Is the stored link NOT COMPARABLE against the current subject — a v1 record under a v2 authority?
+
+    Neither fresh nor stale, and kept separate from `specIsStale` for that reason: collapsing it into
+    staleness would assert a body change that was never observed. -/
+def specIsNotComparable (a : SpecAttachment) (subjectDigestV2 : Option String) : Bool :=
+  match a.expectedHash with
+  | some h => storedFreshness h subjectDigestV2 == StoredFreshness.notComparable
+  | none   => false
+
 /-- Validate a proof registry against a ProofCore artifact. -/
 def validateRegistry (pc : ProofCore) (registry : ProofRegistry) : List RegistryIssue :=
   let allFns := pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)
@@ -2757,14 +2782,8 @@ private def deriveObligationStatus
   -- freshness, so it is NOT COMPARABLE rather than mismatched. That is `needsRecheck`, which is a
   -- claim about the RECORD, not about the program; reporting it as `stale` would assert a body
   -- change that was never observed.
-  let storedIsV1 := fun (a : SpecAttachment) =>
-    match a.expectedHash with
-    | some h => storedFreshness h subjectDigestV2 == StoredFreshness.notComparable
-    | none   => false
-  let isStale := fun (a : SpecAttachment) =>
-    match a.expectedHash with
-    | some h => storedFreshness h subjectDigestV2 == StoredFreshness.moved
-    | none   => a.expectedFp != currentFp
+  let storedIsV1 := fun (a : SpecAttachment) => specIsNotComparable a subjectDigestV2
+  let isStale := fun (a : SpecAttachment) => specIsStale a currentFp subjectDigestV2
   if isTrusted then .trusted
   else if !eligible then
     match spec with
@@ -3354,19 +3373,22 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
       some { invariant := "PROVED-ENTRY", function := o.functionId.qualName
            , message := "obligation is 'proved' but function is not in entries" }
 
-  -- A hash-linked attachment is fresh when hash(currentFp) == expectedHash;
-  -- a plain attachment is fresh when expectedFp == currentFp. (For hash-linked
-  -- entries expectedFp always equals currentFp, so the fp compare is uninformative.)
-  let fpFresh := fun (a : SpecAttachment) (currentFp : String) =>
-    match a.expectedHash with
-    | some h => shortHash currentFp == h
-    | none   => a.expectedFp == currentFp
+  -- THE SUBJECT THIS OBLIGATION'S STORED LINK IS COMPARED AGAINST. Read from the entry, because the
+  -- entry is where the V2 digest lives and `functionId.fingerprint` is the V1 body fingerprint — a
+  -- different question. This invariant compared the stored value against that fingerprint and so
+  -- audited the deriver with a rule the deriver had stopped using.
+  let digestFor := fun (qn : String) => (pc.findEntry qn).bind (·.subjectDigest)
+  -- FRESH means neither moved nor incomparable, evaluated by the SAME predicates the deriver uses.
+  -- Not a local re-implementation: a private copy is exactly how this drifted.
+  let fpFresh := fun (a : SpecAttachment) (qn : String) (currentFp : String) =>
+    let sd := digestFor qn
+    !(specIsStale a currentFp sd) && !(specIsNotComparable a sd)
   -- INV-4: Proved status requires a fresh fingerprint
   let provedFp := pc.obligations.filterMap fun o =>
     if o.status != .proved then none
     else match o.spec with
     | some a =>
-      if !fpFresh a o.functionId.fingerprint then
+      if !fpFresh a o.functionId.qualName o.functionId.fingerprint then
         some { invariant := "PROVED-FP", function := o.functionId.qualName
              , message := s!"obligation is 'proved' but fingerprints disagree" }
       else none
@@ -3379,7 +3401,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
     if o.status != .stale then none
     else match o.spec with
     | some a =>
-      if fpFresh a o.functionId.fingerprint then
+      if fpFresh a o.functionId.qualName o.functionId.fingerprint then
         some { invariant := "STALE-FP", function := o.functionId.qualName
              , message := "obligation is 'stale' but fingerprints match" }
       else none
