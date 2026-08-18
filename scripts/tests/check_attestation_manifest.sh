@@ -542,5 +542,86 @@ else
   no "no overlap between subject and dependency attestations ($ROWS_BOTH rows, $KEYS keys) — the dedupe is untested"
 fi
 
+echo ""
+echo "=== the tracked generated file is what its generator produces ==="
+# FRESHNESS, not arity. The check above compares HOW MANY references exist. It cannot see a reference
+# whose digest has gone stale, and staleness is the whole failure mode here: every component in that
+# file is a hash of something that moves, so the count can stay exactly right while every value in it
+# describes implementations that no longer exist. A proof author would then select a reference that
+# validates, compiles, and attests the wrong body.
+#
+# THIS IS WHAT PAYS FOR THE FILE BEING TRACKED AT ALL. `check_callable_identity.sh` refuses tracked
+# generated artifacts, because a committed artifact that reads as hand-written erases the line between
+# what a human asserted and what a tool emitted — and every provenance claim rests on that line.
+# `GeneratedAttestations.lean` is the single narrow exception, for a reason that does not generalise:
+# proof authors must `import` and SELECT from it, and Lean cannot import a file that is not on disk.
+# The exception is conditional, and this is the condition — the file is re-derived and compared. An
+# allowance without it would be the hole, not the gate.
+REFS_FILE="Concrete/Proof/GeneratedAttestations.lean"
+cp "$REFS_FILE" "$TMP/refs.committed"
+# RESTORE VIA THE TRAP, not via a line further down. Regeneration overwrites a TRACKED file; if the
+# gate exits early between here and a restore statement, it would leave the working tree modified and
+# the next gate would measure something nobody wrote.
+trap 'cp -f "$TMP/refs.committed" "$ROOT_DIR/'"$REFS_FILE"'" 2>/dev/null; rm -rf "$TMP"' EXIT
+
+# THE GENERATOR'S OUTPUT IS THE REFERENCE VALUE FOR EVERY LEG BELOW — captured once, here, as
+# `refs.fresh`. The committed file is a CLAIM about that output and is only used by the staleness leg
+# that judges it. Earlier this gate compared the restoration leg against the COMMITTED file, so a
+# stale commit failed twice: once truthfully ("the file is stale") and once misleadingly ("restoring
+# the source did not restore the references", which was false — the digest was a perfect function of
+# content, and the baseline was simply the wrong one). One defect must produce one finding, or the
+# count stops meaning anything and a reader starts discounting the gate's arithmetic.
+REFS_FRESH_OK=0
+if bash scripts/gen/attestation_refs.sh >/dev/null 2>&1; then
+  cp "$REFS_FILE" "$TMP/refs.fresh"; REFS_FRESH_OK=1
+  if cmp -s "$TMP/refs.committed" "$TMP/refs.fresh"; then
+    ok "$REFS_FILE is byte-identical to a fresh regeneration"
+  else
+    DELTA="$(diff "$TMP/refs.committed" "$TMP/refs.fresh" 2>/dev/null | grep -c '^[<>]' || true)"
+    no "STALE $REFS_FILE — $DELTA line(s) differ from a fresh regeneration; run scripts/gen/attestation_refs.sh. Until then a tracked reference may attest an implementation that no longer exists."
+  fi
+else
+  no "the reference generator REFUSED — freshness is UNPROVEN, which is not the same as fresh"
+fi
+cp -f "$TMP/refs.committed" "$REFS_FILE"
+
+# NON-VACUITY. Without this leg, a generator that emitted a constant file, or one whose input query
+# had silently gone empty, would satisfy the comparison above forever. A real subject body is
+# perturbed so its implementation digest must move, and the emitted file must move with it.
+#
+# Both legs below compare against `refs.fresh`, so they measure the GENERATOR and stay meaningful
+# whether or not the committed file happens to be current. They are skipped, loudly, when the first
+# regeneration failed — with no reference value there is nothing to compare against, and reporting
+# them as passes would be the vacuity this gate exists to refuse.
+PROBE="examples/hmac_sha256/src/main.con"
+if [ "$REFS_FRESH_OK" -ne 1 ]; then
+  no "the generator refused, so the non-vacuity and restoration controls could not run — their absence is not a pass"
+elif [ -f "$PROBE" ]; then
+  cp "$PROBE" "$TMP/probe.orig"
+  trap 'cp -f "$TMP/probe.orig" "$ROOT_DIR/'"$PROBE"'" 2>/dev/null; cp -f "$TMP/refs.committed" "$ROOT_DIR/'"$REFS_FILE"'" 2>/dev/null; rm -rf "$TMP"' EXIT
+  # A COMMENT WOULD NOT DO. Implementation identity is a digest of the compiled body, not of the file
+  # text, so a perturbation that the compiler discards proves nothing. This changes a real statement.
+  printf '\nfn __attestation_probe(x: u32) -> u32 { return x + 1; }\n' >> "$PROBE"
+  bash scripts/gen/attestation_refs.sh >/dev/null 2>&1
+  if cmp -s "$TMP/refs.fresh" "$REFS_FILE"; then
+    no "the generated references did NOT move when a subject's package content changed — the comparison above is vacuous"
+  else
+    ok "changing a subject's package content changes the generated references (the comparison is live)"
+  fi
+  cp -f "$TMP/probe.orig" "$PROBE"
+  cp -f "$TMP/refs.committed" "$REFS_FILE"
+  trap 'cp -f "$TMP/refs.committed" "$ROOT_DIR/'"$REFS_FILE"'" 2>/dev/null; rm -rf "$TMP"' EXIT
+  # ...and the perturbation is fully reversed, so the gate leaves no residue for the next one to read.
+  bash scripts/gen/attestation_refs.sh >/dev/null 2>&1
+  if cmp -s "$TMP/refs.fresh" "$REFS_FILE"; then
+    ok "restoring the source restores the references — the digest is a function of content alone"
+  else
+    no "the references did not return to the generator's own earlier output after restoring the probe — the digest depends on something other than content"
+  fi
+  cp -f "$TMP/refs.committed" "$REFS_FILE"
+else
+  no "the non-vacuity probe fixture $PROBE is missing — the freshness comparison above is unproven"
+fi
+
 echo "ATTESTATION-MANIFEST: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

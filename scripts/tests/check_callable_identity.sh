@@ -618,11 +618,38 @@ fi
 # were hand-written erases the distinction between what a human asserted and what a
 # tool emitted — and every provenance claim rests on that distinction. Anchored to a
 # real `namespace` declaration so the generator's own string literals do not match.
+#
+# ONE ALLOWANCE, NAMED, AND IT IS PAID FOR. `Concrete/Proof/GeneratedAttestations.lean` is tracked
+# deliberately: it is the surface a proof author IMPORTS and selects a typed reference from, and Lean
+# cannot import a file that is not on disk. That reason does not generalise to the proof tables above,
+# so the allowance is one exact path rather than a pattern — a pattern would readmit precisely the
+# hand-written/tool-emitted confusion this rule exists to prevent.
+#
+# The allowance is CONDITIONAL, and the condition is checked below rather than asserted in prose. A
+# tracked generated file is only honest while something re-derives it; otherwise its digests go stale
+# silently and it becomes exactly the committed artifact-posing-as-source this refuses. "Pre-existing"
+# and "intentional" are not the same claim, and neither one makes an unre-derived artifact acceptable.
+GEN_ALLOWED="Concrete/Proof/GeneratedAttestations.lean"
 gen_tracked="$(git -C "$ROOT_DIR" grep -ln "^namespace Concrete.Proof.Generated" -- '*.lean' 2>/dev/null || true)"
-if [ -z "$gen_tracked" ]; then
-  ok "no tracked file declares the generated namespace"
+gen_unallowed="$(printf '%s\n' "$gen_tracked" | grep -v "^${GEN_ALLOWED}$" | grep -v '^$' || true)"
+if [ -z "$gen_unallowed" ]; then
+  ok "no tracked file declares the generated namespace except the one allowed, re-derived surface"
 else
-  no "tracked generated artifact(s): $gen_tracked — generated output must not be committed as source"
+  no "tracked generated artifact(s): $gen_unallowed — generated output must not be committed as source"
+fi
+# THE ALLOWANCE'S OWN PRECONDITION. If the file is exempt, a gate must regenerate it and compare;
+# without that the exemption is an unmonitored hole. Anchored on the GENERATOR INVOCATION, not on a
+# mention of the filename, because a comment naming the file would satisfy a weaker check while
+# nothing re-derived anything.
+if printf '%s\n' "$gen_tracked" | grep -q "^${GEN_ALLOWED}$"; then
+  refs_rederived="$(grep -rl 'scripts/gen/attestation_refs\.sh' "$ROOT_DIR/scripts/tests" 2>/dev/null || true)"
+  if [ -n "$refs_rederived" ]; then
+    ok "the allowed generated file is re-derived and compared by: $(printf '%s' "$refs_rederived" | xargs -n1 basename | tr '\n' ' ')"
+  else
+    no "$GEN_ALLOWED is exempt from the tracked-generated rule but NO gate regenerates it — the exemption is unpaid for"
+  fi
+else
+  ok "the allowance is unused (the file is not tracked), so nothing rests on it"
 fi
 stub_tracked="$(git -C "$ROOT_DIR" grep -ln "^-- Lean proof stub for" -- '*.lean' 2>/dev/null || true)"
 if [ -z "$stub_tracked" ]; then

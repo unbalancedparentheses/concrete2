@@ -471,6 +471,46 @@ jobs:
       - name: "Callable identity (R-0004 step 1 — CallableId is constructed from a resolved declaration, never recovered from text)"
         run: bash scripts/tests/check_callable_identity.sh
 
+      # R-0004 EVIDENCE GATES. These were written alongside the scoped-identity work and every one of
+      # them was absent from this workflow, which is where the local runner derives its gate list —
+      # so the whole R-0004 evidence path was verified only by hand, and a fully green CI pass proved
+      # nothing about it. A gate nobody runs is indistinguishable from a gate that does not exist, and
+      # the absence is worse than a failure: the pass count keeps rising while coverage does not.
+      - name: "Replay producer (R-0004 — kernel replay is a typed producer; refusals are values, not exit codes)"
+        run: bash scripts/tests/check_replay_producer.sh
+
+      - name: "Receipt issuance (R-0004 — a successful replay is the ONLY authority that can mint a receipt)"
+        run: bash scripts/tests/check_receipt_issuance.sh
+
+      - name: "Receipt consumption (R-0004 — a stored receipt is untrusted input, re-checked against current facts)"
+        run: bash scripts/tests/check_receipt_consumption.sh
+
+      - name: "V2 migration plan (R-0004 — every stored link is classified before any is rewritten)"
+        run: bash scripts/tests/check_v2_migration_plan.sh
+
+      - name: "Clean-checkout reproducibility (R-0004 — evidence does not depend on the working tree or the invocation directory)"
+        run: bash scripts/tests/check_clean_checkout.sh
+
+      - name: "Build identity freshness (R-0004 — the embedded compiler identity matches what the sources produce)"
+        run: bash scripts/tests/check_build_identity_freshness.sh
+
+      - name: "Slice 8 adversarial (R-0004 — every registered attack on the receipt path, each paired with a positive control)"
+        run: bash scripts/tests/check_slice8_adversarial.sh
+
+      - name: "Attestation manifest + generated-reference freshness (R-0004 — the tracked generated surface is re-derived and compared)"
+        run: bash scripts/tests/check_attestation_manifest.sh
+
+      # PRE-EXISTING GATES THAT WERE ALSO MISSING. `check_snapshots.sh` was reachable only from the
+      # Makefile and as an opaque nested sub-result of two obligation-view gates, so its 11 real
+      # drifts surfaced as a one-line "snapshot gate failed" with the diff written to /tmp.
+      # `check_v1_fingerprint_golden.sh` was invoked only by the convergence inventory, which
+      # discarded its stderr and read its silence as "inconclusive".
+      - name: "Snapshot baselines (every examples/*/snapshot/ report is byte-identical)"
+        run: bash scripts/tests/check_snapshots.sh
+
+      - name: "V1 fingerprint golden (the frozen V1 body-fingerprint corpus does not move under V2)"
+        run: bash scripts/tests/check_v1_fingerprint_golden.sh
+
       - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
         run: bash scripts/tests/check_match_guard_effects.sh
 
