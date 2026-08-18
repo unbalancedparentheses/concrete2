@@ -64,6 +64,34 @@ def tableConstsIn (e : Lean.Expr) : MetaM (List Name) := do
     | none    => pure ()
   return out.eraseDups
 
+/-- Is this constant a SPECIFICATION expression — the thing a `#[spec(...)]` attribute names?
+
+    Specs are `PExpr`-valued, exactly as tables are `FnTable`-valued, so the same shape of test
+    answers it. -/
+def isSpecValued (ci : ConstantInfo) : MetaM Bool := do
+  let specTy : Lean.Expr := mkConst ``Concrete.Proof.PExpr
+  if (← isDefEq ci.type specTy) then return true
+  forallTelescope ci.type fun _ b => isDefEq b specTy
+
+/-- Names of specification constants appearing in `e`.
+
+    WHY THIS EXISTS. An independent adversarial review bound `main.check_magic` to
+    `check_class_correct` — a real theorem the kernel accepts — and the claim reported
+    `kernel-replayed, receipt current`. The receipt recorded WHICH theorem was replayed and nothing
+    ever asked whether that theorem SAYS anything about this subject: `#[proof_by(...)]` was taken
+    as ground truth. Both theorems bind the same table, so binding the table could not tell them
+    apart; what distinguishes them is the SPEC each one is about.
+
+    A theorem's statement is the only independent witness of what it concerns, and the specs it
+    mentions are extractable from it exactly as its tables are. -/
+def specConstsIn (e : Lean.Expr) : MetaM (List Name) := do
+  let mut out : List Name := []
+  for c in e.getUsedConstants do
+    match (← try pure (some (← getConstInfo c)) catch _ => pure none) with
+    | some ci => if (← isSpecValued ci) then out := c :: out
+    | none    => pure ()
+  return out.eraseDups
+
 /-- A digest binding the WHOLE of a table constant, or `none` if it cannot be bound.
 
     **The under-approximation this exists to prevent.** A `body` edge records which tables a
@@ -113,6 +141,12 @@ structure EdgeEvidence where
       a caller can see the two facts that produced the verdict rather than having
       to trust it. -/
   quantifiesOverTable : Bool
+  /-- The SPECIFICATION constants the theorem's statement mentions.
+
+      This is what ties a theorem to the claim it is allowed to justify. Without it a claim could
+      name any accepted theorem in `#[proof_by(...)]` and the receipt would record it as evidence —
+      the break an independent review found. -/
+  specs : List Name := []
 deriving Repr, Inhabited
 
 /-- Every named table is bound to a digest. A `body` edge whose evidence is not fully
@@ -137,8 +171,12 @@ def classifyTheorem (n : Name) : MetaM (Option EdgeEvidence) := do
     let mut exprs := [body]
     for x in xs do exprs := (← inferType x) :: exprs
     let mut consts : List Name := []
-    for e in exprs do consts := consts ++ (← tableConstsIn e)
+    let mut specs : List Name := []
+    for e in exprs do
+      consts := consts ++ (← tableConstsIn e)
+      specs := specs ++ (← specConstsIn e)
     let named := consts.eraseDups
+    let specsFound := specs.eraseDups
     if named.isEmpty && !bound then return none
     -- Naming a concrete table wins: such a theorem depends on those entries even
     -- if it ALSO quantifies over some other table. Answering `contract` there
@@ -150,8 +188,8 @@ def classifyTheorem (n : Name) : MetaM (Option EdgeEvidence) := do
       let mut digs : List (Name × Option String) := []
       for t in named do digs := digs ++ [(t, ← tableValueDigest t)]
       return some { edge := .body, tables := named, tableDigests := digs
-                  , quantifiesOverTable := bound }
-    return some { edge := .contract, tables := [], quantifiesOverTable := true }
+                  , quantifiesOverTable := bound, specs := specsFound }
+    return some { edge := .contract, tables := [], quantifiesOverTable := true, specs := specsFound }
 
 /-! ## The classification hand-back (R-0004 slice 6, step 1)
 

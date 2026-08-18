@@ -34,51 +34,51 @@ namespace Concrete.Proof
 -- that type being forged, but it does not make validation the only ROUTE to the classification
 -- information. Closing the type without closing the data leaves the front door locked and the
 -- window open.
-private def classificationTable : List (String × String × String × List (String × String) × Bool) :=
+private def classificationTable : List (String × String × String × List (String × String) × Bool × List String) :=
 [
-  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false),
-  ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false),
-  ("Concrete.Proof.decode_header_rejects_short", "body", "98bc0543aa2f21fe0215f61e33a31bd3", [("Concrete.Proof.proofFnsExt", "8d7e53542a5e912ae4ce4ccdfd7f43cc")], false),
-  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body", "0a213b8fe94af7a02dd2e676db3448a0", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false),
-  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body", "0d4e1514e90142c45fbb493d819906ad", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false),
-  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body", "d93f7ee7c94d9f946626140a4eb5f70e", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false),
-  ("Examples.ElfHeader.Proofs.check_magic_correct", "body", "4ec2bf6300b8346ee56a420c7432cb52", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false),
-  ("Examples.ElfHeader.Proofs.check_class_correct", "body", "7a4df947f32ae0bf81bb6be812a12376", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false),
-  ("Examples.ElfHeader.Proofs.check_data_correct", "body", "6b79b8a6b380d8e9a5c6a592a9b005ac", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false),
-  ("Examples.ElfHeader.Proofs.check_version_correct", "body", "a2d629c19c42b0555343c7db75bef406", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false),
-  ("Examples.ElfHeader.Proofs.validate_header_correct", "body", "6dbf4f0a870fb2eddc9abd3b0ad6fc5c", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body", "a5f009923fa06c451b9f6d1d8a0a618c", [("Concrete.Proof.ctTagFns", "7d29432885d6858f3bd5d6198ecf7321")], false),
-  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body", "eb3464a1496339eb7d3ba66b5faaaa06", [("Concrete.Proof.ctTagFns", "7d29432885d6858f3bd5d6198ecf7321")], false),
-  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body", "dbbca2620c905198e81b0eb317e29ca2", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false),
-  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body", "c03809fea8a03cd299d68f5073b8ea28", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false),
-  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body", "86641044424d8467caaedcc1456b8521", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false),
-  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body", "38317276a106f64897f29f97760e3d6a", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false),
-  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body", "3baf80715f1112d3e5cd70b4bce0cdbc", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false),
-  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract", "66c131f62baba38dc63cb5ed1a2ee0d9", [], true),
-  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract", "7514cf668b484ad57f6638496e8da254", [], true),
-  ("Examples.HmacSha256.Proofs.ch_refines", "body", "03c7ac500a119f1a9967e7c95a1462e2", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.HmacSha256.Proofs.ch_selects_high", "body", "dad0ea74403323b46dab5d3c1e99f5eb", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body", "bcff724c64133577213bb602047e7eb4", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.round_refines_list", "body", "52a7439c74366ee07d48cb8bce2bf844", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body", "d7518588077f8f2d9605ef725bc99f91", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body", "f54c86494d513cd00c0bded7bebe4085", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body", "bd7f85952d2f299401e49854542b0e53", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body", "cc7beef4d2f0b237721ba6b811ab2dcd", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body", "a60b88ebbd6bcb8e877fbbfed7de2100", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body", "f1e68b974ee5bfc806ed3598f9fc38c3", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false),
-  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract", "dfc4fb49d1dc178ff9d2f8af256e6d96", [], true),
-  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body", "631a18e6482cac5515013298ad9c523b", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false),
-  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body", "071c8a818aa47e4b2c093da83284ffda", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false),
-  ("Examples.ParseValidate.Proofs.validate_version_correct", "body", "ce762322892966efae727e2c96fdd9ac", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false),
-  ("Examples.ProofPatterns.Proofs.add_three_correct", "body", "bf642e27e45729a9a4db4de97ecb75be", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.ProofPatterns.Proofs.combine_correct", "body", "098f3b62a5c123eb14149b1c917564f2", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false),
-  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body", "2e7d0a991aea1812c2fe9742d5b0549a", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.ProofPatterns.Proofs.dbl_correct", "body", "8a5c627bb3e11a18172dcddd77b6d9b7", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false),
-  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body", "858a134f01297e2ceca7934910d110fb", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.ProofPatterns.Proofs.inc_correct", "body", "aa47cb38439896023c17d5845f799001", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false),
-  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body", "ea930af89044e22c064fd34346746bae", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body", "2a0a7be6bfc7a6e7da5ec81e4f6164c8", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false),
-  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false)
+  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false, ["Concrete.Proof.parseByteExpr"]),
+  ("Concrete.Proof.check_length_rejects_short", "body", "bfda7f397e3221e757383578b50ee3ff", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false, ["Concrete.Proof.checkLengthExpr"]),
+  ("Concrete.Proof.decode_header_rejects_short", "body", "98bc0543aa2f21fe0215f61e33a31bd3", [("Concrete.Proof.proofFnsExt", "8d7e53542a5e912ae4ce4ccdfd7f43cc")], false, ["Concrete.Proof.decodeHeaderExpr"]),
+  ("Examples.CryptoVerify.Proofs.compute_tag_correct", "body", "0a213b8fe94af7a02dd2e676db3448a0", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false, ["Concrete.Proof.computeTagExpr"]),
+  ("Examples.CryptoVerify.Proofs.verify_tag_correct", "body", "0d4e1514e90142c45fbb493d819906ad", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false, ["Concrete.Proof.verifyTagExpr"]),
+  ("Examples.CryptoVerify.Proofs.check_nonce_correct", "body", "d93f7ee7c94d9f946626140a4eb5f70e", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false, ["Concrete.Proof.checkNonceExpr"]),
+  ("Examples.ElfHeader.Proofs.check_magic_correct", "body", "4ec2bf6300b8346ee56a420c7432cb52", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false, ["Concrete.Proof.checkMagicExpr"]),
+  ("Examples.ElfHeader.Proofs.check_class_correct", "body", "7a4df947f32ae0bf81bb6be812a12376", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false, ["Concrete.Proof.checkClassExpr"]),
+  ("Examples.ElfHeader.Proofs.check_data_correct", "body", "6b79b8a6b380d8e9a5c6a592a9b005ac", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false, ["Concrete.Proof.checkDataExpr"]),
+  ("Examples.ElfHeader.Proofs.check_version_correct", "body", "a2d629c19c42b0555343c7db75bef406", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false, ["Concrete.Proof.checkVersionExpr"]),
+  ("Examples.ElfHeader.Proofs.validate_header_correct", "body", "6dbf4f0a870fb2eddc9abd3b0ad6fc5c", [("Concrete.Proof.elfFns", "d7f1c7b87a2e474a9ca4a770f9758da6")], false, ["Concrete.Proof.validateHeaderExpr"]),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "body", "a5f009923fa06c451b9f6d1d8a0a618c", [("Concrete.Proof.ctTagFns", "7d29432885d6858f3bd5d6198ecf7321")], false, ["Concrete.Proof.ctCompareExpr"]),
+  ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "body", "eb3464a1496339eb7d3ba66b5faaaa06", [("Concrete.Proof.ctTagFns", "7d29432885d6858f3bd5d6198ecf7321")], false, ["Concrete.Proof.ctCompareExpr"]),
+  ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "body", "dbbca2620c905198e81b0eb317e29ca2", [("Concrete.Proof.cryptoFns", "c2daff8953e429ad40f4100c9c066525")], false, ["Concrete.Proof.verifyMessageExpr"]),
+  ("Examples.FixedCapacity.Proofs.compute_tag_zero_correct", "body", "c03809fea8a03cd299d68f5073b8ea28", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false, ["Concrete.Proof.fcTagExpr"]),
+  ("Examples.FixedCapacity.Proofs.ring_new_correct", "body", "86641044424d8467caaedcc1456b8521", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false, ["Concrete.Proof.ringNewExpr"]),
+  ("Examples.FixedCapacity.Proofs.ring_push_then_contains_correct", "body", "38317276a106f64897f29f97760e3d6a", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false, ["Concrete.Proof.ringContainsExpr"]),
+  ("Examples.FixedCapacity.Proofs.ring_push_zero_correct", "body", "3baf80715f1112d3e5cd70b4bce0cdbc", [("Concrete.Proof.fixedCapacityFns", "3fe239b3132010b819cd38f6989385b7")], false, ["Concrete.Proof.ringPushExpr"]),
+  ("Examples.HmacSha256.Proofs.block_to_words_at_refines_spec", "contract", "66c131f62baba38dc63cb5ed1a2ee0d9", [], true, ["Concrete.Proof.blockToWordsAtExpr"]),
+  ("Examples.HmacSha256.Proofs.block_to_words_refines_spec", "contract", "7514cf668b484ad57f6638496e8da254", [], true, ["Concrete.Proof.blockToWordsExpr"]),
+  ("Examples.HmacSha256.Proofs.ch_refines", "body", "03c7ac500a119f1a9967e7c95a1462e2", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Concrete.Proof.chExpr"]),
+  ("Examples.HmacSha256.Proofs.ch_selects_high", "body", "dad0ea74403323b46dab5d3c1e99f5eb", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Concrete.Proof.chExpr"]),
+  ("Examples.HmacSha256.Proofs.hmac_sha256_refines_spec", "body", "bcff724c64133577213bb602047e7eb4", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.hmac_sha256Expr"]),
+  ("Examples.HmacSha256.Proofs.round_refines_list", "body", "52a7439c74366ee07d48cb8bce2bf844", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.roundExpr"]),
+  ("Examples.HmacSha256.Proofs.sha256_compress_at_refines_spec", "body", "d7518588077f8f2d9605ef725bc99f91", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.sha256_compressAtExpr"]),
+  ("Examples.HmacSha256.Proofs.sha256_compress_refines_spec", "body", "f54c86494d513cd00c0bded7bebe4085", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.sha256_compressExpr"]),
+  ("Examples.HmacSha256.Proofs.sha256_hash_refines_spec", "body", "bd7f85952d2f299401e49854542b0e53", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.sha256_hashExpr"]),
+  ("Examples.HmacSha256.Proofs.sha256_init_correct", "body", "cc7beef4d2f0b237721ba6b811ab2dcd", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Concrete.Proof.sha256_initExpr"]),
+  ("Examples.HmacSha256.Proofs.sha256_schedule_refines_spec", "body", "a60b88ebbd6bcb8e877fbbfed7de2100", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.scheduleExpr"]),
+  ("Examples.HmacSha256.Proofs.state_to_bytes_refines_spec", "body", "f1e68b974ee5bfc806ed3598f9fc38c3", [("Examples.HmacSha256.Proofs.shaFns", "190bed891ca1977465912c676d501b90")], false, ["Concrete.Proof.stateToBytesExpr"]),
+  ("Examples.LoopInvariant.Proofs.count_up_loop_preserves", "contract", "dfc4fb49d1dc178ff9d2f8af256e6d96", [], true, []),
+  ("Examples.ParseValidate.Proofs.parse_header_too_short", "body", "631a18e6482cac5515013298ad9c523b", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false, ["Concrete.Proof.parseHeaderExpr"]),
+  ("Examples.ParseValidate.Proofs.validate_header_fields_success", "body", "071c8a818aa47e4b2c093da83284ffda", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false, ["Concrete.Proof.validateHeaderFieldsExpr"]),
+  ("Examples.ParseValidate.Proofs.validate_version_correct", "body", "ce762322892966efae727e2c96fdd9ac", [("Concrete.Proof.parseValidateFns", "b157294d111c474262ad8ab9cec1f389")], false, ["Concrete.Proof.validateVersionExpr"]),
+  ("Examples.ProofPatterns.Proofs.add_three_correct", "body", "bf642e27e45729a9a4db4de97ecb75be", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.addThreeExpr"]),
+  ("Examples.ProofPatterns.Proofs.combine_correct", "body", "098f3b62a5c123eb14149b1c917564f2", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false, ["Examples.ProofPatterns.Proofs.combineExpr"]),
+  ("Examples.ProofPatterns.Proofs.copy2_copies_faithfully", "body", "2e7d0a991aea1812c2fe9742d5b0549a", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.copy2Expr"]),
+  ("Examples.ProofPatterns.Proofs.dbl_correct", "body", "8a5c627bb3e11a18172dcddd77b6d9b7", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false, ["Examples.ProofPatterns.Proofs.dblExpr"]),
+  ("Examples.ProofPatterns.Proofs.ghost_sum_correct", "body", "858a134f01297e2ceca7934910d110fb", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.ghostSumExpr"]),
+  ("Examples.ProofPatterns.Proofs.inc_correct", "body", "aa47cb38439896023c17d5845f799001", [("Examples.ProofPatterns.Proofs.combineFns", "97be3bb02ee299498360c97cf005d6d6")], false, ["Examples.ProofPatterns.Proofs.incExpr"]),
+  ("Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest", "body", "ea930af89044e22c064fd34346746bae", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.putExpr"]),
+  ("Examples.ProofPatterns.Proofs.scale_by_two_correct", "body", "2a0a7be6bfc7a6e7da5ec81e4f6164c8", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.scaleByTwoExpr"]),
+  ("Examples.ProofPatterns.Proofs.sum4_totals_concrete", "body", "0d2c0b77e42d28f3c6632e25c130fb88", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["Examples.ProofPatterns.Proofs.sum4Expr"])
 ]
 
 /-- A row that has passed structural validation. The ONLY way to obtain a classification.
@@ -110,6 +110,10 @@ structure ValidatedRow where
       the discriminator `classifyTheorem` used: a consumer re-deriving the verdict from `edge`
       alone could not tell a theorem that quantified from one that named nothing. -/
   quantifies  : Bool
+  /-- The SPECIFICATION constants the theorem's statement mentions. This is what ties a theorem to
+      the claim it may justify: `#[proof_by(...)]` is a source assertion, and without an independent
+      witness of what the theorem is ABOUT, any accepted theorem could be named for any subject. -/
+  specs       : List String
 deriving Repr
 
 private def isHexDigest (d : String) : Bool :=
@@ -174,9 +178,9 @@ def RawRowRefusal.explain : RawRowRefusal → String
     in the checked-in table, which are all well-formed — so "malformed rows are rejected" would
     be asserted against data that contains none. That is precisely the shape of vacuous control
     this codebase keeps finding. -/
-def validateRawRow : String × String × String × List (String × String) × Bool
+def validateRawRow : String × String × String × List (String × String) × Bool × List String
     → Except RawRowRefusal ValidatedRow
-  | (n, tag, dig, tbls, q) =>
+  | (n, tag, dig, tbls, q, specs) =>
     if n.isEmpty then .error .emptyTheoremIdentity
     else match edgeOfTag tag with
     | none => .error (.unknownEdgeTag tag)
@@ -191,7 +195,7 @@ def validateRawRow : String × String × String × List (String × String) × Bo
           if !(tbls.all fun t => !t.1.isEmpty) then .error .tableIdentityEmpty
           else match (tbls.map (·.1)).find? (fun t => ((tbls.map (·.1)).filter (· == t)).length > 1) with
             | some dup => .error (.tableNamedTwice dup)
-            | none => .ok (ValidatedRow.mk n e dig tbls q)
+            | none => .ok (ValidatedRow.mk n e dig tbls q specs)
 
 /-- Entry evidence for tables the COMPILER CANNOT LINK, crossed as data.
 

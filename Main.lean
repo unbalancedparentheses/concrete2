@@ -2735,11 +2735,27 @@ def compileAndReport (inputPath : String) (reportType : String)
               | .ok .needsRecheck =>
                 unreadable := unreadable + 1
                 lines := lines ++ [s!"    ? {subject} — receipt written under a different envelope; re-verify and re-record"]
+        -- COVERAGE IS PART OF THE VERDICT. An independent review deleted one record from a store
+        -- and the section came back all-green: the claim simply vanished, and a dependent of it
+        -- still read `current`. An all-tick section with a silently truncated denominator is
+        -- exactly the output a reviewer acts on, so every claim that COULD carry a receipt and has
+        -- none is named here.
+        let covered := records.map (·.1)
+        let missing := pc.entries.filterMap fun e =>
+          if e.spec.isSome && !covered.contains e.qualName then some e.qualName else none
+        for m in missing do
+          lines := lines ++ [s!"    · {m} — NO RECEIPT in this store (proof-linked, so one is expected)"]
         IO.println (String.intercalate "\n"
           ([s!"\n=== Replay Receipts ({path}) ==="] ++ lines
-           ++ [s!"\n  {current} current, {notCurrent} not current, {unreadable} unreadable"
+           ++ [s!"\n  {current} current, {notCurrent} not current, {unreadable} unreadable, {missing.length} no receipt"
               , "  A receipt makes a claim kernel-replayed ONLY while it agrees with fresh facts."
               , "  Status above is derived from source facts and does not itself mean the kernel ran."]))
+        -- THE EXIT CODE CARRIES THE VERDICT when receipts were consumed. It was unconditionally 0 —
+        -- five current, zero current, an empty store and an unreadable one all exited 0 — so any CI
+        -- gate built on this surface passed no matter what it found. Only the `--receipts` mode is
+        -- affected: without a store, this report answers a different question and keeps its old
+        -- exit semantics.
+        if notCurrent + unreadable + missing.length > 0 then return 1
       return (if hasRegistryErrors then 1 else 0)
     if reportType == "obligations" then
       IO.println (Report.obligationsReport validCore.coreModules locMap registry pc)

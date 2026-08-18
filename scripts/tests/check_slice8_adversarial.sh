@@ -198,6 +198,67 @@ else
   no "foreign store handling moved: $(tally "$FOREIGN")"
 fi
 
+echo "=== a theorem must be ABOUT the claim it is bound to ==="
+
+# THE BREAK AN INDEPENDENT NON-AUTHOR REVIEW FOUND, and the reason this section exists. Every attack
+# above works on the STORE; this one needs no store at all. `#[proof_by(...)]` is a source assertion,
+# and issuance took it as ground truth — so binding a claim to a REAL theorem the kernel accepts, but
+# about a different declaration, produced "kernel-replayed, receipt current".
+#
+# The kernel accepting a theorem says the theorem is TRUE. It does not say it is about this claim.
+FORGE="$ROOT_DIR/.slice8-forge"
+forge_attack() {
+  local name="$1" thm="$2" wantissued="$3"
+  rm -rf "$FORGE"; mkdir -p "$FORGE"
+  cp -r examples/elf_header "$FORGE/f"
+  sed -i "s/#\\[proof_by(Examples.ElfHeader.Proofs.check_magic_correct)\\]/#[proof_by($thm)]/" "$FORGE/f/src/main.con"
+  local out; out="$("$BIN" "$FORGE/f/src/main.con" --report receipts --out "$TMP/forge.txt" 2>/dev/null || true)"
+  local issued; issued="$(grep -oE 'Summary: [0-9]+ issued' <<<"$out" | grep -oE '[0-9]+' || echo -1)"
+  local named; named="$(grep -c 'theorem_not_about_subject' <<<"$out" || true)"
+  rm -rf "$FORGE"
+  if [ "$issued" = "$wantissued" ] && [ "$named" -ge 1 ]; then
+    ok "$name — refused as theorem_not_about_subject; $issued honest claim(s) still issued"
+  else
+    no "$name — issued=$issued (wanted $wantissued), named=$named. A claim bound to an unrelated theorem must not mint."
+  fi
+}
+# Same table, different declaration: binding the table cannot tell these apart, only the spec can.
+forge_attack "claim rebound to a sibling theorem" "Examples.ElfHeader.Proofs.check_class_correct" 3
+# Across programs: the record's own fields contradict each other (a crypto table under an ELF claim).
+forge_attack "claim rebound across programs" "Examples.CryptoVerify.Proofs.check_nonce_correct" 3
+
+echo "=== coverage and exit status are part of the verdict ==="
+
+# DELETING a record used to produce an all-green section: the claim vanished with no line, and a
+# dependent of it still read `current`. An all-tick section with a silently truncated denominator is
+# exactly what a reviewer acts on.
+python3 - "$TMP" <<'PY2'
+import sys, pathlib
+T = sys.argv[1]
+s = pathlib.Path(T + "/base.txt").read_text()
+recs = [b for b in s.split("== ")[1:] if not b.startswith("main.check_magic")]
+pathlib.Path(T + "/short.txt").write_text("".join("== " + b for b in recs))
+PY2
+SHORT="$(consume "$TMP/short.txt")"
+if grep -q 'NO RECEIPT in this store' <<<"$SHORT" && grep -qE '1 no receipt' <<<"$SHORT"; then
+  ok "a proof-linked claim with no record is NAMED and counted, not silently dropped"
+else
+  no "a deleted record produced no coverage complaint: $(tally "$SHORT")"
+fi
+
+# EXIT STATUS. It was unconditionally 0 — five current, zero current, empty and unreadable stores all
+# exited 0 — so any CI gate built on this surface passed regardless of what it found.
+ex(){ "$BIN" "$SRC" --report proof-status --receipts "$1" >/dev/null 2>&1; echo $?; }
+: > "$TMP/empty2.txt"
+sed 's/^root .*/root TAMPERED/' "$TMP/base.txt" > "$TMP/bad2.txt"
+GOOD_EX="$(ex "$TMP/base.txt")"; SHORT_EX="$(ex "$TMP/short.txt")"
+BAD_EX="$(ex "$TMP/bad2.txt")"; EMPTY_EX="$(ex "$TMP/empty2.txt")"
+if [ "$GOOD_EX" = "0" ] && [ "$SHORT_EX" = "1" ] && [ "$BAD_EX" = "1" ] && [ "$EMPTY_EX" = "1" ]; then
+  ok "exit status distinguishes a clean store (0) from incomplete, tampered and empty ones (1)"
+else
+  no "exit codes do not carry the verdict: good=$GOOD_EX short=$SHORT_EX bad=$BAD_EX empty=$EMPTY_EX"
+fi
+
 echo "=== the honest path still works after all of it ==="
 
 # THE FINAL NON-VACUITY CHECK. After every attack above, the untouched store must still read current.

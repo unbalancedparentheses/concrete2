@@ -69,6 +69,21 @@ inductive IssueRefusal where
   | noScopedIdentity (subject : String) (why : String)
   /-- The dependency closure refused to root. -/
   | rootRefused (subject : String) (why : String)
+  /-- The theorem does not mention the specification this claim names, so it says nothing about
+      this subject.
+
+      THE BREAK AN INDEPENDENT ADVERSARIAL REVIEW FOUND. `#[proof_by(...)]` is a SOURCE ASSERTION and
+      issuance took it as ground truth: binding `main.check_magic` to `check_class_correct` — a real
+      theorem the kernel accepts, about a different declaration — produced a receipt reading
+      "kernel-replayed, receipt current". Retargeting across programs to a crypto theorem worked too,
+      leaving a receipt whose own fields contradicted each other and a consumer that accepted it.
+
+      The kernel accepting a theorem says the theorem is TRUE. It does not say the theorem is ABOUT
+      this claim, and only the theorem's own statement can witness that. -/
+  | theoremNotAboutSubject (subject : String) (theoremName : String) (spec : String)
+  /-- The claim names no specification, so there is nothing to check its theorem against. Fail
+      closed: a link nothing can witness must not mint. -/
+  | claimNamesNoSpec (subject : String)
   /-- The claim's own status is not `proved`. Caught on the drift fixture the day issuance landed:
       `elf_header_drifted` is a DIFFERENT program sharing every declaration name with `elf_header`,
       and issuance minted four receipts for it — two of them for `stale` claims, whose bodies had
@@ -96,6 +111,8 @@ def IssueRefusal.canonical : IssueRefusal → String
   | .noScopedIdentity ..=> "no_scoped_identity"
   | .rootRefused ..     => "dependency_root_refused"
   | .noImportClosure _  => "no_import_closure"
+  | .theoremNotAboutSubject .. => "theorem_not_about_subject"
+  | .claimNamesNoSpec _ => "claim_names_no_spec"
   | .notProved ..       => "claim_not_proved"
   | .materialRefused _  => "receipt_material_refused"
 
@@ -107,6 +124,11 @@ def IssueRefusal.explain : IssueRefusal → String
   | .noScopedIdentity s w => s!"'{s}' has no scoped identity: {w}"
   | .rootRefused s w      => s!"'{s}' has no computable dependency root: {w}"
   | .noImportClosure s    => s!"'{s}': the replay found no proof library, so nothing identifies whose theorems were accepted"
+  | .theoremNotAboutSubject sub thm sp =>
+      s!"'{thm}' does not mention '{sp}', the specification '{sub}' names — the kernel accepting a "
+      ++ "theorem says it is TRUE, not that it is about this claim"
+  | .claimNamesNoSpec sub =>
+      s!"'{sub}' names no specification, so nothing witnesses that its theorem is about it"
   | .notProved s st       => s!"'{s}' is '{st}', not 'proved' — the kernel accepted a theorem, which says nothing about whether it still proves this body"
   | .materialRefused s    => s!"'{s}' assembled material that the receipt envelope refused"
 
@@ -196,6 +218,15 @@ def issueFor (pc : ProofCore) (res : ReplayResult) (env : IssueEnvironment)
   if res.environment.importDigests.isEmpty then throw (.noImportClosure subject)
   let sr ← (SuccessfulReplay.of? res thm).mapError (IssueRefusal.replay thm)
   let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)
+  -- THE THEOREM MUST BE ABOUT THIS CLAIM. `#[proof_by]` names a theorem; the classification records
+  -- which SPECIFICATIONS that theorem's statement mentions. If the spec this claim declares is not
+  -- among them, the theorem concerns something else and cannot witness this subject — however
+  -- happily the kernel accepted it. Applied at BOTH producers: issuance must not mint it, and the
+  -- consumer's fresh facts must not compare as if it were legitimate.
+  let claimedSpec := spec.specId.name
+  if claimedSpec.isEmpty then throw (.claimNamesNoSpec subject)
+  if !row.specs.contains claimedSpec then
+    throw (.theoremNotAboutSubject subject thm claimedSpec)
   let some subjDigest := e.subjectDigest | throw (.noSubjectDigest subject)
   let sid ← match e.definitionIdentity with
     | .error w => throw (.noScopedIdentity subject w.explain)
@@ -239,6 +270,15 @@ def freshFactsFor (pc : ProofCore) (env : IssueEnvironment) (toolchain : String)
     | throw (.noProofLink subject)
   if obl.status != .proved then throw (.notProved subject obl.status.canonical)
   let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)
+  -- THE THEOREM MUST BE ABOUT THIS CLAIM. `#[proof_by]` names a theorem; the classification records
+  -- which SPECIFICATIONS that theorem's statement mentions. If the spec this claim declares is not
+  -- among them, the theorem concerns something else and cannot witness this subject — however
+  -- happily the kernel accepted it. Applied at BOTH producers: issuance must not mint it, and the
+  -- consumer's fresh facts must not compare as if it were legitimate.
+  let claimedSpec := spec.specId.name
+  if claimedSpec.isEmpty then throw (.claimNamesNoSpec subject)
+  if !row.specs.contains claimedSpec then
+    throw (.theoremNotAboutSubject subject thm claimedSpec)
   let some subjDigest := e.subjectDigest | throw (.noSubjectDigest subject)
   let sid ← match e.definitionIdentity with
     | .error w => throw (.noScopedIdentity subject w.explain)

@@ -101,7 +101,12 @@ def sourceLinkedThms : List Name :=
         throwError s!"table {tn} of {n} is unbound — refusing to emit a row that names a dependency it cannot bind"
     let tstr := "[" ++ String.intercalate ", " tlits ++ "]"
     let q := if ev.quantifiesOverTable then "true" else "false"
-    lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\", {tstr}, {q})"]
+    -- THE SPECS THE THEOREM IS ABOUT. Without this a claim could name any accepted theorem in
+    -- `#[proof_by(...)]` and the receipt would record it as evidence for a subject the theorem
+    -- never mentions — the break an independent adversarial review found.
+    let slits := ev.specs.map (fun sn => s!"\"{sn}\"")
+    let sstr := "[" ++ String.intercalate ", " slits ++ "]"
+    lits := lits ++ [s!"  (\"{n}\", \"{ev.edge.canonical}\", \"{d}\", {tstr}, {q}, {sstr})"]
   IO.println (String.intercalate ",\n" lits)
   -- OUT-OF-BUILD TABLE ENTRIES. The compiler resolves a table NAME to its value through a closed
   -- dispatch, which covers every table defined inside the compiler. It cannot cover tables defined
