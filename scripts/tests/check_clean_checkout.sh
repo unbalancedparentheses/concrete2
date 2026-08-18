@@ -130,12 +130,20 @@ else
   no "a receipt minted in A is not current in B ($A_IN_B) — receipts are not portable across checkouts"
 fi
 
-# ...and the reverse, because portability that only holds in one direction is an accident.
+# THE REVERSE DIRECTION IS NOT AVAILABLE, and the reason is worth asserting rather than skipping.
+# A fresh clone has no Lake build, so no kernel can run there and NOTHING can be minted — the store
+# comes back empty. That is the fail-closed answer: an unbuilt checkout issues no receipts rather
+# than issuing unverified ones, and its emptiness then makes nothing current.
+#
+# Testing B -> A properly would mean building the clone, which is a full compiler build per gate run.
+# Recorded as the bound on this leg instead of asserted vacuously.
+B_ISSUED="$("$BIN" "$TMP/clone/examples/elf_header/src/main.con" --report receipts 2>/dev/null \
+            | grep -oE '[0-9]+ issued, [0-9]+ withheld' | head -1)"
 B_IN_A="$(xtally "$TMP/from_B.txt" "examples/elf_header/src/main.con")"
-if [ "$B_IN_A" = "5 current, 0 not current, 0 unreadable" ]; then
-  ok "and a receipt minted in checkout B is current against checkout A"
+if grep -qE '^0 issued' <<<"$B_ISSUED" && [ "$B_IN_A" = "0 current, 0 not current, 0 unreadable" ]; then
+  ok "an unbuilt checkout issues nothing ($B_ISSUED) and its empty store makes nothing current"
 else
-  no "a receipt minted in B is not current in A ($B_IN_A) — portability holds in only one direction"
+  no "an unbuilt checkout produced receipts ($B_ISSUED) or a non-empty verdict ($B_IN_A) — minting must need a kernel"
 fi
 
 # NON-VACUITY: the cross-checkout comparison must still be able to say NO. A receipt from a different

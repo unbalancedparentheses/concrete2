@@ -62,7 +62,18 @@ partial def resolveModules (baseDir : String) (m : Module) (parsedPaths : List S
       let subBaseDir := if actualPath == dirPath then
         if baseDir == "" then sub.name else baseDir ++ "/" ++ sub.name
       else baseDir
-      if paths.contains filePath then
+      -- CANONICAL COMPARISON. `paths` is the already-visited list and it was compared as RAW TEXT,
+      -- so the same file reached under two spellings — `./src/x.con` and `src/x.con` — was not
+      -- recognised as visited. That let one module enter `sources` twice, and a package identity
+      -- computed over that list moved with the input path's FORM rather than with the program.
+      --
+      -- The duplicate is prevented here, at the producer, rather than erased downstream by
+      -- deduplicating content digests: a content list that silently collapses `[X, X]` into `[X]`
+      -- also collapses a module that went MISSING into one that was merely repeated.
+      let canon ← try pure (← IO.FS.realPath ⟨filePath⟩).toString catch _ => pure filePath
+      let canonPaths ← paths.mapM fun q =>
+        try pure (← IO.FS.realPath ⟨q⟩).toString catch _ => pure q
+      if canonPaths.contains canon then
         return .error s!"circular module import: {filePath}"
       sources := sources ++ [(filePath, source)]
       match parse source with
@@ -195,19 +206,22 @@ partial def findProjectRoot (startDir : String) : IO (Option String) := do
   let start ← try
       pure (← IO.FS.realPath ⟨if startDir.isEmpty then "." else startDir⟩).toString
     catch _ => pure startDir
-  let rec up (dir : String) (fuel : Nat) : IO (Option String) := do
-    match fuel with
-    | 0 => return none
-    | fuel + 1 =>
-      let tomlExists ← try
-        let _ ← IO.FS.readFile ⟨dir ++ "/Concrete.toml"⟩
-        pure true
-      catch _ => pure false
-      if tomlExists then return some dir
-      let parent := dirOf dir
-      if parent == dir || parent.isEmpty then return none
-      up parent fuel
-  up start 64
+  -- NO FUEL. A depth cap returning `none` is indistinguishable from "there is no project here", so a
+  -- validly-nested project past the cap would silently fall back to STANDALONE analysis — exactly the
+  -- location-dependent authority bug this walk was rewritten to fix, reintroduced at a different
+  -- depth. `start` is canonicalised above, so the ancestor chain is finite and terminates at the
+  -- filesystem root where `dirOf` reaches its fixed point; an arbitrary 64 bought nothing but a
+  -- silent wrong answer for deep trees.
+  let rec up (dir : String) : IO (Option String) := do
+    let tomlExists ← try
+      let _ ← IO.FS.readFile ⟨dir ++ "/Concrete.toml"⟩
+      pure true
+    catch _ => pure false
+    if tomlExists then return some dir
+    let parent := dirOf dir
+    if parent == dir || parent.isEmpty then return none
+    up parent
+  up start
 
 /-- Resolve a dependency path relative to the project root. -/
 def resolveDependencyPath (projectRoot : String) (depPath : String) : String :=
