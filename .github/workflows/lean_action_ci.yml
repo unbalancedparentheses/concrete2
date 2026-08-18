@@ -511,6 +511,40 @@ jobs:
       - name: "V1 fingerprint golden (the frozen V1 body-fingerprint corpus does not move under V2)"
         run: bash scripts/tests/check_v1_fingerprint_golden.sh
 
+      # GATES THAT NOTHING RAN. Three of these appeared in the Makefile only, and three were
+      # referenced by nothing anywhere in the repository — not the workflow, not the Makefile, not
+      # another gate. The two that matter most are the meta-gates: check_one_producer enforces that
+      # a fact has a single authoritative producer, and check_gate_vacuity catches assertions that
+      # pass because they measure nothing. Both encode the discipline the rest of this suite is
+      # written to, and neither was running.
+      - name: "One producer (a fact has one authoritative producer; reconciliation copies are the defect)"
+        run: bash scripts/tests/check_one_producer.sh
+
+      - name: "Gate vacuity (an assertion that passes because it measures nothing is not a gate)"
+        run: bash scripts/tests/check_gate_vacuity.sh
+
+      - name: "Coverage baseline (proved/eligible and the exact unproved dispositions, pinned)"
+        run: bash scripts/tests/check_coverage_baseline.sh
+
+      - name: "Bool kernel (boolean decision procedure agreement)"
+        run: bash scripts/tests/check_bool_kernel.sh
+
+      - name: "Table migration (proof tables convert without changing what they attest)"
+        run: bash scripts/tests/check_table_migration.sh
+
+      - name: "VCgen diff (verification-condition generation is stable across the refactor)"
+        run: bash scripts/tests/check_vcgen_diff.sh
+
+      - name: "Dependency edges (per-edge justification, scoped joins, and the classification vocabulary)"
+        run: bash scripts/tests/check_dependency_edges.sh
+
+      # AND THE RULE THAT KEEPS THIS FROM RECURRING. Every check_*.sh must be reachable from CI or
+      # explicitly declared as a skip with a reason. A gate nobody runs is indistinguishable from a
+      # gate that does not exist, and its absence is quieter than a failure: the pass count keeps
+      # rising while coverage does not.
+      - name: "Gate registration (every gate is reachable from CI or explicitly skipped)"
+        run: bash scripts/tests/check_gate_registration.sh
+
       - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
         run: bash scripts/tests/check_match_guard_effects.sh
 

@@ -75,9 +75,17 @@ if [ "$PROVED" = "35" ] && [ "$ELIGIBLE" = "91" ]; then
 else
   no "coverage moved to $PROVED of $ELIGIBLE eligible (baseline 35 of 91) — say which claims changed and why"
 fi
-if [ "$STALE" = "5" ] && [ "$UNBOUND" = "15" ] && [ "$DEPSNC" = "4" ] && [ "$UNJUST" = "0" ] \
-   && [ "$NOPROOF" = "31" ] && [ "$BLOCKED" = "1" ]; then
-  ok "the unproved dispositions are exactly 31 no-proof / 15 unbound / 5 stale / 4 deps-not-current / 1 blocked / 0 unjustified"
+# 31/15 -> 32/14 on 2026-08-18: ONE claim moved from `unbound` to `no-proof`, and the sum is
+# unchanged. `proof_pressure.validate_header` had its misattributed `#[proof_by]` deleted, leaving
+# `#[spec(...)]` alone. That used to synthesize a registry entry with an empty proof name and report
+# `unbound` — the absence of freshness evidence about a claim — when there is no claim at all. A
+# specification is not a proof claim, so the honest disposition is `no-proof`.
+#
+# Recorded as a transition rather than two independent edits, because that is what makes it
+# checkable: any other movement changes the sum, and this one provably does not.
+if [ "$STALE" = "5" ] && [ "$UNBOUND" = "14" ] && [ "$DEPSNC" = "4" ] && [ "$UNJUST" = "0" ] \
+   && [ "$NOPROOF" = "32" ] && [ "$BLOCKED" = "1" ]; then
+  ok "the unproved dispositions are exactly 32 no-proof / 14 unbound / 5 stale / 4 deps-not-current / 1 blocked / 0 unjustified"
 else
   no "unproved dispositions moved: no-proof=$NOPROOF unbound=$UNBOUND stale=$STALE deps=$DEPSNC blocked=$BLOCKED unjustified=$UNJUST"
 fi
