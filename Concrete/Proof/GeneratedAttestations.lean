@@ -97,16 +97,16 @@ def empty_940edbf5_plain : Except DefinitionIdentityRefusal DefinitionIdentity :
   DefinitionIdentity.of? "940edbf5e1ff4cccc660ec9a65e1e13f" "ghost" "plain" "7114bc0f7ce3e447aa9bd74d3e6d4418"
 def empty_7f57f485_copy2 : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "7f57f485aed0e37c0156fcd3c71523cf" "loopcopy" "copy2" "c8a37b314145120f678fcf80ca1d6d27"
-def empty_c83b7ac9_stale : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "c83b7ac9775351d880f7d8c739cc8aaa" "states" "stale" "c850a160887198d750551e999bf5bc83"
-def empty_c83b7ac9_partial : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "c83b7ac9775351d880f7d8c739cc8aaa" "states" "partial" "ecd934a117e4376625071651869df4c5"
+def empty_0ccbc808_stale : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "0ccbc8088b15d1c95a8901cd5c389546" "states" "stale" "c850a160887198d750551e999bf5bc83"
+def empty_0ccbc808_partial : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "0ccbc8088b15d1c95a8901cd5c389546" "states" "partial" "ecd934a117e4376625071651869df4c5"
 def empty_a90ea7d6_add_three : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "a90ea7d649c3aad1ee60020e9dcbb6ee" "straight_line" "add_three" "dc6d724c16bea86f3f371ddf2162119b"
 def empty_651aaa47_scale_by_two : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "651aaa47b6160f99e32031bc41e534db" "workspace" "scale_by_two" "5dbfd1f078e081530352591407626e2c"
-def cryptoFns_b494bcc1_check_nonce : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "b494bcc169f20eb82e35a0005c8721dd" "main" "check_nonce" "0a3ca2002a335ffd62b6cd22edad6146"
+def cryptoFns_100ec0c9_check_nonce : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "100ec0c97fb5ea6686b4e9e5d6438a72" "main" "check_nonce" "0a3ca2002a335ffd62b6cd22edad6146"
 def parseValidateFns_f0fac914_compute_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "f0fac9145b0f8cea6caa6aaa7ac8e0f5" "parse_validate" "compute_checksum" "c721ca16b467550acd17663a705264ba"
 def parseValidateFns_f0fac914_validate_checksum : Except DefinitionIdentityRefusal DefinitionIdentity :=

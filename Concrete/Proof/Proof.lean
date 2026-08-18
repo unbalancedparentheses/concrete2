@@ -1813,7 +1813,18 @@ def cryptoFns : FnTable :=
     , AttestedPFnDef.of computeTagFn    GeneratedAttestations.cryptoFns_93e60028_compute_tag
     , AttestedPFnDef.of verifyMessageFn GeneratedAttestations.cryptoFns_93e60028_verify_message
     , AttestedPFnDef.of verifyTagFn     GeneratedAttestations.cryptoFns_93e60028_verify_tag
-    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_b494bcc1_check_nonce ]
+    -- RE-SELECTED b494bcc1 -> 100ec0c9 on 2026-08-18, and the reason is a demonstrated cost of the
+    -- current identity scheme rather than anything about this declaration. Module, declaration and
+    -- IMPLEMENTATION DIGEST are unchanged (`main` / `check_nonce` / 0a3ca200...): the body being
+    -- attested is byte-identical. What moved is the PACKAGE, because a different function in
+    -- `proof_pressure` had a wrong proof link deleted, and package identity binds whole-package
+    -- content.
+    --
+    -- So editing any declaration in a package renames the generated symbol of EVERY declaration in
+    -- it, and every proof selecting one stops compiling. That is the whole-package-content
+    -- limitation, and it is the concrete argument for the (module identity, content digest) scheme:
+    -- an unrelated sibling edit should not invalidate a neighbour's attestation.
+    , AttestedPFnDef.of checkNonceFn    GeneratedAttestations.cryptoFns_100ec0c9_check_nonce ]
 
 -- Keeps `simp only [eval, cryptoFns_globals, cryptoFnsGlobals]` working WITHOUT delta-unfolding
 -- the bare `cryptoFns`. The old `def cryptoFns : FnTable | "x" => …` produced equation lemmas
