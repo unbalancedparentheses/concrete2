@@ -1210,7 +1210,7 @@ system.
 | # | Task | Why here |
 |---|---|---|
 | — | ~~**R-0461**~~ | **DONE 2026-08-03.** H23 closed: provenance + cap + `E0617` enforcement. See the execution note below — the cap turned out to be the cheap third of it |
-| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. **Package 3 ACTIVE:** the structural receipt binds root, theorem artifact and trust boundaries; project/path-independent material is gated 5/0; the coverage baseline is 35/91. Kernel replay is now ONE typed producer (26/0) whose failures are values, and minting is replay-gated at the type level — `unchecked facts -> receipt` does not typecheck, with ten mutation families killed. **Production now mints, stores and re-checks:** the vertical slice is closed — receipts are issued (12/0), stored, and re-checked on consumption (15/0), and `StoredReceipt` is a distinct untrusted type with no minting path. Contract-witness precision is **deferred to the typed-contract milestone and off this closure list**, with a corpus tripwire. Receipts now identify the PROOF LIBRARY whose theorems were accepted, by content digest of its Lean sources, closing an authority gap that path-independence did not: the same theorem names replayed against a different library previously produced a byte-identical receipt. **Contract-witness precision and the ninth table are both DEFERRED and off this closure list**, each with a measured tripwire. **The library-package failure is FIXED:** `loadProject` injected builtin `std` as a dependency of `std` itself, so every one of its modules was filtered out of the user set and the proof surface answered 0 functions in silence; std now reports 861 functions and `check_purecore_proofs.sh` is 40/0. **V2 IS ACTIVATED** (44 fingerprints = 43 plan rows + 1 unreachable; the corpus census is unchanged before and after), and clean-checkout reproducibility is gated 11/0 including a receipt minted in one checkout and consumed against another. The compiler identity is a BUILD-TIME constant embedded in the binary — an earlier `/proc/self/exe` + `sha256sum` version made receipt issuance refuse outright on macOS, an active CI platform. **One item remains: Slice 8.** Its attack suite is shipped (20/0) and found one real defect; the INDEPENDENT NON-AUTHOR PACKET is outstanding, and R-0004 cannot close without it. |
+| 1 | **R-0004** remaining trust boundaries | **Packages 1 and 2 CLOSED 2026-08-16.** Every manifest-backed table is converted (pending 0); the evidence join, table membership and dependency roots are keyed on `DefinitionIdentity` with no name-keyed fallback; correspondence AND root computability are consumed by production verdicts through one composed authority pass. `proofFns`, `proofFnsExt`, `pureCoreFns` remain evidence-ineligible — no manifest row, so they justify nothing. Measured: **35 proved / 0 unjustified across the fixture corpus**, 13 subject roots refusing (none of them proved), 86 = 0 + 39 + 47 subject rows, 41 dependency requests = 41 attested + 0 refused. **Package 3 ACTIVE:** the structural receipt binds root, theorem artifact and trust boundaries; project/path-independent material is gated 5/0; the coverage baseline is 35/91. Kernel replay is now ONE typed producer (26/0) whose failures are values, and minting is replay-gated at the type level — `unchecked facts -> receipt` does not typecheck, with ten mutation families killed. **Production now mints, stores and re-checks:** the vertical slice is closed — receipts are issued (12/0), stored, and re-checked on consumption (15/0), and `StoredReceipt` is a distinct untrusted type with no minting path. Contract-witness precision is **deferred to the typed-contract milestone and off this closure list**, with a corpus tripwire. Receipts now identify the PROOF LIBRARY whose theorems were accepted, by content digest of its Lean sources, closing an authority gap that path-independence did not: the same theorem names replayed against a different library previously produced a byte-identical receipt. **Contract-witness precision and the ninth table are both DEFERRED and off this closure list**, each with a measured tripwire. **The library-package failure is FIXED:** `loadProject` injected builtin `std` as a dependency of `std` itself, so every one of its modules was filtered out of the user set and the proof surface answered 0 functions in silence; std now reports 861 functions and `check_purecore_proofs.sh` is 40/0. **V2 IS ACTIVATED** (44 fingerprints = 43 plan rows + 1 unreachable; the corpus census is unchanged before and after), and clean-checkout reproducibility is gated 11/0 including a receipt minted in one checkout and consumed against another. The compiler identity is a portable BUILD-TIME source identity embedded in the binary; post-build byte identity is named follow-up work. **Slice 8 and its independent non-author packet are complete at 24/0.** The packet found that any kernel-accepted theorem could be retargeted to an unrelated claim; theorem-to-subject specification binding now refuses sibling and cross-program substitutions during both issuance and consumption. **The remaining blocker is closure validation:** resolve every failure in the complete discovered gate population, add attestation-manifest freshness and exclusive orchestration, then obtain one uncontaminated serial `completed=1`, discovered=executed, zero-failure run at a clean pushed HEAD. |
 | 2 | **R-0473** | typed contract records. Now carries the IDENTITY SUBSTRATE too — the earlier split was circular, since a record cannot retain identities that do not exist yet. Also the narrow diagnostic-accumulation slice that makes the 263 unmeasured corpus files measurable |
 | 2b | **R-0474** | identity-based substitution + the evaluation-law gate. Consumes R-0473's substrate; graduating it lifts the H25 binder ban and the H27 shadowing ban. Blocks `old(...)`, frame/`modifies`, call-site instantiation |
 | 2c | **R-0476** | drains two ratchets before they become furniture: 23 universal assertions that pass over empty collections, and 145 redundant per-gate builds. Small individually, and the vacuity class already produced one green control that proved nothing |
@@ -4109,27 +4109,27 @@ pass's only live refusal control is outside the attested fixture population. Sli
 the positive path, and Slice 8 must supply hostile production-consumer coverage inside the
 authoritative evidence population.
 
-**What that leaves, as of 2026-08-16.** Replay-authorized receipt issuance and consumption are
+**What that leaves, as of 2026-08-18.** Replay-authorized receipt issuance and consumption are
 SHIPPED: the production replay path is the only minting authority, receipts are issued, stored and
 re-checked, and a stored receipt is a distinct untrusted type with no minting path. Contract-witness
 precision is DEFERRED to the typed-contract milestone with a corpus tripwire, and the ninth table is
 DEFERRED past Slice 8 having been measured to carry no authority — both are off this closure list.
 
-One item remains: Slice 8.
+Slice 8 and the independent non-author packet are SHIPPED at 24/0. The packet found and closed a real
+authority hole: kernel acceptance established that a theorem was true but issuance never established
+that the theorem described the selected subject. Canonical theorem-to-specification binding now
+refuses sibling and cross-program retargeting in both issuance and consumption. What remains is the
+complete closure-validation bar below, not another evidence feature.
 
 **[shipped 2026-08-17] Clean-checkout reproducibility and compiler provenance**
-(`make test-clean-checkout`, 10/0). A real `git clone` into a fresh directory yields byte-identical
-evidence; invocation from the repository root and the project root agree; and the compiler identity a
-receipt binds is the CONTENT OF THE EXECUTABLE THAT RAN, asserted by comparing it against
-`sha256sum` of the running binary.
-
-That identity answers the three cases directly: a binary built from commit A keeps its identity when
-the checkout moves to B; a binary built from uncommitted sources has content no committed build has;
-and a substituted executable at the same reported commit has different content and therefore a
-different identity. An unidentifiable compiler REFUSES to mint rather than recording "unknown", which
-would compare equal to any other "unknown". Known limit: the digest is computed by invoking
-`sha256sum`, so it rests on the same toolchain trust as `lake` and `lean` — it identifies the
-executable against accident and substitution, not against an adversary controlling PATH.
+(`make test-clean-checkout`, 11/0). A real `git clone` into a fresh directory yields identical
+evidence; invocation from repository and project roots agrees; and a receipt minted in one checkout
+is consumed as current against the same source in the other checkout. Compiler provenance is a
+portable build-time, project-standard 128-bit source identity embedded in the binary, with freshness
+checked against both the working tree and committed sources (`BUILD-IDENTITY-FRESHNESS`, 8/0). This
+names the source build rather than the checkout at report time and works on supported macOS without
+`/proc/self/exe` or GNU `sha256sum`. Named limit: patching the executable after build does not move the
+embedded value; portable final-executable or signed-build-manifest binding is post-R-0004 hardening.
 
 **The gate immediately found a real location-dependence.** `dirOf "src"` is `""`, so
 `findProjectRoot` walked from `src` to the FILESYSTEM ROOT and never checked the current directory:
@@ -4366,6 +4366,17 @@ This gate is also not in `run_tests.sh`, which is why the demotion went unmeasur
 > consumer together. "No hostile control can succeed" is necessary but not sufficient: a path that
 > refuses every claim is not evidence that the path accepts valid claims.
 
+**Current closure validation — BLOCKING, not post-R-0004 work.** R-0004 does not close on the fast
+suite or on individually green evidence gates. Resolve every failure found by the complete gate
+population, whether newly introduced or pre-existing; "pre-existing" establishes attribution, not
+acceptability. Add an attestation-manifest freshness owner that regenerates from compiler facts,
+rejects an empty/incomplete population, and pairs the narrow tracked-generated-file allowance with a
+real freshness comparison. Builds, generators, mutation harnesses and evidence gates share one
+repository-wide exclusive lock so a concurrent rewrite/rebuild cannot contaminate the verdict. The
+final run must be serial and uncontaminated, reconcile discovered gates with executed gates, write a
+machine-readable `completed=1` summary, report zero failures and unexplained skips, and finish at a
+clean pushed HEAD. Only then do the closure record, changelog and final denominators land.
+
 **Product hand-off after R-0004:** R-0004 makes the evidence path honest and replay-independent of
 producer state: a receipt can be re-verified from the stored artifact, the exact subject, and the
 public task schema. R-0353 provides a separately implemented consumer for that evidence; it is
@@ -4373,6 +4384,130 @@ deliberately not another R-0004 slice. R-0353 makes the evidence independently c
 trusting Concrete's compiler or report pipeline. Prototype codec/root work may begin in shadow, but
 no verifier result becomes authoritative until R-0004's replay, migration and adversarial
 boundaries close.
+
+### Post-R-0004 milestones and longer-term research
+
+These are recorded so they remain visible without distracting from the strict critical path below.
+They are not R-0004 blockers. This is the canonical sequencing/decision map, not a second copy of the
+detailed task specifications: R-0482, R-0353, R-0473/R-0474, R-0440 and the later phase tasks own
+their implementation detail and gates.
+
+**Evidence architecture**
+- `PackageIdentity` scheme migration under R-0482: bind canonical `(module identity, content digest)`
+  pairs rather than independent sets, add declared origin/namespace, and bootstrap attestations,
+  generated references, workspace identities and receipts atomically. No mixed identity-version
+  fallback. Fix duplicate enumeration at its producer; never erase legitimate duplicate-content
+  modules to stabilize a digest.
+- Compiler provenance hardening: retain the portable source-build identity, then bind source/build
+  provenance, build recipe/toolchain and final executable bytes as distinct facts through a portable
+  streaming digest or signed build manifest. The current build identity deliberately does not detect
+  post-build binary patching.
+- Canonical production `VerificationTask`: one authoritative constructor binding exact subject,
+  proposition, contract state, rule set, dependency material, and environment. Complete before
+  freezing receipt v1.
+- R-0353/schema conformance: publish experimental canonical task/receipt encodings and hostile
+  conformance fixtures, implement a consumer independently of the compiler pipeline, and freeze
+  receipt v1 only after both implementations agree. Receipt validity remains distinct from policy
+  acceptance.
+- Model-faithfulness evidence: explicit relation kinds and independently checked
+  `CorrespondenceEvidence` under R-0482.
+- Package-level evidence composition: how dependencies consume partial evidence, how upgrades
+  invalidate claims, and how absent dependency evidence is represented.
+- Typed `PolicyDecision` under R-0440: policy consumes fresh receipt facts, trust, assumptions,
+  advisories, and release requirements; a valid receipt is not automatically a release acceptance.
+- Axiom and assumption inventories: record Lean axioms, trusted declarations, runtime assumptions,
+  and imported hypotheses per claim.
+- Evidence revocation and rollback: withdrawn proofs, compromised toolchains, revoked package
+  versions, rolled-back receipt stores.
+- Signed transport without authority inflation: DSSE/in-toto envelope authenticates bytes, never
+  upgrades the evidence class.
+- Schema lifecycle and migration: compatibility windows, unknown-field handling, canonical decoding,
+  schema bumps, migration tooling, and controlled downgrade of old receipts to `needs_recheck`.
+
+**Trust and compiler boundaries**
+- Source-to-VIR bridge audit: keep it small, versioned, and independently reviewable; gradually
+  prove or translation-validate critical portions.
+- Toolchain-upgrade migration: a complete recheck plan for Lean, compiler, proof-library, and
+  rule-set upgrades.
+- Reproducible release artifacts: compiler source, dependencies, build recipe, target, linker/
+  runtime inputs, executable digest; separate from ordinary proof receipts.
+- FFI, `Unsafe`, runtime, and backend boundaries: explicit dispositions for claims crossing foreign
+  code, trusted runtime, platform adapters, or backend assumptions.
+- Platform qualification: exercise receipt production and consumption on every supported host,
+  including filesystem semantics, process interruption, and line endings.
+
+**Language and specification work**
+- Exact contract witnesses under R-0473/R-0474: canonical typed `ContractIdentity`, theorem-to-spec
+  binding and imported hypotheses distinguish contract dependence from implementation dependence.
+- Narrow two-state mutation follows that substrate: `old`, `modifies`/frames, record/array state,
+  then ghost locals/parameters/state. Only afterward does the narrow mutable-state extraction convert
+  the ninth table; its existing fail-closed/no-authority disposition remains until then.
+- Checked total functions and `#[decreases]`, followed by the spec standard library, precede richer
+  or relational logic.
+- Specification adequacy and vacuity controls: policy-visible adequacy checks, contradiction
+  detection, and permanent vacuity controls.
+- Relational properties: noninterference, constant-time behavior, equivalence, refinement.
+- Linear error-propagation ergonomics: an authority-preserving operator after the evidence path is
+  stable.
+- Closed-world library evolution: enumerable callable sets, compatible upgrades, and escape hatches.
+
+**Robustness and operations**
+- Parser and decoder fuzzing: receipt, task, manifest, policy, and package decoders.
+- Resource limits and denial-of-service behavior: bounded input sizes, memory, time, import closure,
+  and diagnostic output.
+- Atomic evidence persistence: temporary files, fsync, rename, permissions, concurrent readers,
+  interrupted writes, crash recovery.
+- Gate ownership and reachability: every gate names its owner, freshness producer, mutation
+  coverage, CI lane, and last successful execution.
+- Long-running stability and nondeterminism: scheduling, locale, directory, process-count, and
+  filesystem variations.
+- Performance baselines: replay time, receipt size, dependency-closure cost, memory use,
+  invalidation breadth.
+- `ProofCache` remains performance-pulled rather than early post-R-0004 work. When a measured
+  bottleneck justifies it, cache-off/on, cold/warm, missing, stale and corrupt cases must agree on
+  authority before the cache graduates; cache contents never mint or upgrade evidence.
+
+**Product and governance**
+- External-user dependency-upgrade workflow: receive package/evidence, replay independently, replace
+  a dependency, and obtain an exact machine-readable and human explanation of every claim that stayed
+  current or moved without access to the producer checkout.
+- IDE/CI evidence lenses, bounded parser/file-integrity/protocol flagships and a recurring non-author
+  ergonomics audit follow that vertical workflow rather than substituting for it.
+- Human-readable evidence explanations: which exact subject, theorem, dependency, trust boundary,
+  or environment field moved.
+- Evidence-diff format: stable machine-readable diff for upgrades, toolchain changes, trust widening,
+  schema migration, and proof replacement.
+- Independent implementation and security review of R-0353, schema, verifier, and hostile corpus.
+- Release assurance bundles: claims, receipts, policy decisions, assumptions, dependency evidence,
+  toolchains, replay commands, and unresolved refusals.
+- Privacy and disclosure policy: avoid exposing checkout paths, usernames, private dependency
+  locations, or confidential proof material.
+- Ecosystem compatibility policy: compatible package upgrades from the evidence perspective.
+
+**Longer-term research**
+- Second proof-producing kernel (Rocq or another kernel) in shadow first; Why3 remains a comparative
+  reference only.
+- Verified or translation-validated compiler bridges.
+- Certificate-producing automation; keep non-certificate SMT results explicitly `solver_trusted`.
+
+**Strict post-R-0004 critical path**
+
+`PackageIdentity` and compiler-provenance stabilization
+→ canonical production `VerificationTask`
+→ R-0353 independent consumer and schema conformance
+→ receipt v1 freeze
+→ typed contracts and exact contract identity
+→ `old`/`modifies`/frames and ghost state
+→ narrow mutable-state extraction and ninth-table conversion
+→ `#[decreases]` and the spec standard library
+→ external-user workflow, flagships and ergonomics
+→ broader package-evidence composition and typed policy
+→ a second proof-producing kernel only much later.
+
+No evidence-affecting language feature crosses the initial identity/task/verifier stabilization seam
+unless its change includes the corresponding identity version, atomic migration, replay behavior,
+consumer update and adversarial controls. Why3 remains a comparative reference and never enters this
+chain as a backend.
 
 #### Historical record and detailed slice traceability
 
