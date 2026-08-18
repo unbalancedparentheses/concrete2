@@ -1205,43 +1205,43 @@ probe "an unknown theorem is unclassified" "unclassified" '
 # checked-in table contains only well-formed rows, so validation could not be tested through
 # lookup at all; `validateRawRow` exists so it can be.
 probe "an EMPTY digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "", [], false, [])) ).toOption.isNone'
 probe "a PLACEHOLDER digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "?", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "?", [], false, [])) ).toOption.isNone'
 probe "a WRONG-LENGTH digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "abc123", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "abc123", [], false, [])) ).toOption.isNone'
 # Uppercase is not "the same digest in different case": the generator emits lowercase, so an
 # uppercase value did not come from the generator.
 probe "an UPPERCASE digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "7BCEC2D7871F93204B26E2BF83D5ACF1", [], false, [])) ).toOption.isNone'
 probe "a NON-HEX digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "zzcec2d7871f93204b26e2bf83d5acf1", [], false, [])) ).toOption.isNone'
 probe "an UNKNOWN edge tag is refused" "true" '
-#eval ((validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "somethingelse", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, [])) ).toOption.isNone'
 # Positive control: without it, a validator that refused everything would pass all six above.
 probe "a WELL-FORMED row validates (positive control)" "true" '
-#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false))).toOption.isSome'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, [])) ).toOption.isSome'
 
 # THE TABLE BINDINGS ARE VALIDATED TOO. A row whose theorem digest is sound but whose table
 # digests are not describes its dependencies with values nothing can compare — the same defect
 # one level down, and the level where it would be least visible.
 probe "a MALFORMED table digest is refused" "true" '
-#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false, [])) ).toOption.isNone'
 probe "a table named TWICE in one row is refused" "true" '
-#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584"), ("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false, [])) ).toOption.isNone'
 probe "an EMPTY table identity is refused" "true" '
-#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isNone'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "6fe095a9f592a2e2b556e87f30306584")], false, [])) ).toOption.isNone'
 # ...and a NAMED table with the same digest validates, so the refusal is about the identity being
 # empty rather than about the digest.
 probe "a NAMED table with the same digest validates (the refusal is about the name)" "true" '
-#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false))).toOption.isSome'
+#eval ((validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false, [])) ).toOption.isSome'
 # The raw table is PRIVATE, so validation is the only route to a classification — not merely the
 # only route to the `ValidatedRow` type.
 expect_no_compile "classificationTable cannot be read directly (private)" '
 #eval Concrete.Proof.classificationTable.length'
 
 probe "well-formed table bindings validate and are carried" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true, []) with
       | .ok r => r.tables.length == 1 && r.quantifies
       | .error _ => false'
 # The real table must carry real bindings, or the generator emitted rows that describe nothing.
@@ -1698,64 +1698,67 @@ expect_no_compile "BoundTableEntry cannot be constructed directly" '
 # implementation change the proof actually depends on pass without staling the caller.
 echo "=== theorem-to-edge correspondence ==="
 
-mkrow() { echo "validateRawRow (\"T\", \"$1\", \"7bcec2d7871f93204b26e2bf83d5acf1\", $2, $3)"; }
+# The row gained a trailing `specs : List String` when classification rows began carrying the spec
+# constants a theorem is about; probes pass `[]` because these legs are about edge material, not
+# theorem-to-subject correspondence, which check_receipt_issuance.sh covers.
+mkrow() { echo "validateRawRow (\"T\", \"$1\", \"7bcec2d7871f93204b26e2bf83d5acf1\", $2, $3, [])"; }
 
 probe "contract WITHOUT quantification is not justified" "true" '
-#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []) with
       | .ok r => !(rowJustifies r DependencyEdge.contract)
       | .error _ => false'
 probe "contract WITH quantification is justified" "true" '
-#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], true) with
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], true, []) with
       | .ok r => rowJustifies r DependencyEdge.contract
       | .error _ => false'
 probe "body with NO bound table is not justified" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []) with
       | .ok r => !(rowJustifies r DependencyEdge.body)
       | .error _ => false'
 probe "body WITH a bound table is justified" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], false, []) with
       | .ok r => rowJustifies r DependencyEdge.body
       | .error _ => false'
 probe "unclassified justifies nothing" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true, []) with
       | .ok r => !(rowJustifies r DependencyEdge.unclassified)
       | .error _ => false'
 
 # The consumer must ACT on it: an unjustified row downgrades to `unclassified` rather than being
 # trusted. Without this the check would be a function nobody consults.
 probe "an unjustifiable row would not classify" "unclassified" '
-#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+#eval match validateRawRow ("T", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []) with
       | .ok r => (if rowJustifies r r.edge then r.edge else DependencyEdge.unclassified).canonical
       | .error _ => "no-row"'
 # ROW DEFECTS ARE NAMED AND EACH IS REACHABLE. A named constructor no input can produce reads as
 # coverage while testing nothing, so every one below is exercised by a row that triggers it.
 probe "an EMPTY theorem identity is refused by name" "true" '
-#eval match validateRawRow ("", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+#eval match validateRawRow ("", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []) with
       | .error RawRowRefusal.emptyTheoremIdentity => true
       | _ => false'
 probe "an EMPTY artifact digest is refused by name, distinctly from malformed" "true" '
-#eval match validateRawRow ("T", "body", "", [], false) with
+#eval match validateRawRow ("T", "body", "", [], false, []) with
       | .error RawRowRefusal.emptyArtifactDigest => true
       | _ => false'
 probe "an UNKNOWN edge tag is refused by name, carrying the tag" "true" '
-#eval match validateRawRow ("T", "no_such_kind", "7bcec2d7871f93204b26e2bf83d5acf1", [], false) with
+#eval match validateRawRow ("T", "no_such_kind", "7bcec2d7871f93204b26e2bf83d5acf1", [], false, []) with
       | .error (RawRowRefusal.unknownEdgeTag "no_such_kind") => true
       | _ => false'
 probe "a MALFORMED theorem digest is refused by name, carrying the value" "true" '
-#eval match validateRawRow ("T", "body", "nothex", [], false) with
+#eval match validateRawRow ("T", "body", "nothex", [], false, []) with
       | .error (RawRowRefusal.theoremDigestMalformed "nothex") => true
       | _ => false'
 probe "a MALFORMED table digest is refused by name, carrying table and value" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "nothex")], false, []) with
       | .error (RawRowRefusal.tableDigestMalformed "Tbl" "nothex") => true
       | _ => false'
 probe "an EMPTY table identity is refused by name" "true" '
-#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "7bcec2d7871f93204b26e2bf83d5acf1")], false) with
+#eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("", "7bcec2d7871f93204b26e2bf83d5acf1")], false, []) with
       | .error RawRowRefusal.tableIdentityEmpty => true
       | _ => false'
 probe "a table named TWICE is refused by name, carrying the table" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1",
-        [("Tbl", "7bcec2d7871f93204b26e2bf83d5acf1"), ("Tbl", "bfda7f397e3221e757383578b50ee3ff")], false) with
+        [("Tbl", "7bcec2d7871f93204b26e2bf83d5acf1"), ("Tbl", "bfda7f397e3221e757383578b50ee3ff")], false, []) with
       | .error (RawRowRefusal.tableNamedTwice "Tbl") => true
       | _ => false'
 # The two-level split holds: the lookup layer reports a stable category and carries the detail.
