@@ -206,6 +206,12 @@ test-v2-migration-plan: build ## R-0004 package 3: the V1->V2 migration dry run 
 test-clean-checkout: build ## R-0004 package 3: clean-checkout reproducibility and compiler provenance
 	bash scripts/tests/check_clean_checkout.sh
 
+test-build-identity-freshness: build ## R-0004 package 3: the embedded compiler build identity matches its sources
+	bash scripts/tests/check_build_identity_freshness.sh
+
+test-slice8-adversarial: build ## R-0004 Slice 8: adversarial attacks on the receipt store, through the production consumer
+	bash scripts/tests/check_slice8_adversarial.sh
+
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
 	bash scripts/tests/check_evidence_reproducibility.sh
 

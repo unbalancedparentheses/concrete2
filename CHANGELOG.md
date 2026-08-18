@@ -10,6 +10,47 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004: V2 Activation, Portable Compiler Provenance, And Slice 8
+
+_Compiler and gates, 2026-08-17/18._
+
+**V2 subject digests are ACTIVE.** The live freshness verdict compares the V2 subject digest — which
+binds signature, contracts, capabilities and constant environment as well as the body. The corpus
+census is unchanged before and after (35 proved, 5 stale, 4 dependency-not-current, 15 unbound, 15
+ineligible, 32 no-proof, 9 trusted, 1 blocked), which is the point of migrating first: activation
+without migration turns 43 links `needs_recheck` in a single commit. Atomic by necessity — storing v2
+values while the comparison is still v1 marks every migrated link stale — so the rewrite, the deriver
+flip, the regenerated attestations and the regenerated classification table are one change.
+
+Nothing was given a manufactured value. A stale link is pinned to a body that no longer exists, so no
+honest v2 value exists for it; the drift fixture keeps demonstrating real staleness because its links
+were pinned to measured pre-drift digests.
+
+**The compiler identity now travels with the binary.** Three earlier versions named something else:
+`git status` (any untracked file invalidated every receipt), `git rev-parse HEAD` (a binary built from
+one commit claimed another once the checkout moved), and `sha256sum /proc/self/exe` — which named the
+right object and made receipt issuance REFUSE on macOS, an active CI platform. It is now a 128-bit
+build-time constant over the compiler's own sources, portable and free at run time, with a freshness
+gate that compares what the binary reports against what the sources produce.
+
+**Clean-checkout reproducibility**, including the control that was missing: a receipt minted in one
+checkout consumed against another checkout's sources at a different absolute path. An unbuilt checkout
+issues nothing rather than issuing unverified receipts.
+
+**Slice 8 attack suite** (20/0): substitution between claims, packages and programs; trust deletion,
+laundering and fabrication; partial decoding, schema confusion, duplicate and unknown fields,
+truncated digests; forged roots, artifacts and table bindings. Every attack modifies one record in a
+store of five genuine receipts and asserts BOTH that the attacked record is rejected AND that the rest
+stay current, so neither deny-all nor accept-all can pass. It found one real defect: a store holding
+two contradictory records for one subject reported one current and one not, letting a reader conclude
+a claim was receipt-backed from a store that disagrees with itself. Both are now refused.
+
+**Defects found by independent review**, all fixed: the macOS breakage above; a 64-bit truncated
+identity; a compiler-identity control that only grepped for strings and never made identification
+fail; module enumeration that could visit one file twice under two path spellings; and a 64-ancestor
+depth cap in project discovery that returned a silent `none`, reproducing the location-dependent
+authority bug at a different depth.
+
 ### R-0004 Package 3: Receipts Become Production Evidence — Issued, Stored, Re-checked
 
 _Compiler and gates, 2026-08-16. `--report receipts` is new; no existing verdict changed._
