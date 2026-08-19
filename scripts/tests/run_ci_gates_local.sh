@@ -72,10 +72,39 @@ CORES="$( (sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null) || echo 4 )"
 # Leave two cores for the OS and the editor; cap at 8 because the heavy gates
 # each spawn the compiler over many .con files and contention past that buys
 # little while making flakes (and their re-runs) more likely.
+# Captured BEFORE defaulting, so closure mode can tell "the operator asked for JOBS=4" from "nobody
+# said anything and the default happens to be 4". Refusing the first and silently fixing the second
+# is the correct pair of behaviours; without this they are indistinguishable.
+JOBS_EXPLICIT=0
+[ -n "${JOBS:-}" ] && JOBS_EXPLICIT=1
 JOBS_DEFAULT=$(( CORES - 2 ))
 [ "$JOBS_DEFAULT" -lt 1 ] && JOBS_DEFAULT=1
 [ "$JOBS_DEFAULT" -gt 8 ] && JOBS_DEFAULT=8
 JOBS="${JOBS:-$JOBS_DEFAULT}"
+
+# ---------------------------------------------------------------------------
+# CLOSURE MODE. `CONCRETE_CLOSURE_RUN=1` (or --closure) makes this run capable of producing a
+# completion record. It forces JOBS=1 and refuses anything else.
+#
+# Why it must be explicit rather than the default: JOBS_DEFAULT is cores-2, so "run the complete gate
+# set serially" ran four gates wide for 38 minutes and would have printed an ordinary-looking
+# summary. The repository lock did not prevent it and could not — the lock serializes RUNS against
+# each other and is deliberately re-entrant within a run, so this runner's own fan-out passes
+# straight through it. Verifying that the lock refuses a second run is not verifying serialism.
+#
+# A parallel pass may still run and report. It simply cannot produce `completed=1`.
+CLOSURE=0
+[ "${CONCRETE_CLOSURE_RUN:-0}" = "1" ] && CLOSURE=1
+if [ "$CLOSURE" = "1" ]; then
+  # REFUSE rather than silently override: quietly ignoring an explicit JOBS= is its own defect, and
+  # the operator would be told nothing about why their flag did not apply.
+  if [ -n "${JOBS+x}" ] && [ "${JOBS_EXPLICIT:-0}" = "1" ] && [ "$JOBS" != "1" ]; then
+    echo "error: closure mode requires JOBS=1, but JOBS=$JOBS was given explicitly." >&2
+    echo "       Re-run without JOBS, or with JOBS=1." >&2
+    exit 2
+  fi
+  JOBS=1
+fi
 export SEED
 
 # When --job is given, narrow the workflow text to that job's block first, so
@@ -127,6 +156,41 @@ if [ "$bad" -ne 0 ]; then
   exit 2
 fi
 
+# ---------------------------------------------------------------------------
+# START-STATE CAPTURE for completion integrity.
+#
+# `completed=1` is a claim that this run measured the tree it says it measured. Nothing established
+# that before: a run that mutated a source and died, or that ran while someone else edited, produced
+# a summary indistinguishable from a clean one. Two contaminations in one day motivated this — a
+# 38-minute parallel pass, and a SIGKILL that left Concrete/Elab/Elab.lean holding `declSpan := none`
+# while the harness had already exited.
+#
+# Captured here and re-captured at the end. Any difference names a DIMENSION and suppresses
+# completion; the refusal is diagnostic because "completed=0" with no reason is the same failure
+# shape as a gate that dies silently.
+snapshot_head()      { git rev-parse HEAD 2>/dev/null || echo "no-head"; }
+snapshot_tracked()   { git status --porcelain --untracked-files=no 2>/dev/null | LC_ALL=C sort | cksum | cut -d' ' -f1; }
+snapshot_untracked() { git status --porcelain --untracked-files=normal 2>/dev/null | grep '^??' | LC_ALL=C sort | cksum | cut -d' ' -f1; }
+snapshot_gates()     { printf '%s\n' "${CMDS[@]}" | LC_ALL=C sort | cksum | cut -d' ' -f1; }
+snapshot_compiler()  { grep -oE 'buildIdentity : String := "[0-9a-f]+"' Concrete/BuildIdentity.lean 2>/dev/null | grep -oE '[0-9a-f]{32}' | head -1 || echo "none"; }
+# Mutation targets specifically: the files any registered mutation names. A leftover mutation is the
+# one contamination that no trap can prevent, so it is checked by name rather than folded into the
+# tracked-tree hash — the diagnosis "a mutation target was not restored" is far more actionable than
+# "the tree changed".
+snapshot_muttargets() {
+  { grep -hoE '"(Concrete|Main)[A-Za-z0-9/._]*\.lean"' scripts/tests/test_mutation.sh \
+      scripts/tests/check_gate_mutation_coverage.sh 2>/dev/null | tr -d '"' | LC_ALL=C sort -u; } \
+    | while IFS= read -r f; do [ -f "$f" ] && { git diff --quiet -- "$f" 2>/dev/null || printf '%s ' "$f"; }; done
+}
+START_HEAD="$(snapshot_head)"
+START_TRACKED="$(snapshot_tracked)"
+START_UNTRACKED="$(snapshot_untracked)"
+START_GATES="$(snapshot_gates)"
+START_COMPILER="$(snapshot_compiler)"
+START_MUT="$(snapshot_muttargets)"
+RUN_INTERRUPTED=1
+trap 'RUN_INTERRUPTED=1' INT TERM HUP
+
 PASS=0; FAIL=0; FAILED=""
 
 if [ "$JOBS" -le 1 ]; then
@@ -170,7 +234,62 @@ else
   [ -n "$RECHECKED" ] && echo -e "Recovered under sequential re-run:$RECHECKED"
 fi
 
+RUN_INTERRUPTED=0
+
 echo
 echo "CI-GATES-LOCAL: PASS=$PASS FAIL=$FAIL (JOBS=$JOBS)"
 [ -n "$FAILED" ] && echo -e "Failures:$FAILED"
-[ "$FAIL" -eq 0 ]
+
+# ---------------------------------------------------------------------------
+# COMPLETION INTEGRITY. Each dimension that moved is NAMED, so a suppressed completion says which
+# thing changed rather than only that something did.
+REFUSALS=""
+[ "$JOBS" = "1" ]                              || REFUSALS="$REFUSALS jobs_not_serial(jobs=$JOBS)"
+[ "$(snapshot_head)"      = "$START_HEAD" ]      || REFUSALS="$REFUSALS head_changed($START_HEAD->$(snapshot_head))"
+[ "$(snapshot_tracked)"   = "$START_TRACKED" ]   || REFUSALS="$REFUSALS tracked_tree_changed($START_TRACKED->$(snapshot_tracked))"
+[ "$(snapshot_untracked)" = "$START_UNTRACKED" ] || REFUSALS="$REFUSALS untracked_tree_changed($START_UNTRACKED->$(snapshot_untracked))"
+[ "$(snapshot_gates)"     = "$START_GATES" ]     || REFUSALS="$REFUSALS gate_inventory_changed($START_GATES->$(snapshot_gates))"
+[ "$(snapshot_compiler)"  = "$START_COMPILER" ]  || REFUSALS="$REFUSALS compiler_identity_changed($START_COMPILER->$(snapshot_compiler))"
+# MUTATION TARGETS ARE JUDGED CLEAN, NOT UNCHANGED — and the difference is the whole point.
+# Comparing start against end asks "did a mutation appear during this run", which is silent about a
+# mutation that was ALREADY THERE when the run began. That is exactly the state a SIGKILLed harness
+# leaves behind, and the next run would then measure a mutated compiler and report a clean summary,
+# because nothing changed while it watched. Verified by planting `declSpan := none` before a run:
+# under the change-comparison it went undetected.
+END_MUT="$(snapshot_muttargets)"
+[ -z "$START_MUT" ] || REFUSALS="$REFUSALS mutation_target_dirty_at_start($START_MUT)"
+[ -z "$END_MUT" ]   || REFUSALS="$REFUSALS mutation_target_not_restored($END_MUT)"
+[ "$RUN_INTERRUPTED" = "0" ]                     || REFUSALS="$REFUSALS run_interrupted"
+
+DISCOVERED="${#CMDS[@]}"
+EXECUTED=$(( PASS + FAIL ))
+[ "$DISCOVERED" = "$EXECUTED" ] || REFUSALS="$REFUSALS discovered_not_executed($DISCOVERED discovered, $EXECUTED executed)"
+
+COMPLETED=0
+if [ -z "$REFUSALS" ] && [ "$CLOSURE" = "1" ]; then COMPLETED=1; fi
+
+{
+  echo "completed=$COMPLETED"
+  echo "mode=$([ "$CLOSURE" = 1 ] && echo closure || echo ordinary)"
+  echo "jobs=$JOBS"
+  echo "discovered=$DISCOVERED"
+  echo "executed=$EXECUTED"
+  echo "passed=$PASS"
+  echo "failed=$FAIL"
+  echo "head=$START_HEAD"
+  echo "compiler_identity=$START_COMPILER"
+  [ -n "$REFUSALS" ] && echo "refusals=$REFUSALS"
+} > "$ROOT_DIR/.ci-gates-summary"
+
+if [ -n "$REFUSALS" ]; then
+  echo
+  echo "COMPLETION REFUSED:$REFUSALS"
+  echo "  This run's summary describes a tree that changed under it, or a run that was not serial."
+  echo "  It is reconnaissance, not closure evidence."
+elif [ "$CLOSURE" != "1" ]; then
+  echo
+  echo "NOT A CLOSURE RUN (mode=ordinary). Set CONCRETE_CLOSURE_RUN=1 to produce completed=1."
+fi
+echo "summary written to $ROOT_DIR/.ci-gates-summary (completed=$COMPLETED)"
+
+[ "$FAIL" -eq 0 ] && [ -z "$REFUSALS" ]

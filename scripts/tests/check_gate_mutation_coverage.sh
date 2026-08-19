@@ -843,10 +843,45 @@ TMP=$(mktemp -d)
 # doing anything else; the dirty-tree guard above will refuse the next run rather than
 # silently treating a stranded mutation as pristine source, which is the failure this
 # pair of mechanisms exists to prevent.
-restore_all(){ rm -rf "$TMP"; git checkout -- $(printf "%s " "${FILE[@]}" | tr " " "\n" | sort -u) 2>/dev/null; }
+# RESTORATION IS VERIFIED, not assumed. `git checkout --` can fail — a read-only file, a full disk,
+# an index lock held by something else — and it reports that on stderr which this discards. A restore
+# that ran is not a restore that worked, and the difference is a mutated compiler source left in the
+# tree while the harness exits 0.
+#
+# HUP is trapped alongside INT/TERM: a run started over ssh or in a terminal that closes gets HUP,
+# not TERM, and the 2026-07-31 incident that motivated the INT/TERM traps would have recurred
+# unchanged for that one signal.
+#
+# NOTHING HERE SURVIVES SIGKILL, and it is worth being plain about that rather than implying
+# otherwise: `kill -9` runs no trap, and on 2026-08-19 exactly that left Concrete/Elab/Elab.lean
+# holding `declSpan := none`. The dirty-tree guard above catches it on the NEXT run, and the gate
+# runner's start/end reconciliation catches it in the SAME run. In-place mutation cannot do better
+# than that; only isolating the mutation into a disposable worktree can, which is tracked separately.
+MUT_FILES_SORTED="$(printf "%s\n" "${FILE[@]}" | sort -u)"
+TREE_HASH_START="$(git rev-parse HEAD 2>/dev/null):$(printf '%s\n' "$MUT_FILES_SORTED" | xargs -r git hash-object 2>/dev/null | tr '\n' ' ')"
+
+restore_all(){
+  rm -rf "$TMP"
+  git checkout -- $(printf '%s ' $MUT_FILES_SORTED) 2>/dev/null || true
+  # VERIFY: every mutation target must be byte-identical to HEAD again.
+  local unrestored=""
+  for f in $MUT_FILES_SORTED; do
+    git diff --quiet -- "$f" 2>/dev/null || unrestored="$unrestored $f"
+  done
+  if [ -n "$unrestored" ]; then
+    echo "" >&2
+    echo "MUTATION NOT RESTORED:$unrestored" >&2
+    echo "  The restore step ran and did NOT return these files to HEAD. The tree is left holding" >&2
+    echo "  compiler mutations. Inspect with 'git diff' and restore before running anything else —" >&2
+    echo "  any gate run against this tree is measuring a program nobody wrote." >&2
+    return 1
+  fi
+  return 0
+}
 trap 'restore_all' EXIT
-trap 'restore_all; trap - INT TERM; kill -s INT $$' INT
-trap 'restore_all; trap - INT TERM; kill -s TERM $$' TERM
+trap 'restore_all; trap - INT TERM HUP; kill -s INT $$' INT
+trap 'restore_all; trap - INT TERM HUP; kill -s TERM $$' TERM
+trap 'restore_all; trap - INT TERM HUP; kill -s HUP $$' HUP
 
 apply(){ # file oldfile newfile
   python3 - "$1" "$2" "$3" <<'PY'
