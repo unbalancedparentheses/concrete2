@@ -112,8 +112,21 @@ echo "=== a receipt minted in one checkout is checked against another ==="
 "$BIN" examples/elf_header/src/main.con --report receipts --out "$TMP/from_A.txt" >/dev/null 2>&1
 "$BIN" "$TMP/clone/examples/elf_header/src/main.con" --report receipts --out "$TMP/from_B.txt" >/dev/null 2>&1
 
-xtally(){ "$BIN" "$2" --report proof-status --receipts "$1" 2>/dev/null \
-          | grep -oE '[0-9]+ current, [0-9]+ not current, [0-9]+ unreadable' | head -1; }
+# THE COMPILER'S EXIT STATUS IS NOT THIS HELPER'S ANSWER. `--report proof-status --receipts` exits
+# non-zero when claims lack current receipts, which is a correct fail-closed signal for CI — and
+# exactly the case some legs here MEASURE on purpose (an unbuilt checkout must issue nothing). Under
+# `set -o pipefail` that status propagated through the pipeline, out of the command substitution, and
+# tripped this gate's ERR trap, so the gate aborted mid-run reporting "the verdict below is not
+# trustworthy" rather than the verdict it had just computed correctly.
+#
+# The output is captured first and matched separately, so the tally is read from what the report SAID
+# rather than from whether it approved. A genuine crash still produces an empty tally, which every
+# caller already treats as a mismatch against its expected string.
+xtally(){
+  local out
+  out="$("$BIN" "$2" --report proof-status --receipts "$1" 2>/dev/null || true)"
+  printf '%s\n' "$out" | grep -oE '[0-9]+ current, [0-9]+ not current, [0-9]+ unreadable' | head -1 || true
+}
 
 A_IN_A="$(xtally "$TMP/from_A.txt" "examples/elf_header/src/main.con")"
 if [ "$A_IN_A" = "5 current, 0 not current, 0 unreadable" ]; then
