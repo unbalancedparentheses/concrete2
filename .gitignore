@@ -147,3 +147,4 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .test-summary
 .gate.lock/
 .ci-gates-summary
+.ci-gate-failures/

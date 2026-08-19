@@ -830,7 +830,27 @@ if [ -n "$DIRTY" ]; then
   exit 2
 fi
 
+# ---------------------------------------------------------------------------
+# DISPOSABLE ISOLATION. Mutations are applied to a COPY of the repository, never to the working tree.
+#
+# Everything below used to mutate in place and restore afterwards. That is recoverable from an
+# ordinary exit and from INT/TERM/HUP, and recoverable from nothing else: `kill -9` runs no trap, and
+# on 2026-08-19 exactly that left Concrete/Elab/Elab.lean holding `declSpan := none` while this
+# harness had already exited. A subsequent gate then measured a compiler nobody wrote.
+#
+# With the mutation confined to a copy, a killed run leaves an orphaned directory under /tmp — which
+# is garbage, not corruption. The failure mode is bounded by construction rather than by remembering
+# to trap one more signal.
+#
+# CHEAP because the copy is made ONCE per run and the filesystem is copy-on-write: 627 MB of `.lake`
+# copies in ~0.05s here. `.lake` comes along so the build in the copy is INCREMENTAL — only the
+# mutated file and its dependents recompile, which is the same work the in-place version did. `.git`
+# comes along so a family can restore its target between mutations without reaching outside.
 TMP=$(mktemp -d)
+WORK="$TMP/repo"
+mkdir -p "$WORK"
+cp -a "$ROOT_DIR/." "$WORK/" 2>/dev/null || { echo "error: could not create the isolated workspace" >&2; exit 2; }
+[ -d "$WORK/.git" ] || { echo "error: isolated workspace has no .git; per-family restore would not work" >&2; exit 2; }
 # INT/TERM as well as EXIT: plain EXIT did not restore the tree when this script was
 # killed (observed 2026-07-31, Layout.lean left mutated). The handler re-raises so the
 # exit status still reflects the signal.
@@ -860,28 +880,29 @@ TMP=$(mktemp -d)
 MUT_FILES_SORTED="$(printf "%s\n" "${FILE[@]}" | sort -u)"
 TREE_HASH_START="$(git rev-parse HEAD 2>/dev/null):$(printf '%s\n' "$MUT_FILES_SORTED" | xargs -r git hash-object 2>/dev/null | tr '\n' ' ')"
 
-restore_all(){
+# DISPOSE, don't repair. The working tree is never mutated now, so there is nothing to restore —
+# only a copy to throw away. The verification below therefore asserts something stronger than "the
+# restore worked": it asserts the real tree was never touched in the first place, which is a claim
+# the previous design could not make at all.
+dispose_all(){
   rm -rf "$TMP"
-  git checkout -- $(printf '%s ' $MUT_FILES_SORTED) 2>/dev/null || true
-  # VERIFY: every mutation target must be byte-identical to HEAD again.
-  local unrestored=""
+  local touched=""
   for f in $MUT_FILES_SORTED; do
-    git diff --quiet -- "$f" 2>/dev/null || unrestored="$unrestored $f"
+    git diff --quiet -- "$f" 2>/dev/null || touched="$touched $f"
   done
-  if [ -n "$unrestored" ]; then
+  if [ -n "$touched" ]; then
     echo "" >&2
-    echo "MUTATION NOT RESTORED:$unrestored" >&2
-    echo "  The restore step ran and did NOT return these files to HEAD. The tree is left holding" >&2
-    echo "  compiler mutations. Inspect with 'git diff' and restore before running anything else —" >&2
-    echo "  any gate run against this tree is measuring a program nobody wrote." >&2
+    echo "WORKING TREE WAS MUTATED:$touched" >&2
+    echo "  Mutations are supposed to be confined to a disposable copy. If these files differ, the" >&2
+    echo "  isolation was bypassed — inspect with 'git diff' before running anything else." >&2
     return 1
   fi
   return 0
 }
-trap 'restore_all' EXIT
-trap 'restore_all; trap - INT TERM HUP; kill -s INT $$' INT
-trap 'restore_all; trap - INT TERM HUP; kill -s TERM $$' TERM
-trap 'restore_all; trap - INT TERM HUP; kill -s HUP $$' HUP
+trap 'dispose_all' EXIT
+trap 'dispose_all; trap - INT TERM HUP; kill -s INT $$' INT
+trap 'dispose_all; trap - INT TERM HUP; kill -s TERM $$' TERM
+trap 'dispose_all; trap - INT TERM HUP; kill -s HUP $$' HUP
 
 apply(){ # file oldfile newfile
   python3 - "$1" "$2" "$3" <<'PY'
@@ -900,12 +921,12 @@ run_one(){
   # strip the trailing newline the printf added (match raw substring)
   perl -i -pe 'chomp if eof' "$TMP/old" "$TMP/new"
   echo "--- family $((i+1))/$N: $nm ($file -> ${GATE[$i]}) ---"
-  if ! apply "$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
-    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); git checkout -- "$file" 2>/dev/null; return
+  if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
+    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); git -C "$WORK" checkout -- "$file" 2>/dev/null; return
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
-    if ! "$LAKE" build >"$TMP/build.log" 2>&1; then
+    if ! ( cd "$WORK" && "$LAKE" build ) >"$TMP/build.log" 2>&1; then
       # A build failure is NOT automatically a kill. Distinguish two very different things:
       #
       #   * the type system (or a proof) REJECTED the mutation — a real and strong result,
@@ -944,17 +965,17 @@ rather than counting it as a kill)"
   fi
   if [ "$invalid" -eq 1 ]; then
     echo "  FAIL $nm $note"; FAIL=$((FAIL+1))
-    git checkout -- "$file" 2>/dev/null
+    git -C "$WORK" checkout -- "$file" 2>/dev/null
     return
   fi
   if [ "$killed" -eq 0 ]; then
-    if bash "$gate" >"$TMP/gate.log" 2>&1; then
+    if ( cd "$WORK" && bash "$gate" ) >"$TMP/gate.log" 2>&1; then
       note="(SURVIVED — gate stayed green)"
     else
       killed=1; note="(killed by ${GATE[$i]})"
     fi
   fi
-  git checkout -- "$file" 2>/dev/null
+  git -C "$WORK" checkout -- "$file" 2>/dev/null
   if [ "$killed" -eq 1 ]; then echo "  ok   $nm KILLED $note"; PASS=$((PASS+1));
   else echo "  FAIL $nm $note"; FAIL=$((FAIL+1)); fi
 }
@@ -963,8 +984,19 @@ echo "=== gate mutation coverage: $N families ==="
 if [ -n "$ONLY" ]; then run_one "$((ONLY-1))"; else for i in $(seq 0 $((N-1))); do run_one "$i"; done; fi
 
 # leave a clean binary behind
-echo "--- restoring clean build ---"
-"$LAKE" build >/dev/null 2>&1 || echo "  warn: clean rebuild failed; run 'lake build'"
+# NO REBUILD IS OWED ANY MORE. This existed because mutations were applied to the working tree, so
+# the last one left `.lake` holding objects compiled from mutated source and the next gate would have
+# run against them. Mutations now happen in a disposable copy, so the real `.lake` was never touched
+# and rebuilding here would only cost time while implying the tree had been disturbed.
+#
+# The assertion replaces the action: the real build artifacts must still correspond to the real
+# sources. If this ever fails, isolation was bypassed somewhere and the tree needs looking at.
+if "$LAKE" build >/dev/null 2>&1; then
+  echo "--- working tree still builds clean (isolation left it untouched) ---"
+else
+  echo "  FAIL the working tree does not build after an isolated mutation run — isolation was bypassed"
+  FAIL=$((FAIL+1))
+fi
 
 echo
 echo "GATE-MUTATION-COVERAGE: PASS=$PASS FAIL=$FAIL (of $N families)"

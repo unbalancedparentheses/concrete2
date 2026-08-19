@@ -193,12 +193,24 @@ trap 'RUN_INTERRUPTED=1' INT TERM HUP
 
 PASS=0; FAIL=0; FAILED=""
 
+# A FAILING GATE'S OUTPUT IS KEPT. Discarding it means a failure in a 40-minute pass leaves nothing
+# to diagnose but the gate's name — and a gate that passes standalone but fails inside the pass is
+# then undiagnosable by construction, because reproducing it means re-running the whole thing. That
+# happened to check_clean_checkout on the first closure-candidate run.
+#
+# Only FAILING gates are kept, so a green pass writes nothing: the point is a diagnosis when one is
+# needed, not a transcript nobody reads.
+FAILLOG_DIR="$ROOT_DIR/.ci-gate-failures"
+rm -rf "$FAILLOG_DIR"; mkdir -p "$FAILLOG_DIR"
+faillog_name(){ printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_' | cut -c1-80; }
+
 if [ "$JOBS" -le 1 ]; then
   for cmd in "${CMDS[@]}"; do
     cmd="${cmd/bash .\//bash }"
     if [ -n "$FILTER" ] && [[ "$cmd" != *"$FILTER"* ]]; then continue; fi
-    if eval "$cmd" >/dev/null 2>&1; then PASS=$((PASS+1))
-    else FAIL=$((FAIL+1)); FAILED="$FAILED\n  FAIL $cmd"; echo "  FAIL $cmd"; fi
+    _out="$FAILLOG_DIR/$(faillog_name "$cmd").log"
+    if eval "$cmd" >"$_out" 2>&1; then PASS=$((PASS+1)); rm -f "$_out"
+    else FAIL=$((FAIL+1)); FAILED="$FAILED\n  FAIL $cmd"; echo "  FAIL $cmd (output: ${_out#$ROOT_DIR/})"; fi
   done
 else
   # Parallel pool: each gate writes "OK"/"FAIL <cmd>" to its own result file.
