@@ -31,14 +31,46 @@ cd "$ROOT_DIR"
 
 OUT="Concrete/BuildIdentity.lean"
 
-# The compiler's own sources. `BuildIdentity.lean` is EXCLUDED from its own digest — including it
-# would make the value depend on itself and never reach a fixed point.
-digest_input() {
+# ---------------------------------------------------------------------------
+# THE COMPILER-SOURCE INVENTORY, declared rather than discovered.
+#
+# ROOTS are the trees and files whose content defines a compiler build. Naming them explicitly is
+# the point: a bare `find` over whatever happens to be present answers a slightly different question
+# each time the tree changes, and nothing ever says so. A root that should be here and is not is a
+# digest that is honest about a subset and silent about the rest.
+INVENTORY_ROOTS=(
+  "Concrete"        # the compiler itself
+  "Main.lean"       # the driver
+  "lakefile.toml"   # build configuration: dependencies and targets
+  "lean-toolchain"  # the Lean version the artifact is built against
+)
+
+# NAMED EXCLUSIONS, each with a reason. Excluding by a name stated here rather than by a filter that
+# happens to skip something: the previous form was `grep -v 'Concrete/BuildIdentity.lean'` inline,
+# which is indistinguishable from an accident and would silently stop excluding if the path moved.
+declare -A INVENTORY_EXCLUSIONS=(
+  ["Concrete/BuildIdentity.lean"]="this generator's own output; including it makes the value depend on itself and it never reaches a fixed point"
+)
+
+# The resolved inventory: every `*.lean` under the roots, plus the named non-Lean roots, minus the
+# named exclusions. Emitted sorted so the digest is a function of content and not of directory order.
+inventory_files() {
   {
-    find Concrete Main.lean -name '*.lean' -type f 2>/dev/null | grep -v 'Concrete/BuildIdentity.lean'
-    echo lakefile.toml
-    echo lean-toolchain
-  } | sort | while read -r f; do
+    for r in "${INVENTORY_ROOTS[@]}"; do
+      if [ -d "$r" ]; then
+        find "$r" -name '*.lean' -type f 2>/dev/null
+      elif [ -f "$r" ]; then
+        printf '%s\n' "$r"
+      fi
+    done
+  } | LC_ALL=C sort -u | while IFS= read -r f; do
+    [ -n "${INVENTORY_EXCLUSIONS[$f]:-}" ] && continue
+    printf '%s\n' "$f"
+  done
+}
+
+digest_input() {
+  inventory_files | while IFS= read -r f; do
     [ -f "$f" ] || continue
     printf '%s\n' "$f"
     cat "$f"
@@ -54,6 +86,28 @@ elif command -v shasum >/dev/null 2>&1; then
   DIGEST="$(digest_input | shasum -a 256 | cut -c1-32)"
 else
   echo "FATAL: no sha256sum or shasum available to compute the build identity" >&2
+  exit 1
+fi
+
+# THE INVENTORY ITSELF IS FINGERPRINTED, separately from the content. The content digest moves when
+# a file's TEXT changes; it also moves when a file is added or removed, but indistinguishably. These
+# two values make the difference visible: a changed count or list digest with unchanged files means
+# the inventory moved, which is a different event from an edit and is the one that silently shrinks
+# coverage. `check_build_identity_freshness.sh` re-derives both.
+INV_COUNT="$(inventory_files | grep -c . || true)"
+if command -v sha256sum >/dev/null 2>&1; then
+  INV_DIGEST="$(inventory_files | sha256sum | cut -c1-32)"
+else
+  INV_DIGEST="$(inventory_files | shasum -a 256 | cut -c1-32)"
+fi
+
+# A COLLAPSED INVENTORY MUST NOT PRODUCE A DIGEST. If the roots stopped matching anything, the
+# content hash would still be a well-formed 32 hex characters — of nothing — and would look exactly
+# like a healthy identity. The floor is far below the real count so it catches collapse, not drift.
+if [ "${INV_COUNT:-0}" -lt 50 ]; then
+  echo "FATAL: the compiler-source inventory resolved to ${INV_COUNT} files, which cannot be right." >&2
+  echo "       Refusing to emit a build identity over a collapsed inventory — it would be a" >&2
+  echo "       well-formed digest of almost nothing." >&2
   exit 1
 fi
 
@@ -89,6 +143,19 @@ namespace Concrete
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "${DIGEST}"
 
+/-- How many source files the identity above was computed over.
+
+    Carried so that a SHRINKING inventory is detectable. The content digest moves when a file is
+    removed, but it moves the same way it does for an ordinary edit — this value distinguishes the
+    two, and a digest computed over fewer files is a weaker claim wearing the same shape. -/
+def buildIdentitySourceCount : Nat := ${INV_COUNT}
+
+/-- Digest of the inventory's FILE LIST, independent of file contents.
+
+    Moves only when files are added, removed, or renamed. Together with the count, this makes
+    "the inventory changed" distinguishable from "a source changed". -/
+def buildIdentityInventoryDigest : String := "${INV_DIGEST}"
+
 end Concrete
 LEAN
-echo "wrote $OUT (build identity ${DIGEST})"
+echo "wrote $OUT (build identity ${DIGEST}; ${INV_COUNT} sources, inventory ${INV_DIGEST})"

@@ -22,6 +22,19 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
-def buildIdentity : String := "0130abe65439782d4395e9bbd9645086"
+def buildIdentity : String := "526cdb0d45a43daf3b30d0b57ad14a06"
+
+/-- How many source files the identity above was computed over.
+
+    Carried so that a SHRINKING inventory is detectable. The content digest moves when a file is
+    removed, but it moves the same way it does for an ordinary edit — this value distinguishes the
+    two, and a digest computed over fewer files is a weaker claim wearing the same shape. -/
+def buildIdentitySourceCount : Nat := 96
+
+/-- Digest of the inventory's FILE LIST, independent of file contents.
+
+    Moves only when files are added, removed, or renamed. Together with the count, this makes
+    "the inventory changed" distinguishable from "a source changed". -/
+def buildIdentityInventoryDigest : String := "3dc33a3309a879ac7bbfbeeffedee9c2"
 
 end Concrete

@@ -72,6 +72,51 @@ else
   no "the binary reports $REPORTED but the source constant is $COMMITTED — the binary is older than the constant"
 fi
 
+echo "=== the inventory is complete, and its completeness is checked separately ==="
+
+# FRESHNESS IS NOT COMPLETENESS, and conflating them is how a digest quietly narrows. Freshness asks
+# "does the committed value match a fresh derivation" — and it keeps saying yes while the inventory
+# shrinks, because both sides shrink together. These legs ask the other question: is the inventory
+# still the whole compiler?
+INV_COUNT_SRC="$(grep -oE 'buildIdentitySourceCount : Nat := [0-9]+' Concrete/BuildIdentity.lean | grep -oE '[0-9]+$' || true)"
+INV_DIG_SRC="$(grep -oE 'buildIdentityInventoryDigest : String := "[0-9a-f]+"' Concrete/BuildIdentity.lean | grep -oE '[0-9a-f]{32}' || true)"
+
+# Every `*.lean` under the compiler roots is either digested or NAMED as an exclusion. A file that is
+# neither is a compiler source the identity says nothing about.
+ALL_LEAN="$(find Concrete Main.lean -name '*.lean' -type f 2>/dev/null | LC_ALL=C sort -u | grep -c . || true)"
+# The one declared exclusion is the generator's own output.
+EXPECTED_LEAN=$(( ALL_LEAN - 1 ))
+# Plus the two non-Lean roots that define the build: lakefile.toml and lean-toolchain.
+EXPECTED_TOTAL=$(( EXPECTED_LEAN + 2 ))
+if [ -n "$INV_COUNT_SRC" ] && [ "$INV_COUNT_SRC" = "$EXPECTED_TOTAL" ]; then
+  ok "the inventory covers every compiler source: $INV_COUNT_SRC = $ALL_LEAN Lean files - 1 named exclusion + 2 build files"
+else
+  no "inventory incompleteness: the constant says $INV_COUNT_SRC sources but the roots hold $EXPECTED_TOTAL (${ALL_LEAN} Lean files, 1 named exclusion, 2 build files). A source outside the inventory is one the identity is silent about."
+fi
+
+# The generator's own output must be excluded BY NAME, and the exclusion must still be reachable. If
+# the path moved, an inline filter would silently stop excluding and the value would never converge.
+if grep -q '\["Concrete/BuildIdentity.lean"\]=' scripts/gen/build_identity.sh; then
+  ok "the generator's output is excluded by a NAMED rule, not by an incidental filter"
+else
+  no "the named self-exclusion is gone from the generator — if it moved to a filter, a path change will silently stop excluding it and the digest will never reach a fixed point"
+fi
+
+# NON-VACUITY for the inventory digest: it must move when the FILE LIST moves, and it must NOT move
+# for an ordinary edit. Without both halves, a constant would satisfy either one alone.
+INV_PROBE="$TMP/inv_probe.lean"
+cp "Concrete/BuildIdentity.lean" "$TMP/inv.committed"
+printf -- '-- transient inventory probe\n' > "Concrete/__InventoryProbe.lean"
+bash scripts/gen/build_identity.sh >/dev/null 2>&1
+INV_DIG_MOVED="$(grep -oE 'buildIdentityInventoryDigest : String := "[0-9a-f]+"' Concrete/BuildIdentity.lean | grep -oE '[0-9a-f]{32}' || true)"
+rm -f "Concrete/__InventoryProbe.lean"
+cp "$TMP/inv.committed" "Concrete/BuildIdentity.lean"
+if [ -n "$INV_DIG_MOVED" ] && [ "$INV_DIG_MOVED" != "$INV_DIG_SRC" ]; then
+  ok "adding a compiler source moves the inventory digest ($INV_DIG_SRC -> $INV_DIG_MOVED)"
+else
+  no "adding a compiler source did NOT move the inventory digest — the inventory is not being measured"
+fi
+
 echo "=== the identity moves when the compiler's sources move ==="
 
 # NON-VACUITY. Without this, a generator that emitted a fixed string would satisfy every assertion
