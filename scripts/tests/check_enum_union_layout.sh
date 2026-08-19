@@ -20,6 +20,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 C="$ROOT_DIR/.lake/build/bin/concrete"
 [ -x "$C" ] || { echo "error: build first ($C missing)" >&2; exit 2; }
+# RUN THE COMPILED ARTIFACT, not a JIT interpretation of the IR.
+#
+# This leg used `lli`, and `lli` from LLVM 21.1.8 cannot run this program at all: the ORC path dies
+# with `Symbol "orc_rt_alt_UnwindInfoManager_register" not found in bootstrap symbols map`,
+# `--jit-kind=mcjit` reports no available targets, and `--force-interpreter` aborts with
+# `Cannot load value of type %enum.Option` — which is precisely the aggregate this fixture exists to
+# exercise. The emitted IR was fine throughout; the runner was not.
+#
+# Compiling with `clang` and executing the result gives 42007 immediately, and is a better test on
+# its own terms: it exercises the artifact the compiler actually ships rather than an interpretation
+# of the IR, and the interpreter's inability to load an aggregate says nothing about the layout.
+# `lli` is kept as a fallback for environments without clang.
+CC="$(command -v clang || command -v cc || true)"
 LLI="$(command -v lli || true)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
@@ -46,11 +59,22 @@ else
 fi
 
 # 3. Behavioral: reads back the high-alignment payload correctly.
-if [ -n "$LLI" ]; then
-  out="$("$LLI" "$TMP/fix.ll")"
-  if [ "$out" = "42007" ]; then ok "fixture runs: $out"; else no "fixture runs (want 42007, got $out)"; fi
+if [ -n "$CC" ]; then
+  if "$CC" -o "$TMP/fix.exe" "$TMP/fix.ll" 2>"$TMP/cc.err"; then
+    out="$("$TMP/fix.exe" 2>/dev/null || true)"
+    if [ "$out" = "42007" ]; then ok "compiled fixture runs: $out"; else no "compiled fixture runs (want 42007, got '$out')"; fi
+  else
+    no "the emitted IR did not compile: $(head -1 "$TMP/cc.err")"
+  fi
+elif [ -n "$LLI" ]; then
+  out="$("$LLI" "$TMP/fix.ll" 2>/dev/null || true)"
+  if [ "$out" = "42007" ]; then ok "fixture runs under lli: $out"; else no "fixture runs (want 42007, got '$out')"; fi
 else
-  echo "  skip lli not found (behavioral check)"
+  # NOT A SKIP. Without a compiler or a JIT the behavioural property is UNVERIFIED, and a gate that
+  # prints "skip" and still reports FAIL=0 says the layout was checked when only its shape was. The
+  # two legs above read the emitted IR; nothing above this line observes the program computing the
+  # right answer.
+  no "no clang/cc and no lli — the behavioural leg did NOT run, so the payload read-back is unverified"
 fi
 
 # 4. Align-1-only program: no align attribute, byte-exact old shape.
