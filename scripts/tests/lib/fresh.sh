@@ -63,25 +63,50 @@ _gate_lock_acquire() {
     return 0
   fi
 
-  # Held. Reclaim only if the recorded owner is genuinely gone — a live holder must never be
-  # displaced, because displacing it recreates the very interleaving this prevents.
+  # HELD. NO AUTOMATIC RECLAIM — and this used to reclaim on a dead owner PID, which is a defect,
+  # not a convenience.
+  #
+  # The recorded PID is the process that CREATED the lock. Re-entrant children inherit
+  # `CONCRETE_GATE_LOCK` and keep working after that creator exits, so a dead creator does NOT mean
+  # the tree is free. Observed 2026-08-20: owner pid was dead while an isolated 78-family mutation
+  # campaign, launched by that creator's shell, was still running — and a later gate DID reclaim the
+  # lock on that basis and ran alongside it. Nothing was corrupted only because both parties happened
+  # to work in disposable copies. The mechanism defeats the lock's entire purpose.
+  #
+  # PID liveness cannot be repaired into a safe signal here. The creator is the wrong process to
+  # probe, PIDs are reused, and there is no portable way to prove a whole lease is gone — process
+  # groups do not survive the shells this runs under, and `flock` is absent on macOS.
+  #
+  # So the policy is fail-closed: refuse, and require an explicit human recovery step. A stale lock
+  # costs one command to clear; a wrongly reclaimed one costs a verdict about an artifact that never
+  # existed, and costs it silently.
   owner_pid="$(sed -n 's/^pid=//p' "$_GATE_LOCK_DIR/owner" 2>/dev/null || true)"
   owner_desc="$(tr '\n' ' ' < "$_GATE_LOCK_DIR/owner" 2>/dev/null || true)"
-  if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
-    rm -rf "$_GATE_LOCK_DIR"
-    if mkdir "$_GATE_LOCK_DIR" 2>/dev/null; then
-      printf 'pid=%s\ncmd=%s\n' "$$" "${0##*/}" > "$_GATE_LOCK_DIR/owner" 2>/dev/null || true
-      export CONCRETE_GATE_LOCK="$$"
-      echo "note: reclaimed a stale gate lock left by pid $owner_pid" >&2
-      return 0
-    fi
+  local liveness="unknown"
+  if [ -n "$owner_pid" ]; then
+    if kill -0 "$owner_pid" 2>/dev/null; then liveness="ALIVE"; else liveness="dead"; fi
   fi
+  # Whether other gate work is running is reported as EVIDENCE for the operator's decision, never
+  # used to reclaim automatically. A dead creator with live gates is the exact trap above.
+  local live_gates
+  live_gates="$(ps -eo cmd 2>/dev/null | grep -cE '(scripts/tests/(check|run)_|scripts/ci/)[a-z0-9_]*\.sh' || true)"
 
   echo "REPOSITORY BUSY — refusing to run this gate." >&2
-  echo "  Another gate or build holds the lock: ${owner_desc:-unknown owner}" >&2
+  echo "  Lock holder: ${owner_desc:-unknown owner} (creator pid ${owner_pid:-?} is $liveness)" >&2
+  echo "  Gate-like processes currently running: ${live_gates:-0}" >&2
+  echo "" >&2
   echo "  Gates share one .lake tree and one binary. Running alongside a rebuild yields a verdict" >&2
   echo "  about an artifact that never existed, which is worse than no verdict at all." >&2
-  echo "  Wait for it to finish, or remove $_GATE_LOCK_DIR if you are certain it is stale." >&2
+  if [ "$liveness" = "dead" ]; then
+    echo "" >&2
+    echo "  The recorded creator is gone, but that does NOT mean the tree is free: children that" >&2
+    echo "  inherited this lock outlive their creator, and reclaiming on a dead PID has already" >&2
+    echo "  handed the tree to a concurrent run once. Verify nothing is working the tree, then" >&2
+    echo "  recover explicitly:" >&2
+    echo "      rm -rf $_GATE_LOCK_DIR" >&2
+  else
+    echo "  Wait for it to finish." >&2
+  fi
   return 1
 }
 

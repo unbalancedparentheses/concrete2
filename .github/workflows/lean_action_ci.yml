@@ -545,6 +545,9 @@ jobs:
       - name: "Gate registration (every gate is reachable from CI or explicitly skipped)"
         run: bash scripts/tests/check_gate_registration.sh
 
+      - name: "Gate lock (a lock is refused, never reclaimed on a dead creator PID)"
+        run: bash scripts/tests/check_gate_lock.sh
+
       - name: "Identity freeze (the pre-migration attestation population is pinned)"
         run: bash scripts/tests/check_identity_freeze.sh
 
