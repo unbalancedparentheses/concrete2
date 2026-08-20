@@ -228,29 +228,24 @@ else
   diff <(printf '%s' "$FROM_REPO") <(printf '%s' "$FROM_PROJ") | head -6 | sed 's/^/      /' || true
 fi
 
-echo "=== the compiler identity is the executable that ran ==="
-
-REPORTED="$("$BIN" examples/elf_header/src/main.con --report receipts 2>/dev/null \
-            | grep -oE 'exe:[0-9a-f]+' | head -1 | cut -d: -f2)"
-ACTUAL="$(sha256sum "$BIN" | cut -c1-16)"
-if [ -n "$REPORTED" ] && [ "$REPORTED" = "$ACTUAL" ]; then
-  ok "the reported identity ($REPORTED) is the sha256 of the running executable"
-else
-  no "reported identity '$REPORTED' is not the executable's digest '$ACTUAL' — a receipt names a compiler that did not run"
-fi
-
-# THE SUBSTITUTION CASE, made concrete. A different executable has different content, so it cannot
-# report this identity — demonstrated by digesting a modified copy rather than asserted from the
-# construction. (The copy is not executed: a byte-appended binary need not run, and the property
-# under test is that its IDENTITY differs.)
-cp "$BIN" "$TMP/substituted"
-printf 'x' >> "$TMP/substituted"
-SUB="$(sha256sum "$TMP/substituted" | cut -c1-16)"
-if [ "$SUB" != "$ACTUAL" ]; then
-  ok "a substituted executable has a different identity ($SUB), so it cannot claim this one"
-else
-  no "a modified executable digests identically — substitution would be undetectable"
-fi
+# THE EXECUTABLE-DIGEST SECTION IS GONE, and its absence is the honest position rather than an
+# omission. It asserted that the reported identity equals `sha256(the running binary)` and that a
+# byte-appended copy therefore digests differently — true of the `exe:` identity that used to be
+# reported, and false of the design that replaced it.
+#
+# The identity is now computed AT BUILD TIME over the compiler's own sources, because the executable
+# digest was not portable: neither `/proc/self/exe` nor GNU `sha256sum` exists on macOS, and receipt
+# issuance simply refused there. That trade is recorded in scripts/gen/build_identity.sh, and it has
+# a KNOWN LIMIT stated in the same place — a binary patched after build keeps the constant its
+# sources produced. Re-asserting the old property here would contradict the documented limitation
+# and would fail permanently, which is exactly what it did: these lines have not run since the
+# identity changed, because a stray `exit 1` sat in front of them.
+#
+# What survives of the intent lives where it can be checked: check_build_identity_freshness.sh
+# asserts the value is content-derived, 128-bit, portable, and moves with its sources, and the leg
+# above asserts one binary reports one identity from two checkouts. Binding the shipped BYTES needs
+# a portable streaming executable digest or a signed build manifest, which is tracked as
+# post-R-0004 provenance work and is not claimed today.
 
 # THE CHECKOUT-MOVES CASE. Receipts minted now must survive the repository moving underneath them,
 # because the identity describes the binary and not the tree. The clone is at a different commit-ish
@@ -272,17 +267,24 @@ else
   no "repository state moved receipt currency ($BEFORE -> $AFTER) — the identity is not the binary's"
 fi
 
-echo "=== an unidentifiable compiler mints nothing ==="
-
-# The refusal exists so an unknown identity is never recorded: "unknown" compares equal to another
-# "unknown", which is how receipts from two different compilers would agree. Asserted by reading the
-# refusal path's own message rather than by simulating an unreadable /proc, which is not portable.
-if grep -q 'executable_unlocatable' Main.lean && grep -q 'executable_undigestible' Main.lean \
-   && grep -q 'would compare equal to one produced by any other compiler' Main.lean; then
-  ok "issuance refuses, with a named reason, when the compiler cannot be identified"
-else
-  no "the unidentifiable-compiler refusal is gone — an unknown identity could be recorded"
-fi
+# THE UNIDENTIFIABLE-COMPILER REFUSAL IS GONE BECAUSE THE FAILURE MODE IS. That leg grepped
+# Main.lean for `executable_unlocatable` and `executable_undigestible` — refusal reasons from the
+# `/proc/self/exe` identity, which was removed precisely because it could not be read on macOS and
+# made issuance refuse there outright.
+#
+# The build identity is a constant compiled INTO the binary. There is no locating step that can fail
+# and no digest that can be unreadable at run time, so the branch those names guarded does not exist
+# to be reachable. Keeping the assertion would test a design decision that was reversed.
+#
+# The property it protected — that an "unknown" identity is never recorded, since one "unknown"
+# compares equal to any other — is now held by construction plus a behavioural control:
+# check_build_identity_freshness.sh asserts the value is present, 32 hex characters, and equal to a
+# fresh derivation from the sources. That is a stronger guarantee than a refusal path, because there
+# is nothing left to refuse.
+#
+# It was also a grep over source text, which this gate's own policy note a few sections up forbids
+# for exactly the reason it failed here: a shape assertion cannot notice a production branch becoming
+# unreachable, and cannot notice its own subject being deleted either.
 
 GATE_DONE=1
 echo "CLEAN-CHECKOUT: PASS=$PASS FAIL=$FAIL"
