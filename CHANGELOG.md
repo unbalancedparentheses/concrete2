@@ -10,6 +10,50 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### R-0004 CLOSED: Trustworthy `proved`
+
+_Compiler, gates and harness, 2026-08-20._
+
+Closed on a protected serial run rather than on a claim. `.ci-gates-summary` at `a839d519`:
+`completed=1 mode=closure jobs=1 discovered=205 executed=205 passed=205 failed=0`, no refusals,
+clean tree, `HEAD == origin/main`.
+
+**What the verdict now requires.** A friendly `proved` needs a current exact subject, a complete
+dependency root, explicit trust and assumptions, and a receipt only a successful kernel replay can
+mint. `ProofEvidenceReceipt` has no total constructor, so "unchecked facts became a receipt" fails
+to typecheck rather than failing a test.
+
+**Bugs 059 and 060 are closed** and verified behaviourally: a whole-signature `i32 -> u32` change
+and an added `#[ensures]` both stale the claim. Their tripwires — legs asserting the wrong verdict
+on purpose while the defects were open — fired, and were inverted rather than deleted.
+
+**A misattributed proof link was found and deleted.** `proof_pressure.validate_header` was linked to
+a theorem about `elf_header`'s `validate_header`: same qualified name, nothing else in common, and
+it survived every name-based check for months. Correspondence caught it. Repaired by removing the
+claim, because no theorem proves that body — so the population is genuinely one smaller (44 → 43
+stored links) and every denominator that counted it was corrected.
+
+**The evidence path was not in CI.** Fifteen gates were unreachable from the workflow the runner
+derives its list from, including all eight R-0004 evidence gates and the two meta-gates enforcing
+single-producer authority and non-vacuity. A gate nobody runs is indistinguishable from one that
+does not exist, so `check_gate_registration.sh` now enforces reachability as a transitive fixpoint.
+
+**Harness integrity became a closure requirement, because the completion evidence depends on it.**
+The runner gained a closure mode that forces serial execution (the default was cores−2, so "serial"
+silently ran four-wide), start/end reconciliation with ten named refusal causes, and preserved
+output for failing gates. Mutations now run in a disposable copy: a `kill -9` had previously left a
+compiler source mutated in the working tree, and no trap can prevent that.
+
+**One gate was a syntax error hidden behind its own early exit.** `check_clean_checkout` reported
+`PASS=11 FAIL=0` while exiting 1, because a stray `exit 1` sat immediately before an orphan `fi`
+that bash therefore never parsed. Seventeen of its thirty-seven assertions had never run. It is now
+17/0 with summary and exit status in agreement.
+
+**Recorded, not resolved:** PackageIdentity over-binds — a two-line std edit moved every package
+identity in the repository — and post-build executable bytes are unclaimed, since the identity is
+computed at build time over an explicit 96-file source inventory. Both are fail-safe: the failure
+mode is demotion, never a proof credited to a body it does not describe.
+
 ### R-0004: V2 Activation, Portable Compiler Provenance, And Slice 8
 
 _Compiler and gates, 2026-08-17/18._

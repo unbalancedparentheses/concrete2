@@ -35,7 +35,7 @@ the exit artifact here decides *what the work must ultimately unlock*.
 
 | unlock | principal owners | exit artifact / user-visible boundary | weaker path retired | state |
 |---|---|---|---|---|
-| Trustworthy `proved` | R-0004, R-0440 | every friendly verdict requires a current exact subject, complete dependency root, explicit trust/assumptions/environment and successful replay receipt; migrated corpus survives independent red-team pressure | V1/body-only friendly status, advisory dependency freshness, receipt-free `proved` | **active frontier** |
+| Trustworthy `proved` | R-0004, R-0440 | every friendly verdict requires a current exact subject, complete dependency root, explicit trust/assumptions/environment and successful replay receipt; migrated corpus survives independent red-team pressure | V1/body-only friendly status, advisory dependency freshness, receipt-free `proved` | **R-0004 CLOSED 2026-08-20** (205/205 protected serial run; see the closure record below) |
 | Typed evidence and revocable policy | R-0440, R-0208, R-0343 | source correspondence, logical validity, dependency closure, immutable replay receipt and current policy decision are distinct typed facts; checker advisories degrade only the dimensions they can honestly scope | flat status/digest strings, advisory state baked into historical evidence, whole-report reminting | **ratified / implementation pending** |
 | Typed compositional contracts | R-0473, R-0474, R-0477; Phase 9 frame/composition work | a nontrivial multi-function program is proved without callee inlining; caller establishes preconditions and imports postconditions; mutation is stated with `old` plus frame/`modifies`; one contract crosses an interface artifact | erased/name-keyed contracts, textual substitution, per-call inlining as the only composition story | **foundation next after R-0004** |
 | Total contract language | R-0473, R-0474; Phase 9 termination/spec-library work | `spec fn` and checked `total fn` are the only contract-callable definitions; effects, traps, unchecked recursion and trusted execution refuse explicitly | purity-shaped admission of executable functions whose totality/meaning is unestablished | **design required** |
@@ -435,6 +435,112 @@ rewrite published history other worktrees may hold. That is an owner's call, not
 
 Filed as `docs/bugs/067`. The gate must NOT be weakened — it caught this only because CI has
 the provers, and it is doing exactly its job.
+
+### R-0004 — CLOSED (2026-08-20)
+
+Closed on a protected serial run, not on a claim. The authorizing artifact is
+`.ci-gates-summary` from a run at `a839d519`:
+
+```
+completed=1  mode=closure  jobs=1
+discovered=205  executed=205  passed=205  failed=0
+```
+
+with no `refusals=` line, a clean working tree, and `HEAD == origin/main`. Every integrity
+dimension held: serial execution, unchanged HEAD, unchanged tracked and untracked state,
+unchanged gate inventory, unchanged compiler identity, mutation targets clean at both ends, and
+no interruption.
+
+#### What "closed" means here
+
+The friendly verdict `proved` now requires a current exact subject, a complete dependency root,
+explicit trust and assumptions, and a receipt that only a successful kernel replay can mint.
+`ProofEvidenceReceipt` has no total constructor: the chain `replay → ReplayResult →
+SuccessfulReplay.of? → mint` makes "unchecked facts became a receipt" fail to typecheck rather
+than fail a test.
+
+#### Final denominators
+
+| Population | Value |
+|---|---|
+| gates discovered = executed | 205 / 205, zero failures |
+| corpus census | 35 proved, 0 dependency-closure-unjustified |
+| stored proof links | 55 v2 / 10 v1 of 65, across `examples/`, `tests/` and `std/` |
+| V1 body-fingerprint golden | 77 extracted, unmoved under V2 |
+| compiler-source inventory | 96 files (95 Lean + 2 build files − 1 named exclusion) |
+| registered mutation families | 78 (see the harness note below) |
+| subject accounting | 86/48 frozen, tracked separately from dependency accounting |
+
+The 10 v1 links are pinned exactly rather than required to be zero: their v2 subject is
+INCOMPLETE because the structural producer refuses on intrinsic casts, so no digest is minted
+and there is nothing to migrate to. That is a remaining producer gap, recorded so it cannot grow
+silently.
+
+#### Bugs closed by the V2 activation
+
+**059** (the subject omitted declared types) and **060** (contracts sat outside it) are FIXED and
+verified behaviourally: a whole-signature `i32 -> u32` change and an added `#[ensures]` both stale
+the claim. Both legs were tripwires asserting the WRONG verdict on purpose while the defects were
+open; both fired, and both are inverted rather than deleted, so a reversion is caught by the
+assertion that proved the fix.
+
+#### The independent theorem-retargeting finding
+
+`proof_pressure.validate_header` carried
+`#[proof_by(Examples.ElfHeader.Proofs.validate_header_correct)]` — a theorem about `elf_header`'s
+`validate_header`, which checks ELF magic/class/data/version bytes, attached to a function that
+checks a nonce and calls `check_nonce`. They shared a qualified name and nothing else, and the
+link passed every name-based check for months. Correspondence caught it: `elfFns` holds no
+`check_nonce` model, so the edge had no justification, and the scoped join then showed the refusal
+was about identity rather than luck.
+
+Repaired by DELETING the claim, not by attaching a different theorem. No theorem proves that body,
+and substituting the nearest plausible one is the defect being repaired. The population is
+genuinely one smaller: stored links 44 → 43, and every pinned denominator that counted it was
+corrected rather than left to drift.
+
+#### Non-blocking limitations, recorded rather than resolved
+
+**1. PackageIdentity over-binds, at two levels.** It contains the complete dependency closure,
+which dependency roots already model, and it scopes `DefinitionIdentity` by package CONTENT.
+Both were demonstrated, not theorised:
+
+- migrating two lines in `std/src/base64.con` moved every package identity in the repository,
+  because std is auto-injected everywhere. `GeneratedAttestations.lean` went 168 lines stale in
+  one step, three subjects silently dropped from `proved` to `dependency closure unjustified`,
+  and 38 references had to be remapped — with no implementation digest changing anywhere.
+- deleting a wrong `#[proof_by]` from one function renamed the attestation symbol of a DIFFERENT
+  function in the same package, whose module, declaration and implementation digest were all
+  unchanged.
+
+Fail-safe rather than unsound: the failure mode is demotion and symbol renaming, never a proof
+credited to a body it does not describe. The redesign — PackageScopeIdentity, PackageArtifactIdentity,
+ResolutionContextIdentity, DefinitionIdentity, claim dependency root — is the first post-R-0004
+slice.
+
+**2. Post-build executable bytes are unclaimed.** The compiler identity is computed at build time
+over an explicit 96-file source inventory. A binary PATCHED AFTER BUILD keeps the constant its
+sources produced. This identifies the BUILD, not the bytes. The executable digest that would bind
+the bytes was removed because it was not portable — neither `/proc/self/exe` nor GNU `sha256sum`
+exists on macOS, and receipt issuance refused there outright. A portable streaming digest or a
+signed build manifest is post-R-0004 provenance work and is not claimed today.
+
+#### What the closure run does NOT cover
+
+`check_gate_mutation_coverage.sh` (78 registered families) is deliberately excluded from the local
+runner: it needs a `lake build` per family and takes hours. It IS a CI workflow step, so it runs —
+just not inside the 205, and this record does not fold it in.
+
+What the 205 DOES establish about mutation coverage is narrower and worth stating exactly:
+`check_mutation_anchors` (1/0, in the run) verifies that all 77 mutation anchors still match text
+in their target files. That is anchor INTEGRITY, not kill verification — an anchor that no longer
+matches makes its mutation inert, which is how the single-source dependency-currency policy and the
+generated body digest silently lost coverage before this session. Two such anchors were dead and
+were re-anchored.
+
+So: every registered mutation is applicable, and each one's kill is established by the nightly CI
+step rather than by this run. Mutations now execute against a disposable copy, so that harness can
+no longer corrupt the working tree it measures.
 
 ### R-0004 evidence producer — landed state (2026-08-05)
 
