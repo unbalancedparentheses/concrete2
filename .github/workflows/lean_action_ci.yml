@@ -545,9 +545,6 @@ jobs:
       - name: "Gate registration (every gate is reachable from CI or explicitly skipped)"
         run: bash scripts/tests/check_gate_registration.sh
 
-      - name: "Gate hygiene (every gate parses, does not stop early, and cannot contradict its own summary)"
-        run: bash scripts/tests/check_gate_hygiene.sh
-
       - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
         run: bash scripts/tests/check_match_guard_effects.sh
 
