@@ -120,6 +120,49 @@ else
   ok "coverage reported honestly rather than implied by a green run"
 fi
 
+echo "=== the two drivers PARTITION by claim (the filter is load-bearing) ==="
+# A MUTATION SURVIVED HERE. Removing the `_all` driver's `claim != "unproved"` filter changed
+# nothing this gate could see, because the soundness loop above skips any example with
+# claimed+unclaimed == 0 — and MEASURED, every example carrying an unproved function is exactly that
+# (trap_semantics_gap 0/0/2, unsound_hypothesis 0/0/1, error_conventions 0/0/1). So the `_all`
+# driver was never run anywhere its filter could matter, and the property that defines it — that it
+# excludes functions the compiler never claimed were safe — was asserted nowhere.
+#
+# PAIRED, because each half alone is satisfiable by a degenerate generator:
+#   INVARIANCE  — `_all` on an unproved-only example must be EMPTY. Alone, satisfied by a generator
+#                 that emits nothing at all.
+#   SENSITIVITY — MECHANISM on the SAME example must be non-empty and trap. Alone, satisfied by the
+#                 unfiltered generator the mutation produces.
+# Together they pin the partition: unproved functions reach one driver and not the other.
+# ALL THREE ARE PINNED, not "at least one". Requiring a single live example would let the other two
+# lose their unproved-only character silently, and the coverage would shrink to one case without
+# anything saying so — the drift this suite keeps finding. If an example legitimately stops being
+# unproved-only, this fails and the pin is updated deliberately.
+PART_LIVE=0
+for ex in examples/trap_semantics_gap examples/unsound_hypothesis examples/error_conventions; do
+  if [ ! -f "$ex/src/main.con" ]; then
+    no "$(basename "$ex") is missing — a pinned partition example disappeared"
+    continue
+  fi
+  A="$(fuzz_one "$ex/src/main.con" "")"
+  M="$(fuzz_one "$ex/src/main.con" "MECHANISM ")"
+  if [ "$M" != "trap" ]; then
+    no "$(basename "$ex"): the MECHANISM driver gave '$M', not a trap — this example no longer exercises the unproved population, so the partition it is pinned for is unverified here"
+    continue
+  fi
+  PART_LIVE=$((PART_LIVE + 1))
+  if [ "$A" = "nodriver" ]; then
+    ok "$(basename "$ex"): unproved functions reach the MECHANISM driver ($M) and NOT the all-driver ($A)"
+  else
+    no "$(basename "$ex"): the all-driver is '$A' on an example whose only fuzzable functions are UNPROVED — it should be empty. The claim filter is gone, so functions the compiler never claimed safe are being fuzzed as if it had."
+  fi
+done
+if [ "$PART_LIVE" -eq 3 ]; then
+  ok "all 3 pinned partition examples are live (each traps under MECHANISM)"
+else
+  no "only $PART_LIVE of 3 pinned partition examples are live — the claim filter is verified on less coverage than recorded"
+fi
+
 echo "=== the plan states its own coverage ==="
 P="$("$COMPILER" examples/trap_semantics_gap/src/main.con --report artifact-fuzz 2>/dev/null)"
 printf '%s' "$P" | grep -qE "fuzzable functions: [0-9]+ of [0-9]+" \

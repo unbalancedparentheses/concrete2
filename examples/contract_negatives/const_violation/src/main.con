@@ -1,0 +1,20 @@
+// CONSTANT-VIOLATION attacks: operands the compiler can EVALUATE, chosen so the
+// safety condition is decidably false.
+//
+// Distinct from obligation_redteam, whose attacks use VARIABLE operands and are
+// therefore merely unprovable. These are refutable, and the difference matters:
+// `cEvalInt` returns `some k` here, so the constant-verdict branch runs. Two
+// mutations survived a whole campaign on that gap — replacing both constant
+// verdicts with `decide (k == k)`, always true — because no fixture reached the
+// branch with a violating constant.
+//
+// Kept OUT of obligation_redteam deliberately: a proven violation is E0900, a hard
+// compile error, and that would stop `concrete build` before the policy stage where
+// that gate asserts E0613/E0614/E0615.
+mod cv {
+    // Division by a literal zero. The divisor obligation must be REFUTED.
+    fn divzero_const(n: i32) -> i32 { return n / 0; }
+
+    // A literal index one past the end of a fixed-size array.
+    fn oob_const(a: [i32; 8]) -> i32 { return a[8]; }
+}

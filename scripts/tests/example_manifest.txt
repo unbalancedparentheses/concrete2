@@ -52,6 +52,7 @@ examples/contract_negatives/invalid_invariant/src/main.con expected-error
 examples/contract_negatives/loop_scope_adversarial/src/main.con expected-error
 examples/contract_negatives/lowering_operators/src/main.con expected-error
 examples/contract_negatives/missing_postcondition/src/main.con expected-error
+examples/contract_negatives/const_violation/src/main.con expected-error
 examples/contract_negatives/obligation_redteam/src/main.con expected-error
 examples/contract_negatives/overflow_scope_adversarial/src/main.con expected-error
 examples/contract_negatives/precondition_callsite/src/main.con expected-error

@@ -623,5 +623,136 @@ else
   no "the non-vacuity probe fixture $PROBE is missing — the freshness comparison above is unproven"
 fi
 
+
+echo ""
+echo "=== injected live cases: two defensive branches the corpus cannot exercise ==="
+# TWO MUTATIONS SURVIVED THIS GATE because the checks they delete have no live case here:
+#   manifest-source-population — the scan covers `proof_by|ensures_proof`, but NO fixture carries
+#     ensures_proof WITHOUT proof_by, so narrowing the scan finds an identical set
+#   manifest-surplus-refused   — surplus_tables is 0, so deleting the refusal changes nothing
+#
+# Both are negative assertions with no positive control. The cases are INJECTED INTO A DISPOSABLE
+# COPY rather than added to the corpus: a real ensures-only fixture or a real surplus would move
+# pinned identity denominators for no extra evidence. The injection runs the PRODUCTION generator
+# over a REAL input boundary.
+INJ="$TMP/inj"; rm -rf "$INJ"; mkdir -p "$INJ"
+cp -a "$ROOT_DIR/." "$INJ/repo" 2>/dev/null || true
+IW="$INJ/repo"
+if [ ! -d "$IW/examples" ] || [ ! -f "$IW/scripts/gen/attestation_manifest.sh" ]; then
+  no "could not stage an injection copy — both live-case controls below would be vacuous"
+else
+  # EXIT CODES ARE ASSERTED THROUGHOUT. This gate does not run under `set -e`, so a generator that
+  # failed would otherwise continue and its partial output could satisfy the deltas below.
+  BASE_OUT="$(cd "$IW" && bash scripts/gen/attestation_manifest.sh 2>"$INJ/base.err")"; BASE_RC=$?
+  gf(){ grep -oE "^$1 *= *[0-9]+" <<<"$2" | grep -oE '[0-9]+$' || true; }
+  BASE_SCAN="$(gf fixtures_scanned "$BASE_OUT")"; BASE_ROWS="$(gf subject_rows "$BASE_OUT")"
+  BASE_UNT="$(gf subjects_without_table "$BASE_OUT")"; BASE_SURP="$(gf surplus_tables "$BASE_OUT")"
+  if [ "$BASE_RC" -eq 0 ] && [ "${BASE_SCAN:-0}" -gt 0 ] && [ "${BASE_SURP:-1}" -eq 0 ]; then
+    ok "injection baseline: generator exit 0, $BASE_SCAN fixtures scanned, 0 surplus"
+  else
+    no "injection baseline is not clean (exit=$BASE_RC scanned='$BASE_SCAN' surplus='$BASE_SURP') — deltas below would not be attributable"
+  fi
+
+  # ---- 1. an ensures-only subject ---------------------------------------------------------------
+  if grep -rqE '#\[ensures_proof\(' "$ROOT_DIR/examples" --include='*.con' 2>/dev/null; then
+    ok "injection anchor is fresh: #[ensures_proof(...)] still appears in the real corpus"
+  else
+    no "no #[ensures_proof(...)] remains in the corpus — the probe imitates nothing real"
+  fi
+  # THE DIRECTORY NAME MUST NOT CONTAIN "ensures". The mutation narrows the scan with
+  # `grep -v ensures`, so a probe under `zz_ensures_only_probe/` would be dropped BY ITS PATH and
+  # this control would pass while proving nothing about the attribute. Hence `zz_postcond_probe`,
+  # and the narrowed scan below filters on the ATTRIBUTE ONLY.
+  PROBE_DIR="$IW/examples/zz_postcond_probe"
+  mkdir -p "$PROBE_DIR/src"
+  printf '[package]\nname = "zz_postcond_probe"\n' > "$PROBE_DIR/Concrete.toml"
+  cat > "$PROBE_DIR/src/main.con" <<'PROBE'
+// INJECTED PROBE — a postcondition proof link with NO #[proof_by]. Never a corpus member.
+mod main {
+    #[ensures_proof(Examples.ProofPatterns.Proofs.addThree_correct)]
+    #[ensures(result >= x)]
+    pub fn probe(x: i32) -> i32 { if x < 0 { return 0; } return x; }
+}
+PROBE
+  FOUND="$(cd "$IW" && grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' 2>/dev/null | grep -c zz_postcond_probe || true)"
+  NARROW="$(cd "$IW" && grep -rlE '#\[(proof_by)\(' examples --include='*.con' 2>/dev/null | grep -c zz_postcond_probe || true)"
+  if [ "${FOUND:-0}" -eq 1 ] && [ "${NARROW:-1}" -eq 0 ]; then
+    ok "the probe discriminates the scan patterns by ATTRIBUTE (production finds it, proof_by-only does not)"
+  else
+    no "the probe does not discriminate by attribute (production=$FOUND, proof_by-only=$NARROW)"
+  fi
+  INJ_OUT="$(cd "$IW" && bash scripts/gen/attestation_manifest.sh 2>"$INJ/inj.err")"; INJ_RC=$?
+  INJ_SCAN="$(gf fixtures_scanned "$INJ_OUT")"; INJ_ROWS="$(gf subject_rows "$INJ_OUT")"
+  INJ_UNT="$(gf subjects_without_table "$INJ_OUT")"
+  # DISPOSITION, not merely a scan count. A bumped `fixtures_scanned` proves only that a file was
+  # walked; these assert the generator ACCEPTED the subject and placed it in a bucket.
+  if [ "$INJ_RC" -eq 0 ] && [ "${INJ_SCAN:-0}" -eq "$(( BASE_SCAN + 1 ))" ] \
+     && [ "${INJ_ROWS:-0}" -eq "$(( BASE_ROWS + 1 ))" ] && [ "${INJ_UNT:-0}" -eq "$(( BASE_UNT + 1 ))" ]; then
+    ok "the generator accepts the ensures-only subject and buckets it (exit 0; scanned $BASE_SCAN->$INJ_SCAN, rows $BASE_ROWS->$INJ_ROWS, untabled $BASE_UNT->$INJ_UNT)"
+  else
+    no "the ensures-only subject was not accepted as a row (exit=$INJ_RC scanned $BASE_SCAN->$INJ_SCAN rows $BASE_ROWS->$INJ_ROWS untabled $BASE_UNT->$INJ_UNT)"
+  fi
+  rm -rf "$PROBE_DIR"
+
+  # ---- 2. surplus, as a LOWER-LEVEL RECONCILIATION attack ---------------------------------------
+  # Deliberately distinct from freshness. This does not ask whether the generated file is stale; it
+  # makes the COMPILED table the binary attests disagree with the SOURCE rows the manifest greps —
+  # the shape a mis-shaped or partially-edited classification produces. Conflating the two would let
+  # a freshness pass stand in for surplus handling.
+  CT="$IW/Concrete/Proof/ClassificationTable.lean"
+  EXPECT_ROWS=2
+  ACTUAL_ROWS="$(grep -cE '\("Concrete\.Proof\.ctTagFns", "[0-9a-f]{32}"\)' "$CT" 2>/dev/null || true)"
+  if [ "${ACTUAL_ROWS:-0}" -ne "$EXPECT_ROWS" ]; then
+    no "expected $EXPECT_ROWS ctTagFns classification row(s), found ${ACTUAL_ROWS:-0} — the surplus injection is not the one described and is vacuous"
+  else
+    ok "surplus injection anchor is fresh: exactly $EXPECT_ROWS ctTagFns row(s) to rewrite"
+    REPL_OK=0
+    python3 - "$CT" "$EXPECT_ROWS" <<'PY' && REPL_OK=1
+import sys, re, pathlib
+p = pathlib.Path(sys.argv[1]); want = int(sys.argv[2]); s = p.read_text()
+s2, n = re.subn(r'\("Concrete\.Proof\.ctTagFns", "([0-9a-f]{32})"\)', r'("Zz.Injected.Absent", "\1")', s)
+if n != want:
+    sys.stderr.write(f"replaced {n}, expected {want}\n"); sys.exit(1)
+p.write_text(s2)
+PY
+    if [ "$REPL_OK" -ne 1 ]; then
+      no "the surplus rewrite did not change exactly $EXPECT_ROWS rows — the injection is not the one described"
+    else
+      ok "the surplus rewrite changed exactly $EXPECT_ROWS row(s)"
+      SURP_OUT="$(cd "$IW" && bash scripts/gen/attestation_manifest.sh 2>"$INJ/surp.err")"; SURP_RC=$?
+      SURP_N="$(gf surplus_tables "$SURP_OUT")"
+      if [ "$SURP_RC" -ne 0 ]; then
+        ok "the generator REFUSES (exit $SURP_RC) when a table is attested with no classification row"
+      else
+        no "the generator exited 0 despite an injected surplus — it emitted a manifest authorising material nothing requested"
+      fi
+      if grep -qF "table 'Concrete.Proof.ctTagFns' is attested but referenced by no classification row (surplus)" "$INJ/surp.err"; then
+        ok "the refusal names the exact table and reason"
+      else
+        no "the exact named surplus refusal did not appear — the detector is not reporting what it found"
+      fi
+      if [ "${SURP_N:-0}" -eq 1 ]; then
+        ok "surplus_tables reports exactly 1 — the injected table only"
+      else
+        no "surplus_tables = ${SURP_N:-?}, expected exactly 1 — the injection missed or the generator rejects indiscriminately"
+      fi
+      if grep -q '^Concrete.Proof.elfFns <- ' <<<"$SURP_OUT"; then
+        ok "an unaffected table still maps under the injection (reject-all would fail this)"
+      else
+        no "no unaffected table mapped — the generator rejected more than the injected row"
+      fi
+    fi
+  fi
+
+  # ---- 3. the real corpus is untouched ----------------------------------------------------------
+  if git -C "$ROOT_DIR" diff --quiet -- Concrete/Proof/ClassificationTable.lean 2>/dev/null \
+     && [ ! -d "$ROOT_DIR/examples/zz_postcond_probe" ]; then
+    ok "the real corpus is byte-identical afterwards (both injections stayed in the copy)"
+  else
+    no "the real corpus changed — an injection escaped its copy"
+  fi
+  rm -rf "$INJ"
+fi
+
 echo "ATTESTATION-MANIFEST: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

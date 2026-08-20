@@ -37,6 +37,32 @@ echo "=== 1. NO FALSE GREEN: unsafe constructs are never proved ==="
 ck "unbounded product overflow → unproven"        "st('rt.unsafe_mul#ovf0')=='unproven'"
 ck "out-of-bounds index → unproven"                "st('rt.oob#bounds0')=='unproven'"
 ck "division by possibly-zero divisor → unproven"  "st('rt.divzero#div0')=='unproven'"
+# THE CONSTANT-VERDICT PATH, which had no live case anywhere. Every attack in THIS fixture uses
+# VARIABLE operands, so `cEvalInt` returns none and the `some k` branch never runs — two mutations
+# survived a full campaign on that gap, replacing both constant verdicts with `decide (k == k)`.
+#
+# The violating constants live in their own fixture, `contract_negatives/const_violation`, and NOT
+# here: a decidable violation is E0900, a hard compile error, which would stop `concrete build`
+# before the policy stage this gate asserts E0613/E0614/E0615 at. Measured — adding them here turned
+# 13/0 into 13/5.
+#
+# `counterexample` rather than `unproven`: the compiler can DECIDE these, so reporting mere absence
+# of proof would understate what it knows and leave a weaker control.
+cvled(){ "$COMPILER" examples/contract_negatives/const_violation/src/main.con --report obligation-ledger --json 2>/dev/null; }
+cvck(){ local label="$1" expr="$2"
+  cvled | python3 -c "
+import json,sys
+d=json.load(sys.stdin); byid={o['id']:o for o in d['obligations']}
+def st(i): return byid[i]['status'] if i in byid else '<absent>'
+sys.exit(0 if ($expr) else 1)" 2>/dev/null && ok "$label" || no "$label"; }
+cvck "division by a LITERAL zero → counterexample"  "st('cv.divzero_const#div0')=='counterexample'"
+cvck "LITERAL out-of-range index → counterexample"  "st('cv.oob_const#bounds0')=='counterexample'"
+# ...and the violation is REPORTED as a hard error, not merely recorded in the ledger. Without this
+# the mutation could leave the ledger honest while the compiler shipped the program.
+cv_out="$("$COMPILER" examples/contract_negatives/const_violation/src/main.con -o /dev/null 2>&1 || true)"
+grep -qF 'E0900' <<<"$cv_out" && grep -qF 'divisor 0 is always zero' <<<"$cv_out" \
+  && ok "a decidable violation is refused at compile time with E0900" \
+  || no "no E0900 for a literal-zero divisor — a proven violation would compile"
 ck "assume-laundered assert → unproven (not proof)" "st('rt.launder#aa1')=='unproven'"
 ck "assume is 'assumed', never a proof class"       "st('rt.launder#aa0')=='assumed'"
 ck "vacuous postcondition → NOT proved_by_lean"     "st('rt.vacuous_green#ensures0') in ('missing','vacuous','unproven')"
