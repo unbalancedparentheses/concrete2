@@ -555,8 +555,14 @@ themselves pass (`check_proof_freshness` 33/0, `check_dependency_edges` 310/0,
 `check_attestation_manifest` 45/0), and no authority claim is shown false. This is a named
 follow-up, not a hidden closure gap — but the closure evidence is qualified by it.
 
-`ANCHORS_ONLY=1` now verifies all 78 anchors in seconds, reusing the harness's own arrays rather
-than a second parser that would drift from the harness it describes.
+All nine are re-anchored, and `check_mutation_anchors` now gates BOTH corpora (PASS=2 FAIL=0) via
+an `ANCHORS_ONLY=1` mode that reuses the harness's own arrays rather than a second parser that would
+drift from the harness it describes. Re-anchoring restores applicability; each family's KILL is
+established by the nightly campaign.
+
+Six of the nine quote generated attestation symbol names, so they need re-anchoring whenever package
+identity moves. That coupling is a cost of scoping `DefinitionIdentity` by package CONTENT, and is
+one more concrete argument for the five-way separation.
 
 Mutations execute against a disposable copy, so that harness can no longer corrupt the working tree
 it measures.

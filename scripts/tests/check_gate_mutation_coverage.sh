@@ -248,9 +248,13 @@ add "checked-negation" "Concrete/Backend/EmitSSA.lean" "check_arith_redteam.sh" 
 # proof whose subject has changed underneath it keeps reading proved. The stored digest
 # is still there and still compared — the comparison just always agrees, which is the
 # shape a real staleness bug takes.
+# RE-ANCHORED 2026-08-20. The comparison moved into `specIsStale` when the three private copies of
+# it were lifted into one definition during the V2 activation, and the old anchor named the
+# body-only form that no longer exists. Same intent: staleness can never fire, so an edited body
+# keeps reporting proved.
 add "proof-staleness" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
-  $'    | some h => shortHash currentFp != h\n    | none   => a.expectedFp != currentFp' \
-  $'    | some h => shortHash currentFp == shortHash currentFp && h != h\n    | none   => a.expectedFp != a.expectedFp'
+  $'  | some h => storedFreshness h subjectDigestV2 == StoredFreshness.moved\n  | none   => a.expectedFp != currentFp' \
+  $'  | some h => false\n  | none   => false'
 
 # H2's check: route float→int through a raw `fptosi` instead of the checked helper.
 # LLVM says raw fptosi is POISON on NaN/±inf/out-of-range, so this is undefined
@@ -336,9 +340,15 @@ add "subject-binds-body" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.
 # row stays structurally valid: well-formed digests, one table, no duplicates. Only the
 # correspondence condition fails, so nothing but `rowJustifies` can catch it — which is exactly
 # what makes it the right mutation for this control.
+# RE-ANCHORED 2026-08-20. Two things had moved: the row gained a trailing `specs` component when
+# classification rows began carrying the spec constants a theorem is about, and the table digest
+# changed with the corpus. Anchoring on a row LITERAL means this family needs re-anchoring whenever
+# either moves — the alternative is matching loosely enough to keep applying to a row it no longer
+# describes, which is worse. Same intent: the edge is reclassified `body` -> `contract`, so the
+# justification no longer matches what the theorem actually establishes.
 add "classification-justifies" "Concrete/Proof/ClassificationTable.lean" "check_dependency_edges.sh" yes \
-  $'  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),' \
-  $'  ("Concrete.Proof.parse_byte_correct", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "6fe095a9f592a2e2b556e87f30306584")], false),'
+  $'  ("Concrete.Proof.parse_byte_correct", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false, ["Concrete.Proof.parseByteExpr"]),' \
+  $'  ("Concrete.Proof.parse_byte_correct", "contract", "7bcec2d7871f93204b26e2bf83d5acf1", [("Concrete.Proof.proofFns", "e41b73d684a263ed7a2f8cfebdc34727")], false, ["Concrete.Proof.parseByteExpr"]),'
 
 # R-0004 slice 6. `tableEntryEvidence` RECOMPUTES the canonical body digest from `PFnDef.body` and
 # refuses unless the stored provenance agrees. Before that, the stored digest was copied and every
@@ -447,9 +457,11 @@ add "external-stays-asserted" "Concrete/Proof/TableResolve.lean" "check_dependen
 # it as `«unresolved»`, which turned a `trusted` edge into a `missing` one and cost the subject its
 # correspondence. The mutation restores the entries-only lookup — the exact defect — and must be
 # caught by the REAL-CORPUS correspondence assertion (9/11), not by a synthetic probe.
+# RE-ANCHORED 2026-08-20: the expression gained a `.getD` fallback, so the old one-line anchor no
+# longer matched. Same intent: an excluded declaration loses its scoped identity.
 add "excluded-identity-retained" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
-  $'    | none => (pc.excluded.find? (fun x => x.qualName == qn)).map (\u00b7.callableId)' \
-  $'    | none => none'
+  $'    | none => ((pc.excluded.find? (fun x => x.qualName == qn)).map (\u00b7.callableId)).getD\n                (CallableId.ofUser "\u00ab-unresolved\u00bb" qn)' \
+  $'    | none => CallableId.ofUser "\u00ab-unresolved\u00bb" qn'
 
 # R-0004 attestation provenance. DRIFT SELECTION: the classifier matches a fixture's own header
 # (`// … DRIFTED variant`) rather than its filename, so a renamed drift fixture stays classified. The
@@ -518,25 +530,31 @@ add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check
 # definitions nobody selected are simply not described. The mutation drops one of `elfFns`'s five
 # attestations, which must be caught by the per-table reconciliation (manifest rows = attested +
 # NAMED exclusions), not by a count that only has to be nonzero.
+# ANCHORS THAT QUOTE GENERATED SYMBOL NAMES need re-anchoring whenever package identity moves,
+# because the symbol name embeds it. All six of these went inert at once when the identity cascade
+# renamed 38 references, and nothing objected — there was no anchor-integrity check over this corpus
+# until ANCHORS_ONLY existed. That coupling is a cost of scoping DefinitionIdentity by package
+# CONTENT, and it is one of the concrete arguments for the five-way identity separation: under
+# PackageScopeIdentity these names would not move when an unrelated source did.
 add "attestation-conversion-complete" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
-  $'    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_543bfb75_check_data\n    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic' \
-  $'    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_543bfb75_check_magic'
+  $'    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_d3204ffe_check_data\n    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_d3204ffe_check_magic' \
+  $'    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_d3204ffe_check_magic'
 
 # ...and the same mutation PER CONVERTED TABLE, because the reconciliation is per table: a version
 # that only reconciled the table someone happened to mutate would leave every other conversion
 # unmeasured. `elfFns` above has a named exclusion, so its arithmetic is rows = attested + 1;
 # `fixedCapacityFns` has none, so it is the control for the simple case rows = attested.
 add "attestation-conversion-complete-fixedcapacity" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
-  $'    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push' \
-  $'    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push'
+  $'    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_add7099b_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_add7099b_ring_push' \
+  $'    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_add7099b_ring_push'
 
 # R-0004 package 2, and the same family for the table whose manifest rows are FEWER than its entries.
 # `parseValidateFns` has 8 entries and 3 rows, so a reader could mistake a dropped attestation for
 # the known subject/callee shortfall. The reconciliation is against the MANIFEST, not the entry
 # count, so dropping one still fails: 3 rows, 2 attested, 0 named exclusions.
 add "attestation-conversion-complete-parsevalidate" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
-  $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_420510fb_validate_header_fields\n    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version' \
-  $'    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_420510fb_validate_version'
+  $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_70ac9bb0_validate_header_fields\n    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_version' \
+  $'    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_version'
 
 # R-0004 package 2. A DRIFTED IMPLEMENTATION ATTESTED. This is the exclusion that is NOT a
 # judgement call: `evidence_classes/stale_proof` links the same theorem while its body starts `diff`
@@ -560,8 +578,8 @@ add "attestation-never-binds-drifted-impl" "Concrete/Proof/Proof.lean" "check_at
 # reconciliation now runs over the distinct reference set for each table, so a model the table could
 # describe exactly and does not is a failure.
 add "attestation-dependency-reference-bound" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
-  $'    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_420510fb_compute_checksum\n    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header' \
-  $'    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_420510fb_parse_header'
+  $'    [ AttestedPFnDef.of computeChecksumFn      GeneratedAttestations.parseValidateFns_70ac9bb0_compute_checksum\n    , AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_70ac9bb0_parse_header' \
+  $'    [ AttestedPFnDef.of parseHeaderFn          GeneratedAttestations.parseValidateFns_70ac9bb0_parse_header'
 
 # R-0004 package 2. THE ENTRANCE ASSERTION MUST BE ABLE TO SAY NO. It exists to be red until the flip
 # is safe, and a completion gate that cannot fail is worse than none — it converts an unchecked
@@ -574,7 +592,7 @@ add "attestation-dependency-reference-bound" "Concrete/Proof/Proof.lean" "check_
 # SURVIVED, which is the honest answer for a mutation that changed no behaviour. It now empties the
 # attestation list outright, which is the actual unattested state.
 add "atomic-flip-entrance-refuses-pending" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
-  $'    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_214c7171_compute_tag\n    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_214c7171_ring_contains\n    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_214c7171_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_214c7171_ring_push ]' \
+  $'    [ AttestedPFnDef.of fcTagFn         GeneratedAttestations.fixedCapacityFns_add7099b_compute_tag\n    , AttestedPFnDef.of ringContainsFn  GeneratedAttestations.fixedCapacityFns_add7099b_ring_contains\n    , AttestedPFnDef.of ringNewFn       GeneratedAttestations.fixedCapacityFns_add7099b_ring_new\n    , AttestedPFnDef.of ringPushFn      GeneratedAttestations.fixedCapacityFns_add7099b_ring_push ]' \
   $'    []'
 
 # ...and it must also refuse a table whose bound references are not LOAD-BEARING. Binding an
@@ -582,8 +600,8 @@ add "atomic-flip-entrance-refuses-pending" "Concrete/Proof/Proof.lean" "check_at
 # nothing: the mutation attests a model the table does not hold, which `scopedEntryEvidence` refuses
 # as `attestedModelNotInTable` — so the membership no longer equals the bound count.
 add "atomic-flip-entrance-refuses-inert-binding" "Concrete/Proof/Proof.lean" "check_atomic_flip_entrance.sh" yes \
-  $'    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_543bfb75_check_class' \
-  $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_543bfb75_check_class'
+  $'    [ AttestedPFnDef.of checkClassFn      GeneratedAttestations.elfFns_d3204ffe_check_class' \
+  $'    [ AttestedPFnDef.of checkNonceFn      GeneratedAttestations.elfFns_d3204ffe_check_class'
 
 
 # ---------------------------------------------------------------------------

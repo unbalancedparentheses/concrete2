@@ -106,9 +106,35 @@ if stale:
 print(f"  ok   all {len(files)} mutation anchors still exist in their files")
 PY
 
-if [ "$rc" -eq 0 ]; then
-  echo "MUTATION-ANCHORS: PASS=1 FAIL=0"
+# BOTH MUTATION CORPORA, and it was one. This gate checked `test_mutation.sh`'s 77 anchors and
+# nothing else, while `check_gate_mutation_coverage.sh` carries 78 more with no integrity check at
+# all. NINE of those had gone inert — four guarding check_attestation_manifest, two
+# check_atomic_flip_entrance, two check_dependency_edges, one check_proof_freshness — and the only
+# thing that would have reported it was a multi-hour campaign nobody runs on a change.
+#
+# Worse, a verified claim about one corpus was reported as a claim about both, in the R-0004 closure
+# record. Checking one population and describing two is the failure this pair of checks now prevents.
+#
+# Delegated to that harness's own ANCHORS_ONLY mode rather than re-parsed here: it already holds the
+# arrays, and a second parser for the `add` format would drift from the harness it describes.
+COV_RC=0
+if [ -x scripts/tests/check_gate_mutation_coverage.sh ] || [ -f scripts/tests/check_gate_mutation_coverage.sh ]; then
+  if ANCHORS_ONLY=1 bash scripts/tests/check_gate_mutation_coverage.sh > /tmp/.anchors_cov.$$ 2>&1; then
+    echo "  ok   $(grep -oE 'all [0-9]+ anchors still match their targets' /tmp/.anchors_cov.$$ | head -1) (check_gate_mutation_coverage)"
+  else
+    COV_RC=1
+    echo "  FAIL check_gate_mutation_coverage has inert mutation families:"
+    grep -E '^  FAIL' /tmp/.anchors_cov.$$ | sed 's/^/    /' | head -12
+  fi
+  rm -f /tmp/.anchors_cov.$$
 else
-  echo "MUTATION-ANCHORS: PASS=0 FAIL=1"
+  COV_RC=1
+  echo "  FAIL scripts/tests/check_gate_mutation_coverage.sh is missing — its 78 families are unchecked"
+fi
+
+if [ "$rc" -eq 0 ] && [ "$COV_RC" -eq 0 ]; then
+  echo "MUTATION-ANCHORS: PASS=2 FAIL=0 (both corpora)"
+else
+  echo "MUTATION-ANCHORS: PASS=$(( (rc == 0 ? 1 : 0) + (COV_RC == 0 ? 1 : 0) )) FAIL=$(( (rc != 0 ? 1 : 0) + (COV_RC != 0 ? 1 : 0) ))"
   exit 1
 fi
