@@ -190,8 +190,6 @@ fi
 # by grepping source text: an earlier control here did exactly that, and a shape assertion cannot
 # notice a production branch becoming unreachable.
 
-GATE_DONE=1; echo "CLEAN-CHECKOUT: PASS=$PASS FAIL=$FAIL"; exit 1
-fi
 # Any uncommitted work would make the clone legitimately differ, so the comparison is only meaningful
 # from a clean tree. Reported rather than silently skipped.
 DIRTY="$(git status --porcelain | grep -vc '^?? ' || true)"
