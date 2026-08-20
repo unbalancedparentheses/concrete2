@@ -804,6 +804,41 @@ add "receipt-decode-checks-schema-first" "Concrete/Proof/Receipt.lean" "check_re
 N=${#NAME[@]}
 PASS=0; FAIL=0
 
+# ---------------------------------------------------------------------------
+# ANCHORS_ONLY=1 — verify every family's OLD text still exists in its FILE, and exit. No mutation,
+# no build, no gate run; seconds rather than hours.
+#
+# This exists because these 78 families had NO anchor-integrity check at all. `check_mutation_anchors.sh`
+# covers `test_mutation.sh`'s 77 anchors and nothing else, so a family here whose target text moved
+# became silently inert — the mutation cannot be applied, its gate is never proven load-bearing, and
+# only a full multi-hour campaign would say so. Three had gone dead exactly that way
+# (proof-staleness, subject-binds-body, classification-justifies), all three guarding R-0004
+# authority boundaries, all three broken by refactors that no gate objected to.
+#
+# It reuses THIS FILE'S arrays rather than re-parsing them elsewhere. A second parser for the `add`
+# format would be a second producer of "what the anchors are", and would drift from the harness it
+# is supposed to describe — which is the defect class this repository keeps paying for.
+if [ "${ANCHORS_ONLY:-0}" = "1" ]; then
+  echo "=== mutation anchor integrity: $N families ==="
+  stale=0
+  for i in $(seq 0 $((N-1))); do
+    f="${FILE[$i]}"
+    if [ ! -f "$f" ]; then
+      echo "  FAIL ${NAME[$i]}: file $f no longer exists"; stale=$((stale+1)); continue
+    fi
+    if ! grep -qF -- "${OLD[$i]}" "$f" 2>/dev/null; then
+      echo "  FAIL ${NAME[$i]}: anchor not found in $f — this mutation is INERT and ${GATE[$i]} is unproven"
+      stale=$((stale+1))
+    fi
+  done
+  if [ "$stale" -eq 0 ]; then
+    echo "  ok   all $N anchors still match their targets"
+  fi
+  echo "GATE-MUTATION-ANCHORS: PASS=$(( stale == 0 ? 1 : 0 )) FAIL=$stale (of $N families)"
+  [ "$stale" -eq 0 ]
+  exit $?
+fi
+
 # PRECONDITION: every file this run will mutate must be clean.
 #
 # Restore is `git checkout --`, which discards whatever is in the working tree. If a file

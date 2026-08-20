@@ -538,9 +538,28 @@ matches makes its mutation inert, which is how the single-source dependency-curr
 generated body digest silently lost coverage before this session. Two such anchors were dead and
 were re-anchored.
 
-So: every registered mutation is applicable, and each one's kill is established by the nightly CI
-step rather than by this run. Mutations now execute against a disposable copy, so that harness can
-no longer corrupt the working tree it measures.
+**CORRECTION (2026-08-20, same day).** The sentence that stood here — "every registered mutation is
+applicable" — was FALSE, and the error is worth keeping visible because it is the exact shape this
+record exists to prevent. `check_mutation_anchors` verifies `test_mutation.sh`'s 77 anchors and
+nothing else; the 78 families in `check_gate_mutation_coverage.sh` had no anchor-integrity check at
+all. I generalised a verified claim about one corpus into an unverified claim about both.
+
+Measured rather than assumed, nine of those 78 are INERT, and every one guards an R-0004 evidence
+gate: four for `check_attestation_manifest`, two for `check_atomic_flip_entrance`, two for
+`check_dependency_edges`, one for `check_proof_freshness`. Six anchor on `Proof.lean` and quote
+GENERATED attestation symbol names, which the identity cascade renamed when 38 references were
+remapped — breaking them was a direct consequence of that remap and nothing objected.
+
+What is unverified is that those gates are LOAD-BEARING at those nine boundaries. The gates
+themselves pass (`check_proof_freshness` 33/0, `check_dependency_edges` 310/0,
+`check_attestation_manifest` 45/0), and no authority claim is shown false. This is a named
+follow-up, not a hidden closure gap — but the closure evidence is qualified by it.
+
+`ANCHORS_ONLY=1` now verifies all 78 anchors in seconds, reusing the harness's own arrays rather
+than a second parser that would drift from the harness it describes.
+
+Mutations execute against a disposable copy, so that harness can no longer corrupt the working tree
+it measures.
 
 ### R-0004 evidence producer — landed state (2026-08-05)
 
