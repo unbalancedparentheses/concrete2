@@ -505,10 +505,13 @@ corrected rather than left to drift.
 which dependency roots already model, and it scopes `DefinitionIdentity` by package CONTENT.
 Both were demonstrated, not theorised:
 
-- migrating two lines in `std/src/base64.con` moved every package identity in the repository,
-  because std is auto-injected everywhere. `GeneratedAttestations.lean` went 168 lines stale in
-  one step, three subjects silently dropped from `proved` to `dependency closure unjustified`,
+- migrating two lines in `std/src/base64.con` moved the identity of packages that never mention
+  std, because it is auto-injected everywhere. `GeneratedAttestations.lean` went 168 lines stale
+  in one step, three subjects silently dropped from `proved` to `dependency closure unjustified`,
   and 38 references had to be remapped — with no implementation digest changing anywhere.
+  MEASURED by `check_identity_overbinding.sh`: 7 of 21 package identities move. An earlier
+  version of this record said "every package identity", which overstated it; one package is
+  unaffected.
 - deleting a wrong `#[proof_by]` from one function renamed the attestation symbol of a DIFFERENT
   function in the same package, whose module, declaration and implementation digest were all
   unchanged.
