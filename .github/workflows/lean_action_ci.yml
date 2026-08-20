@@ -545,6 +545,9 @@ jobs:
       - name: "Gate registration (every gate is reachable from CI or explicitly skipped)"
         run: bash scripts/tests/check_gate_registration.sh
 
+      - name: "Identity freeze (the pre-migration attestation population is pinned)"
+        run: bash scripts/tests/check_identity_freeze.sh
+
       - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
         run: bash scripts/tests/check_match_guard_effects.sh
 
