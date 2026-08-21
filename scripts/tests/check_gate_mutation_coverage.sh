@@ -2,8 +2,22 @@
 # Phase 6C #5: gate mutation-testing — prove the pipeline gates are load-bearing.
 #
 # For each rule FAMILY, apply a one-line source mutation that disables the rule
-# (while still building) and prove the family's SPECIFIC gate goes red (KILLED).
-# A mutation whose gate stays green is a SURVIVOR = a decorative gate = failure.
+# and prove the mutation cannot survive. A mutation that survives is a SURVIVOR = a
+# decorative gate = failure.
+#
+# TWO KINDS OF EVIDENCE, stated precisely because the code enforces both and this header used to
+# promise only the first:
+#
+#   (1) the family's NAMED GATE goes red — that gate is shown load-bearing for that rule; or
+#   (2) the mutation fails to BUILD — the defect is unrepresentable, which is a stronger result than a
+#       gate catching it, but leaves that family's gate unproven, so it must be DECLARED per family.
+#
+# `gates_proven=<n>/<N>` reports (1) on every summary line and in the artifact, and the two counts must
+# add up to the whole corpus or the run refuses (`families_unaccounted`). So a completed run does NOT
+# claim every gate was exercised — it claims every family produced one of these two kinds of evidence
+# and says how many of each. `gates_proven=78/81` with three declared build kills is a complete result,
+# not a shortfall; and a PASS line never means "all 81 gates went red", which is why the ratio is
+# always printed beside it.
 #
 # HEAVY / NIGHTLY: the behavioral families need a `lake build` per mutation (~1-3
 # min each), so this is not a per-commit gate. Grep-only families (constructor
@@ -50,9 +64,175 @@
 
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$ROOT_DIR"
+# HASHED BEFORE ANYTHING ELSE RUNS. The snapshot below makes the driver immutable from the point it is
+# taken — but the lock acquisition and artifact invalidation execute from the LIVE file first, and bash
+# reads a script incrementally. A save during that preamble means one version supplied those controls
+# and another supplied the campaign body, while `executed_driver_sha` recorded only the latter. This
+# cannot be prevented (bash has already read those bytes); it can be DETECTED, by hashing the file
+# before the preamble and comparing at snapshot time.
+_PREAMBLE_SHA="$( { sha256sum "${BASH_SOURCE[0]}" 2>/dev/null || shasum -a 256 "${BASH_SOURCE[0]}"; } | cut -c1-32 )"
 LAKE="${LAKE:-lake}"
 ONLY="${FAMILY:-}"
+
+# ---------------------------------------------------------------------------
+# IMMUTABLE DRIVER SNAPSHOT.
+#
+# Bash reads a script INCREMENTALLY, by byte offset. Editing this file while a campaign runs
+# therefore changes the campaign — it does not merely change the next one. Measured 2026-08-20: a
+# 78-family run completed all 78 verdicts and then died with `unexpected EOF while looking for
+# matching '` because the file had grown underneath the interpreter, and it produced no summary at
+# all. That failure was LUCKY. A syntactically valid edit would have silently altered which
+# mutations later families applied, with nothing to expose it. "The arrays are already loaded" is not
+# protection, and I asserted that it was.
+#
+# So the driver re-execs itself from a copy under /tmp and runs from there. Repo edits then cannot
+# reach the running interpreter at all — the failure mode is removed rather than detected. Same
+# reasoning as mutating a disposable copy of the tree instead of the tree.
+# ONE VALIDATED REMOVER for the snapshot directory, used by every cleanup path. This is an `rm -rf`
+# of a value that arrives from the ENVIRONMENT: a caller, or a stale export, naming an unrelated
+# directory would have it deleted. Three separate paths performed that removal and only one of them
+# checked anything. A bare prefix test is not enough either — `/tmp/concrete-mut.x/../../home` has the
+# prefix — so the path must contain no `..` component and must still look like our own.
+_rm_snapdir() {
+  local d="${CONCRETE_MUT_SNAPDIR:-}" owner
+  [ -n "$d" ] || return 0
+  case "$d" in
+    *..*) echo "warning: refusing to remove CONCRETE_MUT_SNAPDIR='$d' — contains '..'" >&2; return 1 ;;
+  esac
+  case "$d" in
+    "${TMPDIR:-/tmp}/concrete-mut."*) ;;
+    *) echo "warning: refusing to remove CONCRETE_MUT_SNAPDIR='$d' — not a campaign-created path" >&2; return 1 ;;
+  esac
+  # OURS, not merely in the namespace. A prefix test alone let a STALE exported CONCRETE_MUT_SNAPDIR —
+  # or one supplied by a caller alongside CONCRETE_MUT_SNAPSHOT — name a directory belonging to a
+  # DIFFERENT, possibly live, campaign in the same namespace, and this would delete it. The marker file
+  # must be present and must record THIS process as owner.
+  [ -f "$d/.concrete-mutation-workspace" ] || {
+    echo "warning: refusing to remove '$d' — no campaign marker file" >&2; return 1; }
+  owner="$(sed -n 's/^owner_pid=//p' "$d/.concrete-mutation-workspace" 2>/dev/null | head -1)"
+  [ "$owner" = "$$" ] || {
+    echo "warning: refusing to remove '$d' — owned by pid ${owner:-?}, not $$" >&2; return 1; }
+  rm -rf "$d" 2>/dev/null || true
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# THE LOCK AND THE INVALIDATION COME BEFORE ANYTHING THAT CAN FAIL — including the driver snapshot.
+#
+# I previously claimed this ordering was in place and it was NOT: the snapshot was created first, so a
+# full disk or an unwritable TMPDIR aborted the run while an older `completed=1` stayed readable. The
+# claim was written into the checkpoint without the corresponding code, which is exactly the kind of
+# unverified assertion this whole exercise exists to catch.
+#
+# Acquiring here is safe across the `exec` below: the token is exported and `exec` keeps the SAME pid,
+# so the re-exec'd phase inherits a token whose owner is itself and passes validation trivially.
+# CAMPAIGN_HELD_LOCK is exported for the same reason — the post-exec phase must know it owns the lock.
+# READ-ONLY MODES TAKE NO LOCK AND WRITE NO ARTIFACT. `--coverage` is a documented reporting command
+# that greps this file and exits; treating it as a campaign start meant it acquired the repository
+# lock, overwrote `.mutation-campaign-summary` with `completed=0` — destroying the authoritative
+# record — and then exited through a trap that only removes the snapshot, never releasing the lock. A
+# reporting command must not be able to do any of that.
+_MUT_READ_ONLY_MODE=0
+[ "${ANCHORS_ONLY:-0}" = "1" ] && _MUT_READ_ONLY_MODE=1
+[ "${1:-}" = "--coverage" ] && _MUT_READ_ONLY_MODE=1
+if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
+  # shellcheck source=scripts/tests/lib/fresh.sh
+  # THE ONE GAP THAT CANNOT BE CLOSED BY ORDERING, so it is stated instead of papered over.
+  #
+  # Two rules are in tension. Nothing may write the artifact without holding the lock (otherwise a
+  # second invocation overwrites a LIVE run's record and is then refused by the lock). And every
+  # failed attempt should discredit the previous record. When the failure IS "the locking library will
+  # not load", both cannot hold: there is no way to take the lock, so there is no way to write
+  # legitimately. Refusing without writing is the safe half of that trade, and the message says so
+  # explicitly — a stale record the operator has been TOLD about is a different thing from one they
+  # have not.
+  _fresh_fail() {
+    echo "FATAL: $1" >&2
+    echo "       The repository lock could not be taken, so this run wrote NOTHING." >&2
+    echo "       .mutation-campaign-summary may still hold an EARLIER run's result — including" >&2
+    echo "       completed=1. Do not read it as describing this attempt." >&2
+    exit 2
+  }
+  . "$ROOT_DIR/scripts/tests/lib/fresh.sh" 2>/dev/null \
+    || _fresh_fail "could not load scripts/tests/lib/fresh.sh — refusing to run unlocked."
+  command -v _gate_lock_acquire >/dev/null 2>&1 \
+    || _fresh_fail "fresh.sh loaded but _gate_lock_acquire is missing."
+  _gate_lock_acquire || {
+    # NOTHING IS WRITTEN on this path: the artifact belongs to whoever holds the lock. Contention is
+    # the COMMON case of that, and it was the one case that said nothing about the consequence — so an
+    # operator saw "requires exclusive access", then read an artifact describing an earlier run.
+    echo "error: the mutation campaign requires exclusive access to the repository." >&2
+    echo "       This run wrote NOTHING. .mutation-campaign-summary may still hold an EARLIER" >&2
+    echo "       run's result — including completed=1. Do not read it as describing this attempt." >&2
+    exit 2
+  }
+  export CAMPAIGN_HELD_LOCK=1
+  _early_target="$ROOT_DIR/.mutation-campaign-summary"
+  [ -z "${ONLY:-}" ] || _early_target="$_early_target.partial"
+  if ! { _early="$(mktemp "$_early_target.XXXXXX" 2>/dev/null)" \
+         && printf 'completed=0\nrefusals= run_started_and_did_not_finish\n' > "$_early" \
+         && mv -f "$_early" "$_early_target"; }; then
+    rm -f "${_early:-}" 2>/dev/null || true
+    # WRITING IS NOT THE ONLY WAY TO DISCREDIT A RECORD. If the atomic write fails AFTER the lock is
+    # held, the old artifact would otherwise survive an attempted run — so remove it outright. By this
+    # harness's own doctrine an ABSENT artifact is a refusal and never a success, so deletion is the
+    # safe fallback; only a failure to delete is unrecoverable.
+    if rm -f "$_early_target" 2>/dev/null && [ ! -e "$_early_target" ]; then
+      echo "warning: could not write the invalidation record, so the previous one was DELETED." >&2
+      echo "         An absent artifact reads as 'no completion', which is correct here." >&2
+      _early_deleted=1
+    fi
+    [ "${_early_deleted:-0}" = "1" ] || \
+    echo "FATAL: could not discredit the previous campaign record at $_early_target." >&2
+    echo "       Refusing to run: an old completed=1 would stay readable as this run's result." >&2
+    _gate_lock_release
+    exit 2
+  fi
+fi
+
+if [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
+  # Same namespace as the workspace below, and marked, so a later run's sweep reclaims it: the EXIT
+  # trap that removes this cannot fire on SIGKILL. Measured 2026-08-21: nine of these were stranded.
+  # CHECKED. An unchecked `mktemp -d` leaves the variable EMPTY on failure, after which `_snap`
+  # becomes "/driver.sh" and the workspace below becomes "/repo" — so an ordinary disk-full or
+  # unwritable-TMPDIR condition turns into writes at the filesystem root.
+  _snap_dir="$(mktemp -d "${TMPDIR:-/tmp}/concrete-mut.$$.XXXXXX")" || {
+    echo "FATAL: could not create a temp directory for the driver snapshot" >&2
+    _gate_lock_release 2>/dev/null || true; exit 2; }
+  [ -n "$_snap_dir" ] && [ -d "$_snap_dir" ] || {
+    echo "FATAL: temp directory for the driver snapshot is not usable" >&2
+    _gate_lock_release 2>/dev/null || true; exit 2; }
+  printf 'owner_pid=%s\nstarted_head=driver-snapshot\n' "$$" > "$_snap_dir/.concrete-mutation-workspace"
+  _snap="$_snap_dir/driver.sh"
+  cp "${BASH_SOURCE[0]}" "$_snap" || {
+    echo "FATAL: could not snapshot the campaign driver" >&2
+    _gate_lock_release 2>/dev/null || true; exit 2; }
+  # ROOT_DIR IS PASSED EXPLICITLY. After `exec`, `BASH_SOURCE[0]` is the snapshot under /tmp, so
+  # deriving the repository root from it lands in the wrong tree and every mutation target reads as
+  # "file no longer exists" — measured on the first attempt, 78/78 spurious failures.
+  # HASH THE COPY, NOT THE ORIGINAL. Hashing `BASH_SOURCE[0]` here reads the LIVE repository file
+  # again, after the `cp` above — so an edit landing between the two produced a snapshot of the OLD
+  # bytes labelled with the NEW hash, and end reconciliation then compared the live file against that
+  # new hash and found them equal. The only value that cannot lie about what is executing is the
+  # digest of the bytes that were actually copied and are about to be exec'd.
+  CONCRETE_MUT_SNAPSHOT="$_snap" \
+  CONCRETE_MUT_ROOT="$ROOT_DIR" \
+  CONCRETE_MUT_PREAMBLE_SHA="$_PREAMBLE_SHA" \
+  CONCRETE_MUT_DRIVER_SHA="$(sha256sum "$_snap" 2>/dev/null | cut -c1-32 \
+                             || shasum -a 256 "$_snap" | cut -c1-32)" \
+  CONCRETE_MUT_SNAPDIR="$_snap_dir" \
+    exec bash "$_snap" "$@"
+fi
+# From here on we are the snapshot, running against the repository the launcher named.
+ROOT_DIR="${CONCRETE_MUT_ROOT:?snapshot launched without a repository root}"
+# The lock was acquired before the snapshot and survives the `exec` (same pid, exported token). This
+# phase only needs the library so it can RELEASE, and must not acquire again.
+if [ "${CAMPAIGN_HELD_LOCK:-0}" = "1" ]; then
+  . "$ROOT_DIR/scripts/tests/lib/fresh.sh" 2>/dev/null || {
+    echo "FATAL: could not load fresh.sh in the snapshot phase — cannot release the lock." >&2; exit 2; }
+fi
+trap '_rm_snapdir' EXIT
+cd "$ROOT_DIR"
 
 # `--coverage`: report which soundness gates have a control, computed from the GATE FIELD of
 # the `add` lines below — not from a grep for gate names, which counts prose.
@@ -254,7 +434,7 @@ add "checked-negation" "Concrete/Backend/EmitSSA.lean" "check_arith_redteam.sh" 
 # keeps reporting proved.
 add "proof-staleness" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
   $'  | some h => storedFreshness h subjectDigestV2 == StoredFreshness.moved\n  | none   => a.expectedFp != currentFp' \
-  $'  | some h => false\n  | none   => false'
+  $'  | some h => storedFreshness h subjectDigestV2 == StoredFreshness.current && h != h\n  | none   => a.expectedFp != a.expectedFp && currentFp == currentFp'
 
 # H2's check: route float→int through a raw `fptosi` instead of the checked helper.
 # LLVM says raw fptosi is POISON on NaN/±inf/out-of-range, so this is undefined
@@ -327,9 +507,23 @@ add "transform-has-effect" "Concrete/Semantics/TermIR.lean" "check_transform_reg
 # state at every other surface: the digest still exists, still refuses incomplete facts, still
 # moves on signature and contract edits. Only "a body edit moves the subject" is lost, and if
 # the gate does not notice, then binding the structural body bought nothing.
-add "subject-binds-body" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
-  $'    | .ok complete =>\n      some (shortHash ("subjectV2:" ++ facts.canonical\n              ++ "|body:" ++ shortHash (Proof.bodyBytesV2 complete)))' \
-  $'    | .ok _ =>\n      some (shortHash ("subjectV2:" ++ facts.canonical))'
+# RE-ANCHORED 2026-08-20 (second attempt). The subject digest was restructured to build from
+# `implementationPreimage`, so the previous anchor named a `subjectV2:`/`bodyBytesV2` construction
+# that no longer appears anywhere in this file. The mutation still removes the BODY's contribution —
+# it reduces the preimage to a single boolean — while keeping `complete` live, because a mutation
+# that merely drops a binding fails on a lint and is scored INVALID rather than killed.
+# RENAMED FROM `subject-binds-body`, because that is not what it establishes.
+#
+# The mutation reduces the whole preimage, so EVERY stored fingerprint changes — and
+# check_proof_freshness.sh:107 requires an untouched fixture to stay `proved`, which fails on that
+# alone. The gate therefore goes red via the stored-fingerprint assertion, NOT via the body-binding
+# assertion at :226 that the old name claimed. Any mutation of the digest SCHEME has the same problem,
+# so this family cannot isolate body-binding at all; renaming it to the claim it actually supports is
+# the honest repair. The body-binding assertion remains unproven by mutation — recorded as a coverage
+# gap rather than quietly credited here.
+add "subject-digest-binds-preimage" "Concrete/Proof/ProofCore.lean" "check_proof_freshness.sh" yes \
+  $'      some (shortHash (implementationPreimage facts complete\n              ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))' \
+  $'      some (shortHash (facts.canonical ++ toString (implementationPreimage facts complete).isEmpty\n              ++ "|spec:" ++ specPart ++ "|scope:" ++ scopePart))'
 
 # R-0004 slice 6, blocker (c) containment. `rowJustifies` refuses a classification whose theorem
 # SHAPE cannot support it, and `classifiedEdgeOf` downgrades such a row to `unclassified`. The
@@ -363,9 +557,17 @@ add "classification-justifies" "Concrete/Proof/ClassificationTable.lean" "check_
 # RETARGETED 2026-08-13 when `tableEntryEvidence` moved from `Option` to a named-refusal `Except`.
 # The harness FAILED rather than passing when its OLD text vanished, which is the behaviour that
 # makes a stale control detectable instead of a quiet always-green.
-add "entry-body-recomputed" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
-  $'          if stored.value != recomputed then' \
-  $'          if false then'
+# SPLIT IN TWO, 2026-08-21, because the single anchor matched BOTH body-provenance sites and was
+# therefore inert: the applier refuses an ambiguous anchor, and the anchor gate had been accepting it
+# because its `check` mode returned success before testing ambiguity. Each site is a separate
+# authority path — one recomputes the digest of an ATTESTED MODEL's body, the other of a CALLEE's —
+# and picking either one arbitrarily would have left the other unproven while the count still read 78.
+add "entry-body-recomputed-attested-model" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
+  $'          let recomputed := Concrete.sourceBodyDigestV1Of model.body\n          if stored.value != recomputed then' \
+  $'          let recomputed := Concrete.sourceBodyDigestV1Of model.body\n          if false then'
+add "entry-body-recomputed-callee" "Concrete/Proof/DependencyEdge.lean" "check_dependency_edges.sh" yes \
+  $'          let recomputed := Concrete.sourceBodyDigestV1Of d.body\n          if stored.value != recomputed then' \
+  $'          let recomputed := Concrete.sourceBodyDigestV1Of d.body\n          if false then'
 
 # R-0004 slice 6, manifest provenance. `CompleteImplementation.of?` refuses facts describing a
 # DIFFERENT callable than the one claimed, which is what stops a manifest row pairing one callable's
@@ -453,15 +655,24 @@ add "external-stays-asserted" "Concrete/Proof/TableResolve.lean" "check_dependen
   $'      else .ok (.compilerLinked, rows)'
 
 # R-0004 slice 6. IDENTITY RETENTION FOR EXCLUDED CALLEES. A trusted helper is excluded from the
-# proof entries but is still a real callable. Resolving callee names only against `entries` reported
-# it as `«unresolved»`, which turned a `trusted` edge into a `missing` one and cost the subject its
-# correspondence. The mutation restores the entries-only lookup — the exact defect — and must be
-# caught by the REAL-CORPUS correspondence assertion (9/11), not by a synthetic probe.
-# RE-ANCHORED 2026-08-20: the expression gained a `.getD` fallback, so the old one-line anchor no
-# longer matched. Same intent: an excluded declaration loses its scoped identity.
+# proof entries but is still a real callable carrying a scoped identity. Resolving callee names only
+# against `entries` reported it as unresolved, which turned a `trusted` edge into a `missing` one and
+# cost the subject its correspondence. Caught by the REAL-CORPUS correspondence assertion, not by a
+# synthetic probe.
+#
+# RETARGETED 2026-08-20 to `scopedOf`, which is where the identity is actually RETAINED. The previous
+# version mutated `labelOf`, and that was mis-targeted: `labelOf` is consulted only AFTER `scopedOf`
+# has already refused, purely to label the unscoped diagnostic. Removing its excluded fallback
+# changes presentation, not the closure, so the mutation SURVIVED — and survived correctly. It was
+# not evidence that excluded identity is redundant; it was evidence that the mutation was pointed at
+# the wrong mechanism. Scored as mis-targeted/equivalent, never as an authority gap.
+#
+# The pair this belongs to, both load-bearing and independent:
+#   * `scopedOf` retains the trusted callee's scoped identity        <- THIS family
+#   * `dependencyNodesOf` gives that identity a leaf node            <- root-leaf-only-trusted-exclusions
 add "excluded-identity-retained" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
-  $'    | none => ((pc.excluded.find? (fun x => x.qualName == qn)).map (\u00b7.callableId)).getD\n                (CallableId.ofUser "\u00ab-unresolved\u00bb" qn)' \
-  $'    | none => CallableId.ofUser "\u00ab-unresolved\u00bb" qn'
+  $'      match pc.excluded.find? (fun x => x.qualName == qn) with\n      | some x => x.definitionIdentity\n      | none   => .error (.legacyNameOnly qn)' \
+  $'      .error (.legacyNameOnly qn)'
 
 # R-0004 attestation provenance. DRIFT SELECTION: the classifier matches a fixture's own header
 # (`// … DRIFTED variant`) rather than its filename, so a renamed drift fixture stays classified. The
@@ -552,9 +763,12 @@ add "attestation-conversion-complete-fixedcapacity" "Concrete/Proof/Proof.lean" 
 # `parseValidateFns` has 8 entries and 3 rows, so a reader could mistake a dropped attestation for
 # the known subject/callee shortfall. The reconciliation is against the MANIFEST, not the entry
 # count, so dropping one still fails: 3 rows, 2 attested, 0 named exclusions.
+# RE-ANCHORED 2026-08-20 (second attempt). The previous anchor paired `validateHeaderFieldsFn` with
+# `validateVersionFn`, which are FOUR lines apart in the attested list — each line was present, so a
+# line-wise check saw a match while an exact substring could never apply. Adjacent lines only.
 add "attestation-conversion-complete-parsevalidate" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
-  $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_70ac9bb0_validate_header_fields\n    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_version' \
-  $'    , AttestedPFnDef.of validateVersionFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_version'
+  $'    , AttestedPFnDef.of validateHeaderFieldsFn GeneratedAttestations.parseValidateFns_70ac9bb0_validate_header_fields\n    , AttestedPFnDef.of validateMsgTypeFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_msg_type' \
+  $'    , AttestedPFnDef.of validateMsgTypeFn      GeneratedAttestations.parseValidateFns_70ac9bb0_validate_msg_type'
 
 # R-0004 package 2. A DRIFTED IMPLEMENTATION ATTESTED. This is the exclusion that is NOT a
 # judgement call: `evidence_classes/stale_proof` links the same theorem while its body starts `diff`
@@ -779,18 +993,35 @@ add "mint-artifact-comes-from-token" "Concrete/Proof/Receipt.lean" "check_depend
 # DIFFERENT program sharing every declaration name with `elf_header` — received four receipts, two
 # for `stale` claims whose bodies had changed since their proofs were linked. The token says the
 # kernel accepted a THEOREM; it says nothing about whether that theorem still proves THIS body.
+# SPLIT IN TWO for the same reason as entry-body-recomputed above: this text appears in BOTH
+# `issueFor` (which mints a receipt) and `freshFactsFor` (which produces fresh facts). Both must
+# refuse a subject that is not proved, and a single ambiguous anchor tested neither.
+#
+# THE TWO HALVES NAME DIFFERENT GATES, and getting that wrong makes the kill meaningless. My first
+# version pointed both at check_receipt_issuance.sh, but that gate only drives `--report receipts`,
+# whose producer is `issueFor`. `freshFactsFor` is reached ONLY from `storedDispositionFor`
+# (Issue.lean:315), which is receipt CONSUMPTION — so an issuance-gate kill for the freshFactsFor
+# mutations would have been evidence about a path the mutation never touched.
 add "issue-requires-proved-status" "Concrete/Proof/Issue.lean" "check_receipt_issuance.sh" yes \
-  'if obl.status != .proved then throw (.notProved subject obl.status.canonical)' \
-  'if false then throw (.notProved subject obl.status.canonical)'
+  $'  if obl.status != .proved then throw (.notProved subject obl.status.canonical)\n  if res.environment.importDigests.isEmpty then throw (.noImportClosure subject)' \
+  $'  if false then throw (.notProved subject obl.status.canonical)\n  if res.environment.importDigests.isEmpty then throw (.noImportClosure subject)'
+add "freshfacts-requires-proved-status" "Concrete/Proof/Issue.lean" "check_receipt_consumption.sh" yes \
+  $'  if obl.status != .proved then throw (.notProved subject obl.status.canonical)\n  let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)' \
+  $'  if false then throw (.notProved subject obl.status.canonical)\n  let row ← (validatedRowOf thm).mapError (IssueRefusal.classification thm)'
 
 # TRUST MUST NOT BE DROPPED ON THE WAY INTO THE RECEIPT. Issuing with no boundaries named while the
 # closure crosses one turns a qualified claim into an unqualified one — the exact laundering the
 # qualification exists to prevent.
 # Written as an operand change: emptying the binding outright strands `trustedDepsOf` on an
 # unused-binding lint, and a mutation that cannot build is INVALID rather than killed.
+# SPLIT IN TWO — `issueFor` and `freshFactsFor` each read the trusted boundaries from the same
+# producer, and each must carry them. One ambiguous anchor covered neither.
 add "issue-carries-trusted-boundaries" "Concrete/Proof/Issue.lean" "check_receipt_issuance.sh" yes \
-  '  let boundaries := trustedDepsOf subject' \
-  '  let boundaries := (trustedDepsOf subject).take 0'
+  $'  let boundaries := trustedDepsOf subject\n  -- The root\'s own trust verdict and the named boundaries must AGREE.' \
+  $'  let boundaries := (trustedDepsOf subject).take 0\n  -- The root\'s own trust verdict and the named boundaries must AGREE.'
+add "freshfacts-carries-trusted-boundaries" "Concrete/Proof/Issue.lean" "check_receipt_consumption.sh" yes \
+  $'  let boundaries := trustedDepsOf subject\n  if rootMat.carriesTrust != !boundaries.isEmpty then throw (.materialRefused subject)' \
+  $'  let boundaries := (trustedDepsOf subject).take 0\n  if rootMat.carriesTrust != !boundaries.isEmpty then throw (.materialRefused subject)'
 
 # R-0004 package 3: receipt storage and consumption.
 
@@ -820,7 +1051,177 @@ add "receipt-decode-checks-schema-first" "Concrete/Proof/Receipt.lean" "check_re
   '  if false then throw (.schemaUnreadable schema)'
 
 N=${#NAME[@]}
+
+# VACUITY FLOOR, APPLIED TO EVERY MODE. `N` comes straight from the inventory array, so an inventory
+# that lost its entries — a renamed array, a truncated edit, a botched merge — would run zero
+# families, satisfy `VERDICTS == EXPECTED_RUN` as 0 == 0, and report `PASS=0 FAIL=0` with
+# `completed=1`: a campaign that proved nothing, recorded as an authoritative success. An earlier
+# version of this floor guarded only ANCHORS_ONLY, which left the mode that actually issues completion
+# records unprotected. The floor sits far below the current 81 so it catches collapse, not growth.
+# THE COUNT IS PINNED, NOT FLOORED. A floor of 50 accepted the deletion of 31 of the 81 families
+# while still reporting a "full" campaign: `EXPECTED_RUN` is derived from whatever `N` happens to be,
+# so a reduced corpus passes as complete. Retiring a mutation is a deliberate act and must be recorded
+# in the same commit as the removal, exactly like the identity freezes.
+EXPECTED_FAMILIES=81
+if [ "$N" != "$EXPECTED_FAMILIES" ]; then
+  echo "FATAL: the mutation inventory holds $N families, pinned at $EXPECTED_FAMILIES." >&2
+  echo "       Mutations are the evidence that gates are load-bearing, so losing some silently" >&2
+  echo "       withdraws that evidence. If this change is intended, update EXPECTED_FAMILIES in the" >&2
+  echo "       SAME commit and say in the message which families moved and why." >&2
+  echo "       The 'add' inventory was probably renamed or truncated. Refusing to report a verdict." >&2
+  # INVALIDATE HERE TOO. This exit happens BEFORE the artifact producer is defined, so without this a
+  # prior `completed=1` stayed readable while the run that should have discredited it refused. Written
+  # inline and atomically for the same reason the producer is: a truncate-in-place can be interrupted.
+  if [ "${ANCHORS_ONLY:-0}" != "1" ]; then
+    # THE SAME TARGET THE RUN OWNS. Hard-coding the full artifact here meant a `FAMILY=n` invocation
+    # against a temporarily changed inventory destroyed the authoritative full-campaign record — the
+    # identical defect fixed on the normal early path, reintroduced by a second producer.
+    _vac_target="$ROOT_DIR/.mutation-campaign-summary"
+    [ -z "${ONLY:-}" ] || _vac_target="$_vac_target.partial"
+    _t="$(mktemp "$_vac_target.XXXXXX" 2>/dev/null)" \
+      && printf 'completed=0\nfamilies_declared=%s\nrefusals= mutation_inventory_pin_violated(%s)\n' "$N" "$N" > "$_t" \
+      && mv -f "$_t" "$_vac_target"
+  fi
+  _gate_lock_release 2>/dev/null || true
+  exit 2
+fi
 PASS=0; FAIL=0
+
+# ---------------------------------------------------------------------------
+# START-STATE CAPTURE for campaign integrity.
+#
+# A campaign's verdicts are only about the tree it measured. The interrupted run of 2026-08-20
+# printed 78 verdicts and stopped without a summary, and nothing distinguished that from a finished
+# run except a human noticing the missing line. These dimensions are recorded now, recomputed at the
+# end, and any difference NAMES itself and suppresses the completion record.
+_d(){ if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -c1-32; else shasum -a 256 | cut -c1-32; fi; }
+snap_driver()    { cat "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | _d; }
+snap_inventory() { grep -h '^add "' "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | _d; }
+snap_head()      { ts_head "$ROOT_DIR"; }
+# TREE STATE COMES FROM THE SHARED LIBRARY, not from a second implementation here. The runner had its
+# own copy of these and the two disagreed after each was fixed separately; see lib/treestate.sh.
+# shellcheck source=scripts/tests/lib/treestate.sh
+# PROVE IT LOADED. Sourcing failure is not caught by `set -uo pipefail`, and there is no `set -e`, so
+# a missing library would leave every ts_* call as "command not found" — and start/end comparisons of
+# two empty strings ACCEPT. This is a live risk for a file that is new in this change: omit it from
+# the commit and the campaign reconciles nothing while reporting completed=1.
+. "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null || true
+ts_require || { _gate_lock_release 2>/dev/null || true; exit 2; }
+snap_tracked()   { ts_tracked "$ROOT_DIR"; }
+snap_untracked() { ts_untracked "$ROOT_DIR"; }
+# Mutation targets are judged CLEAN, not merely unchanged: a mutation already present when the run
+# STARTS is invisible to a start-vs-end comparison, and that is exactly what a killed harness leaves.
+snap_dirty_targets() {
+  # shellcheck disable=SC2086
+  ts_dirty_files "$ROOT_DIR" $(printf '%s\n' "${FILE[@]}" | LC_ALL=C sort -u)
+}
+START_DRIVER="$(snap_driver)";    START_INV="$(snap_inventory)"
+START_HEAD="$(snap_head)";        START_TRACKED="$(snap_tracked)"
+START_UNTRACKED="$(snap_untracked)"; START_DIRTY="$(snap_dirty_targets)"
+FAMILIES_RUN=0
+
+# THE SHA OF THE BYTES ACTUALLY EXECUTED. The launcher hashes the driver before `exec`ing the
+# snapshot and passes it in; before this it computed that value and NOTHING READ IT, while the
+# artifact's `driver_sha` was a hash of the LIVE repository file taken later. An edit landing between
+# snapshot creation and that later capture produced a run executing old bytes while the artifact
+# recorded the new ones, with no mismatch anywhere. The executed bytes are the authority.
+EXECUTED_DRIVER_SHA="${CONCRETE_MUT_DRIVER_SHA:-unknown}"
+# The preamble that took the lock and discredited the old artifact must be the SAME file the snapshot
+# captured. If it is not, two versions of this driver contributed to one run.
+PREAMBLE_DRIVER_SHA="${CONCRETE_MUT_PREAMBLE_SHA:-unknown}"
+
+# ONE producer of the completion artifact, used by every exit path. Two producers would let one
+# path emit a shape the consumer does not check.
+#   write_summary <completed> <refusals>   -> nonzero if the artifact could not be written
+CAMPAIGN_ARTIFACT="$ROOT_DIR/.mutation-campaign-summary"
+write_summary() {
+  # THE ANCHOR GATE MUST NEVER TOUCH THE CAMPAIGN RECORD. `check_mutation_anchors.sh` invokes this
+  # driver with ANCHORS_ONLY=1, and it is registered in CI, so with an unguarded invalidation a cheap
+  # anchor check OVERWROTE an authoritative `completed=1` campaign artifact with a record for a
+  # campaign that was never attempted. An anchor check is not a campaign and has nothing to say here.
+  if [ "${ANCHORS_ONLY:-0}" = "1" ]; then return 0; fi
+  # A PARTIAL RUN WRITES ITS OWN FILE. `FAMILY=n` is a deliberate sample — and the registered
+  # phase6c gate runs two of them — but each one overwrote the authoritative full-campaign record
+  # with a one-family partial. The full record is evidence about all 81 families and a sample cannot
+  # be allowed to destroy it; the sample still gets a durable artifact, under its own name.
+  local target="$CAMPAIGN_ARTIFACT"
+  [ -z "${ONLY:-}" ] || target="$CAMPAIGN_ARTIFACT.partial"
+  # ATOMIC. A truncate-in-place write can be interrupted, leaving a half-written artifact that parses
+  # as a valid record with missing fields. Write beside it, then rename.
+  # mktemp, not a predictable "$file.$$.tmp": a pre-existing symlink at a guessable path would
+  # have the redirection below write THROUGH it and then be installed as the authority artifact.
+  local tmp
+  tmp="$(mktemp "$target.XXXXXX" 2>/dev/null)" || { echo "error: could not create a temp artifact" >&2; return 1; }
+  if ! { echo "completed=$1"
+         echo "families_declared=${N:-0}"
+         echo "families_run=${FAMILIES_RUN:-0}"
+         echo "verdicts=$(( ${PASS:-0} + ${FAIL:-0} ))"
+         echo "killed=${PASS:-0}"
+         # Split, because they are different strengths of evidence: only killed_by_gate shows the
+         # family's named gate is load-bearing. A build kill skips the gate entirely.
+         echo "killed_by_gate=${KILLED_BY_GATE:-0}"
+         echo "killed_by_build=${KILLED_BY_BUILD:-0}"
+         # The positive control's own result. A campaign whose baseline was not fully green has
+         # families that could not be judged, and the artifact must say so rather than leaving a
+         # reader to infer it from the kill count.
+         echo "baseline_gates_green=${BASELINE_GREEN:-0}/${BASELINE_TOTAL:-0}"
+         # The contract figure: how many families turned their NAMED gate red. Build kills are real
+         # results but leave their gate unexercised, so they are excluded here on purpose.
+         echo "gates_proven=${KILLED_BY_GATE:-0}/${N:-0}"
+         echo "failed=${FAIL:-0}"
+         echo "head=$START_HEAD"
+         # Both, because they answer different questions: what ran, and what the repository holds now.
+         echo "executed_driver_sha=$EXECUTED_DRIVER_SHA"
+         echo "preamble_driver_sha=$PREAMBLE_DRIVER_SHA"
+         echo "repo_driver_sha=$START_DRIVER"
+         echo "inventory_sha=$START_INV"
+         # Recorded, not merely compared. `head=` alone let a completed=1 artifact describe an
+         # uncommitted tree while appearing keyed to a commit.
+         echo "tracked_sha=$START_TRACKED"
+         # The digest of the tree actually TESTED (the disposable copy), not only of the repository
+         # around it.
+         echo "workspace_tracked_sha=${WORK_TRACKED:-unknown}"
+         echo "workspace_head=${WORK_HEAD:-unknown}"
+         # Both measured AFTER the baseline: these name the workspace the families were actually
+         # mutated in, which is not the workspace that was copied.
+         echo "workspace_untracked_sha=${WORK_UNTRACKED:-unknown}"
+         # RECOMPUTED AFTER THE BASELINE, not at copy time. Baseline gates call `require_fresh_binary`,
+         # which BUILDS — so the compiler captured before them is not the one families were judged
+         # against. And a run starting with NO compiler had `absent == absent`, passed the copy check,
+         # built one during the baseline, and then recorded `absent` as the identity of the compiler
+         # that produced every verdict.
+         # NAMED FOR WHAT IT IS. Calling this "the compiler actually tested" was incoherent for a
+         # campaign: every family that needs a build produces its OWN mutated binary, so 81 families
+         # test up to 81 different compilers and no single field can name them. What this digest does
+         # identify — and what is worth recording — is the PRISTINE compiler the baseline established,
+         # which is the common starting point every family was mutated away from.
+         echo "baseline_compiler_sha=${TESTED_BIN:-unknown}"
+         echo "compilers_tested=per-family-rebuilds"
+         echo "untracked_sha=$START_UNTRACKED"
+         [ -n "$2" ] && echo "refusals=$2"
+         true
+       } > "$tmp" 2>/dev/null; then
+    echo "error: could not write the campaign artifact at $tmp" >&2; rm -f "$tmp" 2>/dev/null; return 1
+  fi
+  # CHECKED. There is no `set -e` here, so an unchecked write failure would be followed by
+  # "summary written" and could still exit zero.
+  mv -f "$tmp" "$target" 2>/dev/null || {
+    echo "error: could not install the campaign artifact" >&2; rm -f "$tmp" 2>/dev/null; return 1; }
+  return 0
+}
+# INVALIDATE FIRST. Measured 2026-08-21: a run refused by the dirty-target guard exited before
+# reconciliation and left the PREVIOUS run's artifact in place, so reading the artifact after a
+# refused run reported the earlier run's verdicts. A stale completed=1 is worse than no artifact:
+# it answers a question about a run that never happened. Every early exit and every signal now
+# leaves an artifact that says completed=0.
+write_summary 0 " run_did_not_reach_reconciliation" || { _gate_lock_release; exit 2; }
+# REACHED_END is the live signal, replacing an unconditional `CAMPAIGN_INTERRUPTED=0` reset that sat
+# just before reconciliation and cleared whatever the signal trap had recorded — so `run_interrupted`
+# could never appear in a completed reconciliation. A deferred signal (bash defers a trap until the
+# running foreground command returns, which for `lake build` can be minutes) was silently forgotten.
+CAMPAIGN_INTERRUPTED=0
+REACHED_END=0
+trap 'CAMPAIGN_INTERRUPTED=1' INT TERM HUP
 
 # ---------------------------------------------------------------------------
 # ANCHORS_ONLY=1 — verify every family's OLD text still exists in its FILE, and exit. No mutation,
@@ -836,18 +1237,72 @@ PASS=0; FAIL=0
 # It reuses THIS FILE'S arrays rather than re-parsing them elsewhere. A second parser for the `add`
 # format would be a second producer of "what the anchors are", and would drift from the harness it
 # is supposed to describe — which is the defect class this repository keeps paying for.
+# ---------------------------------------------------------------------------
+# ONE DEFINITION OF "DOES THIS ANCHOR MATCH", used by both the applier and the anchor gate.
+#
+# There were two. `apply()` did an exact substring test in python; the ANCHORS_ONLY gate used
+# `grep -qF`, and `grep -F` with a MULTI-LINE pattern is an ALTERNATION, not a sequence — it matches
+# when any single line matches. So the gate reported "all 78 anchors match" while three multi-line
+# anchors could not be applied at all, which is precisely the inert-mutation state it exists to
+# detect. A checker weaker than the thing it checks converts a real failure into a green, and two
+# implementations of one question is the defect class this repository keeps paying for.
+#
+# Defined HERE, above both consumers: ANCHORS_ONLY runs and exits long before the old `apply()`
+# definition was reached, so a function defined further down would not exist yet.
+mut_anchor(){ # mode(check|apply) file oldfile [newfile]
+  MUT_MODE="$1" python3 - "$2" "$3" "${4:-}" <<'PYANCHOR'
+import os, sys
+mode = os.environ["MUT_MODE"]
+f, ofl, nfl = sys.argv[1], sys.argv[2], sys.argv[3]
+src = open(f).read(); old = open(ofl).read()
+n = src.count(old)
+if n < 1:
+    sys.stderr.write("anchor not found in %s\n" % f); sys.exit(1)
+# AMBIGUITY IS TESTED IN BOTH MODES, and it must be. An earlier version returned success from
+# `check` for any n >= 1 and only rejected n > 1 in `apply`, which made the "shared" applier still
+# WEAKER in check mode than in apply mode: ANCHORS_ONLY reported an anchor as matching that the
+# campaign then could not apply. That is the same defect shape as the `grep -F` alternation this
+# routine replaced — a checker weaker than the thing it checks — reintroduced one level down.
+# Exactly one occurrence is required: more than one means the anchor does not identify a unique
+# site, and mutating an arbitrary one of them tests something nobody chose.
+if n > 1:
+    sys.stderr.write("anchor is AMBIGUOUS in %s: %d occurrences\n" % (f, n)); sys.exit(2)
+if mode == "check":
+    sys.exit(0)
+new = open(nfl).read()
+open(f, "w").write(src.replace(old, new, 1))
+PYANCHOR
+}
+
 if [ "${ANCHORS_ONLY:-0}" = "1" ]; then
+  TMP_ANCHOR_OLD="$(mktemp)"
+  trap 'rm -f "$TMP_ANCHOR_OLD"; _rm_snapdir' EXIT
   echo "=== mutation anchor integrity: $N families ==="
+  # Uses `mut_anchor check` — the SAME routine the applier uses, not a second implementation.
   stale=0
-  for i in $(seq 0 $((N-1))); do
+  # ARITHMETIC LOOP, NOT `seq`. With `seq` absent the command substitution yields an EMPTY word list,
+  # the loop body never runs, `stale` stays 0, and this printed "all 81 anchors still match" — a
+  # vacuous green produced by a missing coreutil rather than by any property of the corpus.
+  for (( i=0; i<N; i++ )); do
     f="${FILE[$i]}"
     if [ ! -f "$f" ]; then
       echo "  FAIL ${NAME[$i]}: file $f no longer exists"; stale=$((stale+1)); continue
     fi
-    if ! grep -qF -- "${OLD[$i]}" "$f" 2>/dev/null; then
-      echo "  FAIL ${NAME[$i]}: anchor not found in $f — this mutation is INERT and ${GATE[$i]} is unproven"
-      stale=$((stale+1))
-    fi
+    printf '%s\n' "${OLD[$i]}" > "$TMP_ANCHOR_OLD"
+    perl -i -pe 'chomp if eof' "$TMP_ANCHOR_OLD"
+    # THE TWO FAILURE MODES ARE REPORTED SEPARATELY. They need different repairs: a missing anchor
+    # has drifted from the source and must be re-anchored, while an AMBIGUOUS one matches several
+    # sites and must be widened until it identifies the one site intended. Collapsing both into
+    # "anchor not found" sent me re-anchoring three mutations whose text was present all along.
+    mut_anchor check "$f" "$TMP_ANCHOR_OLD" 2>/dev/null; rc=$?
+    case "$rc" in
+      0) ;;
+      2) echo "  FAIL ${NAME[$i]}: anchor is AMBIGUOUS in $f (matches more than one site) — the campaign"
+         echo "       CANNOT apply it, so this mutation is INERT and ${GATE[$i]} is unproven"
+         stale=$((stale+1)) ;;
+      *) echo "  FAIL ${NAME[$i]}: anchor not found in $f — this mutation is INERT and ${GATE[$i]} is unproven"
+         stale=$((stale+1)) ;;
+    esac
   done
   if [ "$stale" -eq 0 ]; then
     echo "  ok   all $N anchors still match their targets"
@@ -871,15 +1326,19 @@ fi
 # below). Recovery depended on someone running `git status`, not on the tooling.
 # check_multi_kernel.sh already refuses to run dirty for exactly this reason; this is the
 # same guard.
-DIRTY=""
-for f in $(printf "%s\n" "${FILE[@]}" | sort -u); do
-  git diff --quiet -- "$f" 2>/dev/null || DIRTY="$DIRTY $f"
-done
-if [ -n "$DIRTY" ]; then
+# START_DIRTY is the single producer of this fact (snap_dirty_targets, above). This guard used to
+# recompute it with its own loop; two producers of "which targets are dirty" can disagree, and the
+# reconciliation dimension below was unreachable because this guard exits first.
+if [ -n "$START_DIRTY" ]; then
+  write_summary 0 " mutation_target_dirty_at_start($START_DIRTY)"
   echo "error: refusing to run — these files have uncommitted changes and would be" >&2
-  echo "       DESTROYED by the restore step:$DIRTY" >&2
+  echo "       DESTROYED by the restore step: $START_DIRTY" >&2
   echo "       Commit, stash, or 'git checkout --' them first. If a previous run was" >&2
   echo "       killed, verify the diff is yours before discarding it." >&2
+  # RELEASE ON THE REFUSAL PATH. The campaign acquires the lock above but its cleanup trap is not
+  # installed until the workspace exists, so every early exit between the two leaked the lock and the
+  # next gate refused with "REPOSITORY BUSY" until someone removed it by hand.
+  _gate_lock_release
   exit 2
 fi
 
@@ -899,11 +1358,139 @@ fi
 # copies in ~0.05s here. `.lake` comes along so the build in the copy is INCREMENTAL — only the
 # mutated file and its dependents recompile, which is the same work the in-place version did. `.git`
 # comes along so a family can restore its target between mutations without reaching outside.
-TMP=$(mktemp -d)
+# NAMESPACED, and swept on start. SIGKILL cannot be trapped, so a killed campaign always leaks its
+# workspace; measured 2026-08-21, two killed runs left 1.4 GB in /tmp because the 696 MB repo copy
+# lives inside this directory. A plain `mktemp -d` name cannot be swept safely — it is
+# indistinguishable from every other program's temp dir — so the workspace carries the owning PID in
+# its name and a marker naming itself, and only dirs matching BOTH whose owner is gone are removed.
+_MUT_TMP_PREFIX="${TMPDIR:-/tmp}/concrete-mut"
+_swept=0; _kept=0; _stale=""
+for _d in "$_MUT_TMP_PREFIX".*; do
+  [ -d "$_d" ] || continue
+  [ -f "$_d/.concrete-mutation-workspace" ] || { _kept=$((_kept+1)); continue; }
+  _opid="$(sed -n 's/^owner_pid=//p' "$_d/.concrete-mutation-workspace" 2>/dev/null | head -1)"
+  case "$_opid" in ''|*[!0-9]*) _kept=$((_kept+1)); continue;; esac
+  # A DEAD OWNER IS NOT ENOUGH — this is the same mistake `fresh.sh` refuses to make about the
+  # repository lock, and it would be worse here because the remedy is `rm -rf` rather than a refusal.
+  # The recorded pid is the campaign SHELL. Its `lake`/gate descendants outlive it when it is killed,
+  # and they are still building inside this directory. Deleting it underneath them destroys live work
+  # and produces a verdict about an artifact that stopped existing halfway through.
+  #
+  # So both must hold: the owner is gone AND nothing is currently working in the directory. Liveness
+  # is established by looking for any process whose cwd or open files sit under it. If that cannot be
+  # determined on this platform, the directory is KEPT — an unswept 700 MB copy costs disk, a wrongly
+  # swept one costs a live campaign.
+  if kill -0 "$_opid" 2>/dev/null; then _kept=$((_kept+1)); continue; fi
+  # NO AUTOMATIC RECLAIM — the same policy `fresh.sh` applies to the lock, and for a stronger reason:
+  # the remedy here is `rm -rf` of a 700 MB tree rather than a refusal.
+  #
+  # Two successive attempts to make automatic deletion safe were both wrong. Checking only the owner
+  # PID ignored the `lake` descendants that outlive a killed campaign shell. Adding a "did the /proc
+  # scan see anything" witness was INERT, because the scanning process always resolves its own cwd, so
+  # the witness was satisfied whether or not any other process was inspectable. There is also an
+  # unavoidable gap between scanning and deleting during which a descendant can enter the directory.
+  #
+  # So the default is to REPORT abandoned workspaces and let a human remove them. Disk is cheap;
+  # deleting a live campaign's workspace produces a verdict about an artifact that stopped existing
+  # halfway through. CONCRETE_MUT_SWEEP=1 opts in explicitly for an operator who has just checked.
+  if [ "${CONCRETE_MUT_SWEEP:-0}" != "1" ]; then
+    _stale="$_stale $_d"; _kept=$((_kept+1)); continue
+  fi
+  _busy=unknown
+  if [ -d /proc ]; then
+    # SEEN-ANYTHING is tracked separately from FOUND-ANYTHING. Initialising to `no` and ignoring every
+    # failed readlink meant a restricted /proc, or a permissions failure, inspected nothing, stayed
+    # `no`, and licensed `rm -rf` of a directory a descendant might still be using.
+    _busy=no; _seen=0
+    # CWD AND OPEN DESCRIPTORS. Scanning only `cwd` missed the case that matters most: a `lake`
+    # process whose working directory is elsewhere but which holds an open .olean under this
+    # workspace. Deleting it then destroys a live build's inputs mid-write.
+    for _c in /proc/[0-9]*/cwd /proc/[0-9]*/fd/*; do
+      _t="$(readlink "$_c" 2>/dev/null)" || continue
+      _seen=$((_seen+1))
+      case "$_t" in "$_d"|"$_d"/*) _busy=yes; break;; esac
+    done
+    # Our own process has a cwd, so a scan that resolved NOTHING did not work.
+    [ "$_busy" = "yes" ] || [ "$_seen" -gt 0 ] || _busy=unknown
+  elif command -v lsof >/dev/null 2>&1; then
+    # `lsof +D` exits nonzero BOTH when nothing is open under the path and when it could not look
+    # (permissions, a vanished mount). Treating every nonzero as "not busy" turns an inspection
+    # ERROR into a licence to delete, so only an explicit empty result counts as not-busy.
+    if _lsof_out="$(lsof -t +D "$_d" 2>/dev/null)"; then
+      if [ -n "$_lsof_out" ]; then _busy=yes; else _busy=no; fi
+    else
+      _busy=unknown
+    fi
+  fi
+  if [ "$_busy" = "no" ]; then rm -rf "$_d" && _swept=$((_swept+1))
+  else _kept=$((_kept+1)); fi
+done
+# Reported, not silent: "no output" must not be the only evidence that a sweep happened.
+echo "workspace sweep: reclaimed $_swept abandoned workspace(s), left $_kept in place"
+if [ -n "${_stale:-}" ]; then
+  echo "  ABANDONED workspaces found (owner gone). NOT deleted automatically — verify nothing is"
+  echo "  working in them, then remove explicitly, or re-run with CONCRETE_MUT_SWEEP=1:"
+  for _d in $_stale; do echo "      rm -rf $_d   ($(du -sh "$_d" 2>/dev/null | cut -f1))"; done
+fi
+# CHECKED, for the same reason as the snapshot directory above: an empty $TMP makes WORK="/repo".
+TMP=$(mktemp -d "$_MUT_TMP_PREFIX.$$.XXXXXX") || {
+  echo "FATAL: could not create the campaign workspace directory" >&2; _gate_lock_release; exit 2; }
+[ -n "$TMP" ] && [ -d "$TMP" ] || {
+  echo "FATAL: campaign workspace directory is not usable" >&2; _gate_lock_release; exit 2; }
 WORK="$TMP/repo"
-mkdir -p "$WORK"
-cp -a "$ROOT_DIR/." "$WORK/" 2>/dev/null || { echo "error: could not create the isolated workspace" >&2; exit 2; }
-[ -d "$WORK/.git" ] || { echo "error: isolated workspace has no .git; per-family restore would not work" >&2; exit 2; }
+mkdir -p "$WORK" || { echo "FATAL: could not create $WORK" >&2; _gate_lock_release; exit 2; }
+printf 'owner_pid=%s\nstarted_head=%s\n' "$$" "$START_HEAD" > "$TMP/.concrete-mutation-workspace"
+cp -a "$ROOT_DIR/." "$WORK/" 2>/dev/null || { echo "error: could not create the isolated workspace" >&2; _gate_lock_release; exit 2; }
+[ -d "$WORK/.git" ] || { echo "error: isolated workspace has no .git; per-family restore would not work" >&2; _gate_lock_release; exit 2; }
+
+# THE ACTIVATED WORKSPACE IS BOUND TO THE RECORDED STATE.
+#
+# Start state is captured, and the `cp -a` happens later. The lock stops other GATES, not an editor or
+# a `git` command — so a tracked edit landing between capture and copy, and reverted before
+# reconciliation, was copied into the workspace, TESTED, and then invisible to the start/end
+# comparison. A textbook ABA: the campaign would report verdicts about bytes different from the ones
+# its own artifact names. Digesting the COPY closes it, because the copy is what gets tested.
+# ALL THREE DIMENSIONS, because `ts_tracked` hashes `git diff HEAD` — and every clean checkout has
+# the SAME empty-diff digest. Comparing only that left two ordinary ABA paths open: HEAD moving between
+# capture and copy (the new clean checkout copies to an identical diff digest) and an untracked file
+# appearing, being copied, influencing the build, and vanishing before reconciliation.
+# THE COMPILER BINARY IS BOUND TOO. `cp -a` copies IGNORED content — `.lake`, dependency trees,
+# generated binaries — and those are build inputs for every gate that runs here, while
+# `ts_untracked` deliberately excludes ignored paths. So a build or package update landing between
+# capture and copy changed what was TESTED while all three tracked/untracked/head digests still
+# matched. Hashing the whole 627 MB `.lake` tree per run is not affordable; the compiler binary is the
+# input that actually decides gate verdicts, so it is bound explicitly and the residual is stated
+# rather than implied.
+_bin_sha() { [ -f "$1/.lake/build/bin/concrete" ] \
+  && { sha256sum "$1/.lake/build/bin/concrete" 2>/dev/null || shasum -a 256 "$1/.lake/build/bin/concrete"; } | cut -c1-32 \
+  || echo "absent"; }
+WORK_TRACKED="$(ts_tracked "$WORK")"
+WORK_HEAD="$(ts_head "$WORK")"
+WORK_UNTRACKED="$(ts_untracked "$WORK")"
+WORK_BIN="$(_bin_sha "$WORK")"
+ROOT_BIN="$(_bin_sha "$ROOT_DIR")"
+if [ "$WORK_BIN" != "$ROOT_BIN" ]; then
+  echo "error: the workspace compiler binary does not match the repository's." >&2
+  echo "       repository: $ROOT_BIN" >&2
+  echo "       workspace:  $WORK_BIN" >&2
+  echo "       Something rebuilt between the snapshot and the copy, so gate verdicts would describe" >&2
+  echo "       a different compiler from the one this run records. Refusing." >&2
+  write_summary 0 " workspace_binary_diverged"
+  rm -rf "$TMP"; _gate_lock_release; exit 2
+fi
+if [ "$WORK_TRACKED" != "$START_TRACKED" ] \
+   || [ "$WORK_HEAD" != "$START_HEAD" ] \
+   || [ "$WORK_UNTRACKED" != "$START_UNTRACKED" ]; then
+  echo "error: the workspace copy does not match the recorded repository state." >&2
+  echo "       recorded: head=$START_HEAD tracked=$START_TRACKED untracked=$START_UNTRACKED" >&2
+  echo "       copied:   head=$WORK_HEAD tracked=$WORK_TRACKED untracked=$WORK_UNTRACKED" >&2
+  echo "       Something wrote to the tree between the snapshot and the copy, so any verdict would" >&2
+  echo "       describe different bytes from those this run records. Refusing." >&2
+  write_summary 0 " workspace_copy_diverged"
+  rm -rf "$TMP"
+  _gate_lock_release
+  exit 2
+fi
 # INT/TERM as well as EXIT: plain EXIT did not restore the tree when this script was
 # killed (observed 2026-07-31, Layout.lean left mutated). The handler re-raises so the
 # exit status still reflects the signal.
@@ -931,7 +1518,10 @@ cp -a "$ROOT_DIR/." "$WORK/" 2>/dev/null || { echo "error: could not create the 
 # runner's start/end reconciliation catches it in the SAME run. In-place mutation cannot do better
 # than that; only isolating the mutation into a disposable worktree can, which is tracked separately.
 MUT_FILES_SORTED="$(printf "%s\n" "${FILE[@]}" | sort -u)"
-TREE_HASH_START="$(git rev-parse HEAD 2>/dev/null):$(printf '%s\n' "$MUT_FILES_SORTED" | xargs -r git hash-object 2>/dev/null | tr '\n' ' ')"
+# TREE_HASH_START was computed here and never read by anything — a dead producer of an apparent
+# integrity fact, which reads as protection when scanning the file. The live checks are
+# `snap_dirty_targets` (start guard and end reconciliation) and `dispose_all`'s verification that the
+# real tree was never touched; both are compared against something.
 
 # DISPOSE, don't repair. The working tree is never mutated now, so there is nothing to restore —
 # only a copy to throw away. The verification below therefore asserts something stronger than "the
@@ -939,16 +1529,27 @@ TREE_HASH_START="$(git rev-parse HEAD 2>/dev/null):$(printf '%s\n' "$MUT_FILES_S
 # the previous design could not make at all.
 dispose_all(){
   rm -rf "$TMP"
-  local touched=""
-  for f in $MUT_FILES_SORTED; do
-    git diff --quiet -- "$f" 2>/dev/null || touched="$touched $f"
-  done
+  # The driver snapshot is removed HERE too. Its own EXIT trap (set before the re-exec) is overwritten
+  # by this trap and by the ANCHORS_ONLY trap, so on a normal run nothing removed it and every
+  # invocation — including every cheap anchor check — left one behind.
+  _rm_snapdir
+  # Release the lock this campaign took, if it took one. Only the creator's release does anything.
+  [ "${CAMPAIGN_HELD_LOCK:-0}" = "1" ] && _gate_lock_release
+  # THE SHARED PRODUCER, not a private `git diff`. This last-line check — the one that asserts the
+  # real tree was never touched — used the index-relative form, so a STAGED late edit to a mutation
+  # target passed it while the campaign's own guard would have caught the same change.
+  local touched
+  # shellcheck disable=SC2086
+  touched="$(ts_dirty_files "$ROOT_DIR" $MUT_FILES_SORTED)"
   if [ -n "$touched" ]; then
     echo "" >&2
     echo "WORKING TREE WAS MUTATED:$touched" >&2
     echo "  Mutations are supposed to be confined to a disposable copy. If these files differ, the" >&2
     echo "  isolation was bypassed — inspect with 'git diff' before running anything else." >&2
-    return 1
+    # EXIT EXPLICITLY. `return 1` from a function called in an EXIT trap does NOT change the process
+    # status, so a run that detected a mutated real tree still exited 0 and reported success. Calling
+    # `exit` inside the trap does set it.
+    exit 1
   fi
   return 0
 }
@@ -957,25 +1558,203 @@ trap 'dispose_all; trap - INT TERM HUP; kill -s INT $$' INT
 trap 'dispose_all; trap - INT TERM HUP; kill -s TERM $$' TERM
 trap 'dispose_all; trap - INT TERM HUP; kill -s HUP $$' HUP
 
-apply(){ # file oldfile newfile
-  python3 - "$1" "$2" "$3" <<'PY'
-import sys
-f,ofl,nfl=sys.argv[1],sys.argv[2],sys.argv[3]
-src=open(f).read(); old=open(ofl).read(); new=open(nfl).read()
-assert src.count(old)>=1, f"OLD not found in {f}"
-open(f,'w').write(src.replace(old,new,1))
-PY
+apply(){ mut_anchor apply "$1" "$2" "$3"; }
+
+# RESTORE IS VERIFIED, NOT ATTEMPTED. Every per-family restore used to be
+# `git -C "$WORK" checkout -- "$file" 2>/dev/null` with its status discarded. A restore that fails
+# leaves the previous family's mutation ACTIVE in the workspace, so every later family runs its gate
+# against an accumulating pile of mutations and its KILLED/SURVIVED verdict describes a tree nobody
+# chose. `mutation_target_not_restored` cannot see this: it inspects the real repository, not $WORK.
+# A workspace that will not restore invalidates the rest of the campaign, so this is fatal, not a
+# warning.
+WORK_DIRTY=0
+restore_work(){ # file
+  if ! git -C "$WORK" checkout -- "$1" 2>"$TMP/rerr"; then
+    echo "  FATAL: could not restore $1 in the workspace ($(tr '\n' ' ' < "$TMP/rerr"))" >&2
+    echo "         Every later family would run against this mutation. Aborting the campaign." >&2
+    WORK_DIRTY=1; return 1
+  fi
+  # `git checkout` can report success while leaving the file modified if the pathspec did not match.
+  if ! git -C "$WORK" diff --quiet -- "$1" 2>/dev/null; then
+    echo "  FATAL: $1 is still modified after a successful-looking restore. Aborting." >&2
+    WORK_DIRTY=1; return 1
+  fi
+  return 0
 }
+
+# THE CLEAN-GATE POSITIVE CONTROL — the pairing that stops "reject all" from passing.
+#
+# The campaign ran ONLY the mutated gate and read every nonzero exit as a kill. Nothing established
+# that the gate PASSES on an unmutated workspace, so a gate that was broken for any unrelated reason
+# — a missing fixture, a stale lock left by an earlier gate, a pre-existing failure, a build lock —
+# was credited as mutation evidence. Measured 2026-08-21: run directly without an inherited
+# repository lock, check_corecheck_boundary.sh exits 0 and LEAVES $WORK/.gate.lock behind (fresh.sh
+# installs no release), after which check_copy_judgment.sh exits 1 with "REPOSITORY BUSY" — a
+# manufactured kill that names the right gate for entirely the wrong reason.
+#
+# MEASURED ONCE, UP FRONT, ON A PRISTINE WORKSPACE — not lazily per family.
+#
+# The lazy version was unsound and the reason is subtle: `restore_work` restores the SOURCE file, but
+# the `.lake` outputs built from the previous family's mutation stay behind. A gate first encountered
+# midway through the campaign would therefore take its "clean" baseline against compiled artifacts
+# built from a mutation — and some gates never rebuild, so nothing would correct it
+# (`check_dependency_edges.sh:63` drives `lake env lean` directly and does not call
+# `require_fresh_binary`). The baseline has to be taken while the workspace is genuinely untouched,
+# which is only true before the first mutation is applied.
+#
+# Cost: one run per DISTINCT gate — 33 for the current 81 families, not 81.
+declare -A CLEAN_GATE
+# DERIVED FROM EACH GATE'S OWN CLEAN RUN, not from a static list. 209 of 214 gates in this tree emit a
+# `NAME: PASS=n FAIL=m` verdict line, so "no verdict line" is strong evidence a failure was
+# infrastructural rather than a gate disagreeing — but only for a gate that emits one in the first
+# place. Measuring it per gate during the pristine baseline makes the requirement a fact about that
+# gate instead of an assumption about all of them.
+# WHAT THE GATE PRINTS LAST, captured from its own pristine run.
+#
+# The first version of this control accepted any `PASS=n`/`FAIL=n` ANYWHERE in the log, which
+# authenticated a NESTED producer: `run_tests.sh` prints an inner `ORACLE: PASS=… FAIL=…` early and
+# only later reaches its own `passed:`/`failed:` summary, so an unrelated failure after that oracle
+# output still looked like a completed gate run. The question is not "does the log contain something
+# verdict-shaped" but "did this gate reach the end it reaches when it succeeds" — so the control keys
+# on the last non-empty line's first token, measured per gate on pristine source.
+declare -A CLEAN_GATE_VERDICT
+declare -A CLEAN_GATE_TAIL
+# THE LAST LINE WITH ITS NUMBERS NORMALISED, not its first token.
+#
+# Keying on the first token was inert for a real corpus gate: `run_tests.sh`'s final token is
+# `summary`, and EVERY premature exit prints "no summary was produced" — which contains `summary`. So
+# the control accepted exactly the runs it existed to reject. Comparing the whole last line fails for
+# the opposite reason (the counts in it change under mutation), so digits are normalised to `#` and the
+# SHAPE of the line is what must match.
+_tail_shape() { awk 'NF {last=$0} END {gsub(/[0-9]+/, "#", last); print last}' "$1" 2>/dev/null; }
+# ONE PREDICATE FOR "IS THIS RED A GATE VERDICT", used by BOTH red legs.
+#
+# The first leg grew these checks one review round at a time; the confirming leg was written later and
+# had none of them, so the confirmation was weaker than the thing it confirmed. Two implementations of
+# one question again — the defect class this whole arc keeps rediscovering — so there is now one.
+_RED_LEG_WHY=""
+_red_leg_is_gate_evidence() { # log rc gate
+  _RED_LEG_WHY=""
+  if [ "$2" -eq "$_DIED_EARLY_RC" ]; then
+    _RED_LEG_WHY="exited $_DIED_EARLY_RC, the documented died-early code"; return 1
+  fi
+  if grep -q 'GATE-PRECONDITION-FAILED:' "$1" 2>/dev/null; then
+    _RED_LEG_WHY="$(grep -m1 -o 'GATE-PRECONDITION-FAILED:.*' "$1")"; return 1
+  fi
+  if [ "${CLEAN_GATE_VERDICT[$3]:-no}" = "yes" ] && ! _reached_own_end "$1" "$3"; then
+    _RED_LEG_WHY="never reached the end it reaches on pristine source"; return 1
+  fi
+  return 0
+}
+
+_reached_own_end() { # log gate
+  local want="${CLEAN_GATE_TAIL[$2]:-}"
+  [ -n "$want" ] || return 0            # nothing measured: cannot require anything
+  [ "$(_tail_shape "$1")" = "$want" ]
+}
+# EXIT 97 IS "DIED EARLY", BY CONTRACT. `run_tests.sh` documents 97 as a code no assertion produces,
+# emitted by an EXIT trap when its summary file was never written, precisely so "died early" cannot be
+# read as "failed". Any gate exiting 97 therefore did not reach a verdict.
+_DIED_EARLY_RC=97
+# THE PRISTINE TREE MUST BUILD BEFORE ANY FAMILY RUNS.
+#
+# Some gates deliberately perform no build (check_vc_bridge_register.sh, check_transform_register.sh),
+# so for their families the FIRST build of the run is the MUTATED one — and its failure is accepted as
+# a kill. With `reference-division` and `transform-has-effect` on the declared build-kill allowlist, an
+# already-unbuildable pristine workspace would produce KILLED, PARTIAL PASS and exit 0 without anything
+# having been tested: the same shape as a CI job that is green because it never ran.
+# VALIDATED, because these producers signal failure IN BAND and return status 0. Re-measuring without
+# checking would write a `TREESTATE-UNAVAILABLE:*` marker — or an empty string — straight into the
+# authority artifact and still permit `completed=1`: an ordinary mktemp, sort, git or hashing failure
+# during the remeasurement would then certify a workspace nobody measured. The start/end reconciliation
+# validates only the START_* values; these are separate ones.
+_require_measured() { # value label
+  case "${1:-}" in
+    *TREESTATE-UNAVAILABLE*|"")
+      echo "error: post-baseline workspace measurement failed ($2): '${1:-<empty>}'." >&2
+      echo "       Refusing: the artifact would name a workspace that was never measured." >&2
+      write_summary 0 " workspace_remeasure_failed($2)"
+      rm -rf "$TMP"; _gate_lock_release; exit 2 ;;
+  esac
+}
+
+baseline_pristine_build(){
+  printf "baseline: pristine workspace builds ... "
+  if ( cd "$WORK" && "$LAKE" build ) >"$TMP/pristine_build.log" 2>&1; then
+    echo "ok"; return 0
+  fi
+  echo "FAILED"
+  echo "error: the UNMUTATED workspace does not build, so every build-kill verdict would be" >&2
+  echo "       meaningless — a mutation cannot be blamed for a failure that predates it." >&2
+  echo "       see $TMP/pristine_build.log" >&2
+  return 1
+}
+
+baseline_all_gates(){
+  local g total=0 red=0
+  local -a uniq=()
+  # Distinct gates, in inventory order.
+  for g in "${GATE[@]}"; do
+    [ -z "${CLEAN_GATE[$g]:-}" ] || continue
+    CLEAN_GATE[$g]=pending; uniq+=("$g")
+  done
+  total=${#uniq[@]}
+  echo "=== clean-gate baseline: $total distinct gates on the pristine workspace ==="
+  for g in "${uniq[@]}"; do
+    if ( cd "$WORK" && bash "scripts/tests/$g" ) >"$TMP/clean.log" 2>&1; then
+      CLEAN_GATE[$g]=yes
+      _note_freshness_taint "$TMP/clean.log"
+      CLEAN_GATE_TAIL[$g]="$(_tail_shape "$TMP/clean.log")"
+      if [ -n "${CLEAN_GATE_TAIL[$g]}" ]; then CLEAN_GATE_VERDICT[$g]=yes; else CLEAN_GATE_VERDICT[$g]=no; fi
+    else
+      CLEAN_GATE[$g]=no; red=$((red+1))
+      echo "  RED ON CLEAN: $g — every family naming it will be reported INVALID, not killed"
+    fi
+  done
+  # Reported, never silent: a baseline that measured nothing must not look like a baseline that passed.
+  echo "  baseline: $((total-red))/$total gates green on the unmutated workspace"
+  BASELINE_GREEN=$((total-red)); BASELINE_TOTAL=$total; BASELINE_RED=$red
+}
+gate_clean_ok(){ # gate-path (bare filename) — was this gate green on the PRISTINE workspace?
+  [ "${CLEAN_GATE[$1]:-no}" = "yes" ]
+}
+
+# Attribution counters. A build kill is a real and strong result, but it is NOT evidence that the
+# family's named gate is load-bearing, because the gate is skipped once the build already failed.
+KILLED_BY_GATE=0; KILLED_BY_BUILD=0
+UNDECLARED_BUILD_KILLS=""
+FRESHNESS_UNVERIFIED=0
+_note_freshness_taint() { grep -q 'GATE-FRESHNESS-UNVERIFIED' "$1" 2>/dev/null && FRESHNESS_UNVERIFIED=1; return 0; }
+
+# A BUILD KILL MUST BE DECLARED FOR THAT FAMILY.
+#
+# Counting build kills separately was not enough: they still entered PASS, still counted in `killed=`,
+# and still permitted `completed=1` — so the gate could report full coverage while a family's named
+# gate had never run. For these three the type system (or a proof) rejecting the mutation IS the
+# intended outcome, and each says so in its own comment; the mutation is unrepresentable, which is
+# stronger than a gate going red. For any OTHER family, a build kill means the mutation broke the
+# build instead of exercising the rule, and the run must say so rather than bank it as coverage.
+EXPECT_BUILD_KILL=" trap-quotient-condition reference-division transform-has-effect "
+build_kill_declared(){ case "$EXPECT_BUILD_KILL" in *" $1 "*) return 0;; *) return 1;; esac; }
 
 run_one(){
   local i="$1"
+  [ "$WORK_DIRTY" = "0" ] || return 0
+  FAMILIES_RUN=$((FAMILIES_RUN + 1))
   local nm="${NAME[$i]}" file="${FILE[$i]}" gate="scripts/tests/${GATE[$i]}" needs="${BUILD[$i]}"
   printf '%s\n' "${OLD[$i]}" > "$TMP/old"; printf '%s\n' "${NEW[$i]}" > "$TMP/new"
   # strip the trailing newline the printf added (match raw substring)
   perl -i -pe 'chomp if eof' "$TMP/old" "$TMP/new"
   echo "--- family $((i+1))/$N: $nm ($file -> ${GATE[$i]}) ---"
+  # THE POSITIVE CONTROL was measured before this campaign mutated anything. A gate that is already
+  # red proves nothing by going red again.
+  if ! gate_clean_ok "${GATE[$i]}"; then
+    echo "  FAIL $nm: INVALID — ${GATE[$i]} does not pass on the UNMUTATED workspace, so its failure"
+    echo "       under mutation is not evidence. Fix the gate (or its fixtures/lock) first."
+    FAIL=$((FAIL+1)); return
+  fi
   if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
-    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); git -C "$WORK" checkout -- "$file" 2>/dev/null; return
+    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); restore_work "$file"; return
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
@@ -1001,10 +1780,24 @@ run_one(){
       #
       # So: look for a GENUINE error first. Only a failure that is lint-and-nothing-else is
       # an invalid mutation.
-      if grep -qE "unsolved goals|[Tt]ype mismatch|Unknown identifier|Unknown constant|\
-failed to synthesize|Missing cases|declaration uses 'sorry'" "$TMP/build.log"; then
+      # ATTRIBUTED WITHIN THE MUTATED FILE'S OWN DIAGNOSTIC BLOCK.
+      #
+      # This was two INDEPENDENT whole-log searches — "is there a genuine error anywhere" and, inside
+      # it, "is there an error header naming this file anywhere". Both can be satisfied by different
+      # diagnostics: a harmless lint on the target file plus an unrelated file's type mismatch scored
+      # as a kill for this mutation. The two facts must come from the SAME diagnostic.
+      #
+      # A Lean diagnostic is a `path:line:col: error:` header followed by an indented message, so the
+      # reason legitimately appears on later lines. This keeps the blocks whose header names the
+      # mutated file — header until the next header — and searches only inside them.
+      if awk -v f="$file" '
+           /^[^ ].*:[0-9]+:[0-9]+: (error|warning)/ { inblk = (index($0, f ":") == 1) }
+           inblk { print }
+         ' "$TMP/build.log" \
+           | grep -qE "unsolved goals|[Tt]ype mismatch|Unknown identifier|Unknown constant|\
+failed to synthesize|Missing cases|declaration uses 'sorry'"; then
         killed=1
-        note="(killed by build — type system or a proof rejected the mutation)"
+        note="(killed by build — the type system or a proof rejected the mutation in $file)"
       elif grep -qE "unused variable|This simp argument is unused|unused binding" "$TMP/build.log"; then
         invalid=1
         note="(INVALID mutation — build failed on an unused-binding lint, not on the rule; \
@@ -1018,32 +1811,233 @@ rather than counting it as a kill)"
   fi
   if [ "$invalid" -eq 1 ]; then
     echo "  FAIL $nm $note"; FAIL=$((FAIL+1))
-    git -C "$WORK" checkout -- "$file" 2>/dev/null
+    restore_work "$file"
     return
   fi
   if [ "$killed" -eq 0 ]; then
-    if ( cd "$WORK" && bash "$gate" ) >"$TMP/gate.log" 2>&1; then
+    _gate_rc=0
+    ( cd "$WORK" && bash "$gate" ) >"$TMP/gate.log" 2>&1 || _gate_rc=$?
+    if [ "$_gate_rc" -eq 0 ]; then
       note="(SURVIVED — gate stayed green)"
     else
-      killed=1; note="(killed by ${GATE[$i]})"
+      # THE GATE MAY HAVE FAILED BECAUSE IT BUILT. Many gates call `require_fresh_binary`, which runs
+      # `lake build`, so a family declared BUILD=no can still die of a compile error — and the
+      # diagnostic classifier above only runs for BUILD=yes. Every such death was blindly credited as
+      # "killed by <gate>" although the gate's assertions need never have executed. The gate log is
+      # therefore checked for a compile failure attributable to the mutated file before the kill is
+      # attributed to the gate.
+      # THE GATE'S FAILURE MUST BE AUTHENTICATED BEFORE IT COUNTS AS RULE EVIDENCE.
+      #
+      # Three ways a nonzero exit can mean something other than "this rule is load-bearing":
+      #
+      #  1. The gate refused to START. Gates that call `require_fresh_binary` exit before running any
+      #     assertion when the build fails, the binary is missing, there is no toolchain, or the
+      #     repository is busy — and the build output is filtered to `^error` lines, so the compiler
+      #     diagnostic naming the mutated file never appears in this log. A previous attempt to detect
+      #     that by scanning for the diagnostic was INERT for exactly this reason. `fresh.sh` now emits
+      #     a stable `GATE-PRECONDITION-FAILED:` marker instead.
+      #  2. The gate built the mutated source itself and the compile failed — detectable as a
+      #     diagnostic block naming the mutated file.
+      #  3. Infrastructure: ENOSPC, a missing gate script, a shell syntax error, an exhausted inode
+      #     table. Any of these produced a nonzero exit and was scored as a rule kill. The check is a
+      #     positive one: a gate that produced a verdict line on PRISTINE source must produce one here
+      #     too, otherwise it did not get far enough to disagree with anything.
+      # THE SHARED PREDICATE IS CALLED HERE TOO. I claimed both legs used it and only the confirming
+      # leg did — this one still carried its own inline copy, and the two had ALREADY diverged (only
+      # this one classified attributable in-gate build failures). One question, one implementation.
+      #
+      # A precondition failure is never rule evidence, DECLARED or not: a declaration says "the type
+      # system rejecting this mutation is the intended outcome", not "any infrastructure failure will
+      # do".
+      # ORDER: the SPECIFIC evidence first. An in-gate compile failure attributable to the mutated file
+      # is a real (build) kill, and it typically also fails the generic predicate — because a gate that
+      # died compiling never reaches its usual end. Testing the predicate first would therefore reclass
+      # legitimate build kills as INVALID. Fail-closed either way, but wrong, and it would push the
+      # operator to declare families that do not need declaring.
+      if awk -v f="$file" '
+           /^[^ ].*:[0-9]+:[0-9]+: (error|warning)/ { inblk = (index($0, f ":") == 1) }
+           inblk { print }
+         ' "$TMP/gate.log" \
+           | grep -qE "unsolved goals|[Tt]ype mismatch|Unknown identifier|Unknown constant|\
+failed to synthesize|Missing cases|declaration uses 'sorry'"; then
+        killed=1
+        note="(killed by build INSIDE ${GATE[$i]} — the gate's own assertions did not run)"
+        KILLED_BY_BUILD=$((KILLED_BY_BUILD+1))
+        build_kill_declared "$nm" || UNDECLARED_BUILD_KILLS="$UNDECLARED_BUILD_KILLS $nm"
+      elif ! _red_leg_is_gate_evidence "$TMP/gate.log" "$_gate_rc" "${GATE[$i]}"; then
+        # The SHARED predicate — died-early, precondition failure, or never reached its own end.
+        invalid=1
+        note="(INVALID — ${GATE[$i]} did not produce a gate verdict: $_RED_LEG_WHY)"
+      else
+        # COMPLETION IS NOT CAUSATION — the kill is CONFIRMED against the same gate on restored source.
+        #
+        # Reaching the expected final-line shape proves the gate ran to a verdict; it says nothing
+        # about WHY the verdict was red. Gates can turn an unrelated failure into an ordinary failed
+        # assertion and still finish normally — `check_dependency_edges.sh` swallows a `lake env lean`
+        # failure with `|| true` and reports it as a `no`, then prints its usual summary — so a
+        # transient probe, tool or disk failure after the baseline had the right shape and was scored
+        # as a mutation kill.
+        #
+        # The paired control is adjacent rather than up front: restore the file, rebuild if this family
+        # needs one, and run the SAME gate again. Red with the mutation and green without it, measured
+        # minutes apart, is causal evidence. Still red without it means the gate is red for reasons of
+        # its own and this family proves nothing. The cost is one extra gate run (and one rebuild for
+        # BUILD=yes families) per killed family, which is the right price for the difference between
+        # "went red" and "went red BECAUSE of this".
+        # RED, GREEN, RED — the failure must REPRODUCE, not merely coincide.
+        #
+        # One red-with and one green-without is not causal evidence: a one-shot transient during the
+        # mutated run, gone by the restored run, produces exactly that pattern. And the green step must
+        # itself be authenticated, or an unrelated early death during it would read as "still red".
+        # So the sequence is: restore (must go GREEN and reach its own end), re-apply, and run again
+        # (must go RED again). A transient would have to fire twice, in the mutated runs only.
+        _confirm_ok=1
+        if ! restore_work "$file"; then
+          invalid=1; note="(INVALID — could not restore $file to confirm the kill)"; _confirm_ok=0
+        fi
+        if [ "$_confirm_ok" = "1" ] && [ "$needs" = yes ]; then
+          ( cd "$WORK" && "$LAKE" build ) >"$TMP/confirm_build.log" 2>&1 || _confirm_ok=0
+        fi
+        if [ "$_confirm_ok" = "1" ]; then
+          _clean_rc=0
+          ( cd "$WORK" && bash "$gate" ) >"$TMP/confirm_clean.log" 2>&1 || _clean_rc=$?
+          if [ "$_clean_rc" -ne 0 ] || ! _reached_own_end "$TMP/confirm_clean.log" "${GATE[$i]}"; then
+            invalid=1
+            note="(INVALID — ${GATE[$i]} did not go cleanly green after restoring $file, so its \
+failure under mutation is not attributable to the mutation)"
+            _confirm_ok=0
+          fi
+        fi
+        if [ "$_confirm_ok" = "1" ]; then
+          if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr2"; then
+            invalid=1; note="(INVALID — could not re-apply the mutation to reproduce the kill)"; _confirm_ok=0
+          fi
+        fi
+        if [ "$_confirm_ok" = "1" ] && [ "$needs" = yes ]; then
+          # NOT `|| true`. Ignoring this rebuild meant the second red leg could be produced by a
+          # FAILED BUILD rather than by the gate — and the leg below then accepted any nonzero exit
+          # without the exit-97, precondition, or end-shape checks the FIRST red leg gets. The
+          # confirmation was weaker than the thing it was confirming.
+          ( cd "$WORK" && "$LAKE" build ) >"$TMP/confirm_build2.log" 2>&1 || {
+            invalid=1
+            note="(INVALID — the mutated tree did not rebuild for the confirming red leg, so the \
+kill could not be reproduced under the same conditions)"
+            _confirm_ok=0
+          }
+        fi
+        if [ "$_confirm_ok" = "1" ]; then
+          _red2_rc=0
+          ( cd "$WORK" && bash "$gate" ) >"$TMP/confirm_red.log" 2>&1 || _red2_rc=$?
+          if [ "$_red2_rc" -eq 0 ]; then
+            invalid=1
+            note="(INVALID — ${GATE[$i]} was GREEN when the mutation was re-applied, so the earlier \
+red was not reproducible and is not rule evidence)"
+          elif ! _red_leg_is_gate_evidence "$TMP/confirm_red.log" "$_red2_rc" "${GATE[$i]}"; then
+            # The SAME authentication the first red leg gets: a reproduced failure must be the gate
+            # disagreeing, not a precondition failure, an early death, or a run that never finished.
+            invalid=1
+            note="(INVALID — the confirming red leg of ${GATE[$i]} was not a gate verdict: \
+$_RED_LEG_WHY)"
+          else
+            killed=1
+            note="(killed by ${GATE[$i]}; reproduced red/green/red)"
+            KILLED_BY_GATE=$((KILLED_BY_GATE+1))
+          fi
+        fi
+      fi
+    fi
+  else
+    # Killed by the build before the gate ran. Counted separately: the family's named gate was never
+    # exercised, so this result must not be cited as evidence that THAT gate is load-bearing.
+    KILLED_BY_BUILD=$((KILLED_BY_BUILD+1))
+    if ! build_kill_declared "$nm"; then
+      UNDECLARED_BUILD_KILLS="$UNDECLARED_BUILD_KILLS $nm"
+      note="$note (UNDECLARED build kill — ${GATE[$i]} never ran, so it is NOT shown load-bearing)"
     fi
   fi
-  git -C "$WORK" checkout -- "$file" 2>/dev/null
+  restore_work "$file" || return
   if [ "$killed" -eq 1 ]; then echo "  ok   $nm KILLED $note"; PASS=$((PASS+1));
   else echo "  FAIL $nm $note"; FAIL=$((FAIL+1)); fi
 }
 
 echo "=== gate mutation coverage: $N families ==="
-if [ -n "$ONLY" ]; then run_one "$((ONLY-1))"; else for i in $(seq 0 $((N-1))); do run_one "$i"; done; fi
+# The baseline is taken here — after the workspace copy, before any mutation. For a single-family run
+# only that family's gate needs a baseline, so the 33-gate sweep is skipped in favour of the one.
+# VALIDATED BEFORE INDEXING. `FAMILY=0` computes index -1, which bash resolves to the LAST element of
+# an indexed array — so the run executed family 81 while reporting `single_family_selected(0)`, and
+# exited zero. A non-numeric value would index 0 after arithmetic coercion.
+if [ -n "$ONLY" ]; then
+  case "$ONLY" in
+    ''|*[!0-9]*) echo "FATAL: FAMILY must be a positive integer, got '$ONLY'." >&2; _gate_lock_release; exit 2 ;;
+  esac
+  if [ "$ONLY" -lt 1 ] || [ "$ONLY" -gt "$N" ]; then
+    echo "FATAL: FAMILY=$ONLY is out of range 1..$N." >&2; _gate_lock_release; exit 2
+  fi
+  _only_gate="${GATE[$((ONLY-1))]}"
+  echo "=== clean-gate baseline: 1 gate (single-family selection) ==="
+  # The single-family path needs the pristine build too: its one gate may do no build at all, in which
+  # case the first build of the run would be the mutated one.
+  baseline_pristine_build || { write_summary 0 " pristine_build_failed"; rm -rf "$TMP"; _gate_lock_release; exit 2; }
+  BASELINE_TOTAL=1
+  if ( cd "$WORK" && bash "scripts/tests/$_only_gate" ) >"$TMP/clean.log" 2>&1; then
+    CLEAN_GATE[$_only_gate]=yes; BASELINE_GREEN=1; BASELINE_RED=0
+    _note_freshness_taint "$TMP/clean.log"
+    CLEAN_GATE_TAIL[$_only_gate]="$(_tail_shape "$TMP/clean.log")"
+    if [ -n "${CLEAN_GATE_TAIL[$_only_gate]}" ]; then CLEAN_GATE_VERDICT[$_only_gate]=yes
+    else CLEAN_GATE_VERDICT[$_only_gate]=no; fi
+    echo "  baseline: 1/1 gates green on the unmutated workspace"
+  else
+    CLEAN_GATE[$_only_gate]=no; BASELINE_GREEN=0; BASELINE_RED=1
+    echo "  RED ON CLEAN: $_only_gate — this family will be reported INVALID, not killed"
+    echo "  baseline: 0/1 gates green on the unmutated workspace"
+  fi
+  # The single-family path needs the same post-baseline compiler identity as the full run: its one
+  # baseline gate can build too, so the compiler captured at copy time is not necessarily the one this
+  # family was judged against.
+  TESTED_BIN="$(_bin_sha "$WORK")"
+  if [ "$TESTED_BIN" = "absent" ]; then
+    echo "error: no compiler in the workspace after the baseline — nothing could have been tested." >&2
+    write_summary 0 " workspace_compiler_absent"
+    rm -rf "$TMP"; _gate_lock_release; exit 2
+  fi
+  # Re-measured after the baseline for the same reason as the full path: the one baseline gate may
+  # delete untracked paths in the copy.
+  WORK_UNTRACKED="$(ts_untracked "$WORK")"; _require_measured "$WORK_UNTRACKED" untracked
+  WORK_TRACKED="$(ts_tracked "$WORK")";       _require_measured "$WORK_TRACKED" tracked
+  run_one "$((ONLY-1))"
+else
+  baseline_pristine_build || { write_summary 0 " pristine_build_failed"; rm -rf "$TMP"; _gate_lock_release; exit 2; }
+  baseline_all_gates
+  # The compiler the families are judged against exists only now: the baseline may have built it.
+  TESTED_BIN="$(_bin_sha "$WORK")"
+  if [ "$TESTED_BIN" = "absent" ]; then
+    echo "error: no compiler in the workspace after the baseline — nothing could have been tested." >&2
+    write_summary 0 " workspace_compiler_absent"
+    rm -rf "$TMP"; _gate_lock_release; exit 2
+  fi
+  # RE-MEASURED AFTER THE BASELINE, because baseline gates CHANGE the workspace they run in.
+  #
+  # This is live, not hypothetical: `check_receipt_consumption.sh` removes its probe file, and
+  # `run_tests.sh` deletes every extensionless file directly under `tests/programs`. Those paths are
+  # not generally ignored, so untracked bytes present at copy time can be gone before the first
+  # mutation runs — while the artifact still named them as the workspace's untracked state. Start/end
+  # reconciliation cannot see this: it inspects the REAL repository, not the copy.
+  WORK_UNTRACKED="$(ts_untracked "$WORK")"; _require_measured "$WORK_UNTRACKED" untracked
+  WORK_TRACKED="$(ts_tracked "$WORK")";       _require_measured "$WORK_TRACKED" tracked
+  # Arithmetic loop, not `seq`, for the same reason as the anchor loop above.
+  for (( i=0; i<N; i++ )); do run_one "$i"; done
+fi
 
 # leave a clean binary behind
-# NO REBUILD IS OWED ANY MORE. This existed because mutations were applied to the working tree, so
-# the last one left `.lake` holding objects compiled from mutated source and the next gate would have
-# run against them. Mutations now happen in a disposable copy, so the real `.lake` was never touched
-# and rebuilding here would only cost time while implying the tree had been disturbed.
+# NO REBUILD IS OWED FOR MUTATION REPAIR. Mutations are applied in a disposable copy, so the real
+# `.lake` never held objects compiled from mutated source — which is what the in-place design needed a
+# rebuild to undo.
 #
-# The assertion replaces the action: the real build artifacts must still correspond to the real
-# sources. If this ever fails, isolation was bypassed somewhere and the tree needs looking at.
+# BUT THIS IS STILL A REAL BUILD IN THE REAL TREE, and saying otherwise would overclaim: `lake build`
+# below runs against $ROOT_DIR and may write to the real `.lake` (relink, refreshed oleans). It
+# touches no tracked SOURCE, and that is the isolation claim — not that the campaign leaves no trace
+# at all. The check is a genuine one and needs a genuine build: it asserts the real build artifacts
+# still correspond to the real sources, so if it fails, isolation was bypassed somewhere.
 if "$LAKE" build >/dev/null 2>&1; then
   echo "--- working tree still builds clean (isolation left it untouched) ---"
 else
@@ -1051,6 +2045,141 @@ else
   FAIL=$((FAIL+1))
 fi
 
+REACHED_END=1
+
+# ---------------------------------------------------------------------------
+# CAMPAIGN INTEGRITY. Each dimension that moved is NAMED, because "completed=0" with no reason is
+# the same failure shape as a run that dies quietly.
+#
+# RECONCILED BEFORE THE SUMMARY LINE IS PRINTED. This block used to run AFTER
+# `GATE-MUTATION-COVERAGE: PASS=.. FAIL=..`, so a refused campaign printed a clean PASS line and then
+# exited nonzero — the exact summary-vs-exit disagreement that hid 17 stranded assertions in
+# check_clean_checkout for two days. Consumers that scrape the summary line must not be able to read
+# PASS off a run whose completion was refused.
+REFUSALS=""
+# COMPARED AGAINST THE EXECUTED BYTES, not against a second hash of the live file taken at start.
+if [ "$EXECUTED_DRIVER_SHA" = "unknown" ]; then
+  REFUSALS="$REFUSALS driver_snapshot_unverifiable"
+elif [ "$(snap_driver)" != "$EXECUTED_DRIVER_SHA" ]; then
+  REFUSALS="$REFUSALS driver_changed"
+fi
+# An in-band unavailability marker must REFUSE, not be compared. Two identical markers would
+# otherwise satisfy the equality checks below exactly like two identical digests.
+case "$START_HEAD$START_TRACKED$START_UNTRACKED" in
+  *TREESTATE-UNAVAILABLE*) REFUSALS="$REFUSALS tree_state_unavailable_at_start" ;;
+esac
+# EMPTY IS NOT A DIGEST. Rejecting only the literal marker still let two EMPTY values compare equal
+# and authorise completion — the exact empty-equals-empty path the marker exists to close, reached by
+# a different route (a failed hasher, a partial pipeline).
+for _v in "$START_HEAD" "$START_TRACKED" "$START_UNTRACKED"; do
+  [ -n "$_v" ] || { REFUSALS="$REFUSALS tree_state_empty_at_start"; break; }
+done
+for _v in "$(snap_head)" "$(snap_tracked)" "$(snap_untracked)"; do
+  [ -n "$_v" ] || { REFUSALS="$REFUSALS tree_state_empty_at_end"; break; }
+done
+case "$(snap_head)$(snap_tracked)$(snap_untracked)" in
+  *TREESTATE-UNAVAILABLE*) REFUSALS="$REFUSALS tree_state_unavailable_at_end" ;;
+esac
+[ "$(snap_inventory)" = "$START_INV" ]       || REFUSALS="$REFUSALS mutation_inventory_changed"
+[ "$(snap_head)"      = "$START_HEAD" ]      || REFUSALS="$REFUSALS head_changed"
+[ "$(snap_tracked)"   = "$START_TRACKED" ]   || REFUSALS="$REFUSALS tracked_tree_changed"
+[ "$(snap_untracked)" = "$START_UNTRACKED" ] || REFUSALS="$REFUSALS untracked_tree_changed"
+# mutation_target_dirty_at_start is NOT re-checked here: the start guard above already refused and
+# exited, so this point is only reachable with START_DIRTY empty. A check that cannot fail is not a
+# check, and leaving it here would overstate how many dimensions this block actually covers.
+END_DIRTY="$(snap_dirty_targets)"
+[ -z "$END_DIRTY" ]                          || REFUSALS="$REFUSALS mutation_target_not_restored($END_DIRTY)"
+[ "$CAMPAIGN_INTERRUPTED" = "0" ]            || REFUSALS="$REFUSALS run_interrupted"
+[ "$REACHED_END" = "1" ]                     || REFUSALS="$REFUSALS did_not_reach_end"
+[ "${WORK_DIRTY:-0}" = "0" ]                 || REFUSALS="$REFUSALS workspace_restore_failed"
+# A family that died in the build without declaring that as its intended outcome leaves its named gate
+# unproven, and the campaign's whole purpose is proving those gates load-bearing.
+[ -z "$UNDECLARED_BUILD_KILLS" ]             || REFUSALS="$REFUSALS undeclared_build_kills($UNDECLARED_BUILD_KILLS )"
+# A gate that ran against an unverified binary taints the whole campaign: its verdict describes an
+# artifact nobody established corresponds to the source. `CONCRETE_ALLOW_UNVERIFIED_BINARY=1` only
+# warned, which is indistinguishable from verified evidence to anything reading logs or artifacts.
+[ "${FRESHNESS_UNVERIFIED:-0}" = "0" ]       || REFUSALS="$REFUSALS compiler_freshness_unverified"
+[ "$PREAMBLE_DRIVER_SHA" = "$EXECUTED_DRIVER_SHA" ] \
+  || REFUSALS="$REFUSALS driver_changed_during_preamble($PREAMBLE_DRIVER_SHA->$EXECUTED_DRIVER_SHA)"
+# EVERY FAMILY MUST BE ACCOUNTED FOR, and a bare PASS may not paper over a gap. This file's stated
+# purpose is that each family's SPECIFIC gate goes red. A DECLARED build kill is a different and
+# legitimate kind of evidence — the mutation is unrepresentable — but it leaves that family's gate
+# unproven, so the two must add up: gate-proven families plus declared build kills must equal the
+# whole corpus. Anything else means some family produced neither kind of evidence while the run still
+# reported PASS.
+if [ -z "$ONLY" ]; then
+  _accounted=$(( ${KILLED_BY_GATE:-0} + ${KILLED_BY_BUILD:-0} ))
+  [ "$_accounted" = "$N" ] \
+    || REFUSALS="$REFUSALS families_unaccounted(gate=${KILLED_BY_GATE:-0} build=${KILLED_BY_BUILD:-0} of $N)"
+fi
+# A partial campaign is not a campaign. FAMILY=<n> selects one deliberately and cannot complete.
+EXPECTED_RUN="$N"; [ -n "$ONLY" ] && EXPECTED_RUN=1
+# THE DENOMINATOR IS VERDICTS, NOT VISITS. `FAMILIES_RUN` is incremented unconditionally at the top of
+# `run_one` and the loop is `seq 0 $((N-1))`, so `FAMILIES_RUN == N` was ARITHMETICALLY guaranteed and
+# the check could not fail — an inert control, the same shape as the dirty-target copy removed above.
+# `PASS + FAIL` is not guaranteed: it holds only because every one of `run_one`'s exit paths records a
+# verdict. A `return` added later without one silently shrinks the denominator, which is precisely the
+# "discovered but not executed" failure this dimension exists to catch. FAMILIES_RUN stays in the
+# artifact as reported data, not as an assertion.
+VERDICTS=$(( PASS + FAIL ))
+[ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
+
+# SCOPE IS NOT INTEGRITY, and conflating them broke a working gate. Everything above says "these
+# verdicts cannot be trusted" — the tree moved, the driver moved, a restore failed, a signal arrived.
+# `FAMILY=<n>` says something completely different: the operator deliberately asked for ONE family.
+# That run must not claim `completed=1` (it is not a campaign), but its verdict is perfectly good, and
+# forcing it to exit nonzero broke `check_phase6c_observability.sh:35`, which chains
+# `FAMILY=5 ... && FAMILY=6 ...` as a cheap sample and expects success. A deliberate selection is not
+# a corrupted run, so it suppresses completion WITHOUT failing the process.
+SCOPE_NOTES=""
+[ -z "$ONLY" ] || SCOPE_NOTES=" single_family_selected($ONLY)"
+ALL_REFUSALS="$REFUSALS$SCOPE_NOTES"
+
+COMPLETED=0; [ -z "$ALL_REFUSALS" ] && [ "$FAIL" -eq 0 ] && COMPLETED=1
+ARTIFACT_OK=1; write_summary "$COMPLETED" "$ALL_REFUSALS" || ARTIFACT_OK=0
+
+# The process succeeds when the verdicts are sound and durably recorded: integrity intact, no failing
+# family, artifact written. Deliberate scope does not enter this.
+RUN_OK=1
+[ "$FAIL" -eq 0 ]        || RUN_OK=0
+[ -z "$REFUSALS" ]       || RUN_OK=0
+[ "$ARTIFACT_OK" = "1" ] || RUN_OK=0
+
 echo
-echo "GATE-MUTATION-COVERAGE: PASS=$PASS FAIL=$FAIL (of $N families)"
-[ "$FAIL" -eq 0 ]
+# GATE COVERAGE IS REPORTED SEPARATELY FROM KILL COUNT.
+#
+# This gate's stated purpose is that each family's SPECIFIC gate goes red. A build kill does not
+# establish that — the named gate is skipped entirely — so counting it into a single PASS number let a
+# run claim the contract was met for families whose gate never executed. Both numbers are now on the
+# line and in the artifact: `killed` is how many mutations died, `gates_proven` is how many did so by
+# turning their named gate red, which is the only figure that speaks to the contract.
+GATES_PROVEN="${KILLED_BY_GATE:-0}/$N"
+if [ "$RUN_OK" = "1" ] && [ "$COMPLETED" = "1" ]; then
+  echo "GATE-MUTATION-COVERAGE: PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN"
+elif [ "$RUN_OK" = "1" ]; then
+  # Sound but deliberately partial: say so on the summary line rather than printing a bare PASS that
+  # a consumer could read as a completed campaign.
+  echo "GATE-MUTATION-COVERAGE: PARTIAL PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN —$SCOPE_NOTES"
+else
+  # The summary line itself carries the refusal, so scraping it cannot yield a false PASS.
+  echo "GATE-MUTATION-COVERAGE: REFUSED PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN"
+  echo "CAMPAIGN INTEGRITY REFUSED:$REFUSALS"
+  echo "  These verdicts describe a tree that moved under the run, or a run with no durable record."
+fi
+if [ "$ARTIFACT_OK" = "1" ]; then
+  if [ "${ANCHORS_ONLY:-0}" != "1" ]; then
+    # NAMES THE FILE IT ACTUALLY WROTE. A partial run writes .partial and deliberately leaves the full
+    # record alone, but this line always said ".mutation-campaign-summary" — so following it led a
+    # reader to an OLDER full-campaign record and let it be read as this run's result.
+    if [ -n "${ONLY:-}" ]; then
+      echo "summary written to .mutation-campaign-summary.partial (completed=$COMPLETED)"
+      echo "  the full-campaign record .mutation-campaign-summary was NOT touched by this partial run"
+    else
+      echo "summary written to .mutation-campaign-summary (completed=$COMPLETED)"
+    fi
+  fi
+else
+  echo "error: the campaign artifact could NOT be written — this run has no completion record" >&2
+fi
+
+[ "$RUN_OK" = "1" ]

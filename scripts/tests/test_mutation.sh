@@ -43,18 +43,82 @@ fi
 # hash postcondition refuses to exit quietly on an inexact restore, and a killed
 # run must be followed by
 #   grep -rn -- "-- MUTATION" Concrete && git checkout -- <files>
+# THE REPOSITORY LOCK, TOO — not just this harness's own.
+#
+# `.mutation.lock` stops two mutation runs colliding, but it says nothing about the shared `.lake`
+# tree and binary. This harness invokes named gates, and a gate that calls `require_fresh_binary`
+# ACQUIRES `.gate.lock` and never releases it (the library deliberately installs no EXIT trap), so
+# the SECOND named gate in a run refused with "REPOSITORY BUSY" — and this harness recorded that
+# nonzero exit as `KILLED (gate)`. That is the manufactured-kill defect fixed in
+# check_gate_mutation_coverage.sh on 2026-08-21, left live here because the two harnesses hold
+# different locks. Acquiring the repository lock here makes every gate this harness invokes re-entrant
+# by inheritance, so none of them creates a lock to leave behind.
+#
+# Held for the whole run and released explicitly on the cleanup path below, alongside .mutation.lock.
+# READ-ONLY MODES TAKE NO LOCKS. `--list` and `--check-patterns` touch no files, and
+# `check_mutation_anchors.sh` calls the latter as a cheap gate; making them contend for the mutation
+# lock would turn a one-second read into a source of spurious "another mutation run holds" refusals.
+# LAST OPTION WINS, exactly as the real parser below decides. Scanning for "any read-only flag"
+# disagreed with it: `--check-patterns --mutation 1` skipped both locks and then entered MUTATING
+# mode, editing real compiler source with no lock held at all.
+MUT_READ_ONLY=0
+for _a in "$@"; do
+  case "$_a" in
+    --list|--check-patterns) MUT_READ_ONLY=1 ;;
+    --mutation|--all|-*) MUT_READ_ONLY=0 ;;
+  esac
+done
+
+MUT_HELD_GATE_LOCK=0
+if [ "$MUT_READ_ONLY" = "0" ]; then
+  source "$ROOT_DIR/scripts/tests/lib/fresh.sh"
+  _gate_lock_acquire || {
+    echo "error: this harness mutates real compiler source and needs exclusive repository access." >&2
+    exit 2
+  }
+  MUT_HELD_GATE_LOCK=1
+fi
+
 LOCK_DIR="$ROOT_DIR/.mutation.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+MUT_HELD_MUT_LOCK=0
+if [ "$MUT_READ_ONLY" = "1" ]; then
+  :
+elif ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  [ "${MUT_HELD_GATE_LOCK:-0}" = "1" ] && _gate_lock_release
   echo "error: another mutation run holds $LOCK_DIR" >&2
   echo "       this harness edits source in place; concurrent runs corrupt it." >&2
   echo "       if no run is active, remove the directory and check for stray" >&2
   echo "       '-- MUTATION' markers: grep -rn 'MUTATION' Concrete/ --include='*.lean'" >&2
   exit 2
+else
+  # Recorded so cleanup releases only a lock THIS run created. Without this the flag stayed 0 and
+  # cleanup never removed the lock at all, wedging every later run — the opposite failure.
+  MUT_HELD_MUT_LOCK=1
 fi
 # Backups live in a unique temp dir, not beside the source: a `<file>.mutbak`
 # sitting in the tree is itself a way to leave state behind, and two runs racing
 # on the same path is what corrupted Proof.lean.
-MUT_BACKUP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/concrete-mutation.XXXXXX")"
+MUT_BACKUP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/concrete-mutation.XXXXXX")" || {
+  echo "error: could not create the mutation backup directory" >&2; exit 2; }
+[ -n "$MUT_BACKUP_DIR" ] && [ -d "$MUT_BACKUP_DIR" ] || {
+  echo "error: mutation backup directory is not usable" >&2; exit 2; }
+# EVIDENCE LOGS ARE PER-RUN, NOT GLOBAL. Build and gate output went to fixed /tmp/mutation_*.log
+# paths, and the classifier below READS those paths to decide whether a kill is genuine. Two runs in
+# separate worktrees — each correctly holding its own locks, since the locks are per-repository — would
+# truncate and interleave the same file, letting one mutation be credited with the other run's
+# diagnostic. The backup directory was already unique; the evidence-bearing logs were not.
+# A SIBLING DIRECTORY, NOT A CHILD OF THE BACKUP TREE.
+#
+# The backup tree MIRRORS THE REPOSITORY LAYOUT, and cleanup walks every file in it treating the
+# relative path as the target to restore. Putting logs inside it therefore made
+# `$MUT_BACKUP_DIR/logs/build.log` look like a backup of `$ROOT_DIR/logs/build.log` — so if such a
+# file existed in the repository, cleanup would overwrite it with a build log. That is a path outside
+# the mutation-target set, so no preflight covered it. Introduced by my own round-5 fix for the
+# global-log race; the log directory has to be somewhere cleanup does not interpret.
+MUT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/concrete-mutation-logs.XXXXXX")" || {
+  echo "error: could not create the mutation log directory" >&2; exit 2; }
+[ -n "$MUT_LOG_DIR" ] && [ -d "$MUT_LOG_DIR" ] || {
+  echo "error: mutation log directory is not usable" >&2; exit 2; }
 
 # Hashes of every target file, captured BEFORE any mutation. Restoration is
 # verified against these, so "restored" means byte-identical rather than "the
@@ -68,8 +132,23 @@ declare -A MUT_HASH_APPLIED=()
 MUT_CONCURRENT=0
 hash_of() { shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
 
+# Families for which a BUILD kill is the intended outcome, by description. Empty until a full run
+# enumerates them: an undeclared build kill is reported as an ERROR rather than banked as coverage.
+MUT_EXPECT_BUILD_KILL=""
+build_kill_declared() { case " $MUT_EXPECT_BUILD_KILL " in *" $1 "*) return 0;; *) return 1;; esac; }
+
+# A SIGNAL MUST NOT BE ABLE TO PRODUCE EXIT 0.
+#
+# This handler exits with the status it captured on entry, and bash DEFERS a signal until the running
+# foreground child returns — so a TERM arriving during a successful build gives `$?` = 0 and the
+# interrupted, INCOMPLETE run exits ZERO. An exit-code consumer reads that as a completed successful
+# campaign. The signal is recorded by the trap itself, so the handler can tell the two apart.
+MUT_SIGNALLED=0
 cleanup_lock() {
   local rc=$?
+  if [ "${MUT_SIGNALLED:-0}" = "1" ] && [ "$rc" -eq 0 ]; then
+    rc=130   # terminated by a signal — never a verdict
+  fi
   # The lock is released at the END, after restoration. Releasing it first let a
   # second run start while this one still had a mutation applied — the exact race
   # the lock exists to prevent.
@@ -87,24 +166,60 @@ cleanup_lock() {
     while IFS= read -r bak; do
       local rel="${bak#$MUT_BACKUP_DIR/}"
       # Skip rescued copies of a third party's work — they are evidence, not backups.
-      case "$rel" in CONCURRENT-EDIT/*) continue ;; esac
+      # `.staging` files are half-written backups, never authoritative originals — see apply_mutation.
+      case "$rel" in CONCURRENT-EDIT/*) continue ;; *.staging) continue ;; esac
       if [ -f "$ROOT_DIR/$rel" ]; then
         # Same non-clobber rule as restore_mutation: on INT/TERM we must not
         # "restore" over an edit that was never ours.
         local now applied
         now="$(hash_of "$ROOT_DIR/$rel")"
         applied="${MUT_HASH_APPLIED[$rel]:-}"
-        if [ -n "$applied" ] && [ "$now" != "$applied" ] && [ "$now" != "${MUT_HASH0[$rel]:-}" ]; then
+        # Same rule as restore_mutation, and it must not depend on having installed anything: the
+        # on-disk content is either ours or the pristine original, or it is someone else's.
+        if [ "$now" != "${MUT_HASH0[$rel]:-}" ] \
+           && { [ -z "$applied" ] || [ "$now" != "$applied" ]; }; then
           mkdir -p "$(dirname "$MUT_BACKUP_DIR/CONCURRENT-EDIT/$rel")"
           cp "$ROOT_DIR/$rel" "$MUT_BACKUP_DIR/CONCURRENT-EDIT/$rel"
           echo "  REFUSED to restore $rel — changed by another writer; theirs kept" >&2
           bad=1
           continue
         fi
-        cp "$bak" "$ROOT_DIR/$rel"
-        echo "  restored $rel from backup" >&2
+        # STAGED RENAME, like restore_mutation — and verified. A plain `cp` leaves the target partial
+        # while copying, so an interrupted signal cleanup produced a truncated compiler source; and it
+        # overwrote a save landing between the ownership check above and the copy. The signal path had
+        # the exact defect the normal restore path was repaired for, which is what happens when the
+        # same operation is written twice.
+        # OWNERSHIP RE-CHECKED IMMEDIATELY BEFORE THE RENAME. The check above happens, then the copy
+        # and hash take time, and only then does the rename land — so a cooperative save during that
+        # staging work was silently overwritten. The ordinary restore path already re-checks; the
+        # signal path did not, which is the same operation written twice and diverging again.
+        if cp "$bak" "$ROOT_DIR/$rel.mutsig.$$" \
+           && [ "$(hash_of "$ROOT_DIR/$rel.mutsig.$$")" = "$(hash_of "$bak")" ] \
+           && [ "$(hash_of "$ROOT_DIR/$rel")" = "$now" ] \
+           && mv -f "$ROOT_DIR/$rel.mutsig.$$" "$ROOT_DIR/$rel"; then
+          echo "  restored $rel from backup" >&2
+          MUT_RESTORED_ANY=1
+        else
+          rm -f "$ROOT_DIR/$rel.mutsig.$$" 2>/dev/null || true
+          echo "  FAILED to restore $rel — backup KEPT at $bak; restore it by hand" >&2
+          # KEPT means kept: retention was conditioned only on MUT_CONCURRENT, so any OTHER restore
+          # failure fell through to `rm -rf "$MUT_BACKUP_DIR"` and destroyed the recovery copy this
+          # message had just promised.
+          MUT_KEEP_BACKUP=1
+          bad=1
+        fi
       fi
     done < <(find "$MUT_BACKUP_DIR" -type f 2>/dev/null)
+  fi
+  # THE BINARY MUST FOLLOW THE SOURCE ON THIS PATH TOO. The signal handler restored source and never
+  # rebuilt, so a Ctrl-C — deferred by bash until the running build finishes, and reachable right after
+  # a mutated confirming rebuild — left pristine source beside a compiler and oleans built FROM the
+  # mutation. That is the stale-artifact state the normal restore rebuilds to prevent, and anything run
+  # afterwards would measure the mutated compiler while `git status` looked clean.
+  if [ "${MUT_RESTORED_ANY:-0}" = "1" ] && [ -n "${LAKE:-}" ]; then
+    echo "  rebuilding after restore (the binary must match the restored source)..." >&2
+    "$LAKE" build >/dev/null 2>&1 \
+      || echo "  WARNING: rebuild after signal-restore FAILED — .lake may still hold a mutated binary" >&2
   fi
   if [ "$MUT_CONCURRENT" != 0 ]; then
     echo "" >&2
@@ -141,9 +256,24 @@ cleanup_lock() {
     echo "    CONCURRENT-EDIT/<path>  the other writer's version" >&2
     echo "    <path>                  the original this harness backed up" >&2
   else
-    rm -rf "$MUT_BACKUP_DIR" 2>/dev/null || true
+    if [ "${MUT_KEEP_BACKUP:-0}" = "1" ]; then
+      echo "  PRESERVED for recovery: $MUT_BACKUP_DIR" >&2
+    else
+      rm -rf "$MUT_BACKUP_DIR" 2>/dev/null || true
+    fi
   fi
-  rmdir "$LOCK_DIR" 2>/dev/null || true
+  # ONLY IF THIS RUN CREATED IT. A read-only invocation takes no lock, yet cleanup removed
+  # $LOCK_DIR unconditionally — so a documented `--check-patterns` run deleted the lock of an ACTIVE
+  # mutating run, and the next mutating run would then start alongside it.
+  # The log directory is a SIBLING of the backup tree (see its creation), so it is removed here and
+  # never walked by the restore loop above.
+  [ -n "${MUT_LOG_DIR:-}" ] && case "$MUT_LOG_DIR" in
+    "${TMPDIR:-/tmp}/concrete-mutation-logs."*) rm -rf "$MUT_LOG_DIR" ;;
+  esac
+  [ "${MUT_HELD_MUT_LOCK:-0}" = "1" ] && rmdir "$LOCK_DIR" 2>/dev/null || true
+  # The repository lock is released alongside it. Creator-only, so this is a no-op when the lock was
+  # inherited from an outer runner.
+  [ "${MUT_HELD_GATE_LOCK:-0}" = "1" ] && _gate_lock_release
   if [ "$bad" = 1 ]; then
     echo "" >&2
     echo "restore the tree before building, gating or committing:" >&2
@@ -152,7 +282,8 @@ cleanup_lock() {
   fi
   exit $rc
 }
-trap cleanup_lock EXIT INT TERM
+trap cleanup_lock EXIT
+trap 'MUT_SIGNALLED=1; cleanup_lock' INT TERM
 
 KILLED=0
 SURVIVED=0
@@ -762,12 +893,32 @@ MUT_DESC+=("TypeId: nested identity drops enclosing module")
 gate_for_last "scripts/tests/check_type_identity.sh"
 
 # 52. Elab resolves a field but silently drops it from the V2 input.
+#
+# SPLIT IN TWO AND WIDENED, 2026-08-21. The original anchor matched BOTH `recordFieldUse` call sites
+# (Elab.lean:685 in field-access elaboration and :1762 in the field-owner resolution), and the harness
+# applies mutations with `content.replace(old, new, 1)` — the FIRST match. So this mutation silently
+# tested only site A while claiming to test "the" resolved-field path, and the anchor gate accepted it
+# because that gate asked only whether the text was PRESENT, never whether it was UNIQUE. Both sites
+# feed evidence inputs, so each gets its own mutation; the extra adjacent line makes each unique.
 MUT_FILE+=("Concrete/Elab/Elab.lean")
 MUT_OLD+=("      | some f =>
-        recordFieldUse sd field")
+        recordFieldUse sd field
+        let fieldTy := substTy mapping f.ty")
 MUT_NEW+=("      | some f =>
-        pure () -- MUTATION: resolved field omitted from evidence input")
-MUT_DESC+=("Elab V2 input: resolved field use omitted")
+        pure () -- MUTATION: resolved field omitted from evidence input
+        let fieldTy := substTy mapping f.ty")
+MUT_DESC+=("Elab V2 input: resolved field use omitted (field access)")
+gate_for_last "scripts/tests/check_type_identity.sh"
+
+# 52b. The same omission in the field-OWNER resolution path.
+MUT_FILE+=("Concrete/Elab/Elab.lean")
+MUT_OLD+=("      | some f =>
+        recordFieldUse sd field
+        let mapping := sd.typeParams.zip tArgs")
+MUT_NEW+=("      | some f =>
+        pure () -- MUTATION: resolved field omitted from evidence input
+        let mapping := sd.typeParams.zip tArgs")
+MUT_DESC+=("Elab V2 input: resolved field use omitted (field owner resolution)")
 gate_for_last "scripts/tests/check_type_identity.sh"
 
 # 53. A normally resolved declaration with missing provenance reads as covered.
@@ -997,6 +1148,16 @@ MUT_DESC+=("V2 serializer: binder encoding loses its length prefix")
 gate_for_last "scripts/tests/check_identity_use_bytes.sh"
 
 NUM_MUTATIONS=${#MUT_FILE[@]}
+# PINNED, not self-denominating. Every downstream count derives from this, so deleting families
+# silently shrank the population a "full" run reported on. Retiring a mutation withdraws the evidence
+# that some gate is load-bearing and must be a recorded decision.
+EXPECTED_MUTATIONS=78
+if [ "$NUM_MUTATIONS" != "$EXPECTED_MUTATIONS" ]; then
+  echo "FATAL: the mutation inventory holds $NUM_MUTATIONS families, pinned at $EXPECTED_MUTATIONS." >&2
+  echo "       If this change is intended, update EXPECTED_MUTATIONS in the SAME commit and say" >&2
+  echo "       in the message which families moved and why." >&2
+  exit 2
+fi
 
 # ============================================================
 # Argument parsing
@@ -1092,6 +1253,64 @@ fi
 # Apply / restore mutation using exact string replacement
 # ============================================================
 
+# CLEAN BASELINE for every kill-evidence producer, measured BEFORE ANY MUTATION IS APPLIED.
+#
+# A gate that is already red proves nothing by going red again, and this harness had no such control
+# at all: it read every nonzero exit as a kill. The first attempt at a fix was worse than useless —
+# it called the baseline from inside `run_mutation`, AFTER the mutation had been applied and built, so
+# a mutation that correctly turned its gate red was labelled "red on clean" and a mutation that left
+# the gate green poisoned the cache for every later family. A baseline measured after the mutation is
+# not a baseline.
+#
+# There are TWO producers of kill evidence — the named gate and the fast suite — and both need a
+# control. Only the named gate had one; a fast suite already red for an unrelated reason manufactured
+# kills exactly as a red gate did.
+declare -A MUT_CLEAN_GATE
+# The campaign's end-of-run control, which this harness lacked entirely: a gate that reached a verdict
+# on pristine source must reach one under mutation too, or its nonzero exit is infrastructural rather
+# than rule evidence. Digits are normalised so the SHAPE of the final line is what must match, since
+# its counts move under mutation.
+declare -A MUT_CLEAN_TAIL
+_mut_tail_shape() { awk 'NF {last=$0} END {gsub(/[0-9]+/, "#", last); print last}' "$1" 2>/dev/null; }
+MUT_CLEAN_FAST="unknown"
+MUT_FRESHNESS_TAINT=0
+baseline_clean_producers() {
+  local g total=0 red=0
+  local -a uniq=()
+  for (( _b=0; _b<NUM_MUTATIONS; _b++ )); do
+    g="${MUT_GATE[$_b]:-}"
+    [[ -n "$g" ]] || continue
+    [[ -z "${MUT_CLEAN_GATE[$g]:-}" ]] || continue
+    MUT_CLEAN_GATE[$g]=pending; uniq+=("$g")
+  done
+  printf "baseline: fast suite on pristine source ... "
+  if bash scripts/tests/run_tests.sh --fast > "$MUT_LOG_DIR/fast_clean.log" 2>&1; then
+    MUT_CLEAN_FAST=yes
+    # Its pristine end shape, so a mutated run that dies before reaching it is not read as a kill —
+    # the same control the named gates get. Without this, SIGKILL, exit 126/127 or a startup failure
+    # manufactured `KILLED (fast suite)`.
+    MUT_CLEAN_FAST_TAIL="$(_mut_tail_shape "$MUT_LOG_DIR/fast_clean.log")"
+    echo "green"
+  else
+    MUT_CLEAN_FAST=no; echo "RED — fast-suite kills are not evidence in this run"
+  fi
+  total=${#uniq[@]}
+  echo "baseline: $total distinct named gate(s) on pristine source"
+  for g in "${uniq[@]}"; do
+    if bash "$g" > "$MUT_LOG_DIR/gate_clean.log" 2>&1; then
+      MUT_CLEAN_GATE[$g]=yes
+      MUT_CLEAN_TAIL[$g]="$(_mut_tail_shape "$MUT_LOG_DIR/gate_clean.log")"
+    else
+      MUT_CLEAN_GATE[$g]=no; red=$((red+1))
+      echo "  RED ON CLEAN: $g — families naming it will be reported ERROR, not killed" >&2
+    fi
+  done
+  echo "  baseline: $((total-red))/$total named gates green on pristine source"
+}
+gate_clean_ok() { # gate-path — was it green on PRISTINE source?
+  [[ "${MUT_CLEAN_GATE[$1]:-no}" == "yes" ]]
+}
+
 apply_mutation() {
   local idx=$1
   local file="${MUT_FILE[$idx]}"
@@ -1105,30 +1324,127 @@ apply_mutation() {
   # Mirror the path INSIDE the backup dir rather than flattening it. `tr / _`
   # collides (`a/b_c` and `a_b/c` both become `a_b_c`) and is not invertible, so
   # the restore loop had to guess which file a backup belonged to.
-  mkdir -p "$MUT_BACKUP_DIR/$(dirname "$file")"
-  cp "$file" "$MUT_BACKUP_DIR/$file"
+  # THE BACKUP IS VERIFIED BEFORE THE FILE IS TOUCHED. Both of these were unchecked, and `set -e`
+  # does NOT help: this function is invoked as `if ! apply_mutation ...`, and bash suppresses errexit
+  # for the whole function body in that context. So a full disk or an unwritable TMPDIR let the copy
+  # fail and the python below mutate real compiler source with NO backup in existence. Byte-compared,
+  # not merely attempted: a partial copy is worse than none, because it looks like a backup.
+  if ! mkdir -p "$MUT_BACKUP_DIR/$(dirname "$file")"; then
+    echo "  FATAL: could not create the backup directory for $file — refusing to mutate." >&2
+    return 2
+  fi
+  # STAGED UNDER A NON-AUTHORITATIVE NAME, THEN ACTIVATED BY RENAME.
+  #
+  # Copying straight to the path cleanup treats as authoritative meant an interrupt DURING the copy
+  # left a PARTIAL file there — and the signal trap then walks every such file, stages it, verifies it
+  # only against itself, and renames it over the original. A terminal interrupt reaching both bash and
+  # `cp` could therefore replace tracked compiler source with a truncated copy, and cleanup deletes
+  # the backup directory afterwards. A partial backup must never be reachable under the name that
+  # means "this is the original".
+  local bak_stage="$MUT_BACKUP_DIR/$file.staging"
+  if ! cp "$file" "$bak_stage"; then
+    echo "  FATAL: could not back up $file — refusing to mutate." >&2
+    rm -f "$bak_stage"
+    return 2
+  fi
+  if [ "$(hash_of "$file")" != "$(hash_of "$bak_stage")" ]; then
+    echo "  FATAL: backup of $file does not match the original — refusing to mutate." >&2
+    rm -f "$bak_stage"
+    return 2
+  fi
+  if ! mv -f "$bak_stage" "$MUT_BACKUP_DIR/$file"; then
+    echo "  FATAL: could not activate the backup of $file — refusing to mutate." >&2
+    rm -f "$bak_stage"
+    return 2
+  fi
 
-  # Use python for reliable multi-line string replacement
+  # WRITTEN TO A SIBLING TEMP FILE, HASHED, THEN INSTALLED BY RENAME.
+  #
+  # The previous form wrote the target in place and then re-read it to record what had been written.
+  # Between those two steps a concurrent editor's save would be hashed as OUR mutation, after which
+  # the restore below would overwrite it as if it were ours — the exact loss the recorded hash exists
+  # to prevent, one step earlier. Writing a sibling and renaming makes installation atomic and lets
+  # the recorded hash describe exactly the bytes installed, because it is computed before they are.
+  local tmp_out="$file.mutwrite.$$"
   python3 -c "
 import sys
-path = sys.argv[1]
-old = sys.argv[2]
-new = sys.argv[3]
-with open(path, 'r') as f:
+src = sys.argv[1]
+dst = sys.argv[2]
+old = sys.argv[3]
+new = sys.argv[4]
+with open(src, 'r') as f:
     content = f.read()
-if old not in content:
+# EXACTLY ONE OCCURRENCE, ENFORCED HERE — not only in --check-patterns.
+#
+# This tested presence and then used replace(..., 1), so an ambiguous anchor mutated whichever site
+# came first and produced a perfectly green run testing something nobody chose. The freshness mode
+# already required uniqueness, so the two disagreed and the WEAKER one was the code that actually
+# mutates. A checker stricter than its applier is the same defect as an applier stricter than its
+# checker: the authority has to be the thing that acts.
+# SINGLE QUOTES ONLY inside this payload: it is passed via `python3 -c "..."`, so a double quote
+# here TERMINATES the bash string and python receives truncated source. That is why the surrounding
+# code uses 'r'/'w' rather than "r"/"w".
+n = content.count(old)
+if n < 1:
+    sys.stderr.write('anchor not found\n')
     sys.exit(1)
+if n > 1:
+    sys.stderr.write('anchor is AMBIGUOUS: %d occurrences\n' % n)
+    sys.exit(3)
 content = content.replace(old, new, 1)
-with open(path, 'w') as f:
+with open(dst, 'w') as f:
     f.write(content)
-" "$file" "$old" "$new"
+" "$file" "$tmp_out" "$old" "$new"
   local rc=$?
-  # Record the EXACT content this harness wrote. Restoration compares against it,
-  # so "the file changed" can be told apart from "we changed the file". Without
-  # this, a concurrent editor's save is indistinguishable from our own mutation
-  # and gets silently overwritten by the restore below.
-  [ "$rc" -eq 0 ] && MUT_HASH_APPLIED["$file"]="$(hash_of "$file")"
-  return $rc
+  if [ "$rc" -ne 0 ]; then
+    rm -f "$tmp_out"
+    return $rc
+  fi
+  local want; want="$(hash_of "$tmp_out")"
+  if [ -z "$want" ]; then
+    echo "  FATAL: could not hash the mutated content for $file — refusing to install it." >&2
+    rm -f "$tmp_out"
+    return 2
+  fi
+  # OWNERSHIP RE-CHECKED IMMEDIATELY BEFORE INSTALLING. Backing up and then renaming over the target
+  # without re-reading it meant a user save landing after the backup was folded into
+  # MUT_HASH_APPLIED — and then erased by the restore as though the harness had written it. This is
+  # the same class as the restore-side check, and it was missing on the apply side entirely.
+  if [ "$(hash_of "$file")" != "$(hash_of "$MUT_BACKUP_DIR/$file")" ]; then
+    echo "  FATAL: $file changed between backup and mutation — refusing to overwrite another writer." >&2
+    echo "         Backup: $MUT_BACKUP_DIR/$file" >&2
+    rm -f "$tmp_out"
+    MUT_CONCURRENT=1
+    return 1
+  fi
+  # RECORDED BEFORE ACTIVATION, AND RE-CHECKED IMMEDIATELY BEFORE IT — WHICH NARROWS THE RACE, IT DOES
+  # NOT CLOSE IT. A save landing between this final hash read and the `mv -f` below is still
+  # overwritten, and is then indistinguishable from content this harness installed. Every check/rename
+  # pair in this file has that residual, including the normal restore, which says so at its own site.
+  # Closing it needs a lock the editors here do not participate in; the remedy is operational — run
+  # mutation campaigns in a dedicated worktree (`scripts/worktree-new.sh`), not the tree you are
+  # editing. I am recording the bound rather than claiming a fix.
+  #
+  # Two gaps here. The ownership check happened well above and the rename below, so a save landing
+  # between them was overwritten — and the later restore then saw the installed mutation, judged it
+  # ours, and restored the older backup over the save. And `MUT_HASH_APPLIED` was recorded only AFTER
+  # the rename, so a signal in that window made cleanup misclassify the harness's own mutation as a
+  # concurrent edit and strand it. Recording first is safe: if the rename never happens the file still
+  # holds pristine bytes, which the restore guard already recognises.
+  MUT_HASH_APPLIED["$file"]="$want"
+  if [ "$(hash_of "$file")" != "$(hash_of "$MUT_BACKUP_DIR/$file")" ]; then
+    echo "  FATAL: $file changed just before the mutation was installed — refusing to overwrite." >&2
+    rm -f "$tmp_out"
+    MUT_CONCURRENT=1
+    return 1
+  fi
+  # Same directory, so this is a rename rather than a copy: no window in which the target is partial.
+  if ! mv -f "$tmp_out" "$file"; then
+    echo "  FATAL: could not install the mutation into $file." >&2
+    rm -f "$tmp_out"
+    return 2
+  fi
+  return 0
 }
 
 restore_mutation() {
@@ -1144,7 +1460,16 @@ restore_mutation() {
     # ProofCore.lean vanished mid-session and the file dropped out of git status.
     local now; now="$(hash_of "$file")"
     local applied="${MUT_HASH_APPLIED[$file]:-}"
-    if [ -n "$applied" ] && [ "$now" != "$applied" ] && [ "$now" != "${MUT_HASH0[$file]:-}" ]; then
+    # THE GUARD MUST NOT DEPEND ON HAVING INSTALLED SOMETHING.
+    #
+    # It required `applied` to be non-empty, so when the apply path DETECTED a concurrent edit and
+    # refused to install, `applied` stayed unset — and this guard let the restore proceed and rename
+    # the backup straight over the edit it had just protected. A fix that detects the loss and then
+    # causes it is worse than no fix. The correct rule needs no knowledge of what we installed: the
+    # on-disk content must be either what we wrote or the pristine original; anything else belongs to
+    # someone else.
+    if [ "$now" != "${MUT_HASH0[$file]:-}" ] \
+       && { [ -z "$applied" ] || [ "$now" != "$applied" ]; }; then
       local rescue="$MUT_BACKUP_DIR/CONCURRENT-EDIT/$file"
       mkdir -p "$(dirname "$rescue")"; cp "$file" "$rescue"
       echo "" >&2
@@ -1158,23 +1483,229 @@ restore_mutation() {
       MUT_CONCURRENT=1
       return 1
     fi
-    cp "$bak" "$file"
+    # THE COPY IS VERIFIED BEFORE THE BACKUP IS DELETED. This was `cp` then an unconditional
+    # `rm -f "$bak"`, so a failed or PARTIAL copy — full disk, read-only file, interrupted write —
+    # destroyed the only copy of the original and left real compiler source mutated or truncated. No
+    # later hash check can recover bytes that no longer exist anywhere. The backup is removed only
+    # once the restored file is byte-identical to it.
+    # STAGED BESIDE THE TARGET, VERIFIED, THEN RENAMED — and the ownership check above is repeated
+    # immediately before the rename. A plain `cp` over the target leaves it partial while copying, so
+    # an interrupted restore produced a truncated compiler source; and the gap between the ownership
+    # check and the overwrite was a window in which a concurrent save was destroyed. The rename is
+    # atomic, so the target is either the mutation or the original and never something in between.
+    #
+    # RESIDUAL, stated rather than implied: a save landing between the final re-check and the rename
+    # is still lost. Closing that completely needs file locking the editors here do not participate
+    # in. The window is now a single re-hash plus a rename rather than a whole file copy.
+    local tmp_in="$file.mutrestore.$$"
+    if ! cp "$bak" "$tmp_in"; then
+      echo "" >&2
+      echo "  FATAL: could not stage the restore of $file." >&2
+      echo "         The backup is PRESERVED at: $bak" >&2
+      rm -f "$tmp_in"
+      ERRORS=$((ERRORS + 1)); RESTORE_BUILD_FAILED=1
+      return 1
+    fi
+    if [ "$(hash_of "$tmp_in")" != "$(hash_of "$bak")" ]; then
+      echo "" >&2
+      echo "  FATAL: staged restore of $file does not match the backup — the copy was partial." >&2
+      echo "         The backup is PRESERVED at: $bak" >&2
+      rm -f "$tmp_in"
+      ERRORS=$((ERRORS + 1)); RESTORE_BUILD_FAILED=1
+      return 1
+    fi
+    local recheck; recheck="$(hash_of "$file")"
+    if [ "$recheck" != "$now" ]; then
+      echo "" >&2
+      echo "  FATAL: $file changed again while the restore was being staged. Refusing to overwrite." >&2
+      echo "         The backup is PRESERVED at: $bak" >&2
+      rm -f "$tmp_in"
+      MUT_CONCURRENT=1
+      return 1
+    fi
+    if ! mv -f "$tmp_in" "$file"; then
+      echo "" >&2
+      echo "  FATAL: could not install the restored $file. Backup PRESERVED at: $bak" >&2
+      rm -f "$tmp_in"
+      ERRORS=$((ERRORS + 1)); RESTORE_BUILD_FAILED=1
+      return 1
+    fi
     rm -f "$bak"
   else
-    echo "  WARNING: no backup for $file — cannot restore" >&2
+    # FATAL, not a warning. A warning returned zero and the run continued with real source possibly
+    # still mutated.
+    echo "  FATAL: no backup for $file — cannot restore. The file may still be mutated." >&2
+    ERRORS=$((ERRORS + 1))
+    RESTORE_BUILD_FAILED=1
   fi
   # Rebuild so the tree's BINARY matches its restored SOURCE. Restoring only the
   # source leaves `.lake/build/bin/concrete` built from the mutation, and anything
   # run afterwards — a gate, a probe, another script — silently measures the
   # mutated compiler while the source looks clean. That is a trap this harness
   # has sprung on its callers more than once, and it costs more than the rebuild.
-  $LAKE build > /tmp/mutation_restore_build.log 2>&1 \
-    || echo "  WARNING: rebuild after restore FAILED — .lake holds a mutated binary (see /tmp/mutation_restore_build.log)" >&2
+  # A WARNING IS NOT A CONTROL. This printed to stderr and returned ZERO, so the run continued with
+  # `.lake` holding a binary built from the mutation — and every later family's verdict, plus anything
+  # the operator ran afterwards, measured that binary while the SOURCE reconciled as clean. The
+  # harness could finish with no survivors and no errors on exactly that state. Source hashes agreeing
+  # is not the same as the build artifacts agreeing, and this is the gap between them.
+  if ! $LAKE build > "$MUT_LOG_DIR/restore_build.log" 2>&1; then
+    echo "" >&2
+    echo "  FATAL: rebuild after restore FAILED — .lake now holds a binary built from a mutation." >&2
+    echo "         Every later verdict would describe that binary while the source looks clean." >&2
+    echo "         See $MUT_LOG_DIR/restore_build.log, then rebuild before running anything else." >&2
+    ERRORS=$((ERRORS + 1))
+    RESTORE_BUILD_FAILED=1
+    return 1
+  fi
+  return 0
 }
 
 # ============================================================
 # Run a single mutation
 # ============================================================
+
+# CONFIRMATION HELPERS — red / green / red, without disturbing the backup.
+#
+# `restore_mutation` is the END-OF-FAMILY operation: it consumes the backup. Confirmation happens in
+# the MIDDLE of a family, so it swaps content directly and leaves the backup for the normal restore.
+CONFIRM_WHY=""
+# EVERY SWAP CHECKS WHAT IT IS OVERWRITING.
+#
+# The first version renamed over the target unconditionally. That is worse than the narrow
+# check-to-rename window documented elsewhere: these helpers hold PRISTINE source across a full
+# rebuild and gate run — many minutes — and then overwrite it with the mutation. A save landing
+# anywhere in that interval was destroyed silently, and the final restore saw the expected mutation
+# bytes and could not tell anything had been lost.
+#
+# So each swap states what it expects to find and refuses if the file is something else. The caller
+# treats that refusal as fatal and keeps the user's bytes.
+_confirm_swap() { # file  from-path  expected-hash-or-empty
+  local now
+  if [ -n "${3:-}" ]; then
+    now="$(hash_of "$1")"
+    if [ "$now" != "$3" ]; then
+      CONFIRM_WHY="$1 was modified by another writer during confirmation — refusing to overwrite it"
+      MUT_CONCURRENT=1
+      return 1
+    fi
+  fi
+  # STAGED FIRST, THEN RE-CHECKED IMMEDIATELY BEFORE THE RENAME. Checking on entry and renaming after
+  # the copy leaves a much longer gap — but this is still a narrowing, not a closure: a save landing
+  # between the check and the `mv -f` is overwritten. Same residual as every other check/rename pair
+  # here; same operational remedy (a dedicated worktree).
+  cp "$2" "$1.confirmswap.$$" || return 1
+  if [ -n "${3:-}" ] && [ "$(hash_of "$1")" != "$3" ]; then
+    rm -f "$1.confirmswap.$$"
+    CONFIRM_WHY="$1 changed while the swap was being staged — refusing to overwrite it"
+    MUT_CONCURRENT=1
+    return 1
+  fi
+  mv -f "$1.confirmswap.$$" "$1"
+}
+# THE BINARY MUST FOLLOW THE SOURCE. This harness mutates IN PLACE and its own restore path already
+# rebuilds for exactly this reason: source-only restoration leaves `.lake` holding a binary built from
+# the mutation, so anything run afterwards measures the mutated compiler while the source looks clean.
+# The confirmation swaps source three times, so it has to rebuild after each swap or its "green" leg
+# tests a source/binary pair that was never built together.
+_confirm_rebuild() { # label
+  $LAKE build > "$MUT_LOG_DIR/confirm_build_$1.log" 2>&1
+}
+# THE CONFIRMING RED LEG IS AUTHENTICATED, exactly like the first one. Accepting any nonzero here was
+# the same defect as the campaign's unauthenticated confirming leg — a confirming exit 97 or
+# precondition failure would have become a KILL.
+_confirm_red_ok() { # log rc expected-tail-shape
+  [ "$2" -ne 0 ] || return 1
+  [ "$2" -ne 97 ] || { CONFIRM_WHY="confirming run exited 97 (died early), not a verdict"; return 1; }
+  if grep -q 'GATE-PRECONDITION-FAILED:' "$1" 2>/dev/null; then
+    CONFIRM_WHY="confirming run hit a precondition failure, so its assertions never ran"; return 1
+  fi
+  # THE END-SHAPE CHECK TOO. Without it this accepted exit 126/127, a shell failure, or any premature
+  # non-97 exit — so the confirming leg was still weaker than the first leg it claimed to match.
+  if [ -n "${3:-}" ] && [ "$(_mut_tail_shape "$1")" != "$3" ]; then
+    CONFIRM_WHY="confirming run never reached the end it reaches on pristine source"; return 1
+  fi
+  return 0
+}
+confirm_gate_kill() { # idx gate
+  local idx="$1" gate="$2"
+  local file="${MUT_FILE[$idx]}" bak="$MUT_BACKUP_DIR/${MUT_FILE[$idx]}"
+  CONFIRM_WHY=""
+  [ -f "$bak" ] || { CONFIRM_WHY="no backup available to confirm against"; return 1; }
+  # THE EXPECTED HASH COMES FROM `MUT_HASH_APPLIED`, the record of what this harness INSTALLED — not
+  # from whatever is on disk now. Deriving it from disk BLESSED a concurrent save as "the expected
+  # mutation" and then overwrote it; and if a signal arrived during the pristine leg, cleanup saw
+  # pristine bytes, did not flag concurrency, and deleted the log holding the only copy of the user's
+  # version. Checking against what we wrote is the entire point of having recorded it.
+  local mut_hash pristine_hash
+  mut_hash="${MUT_HASH_APPLIED[$file]:-}"
+  [ -n "$mut_hash" ] || { CONFIRM_WHY="no recorded applied-hash for $file; refusing to confirm"; return 1; }
+  pristine_hash="$(hash_of "$bak")"
+  if [ "$(hash_of "$file")" != "$mut_hash" ]; then
+    CONFIRM_WHY="$file is not the content this harness installed — another writer changed it"
+    MUT_CONCURRENT=1
+    return 1
+  fi
+  cp "$file" "$MUT_LOG_DIR/mutated.keep" || { CONFIRM_WHY="could not stash the mutated content"; return 1; }
+  _confirm_swap "$file" "$bak" "$mut_hash" || return 1
+  _confirm_rebuild green || { _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash"
+    CONFIRM_WHY="restored source did not rebuild, so the green leg could not be measured"; return 1; }
+  local rc=0
+  bash "$gate" > "$MUT_LOG_DIR/gate_confirm.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ] \
+     || { [ -n "${MUT_CLEAN_TAIL[$gate]:-}" ] \
+          && [ "$(_mut_tail_shape "$MUT_LOG_DIR/gate_confirm.log")" != "${MUT_CLEAN_TAIL[$gate]}" ]; }; then
+    _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash" || return 1
+    _confirm_rebuild restore >/dev/null 2>&1 || true
+    CONFIRM_WHY="still red after restoring the source — not attributable to the mutation"
+    return 1
+  fi
+  # second red leg: the file must still hold the PRISTINE bytes we just installed
+  _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash" || return 1
+  _confirm_rebuild red2 || { CONFIRM_WHY="re-applied mutation did not rebuild for the second red leg"; return 1; }
+  rc=0
+  bash "$gate" > "$MUT_LOG_DIR/gate_confirm2.log" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    CONFIRM_WHY="green when the mutation was re-applied — the earlier red was not reproducible"
+    return 1
+  fi
+  _confirm_red_ok "$MUT_LOG_DIR/gate_confirm2.log" "$rc" "${MUT_CLEAN_TAIL[$gate]:-}" || return 1
+  return 0
+}
+confirm_fast_kill() { # idx
+  local idx="$1"
+  local file="${MUT_FILE[$idx]}" bak="$MUT_BACKUP_DIR/${MUT_FILE[$idx]}"
+  CONFIRM_WHY=""
+  [ -f "$bak" ] || { CONFIRM_WHY="no backup available to confirm against"; return 1; }
+  # Same rule as the named-gate helper: the expected bytes are the ones we installed.
+  local mut_hash pristine_hash
+  mut_hash="${MUT_HASH_APPLIED[$file]:-}"
+  [ -n "$mut_hash" ] || { CONFIRM_WHY="no recorded applied-hash for $file; refusing to confirm"; return 1; }
+  pristine_hash="$(hash_of "$bak")"
+  if [ "$(hash_of "$file")" != "$mut_hash" ]; then
+    CONFIRM_WHY="$file is not the content this harness installed — another writer changed it"
+    MUT_CONCURRENT=1
+    return 1
+  fi
+  cp "$file" "$MUT_LOG_DIR/mutated.keep" || { CONFIRM_WHY="could not stash the mutated content"; return 1; }
+  _confirm_swap "$file" "$bak" "$mut_hash" || return 1
+  _confirm_rebuild fastgreen || { _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash"
+    CONFIRM_WHY="restored source did not rebuild, so the green leg could not be measured"; return 1; }
+  local rc=0
+  bash scripts/tests/run_tests.sh --fast > "$MUT_LOG_DIR/fast_confirm.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash" || return 1
+    _confirm_rebuild fastrestore >/dev/null 2>&1 || true
+    CONFIRM_WHY="fast suite still red after restoring the source"
+    return 1
+  fi
+  _confirm_swap "$file" "$MUT_LOG_DIR/mutated.keep" "$pristine_hash" || return 1
+  _confirm_rebuild fastred2 || { CONFIRM_WHY="re-applied mutation did not rebuild for the second red leg"; return 1; }
+  rc=0
+  bash scripts/tests/run_tests.sh --fast > "$MUT_LOG_DIR/fast_confirm2.log" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || { CONFIRM_WHY="fast suite green when the mutation was re-applied"; return 1; }
+  _confirm_red_ok "$MUT_LOG_DIR/fast_confirm2.log" "$rc" "${MUT_CLEAN_FAST_TAIL:-}" || return 1
+  return 0
+}
 
 run_mutation() {
   local num=$1       # 1-based index for display
@@ -1198,28 +1729,166 @@ run_mutation() {
   local result=""
 
   # Try to build
-  if $LAKE build > /tmp/mutation_build.log 2>&1; then
+  if $LAKE build > "$MUT_LOG_DIR/build.log" 2>&1; then
     # Build succeeded — run tests
     local gate="${MUT_GATE[$idx]:-}"
-    if ! bash scripts/tests/run_tests.sh --fast > /tmp/mutation_test.log 2>&1; then
-      result="KILLED"
-      KILLED=$((KILLED + 1))
-    elif [[ -n "$gate" ]] && ! bash "$gate" > /tmp/mutation_gate.log 2>&1; then
-      result="KILLED (gate)"
-      KILLED=$((KILLED + 1))
+    # THE NAMED GATE IS ALWAYS CONSULTED, and it is consulted against a CLEAN baseline.
+    #
+    # Two defects lived in the old ordering. First, a failing fast suite short-circuited to KILLED and
+    # the named gate never ran — so a family recorded as killed established nothing about the gate it
+    # names, which is the whole point of naming one. Second, nothing ever showed the named gate GREEN
+    # on unmutated source, so any gate that was red for an unrelated reason (a missing fixture, a
+    # leaked lock, a pre-existing failure) was credited as mutation evidence. That is the same
+    # false-green the campaign harness was repaired for on 2026-08-21; it was left live here.
+    local gate_verdict="none"
+    if [[ -n "$gate" ]]; then
+      if gate_clean_ok "$gate"; then
+        local grc=0
+        bash "$gate" > "$MUT_LOG_DIR/gate.log" 2>&1 || grc=$?
+        # THE SAME AUTHENTICATION THE CAMPAIGN APPLIES. This harness accepted ANY nonzero exit as a
+        # gate kill: it checked neither the precondition marker nor whether the gate reached a verdict,
+        # so a transient build failure inside the gate, a missing toolchain, repository contention, or
+        # an early death all counted as "the rule is load-bearing". Two producers of kill evidence and
+        # only one of them authenticated it.
+        if [[ $grc -eq 0 ]]; then
+          gate_verdict="green"
+        elif [[ $grc -eq 97 ]]; then
+          gate_verdict="died-early"
+        elif grep -q 'GATE-PRECONDITION-FAILED:' "$MUT_LOG_DIR/gate.log" 2>/dev/null; then
+          gate_verdict="precondition"
+        elif [[ -n "${MUT_CLEAN_TAIL[$gate]:-}" ]] \
+             && [[ "$(_mut_tail_shape "$MUT_LOG_DIR/gate.log")" != "${MUT_CLEAN_TAIL[$gate]}" ]]; then
+          gate_verdict="no-verdict"
+        else
+          gate_verdict="red"
+        fi
+        grep -q 'GATE-FRESHNESS-UNVERIFIED' "$MUT_LOG_DIR/gate.log" 2>/dev/null && MUT_FRESHNESS_TAINT=1
+      else
+        gate_verdict="invalid-baseline"
+      fi
+    fi
+    if [[ "$gate_verdict" == "invalid-baseline" ]]; then
+      result="ERROR (gate red on clean source — not evidence)"
+      ERRORS=$((ERRORS + 1))
+    elif [[ "$gate_verdict" == "died-early" ]]; then
+      result="ERROR ($gate exited 97, its documented died-early code — no verdict, not evidence)"
+      ERRORS=$((ERRORS + 1))
+    elif [[ "$gate_verdict" == "precondition" ]]; then
+      result="ERROR (a precondition of $gate failed — its assertions never ran, not evidence)"
+      ERRORS=$((ERRORS + 1))
+    elif [[ "$gate_verdict" == "no-verdict" ]]; then
+      result="ERROR ($gate never reached the end it reaches on pristine source — no verdict, not evidence)"
+      ERRORS=$((ERRORS + 1))
+    elif [[ "$gate_verdict" == "red" ]]; then
+      # CONFIRMED AGAINST RESTORED SOURCE, as the campaign does. Without this, a one-off unrelated
+      # gate failure was valid evidence in this harness while the campaign rejected it — two producers
+      # of the same kind of evidence with different standards, which is how this whole arc started.
+      # NON-DESTRUCTIVE. Calling `restore_mutation` here DELETED the backup, and the common tail
+      # then restored again, found none, and aborted the whole run — so this "fix" made a genuine
+      # named-gate kill impossible to accept. The confirmation swaps content directly and leaves the
+      # backup exactly where the normal restore expects it.
+      if confirm_gate_kill "$idx" "$gate"; then
+        result="KILLED (gate, confirmed green once restored)"
+        KILLED=$((KILLED + 1))
+      else
+        result="ERROR ($gate: $CONFIRM_WHY)"
+        ERRORS=$((ERRORS + 1))
+      fi
+    elif [[ "$MUT_CLEAN_FAST" != "yes" ]]; then
+      # The fast suite is not a usable producer in this run, so it cannot supply a kill.
+      result="ERROR (fast suite red on pristine source — not evidence)"
+      ERRORS=$((ERRORS + 1))
     else
-      result="SURVIVED"
-      SURVIVED=$((SURVIVED + 1))
+      # THE FAST SUITE IS AUTHENTICATED THE SAME WAY, and written as a plain sequence rather than a
+      # compound condition — the first version of this was a single `elif` with nested `&&`/`||` and
+      # an inline assignment, which is unreadable enough to be its own defect.
+      local fast_rc=0
+      bash scripts/tests/run_tests.sh --fast > "$MUT_LOG_DIR/test.log" 2>&1 || fast_rc=$?
+      grep -q 'GATE-FRESHNESS-UNVERIFIED' "$MUT_LOG_DIR/test.log" 2>/dev/null && MUT_FRESHNESS_TAINT=1
+      if [[ $fast_rc -eq 0 ]]; then
+        result="SURVIVED"
+        SURVIVED=$((SURVIVED + 1))
+      elif [[ $fast_rc -eq 97 ]]; then
+        # Its own documented contract: 97 means the summary file was never written, so no verdict was
+        # reached. A code no assertion produces cannot be read as an assertion failing.
+        result="ERROR (fast suite exited 97 — died early, no verdict, not evidence)"
+        ERRORS=$((ERRORS + 1))
+      elif grep -q 'GATE-PRECONDITION-FAILED:' "$MUT_LOG_DIR/test.log" 2>/dev/null; then
+        result="ERROR (a precondition of the fast suite failed — its assertions never ran)"
+        ERRORS=$((ERRORS + 1))
+      elif [[ -n "${MUT_CLEAN_FAST_TAIL:-}" ]] \
+           && [[ "$(_mut_tail_shape "$MUT_LOG_DIR/test.log")" != "$MUT_CLEAN_FAST_TAIL" ]]; then
+        result="ERROR (fast suite never reached the end it reaches on pristine source — no verdict)"
+        ERRORS=$((ERRORS + 1))
+      else
+        # The fast suite caught it but the named gate did not. Reported as such: a real kill, but not
+        # evidence that the named gate is load-bearing.
+        # CONFIRMED like a named-gate kill: a one-off failure during the mutated run only, with no
+        # reproduction, is not evidence. The fast suite was the last producer still accepting one
+        # observation.
+        if confirm_fast_kill "$idx"; then
+          result="KILLED (fast suite, confirmed; named gate stayed green)"
+          KILLED=$((KILLED + 1))
+        else
+          result="ERROR (fast suite: $CONFIRM_WHY)"
+          ERRORS=$((ERRORS + 1))
+        fi
+      fi
     fi
   else
-    # Build failed — type system caught it
-    result="KILLED (build)"
-    KILLED=$((KILLED + 1))
+    # BUILD FAILED. That is not automatically a kill: the mutation may simply be malformed. The
+    # diagnostic has to be attributable to the mutated file, and a failure that is only an
+    # unused-binding lint is a broken mutation rather than a type-system rejection. Same distinction
+    # the campaign harness makes, which this harness lacked entirely.
+    local mfile="${MUT_FILE[$idx]}" base
+    base="$(basename "$mfile" .lean)"
+    # ONE LINE MUST CARRY BOTH FACTS. Two independent greps over the whole log accepted a generic
+    # error from one file and the mutated basename from an unrelated line — so a mutation could be
+    # credited with somebody else's diagnostic. Lean emits `path:line:col: error: ...`, so the
+    # attribution is a single line naming the mutated file AND carrying the error.
+    # THE TARGET FILE'S OWN DIAGNOSTIC BLOCK. A Lean diagnostic is a `path:line:col: error:` header
+    # followed by an indented message, so the reason can legitimately sit on a later line — but
+    # `grep -A2` also swept in whatever came next, letting an UNRELATED file's diagnostic supply the
+    # reason. This keeps only the blocks whose header names the mutated file (header to next header).
+    if awk -v f="$mfile" '
+         /^[^ ].*:[0-9]+:[0-9]+: (error|warning)/ { inblk = (index($0, f ":") == 1) }
+         inblk { print }
+       ' "$MUT_LOG_DIR/build.log" \
+         | grep -qE "unsolved goals|[Tt]ype mismatch|Unknown identifier|Unknown constant|failed to synthesize|Missing cases|declaration uses 'sorry'"; then
+      # DECLARED PER FAMILY, exactly as the campaign requires. An attributable type error proves the
+      # mutation is unrepresentable, which is a real result — but it also means the family's NAMED
+      # GATE never ran, so it is not evidence that the gate is load-bearing. Without a declaration
+      # this harness credited every such family as killed and could exit successfully having exercised
+      # no gate at all.
+      #
+      # The allowlist starts EMPTY on purpose: the next full run enumerates exactly which families die
+      # in the build, and each is then declared deliberately with a reason. Guessing the list here
+      # would be the same unverified assertion this whole exercise exists to remove.
+      if build_kill_declared "${MUT_DESC[$idx]}"; then
+        result="KILLED (build, declared)"
+        KILLED=$((KILLED + 1))
+      else
+        result="ERROR (UNDECLARED build kill — ${MUT_GATE[$idx]:-no gate} never ran, so it is not shown load-bearing)"
+        ERRORS=$((ERRORS + 1))
+      fi
+    elif grep -qE "unused variable|This simp argument is unused|unused binding" "$MUT_LOG_DIR/build.log"; then
+      result="ERROR (invalid mutation — unused-binding lint, not the rule)"
+      ERRORS=$((ERRORS + 1))
+    else
+      result="ERROR (build failed unattributably — inspect $MUT_LOG_DIR/build.log)"
+      ERRORS=$((ERRORS + 1))
+    fi
   fi
 
-  # Restore original
-  restore_mutation "$idx"
+  # Restore original. A failed restore-build is fatal to the REST of the run, because every later
+  # family would be judged against a binary built from this mutation.
+  restore_mutation "$idx" || true
   TOTAL=$((TOTAL + 1))
+  if [ "${RESTORE_BUILD_FAILED:-0}" = "1" ]; then
+    echo "$result"
+    echo "  ABORTING: refusing to run further families against a mutated binary." >&2
+    return 1
+  fi
 
   if [[ "$result" == "SURVIVED" ]]; then
     echo "$result  <-- TEST GAP"
@@ -1272,6 +1941,8 @@ else
   echo "       see /tmp/mutation_preflight.log" >&2
   exit 2
 fi
+# Measured HERE: pristine source, nothing mutated yet, nothing built from a mutation.
+baseline_clean_producers
 echo ""
 
 if [[ "$MODE" == "single" ]]; then
@@ -1287,6 +1958,12 @@ else
 fi
 
 echo ""
+if [ "${MUT_FRESHNESS_TAINT:-0}" = "1" ]; then
+  echo ""
+  echo "FRESHNESS UNVERIFIED: at least one gate ran against a binary nobody verified against source." >&2
+  echo "  Every verdict below describes that binary. This run is not evidence." >&2
+  ERRORS=$((ERRORS + 1))
+fi
 echo "=== Results: $KILLED killed, $SURVIVED survived, $ERRORS errors ($TOTAL total) ==="
 
 if [[ "$SURVIVED" -gt 0 ]]; then

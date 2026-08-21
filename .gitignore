@@ -148,3 +148,5 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .gate.lock/
 .ci-gates-summary
 .ci-gate-failures/
+.mutation-campaign-summary
+.mutation-campaign-summary.partial

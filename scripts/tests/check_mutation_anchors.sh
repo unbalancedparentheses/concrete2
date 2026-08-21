@@ -33,42 +33,45 @@ HARNESS="scripts/tests/test_mutation.sh"
 # `|| rc=$?` because the ERR trap would otherwise fire on the python exit and kill the
 # gate before it can print its own verdict — the failure mode this gate exists to notice,
 # reproduced in the gate itself on its first run.
+# THE AUTHORITATIVE CHECKER IS INVOKED, NOT REIMPLEMENTED.
+#
+# This gate used to re-parse the harness's bash source with a python regex and unescape it by hand.
+# The harness already ships `--check-patterns`, which iterates the REAL arrays it applies and requires
+# each anchor to match EXACTLY ONCE — and its own comment records that a separate re-parsing check
+# "mis-handled multi-line MUT_OLD entries and reported 17 false stalenesses". So there were two
+# implementations of "does this anchor identify a site", the weaker one was the gate, and on
+# 2026-08-21 strengthening the weak copy merely duplicated a check the authority already performed
+# correctly. A gate must not be a second opinion about the thing it is checking.
 rc=0
-python3 - "$HARNESS" <<'PY' || rc=$?
-import re, sys, os
+DELEG_OUT="$(mktemp)"
+bash "$HARNESS" --check-patterns > "$DELEG_OUT" 2>&1 || rc=$?
+# A ZERO EXIT IS NOT A VERDICT: a harness that exits early, or whose mode is renamed, would exit 0
+# having asserted nothing. The verdict line must be present and name a credible count.
+DELEG_VERDICT="$(grep -oE 'all [0-9]+ mutation patterns match their target exactly once' "$DELEG_OUT" | head -1)"
+DELEG_COUNT="$(printf '%s' "$DELEG_VERDICT" | grep -oE '[0-9]+' | head -1)"
+if [ "$rc" -eq 0 ]; then
+  if [ -z "$DELEG_VERDICT" ] || [ -z "$DELEG_COUNT" ] || [ "$DELEG_COUNT" -lt 50 ]; then
+    echo "  FAIL $HARNESS --check-patterns exited 0 without a credible verdict"
+    echo "       (found: '${DELEG_VERDICT:-<nothing>}') — a delegated check that reports nothing"
+    echo "       must not be read as a check that passed."
+    rc=1
+  else
+    echo "  ok   $DELEG_VERDICT ($HARNESS)"
+  fi
+else
+  echo "  FAIL $HARNESS reports inert or ambiguous mutation anchors:"
+  grep -E '^  STALE|^FAIL' "$DELEG_OUT" | sed 's/^/    /' | head -12
+fi
+rm -f "$DELEG_OUT"
+
+# The per-gate coverage floors below are a DIFFERENT fact — how many mutations name each gate — and
+# they are declarations in the harness source, so parsing is the only way to read them.
+rc2=0
+python3 - "$HARNESS" <<'PY' || rc2=$?
+import re, sys
 harness = sys.argv[1]
 src = open(harness).read()
-
-files = re.findall(r'MUT_FILE\+=\("([^"]+)"\)', src)
-olds  = re.findall(r'MUT_OLD\+=\("(.*?)"\)\n', src, re.S)
-
 fail = 0
-# Pairing by ORDER is how the harness itself indexes these arrays, so a count mismatch
-# means some entry is malformed and every mutation after it is paired with the wrong file.
-if len(files) != len(olds):
-    print(f"  FAIL MUT_FILE ({len(files)}) and MUT_OLD ({len(olds)}) counts differ — the arrays are index-paired, so a mismatch mis-pairs every entry after it")
-    fail += 1
-    sys.exit(1)
-
-stale = []
-for i, (f, o) in enumerate(zip(files, olds), 1):
-    # BASH HONOURS EXACTLY FOUR ESCAPES inside double quotes: \" \$ \\ and \` — and this mirrored
-    # only three. An anchor containing a backtick therefore could never match its file, so the gate
-    # reported "cannot be applied" for a mutation whose target text was present and correct. That is
-    # the worst shape of failure for this particular gate: it exists to detect inert mutations, and a
-    # false report here sends someone to re-anchor source that was never stale. Lean comments quote
-    # identifiers in backticks constantly, so any anchor spanning a doc comment hit it.
-    o = (o.replace('\\"', '"').replace('\\$', '$')
-          .replace('\\`', '`').replace('\\\\', '\\'))
-    if not os.path.exists(f):
-        stale.append((i, f, "the FILE no longer exists")); continue
-    if o not in open(f).read():
-        stale.append((i, f, o.strip().split('\n')[0][:70]))
-
-for i, f, why in stale:
-    print(f"  FAIL mutation #{i} cannot be applied to {f}")
-    print(f"       anchor: {why}")
-
 # MUTATION COVERAGE PER GATE. "Every leg is mutation-verified" is a discipline nobody can
 # enforce by reading, and I applied it inconsistently across this arc — several legs turned
 # out to pass for the wrong reason, and three gates could not fail at all. This is the
@@ -94,17 +97,11 @@ for gate, floor in sorted(FLOORS.items()):
 
 if fail:
     sys.exit(1)
-
-if stale:
-    print()
-    print(f"  {len(stale)} of {len(files)} mutations are inert. Re-anchor each on the current")
-    print("  code shape. Do NOT delete them and do NOT leave them skipped: a mutation is the")
-    print("  evidence that some gate is load-bearing, and an inert one withdraws that evidence")
-    print("  without saying so.")
-    sys.exit(1)
-
-print(f"  ok   all {len(files)} mutation anchors still exist in their files")
 PY
+# The delegated anchor verdict and the per-gate coverage floors are separate results, and both
+# must hold. Keeping them separate matters: the floors are about how many mutations NAME a gate,
+# which is a declaration; the anchor verdict is about whether those mutations can be APPLIED.
+[ "$rc2" -eq 0 ] || rc=1
 
 # BOTH MUTATION CORPORA, and it was one. This gate checked `test_mutation.sh`'s 77 anchors and
 # nothing else, while `check_gate_mutation_coverage.sh` carries 78 more with no integrity check at
@@ -119,14 +116,31 @@ PY
 # arrays, and a second parser for the `add` format would drift from the harness it describes.
 COV_RC=0
 if [ -x scripts/tests/check_gate_mutation_coverage.sh ] || [ -f scripts/tests/check_gate_mutation_coverage.sh ]; then
-  if ANCHORS_ONLY=1 bash scripts/tests/check_gate_mutation_coverage.sh > /tmp/.anchors_cov.$$ 2>&1; then
-    echo "  ok   $(grep -oE 'all [0-9]+ anchors still match their targets' /tmp/.anchors_cov.$$ | head -1) (check_gate_mutation_coverage)"
+  # mktemp, not a predictable /tmp path a same-user process could preplant a symlink at —
+  # the same reasoning already applied to the other delegated output below.
+  COV_OUT="$(mktemp)" || { echo "  FAIL could not create a temp file for the delegated check"; exit 1; }
+  if ANCHORS_ONLY=1 bash scripts/tests/check_gate_mutation_coverage.sh > "$COV_OUT" 2>&1; then
+    # A ZERO EXIT IS NOT A VERDICT. This printed `ok` on any successful exit and quoted whatever the
+    # grep found — which is the empty string when the child produced no verdict at all. A child
+    # replaced by `exit 0`, or one exiting early before its loop, therefore yielded `ok  ` and PASS=2:
+    # the delegation reported that 81 anchors were checked when nothing had been. The child's own
+    # vacuity floor cannot help, because the failure mode is the child's logic DISAPPEARING.
+    COV_VERDICT="$(grep -oE 'all [0-9]+ anchors still match their targets' "$COV_OUT" | head -1)"
+    COV_COUNT="$(printf '%s' "$COV_VERDICT" | grep -oE '[0-9]+' | head -1)"
+    if [ -z "$COV_VERDICT" ] || [ -z "$COV_COUNT" ] || [ "$COV_COUNT" -lt 50 ]; then
+      COV_RC=1
+      echo "  FAIL check_gate_mutation_coverage exited 0 but produced no credible anchor verdict"
+      echo "       (found: '${COV_VERDICT:-<nothing>}') — a delegated check that reports nothing"
+      echo "       must not be read as a check that passed."
+    else
+      echo "  ok   $COV_VERDICT (check_gate_mutation_coverage)"
+    fi
   else
     COV_RC=1
     echo "  FAIL check_gate_mutation_coverage has inert mutation families:"
-    grep -E '^  FAIL' /tmp/.anchors_cov.$$ | sed 's/^/    /' | head -12
+    grep -E '^  FAIL' "$COV_OUT" | sed 's/^/    /' | head -12
   fi
-  rm -f /tmp/.anchors_cov.$$
+  rm -f "$COV_OUT"
 else
   COV_RC=1
   echo "  FAIL scripts/tests/check_gate_mutation_coverage.sh is missing — its 78 families are unchecked"
