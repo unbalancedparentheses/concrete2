@@ -10,6 +10,37 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Post-R-0004 Mutation Harness Hardening And Qualification Reset
+
+_Harness and documentation, 2026-08-21. Code landed at `898d9a7b`; no 81-family result is claimed._
+
+The mutation harness now distinguishes “a gate went red” from “this mutation made its intended
+rule go red.” A scored kill requires a green pristine gate, a pristine build, an exact unique
+anchor, an authenticated gate completion, then restore/rebuild/re-run green and
+reapply/rebuild/re-run red. Mutations execute in disposable workspaces and every launched unit must
+report back; missing or empty results cannot become success.
+
+This work withdraws earlier 15/15 and applicability claims that were based on weaker checks.
+Independent review repeatedly found the same infrastructure defect class: one fact had multiple
+producers with different acceptance rules—tree state, anchor matching, kill attribution, locks and
+completion artifacts. The canonical producer/consumer was repaired rather than adding another
+summary-side check.
+
+The first 81-family attempt against `898d9a7b` is not evidence. Its artifact says
+`completed=0`, `families_run=0`, `baseline_gates_green=0/0`, and
+`run_did_not_reach_reconciliation`; it stopped before the baseline. A second schema defect is also
+open: the current artifact conflates completion with qualification by requiring zero failed
+families for `completed=1`. The next campaign must report `completed` (did every family report?)
+and `qualified` (did every family causally die with no refusal?) separately. R-0004 remains closed
+by its protected 205/205 production-gate run; the mutation campaign is stronger post-closure
+qualification, and any product-authority defect it finds is handled before R-0482 begins.
+
+Roadmap status was consolidated in the same documentation pass: the August 1 red dashboard and
+old “next 20” queue are historical, Slice 8 is shipped rather than pending, the current strict path
+starts with mutation qualification and R-0208 before R-0482, and a second kernel is research-gated
+rather than a product-path dependency. The detailed chronology is indexed in
+[docs/archive/R-0004_EXECUTION_HISTORY.md](docs/archive/R-0004_EXECUTION_HISTORY.md).
+
 ### R-0004 CLOSED: Trustworthy `proved`
 
 _Compiler, gates and harness, 2026-08-20._
@@ -49,8 +80,8 @@ compiler source mutated in the working tree, and no trap can prevent that.
 that bash therefore never parsed. Seventeen of its thirty-seven assertions had never run. It is now
 17/0 with summary and exit status in agreement.
 
-**Recorded, not resolved:** PackageIdentity over-binds — a two-line std edit moved every package
-identity in the repository — and post-build executable bytes are unclaimed, since the identity is
+**Recorded, not resolved:** PackageIdentity over-binds — a two-line std edit moved 7 of 21 measured
+package identities — and post-build executable bytes are unclaimed, since the identity is
 computed at build time over an explicit 96-file source inventory. Both are fail-safe: the failure
 mode is demotion, never a proof credited to a body it does not describe.
 
@@ -81,8 +112,9 @@ gate that compares what the binary reports against what the sources produce.
 checkout consumed against another checkout's sources at a different absolute path. An unbuilt checkout
 issues nothing rather than issuing unverified receipts.
 
-**Slice 8 attack suite** (20/0): substitution between claims, packages and programs; trust deletion,
-laundering and fabrication; partial decoding, schema confusion, duplicate and unknown fields,
+**Slice 8 attack suite** (24/0 after the independent packet): substitution between claims,
+packages and programs; trust deletion, laundering and fabrication; partial decoding, schema
+confusion, duplicate and unknown fields,
 truncated digests; forged roots, artifacts and table bindings. Every attack modifies one record in a
 store of five genuine receipts and asserts BOTH that the attacked record is rejected AND that the rest
 stay current, so neither deny-all nor accept-all can pass. It found one real defect: a store holding

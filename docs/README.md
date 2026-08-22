@@ -121,9 +121,9 @@ Every new or materially rewritten document starts with a status line chosen from
 
 Promotion is a move, not a relabel in place: when research becomes a rule, create or move the
 normative form into `docs/`, link the old research note to it, and leave the research note dated.
-When a stable document becomes historical, move it under a future `docs/archive/` only after link
-checking and add a replacement pointer. Do not reorganize files merely for aesthetics while active
-tasks cite them.
+When a stable document becomes historical, move it under `docs/archive/` only after link checking
+and add a replacement pointer. Do not reorganize files merely for aesthetics while active tasks
+cite them.
 
 ## Physical Layout
 
@@ -143,6 +143,7 @@ Current families:
 - `docs/verification/` — charter, evidence, VIR, proof workflow and trust model;
 - `docs/platform/` — ABI, FFI, targets, runtime and freestanding boundaries;
 - `docs/project/` — project identity, policy, decisions, examples and authoring conventions;
+- `docs/archive/` — dated, non-authoritative execution history retained for traceability;
 - existing `docs/stdlib/`, `docs/bugs/`, `docs/book/`, and `docs/NOTES/` remain distinct.
 
 The canonical-owner table above remains the authority layer. Do not create compatibility copies
