@@ -72,6 +72,34 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # before the preamble and comparing at snapshot time.
 _PREAMBLE_SHA="$( { sha256sum "${BASH_SOURCE[0]}" 2>/dev/null || shasum -a 256 "${BASH_SOURCE[0]}"; } | cut -c1-32 )"
 LAKE="${LAKE:-lake}"
+RUN_T0=$(date +%s)
+
+# PER-PHASE TIMING, so the next optimisation is chosen from measurement rather than from my
+# assumption that builds dominate. The 898d9a7b campaign took ~20 hours for 81 families and nothing
+# in it recorded WHERE that time went.
+#
+# These two wrappers are also the single invocation site for "build the workspace" and "run a gate in
+# the workspace". Those were spelled out at five and five places respectively, which is the
+# duplicated-producer shape this harness keeps paying for — a timing wrapper is a poor reason to add a
+# sixth copy, and a good reason to remove the other nine.
+declare -A PHASE_SECS
+declare -A FAMILY_SECS
+_sw_now(){ date +%s; }
+_timed_build(){ # logfile
+  local _t0 rc=0; _t0=$(_sw_now)
+  ( cd "$WORK" && "$LAKE" build ) >"$1" 2>&1 || rc=$?
+  local d=$(( $(_sw_now) - _t0 ))
+  PHASE_SECS[build]=$(( ${PHASE_SECS[build]:-0} + d )); FAMILY_SECS[build]=$(( ${FAMILY_SECS[build]:-0} + d ))
+  return $rc
+}
+_timed_gate(){ # gate-path logfile
+  local _t0 rc=0; _t0=$(_sw_now)
+  ( cd "$WORK" && bash "$1" ) >"$2" 2>&1 || rc=$?
+  local d=$(( $(_sw_now) - _t0 ))
+  PHASE_SECS[gate]=$(( ${PHASE_SECS[gate]:-0} + d )); FAMILY_SECS[gate]=$(( ${FAMILY_SECS[gate]:-0} + d ))
+  return $rc
+}
+
 ONLY="${FAMILY:-}"
 # A single-family probe and a full campaign make different claims. Only a campaign can ever qualify;
 # a probe must be able to SUCCEED on a sound selected result without ever storing or printing campaign
@@ -1171,6 +1199,14 @@ write_summary() {
          echo "survived=${SURVIVED_N:-0}"
          echo "could_not_apply=${COULD_NOT_APPLY:-0}"
          echo "integrity_ok=${INTEGRITY_OK:-0}"
+         # Measured, not estimated. `secs_other` is whatever is left after builds and gate runs —
+         # mutation apply, restores, digests, snapshot bookkeeping — so the three numbers account for
+         # the whole run and an unexplained remainder cannot hide.
+         echo "secs_total=${RUN_SECS:-0}"
+         echo "secs_copy=${PHASE_SECS[copy]:-0}"
+         echo "secs_build=${PHASE_SECS[build]:-0}"
+         echo "secs_gate=${PHASE_SECS[gate]:-0}"
+         echo "secs_other=$(( ${RUN_SECS:-0} - ${PHASE_SECS[copy]:-0} - ${PHASE_SECS[build]:-0} - ${PHASE_SECS[gate]:-0} ))"
          echo "qualified=${QUALIFIED:-0}"
          # Retained for continuity with older records; `reported` is the field to read.
          echo "families_declared=${N:-0}"
@@ -1458,7 +1494,9 @@ TMP=$(mktemp -d "$_MUT_TMP_PREFIX.$$.XXXXXX") || {
 WORK="$TMP/repo"
 mkdir -p "$WORK" || { echo "FATAL: could not create $WORK" >&2; _gate_lock_release; exit 2; }
 printf 'owner_pid=%s\nstarted_head=%s\n' "$$" "$START_HEAD" > "$TMP/.concrete-mutation-workspace"
+_copy_t0=$(date +%s)
 cp -a "$ROOT_DIR/." "$WORK/" 2>/dev/null || { echo "error: could not create the isolated workspace" >&2; _gate_lock_release; exit 2; }
+PHASE_SECS[copy]=$(( $(date +%s) - _copy_t0 ))
 [ -d "$WORK/.git" ] || { echo "error: isolated workspace has no .git; per-family restore would not work" >&2; _gate_lock_release; exit 2; }
 
 # THE ACTIVATED WORKSPACE IS BOUND TO THE RECORDED STATE.
@@ -1698,7 +1736,7 @@ _require_measured() { # value label
 
 baseline_pristine_build(){
   printf "baseline: pristine workspace builds ... "
-  if ( cd "$WORK" && "$LAKE" build ) >"$TMP/pristine_build.log" 2>&1; then
+  if _timed_build "$TMP/pristine_build.log"; then
     echo "ok"; return 0
   fi
   echo "FAILED"
@@ -1719,7 +1757,7 @@ baseline_all_gates(){
   total=${#uniq[@]}
   echo "=== clean-gate baseline: $total distinct gates on the pristine workspace ==="
   for g in "${uniq[@]}"; do
-    if ( cd "$WORK" && bash "scripts/tests/$g" ) >"$TMP/clean.log" 2>&1; then
+    if _timed_gate "scripts/tests/$g" "$TMP/clean.log"; then
       CLEAN_GATE[$g]=yes
       _note_freshness_taint "$TMP/clean.log"
       CLEAN_GATE_TAIL[$g]="$(_tail_shape "$TMP/clean.log")"
@@ -1771,6 +1809,7 @@ run_one(){
   # strip the trailing newline the printf added (match raw substring)
   perl -i -pe 'chomp if eof' "$TMP/old" "$TMP/new"
   echo "--- family $((i+1))/$N: $nm ($file -> ${GATE[$i]}) ---"
+  FAMILY_SECS[build]=0; FAMILY_SECS[gate]=0; _fam_t0=$(_sw_now)
   # THE POSITIVE CONTROL was measured before this campaign mutated anything. A gate that is already
   # red proves nothing by going red again.
   if ! gate_clean_ok "${GATE[$i]}"; then
@@ -1784,7 +1823,7 @@ run_one(){
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
-    if ! ( cd "$WORK" && "$LAKE" build ) >"$TMP/build.log" 2>&1; then
+    if ! _timed_build "$TMP/build.log"; then
       # A build failure is NOT automatically a kill. Distinguish two very different things:
       #
       #   * the type system (or a proof) REJECTED the mutation — a real and strong result,
@@ -1842,7 +1881,7 @@ rather than counting it as a kill)"
   fi
   if [ "$killed" -eq 0 ]; then
     _gate_rc=0
-    ( cd "$WORK" && bash "$gate" ) >"$TMP/gate.log" 2>&1 || _gate_rc=$?
+    _timed_gate "$gate" "$TMP/gate.log" || _gate_rc=$?
     if [ "$_gate_rc" -eq 0 ]; then
       note="(SURVIVED — gate stayed green)"
     else
@@ -1922,11 +1961,11 @@ failed to synthesize|Missing cases|declaration uses 'sorry'"; then
           invalid=1; note="(INVALID — could not restore $file to confirm the kill)"; _confirm_ok=0
         fi
         if [ "$_confirm_ok" = "1" ] && [ "$needs" = yes ]; then
-          ( cd "$WORK" && "$LAKE" build ) >"$TMP/confirm_build.log" 2>&1 || _confirm_ok=0
+          _timed_build "$TMP/confirm_build.log" || _confirm_ok=0
         fi
         if [ "$_confirm_ok" = "1" ]; then
           _clean_rc=0
-          ( cd "$WORK" && bash "$gate" ) >"$TMP/confirm_clean.log" 2>&1 || _clean_rc=$?
+          _timed_gate "$gate" "$TMP/confirm_clean.log" || _clean_rc=$?
           if [ "$_clean_rc" -ne 0 ] || ! _reached_own_end "$TMP/confirm_clean.log" "${GATE[$i]}"; then
             invalid=1
             note="(INVALID — ${GATE[$i]} did not go cleanly green after restoring $file, so its \
@@ -1944,7 +1983,7 @@ failure under mutation is not attributable to the mutation)"
           # FAILED BUILD rather than by the gate — and the leg below then accepted any nonzero exit
           # without the exit-97, precondition, or end-shape checks the FIRST red leg gets. The
           # confirmation was weaker than the thing it was confirming.
-          ( cd "$WORK" && "$LAKE" build ) >"$TMP/confirm_build2.log" 2>&1 || {
+          _timed_build "$TMP/confirm_build2.log" || {
             invalid=1
             note="(INVALID — the mutated tree did not rebuild for the confirming red leg, so the \
 kill could not be reproduced under the same conditions)"
@@ -1953,7 +1992,7 @@ kill could not be reproduced under the same conditions)"
         fi
         if [ "$_confirm_ok" = "1" ]; then
           _red2_rc=0
-          ( cd "$WORK" && bash "$gate" ) >"$TMP/confirm_red.log" 2>&1 || _red2_rc=$?
+          _timed_gate "$gate" "$TMP/confirm_red.log" || _red2_rc=$?
           if [ "$_red2_rc" -eq 0 ]; then
             invalid=1
             note="(INVALID — ${GATE[$i]} was GREEN when the mutation was re-applied, so the earlier \
@@ -1982,6 +2021,10 @@ $_RED_LEG_WHY)"
     fi
   fi
   restore_work "$file" || return
+  # Where this family's wall-clock went, so the aggregate below can be trusted and a single slow
+  # family is visible rather than averaged away.
+  printf '  [t] family=%ds build=%ds gate=%ds\n' \
+    "$(( $(_sw_now) - ${_fam_t0:-0} ))" "${FAMILY_SECS[build]:-0}" "${FAMILY_SECS[gate]:-0}"
   if [ "$killed" -eq 1 ]; then
     echo "  ok   $nm KILLED $note"; PASS=$((PASS+1))
   else
@@ -2026,7 +2069,7 @@ if [ -n "$ONLY" ]; then
   # case the first build of the run would be the mutated one.
   baseline_pristine_build || { write_summary 0 " pristine_build_failed"; rm -rf "$TMP"; _gate_lock_release; exit 2; }
   BASELINE_TOTAL=1
-  if ( cd "$WORK" && bash "scripts/tests/$_only_gate" ) >"$TMP/clean.log" 2>&1; then
+  if _timed_gate "scripts/tests/$_only_gate" "$TMP/clean.log"; then
     CLEAN_GATE[$_only_gate]=yes; BASELINE_GREEN=1; BASELINE_RED=0
     _note_freshness_taint "$TMP/clean.log"
     CLEAN_GATE_TAIL[$_only_gate]="$(_tail_shape "$TMP/clean.log")"
@@ -2093,6 +2136,7 @@ else
 fi
 
 REACHED_END=1
+RUN_SECS=$(( $(date +%s) - RUN_T0 ))
 
 # ---------------------------------------------------------------------------
 # CAMPAIGN INTEGRITY. Each dimension that moved is NAMED, because "completed=0" with no reason is
