@@ -73,6 +73,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 _PREAMBLE_SHA="$( { sha256sum "${BASH_SOURCE[0]}" 2>/dev/null || shasum -a 256 "${BASH_SOURCE[0]}"; } | cut -c1-32 )"
 LAKE="${LAKE:-lake}"
 ONLY="${FAMILY:-}"
+# A single-family probe and a full campaign make different claims. Only a campaign can ever qualify;
+# a probe must be able to SUCCEED on a sound selected result without ever storing or printing campaign
+# qualification. Conflating the two would break the registered FAMILY=n consumers, including
+# check_phase6c_observability.sh, which chains two of them with `&&`.
+CAMPAIGN_MODE=campaign; [ -z "$ONLY" ] || CAMPAIGN_MODE=single
 
 # ---------------------------------------------------------------------------
 # IMMUTABLE DRIVER SNAPSHOT.
@@ -1153,10 +1158,23 @@ write_summary() {
   local tmp
   tmp="$(mktemp "$target.XXXXXX" 2>/dev/null)" || { echo "error: could not create a temp artifact" >&2; return 1; }
   if ! { echo "completed=$1"
+         # MODE IS PART OF THE RECORD. A single-family probe and a full campaign are different claims,
+         # and only one of them can ever qualify. Stating it means a partial record cannot be read as
+         # a campaign one.
+         echo "mode=${CAMPAIGN_MODE:-campaign}"
+         echo "discovered=${N:-0}"
+         echo "selected=${EXPECTED_RUN:-${N:-0}}"
+         echo "executed=${FAMILIES_RUN:-0}"
+         echo "reported=$(( ${PASS:-0} + ${FAIL:-0} ))"
+         echo "killed=${PASS:-0}"
+         echo "invalid=${INVALID:-0}"
+         echo "survived=${SURVIVED_N:-0}"
+         echo "could_not_apply=${COULD_NOT_APPLY:-0}"
+         echo "integrity_ok=${INTEGRITY_OK:-0}"
+         echo "qualified=${QUALIFIED:-0}"
+         # Retained for continuity with older records; `reported` is the field to read.
          echo "families_declared=${N:-0}"
          echo "families_run=${FAMILIES_RUN:-0}"
-         echo "verdicts=$(( ${PASS:-0} + ${FAIL:-0} ))"
-         echo "killed=${PASS:-0}"
          # Split, because they are different strengths of evidence: only killed_by_gate shows the
          # family's named gate is load-bearing. A build kill skips the gate entirely.
          echo "killed_by_gate=${KILLED_BY_GATE:-0}"
@@ -1723,6 +1741,13 @@ gate_clean_ok(){ # gate-path (bare filename) — was this gate green on the PRIS
 # family's named gate is load-bearing, because the gate is skipped once the build already failed.
 KILLED_BY_GATE=0; KILLED_BY_BUILD=0
 UNDECLARED_BUILD_KILLS=""
+# DISPOSITIONS ARE COUNTED SEPARATELY. `FAIL` lumped three different outcomes together — a gate that
+# was already red, a mutation that could not be applied, and a mutation the gate FAILED TO CATCH — so
+# the artifact could not say which. They mean different things and need different work: a survivor is
+# a coverage gap in the gate, an invalid is a broken experiment, and a could-not-apply is a stale
+# anchor. The 81-family run on 898d9a7b reported `failed=8` and left which-was-which to be recovered
+# from the log.
+INVALID=0; SURVIVED_N=0; COULD_NOT_APPLY=0
 FRESHNESS_UNVERIFIED=0
 _note_freshness_taint() { grep -q 'GATE-FRESHNESS-UNVERIFIED' "$1" 2>/dev/null && FRESHNESS_UNVERIFIED=1; return 0; }
 
@@ -1751,10 +1776,11 @@ run_one(){
   if ! gate_clean_ok "${GATE[$i]}"; then
     echo "  FAIL $nm: INVALID — ${GATE[$i]} does not pass on the UNMUTATED workspace, so its failure"
     echo "       under mutation is not evidence. Fix the gate (or its fixtures/lock) first."
-    FAIL=$((FAIL+1)); return
+    FAIL=$((FAIL+1)); INVALID=$((INVALID+1)); return
   fi
   if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
-    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"; FAIL=$((FAIL+1)); restore_work "$file"; return
+    echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"
+    FAIL=$((FAIL+1)); COULD_NOT_APPLY=$((COULD_NOT_APPLY+1)); restore_work "$file"; return
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
@@ -1810,7 +1836,7 @@ rather than counting it as a kill)"
     fi
   fi
   if [ "$invalid" -eq 1 ]; then
-    echo "  FAIL $nm $note"; FAIL=$((FAIL+1))
+    echo "  FAIL $nm $note"; FAIL=$((FAIL+1)); INVALID=$((INVALID+1))
     restore_work "$file"
     return
   fi
@@ -1956,8 +1982,29 @@ $_RED_LEG_WHY)"
     fi
   fi
   restore_work "$file" || return
-  if [ "$killed" -eq 1 ]; then echo "  ok   $nm KILLED $note"; PASS=$((PASS+1));
-  else echo "  FAIL $nm $note"; FAIL=$((FAIL+1)); fi
+  if [ "$killed" -eq 1 ]; then
+    echo "  ok   $nm KILLED $note"; PASS=$((PASS+1))
+  else
+    echo "  FAIL $nm $note"; FAIL=$((FAIL+1))
+    # A SURVIVOR AND AN INVALID ARE NOT THE SAME FINDING. Survived = the gate ran, reached its verdict,
+    # and stayed green: a real coverage gap. Invalid = the experiment did not establish anything.
+    if [ "$invalid" -eq 1 ]; then INVALID=$((INVALID+1)); else SURVIVED_N=$((SURVIVED_N+1)); fi
+  fi
+  # FAILURE EVIDENCE IS RETAINED. Per-family logs live in the run's temp directory and are deleted on
+  # completion — correct for the 73 kills, and an own-goal for the 8 findings, whose diagnosis was
+  # discarded with them. The 898d9a7b run reported four "build failed for an unrecognised reason"
+  # families and kept nothing to inspect. Only failing families are kept, so this cannot grow without
+  # bound.
+  if [ "$killed" -ne 1 ]; then
+    _keep="$ROOT_DIR/.mutation-failures/$nm"
+    mkdir -p "$_keep" 2>/dev/null \
+      && { for _l in build.log gate.log clean.log confirm_clean.log confirm_red.log \
+                     confirm_build.log confirm_build2.log aerr; do
+             [ -f "$TMP/$_l" ] && cp "$TMP/$_l" "$_keep/$_l" 2>/dev/null
+           done
+           printf 'family=%s\nfile=%s\ngate=%s\nverdict=%s\n' \
+             "$nm" "$file" "${GATE[$i]}" "$note" > "$_keep/verdict.txt" 2>/dev/null; }
+  fi
 }
 
 echo "=== gate mutation coverage: $N families ==="
@@ -2122,6 +2169,8 @@ EXPECTED_RUN="$N"; [ -n "$ONLY" ] && EXPECTED_RUN=1
 # "discovered but not executed" failure this dimension exists to catch. FAMILIES_RUN stays in the
 # artifact as reported data, not as an assertion.
 VERDICTS=$(( PASS + FAIL ))
+# Every SELECTED unit reported a verdict. This is what `completed` asserts — not that they all passed.
+REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
 [ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
 
 # SCOPE IS NOT INTEGRITY, and conflating them broke a working gate. Everything above says "these
@@ -2135,15 +2184,51 @@ SCOPE_NOTES=""
 [ -z "$ONLY" ] || SCOPE_NOTES=" single_family_selected($ONLY)"
 ALL_REFUSALS="$REFUSALS$SCOPE_NOTES"
 
-COMPLETED=0; [ -z "$ALL_REFUSALS" ] && [ "$FAIL" -eq 0 ] && COMPLETED=1
+# COMPLETED AND QUALIFIED ARE DIFFERENT FACTS, and conflating them recreated exactly the
+# missing-summary ambiguity this harness exists to remove.
+#
+#   completed = this run reached reconciliation and every SELECTED unit reported a verdict.
+#               It says the record is trustworthy, NOT that the corpus is discharged.
+#   qualified = a full campaign, complete, integrity intact, and every family met its declared causal
+#               route. It says the corpus IS discharged.
+#
+# The 81-family run on 898d9a7b executed and reported all 81 families and still said `completed=0`,
+# because `FAIL -eq 0` was folded into completion. A complete report of eight unresolved claims is a
+# GOOD artifact; calling it incomplete discards the distinction between "did not finish" and "finished
+# and found problems". That was Codex round-12 finding 1 resolved on the wrong axis: the finding (a
+# closure run could write completed=1 with failed gates) was real, and the fix should have been two
+# fields rather than one stricter field.
+INTEGRITY_OK=1; [ -z "$REFUSALS" ] || INTEGRITY_OK=0
+
+COMPLETED=0
+[ "$REACHED_END" = "1" ] && [ "${REPORTED_ALL:-0}" = "1" ] && COMPLETED=1
+
+QUALIFIED=0
+if [ "$COMPLETED" = "1" ] && [ "$INTEGRITY_OK" = "1" ] \
+   && [ "${CAMPAIGN_MODE:-campaign}" = "campaign" ] \
+   && [ "${PASS:-0}" = "${N:-0}" ] \
+   && [ "${INVALID:-0}" -eq 0 ] && [ "${SURVIVED_N:-0}" -eq 0 ] && [ "${COULD_NOT_APPLY:-0}" -eq 0 ]; then
+  QUALIFIED=1
+fi
 ARTIFACT_OK=1; write_summary "$COMPLETED" "$ALL_REFUSALS" || ARTIFACT_OK=0
 
 # The process succeeds when the verdicts are sound and durably recorded: integrity intact, no failing
 # family, artifact written. Deliberate scope does not enter this.
+# EXIT FOLLOWS `qualified` ONLY IN CAMPAIGN MODE.
+#
+# A campaign's job is to discharge the corpus, so its exit tracks qualification. A single-family probe's
+# job is to report one sound result, so it exits on THAT — otherwise every legitimate FAMILY=n consumer
+# breaks. Neither mode may exit 0 without a durable record.
 RUN_OK=1
-[ "$FAIL" -eq 0 ]        || RUN_OK=0
-[ -z "$REFUSALS" ]       || RUN_OK=0
 [ "$ARTIFACT_OK" = "1" ] || RUN_OK=0
+[ -z "$REFUSALS" ]       || RUN_OK=0
+if [ "$CAMPAIGN_MODE" = "campaign" ]; then
+  [ "$QUALIFIED" = "1" ] || RUN_OK=0
+else
+  # Sound selected result: it reported, and it was not an invalid experiment or a survivor.
+  [ "$REPORTED_ALL" = "1" ] || RUN_OK=0
+  [ "${INVALID:-0}" -eq 0 ] && [ "${SURVIVED_N:-0}" -eq 0 ] && [ "${COULD_NOT_APPLY:-0}" -eq 0 ] || RUN_OK=0
+fi
 
 echo
 # GATE COVERAGE IS REPORTED SEPARATELY FROM KILL COUNT.
@@ -2154,15 +2239,21 @@ echo
 # line and in the artifact: `killed` is how many mutations died, `gates_proven` is how many did so by
 # turning their named gate red, which is the only figure that speaks to the contract.
 GATES_PROVEN="${KILLED_BY_GATE:-0}/$N"
-if [ "$RUN_OK" = "1" ] && [ "$COMPLETED" = "1" ]; then
-  echo "GATE-MUTATION-COVERAGE: PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN"
+DISPO="killed=$PASS invalid=${INVALID:-0} survived=${SURVIVED_N:-0} could_not_apply=${COULD_NOT_APPLY:-0}"
+if [ "$CAMPAIGN_MODE" = "campaign" ] && [ "$QUALIFIED" = "1" ]; then
+  echo "GATE-MUTATION-COVERAGE: QUALIFIED completed=1 $DISPO (of $N) gates_proven=$GATES_PROVEN"
+elif [ "$CAMPAIGN_MODE" = "campaign" ] && [ "$COMPLETED" = "1" ]; then
+  # COMPLETE BUT NOT QUALIFYING is the honest shape of a run that finished and found problems. Saying
+  # only "REFUSED" would hide that the report itself is trustworthy and every family was accounted for.
+  echo "GATE-MUTATION-COVERAGE: COMPLETE-NOT-QUALIFIED completed=1 qualified=0 $DISPO (of $N) gates_proven=$GATES_PROVEN"
+  [ -n "$REFUSALS" ] && echo "  integrity refusals:$REFUSALS"
 elif [ "$RUN_OK" = "1" ]; then
   # Sound but deliberately partial: say so on the summary line rather than printing a bare PASS that
   # a consumer could read as a completed campaign.
-  echo "GATE-MUTATION-COVERAGE: PARTIAL PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN —$SCOPE_NOTES"
+  echo "GATE-MUTATION-COVERAGE: PARTIAL completed=$COMPLETED qualified=0 $DISPO (of $N) —$SCOPE_NOTES"
 else
   # The summary line itself carries the refusal, so scraping it cannot yield a false PASS.
-  echo "GATE-MUTATION-COVERAGE: REFUSED PASS=$PASS FAIL=$FAIL (of $N families) gates_proven=$GATES_PROVEN"
+  echo "GATE-MUTATION-COVERAGE: REFUSED completed=$COMPLETED qualified=0 $DISPO (of $N) gates_proven=$GATES_PROVEN"
   echo "CAMPAIGN INTEGRITY REFUSED:$REFUSALS"
   echo "  These verdicts describe a tree that moved under the run, or a run with no durable record."
 fi
