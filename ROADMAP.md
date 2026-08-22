@@ -407,7 +407,7 @@ Phases 1–6E and completed Phase 7 foundations/workloads 1–8 are historical a
 live in [CHANGELOG.md](CHANGELOG.md). Phase 7.5's QBE backend is specified but
 has not started.
 
-## Current Execution State (2026-08-21)
+## Current Execution State (2026-08-22)
 
 ### Post-R-0004 mutation qualification — active; R-0482 has not started
 
@@ -420,17 +420,55 @@ The hardened harness is shipped at `898d9a7b`. It now requires a green pristine 
 pristine build, exact and unique anchor application, authenticated gate completion, and a causal
 restore/rebuild/reapply red-green-red confirmation. Mutations run in disposable workspaces.
 
-The latest 81-family attempt is **diagnostic only and establishes no denominator**. Its artifact
-records `completed=0`, `families_run=0`, `baseline_gates_green=0/0`, and
-`run_did_not_reach_reconciliation` at `898d9a7b`. It died before the clean baseline completed.
-Separately, the artifact schema currently makes `failed=0` a condition of `completed=1`; that
-conflates “the run reached the end and reported every family” with “the completed run qualifies as
-evidence.” Both defects must be resolved before another campaign result is cited.
+The complete diagnostic campaign against `898d9a7b` ran and reported all 81 families. Its preserved
+record is `mutation-campaign-summary.898d9a7b`, with the 173-line trace retained as
+`campaign_full.898d9a7b.log`:
+
+```text
+73 killed (all causally confirmed red -> green -> red)
+ 6 invalid experiments
+ 2 survived
+ 0 could_not_apply
+```
+
+This is a trustworthy **diagnosis**, not qualification. The two survivors are
+`freshfacts-requires-proved-status` and `freshfacts-carries-trusted-boundaries`; the receipt-
+consumption gate has no live trusted-boundary receipt and cannot yet distinguish the intended fresh-
+fact refusal from a material mismatch. The invalid experiments are `trap-quotient-condition`,
+`attestation-precondition`, `kernel-foundation`, `reference-division`, `divergence-detection`, and
+`transform-has-effect`. They establish nothing until retained logs support an attributable route or
+the mutation is rewritten/reclassified honestly.
+
+The historical artifact says `completed=0` even though all 81 units reported, because its schema
+made zero failed families a condition of completion. It also names `head_changed`—the control
+checkout moved from `898d9a7b` to the documentation-only `89a2bcb1` while the immutable disposable
+workspace remained bound to `898d9a7b`—and
+`families_unaccounted(gate=73 build=0 of 81)`. Neither refusal is rewritten after the fact. Under the
+correct semantics this run is `completed=1`, `qualified=0`; the old artifact remains the historical
+record of the old schema.
+
+**Schema separation shipped at `98dee5e3`.** The artifact now records `mode`, `discovered`,
+`selected`, `executed`, `reported`, `killed`, `invalid`, `survived`, `could_not_apply`,
+`integrity_ok`, `completed`, and `qualified` separately. A single-family probe can complete and exit
+according to its selected result but can never claim campaign qualification. Live controls cover a
+killed single family and a surviving one with retained failure logs. Before the next full campaign,
+the pure reconciliation matrix must also demonstrate the campaign-positive branch and the
+complete-but-unqualified, integrity-refused, and interrupted branches without spending hours to
+reach them.
+
+**Performance is part of this checkpoint, without weakening causality.** Before another full run,
+record per-family time spent copying, building, running gates and confirming. Replace redundant
+confirmation rebuilds only with content-bound snapshots that pair complete source and build state;
+never swap `.lake` alone. Reject stale, corrupt, wrong-mutation and source/artifact-mismatched
+snapshots. Then benchmark isolated workers (starting at 1, 2 and 4), with separate source/build/temp/
+process state and serial/parallel disposition agreement. A fast affected-family mode may be
+non-qualifying; the authoritative mode retains full red-green-red confirmation.
 
 The checkpoint exits only when one clean pushed HEAD reports all of the following separately:
 
-- `completed=1`: the driver reached reconciliation and every discovered family reported;
-- discovered = executed = 81, with zero `could_not_apply` and no integrity refusal;
+- `completed=1`: the driver reached reconciliation and every selected family reported;
+- discovered = selected = executed = reported = killed = 81;
+- `invalid=0`, `survived=0`, `could_not_apply=0`, and `integrity_ok=1`;
 - `qualified=1`: all 81 families were killed by their intended attributable gate/build outcome;
 - the artifact and human summary agree, and the repository is clean afterward.
 
@@ -544,9 +582,12 @@ break the build; a gate could be red before mutation; source restoration could l
 binary; and an empty result could be counted as success. The harness at `898d9a7b` now requires the
 stronger causal controls described in the current execution state.
 
-No authoritative 81-family result exists yet. The most recent attempt stopped before its baseline
-and recorded `completed=0`, `families_run=0`. That artifact is preserved only as a failure record;
-it cannot validate the harness or any mutation family.
+No **qualifying** 81-family result exists yet. The complete diagnostic run at `898d9a7b` reported
+73 causal kills, 6 invalid experiments, 2 survivors and zero could-not-apply results. Its immutable
+workspace stayed bound to that SHA, so the family dispositions are diagnostic evidence; the control
+checkout's concurrent move to `89a2bcb1`, the eight unresolved families, and the old schema's
+completion/qualification conflation correctly prevent it from discharging this checkpoint. The
+preserved historical artifact is not rewritten to use the schema shipped later at `98dee5e3`.
 
 ### R-0004 evidence producer — landed state (2026-08-05)
 
@@ -1315,7 +1356,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 1 | **Post-R-0004 mutation qualification checkpoint** | repair the campaign's premature exit; split `completed` from `qualified`; preserve the failed artifact; validate the known survivors or reclassify equivalent/mistargeted mutations honestly; obtain one clean pushed-HEAD run with 81 discovered = 81 executed = 81 killed, zero `could_not_apply`, `completed=1`, `qualified=1`, and no integrity refusal |
+| 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 81 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
 | 4 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |

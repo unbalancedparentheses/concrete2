@@ -85,11 +85,23 @@ The mutation campaign is stronger assurance work, not a second R-0004 closure de
 harness shipped at `898d9a7b` requires a green pristine baseline, pristine build, exact unique
 anchor, authenticated gate completion, and causal restore/rebuild/reapply confirmation.
 
-No authoritative 81-family campaign result exists as of 2026-08-21. The latest artifact at
-`898d9a7b` records `completed=0`, `families_run=0`, and
-`run_did_not_reach_reconciliation`. It is evidence of an interrupted runner only. The current
-roadmap requires separate `completed` and `qualified` facts before another campaign result may be
-cited.
+An earlier attempt stopped before its baseline and retained only
+`run_did_not_reach_reconciliation`. The complete diagnostic campaign against `898d9a7b` subsequently
+executed and reported all 81 families: 73 were killed by their named gates with red-green-red causal
+confirmation, 6 experiments were invalid, 2 survived, and none failed to apply. The preserved files
+are `mutation-campaign-summary.898d9a7b` and `campaign_full.898d9a7b.log`.
+
+The artifact's `completed=0` is a historical schema defect, not an assertion that the run stopped:
+the old producer made zero unresolved families a condition of completion. It also recorded
+`head_changed` because the control checkout moved to documentation commit `89a2bcb1` during the run;
+the immutable tested workspace remained bound to `898d9a7b`. The dispositions are therefore useful
+diagnosis but the campaign is not qualifying evidence.
+
+Commit `98dee5e3` split the facts: `completed` now means every selected unit reported and the driver
+reached reconciliation; `qualified` additionally requires a full campaign, intact integrity and
+every family killed by its declared attributable route. It also records exact disposition counters
+and retains failure logs. A clean pushed-HEAD campaign still needs 81/81 kills, zero invalid,
+survived or could-not-apply results, `completed=1`, and `qualified=1`.
 
 ## Where the detailed record remains
 

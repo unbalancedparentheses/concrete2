@@ -10,9 +10,10 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Post-R-0004 Mutation Harness Hardening And Qualification Reset
+### Post-R-0004 Mutation Harness Hardening And Diagnostic Census
 
-_Harness and documentation, 2026-08-21. Code landed at `898d9a7b`; no 81-family result is claimed._
+_Harness and documentation, 2026-08-21/22. Causal harness landed at `898d9a7b`; typed campaign
+accounting landed at `98dee5e3`. No qualifying 81-family result is claimed._
 
 The mutation harness now distinguishes “a gate went red” from “this mutation made its intended
 rule go red.” A scored kill requires a green pristine gate, a pristine build, an exact unique
@@ -26,14 +27,40 @@ producers with different acceptance rules—tree state, anchor matching, kill at
 completion artifacts. The canonical producer/consumer was repaired rather than adding another
 summary-side check.
 
-The first 81-family attempt against `898d9a7b` is not evidence. Its artifact says
-`completed=0`, `families_run=0`, `baseline_gates_green=0/0`, and
-`run_did_not_reach_reconciliation`; it stopped before the baseline. A second schema defect is also
-open: the current artifact conflates completion with qualification by requiring zero failed
-families for `completed=1`. The next campaign must report `completed` (did every family report?)
-and `qualified` (did every family causally die with no refusal?) separately. R-0004 remains closed
-by its protected 205/205 production-gate run; the mutation campaign is stronger post-closure
-qualification, and any product-authority defect it finds is handled before R-0482 begins.
+The complete diagnostic campaign against `898d9a7b` executed and reported all 81 families:
+
+```text
+73 killed by their named gate, each reproduced red -> green -> red
+ 6 invalid experiments
+ 2 survived
+ 0 could_not_apply
+```
+
+The artifact and 173-line trace are preserved as `mutation-campaign-summary.898d9a7b` and
+`campaign_full.898d9a7b.log`. The two survivors are
+`freshfacts-requires-proved-status` and `freshfacts-carries-trusted-boundaries`; the production
+receipt-consumption gate lacks the live trusted-boundary receipt needed to distinguish their
+intended path from a material mismatch. The six invalid experiments are retained as findings, not
+counted as kills: four produced unattributable build failures, one only an unused-binding lint, and
+one never produced an authenticated gate verdict.
+
+The historical artifact says `completed=0` despite reporting all 81 families. Its schema had folded
+“zero unresolved families” into “the run reached reconciliation.” It also correctly refused global
+qualification because the control checkout's HEAD moved from `898d9a7b` to documentation commit
+`89a2bcb1` during the run, although the immutable tested workspace and all tree digests remained
+bound to `898d9a7b`. The artifact is not rewritten: under the later semantics it represents
+`completed=1`, `qualified=0`.
+
+Commit `98dee5e3` separates the facts. Artifacts now record mode, discovered/selected/executed/
+reported populations, killed/invalid/survived/could-not-apply dispositions, integrity, completion
+and qualification. Single-family probes can complete and succeed or fail on their selected result,
+but can never claim campaign qualification. Failure logs are retained so an invalid or survivor can
+be diagnosed instead of disappearing with the disposable workspace. Live controls demonstrate both
+a killed and a surviving single-family result.
+
+R-0004 remains closed by its protected 205/205 production-gate run. This campaign is stronger
+post-closure qualification, and the eight unresolved experiments plus acceleration/hostile-control
+work remain ahead of R-0208 and R-0482.
 
 Roadmap status was consolidated in the same documentation pass: the August 1 red dashboard and
 old “next 20” queue are historical, Slice 8 is shipped rather than pending, the current strict path
