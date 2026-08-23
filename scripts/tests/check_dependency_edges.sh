@@ -62,7 +62,13 @@ LEAN
   # required; the batch path already checked both, and this asymmetry left the 240 ordinary probes
   # weaker than the 18 batched ones.
   local out rc=0
-  out="$(lake env lean "$TMP/p.lean" 2>&1)" || rc=$?
+  # SELFTEST seam: a process that prints exactly the wanted string and then exits nonzero. Before
+  # the `|| true` was removed every probe would have PASSED against this; now every probe must fail.
+  if [ "${PROBE_SELFTEST_FAKE_EXIT:-}" = "1" ]; then
+    out="$(printf '%s\n' "$want"; exit 9)" || rc=$?
+  else
+    out="$(lake env lean "$TMP/p.lean" 2>&1)" || rc=$?
+  fi
   # An error is a failure whatever the text says — a probe that cannot elaborate
   # must not pass on a digit inside "line:col" (that happened in the migration gate).
   # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
