@@ -37,8 +37,7 @@ probe() {
   local label="$1" want="$2" body="$3"
   PROBE_N=$((PROBE_N + 1))
   if [ -n "$_MINT_HASHER" ]; then
-    PROBE_RECS+="$(printf '%d:%s,%d:%s,%d:%s' \
-      "${#label}" "$label" "${#want}" "$want" "${#body}" "$body" | $_MINT_HASHER | cut -d' ' -f1)
+    PROBE_RECS+="$(_manifest_record "$label" "$want" "ordinary" "$body")
 "
   fi
   # An empty expectation accepts any output, because `grep -qF ""` matches everything.
@@ -144,11 +143,22 @@ EXPECTED_MINT_PROBES=18
 # Digest of the full manifest, not just the names — see mint_manifest_digest below. The constant is
 # a sha256 because this repository supports macOS, where GNU md5sum does not exist; the hasher
 # fallback follows the one in lib/treestate.sh rather than adding a third way to hash a thing.
-EXPECTED_MINT_MANIFEST_SHA256="edf32a8a94674f8d917a23d6c11294e52d916f25289d3eeefbe6b169440f1f35"
+EXPECTED_MINT_MANIFEST_SHA256="d2af130d30417504306ba38707cac26542b576ce063b986dbb5e51c7fa4af3c5"
 if command -v sha256sum >/dev/null 2>&1; then _MINT_HASHER="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then _MINT_HASHER="shasum -a 256"
 else _MINT_HASHER=""
 fi
+
+# ONE RECORD PRODUCER, AND IT IS LOCALE-INDEPENDENT. `${#field}` counts CHARACTERS under a UTF-8
+# locale but BYTES under C, while the bytes being hashed never change — and these bodies contain
+# `←`, whose length is 1 or 3 depending on the locale. A digest pinned on one machine would then
+# fail on another for no reason at all. `local LC_ALL=C` fixes the counting to bytes, and both
+# populations use this one function so they cannot drift apart.
+_manifest_record() {
+  local LC_ALL=C
+  printf '%d:%s,%d:%s,%d:%s,%d:%s' \
+    "${#1}" "$1" "${#2}" "$2" "${#3}" "$3" "${#4}" "$4" | $_MINT_HASHER | cut -d' ' -f1
+}
 
 # THE MANIFEST COVERS WHAT EACH PROBE ASSERTS, NOT ONLY WHAT IT IS CALLED. Pinning labels alone left
 # a hole: two probes that expect the same string — and several do — could have one body copied over
@@ -162,11 +172,7 @@ fi
 mint_manifest_digest() {
   local i recs=""
   for ((i = 0; i < ${#MINT_LABEL[@]}; i++)); do
-    recs+="$(printf '%d:%s,%d:%s,%d:%s,%d:%s' \
-      "${#MINT_LABEL[$i]}" "${MINT_LABEL[$i]}" \
-      "${#MINT_WANT[$i]}"  "${MINT_WANT[$i]}" \
-      "${#MINT_GROUP[$i]}" "${MINT_GROUP[$i]}" \
-      "${#MINT_BODY[$i]}"  "${MINT_BODY[$i]}" | $_MINT_HASHER | cut -d' ' -f1)
+    recs+="$(_manifest_record "${MINT_LABEL[$i]}" "${MINT_WANT[$i]}" "${MINT_GROUP[$i]}" "${MINT_BODY[$i]}")
 "
   done
   printf '%s' "$recs" | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1
@@ -343,8 +349,22 @@ mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
 
 # Same reconciliation as the mint batch, for the ordinary population.
 EXPECTED_ORDINARY_PROBES=240
-EXPECTED_ORDINARY_MANIFEST_SHA256="a1039ff988984a423c033998eddbb8b033b71851cb33b68965ec6afcb0dd1cc2"
+EXPECTED_ORDINARY_MANIFEST_SHA256="335c8705b8d0cba7c1d42afd03d86de5219b8f10cee9e5d2dc4577ad94c30b56"
+# The ordinary and mint populations are pinned, but roughly 43 assertions belong to NEITHER — the
+# hand-written checks scattered through this gate — and deleting one of those still shrank a green
+# total. One pinned grand total covers every assertion this gate makes, whatever its shape.
+EXPECTED_TOTAL_ASSERTIONS=310
+reconcile_assertion_total() {
+  local total=$((PASS + FAIL))
+  if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
+    no "this gate made $total assertions, expected $EXPECTED_TOTAL_ASSERTIONS — an assertion was added or removed without updating EXPECTED_TOTAL_ASSERTIONS"
+  fi
+}
+
 reconcile_ordinary_probes() {
+  if [ "$EXPECT_NC_N" -ne "$EXPECTED_NEGATIVE_TESTS" ]; then
+    no "ran $EXPECT_NC_N negative (no-compile) tests, expected $EXPECTED_NEGATIVE_TESTS"
+  fi
   if [ "$PROBE_N" -ne "$EXPECTED_ORDINARY_PROBES" ]; then
     no "ran $PROBE_N ordinary probes, expected $EXPECTED_ORDINARY_PROBES — a probe was added or removed without updating EXPECTED_ORDINARY_PROBES"
   fi
@@ -354,9 +374,7 @@ reconcile_ordinary_probes() {
   fi
   local got
   got="$(printf '%s' "$PROBE_RECS" | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1)"
-  if [ "${ORDINARY_SELFTEST_SKIP_MANIFEST:-}" = "1" ]; then
-    echo "  note ordinary manifest reconciliation SKIPPED (self-test)"
-  elif [ "$got" != "$EXPECTED_ORDINARY_MANIFEST_SHA256" ]; then
+  if [ "$got" != "$EXPECTED_ORDINARY_MANIFEST_SHA256" ]; then
     no "ordinary probe manifest changed (got $got, expected $EXPECTED_ORDINARY_MANIFEST_SHA256) — a label, expectation or BODY was swapped, renamed or substituted; update EXPECTED_ORDINARY_MANIFEST_SHA256 deliberately"
   fi
 }
@@ -377,12 +395,11 @@ flush_mint_probes() {
   for ((_i = 0; _i < n0; _i++)); do
     [ -n "${MINT_WANT[$_i]}" ] || no "${MINT_LABEL[$_i]} — has an EMPTY expectation, which would accept any output"
   done
-  # Lets a control demonstrate that WITHOUT this guard a same-expectation body swap is invisible.
-  # A control that passes only because the swapped probe also had a different expectation proves
-  # nothing about the manifest.
-  if [ "${MINT_SELFTEST_SKIP_MANIFEST:-}" = "1" ]; then
-    echo "  note manifest reconciliation SKIPPED (self-test)"
-  elif [ -z "$_MINT_HASHER" ]; then
+  # NO SKIP SEAM. An inherited MINT_SELFTEST_SKIP_MANIFEST=1 disabled the only body-integrity check
+  # in production, which is a strictly worse hole than the one the manifest closes. The causal
+  # control is performed instead by pinning the POST-swap digest, an explicit source edit that
+  # cannot be reached from the environment.
+  if [ -z "$_MINT_HASHER" ]; then
     no "mint batch: no sha256 implementation found, so the probe manifest cannot be reconciled"
   else
     lsha="$(mint_manifest_digest)"
@@ -1215,9 +1232,13 @@ echo "=== hostile controls (construction is closed) ==="
 # constructor became public, as long as some unrelated typo, missing import or syntax error was
 # present. Each call now declares the diagnostic it expects, and the run must both exit nonzero and
 # produce THAT diagnostic.
+EXPECTED_NEGATIVE_TESTS=9
 EXPECT_NC_N=0
+# ALL declared patterns must match. One pattern was too coarse to separate the intended failure from
+# an unrelated one of the same class.
 expect_no_compile() {
-  local label="$1" body="$2" wantdiag="${3:-}"
+  local label="$1" body="$2"; shift 2
+  local -a pats=("$@")
   EXPECT_NC_N=$((EXPECT_NC_N + 1))
   cat > "$TMP/h.lean" <<LEAN
 import Concrete
@@ -1225,20 +1246,23 @@ import Examples
 open Lean Meta Concrete Concrete.Proof
 $body
 LEAN
+  # NO DUMP SEAM. `EXPECT_NC_DUMP=1` returned before reporting any verdict, so an inherited value
+  # skipped all nine negative assertions and still allowed exit 0 — the same class of hole as the
+  # manifest skip. Diagnostics for pinning new patterns are obtained by running the snippet directly.
   local out rc=0
   out="$(lake env lean "$TMP/h.lean" 2>&1)" || rc=$?
-  if [ "${EXPECT_NC_DUMP:-}" = "1" ]; then
-    echo "NCDUMP<<$label>> rc=$rc :: $(grep -m1 -E 'error' <<<"$out" | cut -c1-200)"
-    return
-  fi
-  if [ -z "$wantdiag" ]; then
+  local p miss=""
+  for p in ${pats[@]+"${pats[@]}"}; do
+    grep -qE -- "$p" <<<"$out" || { miss="$p"; break; }
+  done
+  if [ "${#pats[@]}" -eq 0 ]; then
     no "$label — no expected diagnostic declared, so any error would satisfy it"
   elif [ "$rc" -eq 0 ]; then
     no "$label — IT COMPILED (exit 0), so the invariant is documentation rather than a type"
   elif ! grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — exited $rc but produced no Lean diagnostic, so it failed for an unrelated reason"
-  elif ! grep -qE -- "$wantdiag" <<<"$out"; then
-    no "$label — rejected for the WRONG reason (expected /$wantdiag/): $(printf '%s' "$out" | grep -m1 -E 'error' | cut -c1-180)"
+  elif [ -n "$miss" ]; then
+    no "$label — rejected for the WRONG reason (missing /$miss/): $(printf '%s' "$out" | grep -m1 -E 'error' | cut -c1-180)"
   else
     ok "$label"
   fi
@@ -1252,7 +1276,7 @@ def forged : ProofEvidenceReceipt :=
 
 expect_no_compile '`default` does NOT produce a receipt (no Inhabited)' '
 #eval show MetaM Unit from IO.println (default : ProofEvidenceReceipt).schemaVersion' \
-  'synthInstanceFailed|failed to synthesize'
+  'synthInstanceFailed|failed to synthesize' 'Inhabited ProofEvidenceReceipt'
 
 # Correspondence, not arity. `tablesFullyBound` checks equal LENGTHS and all-present, which
 # admits tables := [X] with digests for [Y] — a receipt claiming Y while the theorem depended
@@ -1629,7 +1653,7 @@ probe "a NAMED table with the same digest validates (the refusal is about the na
 # only route to the `ValidatedRow` type.
 expect_no_compile "classificationTable cannot be read directly (private)" '
 #eval Concrete.Proof.classificationTable.length' \
-  'Unknown identifier .Concrete.Proof.classificationTable'
+  'Unknown identifier .Concrete\.Proof\.classificationTable'
 
 probe "well-formed table bindings validate and are carried" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true, []) with
@@ -1952,7 +1976,7 @@ expect_no_compile "an entry with NO body digest has no representation (absence i
   let rows := [{ callee := Concrete.CallableId.ofUser "m" "f",
                  sourceBodyDigestV1 := none : Concrete.Proof.TableEntryEvidence }]
   rows.length' \
-  'Type mismatch'
+  'Type mismatch' 'Option \?m' 'expected to have type' 'String'
 
 # CONTAINMENT: the format-only door is closed. `rowsWellFormed` answers the format question as a
 # Bool; there is no public way to turn chosen digests into a manifest.
@@ -1970,7 +1994,7 @@ expect_no_compile "ofRows is private — chosen digests cannot become a manifest
 #eval (Concrete.Proof.ImplementationManifest.ofRows
         [(Concrete.CallableId.ofUser "m" "f",
           "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]).isSome' \
-  'Unknown constant .Concrete.Proof.Implementation'
+  'Unknown constant .Concrete\.Proof\.ImplementationManifest\.ofRows.'
 
 # === MANIFEST COMPLETENESS IS SELF-DENOMINATING ===============================================
 # The producer used to `filterMap`, so an entry it could not build a row for vanished and the result
@@ -2044,7 +2068,7 @@ expect_no_compile "CompleteImplementation cannot be constructed directly" '
 #eval fun (fx : Concrete.Proof.CheckedDeclFacts) (b : Concrete.Proof.CompleteEvidenceBodyV2) =>
   (Concrete.CompleteImplementation.mk (Concrete.CallableId.ofUser "m" "f") fx b
     (Concrete.Proof.PExpr.lit (Concrete.Proof.PVal.int 0))).callable' \
-  'Unknown constant .Concrete.CompleteImplementation.mk'
+  'Unknown constant .Concrete\.CompleteImplementation\.mk.'
 
 # FACTS MUST DESCRIBE THE CALLABLE CLAIMED. Facts for `g`, offered as `f`: this is the mispairing
 # the record exists to prevent, and the one it can actually see.
@@ -2082,10 +2106,10 @@ probe "INCOMPLETE facts are refused" "true" '
 
 expect_no_compile "the manifest cannot be constructed directly" '
 #eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")' \
-  'Unknown constant .Concrete.Proof.ImplementationManifest.mk'
+  'Unknown constant .Concrete\.Proof\.ImplementationManifest\.mk.'
 expect_no_compile "BoundTableEntry cannot be constructed directly" '
 #eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").implDigest' \
-  'Unknown constant .Concrete.Proof.BoundTableEntry.mk'
+  'Unknown constant .Concrete\.Proof\.BoundTableEntry\.mk.'
 
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
 # A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
@@ -3383,6 +3407,7 @@ echo ""
 # batch runs, or a crash inside the batch would leave a short but green-looking result.
 flush_mint_probes
 reconcile_ordinary_probes
+reconcile_assertion_total
 GATE_DONE=1
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
