@@ -61,14 +61,16 @@ LEAN
   # then exited nonzero passed. Output matching and process success are separate facts and both are
   # required; the batch path already checked both, and this asymmetry left the 240 ordinary probes
   # weaker than the 18 batched ones.
+  # ONE capture site. The self-test swaps the COMMAND, not the capture: a seam with its own status
+  # capture would stay red even if `|| true` were restored on the real invocation, so it would prove
+  # nothing about the path that actually runs Lean.
   local out rc=0
-  # SELFTEST seam: a process that prints exactly the wanted string and then exits nonzero. Before
-  # the `|| true` was removed every probe would have PASSED against this; now every probe must fail.
+  local -a cmd=(lake env lean "$TMP/p.lean")
   if [ "${PROBE_SELFTEST_FAKE_EXIT:-}" = "1" ]; then
-    out="$(printf '%s\n' "$want"; exit 9)" || rc=$?
-  else
-    out="$(lake env lean "$TMP/p.lean" 2>&1)" || rc=$?
+    printf '#!/bin/sh\nprintf "%%s\\n" "$1"\nexit 9\n' > "$TMP/fakeprobe"; chmod +x "$TMP/fakeprobe"
+    cmd=("$TMP/fakeprobe" "$want")
   fi
+  out="$("${cmd[@]}" 2>&1)" || rc=$?
   # An error is a failure whatever the text says — a probe that cannot elaborate
   # must not pass on a digit inside "line:col" (that happened in the migration gate).
   # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
@@ -125,7 +127,7 @@ EXPECTED_MINT_PROBES=18
 # Digest of the full manifest, not just the names — see mint_manifest_digest below. The constant is
 # a sha256 because this repository supports macOS, where GNU md5sum does not exist; the hasher
 # fallback follows the one in lib/treestate.sh rather than adding a third way to hash a thing.
-EXPECTED_MINT_MANIFEST_SHA256="00faf7b8af5f3fbcc310c1760131b0078e82ad21ae15bf644661406da7afc329"
+EXPECTED_MINT_MANIFEST_SHA256="edf32a8a94674f8d917a23d6c11294e52d916f25289d3eeefbe6b169440f1f35"
 if command -v sha256sum >/dev/null 2>&1; then _MINT_HASHER="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then _MINT_HASHER="shasum -a 256"
 else _MINT_HASHER=""
@@ -136,12 +138,21 @@ fi
 # the other, keeping all 18 labels and the label digest intact while silently deleting an assertion.
 # So the digest is over (label, want, group, body) for every probe, sorted so that merely reordering
 # probes is not a change. Unit separators keep the fields unambiguous.
+# LENGTH-PREFIXED, so the serialization is INJECTIVE. Escaping newlines as the two bytes `\n` made
+# a body containing a literal backslash-n serialize identically to one containing a real newline —
+# two different probes, one digest. Length prefixes need no escaping and no separator can be forged.
+# Each record is hashed first so that a body containing newlines cannot disturb the sort.
 mint_manifest_digest() {
-  local i
+  local i recs=""
   for ((i = 0; i < ${#MINT_LABEL[@]}; i++)); do
-    printf '%s\x1f%s\x1f%s\x1f%s\x1e\n' \
-      "${MINT_LABEL[$i]}" "${MINT_WANT[$i]}" "${MINT_GROUP[$i]}" "${MINT_BODY[$i]//$'\n'/\\n}"
-  done | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1
+    recs+="$(printf '%d:%s,%d:%s,%d:%s,%d:%s' \
+      "${#MINT_LABEL[$i]}" "${MINT_LABEL[$i]}" \
+      "${#MINT_WANT[$i]}"  "${MINT_WANT[$i]}" \
+      "${#MINT_GROUP[$i]}" "${MINT_GROUP[$i]}" \
+      "${#MINT_BODY[$i]}"  "${MINT_BODY[$i]}" | $_MINT_HASHER | cut -d' ' -f1)
+"
+  done
+  printf '%s' "$recs" | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1
 }
 probe_mint() {
   MINT_LABEL+=("$1"); MINT_WANT+=("$2"); MINT_BODY+=("$3")
@@ -259,8 +270,20 @@ LEAN
   # EXACT SET EQUALITY over this group's declared members. Missing, duplicate and unexpected each
   # fail BY NAME. Reconciliation does not stop at the first problem, so breaking an early probe
   # cannot make later probes disappear silently — they are still individually reported.
-  ids="$(grep -oE '^<<P[0-9]{3}>>' <<<"$out" | tr -cd '0-9\n' | grep -E '^[0-9]+$' || true)"
-  dup="$(printf '%s\n' "$ids" | sort | uniq -d || true)"
+  # `|| true` HERE WOULD SUPPRESS A PARSER FAILURE. grep legitimately exits 1 when a group produced
+  # no results, so the status is examined rather than discarded: 0 (matches) and 1 (none) are both
+  # normal, anything else means the parse itself broke and the reconciliation below would be reading
+  # from nothing.
+  local prc=0
+  ids="$(grep -oE '^<<P[0-9]{3}>>' <<<"$out" | tr -cd '0-9\n' | grep -E '^[0-9]+$')" || prc=$?
+  if [ "$prc" -gt 1 ]; then
+    no "mint group '$grp': could not parse result ids (status $prc) — reconciliation would be reading nothing"
+  fi
+  local drc=0
+  dup="$(printf '%s\n' "$ids" | sort | uniq -d)" || drc=$?
+  if [ "$drc" -ne 0 ]; then
+    no "mint group '$grp': duplicate-id detection failed (status $drc)"
+  fi
   [ -z "$dup" ] || no "mint group '$grp': DUPLICATE result ids: $(echo $dup)"
 
   for i in "${idx[@]}"; do
@@ -280,7 +303,10 @@ LEAN
 
   # A result this group never declared means the driver and the declared list disagree — including a
   # result belonging to ANOTHER group, which is how cross-group substitution would show up.
-  local want_ids=" $(for i in "${idx[@]}"; do printf '%03d ' "$i"; done)"
+  # DECLARED FIRST, ASSIGNED SECOND: `local x="$(...)"` returns local's own status and hides the
+  # substitution's.
+  local want_ids
+  want_ids=" $(for i in "${idx[@]}"; do printf '%03d ' "$i"; done)"
   while read -r id; do
     [ -n "$id" ] || continue
     case "$want_ids" in
@@ -314,7 +340,12 @@ flush_mint_probes() {
   for ((_i = 0; _i < n0; _i++)); do
     [ -n "${MINT_WANT[$_i]}" ] || no "${MINT_LABEL[$_i]} — has an EMPTY expectation, which would accept any output"
   done
-  if [ -z "$_MINT_HASHER" ]; then
+  # Lets a control demonstrate that WITHOUT this guard a same-expectation body swap is invisible.
+  # A control that passes only because the swapped probe also had a different expectation proves
+  # nothing about the manifest.
+  if [ "${MINT_SELFTEST_SKIP_MANIFEST:-}" = "1" ]; then
+    echo "  note manifest reconciliation SKIPPED (self-test)"
+  elif [ -z "$_MINT_HASHER" ]; then
     no "mint batch: no sha256 implementation found, so the probe manifest cannot be reconciled"
   else
     lsha="$(mint_manifest_digest)"
@@ -346,16 +377,15 @@ flush_mint_probes() {
   # enclosing `echo` then succeeds and the run continues to a green exit — the trap fires, prints
   # FATAL, and changes nothing. A standalone assignment whose status is checked cannot do that.
   # `awk` also counts an empty list as 0 groups, where `wc -l` counted the blank line as 1.
-  local ngroups
-  if ! ngroups="$(printf '%s\n' "$groups" | awk 'NF{c++} END{print c+0}')"; then
+  # ONE producer, ONE status check. The self-test substitutes the COUNTER used by the production
+  # expression instead of adding a second assignment beside it — otherwise restoring the unsafe
+  # original would leave the control red and prove nothing about the production path.
+  local ngroups counter="awk"
+  [ "$MINT_SELFTEST_SUBSHELL_FAIL" != "1" ] || counter="/nonexistent-counter-for-the-subshell-control"
+  if ! ngroups="$(printf '%s\n' "$groups" | "$counter" 'NF{c++} END{print c+0}')"; then
     no "mint batch: the replay-group count could not be computed"
     ngroups="?"
   fi
-  [ "$MINT_SELFTEST_SUBSHELL_FAIL" != "1" ] || \
-    if ! ngroups="$(/nonexistent-command-for-the-subshell-control)"; then
-      no "mint batch: the replay-group count could not be computed"
-      ngroups="?"
-    fi
   echo "=== receipt minting ($n probes, $ngroups replay group(s)) ==="
   if [ -z "${groups//[[:space:]]/}" ]; then
     no "mint batch produced NO groups from $n registered probes — the grouping step failed and no driver ran"
