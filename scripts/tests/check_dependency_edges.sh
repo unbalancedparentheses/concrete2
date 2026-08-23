@@ -5,11 +5,16 @@
 # declaration: a mode flag would let someone claim `contract` while the proof
 # unfolds a concrete table, and an implementation change that preserved the
 # contract would then fail to stale a caller that really depends on the body.
-set -uo pipefail
+# -E (errtrace) IS LOAD-BEARING: without it bash does not propagate the ERR trap into functions, so
+# every failure inside flush_mint_probes and its helpers was invisible to the guard below.
+set -uEo pipefail
+# GATE_DONE IS INITIALIZED HERE, not left to `${GATE_DONE:-0}`. It was only ever assigned near the
+# end, so an inherited GATE_DONE=1 from the environment disarmed the trap for the WHOLE run.
+GATE_DONE=0
 # An unexpected command failure must not sit beside a green total. A backtick in a
 # probe label once executed `missing` as a command and the gate still reported
 # 26/0 — the error was visible and the verdict said otherwise.
-trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "${GATE_DONE:-0}" -ne 1 ]; then
+trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$GATE_DONE" -ne 1 ]; then
   echo "FATAL: unexpected shell failure (exit $rc) — the verdict below is not trustworthy" >&2; exit "$rc"; fi' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # ONE definition of "a stored proof link". This gate previously held four private copies of the
@@ -99,11 +104,12 @@ MINT_LABEL=(); MINT_WANT=(); MINT_BODY=(); MINT_GROUP=()
 # The self-tests now use dedicated boolean flags below, which cannot name the authoritative theorem.
 readonly MINT_DEFAULT_GROUP="Concrete.Proof.parse_byte_correct"
 
-# PINNED DENOMINATOR. Without it `flush_mint_probes` only rejected zero registrations, so deleting a
-# probe_mint call left 17 probes reporting PASS=309 FAIL=0 and exit 0 — work silently skipped, the
-# same missing-denominator defect this repository already pins with EXPECTED_GATE_COMMANDS and
-# EXPECTED_MUTATIONS. Changing the number of minting probes must be a deliberate edit here.
+# PINNED POPULATION, NOT A PINNED COUNT. A count alone is not a denominator: delete one probe and
+# duplicate another and the total is still 18, both copies pass, and the deleted assertion is gone
+# with nothing to notice it. So the SET of labels is pinned by digest and duplicates are rejected.
+# Changing which probes mint must be a deliberate edit of both values.
 EXPECTED_MINT_PROBES=18
+EXPECTED_MINT_LABELS_SHA="4b35a4e58c9882c52a4687cde76dffdb"   # md5 of the sorted label set
 probe_mint() {
   MINT_LABEL+=("$1"); MINT_WANT+=("$2"); MINT_BODY+=("$3")
   MINT_GROUP+=("${4:-$MINT_DEFAULT_GROUP}")
@@ -167,7 +173,7 @@ LEAN
         past=1; print }')"
     # Fail closed rather than emit a driver known to be malformed.
     if grep -q '^#eval' <<<"$body"; then
-      no "${MINT_LABEL[$i]} — body has an unstripped '#eval'; refusing to batch it"
+      mint_no "${MINT_LABEL[$i]} — body has an unstripped '#eval'; refusing to batch it"
       skip_ids="$skip_ids $id"; continue
     fi
     # Each body is nested under its OWN `do` at a deeper column, so bindings cannot leak from one
@@ -191,7 +197,7 @@ LEAN
   # empty green batch: no probe in this group ran.
   if grep -qF '<<REPLAY-FAILED>>' <<<"$out"; then
     no "mint group '$grp': the shared kernel replay FAILED — none of its $expect_n probes ran:"
-    for i in "${idx[@]}"; do no "  unproven (replay failed): ${MINT_LABEL[$i]}"; done
+    for i in "${idx[@]}"; do mint_no "  unproven (replay failed): ${MINT_LABEL[$i]}"; done
     return
   fi
 
@@ -218,14 +224,14 @@ LEAN
     id="$(printf '%03d' "$i")"
     case "$skip_ids " in *" $id "*) continue ;; esac   # refused above; already counted once
     if ! grep -qE "^<<P$id>> ." <<<"$out"; then
-      no "${MINT_LABEL[$i]} — MISSING from group '$grp' (no <<P$id>> result)"
+      mint_no "${MINT_LABEL[$i]} — MISSING from group '$grp' (no <<P$id>> result)"
       continue
     fi
     got="$(grep -m1 -E "^<<P$id>> " <<<"$out" | sed "s/^<<P$id>> //")"
     if grep -qF -- "${MINT_WANT[$i]}" <<<"$got"; then
-      ok "${MINT_LABEL[$i]}"
+      mint_ok "${MINT_LABEL[$i]}"
     else
-      no "${MINT_LABEL[$i]} — want '${MINT_WANT[$i]}' got '$(printf '%s' "$got" | cut -c1-160)'"
+      mint_no "${MINT_LABEL[$i]} — want '${MINT_WANT[$i]}' got '$(printf '%s' "$got" | cut -c1-160)'"
     fi
   done
 
@@ -241,7 +247,29 @@ LEAN
   done <<<"$ids"
 }
 
+# Every per-probe verdict increments this. At the end it must equal the number of registered
+# probes: that is what catches a whole group never running — an empty `groups` list, a loop that
+# never executed, a helper that returned 0 without reporting. Counting registrations proves what was
+# ASKED FOR; only counting verdicts proves what was ANSWERED.
+MINT_VERDICTS=0
+mint_ok(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); ok "$1"; }
+mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
+
 flush_mint_probes() {
+  # RECONCILE THE DECLARED POPULATION FIRST, before any self-test registration can perturb it.
+  local n0=${#MINT_LABEL[@]} lsha ldup
+  if [ "$n0" -ne "$EXPECTED_MINT_PROBES" ]; then
+    no "mint batch registered $n0 probes, expected $EXPECTED_MINT_PROBES — a probe_mint call was added or removed without updating EXPECTED_MINT_PROBES"
+  fi
+  ldup="$(printf '%s\n' "${MINT_LABEL[@]}" | LC_ALL=C sort | uniq -d)"
+  if [ -n "$ldup" ]; then
+    no "mint batch has DUPLICATE probe labels, so one probe is standing in for another: $(printf '%s' "$ldup" | tr '\n' '|')"
+  fi
+  lsha="$(printf '%s\n' "${MINT_LABEL[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f1)"
+  if [ "$lsha" != "$EXPECTED_MINT_LABELS_SHA" ]; then
+    no "mint batch label set changed (got $lsha, expected $EXPECTED_MINT_LABELS_SHA) — probes were swapped, renamed or substituted; update EXPECTED_MINT_LABELS_SHA deliberately"
+  fi
+
   # A SECOND GROUP THAT MUST FAIL. With every real probe in one group, "results cannot cross groups"
   # rested on process separation being asserted, never exercised. This registers one probe in a
   # different group whose theorem does not exist: its replay must fail and name only that member,
@@ -252,22 +280,30 @@ flush_mint_probes() {
   IO.println "UNREACHABLE"' "Concrete.Proof.__selftest_second_group__"
   fi
 
+  # The population was already reconciled above against the pinned label set; a second count check
+  # here would be a duplicate producer of the same fact, differing only in whether it had seen the
+  # self-test registration.
   local n=${#MINT_LABEL[@]}
-  local expect=$EXPECTED_MINT_PROBES
-  [ "$MINT_SELFTEST_SECOND_GROUP" != "1" ] || expect=$((expect + 1))
-  if [ "$n" -ne "$expect" ]; then
-    no "mint batch registered $n probes, expected $expect — a probe_mint call was added or removed without updating EXPECTED_MINT_PROBES"
-  fi
   if [ "$n" -eq 0 ]; then no "mint batch is EMPTY — no probe registered (vacuous)"; return; fi
   local groups g i
   groups="$(printf '%s\n' "${MINT_GROUP[@]}" | sort -u)"
   echo "=== receipt minting ($n probes, $(printf '%s\n' "$groups" | wc -l) replay group(s)) ==="
+  if [ -z "${groups//[[:space:]]/}" ]; then
+    no "mint batch produced NO groups from $n registered probes — the grouping step failed and no driver ran"
+  fi
   while read -r g; do
     [ -n "$g" ] || continue
     local -a idx=()
     for ((i = 0; i < n; i++)); do [ "${MINT_GROUP[$i]}" = "$g" ] && idx+=("$i"); done
     _mint_run_group "$g" "${idx[@]}"
   done <<<"$groups"
+
+  # WHAT WAS ANSWERED MUST EQUAL WHAT WAS ASKED. Every path above that resolves one probe goes
+  # through mint_ok/mint_no, so a group that never ran — for any reason, including one nobody
+  # anticipated — shows up here as a shortfall instead of as a smaller green total.
+  if [ "$MINT_VERDICTS" -ne "$n" ]; then
+    no "mint batch reported $MINT_VERDICTS verdicts for $n registered probes — $((n - MINT_VERDICTS)) probe(s) were never resolved"
+  fi
 }
 
 echo "=== the vocabulary is complete and cannot launder trust ==="
@@ -3042,7 +3078,10 @@ probe "changing an edge KIND moves the root" "true" '
 # Both consumers read ONE set of nodes (`ProofCore.dependencyNodesOf`). The root is computed and
 # REPORTED; it decides nothing yet.
 CORPUS_FILES_EARLY="$(fp_files)"
-TMPDISC="$(mktemp)"; trap 'rm -f "$TMPDISC"' EXIT
+# BOTH temporaries, because `trap ... EXIT` REPLACES a previous EXIT trap rather than adding to it.
+# This one silently cancelled the `rm -rf "$TMP"` installed at the top, leaking every generated
+# batch driver directory.
+TMPDISC="$(mktemp)"; trap 'rm -f "$TMPDISC"; rm -rf "$TMP"' EXIT
 
 # ============================================================================================
 # NO SUBJECT MAY ROOT WHILE REPORTING A NON-CURRENT EDGE.
