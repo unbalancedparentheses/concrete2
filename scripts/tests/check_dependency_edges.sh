@@ -91,23 +91,40 @@ LEAN
 # line-continuation call shape — and a batcher built on that regex would have silently dropped four
 # probes from a green run. Callers name themselves `probe_mint`.
 MINT_LABEL=(); MINT_WANT=(); MINT_BODY=(); MINT_GROUP=()
-# Overridable ONLY so the self-tests can induce a replay failure; production never sets it.
-MINT_DEFAULT_GROUP="${MINT_DEFAULT_GROUP:-Concrete.Proof.parse_byte_correct}"
+
+# THE REPLAY TARGET IS PINNED, NOT INHERITED FROM THE ENVIRONMENT. This was briefly overridable so a
+# self-test could induce a replay failure, and that was a fail-open authority path: pointing it at
+# any other imported theorem replays THAT theorem while every receipt assertion stays green,
+# because the artifact control compares against this same name and so only checks self-consistency.
+# The self-tests now use dedicated boolean flags below, which cannot name the authoritative theorem.
+readonly MINT_DEFAULT_GROUP="Concrete.Proof.parse_byte_correct"
+
+# PINNED DENOMINATOR. Without it `flush_mint_probes` only rejected zero registrations, so deleting a
+# probe_mint call left 17 probes reporting PASS=309 FAIL=0 and exit 0 — work silently skipped, the
+# same missing-denominator defect this repository already pins with EXPECTED_GATE_COMMANDS and
+# EXPECTED_MUTATIONS. Changing the number of minting probes must be a deliberate edit here.
+EXPECTED_MINT_PROBES=18
 probe_mint() {
   MINT_LABEL+=("$1"); MINT_WANT+=("$2"); MINT_BODY+=("$3")
   MINT_GROUP+=("${4:-$MINT_DEFAULT_GROUP}")
 }
 
 # Self-test hooks, unset in normal runs. BREAK corrupts one probe's body; FOREIGN injects a result
-# id that belongs to no probe of the group being reconciled.
+# id belonging to no probe of the group being reconciled; REPLAY_FAIL makes the driver ask for a
+# theorem that does not exist; SECOND_GROUP registers an extra probe in a DIFFERENT group whose
+# replay must fail, proving group separation is real rather than an untested claim about processes.
 : "${MINT_SELFTEST_BREAK:=}"
 : "${MINT_SELFTEST_FOREIGN:=}"
+: "${MINT_SELFTEST_REPLAY_FAIL:=}"
+: "${MINT_SELFTEST_SECOND_GROUP:=}"
 
 # Reconcile one group: run its driver, then account for EXACTLY its declared members.
 _mint_run_group() {
   local grp="$1"; shift
   local -a idx=("$@")
   local f="$TMP/mintbatch.${grp//[^A-Za-z0-9]/_}.lean" out i id body skip_ids="" got dup ids expect_n=${#idx[@]}
+  local thm="$grp"
+  [ "$MINT_SELFTEST_REPLAY_FAIL" != "1" ] || thm="Concrete.Proof.__selftest_theorem_that_does_not_exist__"
 
   cat > "$f" <<LEAN
 import Concrete
@@ -116,7 +133,7 @@ open Lean Meta Concrete Concrete.Proof
 def tPkg : String := Concrete.shortHash "test-package"
 def tid? (m d : String) : Option DefinitionIdentity :=
   (DefinitionIdentity.of? tPkg m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
-def probeThm : String := "$grp"
+def probeThm : String := "$thm"
 -- The pure half of \`mintProbe\`: same material validation, same mint, replay supplied by the group.
 def mintWith (sr : SuccessfulReplay) (subjectDigest? : Option String) (ev : EdgeEvidence)
     (root : String) (trust : Bool) (bounds : List String) (cv ws im : String)
@@ -142,7 +159,12 @@ LEAN
     # `probe_mint "l" "w" '` opens the quote at end of line, so its body BEGINS with a newline, while
     # the line-continuation shape does not. Dropping "line 1" therefore stripped a blank line for
     # fourteen probes and left `#eval` embedded mid-driver — which is exactly what happened.
-    body="$(printf '%s\n' "${MINT_BODY[$i]}" | sed -e '/./,$!d' -e '0,/^#eval/{/^#eval/d}')"
+    # awk, not `sed -e '0,/^#eval/{...}'`: that address form is GNU-only and this must not depend
+    # on which sed the host ships.
+    body="$(printf '%s\n' "${MINT_BODY[$i]}" | awk 'BEGIN{past=0}
+      { if (!past && $0 ~ /^[[:space:]]*$/) next
+        if (!past && $0 ~ /^#eval/) { past=1; next }
+        past=1; print }')"
     # Fail closed rather than emit a driver known to be malformed.
     if grep -q '^#eval' <<<"$body"; then
       no "${MINT_LABEL[$i]} — body has an unstripped '#eval'; refusing to batch it"
@@ -177,6 +199,12 @@ LEAN
   # dies after printing some results cannot pass merely because the lines it did print looked right.
   if [ "$rc" -ne 0 ]; then
     no "mint group '$grp': driver exited $rc — $(printf '%s' "$out" | grep -m1 -E 'error' | cut -c1-160)"
+  fi
+  # The comment above used to claim diagnostics were checked when only the exit status was. `probe()`
+  # treats any Lean diagnostic as a failure regardless of exit status, and this path must match it —
+  # matching the DIAGNOSTIC shape, not the bare word, because `Except.error` is a legitimate value.
+  if grep -qE "error:|error\(lean" <<<"$out"; then
+    no "mint group '$grp': driver reported a Lean diagnostic — $(printf '%s' "$out" | grep -m1 -E 'error:|error\(lean' | cut -c1-160)"
   fi
 
   # EXACT SET EQUALITY over this group's declared members. Missing, duplicate and unexpected each
@@ -214,7 +242,22 @@ LEAN
 }
 
 flush_mint_probes() {
+  # A SECOND GROUP THAT MUST FAIL. With every real probe in one group, "results cannot cross groups"
+  # rested on process separation being asserted, never exercised. This registers one probe in a
+  # different group whose theorem does not exist: its replay must fail and name only that member,
+  # while all 18 real probes still pass. A shared driver would take both down together.
+  if [ "$MINT_SELFTEST_SECOND_GROUP" = "1" ]; then
+    probe_mint "SELFTEST: member of a second, failing group" "NEVER-REPORTED" \
+'#eval show IO Unit from do
+  IO.println "UNREACHABLE"' "Concrete.Proof.__selftest_second_group__"
+  fi
+
   local n=${#MINT_LABEL[@]}
+  local expect=$EXPECTED_MINT_PROBES
+  [ "$MINT_SELFTEST_SECOND_GROUP" != "1" ] || expect=$((expect + 1))
+  if [ "$n" -ne "$expect" ]; then
+    no "mint batch registered $n probes, expected $expect — a probe_mint call was added or removed without updating EXPECTED_MINT_PROBES"
+  fi
   if [ "$n" -eq 0 ]; then no "mint batch is EMPTY — no probe registered (vacuous)"; return; fi
   local groups g i
   groups="$(printf '%s\n' "${MINT_GROUP[@]}" | sort -u)"
@@ -3132,9 +3175,11 @@ else
   no "$C_EDGES contract dependency edge(s) now exist — the contract-precision deferral rests on there being none. Revisit the decision recorded in ROADMAP.md before this gate is made green again."
 fi
 
-GATE_DONE=1
 echo ""
-# Batched mint probes report here. Their verdicts are per-probe, not per-batch.
+# Batched mint probes report here. Their verdicts are per-probe, not per-batch. This runs BEFORE
+# GATE_DONE=1: the ERR trap that catches an unexpected shell failure must still be armed while the
+# batch runs, or a crash inside the batch would leave a short but green-looking result.
 flush_mint_probes
+GATE_DONE=1
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
