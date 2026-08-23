@@ -31,6 +31,35 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 # ordinary probe left PASS=309 FAIL=0 and exit 0 — the same silent-deletion hole, thirteen times
 # larger. Registration happens here, at the single point every ordinary probe passes through, so it
 # cannot be bypassed by adding a call site.
+# THE COMPILER'S EXIT STATUS MUST NOT BE DISCARDED. Twenty-six sites below run the compiler with
+# `2>/dev/null` and then read its OUTPUT, and every one of them treats an empty result as "nothing
+# wrong": no refusals, no bypasses, no unresolved identities. A compiler that crashed therefore
+# produced a clean bill of health. Failures are recorded to a file rather than a variable because
+# these calls happen inside command substitutions, where a counter increment would be lost with the
+# subshell — the same class of defect.
+CC_FAILURES="$TMP/cc_failures"; : > "$CC_FAILURES"
+cc() {
+  local f="$1" rep="$2" rc=0 out
+  out="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report "$rep" 2>/dev/null)" || rc=$?
+  # A NONZERO EXIT IS NORMAL HERE and must not be treated as a producer failure: the compiler exits
+  # nonzero when the SUBJECT is bad — a stale-proof fixture is meant to be rejected — while still
+  # printing its report. Six such runs exist in this corpus. What is never normal is an EMPTY
+  # report, because that is what a crash produces and it is exactly what every caller below reads
+  # as "no refusals, no bypasses, nothing unresolved".
+  if [ -z "$out" ]; then
+    printf '%s --report %s produced NO output (exit %s)\n' "$f" "$rep" "$rc" >> "$CC_FAILURES"
+  fi
+  printf '%s' "$out"
+}
+reconcile_compiler_runs() {
+  local n; n="$(awk 'END{print NR}' "$CC_FAILURES")"
+  if [ "$n" -eq 0 ]; then
+    ok "the compiler succeeded on every file this gate read evidence from"
+  else
+    no "the compiler FAILED $n time(s) — every site here reads its output, so a crash would have read as a clean result: $(head -3 "$CC_FAILURES" | tr '\n' ';' )"
+  fi
+}
+
 PROBE_N=0
 PROBE_RECS=""
 probe() {
@@ -771,8 +800,8 @@ fi
 # drifted file was moved into its own package — it previously sat beside `main.con` in one package,
 # both declaring `mod main`, so the loader resolved to `main.con` and the drifted bodies were never
 # analyzed at all.
-REAL_CORR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=4 missing=0' || true)"
-DRIFT_CORR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
+REAL_CORR="$(cc examples/elf_header/src/main.con subject-facts | grep -c 'shadow correspondence: matched=4 missing=0' || true)"
+DRIFT_CORR="$(cc examples/elf_header_drifted/src/main.con subject-facts | grep -c 'shadow correspondence: matched=0 missing=4' || true)"
 if [ "$REAL_CORR" = "1" ] && [ "$DRIFT_CORR" = "1" ]; then
   ok "same declarations, two packages: the real program corresponds 4/4 and the drifted one 0/4"
 else
@@ -782,7 +811,7 @@ fi
 # THE DRIFTED PACKAGE IS CAUGHT BY STALENESS, NOT BY CORRESPONDENCE, and that ordering is correct: a
 # body that no longer matches its own stored fingerprint is a more specific and more actionable fact
 # than an unjustified closure, so `stale` wins and the authority pass never sees those subjects.
-DRIFT_STALE="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report proof-status 2>/dev/null | grep -cE "^-- proof stale" || true)"
+DRIFT_STALE="$(cc examples/elf_header_drifted/src/main.con proof-status | grep -cE "^-- proof stale" || true)"
 if [ "$DRIFT_STALE" = "2" ]; then
   ok "the drifted package reports 2 stale proofs — exactly the two functions its header says drifted"
 else
@@ -795,8 +824,8 @@ fi
 # in the fixture corpus, that is a finding either way — a real defect caught, or a regression.
 CORPUS_PROVED=0; CORPUS_UNJUST=0
 for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
-  CORPUS_PROVED=$((CORPUS_PROVED + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- proved" || true)))
-  CORPUS_UNJUST=$((CORPUS_UNJUST + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)))
+  CORPUS_PROVED=$((CORPUS_PROVED + $(cc "$f" proof-status | grep -cE "^-- proved" || true)))
+  CORPUS_UNJUST=$((CORPUS_UNJUST + $(cc "$f" proof-status | grep -cE "^-- dependency closure unjustified" || true)))
 done
 if [ "$CORPUS_PROVED" = "35" ] && [ "$CORPUS_UNJUST" = "0" ]; then
   ok "corpus-wide: 35 proved, 0 unjustified closures (the fixture corpus is clean under the authority pass)"
@@ -804,7 +833,7 @@ else
   no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 35/0) — say which subject changed and why"
 fi
 # ...and the live case must stay live, or the pass has no corpus exercise at all.
-DH_UNJUST="$("$ROOT_DIR/.lake/build/bin/concrete" tests/programs/proof_decode_header.con --report proof-status 2>/dev/null | grep -cE "^-- dependency closure unjustified" || true)"
+DH_UNJUST="$(cc tests/programs/proof_decode_header.con proof-status | grep -cE "^-- dependency closure unjustified" || true)"
 if [ "$DH_UNJUST" = "1" ]; then
   ok "decode_header's closure is refused (a table with no entries can describe no definitions)"
 else
@@ -837,8 +866,12 @@ else
 fi
 # ...and the consumption is in the COMPOSITION, not in per-entry status derivation. A root reaching
 # `deriveObligationStatus` would bypass the composed pass entirely.
+# AN ABSENT ANCHOR IS NOT A CLEAN RESULT. `|| true` made a vanished call site — renamed, moved or
+# deleted — indistinguishable from one that exists and is clean.
 DERIVE_CTX="$(grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
-if printf '%s' "$DERIVE_CTX" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
+if [ -z "$DERIVE_CTX" ]; then
+  no "deriveObligationStatus e.eligibility no longer appears in ProofCore.lean — this control lost its anchor and was passing on absence"
+elif printf '%s' "$DERIVE_CTX" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
   no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
   ok "roots are consumed by the composed authority pass, not by per-entry status derivation"
@@ -851,7 +884,7 @@ fi
 # while asserting the wrong integration state.
 ROOTREF=0
 for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
-  ROOTREF=$((ROOTREF + $("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow depRoot' | grep -c REFUSED || true)))
+  ROOTREF=$((ROOTREF + $(cc "$f" subject-facts | grep 'shadow depRoot' | grep -c REFUSED || true)))
 done
 if [ "$ROOTREF" = "13" ]; then
   ok "13 subject roots refuse (measured, exact)"
@@ -873,8 +906,12 @@ fi
 # invariant assumes stale means a fingerprint mismatch). Absorbing someone else's defect into this
 # gate would have pinned it as expected; it is reported separately instead.
 CONSBAD=0
-for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
-  out="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report consistency 2>/dev/null || true)"
+CONSFILES="$(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort || true)"
+if [ -z "$CONSFILES" ]; then
+  no "no fixture carries a proof attribute — a zero-violation result here would be vacuous"
+fi
+for f in $CONSFILES; do
+  out="$(cc "$f" consistency || true)"
   if printf '%s' "$out" | grep -q "PROVED-ROOTS"; then
     CONSBAD=$((CONSBAD+1)); echo "      $f: $(printf '%s' "$out" | grep 'PROVED-ROOTS' | head -1)"
   fi
@@ -927,7 +964,7 @@ def elG (q : String) : EligibilityEntry :=
 # is `outer -> middle -> leaf` with `leaf` trusted: `outer`'s own body mentions no trusted function
 # at all, and it must still disclose the assumption. A claim that dropped it two hops from the
 # boundary would launder exactly what the one-hop qualification prevents.
-DEEP_TRUST="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_deep_trust/src/main.con --report proof-status 2>/dev/null || true)"
+DEEP_TRUST="$(cc examples/proof_patterns/composition_deep_trust/src/main.con proof-status || true)"
 DEEP_N="$(printf '%s' "$DEEP_TRUST" | grep -c 'ASSUMES trusted boundaries (not proved): calls.leaf' || true)"
 if [ "$DEEP_N" = "2" ]; then
   ok "trust reaches BOTH hops: middle and outer each disclose calls.leaf"
@@ -935,7 +972,7 @@ else
   no "deep trust disclosed by $DEEP_N of 2 subjects — propagation stopped short of the full closure"
 fi
 # ...and the one-hop case still holds, so the deep control did not replace it.
-ONE_HOP="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report proof-status 2>/dev/null || true)"
+ONE_HOP="$(cc examples/proof_patterns/composition_trusted_helper/src/main.con proof-status || true)"
 if printf '%s' "$ONE_HOP" | grep -q 'ASSUMES trusted boundaries (not proved): calls.dbl'; then
   ok "a PROVED claim one hop from a boundary still states its assumption"
 else
@@ -982,7 +1019,7 @@ def mkEntryC (q d : String) : Option ProofCoreEntry :=
   | _, _, _, _ => IO.println "could not build the control"'
 # ...and a closure crossing a TRUSTED boundary must still root. Its absence refused `calls.combine`
 # entirely, for a reason that had nothing to do with its evidence.
-TH_ROOTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null || true)"
+TH_ROOTS="$(cc examples/proof_patterns/composition_trusted_helper/src/main.con subject-facts || true)"
 if printf '%s' "$TH_ROOTS" | grep -q 'shadow depRoot: REFUSED'; then
   no "composition_trusted_helper cannot root — an edge to a trusted callee has no node again"
 else
@@ -1559,13 +1596,16 @@ probe "completeness agrees with the merge, both ways" "true" "
 # become `missing`, and those should gate a verdict. It reports rather than fails, because the
 # current state is expected and the transition is what needs noticing.
 echo "=== step 6 precondition (are refusals ours or the program's?) ==="
-DRR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true)"
+DRR="$(cc examples/proof_patterns/composition/src/main.con subject-facts | grep 'depRoot: REFUSED' || true)"
+# THIS IS A REPORT, NOT AN ASSERTION, and it must stop counting as one. All three branches called
+# `ok`, so it could not fail under any state of the program — a control that cannot fail inflates the
+# pass total while proving nothing. The transition it watches for is still worth printing.
 if [ -z "$DRR" ]; then
-  ok "no root refusals in this fixture"
+  echo "  note no root refusals in this fixture"
 elif printf '%s' "$DRR" | grep -q "unclassified"; then
-  ok "refusals are UNCLASSIFIED (our state, not the program's) — step 6 stays blocked, correctly"
+  echo "  note refusals are UNCLASSIFIED (our state, not the program's) — step 6 stays blocked, correctly"
 else
-  ok "PRECONDITION MET: refusals are no longer unclassified — real classifications have landed, so the root may now gate proved"
+  echo "  note PRECONDITION MET: refusals are no longer unclassified — real classifications have landed, so the root may now gate proved"
 fi
 
 # THE THEOREM DIGEST MUST SEE THE PROOF, not only the statement. `theoremArtifactDigest` claims
@@ -2607,8 +2647,8 @@ probe "attesting a model the table contains is accepted" "true" '
 # from module NAMES — so package scope does NO work here. The drift is caught by the IMPLEMENTATION
 # component alone. Stated because a reader could otherwise assume package scope is what separates
 # them, and build a generator that relies on it.
-CANON="$("$ROOT_DIR/.lake/build/bin/concrete" examples/thesis_demo/src/main.con --report generated-implementations 2>/dev/null || true)"
-DRIFT="$("$ROOT_DIR/.lake/build/bin/concrete" examples/thesis_demo/src/main_drifted.con --report generated-implementations 2>/dev/null || true)"
+CANON="$(cc examples/thesis_demo/src/main.con generated-implementations || true)"
+DRIFT="$(cc examples/thesis_demo/src/main_drifted.con generated-implementations || true)"
 C_IMPL="$(printf '%s' "$CANON" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | tail -1)"
 D_IMPL="$(printf '%s' "$DRIFT" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | tail -1)"
 C_PKG="$(printf '%s' "$CANON" | grep -A1 'def main_parse_byte' | tail -1 | grep -oE '"[0-9a-f]{32}"' | head -1)"
@@ -2690,7 +2730,7 @@ probe "two same-named models attesting DIFFERENT implementations are permitted" 
 # `|| true`: this command path exits 1 whenever the program has open proof obligations, independent
 # of the report — `--report impl-manifest` behaves the same and its gate does likewise. The report
 # CONTENT is what is asserted, so a nonzero exit must not abort the gate under `set -u`/pipefail.
-GEN="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report generated-implementations 2>/dev/null || true)"
+GEN="$(cc examples/proof_patterns/composition/src/main.con generated-implementations || true)"
 if printf '%s' "$GEN" | grep -q 'def calls_inc : Except DefinitionIdentityRefusal DefinitionIdentity'; then
   ok "the generator emits typed opaque references (author selects a symbol, transcribes nothing)"
 else
@@ -2710,7 +2750,7 @@ fi
 DEFID_FILES="$(fp_files)"
 DEFID=""
 for f in $DEFID_FILES; do
-  DEFID="$DEFID$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+  DEFID="$DEFID$(cc "$f" subject-facts \
     | grep -E '^v1:|shadow defIdentity:' | paste - - 2>/dev/null)
 "
 done
@@ -3033,7 +3073,7 @@ probe "usability compares the COUNT, so a dropped request cannot pass" "true" "
 CORR_FILES="$(fp_files)"
 CORR_LINES=""
 for f in $CORR_FILES; do
-  CORR_LINES="$CORR_LINES$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'shadow correspondence:' || true)
+  CORR_LINES="$CORR_LINES$(cc "$f" subject-facts | grep 'shadow correspondence:' || true)
 "
 done
 C_USABLE="$(printf '%s' "$CORR_LINES" | grep -c 'usable=yes' || true)"
@@ -3091,7 +3131,7 @@ if [ "$VH" = "1" ]; then
   # one of its four body edges pointed at an `elfFns` entry by NAME. Now the package component
   # separates them and all four fall to `missing`. If this ever reads `usable=yes`, the join has
   # gone back to matching names.
-  DRIFT_FACTS="$("$ROOT_DIR/.lake/build/bin/concrete" examples/elf_header_drifted/src/main.con --report subject-facts 2>/dev/null || true)"
+  DRIFT_FACTS="$(cc examples/elf_header_drifted/src/main.con subject-facts || true)"
   if ! printf '%s' "$DRIFT_FACTS" | grep -q 'shadow correspondence: matched=0 missing=4'; then
     no "elf_header/main_drifted no longer refuses with missing=4 — a different program's edges are being justified by elfFns again"
   else
@@ -3104,7 +3144,7 @@ fi
 # IDENTITY IS RETAINED FOR EXCLUDED CALLEES. A trusted helper is excluded from the proof entries but
 # is still a real callable; resolving only against `entries` reported it as `«unresolved»` and turned
 # a `trusted` edge into a `missing` one. No `«unresolved»` may remain anywhere in the corpus.
-UNRES="$(for f in $CORR_FILES; do "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep -c '«unresolved»' || true; done | awk '{s+=$1} END{print s+0}')"
+UNRES="$(for f in $CORR_FILES; do cc "$f" subject-facts | grep -c '«unresolved»' || true; done | awk '{s+=$1} END{print s+0}')"
 if [ "$UNRES" = "0" ]; then
   ok "no dependency edge in the corpus reports an «unresolved» identity"
 else
@@ -3112,11 +3152,11 @@ else
 fi
 # ...and the trusted helper resolves to a TRUSTED edge with its real identity, not merely to
 # something non-unresolved.
-TH="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep 'shadow edgeKinds:' | grep 'calls.combine' || true)"
+# (removed: TH was computed here and never read — a producer with no consumer.)
 # RENDERED BY LOCAL NAME NOW, because the edge carries a scoped identity and `v1:user:…` is a
 # `CallableId` rendering. The identity is what the node compares; the diagnostic prints what a reader
 # recognises. Still asserting BOTH halves — the right callee and the right kind.
-TH2="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition_trusted_helper/src/main.con --report subject-facts 2>/dev/null | grep -c 'calls.dbl=trusted' || true)"
+TH2="$(cc examples/proof_patterns/composition_trusted_helper/src/main.con subject-facts | grep -c 'calls.dbl=trusted' || true)"
 if [ "$TH2" -ge 1 ]; then
   ok "the trusted helper resolves to 'calls.dbl=trusted' — right callee AND right kind"
 else
@@ -3288,7 +3328,7 @@ TMPDISC="$(mktemp)"; trap 'rm -f "$TMPDISC"; rm -rf "$TMP"' EXIT
 # vacuous: 12 non-current edges exist in the corpus and the two refusals below are theirs.
 BYPASS=0
 for f in $CORPUS_FILES_EARLY; do
-  n="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+  n="$(cc "$f" subject-facts \
     | grep -E 'shadow edgeKinds:|shadow depRoot:' \
     | paste - - 2>/dev/null \
     | grep -E 'non-current, ' | grep -vE '\[0 non-current' | grep -v 'depRoot: REFUSED' | grep -c . || true)"
@@ -3303,7 +3343,7 @@ fi
 # ...and the corpus really does contain non-current edges, or the above is vacuous.
 NONCUR=0
 for f in $CORPUS_FILES_EARLY; do
-  n="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+  n="$(cc "$f" subject-facts \
         | grep -o 'shadow edgeKinds:.*' | grep -oE '=(unclassified|missing)' | grep -c . || true)"
   NONCUR=$((NONCUR + n))
 done
@@ -3321,7 +3361,7 @@ else
   no "non-current edge count moved to $NONCUR (was 12, all unclassified) — if the hand-back classified more, update this and say so"
 fi
 
-DR="$("$ROOT_DIR/.lake/build/bin/concrete" examples/proof_patterns/composition/src/main.con --report subject-facts 2>/dev/null | grep 'shadow depRoot:' || true)"
+DR="$(cc examples/proof_patterns/composition/src/main.con subject-facts | grep 'shadow depRoot:' || true)"
 [ -n "$DR" ] \
   && ok "subject-facts carries a depRoot line (both consumers read ProofCore's nodes)" \
   || no "no depRoot line — the shadow integration is not wired"
@@ -3340,7 +3380,7 @@ printf '%s' "$DR" | grep -qE "shadow depRoot: [0-9a-f]{8}" \
 # behaviour itself is unit-tested above ("a root refuses an UNCLASSIFIED edge").
 CORPUS_FILES="$(fp_files)"
 CORPUS_REF="$(for f in $CORPUS_FILES; do
-  "$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null | grep 'depRoot: REFUSED' || true
+  cc "$f" subject-facts | grep 'depRoot: REFUSED' || true
 done)"
 NFILES="$(printf '%s\n' "$CORPUS_FILES" | grep -c . || true)"
 NREF="$(printf '%s' "$CORPUS_REF" | grep -c 'REFUSED' || true)"
@@ -3381,7 +3421,7 @@ fi
 echo "=== contract-precision deferral: the premise is still true ==="
 C_EDGES=0; B_EDGES=0
 for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort); do
-  KINDS="$("$ROOT_DIR/.lake/build/bin/concrete" "$f" --report subject-facts 2>/dev/null \
+  KINDS="$(cc "$f" subject-facts \
            | grep -oE 'shadow edgeKinds: [^[]*' || true)"
   # `grep -o` exits 1 on no match, and under `pipefail` that trips the ERR trap — so the counter
   # would abort the gate on the very corpus state it exists to confirm. Captured, then counted.
@@ -3406,6 +3446,7 @@ echo ""
 # GATE_DONE=1: the ERR trap that catches an unexpected shell failure must still be armed while the
 # batch runs, or a crash inside the batch would leave a short but green-looking result.
 flush_mint_probes
+reconcile_compiler_runs
 reconcile_ordinary_probes
 reconcile_assertion_total
 GATE_DONE=1
