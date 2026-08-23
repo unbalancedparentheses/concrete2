@@ -57,13 +57,20 @@ def tid? (m d : String) : Option DefinitionIdentity :=
 -- kernel invocations.
 $body
 LEAN
-  local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
+  # `|| true` USED TO DISCARD THE EXIT STATUS here, so a Lean that printed the wanted string and
+  # then exited nonzero passed. Output matching and process success are separate facts and both are
+  # required; the batch path already checked both, and this asymmetry left the 240 ordinary probes
+  # weaker than the 18 batched ones.
+  local out rc=0
+  out="$(lake env lean "$TMP/p.lean" 2>&1)" || rc=$?
   # An error is a failure whatever the text says — a probe that cannot elaborate
   # must not pass on a digit inside "line:col" (that happened in the migration gate).
   # Match a LEAN DIAGNOSTIC, not the bare word: `Except.error` is a legitimate
   # value and matching "error" made every probe of a refusal a false negative —
   # the vacuity guard corrupting the measurement it exists to protect.
-  if grep -qE "error:|error\(lean" <<<"$out"; then
+  if [ "$rc" -ne 0 ]; then
+    no "$label — probe exited $rc: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"
+  elif grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"
   elif grep -qF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"; fi
@@ -109,7 +116,27 @@ readonly MINT_DEFAULT_GROUP="Concrete.Proof.parse_byte_correct"
 # with nothing to notice it. So the SET of labels is pinned by digest and duplicates are rejected.
 # Changing which probes mint must be a deliberate edit of both values.
 EXPECTED_MINT_PROBES=18
-EXPECTED_MINT_LABELS_SHA="4b35a4e58c9882c52a4687cde76dffdb"   # md5 of the sorted label set
+# Digest of the full manifest, not just the names — see mint_manifest_digest below. The constant is
+# a sha256 because this repository supports macOS, where GNU md5sum does not exist; the hasher
+# fallback follows the one in lib/treestate.sh rather than adding a third way to hash a thing.
+EXPECTED_MINT_MANIFEST_SHA256="00faf7b8af5f3fbcc310c1760131b0078e82ad21ae15bf644661406da7afc329"
+if command -v sha256sum >/dev/null 2>&1; then _MINT_HASHER="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then _MINT_HASHER="shasum -a 256"
+else _MINT_HASHER=""
+fi
+
+# THE MANIFEST COVERS WHAT EACH PROBE ASSERTS, NOT ONLY WHAT IT IS CALLED. Pinning labels alone left
+# a hole: two probes that expect the same string — and several do — could have one body copied over
+# the other, keeping all 18 labels and the label digest intact while silently deleting an assertion.
+# So the digest is over (label, want, group, body) for every probe, sorted so that merely reordering
+# probes is not a change. Unit separators keep the fields unambiguous.
+mint_manifest_digest() {
+  local i
+  for ((i = 0; i < ${#MINT_LABEL[@]}; i++)); do
+    printf '%s\x1f%s\x1f%s\x1f%s\x1e\n' \
+      "${MINT_LABEL[$i]}" "${MINT_WANT[$i]}" "${MINT_GROUP[$i]}" "${MINT_BODY[$i]//$'\n'/\\n}"
+  done | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1
+}
 probe_mint() {
   MINT_LABEL+=("$1"); MINT_WANT+=("$2"); MINT_BODY+=("$3")
   MINT_GROUP+=("${4:-$MINT_DEFAULT_GROUP}")
@@ -130,6 +157,9 @@ probe_mint() {
 # rather than as a smaller green total.
 : "${MINT_SELFTEST_SHELL_FAIL:=}"
 : "${MINT_SELFTEST_EMPTY_GROUPS:=}"
+# SUBSHELL_FAIL fails a command SUBSTITUTION rather than a direct command. Bash exits only the
+# subshell on ERR there, so the trap alone never catches it; this proves the status check does.
+: "${MINT_SELFTEST_SUBSHELL_FAIL:=}"
 
 # Reconcile one group: run its driver, then account for EXACTLY its declared members.
 _mint_run_group() {
@@ -272,9 +302,19 @@ flush_mint_probes() {
   if [ -n "$ldup" ]; then
     no "mint batch has DUPLICATE probe labels, so one probe is standing in for another: $(printf '%s' "$ldup" | tr '\n' '|')"
   fi
-  lsha="$(printf '%s\n' "${MINT_LABEL[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f1)"
-  if [ "$lsha" != "$EXPECTED_MINT_LABELS_SHA" ]; then
-    no "mint batch label set changed (got $lsha, expected $EXPECTED_MINT_LABELS_SHA) — probes were swapped, renamed or substituted; update EXPECTED_MINT_LABELS_SHA deliberately"
+  # AN EMPTY EXPECTATION ACCEPTS ANY OUTPUT, because `grep -qF ""` matches everything. A probe like
+  # that reports ok while asserting nothing at all.
+  local _i
+  for ((_i = 0; _i < n0; _i++)); do
+    [ -n "${MINT_WANT[$_i]}" ] || no "${MINT_LABEL[$_i]} — has an EMPTY expectation, which would accept any output"
+  done
+  if [ -z "$_MINT_HASHER" ]; then
+    no "mint batch: no sha256 implementation found, so the probe manifest cannot be reconciled"
+  else
+    lsha="$(mint_manifest_digest)"
+    if [ "$lsha" != "$EXPECTED_MINT_MANIFEST_SHA256" ]; then
+      no "mint batch manifest changed (got $lsha, expected $EXPECTED_MINT_MANIFEST_SHA256) — a label, expectation, group or BODY was swapped, renamed or substituted; update EXPECTED_MINT_MANIFEST_SHA256 deliberately"
+    fi
   fi
 
   # A SECOND GROUP THAT MUST FAIL. With every real probe in one group, "results cannot cross groups"
@@ -296,7 +336,21 @@ flush_mint_probes() {
   [ "$MINT_SELFTEST_SHELL_FAIL" != "1" ] || /nonexistent-command-for-the-errtrace-control
   groups="$(printf '%s\n' "${MINT_GROUP[@]}" | sort -u)"
   [ "$MINT_SELFTEST_EMPTY_GROUPS" != "1" ] || groups=""
-  echo "=== receipt minting ($n probes, $(printf '%s\n' "$groups" | wc -l) replay group(s)) ==="
+  # NOT `echo "... $(...)"`. An ERR inside a command substitution exits only that subshell; the
+  # enclosing `echo` then succeeds and the run continues to a green exit — the trap fires, prints
+  # FATAL, and changes nothing. A standalone assignment whose status is checked cannot do that.
+  # `awk` also counts an empty list as 0 groups, where `wc -l` counted the blank line as 1.
+  local ngroups
+  if ! ngroups="$(printf '%s\n' "$groups" | awk 'NF{c++} END{print c+0}')"; then
+    no "mint batch: the replay-group count could not be computed"
+    ngroups="?"
+  fi
+  [ "$MINT_SELFTEST_SUBSHELL_FAIL" != "1" ] || \
+    if ! ngroups="$(/nonexistent-command-for-the-subshell-control)"; then
+      no "mint batch: the replay-group count could not be computed"
+      ngroups="?"
+    fi
+  echo "=== receipt minting ($n probes, $ngroups replay group(s)) ==="
   if [ -z "${groups//[[:space:]]/}" ]; then
     no "mint batch produced NO groups from $n registered probes — the grouping step failed and no driver ran"
   fi
