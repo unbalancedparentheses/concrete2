@@ -72,6 +72,169 @@ LEAN
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"; fi
 }
 
+# ---------------------------------------------------------------------------
+# BATCHED MINT PROBES — one successful replay per group, with every receipt in that group deriving
+# from that replay.
+#
+# `mintProbe` runs `Concrete.Proof.replay`, a real kernel run, MEASURED at ~17.5s. Eighteen probes
+# called it, each in its own `lake env lean` process: ~315s of this gate's measured 675s spent
+# replaying the same theorem eighteen times. What differs between these probes is the material handed
+# to `ReceiptMaterial.of?`, and that is PURE — as the preamble above already says.
+#
+# WHAT THIS DOES NOT WEAKEN. `SuccessfulReplay` has a private constructor and `replay` is its only
+# producer, so a receipt still cannot exist without a genuine kernel run. That is a type-level
+# property and does not depend on how many times the run happens. What drops is the COUNT of
+# identical replays.
+#
+# GROUPS. A group is a replay target: probes in a group share one replay because they ask for the
+# same theorem, imports and target. Groups are DECLARED per probe, never inferred. Each group gets
+# its OWN driver process and therefore its own replay, so a result for probe X can only have come
+# from the driver of X's declared group — cross-group substitution is structurally impossible rather
+# than merely checked, and no replay outlives its `$TMP` driver, so nothing survives into another
+# gate invocation or mutation state. All 18 probes currently declare one group because all 18 replay
+# `parse_byte_correct` with identical targets; adding a probe with a different target adds a group
+# and a second replay automatically.
+#
+# MEMBERSHIP IS BY CONSTRUCTION. A regex over this file found only 14 of the 18 sites — four use a
+# line-continuation call shape — and a batcher built on that regex would have silently dropped four
+# probes from a green run. Callers name themselves `probe_mint`.
+MINT_LABEL=(); MINT_WANT=(); MINT_BODY=(); MINT_GROUP=()
+# Overridable ONLY so the self-tests can induce a replay failure; production never sets it.
+MINT_DEFAULT_GROUP="${MINT_DEFAULT_GROUP:-Concrete.Proof.parse_byte_correct}"
+probe_mint() {
+  MINT_LABEL+=("$1"); MINT_WANT+=("$2"); MINT_BODY+=("$3")
+  MINT_GROUP+=("${4:-$MINT_DEFAULT_GROUP}")
+}
+
+# Self-test hooks, unset in normal runs. BREAK corrupts one probe's body; FOREIGN injects a result
+# id that belongs to no probe of the group being reconciled.
+: "${MINT_SELFTEST_BREAK:=}"
+: "${MINT_SELFTEST_FOREIGN:=}"
+
+# Reconcile one group: run its driver, then account for EXACTLY its declared members.
+_mint_run_group() {
+  local grp="$1"; shift
+  local -a idx=("$@")
+  local f="$TMP/mintbatch.${grp//[^A-Za-z0-9]/_}.lean" out i id body skip_ids="" got dup ids expect_n=${#idx[@]}
+
+  cat > "$f" <<LEAN
+import Concrete
+import Examples
+open Lean Meta Concrete Concrete.Proof
+def tPkg : String := Concrete.shortHash "test-package"
+def tid? (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? tPkg m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def probeThm : String := "$grp"
+-- The pure half of \`mintProbe\`: same material validation, same mint, replay supplied by the group.
+def mintWith (sr : SuccessfulReplay) (subjectDigest? : Option String) (ev : EdgeEvidence)
+    (root : String) (trust : Bool) (bounds : List String) (cv ws im : String)
+    : Option ProofEvidenceReceipt :=
+  (ReceiptMaterial.of? subjectDigest? ev root trust bounds cv ws im).map
+    (ProofEvidenceReceipt.mint sr)
+
+#eval show IO Unit from do
+  let tgt : ReplayTarget :=
+    { subject := "probe", theoremName := probeThm
+    , kind := .refinement, origin := .sourceLinked, binding := .bound }
+  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [tgt] } with
+  | .error _ => IO.println "<<REPLAY-FAILED>>"
+  | .ok rr => match SuccessfulReplay.of? rr probeThm with
+    | .error _ => IO.println "<<REPLAY-FAILED>>"
+    | .ok sr => do
+LEAN
+
+  for i in "${idx[@]}"; do
+    id="$(printf '%03d' "$i")"
+    printf '      IO.print "<<P%s>> "\n      do\n' "$id" >> "$f"
+    # STRIP THE `#eval` HEADER BY PATTERN, NOT BY POSITION. The two call shapes in this file differ:
+    # `probe_mint "l" "w" '` opens the quote at end of line, so its body BEGINS with a newline, while
+    # the line-continuation shape does not. Dropping "line 1" therefore stripped a blank line for
+    # fourteen probes and left `#eval` embedded mid-driver — which is exactly what happened.
+    body="$(printf '%s\n' "${MINT_BODY[$i]}" | sed -e '/./,$!d' -e '0,/^#eval/{/^#eval/d}')"
+    # Fail closed rather than emit a driver known to be malformed.
+    if grep -q '^#eval' <<<"$body"; then
+      no "${MINT_LABEL[$i]} — body has an unstripped '#eval'; refusing to batch it"
+      skip_ids="$skip_ids $id"; continue
+    fi
+    # Each body is nested under its OWN `do` at a deeper column, so bindings cannot leak from one
+    # probe into the next: probe N must not be able to see probe N-1's `ev`.
+    { if [ "$MINT_SELFTEST_BREAK" = "$i" ]; then
+        printf '%s\n' "$body" | sed '1s/.*/let _ := thisNameDoesNotExist/'
+      else
+        printf '%s\n' "$body"
+      fi
+    } | sed -e 's/match ← mintProbe /match mintWith sr /' \
+            -e 's/← *mintProbe /mintWith sr /' \
+            -e 's/^/      /' >> "$f"
+  done
+
+  local rc=0
+  out="$(lake env lean "$f" 2>&1)" || rc=$?
+  [ -z "$MINT_SELFTEST_FOREIGN" ] || out="$out
+<<P$MINT_SELFTEST_FOREIGN>> INJECTED"
+
+  # A SHARED-REPLAY FAILURE IS ONE CAUSE, and it names every affected member rather than becoming an
+  # empty green batch: no probe in this group ran.
+  if grep -qF '<<REPLAY-FAILED>>' <<<"$out"; then
+    no "mint group '$grp': the shared kernel replay FAILED — none of its $expect_n probes ran:"
+    for i in "${idx[@]}"; do no "  unproven (replay failed): ${MINT_LABEL[$i]}"; done
+    return
+  fi
+
+  # LEAN'S EXIT STATUS AND DIAGNOSTICS ARE CHECKED INDEPENDENTLY of result parsing, so a driver that
+  # dies after printing some results cannot pass merely because the lines it did print looked right.
+  if [ "$rc" -ne 0 ]; then
+    no "mint group '$grp': driver exited $rc — $(printf '%s' "$out" | grep -m1 -E 'error' | cut -c1-160)"
+  fi
+
+  # EXACT SET EQUALITY over this group's declared members. Missing, duplicate and unexpected each
+  # fail BY NAME. Reconciliation does not stop at the first problem, so breaking an early probe
+  # cannot make later probes disappear silently — they are still individually reported.
+  ids="$(grep -oE '^<<P[0-9]{3}>>' <<<"$out" | tr -cd '0-9\n' | grep -E '^[0-9]+$' || true)"
+  dup="$(printf '%s\n' "$ids" | sort | uniq -d || true)"
+  [ -z "$dup" ] || no "mint group '$grp': DUPLICATE result ids: $(echo $dup)"
+
+  for i in "${idx[@]}"; do
+    id="$(printf '%03d' "$i")"
+    case "$skip_ids " in *" $id "*) continue ;; esac   # refused above; already counted once
+    if ! grep -qE "^<<P$id>> ." <<<"$out"; then
+      no "${MINT_LABEL[$i]} — MISSING from group '$grp' (no <<P$id>> result)"
+      continue
+    fi
+    got="$(grep -m1 -E "^<<P$id>> " <<<"$out" | sed "s/^<<P$id>> //")"
+    if grep -qF -- "${MINT_WANT[$i]}" <<<"$got"; then
+      ok "${MINT_LABEL[$i]}"
+    else
+      no "${MINT_LABEL[$i]} — want '${MINT_WANT[$i]}' got '$(printf '%s' "$got" | cut -c1-160)'"
+    fi
+  done
+
+  # A result this group never declared means the driver and the declared list disagree — including a
+  # result belonging to ANOTHER group, which is how cross-group substitution would show up.
+  local want_ids=" $(for i in "${idx[@]}"; do printf '%03d ' "$i"; done)"
+  while read -r id; do
+    [ -n "$id" ] || continue
+    case "$want_ids" in
+      *" $id "*) ;;
+      *) no "mint group '$grp': UNEXPECTED result id <<P$id>> — not a declared member" ;;
+    esac
+  done <<<"$ids"
+}
+
+flush_mint_probes() {
+  local n=${#MINT_LABEL[@]}
+  if [ "$n" -eq 0 ]; then no "mint batch is EMPTY — no probe registered (vacuous)"; return; fi
+  local groups g i
+  groups="$(printf '%s\n' "${MINT_GROUP[@]}" | sort -u)"
+  echo "=== receipt minting ($n probes, $(printf '%s\n' "$groups" | wc -l) replay group(s)) ==="
+  while read -r g; do
+    [ -n "$g" ] || continue
+    local -a idx=()
+    for ((i = 0; i < n; i++)); do [ "${MINT_GROUP[$i]}" = "$g" ] && idx+=("$i"); done
+    _mint_run_group "$g" "${idx[@]}"
+  done <<<"$groups"
+}
+
 echo "=== the vocabulary is complete and cannot launder trust ==="
 # COMPLETENESS IS A THEOREM (`DependencyEdge.mem_all`), not this length check. A count protects
 # nothing against a sixth constructor whose author also updates the 5 to a 6 — the list and the
@@ -728,7 +891,7 @@ probe "an empty IMPORTS id refuses to mint" "REFUSED" '
 # An old-schema receipt can only arrive by DESERIALIZATION, which does not exist yet, so that
 # leg is deliberately absent rather than faked with a constructor call. Recorded here so its
 # absence is a known gap and not an oversight.
-probe "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
+probe_mint "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:a") ev "ROOT" false [] "t" "w" "i" with
@@ -736,7 +899,7 @@ probe "...and a current-schema receipt IS comparable (control)" "COMPARABLE" '
   | none   => IO.println "MINT-REFUSED"'
 
 # End-to-end: the digests a real classification produces must reach a receipt.
-probe "a minted receipt carries the table binding it was given" "d1" '
+probe_mint "a minted receipt carries the table binding it was given" "d1" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`X]
                            , tableDigests := [(`X, some "d1")], quantifiesOverTable := false }
@@ -749,7 +912,7 @@ probe "a minted receipt carries the table binding it was given" "d1" '
 # built receipt DETECTS change — which is the only reason to store one.
 echo "=== receipt currency ==="
 
-probe "an unchanged environment is current (control)" "CURRENT" '
+probe_mint "an unchanged environment is current (control)" "CURRENT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
@@ -757,7 +920,7 @@ probe "an unchanged environment is current (control)" "CURRENT" '
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "ROOT" r.theoremArtifact false [] r.toolchainId "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
-probe "changing a TABLE BODY makes the receipt non-current" "NOT" '
+probe_mint "changing a TABLE BODY makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
@@ -767,7 +930,7 @@ probe "changing a TABLE BODY makes the receipt non-current" "NOT" '
 
 # The swap. Sorting normalizes ORDER, and must not normalize away WHICH name carries which
 # digest — otherwise two tables exchanging contents would look unchanged.
-probe "SWAPPING two tables digests makes the receipt non-current" "NOT" '
+probe_mint "SWAPPING two tables digests makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A, `B]
                            , tableDigests := [(`A, some "da"), (`B, some "db")], quantifiesOverTable := false }
@@ -777,7 +940,7 @@ probe "SWAPPING two tables digests makes the receipt non-current" "NOT" '
 
 # ...while REORDERING the same pairs must NOT. Order is normalized, so it carries no
 # information; without this control the sort could be dropped and nothing would notice.
-probe "REORDERING the same pairs leaves it current" "CURRENT" '
+probe_mint "REORDERING the same pairs leaves it current" "CURRENT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`B, `A]
                            , tableDigests := [(`B, some "db"), (`A, some "da")], quantifiesOverTable := false }
@@ -788,7 +951,7 @@ probe "REORDERING the same pairs leaves it current" "CURRENT" '
 # The structural table digest is toolchain-relative (recorded limit at tableValueDigest). That
 # is only acceptable if the toolchain is itself bound — so a toolchain change must invalidate
 # even when every table digest is byte-identical.
-probe "a TOOLCHAIN change invalidates even with identical table digests" "NOT" '
+probe_mint "a TOOLCHAIN change invalidates even with identical table digests" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [`A]
                            , tableDigests := [(`A, some "da")], quantifiesOverTable := false }
@@ -796,21 +959,21 @@ probe "a TOOLCHAIN change invalidates even with identical table digests" "NOT" '
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [(`A, "da")] "ROOT" r.theoremArtifact false [] "tc-NEW" "ws" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
-probe "a WORKSPACE change invalidates" "NOT" '
+probe_mint "a WORKSPACE change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" r.theoremArtifact false [] r.toolchainId "ws-NEW" "im" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
-probe "an IMPORT-CLOSURE change invalidates" "NOT" '
+probe_mint "an IMPORT-CLOSURE change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" r.theoremArtifact false [] r.toolchainId "ws" "im-NEW" then "CURRENT" else "NOT")
   | none => IO.println "MINT-REFUSED"'
 
-probe "a SUBJECT change invalidates" "NOT" '
+probe_mint "a SUBJECT change invalidates" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
@@ -818,7 +981,7 @@ probe "a SUBJECT change invalidates" "NOT" '
   | none => IO.println "MINT-REFUSED"'
 
 # A CONTRACT edge names no tables, so it must not acquire a body dependency it does not have.
-probe "a contract edge binds NO tables" "0" '
+probe_mint "a contract edge binds NO tables" "0" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .contract, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
@@ -889,7 +1052,7 @@ probe "an EMPTY-STRING subject digest refuses to mint" "REFUSED" '
 # The EDGE must participate in currency. Its omission was a real hole: a receipt recorded for a
 # `contract` edge read current against `body` material — a claim surviving exactly the
 # implementation change it depends on.
-probe "an EDGE-KIND change makes the receipt non-current" "NOT" '
+probe_mint "an EDGE-KIND change makes the receipt non-current" "NOT" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
@@ -899,14 +1062,14 @@ probe "an EDGE-KIND change makes the receipt non-current" "NOT" '
 # ONE disposition, not two booleans in the right order. `comparable` then `isCurrentAgainst` was
 # a sequencing a consumer had to remember, and reading them out of order reports "the proof went
 # stale" when the ENVELOPE changed — a claim about the program rather than the format.
-probe "disposition: unchanged material is current" "current" '
+probe_mint "disposition: unchanged material is current" "current" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
   | some r => IO.println (toString (repr (r.disposition "v2:s" .body [] "ROOT" r.theoremArtifact false [] r.toolchainId "ws" "im")))
   | none => IO.println "MINT-REFUSED"'
 
-probe "disposition: moved material is notCurrent (not needsRecheck)" "notCurrent" '
+probe_mint "disposition: moved material is notCurrent (not needsRecheck)" "notCurrent" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
@@ -961,7 +1124,7 @@ probe "an empty dependency ROOT refuses to mint" "REFUSED" \
 # minting token, so the receipt records the theorem the KERNEL accepted. The old "empty artifact
 # refuses" leg is gone because it became unfalsifiable — there is no argument left to make empty —
 # and this is what replaced it: the artifact equals what was replayed.
-probe "the minted artifact is the theorem that was REPLAYED, not a caller's claim" "ARTIFACT-MATCHES" \
+probe_mint "the minted artifact is the theorem that was REPLAYED, not a caller's claim" "ARTIFACT-MATCHES" \
 '#eval show IO Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:a") ev "ROOT" false [] "t" "w" "i" with
@@ -984,19 +1147,19 @@ probe "a qualified receipt mints when flag and boundaries agree" "MINTED" \
   IO.println (if (ReceiptMaterial.of? (some "v2:a") ev "R" true ["m.helper"] "t" "w" "i").isSome then "MINTED" else "REFUSED")'
 # EVERY NEW FIELD PARTICIPATES IN CURRENCY. A field added to the envelope and left out of the
 # comparison is worse than an absent field: it reads as bound.
-probe "a changed dependency ROOT makes the receipt non-current" "NOT" \
+probe_mint "a changed dependency ROOT makes the receipt non-current" "NOT" \
 '#eval show IO Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "t" "w" "i" with
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT-MOVED" r.theoremArtifact false [] r.toolchainId "w" "i" then "CURRENT" else "NOT")
   | none => IO.println "REFUSED"'
-probe "a changed THEOREM ARTIFACT makes the receipt non-current" "NOT" \
+probe_mint "a changed THEOREM ARTIFACT makes the receipt non-current" "NOT" \
 '#eval show IO Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "t" "w" "i" with
   | some r => IO.println (if r.isCurrentAgainst "v2:s" .body [] "ROOT" "THM-REPROVED" false [] r.toolchainId "w" "i" then "CURRENT" else "NOT")
   | none => IO.println "REFUSED"'
-probe "a receipt that gained a trusted boundary is non-current" "NOT" \
+probe_mint "a receipt that gained a trusted boundary is non-current" "NOT" \
 '#eval show IO Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "t" "w" "i" with
@@ -2979,5 +3142,7 @@ fi
 
 GATE_DONE=1
 echo ""
+# Batched mint probes report here. Their verdicts are per-probe, not per-batch.
+flush_mint_probes
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
