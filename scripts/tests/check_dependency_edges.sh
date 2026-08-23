@@ -35,29 +35,21 @@ open Lean Meta Concrete Concrete.Proof
 def tPkg : String := Concrete.shortHash "test-package"
 def tid? (m d : String) : Option DefinitionIdentity :=
   (DefinitionIdentity.of? tPkg m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
--- MINTING REQUIRES A REAL KERNEL RUN, and these probes pay for it. \`SuccessfulReplay\` has a
--- private constructor and \`Concrete.Proof.replay\` is the only producer of the \`ReplayResult\` it
--- is extracted from, so there is no cheaper way to obtain a receipt — which is exactly the property
--- under test. Every probe below that holds a receipt has genuinely replayed a theorem first.
+-- MINTING REQUIRES A REAL KERNEL RUN, and the probes that mint pay for it — but they do not run
+-- here. \`SuccessfulReplay\` has a private constructor and \`Concrete.Proof.replay\` is the only
+-- producer of the \`ReplayResult\` it is extracted from, so there is no cheaper way to obtain a
+-- receipt: that is exactly the property under test, and it is type-level, so it does not depend on
+-- how many times the replay happens. Minting probes therefore declare themselves with
+-- \`probe_mint\` and run in their group's batch driver: ONE successful replay per group, with every
+-- receipt in that group deriving from that replay.
 --
--- Material validation does NOT go through here: it is pure, and most of these legs are about
--- material rather than authority. Keeping them separate is why this file did not grow 36 kernel
--- invocations.
-def probeThm : String := "Concrete.Proof.parse_byte_correct"
-def mintProbe (subjectDigest? : Option String) (ev : EdgeEvidence) (root : String)
-    (trust : Bool) (bounds : List String) (cv ws im : String)
-    : IO (Option ProofEvidenceReceipt) := do
-  let tgt : ReplayTarget :=
-    { subject := "probe", theoremName := probeThm
-    , kind := .refinement, origin := .sourceLinked, binding := .bound }
-  match ← replay { inputPath := "Main.lean", imports := ["Concrete"], targets := [tgt] } with
-  | .error _ => return none
-  | .ok rr =>
-    match SuccessfulReplay.of? rr probeThm with
-    | .error _ => return none
-    | .ok sr =>
-      return (ReceiptMaterial.of? subjectDigest? ev root trust bounds cv ws im).map
-               (ProofEvidenceReceipt.mint sr)
+-- The mint definition lives ONLY in that driver. It used to be duplicated here too, and a second
+-- definition of the same fact is a second thing to keep in step — the batch could have drifted from
+-- this copy without any gate noticing.
+--
+-- Material validation does NOT go through minting at all: it is pure, and most of those legs are
+-- about material rather than authority. Keeping them separate is why this file did not grow 36
+-- kernel invocations.
 $body
 LEAN
   local out; out="$(lake env lean "$TMP/p.lean" 2>&1 || true)"
