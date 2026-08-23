@@ -123,6 +123,13 @@ probe_mint() {
 : "${MINT_SELFTEST_FOREIGN:=}"
 : "${MINT_SELFTEST_REPLAY_FAIL:=}"
 : "${MINT_SELFTEST_SECOND_GROUP:=}"
+# SHELL_FAIL runs a failing command inside the batch: it proves the ERR trap actually reaches into
+# these functions, which it did NOT before errtrace was set. Run it with GATE_DONE=1 exported to
+# also prove an inherited value can no longer disarm the trap.
+# EMPTY_GROUPS blanks the grouping result: it proves that "no driver ran" surfaces as a shortfall
+# rather than as a smaller green total.
+: "${MINT_SELFTEST_SHELL_FAIL:=}"
+: "${MINT_SELFTEST_EMPTY_GROUPS:=}"
 
 # Reconcile one group: run its driver, then account for EXACTLY its declared members.
 _mint_run_group() {
@@ -286,7 +293,9 @@ flush_mint_probes() {
   local n=${#MINT_LABEL[@]}
   if [ "$n" -eq 0 ]; then no "mint batch is EMPTY — no probe registered (vacuous)"; return; fi
   local groups g i
+  [ "$MINT_SELFTEST_SHELL_FAIL" != "1" ] || /nonexistent-command-for-the-errtrace-control
   groups="$(printf '%s\n' "${MINT_GROUP[@]}" | sort -u)"
+  [ "$MINT_SELFTEST_EMPTY_GROUPS" != "1" ] || groups=""
   echo "=== receipt minting ($n probes, $(printf '%s\n' "$groups" | wc -l) replay group(s)) ==="
   if [ -z "${groups//[[:space:]]/}" ]; then
     no "mint batch produced NO groups from $n registered probes — the grouping step failed and no driver ran"
