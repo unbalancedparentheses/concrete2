@@ -27,8 +27,25 @@ PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
+# THE ORDINARY PROBES ARE A POPULATION TOO. Only the 18 minting probes were pinned, so deleting an
+# ordinary probe left PASS=309 FAIL=0 and exit 0 — the same silent-deletion hole, thirteen times
+# larger. Registration happens here, at the single point every ordinary probe passes through, so it
+# cannot be bypassed by adding a call site.
+PROBE_N=0
+PROBE_RECS=""
 probe() {
   local label="$1" want="$2" body="$3"
+  PROBE_N=$((PROBE_N + 1))
+  if [ -n "$_MINT_HASHER" ]; then
+    PROBE_RECS+="$(printf '%d:%s,%d:%s,%d:%s' \
+      "${#label}" "$label" "${#want}" "$want" "${#body}" "$body" | $_MINT_HASHER | cut -d' ' -f1)
+"
+  fi
+  # An empty expectation accepts any output, because `grep -qF ""` matches everything.
+  if [ -z "$want" ]; then
+    no "$label — has an EMPTY expectation, which would accept any output"
+    return
+  fi
   cat > "$TMP/p.lean" <<LEAN
 import Concrete
 import Examples
@@ -323,6 +340,26 @@ LEAN
 MINT_VERDICTS=0
 mint_ok(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); ok "$1"; }
 mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
+
+# Same reconciliation as the mint batch, for the ordinary population.
+EXPECTED_ORDINARY_PROBES=240
+EXPECTED_ORDINARY_MANIFEST_SHA256="a1039ff988984a423c033998eddbb8b033b71851cb33b68965ec6afcb0dd1cc2"
+reconcile_ordinary_probes() {
+  if [ "$PROBE_N" -ne "$EXPECTED_ORDINARY_PROBES" ]; then
+    no "ran $PROBE_N ordinary probes, expected $EXPECTED_ORDINARY_PROBES — a probe was added or removed without updating EXPECTED_ORDINARY_PROBES"
+  fi
+  if [ -z "$_MINT_HASHER" ]; then
+    no "no sha256 implementation found, so the ordinary probe manifest cannot be reconciled"
+    return
+  fi
+  local got
+  got="$(printf '%s' "$PROBE_RECS" | LC_ALL=C sort | $_MINT_HASHER | cut -d' ' -f1)"
+  if [ "${ORDINARY_SELFTEST_SKIP_MANIFEST:-}" = "1" ]; then
+    echo "  note ordinary manifest reconciliation SKIPPED (self-test)"
+  elif [ "$got" != "$EXPECTED_ORDINARY_MANIFEST_SHA256" ]; then
+    no "ordinary probe manifest changed (got $got, expected $EXPECTED_ORDINARY_MANIFEST_SHA256) — a label, expectation or BODY was swapped, renamed or substituted; update EXPECTED_ORDINARY_MANIFEST_SHA256 deliberately"
+  fi
+}
 
 flush_mint_probes() {
   # RECONCILE THE DECLARED POPULATION FIRST, before any self-test registration can perturb it.
@@ -1173,29 +1210,49 @@ probe "fewer digests than names refuses AT MINT" "REFUSED" '
 # constructor, not the claim. These test the claim.
 echo "=== hostile controls (construction is closed) ==="
 
+# A NEGATIVE TEST MUST FAIL FOR ITS OWN REASON. This accepted ANY Lean diagnostic and discarded the
+# exit status, so a probe meant to prove "the constructor is private" stayed green after the
+# constructor became public, as long as some unrelated typo, missing import or syntax error was
+# present. Each call now declares the diagnostic it expects, and the run must both exit nonzero and
+# produce THAT diagnostic.
+EXPECT_NC_N=0
 expect_no_compile() {
-  local label="$1" body="$2"
+  local label="$1" body="$2" wantdiag="${3:-}"
+  EXPECT_NC_N=$((EXPECT_NC_N + 1))
   cat > "$TMP/h.lean" <<LEAN
 import Concrete
 import Examples
 open Lean Meta Concrete Concrete.Proof
 $body
 LEAN
-  local out; out="$(lake env lean "$TMP/h.lean" 2>&1 || true)"
-  if grep -qE "error:|error\(lean" <<<"$out"; then
-    ok "$label"
+  local out rc=0
+  out="$(lake env lean "$TMP/h.lean" 2>&1)" || rc=$?
+  if [ "${EXPECT_NC_DUMP:-}" = "1" ]; then
+    echo "NCDUMP<<$label>> rc=$rc :: $(grep -m1 -E 'error' <<<"$out" | cut -c1-200)"
+    return
+  fi
+  if [ -z "$wantdiag" ]; then
+    no "$label — no expected diagnostic declared, so any error would satisfy it"
+  elif [ "$rc" -eq 0 ]; then
+    no "$label — IT COMPILED (exit 0), so the invariant is documentation rather than a type"
+  elif ! grep -qE "error:|error\(lean" <<<"$out"; then
+    no "$label — exited $rc but produced no Lean diagnostic, so it failed for an unrelated reason"
+  elif ! grep -qE -- "$wantdiag" <<<"$out"; then
+    no "$label — rejected for the WRONG reason (expected /$wantdiag/): $(printf '%s' "$out" | grep -m1 -E 'error' | cut -c1-180)"
   else
-    no "$label — IT COMPILED, so the invariant is documentation rather than a type"
+    ok "$label"
   fi
 }
 
 expect_no_compile "direct construction does NOT compile (constructor is private)" '
 def forged : ProofEvidenceReceipt :=
   { schemaVersion := receiptSchemaVersion, subjectDigest := "", edge := .body
-  , tableBindings := [], toolchainId := "", workspaceId := "", importsId := "" }'
+  , tableBindings := [], toolchainId := "", workspaceId := "", importsId := "" }' \
+  'constructor for .ProofEvidenceReceipt. is marked as private'
 
 expect_no_compile '`default` does NOT produce a receipt (no Inhabited)' '
-#eval show MetaM Unit from IO.println (default : ProofEvidenceReceipt).schemaVersion'
+#eval show MetaM Unit from IO.println (default : ProofEvidenceReceipt).schemaVersion' \
+  'synthInstanceFailed|failed to synthesize'
 
 # Correspondence, not arity. `tablesFullyBound` checks equal LENGTHS and all-present, which
 # admits tables := [X] with digests for [Y] — a receipt claiming Y while the theorem depended
@@ -1571,7 +1628,8 @@ probe "a NAMED table with the same digest validates (the refusal is about the na
 # The raw table is PRIVATE, so validation is the only route to a classification — not merely the
 # only route to the `ValidatedRow` type.
 expect_no_compile "classificationTable cannot be read directly (private)" '
-#eval Concrete.Proof.classificationTable.length'
+#eval Concrete.Proof.classificationTable.length' \
+  'Unknown identifier .Concrete.Proof.classificationTable'
 
 probe "well-formed table bindings validate and are carried" "true" '
 #eval match validateRawRow ("T", "body", "7bcec2d7871f93204b26e2bf83d5acf1", [("Tbl", "6fe095a9f592a2e2b556e87f30306584")], true, []) with
@@ -1623,7 +1681,8 @@ probe "a validated row exposes its digest" "true" '
 # only form in which "cannot be constructed" is testable.
 expect_no_compile "ValidatedRow cannot be constructed directly (private ctor)" '
 def forged : Concrete.Proof.ValidatedRow :=
-  { theoremName := "X", edge := Concrete.Proof.DependencyEdge.body, digest := "" }'
+  { theoremName := "X", edge := Concrete.Proof.DependencyEdge.body, digest := "" }' \
+  'constructor for .ValidatedRow. is marked as private'
 
 # === CANONICAL TABLE-ENTRY EVIDENCE (blocker c prerequisite) =================================
 # A whole-table digest answers "did this table change" and cannot answer "does it CONTAIN that
@@ -1892,7 +1951,8 @@ expect_no_compile "an entry with NO body digest has no representation (absence i
 #eval
   let rows := [{ callee := Concrete.CallableId.ofUser "m" "f",
                  sourceBodyDigestV1 := none : Concrete.Proof.TableEntryEvidence }]
-  rows.length'
+  rows.length' \
+  'Type mismatch'
 
 # CONTAINMENT: the format-only door is closed. `rowsWellFormed` answers the format question as a
 # Bool; there is no public way to turn chosen digests into a manifest.
@@ -1909,7 +1969,8 @@ probe "the qualified manifest path resolves (so the no-compile below is about PR
 expect_no_compile "ofRows is private — chosen digests cannot become a manifest" '
 #eval (Concrete.Proof.ImplementationManifest.ofRows
         [(Concrete.CallableId.ofUser "m" "f",
-          "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]).isSome'
+          "496808fdd594d5047f23e823bc26b69c", "496808fdd594d5047f23e823bc26b69c")]).isSome' \
+  'Unknown constant .Concrete.Proof.Implementation'
 
 # === MANIFEST COMPLETENESS IS SELF-DENOMINATING ===============================================
 # The producer used to `filterMap`, so an entry it could not build a row for vanished and the result
@@ -1982,7 +2043,8 @@ echo "=== manifest provenance: inputs in, digests computed ==="
 expect_no_compile "CompleteImplementation cannot be constructed directly" '
 #eval fun (fx : Concrete.Proof.CheckedDeclFacts) (b : Concrete.Proof.CompleteEvidenceBodyV2) =>
   (Concrete.CompleteImplementation.mk (Concrete.CallableId.ofUser "m" "f") fx b
-    (Concrete.Proof.PExpr.lit (Concrete.Proof.PVal.int 0))).callable'
+    (Concrete.Proof.PExpr.lit (Concrete.Proof.PVal.int 0))).callable' \
+  'Unknown constant .Concrete.CompleteImplementation.mk'
 
 # FACTS MUST DESCRIBE THE CALLABLE CLAIMED. Facts for `g`, offered as `f`: this is the mispairing
 # the record exists to prevent, and the one it can actually see.
@@ -2019,9 +2081,11 @@ probe "INCOMPLETE facts are refused" "true" '
 '
 
 expect_no_compile "the manifest cannot be constructed directly" '
-#eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")'
+#eval (Concrete.Proof.ImplementationManifest.mk []).find? (Concrete.CallableId.ofUser "m" "f")' \
+  'Unknown constant .Concrete.Proof.ImplementationManifest.mk'
 expect_no_compile "BoundTableEntry cannot be constructed directly" '
-#eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").implDigest'
+#eval (Concrete.Proof.BoundTableEntry.mk (Concrete.CallableId.ofUser "m" "f") "").implDigest' \
+  'Unknown constant .Concrete.Proof.BoundTableEntry.mk'
 
 # === THEOREM-TO-EDGE CORRESPONDENCE (slice 6, blocker c) =====================================
 # A row says a theorem implies `contract` or `body`. Using that to type an edge is a FURTHER
@@ -3318,6 +3382,7 @@ echo ""
 # GATE_DONE=1: the ERR trap that catches an unexpected shell failure must still be armed while the
 # batch runs, or a crash inside the batch would leave a short but green-looking result.
 flush_mint_probes
+reconcile_ordinary_probes
 GATE_DONE=1
 echo "DEPENDENCY-EDGES: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
