@@ -412,7 +412,7 @@ EXPECTED_ORDINARY_MANIFEST_SHA256="335c8705b8d0cba7c1d42afd03d86de5219b8f10cee9e
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
 EXPECTED_TOTAL_ASSERTIONS=310
-EXPECTED_ASSERTION_LABELS_SHA256="c1a1eac3b5a299875488257b0dc9cb1acd67c654e8ed42c2044a0224a807d808"
+EXPECTED_ASSERTION_LABELS_SHA256="5a08c3d9363d2f7b4f71f563ed707d945b7f5829b0c762ccd9a3cf7da8cb0d67"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
@@ -899,19 +899,32 @@ echo "=== ROOT INTEGRATION — asserted, not tripwired ==="
 # three on an unchanged tree and passed the rest, which is worse than always failing: it reads as
 # flakiness in the suite rather than as a defect in the check. Same shape as the `proof-status |
 # grep -q` bug fixed in the manifest gate; the fix is the same.
-ROOTCALLS="$(grep -v '^[[:space:]]*--' "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
-if printf '%s' "$ROOTCALLS" | grep -q "Proof.dependencyRootMaterial (dependencyNodesOf"; then
-  ok "ProofCore CALLS dependencyRootMaterial over the real node set (the authority pass requires a computable closure)"
+# EXISTENCE IS NOT ENOUGH WHEN THERE ARE TWO CALLERS. `grep -q` passed as long as EITHER survived,
+# so deleting the authority-pass call still left this green on the strength of the self-check call.
+# The number of call sites is pinned instead, which is what makes removing one of them visible.
+EXPECTED_ROOTCALL_SITES=2   # the authority pass, and ProofCore's own self-check
+ROOTCALLS_N="$(grep -v '^[[:space:]]*--' "$ROOT_DIR/Concrete/Proof/ProofCore.lean" \
+  | grep -c "Proof.dependencyRootMaterial (dependencyNodesOf" || true)"
+if [ "$ROOTCALLS_N" = "$EXPECTED_ROOTCALL_SITES" ]; then
+  ok "ProofCore calls dependencyRootMaterial over the real node set at both expected sites (the authority pass requires a computable closure)"
 else
-  no "no non-comment call to dependencyRootMaterial over dependencyNodesOf — the root dimension has been dropped"
+  no "found $ROOTCALLS_N non-comment call(s) to dependencyRootMaterial over dependencyNodesOf, expected $EXPECTED_ROOTCALL_SITES — a caller was removed, added or moved"
 fi
 # ...and the consumption is in the COMPOSITION, not in per-entry status derivation. A root reaching
 # `deriveObligationStatus` would bypass the composed pass entirely.
 # AN ABSENT ANCHOR IS NOT A CLEAN RESULT. `|| true` made a vanished call site — renamed, moved or
 # deleted — indistinguishable from one that exists and is clean.
-DERIVE_CTX="$(grep -A2 "deriveObligationStatus e.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
-if [ -z "$DERIVE_CTX" ]; then
-  no "deriveObligationStatus e.eligibility no longer appears in ProofCore.lean — this control lost its anchor and was passing on absence"
+# ALL FOUR CALL SITES, NOT THREE. The anchor matched only `e.eligibility` and silently ignored the
+# `x.eligibility` caller, so that one could have started consuming a root with this control none the
+# wiser; and because the matches were aggregated, any single site could vanish while the whole stayed
+# nonempty. The count is pinned and the pattern covers every receiver.
+EXPECTED_DERIVE_SITES=4
+DERIVE_N="$(grep -cE "deriveObligationStatus [a-z]+\.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
+DERIVE_CTX="$(grep -A2 -E "deriveObligationStatus [a-z]+\.eligibility" "$ROOT_DIR/Concrete/Proof/ProofCore.lean" || true)"
+if [ "$DERIVE_N" != "$EXPECTED_DERIVE_SITES" ]; then
+  no "found $DERIVE_N deriveObligationStatus call site(s), expected $EXPECTED_DERIVE_SITES — one was added, removed or moved, so this control no longer covers what it names"
+elif [ -z "$DERIVE_CTX" ]; then
+  no "deriveObligationStatus no longer appears in ProofCore.lean — this control lost its anchor and was passing on absence"
 elif printf '%s' "$DERIVE_CTX" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
   no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
