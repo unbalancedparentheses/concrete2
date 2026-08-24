@@ -2790,12 +2790,20 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "extraction" then
       IO.println (Report.extractionReport (registry := registry) (pc := pc))
       return 0
+    -- THESE THREE PRINTED THEIR REPORT AND THEN FELL THROUGH to the "Unknown report type" branch,
+    -- exiting 1 with a diagnostic naming a report the caller had just successfully received. Every
+    -- neighbouring handler returns 0; these three did not, so any caller checking exit status saw a
+    -- failure on correct output. Found by a test harness that started rejecting nonzero exits and
+    -- immediately caught three of its own inputs.
     if reportType == "attestation-join" then
       IO.println (Report.attestationJoinReport (pc := pc))
+      return 0
     if reportType == "generated-implementations" then
       IO.println (Report.generatedImplementationsReport (pc := pc))
+      return 0
     if reportType == "impl-manifest" then
       IO.println (Report.implementationManifestReport (pc := pc))
+      return 0
     if reportType == "body-bytes" then
       IO.println (Report.bodyBytesReport (pc := pc))
       return 0

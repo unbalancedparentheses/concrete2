@@ -99,15 +99,28 @@ cc() {
       *) why="is a report kind with no declared completeness rule" ;;
     esac
   fi
-  # A COMPLETE-LOOKING REPORT STILL MUST NOT LAUNDER AN UNEXPECTED EXIT. Exit 1 is OVERLOADED: it
-  # means the subject was rejected (the stale-proof fixture is meant to be), but MEASURED, it is
-  # also what a missing file, an unknown report name and no arguments return. So this check is not
-  # "1 means subject rejection" — those usage errors are caught upstream because they produce empty
-  # stdout, and truncation is caught by the completeness rules. What is left for this check is the
-  # case neither of those sees: a process that printed a plausible, complete report and THEN died
-  # from a signal (128+n) or an unexpected code.
-  if [ -z "$why" ] && [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
-    why="exited $rc, which is neither success nor a subject rejection"
+  # EXPECTED STATUS IS PER REPORT, because a global "0 or 1 is fine" rule launders real failures.
+  # Exit 1 is OVERLOADED — a missing file, an unknown report name and no arguments all return it —
+  # and accepting it everywhere hid a genuine COMPILER BUG: attestation-join,
+  # generated-implementations and impl-manifest printed their report, fell through to the
+  # "Unknown report type" branch, and exited 1. Three assertions in this gate consumed that output
+  # as if the run had succeeded. The compiler is fixed; this keeps it fixed.
+  #
+  # The sets below are MEASURED across the 25 proof-carrying fixtures, not assumed:
+  #   subject-facts 25/25 exit 0   generated-implementations 25/25 exit 0
+  #   proof-status  24x0 1x1       consistency               24x0 1x1
+  # The single 1 in each is the stale-proof fixture, which is SUPPOSED to be rejected.
+  if [ -z "$why" ]; then
+    local okrc=""
+    case "$rep" in
+      subject-facts|generated-implementations) okrc="0" ;;
+      proof-status|consistency)                okrc="0 1" ;;
+      *)                                       okrc="0" ;;
+    esac
+    case " $okrc " in
+      *" $rc "*) ;;
+      *) why="exited $rc, which is not an expected status for --report $rep (expected: $okrc)" ;;
+    esac
   fi
   [ -z "$why" ] || printf '%s --report %s %s (exit %s)\n' "$f" "$rep" "$why" "$rc" >> "$CC_FAILURES"
   printf '%s' "$out"
