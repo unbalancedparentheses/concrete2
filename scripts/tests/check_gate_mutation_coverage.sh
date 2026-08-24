@@ -1851,7 +1851,10 @@ _require_measured() { # value label
 
 baseline_pristine_build(){
   printf "baseline: pristine workspace builds ... "
+  # THE PRISTINE BUILD IS RUN-LEVEL EVIDENCE. Three families declare a BUILD route, and their kills
+  # only mean anything because the UNMUTATED tree built first. That transcript was discarded.
   if _timed_build "$TMP/pristine_build.log"; then
+    keep_baseline_log "_pristine_build" "$TMP/pristine_build.log"
     echo "ok"; return 0
   fi
   echo "FAILED"
@@ -1930,7 +1933,10 @@ EVIDENCE_FAILED=""
 # overwrite a family that an older full-campaign summary still points at — same HEAD, different run,
 # possibly different driver or working state. Each run publishes under its own directory and names
 # that directory in its summary, so a summary and its evidence cannot drift apart.
-RUN_ID="${START_HEAD:0:12}-$(date +%Y%m%dT%H%M%S)-$$"
+# HEAD + second + pid can repeat across hosts sharing a checkout, and the run directory is supposed
+# to be unique. A random component removes the coincidence; `mktemp -u` is used because it draws from
+# the same entropy the rest of this script relies on.
+RUN_ID="${START_HEAD:0:12}-$(date +%Y%m%dT%H%M%S)-$$-$(basename "$(mktemp -u XXXXXX)")"
 EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 
 # The per-family transcript files. Named once: publication copies exactly these, and the family
@@ -1938,7 +1944,7 @@ EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 # clean.log is deliberately NOT here: it is written by the BASELINE loop, not by any family, and
 # including it is what let the last baseline gate's transcript be copied into every family record.
 # The baseline keeps its own per-gate transcripts under _baseline/.
-EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr"
+EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr aerr2"
 
 # ONE PRODUCER, because the baseline is implemented TWICE — once for the campaign sweep and once for
 # single-family selection — and adding retention to only one of them is exactly the drift this
@@ -1955,8 +1961,20 @@ keep_baseline_log() { # gate-name source-log
 # that never reached its verdict is exactly the one whose transcript a reader needs, and those paths
 # used to delete it. Arguments are explicit so an early return cannot publish another family's
 # leftover variables.
-publish_evidence() { # nm index file gate killed invalid note
-  local nm="$1" idx="$2" file="$3" gate="$4" killed="$5" invalid="$6" note="$7"
+publish_evidence() { # nm index file gate killed invalid note [disposition]
+  local nm="$1" idx="$2" file="$3" gate="$4" killed="$5" invalid="$6" note="$7" disp="${8:-}"
+  # THE STORED INDEX MUST REPRODUCE THE RUN. The array index is ZERO-based and FAMILY= is ONE-based,
+  # so a record for FAMILY=73 said index=72 and anyone using it to re-run selected a DIFFERENT
+  # experiment. The selector is stored as the value you actually type.
+  local selector=$(( idx + 1 ))
+  # DISPOSITION IS EXPLICIT, not inferred from two booleans. A could-not-apply was written as
+  # invalid=1 while the summary deliberately counts it under could_not_apply, so the record and the
+  # artifact disagreed about what happened.
+  if [ -z "$disp" ]; then
+    if [ "$killed" = "1" ]; then disp=killed
+    elif [ "$invalid" = "1" ]; then disp=invalid
+    else disp=survived; fi
+  fi
   local stage final l ok=1
   final="$EVIDENCE_DIR/$nm"
   # mktemp, not a predictable name: `mkdir -p .staging.$nm.$$` silently REUSED a stranded directory
@@ -1967,8 +1985,8 @@ publish_evidence() { # nm index file gate killed invalid note
   for l in $EV_LOGS; do
     if [ -f "$TMP/$l" ]; then cp "$TMP/$l" "$stage/$l" 2>/dev/null || ok=0; fi
   done
-  printf 'family=%s\nindex=%s\nfile=%s\ngate=%s\nkilled=%s\ninvalid=%s\nexpected_route=%s\nhead=%s\nrun_id=%s\nverdict=%s\n' \
-    "$nm" "$idx" "$file" "$gate" "$killed" "$invalid" \
+  printf 'family=%s\nselector=FAMILY=%s\narray_index=%s\nfile=%s\ngate=%s\ndisposition=%s\nkilled=%s\ninvalid=%s\nbuild_required=%s\nexpected_route=%s\nhead=%s\nrun_id=%s\nverdict=%s\n' \
+    "$nm" "$selector" "$idx" "$file" "$gate" "$disp" "$killed" "$invalid" "${BUILD[$idx]:-unknown}" \
     "$(if build_kill_declared "$nm"; then echo build; else echo gate; fi)" \
     "$START_HEAD" "$RUN_ID" "$note" > "$stage/verdict.txt" 2>/dev/null || ok=0
   # VALIDATE BEFORE PUBLISHING. Every cp and the verdict write used to be `|| true`, and
@@ -1977,21 +1995,19 @@ publish_evidence() { # nm index file gate killed invalid note
   if [ "$ok" != "1" ]; then
     rm -rf "$stage" 2>/dev/null; EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0
   fi
-  # REPLACE WITHOUT A DESTRUCTIVE WINDOW. `rm -rf final && mv stage final` destroyed a good record
-  # before knowing the new one would land, and if the removal failed `mv` moved the stage INSIDE the
-  # existing directory and still reported success. Move the old record aside first, and only discard
-  # it once the new one is in place.
-  local old=""
+  # AN EXISTING RECORD IS A COLLISION, NOT SOMETHING TO REPLACE. The run directory is unique per run
+  # and each family publishes once, so finding a record already there means two writers are using one
+  # identity — and the previous move-aside dance had a window in which NO final record existed, so an
+  # interruption left only a hidden `.previous`. Refusing removes both the window and the ambiguity.
   if [ -e "$final" ]; then
-    old="$stage.previous"
-    mv "$final" "$old" 2>/dev/null || { rm -rf "$stage" 2>/dev/null; EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0; }
+    rm -rf "$stage" 2>/dev/null
+    EVIDENCE_FAILED="$EVIDENCE_FAILED $nm(duplicate-record)"
+    return 0
   fi
+  # ONE rename, into a name nothing occupies. Two renames are not atomic even on one filesystem.
   if mv "$stage" "$final" 2>/dev/null && [ -s "$final/verdict.txt" ]; then
-    [ -z "$old" ] || rm -rf "$old" 2>/dev/null
     EVIDENCE_WRITTEN=$((EVIDENCE_WRITTEN + 1))
   else
-    # Put the old record back rather than leaving nothing behind.
-    [ -z "$old" ] || mv "$old" "$final" 2>/dev/null
     rm -rf "$stage" 2>/dev/null
     EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
   fi
@@ -2027,7 +2043,7 @@ run_one(){
   if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
     echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"
     FAIL=$((FAIL+1)); COULD_NOT_APPLY=$((COULD_NOT_APPLY+1))
-    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 1 "could not apply mutation ($(cat "$TMP/aerr" 2>/dev/null))"
+    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 0 "could not apply mutation ($(cat "$TMP/aerr" 2>/dev/null))" could_not_apply
     restore_work "$file"
     return
   fi
@@ -2424,6 +2440,29 @@ VERDICTS=$(( PASS + FAIL ))
 [ -z "$EVIDENCE_FAILED" ] || REFUSALS="$REFUSALS evidence_unwritable($(echo $EVIDENCE_FAILED | tr ' ' ','))"
 [ "$EVIDENCE_WRITTEN" = "$(( ${PASS:-0} + ${FAIL:-0} ))" ] \
   || REFUSALS="$REFUSALS evidence_missing($EVIDENCE_WRITTEN/$(( ${PASS:-0} + ${FAIL:-0} )))"
+# A COUNTER IS A CLAIM ABOUT THE PAST; A CENSUS IS THE PRESENT STATE. Incrementing in memory says a
+# record was written, not that it still exists and is readable — over a 15-hour campaign a record can
+# be deleted, truncated or overwritten after the fact and the counter would never notice. The census
+# counts directories that actually hold a non-empty verdict.txt, and a BUILD=no family must NOT carry
+# a build.log, which is the shape cross-family contamination takes.
+_census=0; _census_bad=""
+if [ -d "$EVIDENCE_DIR" ]; then
+  for _d in "$EVIDENCE_DIR"/*/; do
+    _n="$(basename "$_d")"; [ "$_n" != "_baseline" ] || continue
+    [ -e "$_d" ] || continue
+    if [ -s "$_d/verdict.txt" ]; then
+      _census=$(( _census + 1 ))
+      if grep -qE '^build_required=no$' "$_d/verdict.txt" 2>/dev/null && [ -e "$_d/build.log" ]; then
+        _census_bad="$_census_bad $_n(build.log-in-a-no-build-family)"
+      fi
+    else
+      _census_bad="$_census_bad $_n(no-verdict)"
+    fi
+  done
+fi
+[ -z "$_census_bad" ] || REFUSALS="$REFUSALS evidence_census_bad($_census_bad )"
+[ "$_census" = "$EVIDENCE_WRITTEN" ] \
+  || REFUSALS="$REFUSALS evidence_census_disagrees(on-disk=$_census counter=$EVIDENCE_WRITTEN)"
 REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
 [ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
 
