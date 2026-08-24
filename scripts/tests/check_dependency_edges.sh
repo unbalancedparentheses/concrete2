@@ -69,11 +69,19 @@ cc() {
   else
     case "$rep" in
       subject-facts)
-        local hdr rows
+        # COUNTING THE ENTRY MARKERS IS NOT ENOUGH. Truncating immediately after the LAST `v1:` line
+        # leaves header and marker count agreeing while deleting that entry's body — including its
+        # `depRoot` line, which is exactly what the absence-oriented consumers search for. Every
+        # entry emits exactly one `shadow depRoot:` line and it is the entry's LAST line, so the
+        # depRoot count must also agree and the report must END on one.
+        local hdr rows roots
         hdr="$(sed -n '1s/.*(\([0-9]\+\) entries).*/\1/p' <<<"$out")"
         rows="$(grep -c '^v1:' <<<"$out" || true)"
+        roots="$(grep -c 'shadow depRoot:' <<<"$out" || true)"
         if [ -z "$hdr" ]; then why="has no '=== Subject facts (N entries) ===' header"
         elif [ "$hdr" != "$rows" ]; then why="declares $hdr entries but rendered $rows — truncated"
+        elif [ "$hdr" != "$roots" ]; then why="declares $hdr entries but rendered $roots depRoot lines — an entry body is truncated"
+        elif ! grep -q 'shadow depRoot:' <<<"$(tail -1 <<<"$out")"; then why="does not end on a depRoot line — the last entry is truncated"
         fi ;;
       proof-status)
         grep -qE '^Totals: [0-9]+ functions' <<<"$out" || why="has no 'Totals:' trailer — truncated before the end" ;;
@@ -90,6 +98,13 @@ cc() {
         fi ;;
       *) why="is a report kind with no declared completeness rule" ;;
     esac
+  fi
+  # A COMPLETE-LOOKING REPORT STILL MUST NOT LAUNDER AN UNEXPECTED EXIT. The compiler exits 1 when
+  # the SUBJECT is rejected — a stale-proof fixture is meant to be — and that is the only nonzero
+  # status this gate expects. Anything else is a crash, a signal (128+n), or a usage error, and a
+  # process that printed a plausible report and then died must not be read as evidence.
+  if [ -z "$why" ] && [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+    why="exited $rc, which is neither success nor a subject rejection"
   fi
   [ -z "$why" ] || printf '%s --report %s %s (exit %s)\n' "$f" "$rep" "$why" "$rc" >> "$CC_FAILURES"
   printf '%s' "$out"
@@ -430,7 +445,7 @@ EXPECTED_ORDINARY_MANIFEST_SHA256="f41d45bd78aab6f73db3e4345f79cacda5283269530d8
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
 EXPECTED_TOTAL_ASSERTIONS=312
-EXPECTED_ASSERTION_LABELS_SHA256="0c741cc3d707168748c9532873a1be68aa51b93e33a7797046239cff0d4a9b6f"
+EXPECTED_ASSERTION_LABELS_SHA256="43e740f6cde8e7e91ca5a7fc4c1d3dfbe3304c6aa5314ecf4c1c9f828b4e4f47"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
@@ -953,7 +968,12 @@ elif [ -z "$DERIVE_CTX" ]; then
 elif printf '%s' "$DERIVE_CTX" | grep -qE "dependencyRootMaterial|dependencyNodesOf"; then
   no "a dependency root reaches deriveObligationStatus — that bypasses the composition rather than joining it"
 else
-  ok "roots are consumed by the composed authority pass, not by per-entry status derivation"
+  # NARROWED TO WHAT THIS ACTUALLY CHECKS. It used to claim "roots are consumed by the composed
+  # authority pass, NOT by per-entry status derivation" — an architectural claim about where a value
+  # flows, which a two-line grep cannot support: a root computed earlier and passed in under another
+  # name leaves every call header clean. Consumption BY the authority pass is now asserted
+  # behaviourally above; this remains a lexical tripwire and its label says so.
+  ok "no deriveObligationStatus call site textually mentions a dependency root (lexical tripwire, not a dataflow proof)"
 fi
 
 # THE ROOT CONJUNCT IS CONSUMED AND CURRENTLY REDUNDANT, measured. Every subject whose root refuses
@@ -1046,6 +1066,13 @@ def elG (q : String) : EligibilityEntry :=
 # The subject has NO outgoing edges, which makes correspondence VACUOUSLY justified, so the only
 # thing that can move the verdict is the root conjunct. Without that isolation the downgrade would be
 # attributable to correspondence and would prove nothing about rooting.
+# THE STATUS THIS PINS REPORTS A FALSE CAUSE, and pinning it records that rather than blessing it.
+# `.correspondenceUnjustified` means per-edge correspondence was unusable. This subject's
+# correspondence is VACUOUSLY VALID — it has no edges — and the only thing wrong is that its closure
+# cannot be rooted, so the production pass reports the wrong reason for a correct downgrade. The
+# downgrade itself is right and is what this asserts; the mislabelled cause is a product defect
+# recorded separately, and this probe will change when the pass grows a root-specific status or a
+# typed reason.
 probe "applyCorrespondenceAuthority DOWNGRADES a proved subject whose closure cannot root" "DOWNGRADED" \
 'def aPk : String := Concrete.shortHash "authority-consumes-root"
 def aI (m d : String) : Option DefinitionIdentity :=
