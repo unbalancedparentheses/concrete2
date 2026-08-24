@@ -154,3 +154,4 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .mutation-campaign-summary.partial.*
 .mutation-campaign-summary.??????
 .mutation-evidence/
+.mutation-campaign-summary.candidate

@@ -267,6 +267,97 @@ fi
 trap '_rm_snapdir' EXIT
 cd "$ROOT_DIR"
 
+# =================================================================================================
+# SUPERVISOR BOUNDARY.
+#
+# A process cannot safely publish a verdict about its own exit. Reconciliation and artifact
+# installation used to happen INSIDE the run, before the EXIT trap performed its final dirty-target
+# check — so a target changing after the last reconciliation let the script print and durably store
+# `qualified=1` and THEN exit nonzero from the trap. A failed process left a passing artifact behind.
+# No additional trap fixes that; the publisher has to outlive the thing it is judging.
+#
+# So the run is split. The CHILD executes the campaign and may only write a CANDIDATE record. The
+# SUPERVISOR observes the child's exit, re-reconciles the tree ITSELF, and is the only role that may
+# install the authoritative artifact or write qualified=1. Both roles are the same immutable
+# snapshot, so this adds a process boundary without adding a second implementation.
+#
+# The supervisor's reconciliation is INDEPENDENT, not a re-read of what the child claimed: it
+# captures tree state before spawning and again after reaping, so a child that lied or died mid-write
+# is caught by an observer that never trusted it.
+#
+# The lock is acquired by the launcher and survives the exec by pid identity; the child inherits the
+# exported token and is a verified descendant. Only the supervisor releases it, so the tree stays
+# held until the artifact is installed.
+CONCRETE_MUT_ROLE="${CONCRETE_MUT_ROLE:-supervisor}"
+
+# Anchor and coverage modes publish nothing and are not campaigns; supervising them would add a fork
+# and a second set of failure modes for no verdict.
+if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] \
+   && [ "${1:-}" != "--coverage" ]; then
+  # The supervisor forks BEFORE the campaign preamble, so it loads the tree-state library itself
+  # rather than relying on the child's later sourcing. One producer, used by both roles.
+  . "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null \
+    || { echo "FATAL: supervisor cannot load treestate.sh — it would have nothing to reconcile with" >&2; exit 2; }
+  ts_require || { echo "FATAL: supervisor tree-state producers unavailable" >&2; exit 2; }
+  _sup_head0="$(ts_head "$ROOT_DIR" 2>/dev/null)"
+  _sup_tracked0="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
+  _sup_untracked0="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
+
+  CONCRETE_MUT_ROLE=child bash "$0" "$@"
+  _child_rc=$?
+
+  _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
+  _sup_tracked1="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
+  _sup_untracked1="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
+
+  _cand="$ROOT_DIR/.mutation-campaign-summary.candidate"
+  _final="$ROOT_DIR/.mutation-campaign-summary"
+  [ -z "${FAMILY:-}" ] || _final="$_final.partial"
+
+  # ONE DECISION PRODUCER, and it lives in a library so a gate can attack it with hostile inputs
+  # directly instead of needing a full campaign to reach it. Inline here, it was reachable only by
+  # running the thing it judges.
+  . "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" 2>/dev/null \
+    || { echo "FATAL: supervisor cannot load its decision library" >&2; exit 2; }
+  _sup_refusals="$(supervisor_refusals "$_child_rc" "$_cand" \
+                    "$_sup_head0" "$_sup_head1" "$_sup_tracked0" "$_sup_tracked1" \
+                    "$_sup_untracked0" "$_sup_untracked1")"
+
+  # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
+  # the child claimed it AND the supervisor's own reconciliation is clean.
+  _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  if [ -s "$_cand" ]; then
+    # The qualified line is decided by the same library, not by a second rule here.
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp"
+  else
+    printf 'completed=0
+mode=%s
+qualified=0
+integrity_ok=0
+' "${FAMILY:+single}${FAMILY:-campaign}" > "$_tmp"
+  fi
+  printf 'supervisor_refusals=%s
+supervisor_child_exit=%s
+' "${_sup_refusals:-none}" "$_child_rc" >> "$_tmp"
+  mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  rm -f "$_cand" 2>/dev/null
+
+  if [ -n "$_sup_refusals" ]; then
+    echo "SUPERVISOR REFUSED QUALIFICATION:$_sup_refusals" >&2
+    _gate_lock_release 2>/dev/null
+    [ "$_child_rc" = "0" ] && exit 1 || exit "$_child_rc"
+  fi
+  _gate_lock_release 2>/dev/null
+  exit "$_child_rc"
+fi
+
+# THE CHILD DOES NOT RELEASE THE LOCK. The supervisor holds the tree until the artifact is installed;
+# a child that released here would let another run start against a tree whose verdict is still being
+# decided.
+if [ "$CONCRETE_MUT_ROLE" = "child" ]; then
+  _gate_lock_release() { return 0; }
+fi
+
 # `--coverage`: report which soundness gates have a control, computed from the GATE FIELD of
 # the `add` lines below — not from a grep for gate names, which counts prose.
 if [ "${1:-}" = "--coverage" ]; then
@@ -1092,6 +1183,14 @@ add "report-handler-returns" "Main.lean" "check_cli_contract.sh" yes \
 $'      IO.println (Report.generatedImplementationsReport (pc := pc))\n      return 0' \
 $'      IO.println (Report.generatedImplementationsReport (pc := pc))'
 
+# ONLY A SUPERVISOR MAY PUBLISH QUALIFICATION, and its refusals must be load-bearing rather than
+# decorative. Disabling the child-exit refusal makes the supervisor accept a child that died — the
+# exact case the boundary exists for, since reconciliation used to happen inside the run and a
+# process cannot judge its own exit. check_campaign_supervisor.sh must turn red for it.
+add "supervisor-child-exit-refusal" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+$'  [ "$rc" = "0" ] || out="$out child_exit($rc)"' \
+$'  [ "$rc" = "0" ] || out="$out"'
+
 N=${#NAME[@]}
 
 # VACUITY FLOOR, APPLIED TO EVERY MODE. `N` comes straight from the inventory array, so an inventory
@@ -1104,7 +1203,7 @@ N=${#NAME[@]}
 # while still reporting a "full" campaign: `EXPECTED_RUN` is derived from whatever `N` happens to be,
 # so a reduced corpus passes as complete. Retiring a mutation is a deliberate act and must be recorded
 # in the same commit as the removal, exactly like the identity freezes.
-EXPECTED_FAMILIES=82
+EXPECTED_FAMILIES=83
 if [ "$N" != "$EXPECTED_FAMILIES" ]; then
   echo "FATAL: the mutation inventory holds $N families, pinned at $EXPECTED_FAMILIES." >&2
   echo "       Mutations are the evidence that gates are load-bearing, so losing some silently" >&2
@@ -1188,6 +1287,9 @@ write_summary() {
   # be allowed to destroy it; the sample still gets a durable artifact, under its own name.
   local target="$CAMPAIGN_ARTIFACT"
   [ -z "${ONLY:-}" ] || target="$CAMPAIGN_ARTIFACT.partial"
+  # UNDER SUPERVISION THE CHILD MAY ONLY PROPOSE. The authoritative name is installed by the
+  # supervisor after it has observed this process exit and re-reconciled the tree.
+  [ "${CONCRETE_MUT_ROLE:-supervisor}" != "child" ] || target="$CAMPAIGN_ARTIFACT.candidate"
   # ATOMIC. A truncate-in-place write can be interrupted, leaving a half-written artifact that parses
   # as a valid record with missing fields. Write beside it, then rename.
   # mktemp, not a predictable "$file.$$.tmp": a pre-existing symlink at a guessable path would

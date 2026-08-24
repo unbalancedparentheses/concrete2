@@ -914,6 +914,9 @@ jobs:
       - name: CLI-contract gate (Phase 4 #15 — golden command behavior matrix)
         run: bash scripts/tests/check_cli_contract.sh
 
+      - name: Campaign-supervisor gate (only a supervisor may publish qualification)
+        run: bash scripts/tests/check_campaign_supervisor.sh
+
       - name: concrete prove CLI gate
         run: bash scripts/tests/test_prove_cli.sh
 
