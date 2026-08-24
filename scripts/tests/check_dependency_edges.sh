@@ -424,13 +424,13 @@ mint_ok(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); ok "$1"; }
 mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
 
 # Same reconciliation as the mint batch, for the ordinary population.
-EXPECTED_ORDINARY_PROBES=240
-EXPECTED_ORDINARY_MANIFEST_SHA256="335c8705b8d0cba7c1d42afd03d86de5219b8f10cee9e5d2dc4577ad94c30b56"
+EXPECTED_ORDINARY_PROBES=242
+EXPECTED_ORDINARY_MANIFEST_SHA256="f41d45bd78aab6f73db3e4345f79cacda5283269530d855133959e081ca3b5bd"
 # The ordinary and mint populations are pinned, but roughly 43 assertions belong to NEITHER — the
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
-EXPECTED_TOTAL_ASSERTIONS=310
-EXPECTED_ASSERTION_LABELS_SHA256="5a08c3d9363d2f7b4f71f563ed707d945b7f5829b0c762ccd9a3cf7da8cb0d67"
+EXPECTED_TOTAL_ASSERTIONS=312
+EXPECTED_ASSERTION_LABELS_SHA256="0c741cc3d707168748c9532873a1be68aa51b93e33a7797046239cff0d4a9b6f"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
@@ -1035,6 +1035,80 @@ def elG (q : String) : EligibilityEntry :=
       , obligations := [obl], diagnostics := [] }
     let vs := pc.selfCheck
     IO.println s!"provedRoots={(vs.filter (·.invariant == "PROVED-ROOTS")).length}"
+  | _, _ => IO.println "could not build the control"'
+
+# THE ROOT CONJUNCT IS CONSUMED, ASSERTED BEHAVIOURALLY. Counting call sites cannot establish this:
+# a compile-valid mutation can KEEP the call to `dependencyRootMaterial` and discard its result —
+# `let _ := ...; true` — leaving the site count at 2 while the `rooted e` conjunct goes inert.
+# Measured against exactly that mutation: the site count stayed 2 and this probe flipped from
+# DOWNGRADED to STILL-PROVED, so this is the assertion that actually covers consumption.
+#
+# The subject has NO outgoing edges, which makes correspondence VACUOUSLY justified, so the only
+# thing that can move the verdict is the root conjunct. Without that isolation the downgrade would be
+# attributable to correspondence and would prove nothing about rooting.
+probe "applyCorrespondenceAuthority DOWNGRADES a proved subject whose closure cannot root" "DOWNGRADED" \
+'def aPk : String := Concrete.shortHash "authority-consumes-root"
+def aI (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def aFn (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def aEl (q : String) : EligibilityEntry :=
+  { qualName := q, eligible := true, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := false, loc := none }
+#eval show IO Unit from do
+  match aI "m" "solo", (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.solo", bareName := "solo"
+      , callableId := CallableId.ofUser "m" "solo", fn := aFn "solo"
+      , extracted := none, unsupported := [], fingerprint := "FP"
+      , params := [], eligibility := aEl "m.solo", loc := none, spec := none
+      , subjectDigest := none }
+    let obl : Obligation :=
+      { functionId := { qualName := "m.solo", fingerprint := "FP" }, bareName := "solo"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    match (applyCorrespondenceAuthority pc pc.callGraph).obligations.head? with
+    | some o => IO.println (if o.status == .correspondenceUnjustified then "DOWNGRADED"
+                            else if o.status == .proved then "STILL-PROVED" else "OTHER-STATUS")
+    | none   => IO.println "NO-OBLIGATION"
+  | _, _ => IO.println "could not build the control"'
+
+# THE VALID-ROOT CONTROL, so the assertion above cannot be satisfied by a pass that refuses
+# everything. Identical construction, one difference: the subject HAS a digest, so its closure roots
+# and the proved verdict must survive.
+probe "...and LEAVES a proved subject whose closure roots (the pass is not deny-all)" "STILL-PROVED" \
+'def aPk : String := Concrete.shortHash "authority-consumes-root"
+def aI (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def aFn (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def aEl (q : String) : EligibilityEntry :=
+  { qualName := q, eligible := true, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := false, loc := none }
+#eval show IO Unit from do
+  match aI "m" "solo", (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.solo", bareName := "solo"
+      , callableId := CallableId.ofUser "m" "solo", fn := aFn "solo"
+      , extracted := none, unsupported := [], fingerprint := "FP"
+      , params := [], eligibility := aEl "m.solo", loc := none, spec := none
+      , subjectDigest := some "D" }
+    let obl : Obligation :=
+      { functionId := { qualName := "m.solo", fingerprint := "FP" }, bareName := "solo"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    match (applyCorrespondenceAuthority pc pc.callGraph).obligations.head? with
+    | some o => IO.println (if o.status == .correspondenceUnjustified then "DOWNGRADED"
+                            else if o.status == .proved then "STILL-PROVED" else "OTHER-STATUS")
+    | none   => IO.println "NO-OBLIGATION"
   | _, _ => IO.println "could not build the control"'
 
 # TRUST PROPAGATES MONOTONICALLY THROUGH THE FULL CLOSURE, not one hop.
