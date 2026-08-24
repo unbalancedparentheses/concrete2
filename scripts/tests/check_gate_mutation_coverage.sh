@@ -1221,6 +1221,14 @@ add "authority-consumes-root" "Concrete/Proof/ProofCore.lean" "check_dependency_
 $'    | .ok d    => (Proof.dependencyRootMaterial (dependencyNodesOf pc graph) d).toOption.isSome' \
 $'    | .ok d    => let _ := (Proof.dependencyRootMaterial (dependencyNodesOf pc graph) d).toOption.isSome; true'
 
+# A MISSING PROBE MUST NOT COUNT AS A PASS. This turns the batch's missing-result refusal into an
+# `ok`, which is precisely the silent-shrink the batching work had to rule out: a probe that never
+# reported would be indistinguishable from one that passed. Its declared gate is
+# check_mint_batch_accounting.sh, which is the only thing that exercises that path.
+add "mint-missing-result-refusal" "scripts/tests/check_dependency_edges.sh" "check_mint_missing_result.sh" no \
+$'      mint_no "${MINT_LABEL[$i]} — MISSING from group \'$grp\' (no <<P$id>> result)"' \
+$'      mint_ok "${MINT_LABEL[$i]}"'
+
 N=${#NAME[@]}
 
 # VACUITY FLOOR, APPLIED TO EVERY MODE. `N` comes straight from the inventory array, so an inventory
@@ -1233,7 +1241,7 @@ N=${#NAME[@]}
 # while still reporting a "full" campaign: `EXPECTED_RUN` is derived from whatever `N` happens to be,
 # so a reduced corpus passes as complete. Retiring a mutation is a deliberate act and must be recorded
 # in the same commit as the removal, exactly like the identity freezes.
-EXPECTED_FAMILIES=84
+EXPECTED_FAMILIES=85
 if [ "$N" != "$EXPECTED_FAMILIES" ]; then
   echo "FATAL: the mutation inventory holds $N families, pinned at $EXPECTED_FAMILIES." >&2
   echo "       Mutations are the evidence that gates are load-bearing, so losing some silently" >&2

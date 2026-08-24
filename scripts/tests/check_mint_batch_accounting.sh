@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# THE MINT-BATCH ACCOUNTING CONTROLS, ACTUALLY RUN.
+#
+# `check_dependency_edges.sh` batches its eighteen receipt-minting probes into one kernel replay,
+# which is sound only because the batch reconciles what it ASKED FOR against what it was ANSWERED:
+# a missing result, a duplicate result, a foreign result, a failed replay, a broken probe or a
+# grouping failure must each turn the gate red rather than shrink a green total.
+#
+# Those controls existed as environment-gated branches inside that gate and NOTHING INVOKED THEM.
+# An unreachable control is documentation: it can rot, or be quietly disabled, and no run notices.
+# Worse, the normal 315-assertion run exercises none of them, so the accounting they protect was
+# asserted only by having been tested once, by hand, months from whenever this is read.
+#
+# This gate runs each one and requires it to FAIL for its own reason. Every case names the marker it
+# expects, so a control that starts passing for an unrelated reason is not mistaken for coverage.
+#
+# It is deliberately a separate gate: it runs the dependency-edge gate repeatedly, which is minutes
+# per case, and burying that inside the gate it tests would make the common path pay for it.
+set -uEo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+GATE="$ROOT_DIR/scripts/tests/check_dependency_edges.sh"
+[ -x "$GATE" ] || [ -f "$GATE" ] || { echo "error: $GATE missing" >&2; exit 2; }
+
+PASS=0; FAIL=0
+ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
+no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+# SCOPED RUNS ARE LABELLED AS SUCH. A mutation family covering one refusal would otherwise pay for
+# all eight cases on four legs — over three hours for one family. MBA_ONLY runs a single case, and
+# the final line SAYS so, because a subset that printed the full-coverage line would be a smaller
+# green total wearing the same name. CI runs the full set.
+: "${MBA_ONLY:=}"
+
+# case <label> <env-assignment> <expected-marker> <expect-exit-nonzero>
+# The gate is run with ONE self-test flag set. Its verdict must be red AND must name the reason.
+case_run() {
+  local label="$1" env_kv="$2" marker="$3"
+  if [ -n "$MBA_ONLY" ] && [ "${env_kv%%=*}" != "$MBA_ONLY" ]; then return 0; fi
+  local log="$TMP/$(echo "$env_kv" | tr '=/ ' '___').log" rc=0
+  # GATE_DONE=1 is exported on purpose: an inherited value once disarmed the failure trap for a whole
+  # run, so every case here also proves that no longer matters.
+  env GATE_DONE=1 "$env_kv" bash "$GATE" > "$log" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    no "$label — the gate exited 0 under $env_kv, so this control is inert"
+    return
+  fi
+  if grep -qF -- "$marker" "$log"; then
+    ok "$label"
+  else
+    no "$label — red, but never named /$marker/ (failed for an unrelated reason): $(grep -m1 -E '^  FAIL|FATAL' "$log" | cut -c1-120)"
+  fi
+}
+
+echo "=== the batch must account for every probe it registered ==="
+case_run "a broken probe is named, and does not take its peers' accounting with it" \
+         "MINT_SELFTEST_BREAK=0" "MISSING from group"
+case_run "a result nobody declared is rejected by id" \
+         "MINT_SELFTEST_FOREIGN=1" "UNEXPECTED result id"
+case_run "a failed shared replay names every affected member instead of emptying the batch" \
+         "MINT_SELFTEST_REPLAY_FAIL=1" "the shared kernel replay FAILED"
+case_run "a second group that cannot replay fails ALONE, leaving the real probes accounted" \
+         "MINT_SELFTEST_SECOND_GROUP=1" "unproven (replay failed): SELFTEST"
+
+echo "=== a failure inside the batch cannot be swallowed ==="
+case_run "a shell failure inside the batch reaches the trap (errtrace is load-bearing)" \
+         "MINT_SELFTEST_SHELL_FAIL=1" "FATAL: unexpected shell failure"
+case_run "a failure inside a command substitution is caught by its status check, not the trap" \
+         "MINT_SELFTEST_SUBSHELL_FAIL=1" "replay-group count could not be computed"
+case_run "no groups means no driver ran, and that is a shortfall — not a smaller green total" \
+         "MINT_SELFTEST_EMPTY_GROUPS=1" "verdicts for"
+
+echo "=== the ordinary probe path checks process success, not just output ==="
+case_run "a process that prints the wanted string and exits nonzero still fails" \
+         "PROBE_SELFTEST_FAKE_EXIT=1" "probe exited 9"
+
+echo ""
+if [ -n "$MBA_ONLY" ]; then
+  echo "MINT-BATCH-ACCOUNTING(SUBSET=$MBA_ONLY): PASS=$PASS FAIL=$FAIL"
+  [ "$PASS" -ge 1 ] || { echo "  FAIL MBA_ONLY=$MBA_ONLY selected no case" >&2; FAIL=$((FAIL+1)); }
+else
+  # THE FULL SET IS PINNED. A case silently deleted would otherwise shrink a green total.
+  EXPECTED_CASES=8
+  [ "$((PASS + FAIL))" = "$EXPECTED_CASES" ] \
+    || { echo "  FAIL ran $((PASS + FAIL)) cases, expected $EXPECTED_CASES"; FAIL=$((FAIL+1)); }
+  echo "MINT-BATCH-ACCOUNTING: PASS=$PASS FAIL=$FAIL"
+fi
+[ "$FAIL" -eq 0 ]

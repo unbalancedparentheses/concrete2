@@ -917,6 +917,12 @@ jobs:
       - name: Campaign-supervisor gate (only a supervisor may publish qualification)
         run: bash scripts/tests/check_campaign_supervisor.sh
 
+      - name: Mint-batch accounting gate (the batch reconciliation controls, actually run)
+        run: bash scripts/tests/check_mint_batch_accounting.sh
+
+      - name: Mint missing-result refusal (the single case the mutation family covers)
+        run: bash scripts/tests/check_mint_missing_result.sh
+
       - name: concrete prove CLI gate
         run: bash scripts/tests/test_prove_cli.sh
 
