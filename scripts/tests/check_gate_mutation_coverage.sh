@@ -1083,6 +1083,15 @@ add "receipt-decode-checks-schema-first" "Concrete/Proof/Receipt.lean" "check_re
   '  if schema != receiptSchemaVersion then throw (.schemaUnreadable schema)' \
   '  if false then throw (.schemaUnreadable schema)'
 
+# THE REPORT HANDLERS MUST RETURN. attestation-join, generated-implementations and impl-manifest
+# each printed their report and then fell through to the "Unknown report type" branch, exiting 1 on
+# correct output. Nothing asserted a report's exit code, so it went unnoticed until a harness started
+# rejecting nonzero exits. Removing the restored `return 0` reproduces the defect exactly, and
+# check_cli_contract.sh must turn red for it.
+add "report-handler-returns" "Main.lean" "check_cli_contract.sh" yes \
+$'      IO.println (Report.generatedImplementationsReport (pc := pc))\n      return 0' \
+$'      IO.println (Report.generatedImplementationsReport (pc := pc))'
+
 N=${#NAME[@]}
 
 # VACUITY FLOOR, APPLIED TO EVERY MODE. `N` comes straight from the inventory array, so an inventory
@@ -1095,7 +1104,7 @@ N=${#NAME[@]}
 # while still reporting a "full" campaign: `EXPECTED_RUN` is derived from whatever `N` happens to be,
 # so a reduced corpus passes as complete. Retiring a mutation is a deliberate act and must be recorded
 # in the same commit as the removal, exactly like the identity freezes.
-EXPECTED_FAMILIES=81
+EXPECTED_FAMILIES=82
 if [ "$N" != "$EXPECTED_FAMILIES" ]; then
   echo "FATAL: the mutation inventory holds $N families, pinned at $EXPECTED_FAMILIES." >&2
   echo "       Mutations are the evidence that gates are load-bearing, so losing some silently" >&2

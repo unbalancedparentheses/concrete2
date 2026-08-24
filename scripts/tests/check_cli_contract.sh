@@ -108,6 +108,65 @@ for fut in inspect fmt doc clean; do
     && ok "future '$fut' not yet a command → clean nonzero (NOT-YET)" || no "future '$fut' should fail cleanly (rc=$rc)"
 done
 
+# =================================================================================================
+# REPORT EXIT-STATUS MATRIX.
+#
+# Three handlers — attestation-join, generated-implementations, impl-manifest — printed their report
+# and then FELL THROUGH to the "Unknown report type" branch, exiting 1 with a diagnostic naming the
+# report the caller had just received. Callers checking status saw failure on correct output, and a
+# test gate was consuming exactly that. Nothing here asserted a report's exit code, so the defect was
+# invisible; the whole point of this matrix is that a report's status is part of its contract.
+#
+# Success is asserted as COMPLETE output, not merely non-empty: a handler that printed a header and
+# died would otherwise still look correct.
+TD="examples/thesis_demo/src/main.con"
+SP="examples/evidence_classes/stale_proof/src/main.con"
+
+echo "=== reports: the three that used to exit 1 on success ==="
+run "$C" "$TD" --report attestation-join
+{ [ "$rc" = "0" ] && [ -s "$OUT" ] && head -1 "$OUT" | grep -q '^# role' && ! grep -q 'Unknown report type' "$ERR"; } \
+  && ok "attestation-join → exit 0 with its header, no unknown-report diagnostic" \
+  || no "attestation-join contract (rc=$rc)"
+
+run "$C" "$TD" --report generated-implementations
+{ [ "$rc" = "0" ] && grep -q '^-- emitted=[0-9]' "$OUT" && ! grep -q 'Unknown report type' "$ERR"; } \
+  && ok "generated-implementations → exit 0, reaches its '-- emitted=' trailer" \
+  || no "generated-implementations contract (rc=$rc)"
+
+run "$C" "$TD" --report impl-manifest
+_e="$(sed -n 's/^IMPL-MANIFEST expected=\([0-9]*\).*/\1/p' "$OUT")"
+_r="$(sed -n 's/^IMPL-MANIFEST.* rows=\([0-9]*\).*/\1/p' "$OUT")"
+{ [ "$rc" = "0" ] && [ -n "$_e" ] && [ "$_e" = "$_r" ] && ! grep -q 'Unknown report type' "$ERR"; } \
+  && ok "impl-manifest → exit 0, self-consistent (expected=$_e rows=$_r)" \
+  || no "impl-manifest contract (rc=$rc expected=$_e rows=$_r)"
+
+echo "=== reports: the unknown branch still rejects ==="
+run "$C" "$TD" --report no-such-report-name
+{ [ "$rc" = "1" ] && [ ! -s "$OUT" ] && grep -q 'Unknown report type' "$ERR"; } \
+  && ok "unknown --report → exit 1, empty stdout, unknown-report diagnostic on stderr" \
+  || no "unknown --report contract (rc=$rc)"
+
+echo "=== reports: legitimate exit 1 is preserved (subject rejection, not a CLI failure) ==="
+run "$C" "$SP" --report proof-status
+{ [ "$rc" = "1" ] && grep -q '^Totals:' "$OUT"; } \
+  && ok "proof-status on a stale fixture → exit 1 WITH a complete report (the subject is rejected)" \
+  || no "proof-status stale-fixture contract (rc=$rc)"
+run "$C" "$SP" --report consistency
+{ [ "$rc" = "1" ] && grep -q 'consistency violation' "$OUT"; } \
+  && ok "consistency on a stale fixture → exit 1 WITH its violation report" \
+  || no "consistency stale-fixture contract (rc=$rc)"
+
+echo "=== reports: the handlers that return through the shared path stay green (positive controls) ==="
+# Static scanning suggested nine handlers lacked a return; measurement showed three. These six take a
+# later shared return, and pinning them here is what makes that distinction a fact rather than a
+# reading of the source.
+for _r in proof-status obligations proof-bundle consistency audit verify; do
+  run "$C" "$TD" --report "$_r"
+  { [ "$rc" = "0" ] && [ -s "$OUT" ] && ! grep -q 'Unknown report type' "$ERR"; } \
+    && ok "--report $_r → exit 0 via the shared return" \
+    || no "--report $_r regressed (rc=$rc)"
+done
+
 echo ""
 echo "CLI-CONTRACT: PASS=$PASS  FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
