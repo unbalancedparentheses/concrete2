@@ -1764,6 +1764,13 @@ baseline_all_gates(){
     if _timed_gate "scripts/tests/$g" "$TMP/clean.log"; then
       CLEAN_GATE[$g]=yes
       _note_freshness_taint "$TMP/clean.log"
+      # THE POSITIVE CONTROL'S OWN TRANSCRIPT, kept per gate at RUN level. $TMP/clean.log is reused
+      # by every gate in this loop, so by the end it holds only the LAST one — and it used to be
+      # copied into all 81 family records as though it were each family's evidence. It belongs to
+      # the run: it is what makes a later red meaningful, and discarding it left every kill resting
+      # on a green baseline nobody could re-read.
+      mkdir -p "$EVIDENCE_DIR/_baseline" 2>/dev/null \
+        && cp "$TMP/clean.log" "$EVIDENCE_DIR/_baseline/$g.log" 2>/dev/null || true
       CLEAN_GATE_TAIL[$g]="$(_tail_shape "$TMP/clean.log")"
       if [ -n "${CLEAN_GATE_TAIL[$g]}" ]; then CLEAN_GATE_VERDICT[$g]=yes; else CLEAN_GATE_VERDICT[$g]=no; fi
     else
@@ -1814,7 +1821,10 @@ EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 
 # The per-family transcript files. Named once: publication copies exactly these, and the family
 # preamble clears exactly these.
-EV_LOGS="build.log gate.log clean.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr"
+# clean.log is deliberately NOT here: it is written by the BASELINE loop, not by any family, and
+# including it is what let the last baseline gate's transcript be copied into every family record.
+# The baseline keeps its own per-gate transcripts under _baseline/.
+EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr"
 
 # PUBLISH ONE FAMILY'S RECORD. Called at EVERY exit from run_one, including the early ones: a family
 # that never reached its verdict is exactly the one whose transcript a reader needs, and those paths
