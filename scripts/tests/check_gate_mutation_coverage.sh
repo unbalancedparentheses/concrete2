@@ -1769,12 +1769,15 @@ baseline_all_gates(){
       # copied into all 81 family records as though it were each family's evidence. It belongs to
       # the run: it is what makes a later red meaningful, and discarding it left every kill resting
       # on a green baseline nobody could re-read.
-      mkdir -p "$EVIDENCE_DIR/_baseline" 2>/dev/null \
-        && cp "$TMP/clean.log" "$EVIDENCE_DIR/_baseline/$g.log" 2>/dev/null || true
+      keep_baseline_log "$g" "$TMP/clean.log"
       CLEAN_GATE_TAIL[$g]="$(_tail_shape "$TMP/clean.log")"
       if [ -n "${CLEAN_GATE_TAIL[$g]}" ]; then CLEAN_GATE_VERDICT[$g]=yes; else CLEAN_GATE_VERDICT[$g]=no; fi
     else
       CLEAN_GATE[$g]=no; red=$((red+1))
+      # KEPT ON THE RED PATH TOO. This transcript is the reason every family naming this gate is
+      # reported INVALID; retaining it only when the baseline is GREEN would discard exactly the
+      # diagnosis a reader needs.
+      keep_baseline_log "$g" "$TMP/clean.log"
       echo "  RED ON CLEAN: $g — every family naming it will be reported INVALID, not killed"
     fi
   done
@@ -1825,6 +1828,17 @@ EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 # including it is what let the last baseline gate's transcript be copied into every family record.
 # The baseline keeps its own per-gate transcripts under _baseline/.
 EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr"
+
+# ONE PRODUCER, because the baseline is implemented TWICE — once for the campaign sweep and once for
+# single-family selection — and adding retention to only one of them is exactly the drift this
+# repository keeps being bitten by. I did precisely that: the campaign path kept its transcript and
+# the single-family path did not, and the single-family run I used to verify the change could not
+# see the difference.
+keep_baseline_log() { # gate-name source-log
+  mkdir -p "$EVIDENCE_DIR/_baseline" 2>/dev/null || return 0
+  cp "$2" "$EVIDENCE_DIR/_baseline/$1.log" 2>/dev/null || true
+  return 0
+}
 
 # PUBLISH ONE FAMILY'S RECORD. Called at EVERY exit from run_one, including the early ones: a family
 # that never reached its verdict is exactly the one whose transcript a reader needs, and those paths
@@ -2147,6 +2161,7 @@ if [ -n "$ONLY" ]; then
   BASELINE_TOTAL=1
   if _timed_gate "scripts/tests/$_only_gate" "$TMP/clean.log"; then
     CLEAN_GATE[$_only_gate]=yes; BASELINE_GREEN=1; BASELINE_RED=0
+    keep_baseline_log "$_only_gate" "$TMP/clean.log"
     _note_freshness_taint "$TMP/clean.log"
     CLEAN_GATE_TAIL[$_only_gate]="$(_tail_shape "$TMP/clean.log")"
     if [ -n "${CLEAN_GATE_TAIL[$_only_gate]}" ]; then CLEAN_GATE_VERDICT[$_only_gate]=yes
@@ -2154,6 +2169,9 @@ if [ -n "$ONLY" ]; then
     echo "  baseline: 1/1 gates green on the unmutated workspace"
   else
     CLEAN_GATE[$_only_gate]=no; BASELINE_GREEN=0; BASELINE_RED=1
+    # A RED baseline transcript is the MOST important one to keep: every family on that gate is
+    # reported INVALID because of it.
+    keep_baseline_log "$_only_gate" "$TMP/clean.log"
     echo "  RED ON CLEAN: $_only_gate — this family will be reported INVALID, not killed"
     echo "  baseline: 0/1 gates green on the unmutated workspace"
   fi
