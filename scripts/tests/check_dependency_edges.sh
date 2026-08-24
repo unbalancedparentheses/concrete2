@@ -242,11 +242,11 @@ readonly MINT_DEFAULT_GROUP="Concrete.Proof.parse_byte_correct"
 # duplicate another and the total is still 18, both copies pass, and the deleted assertion is gone
 # with nothing to notice it. So the SET of labels is pinned by digest and duplicates are rejected.
 # Changing which probes mint must be a deliberate edit of both values.
-EXPECTED_MINT_PROBES=18
+EXPECTED_MINT_PROBES=19
 # Digest of the full manifest, not just the names — see mint_manifest_digest below. The constant is
 # a sha256 because this repository supports macOS, where GNU md5sum does not exist; the hasher
 # fallback follows the one in lib/treestate.sh rather than adding a third way to hash a thing.
-EXPECTED_MINT_MANIFEST_SHA256="d2af130d30417504306ba38707cac26542b576ce063b986dbb5e51c7fa4af3c5"
+EXPECTED_MINT_MANIFEST_SHA256="2ddb0cedc814928de392e53ae21e2f85873b69c088e79f71b3e74cedef6ceb18"
 if command -v sha256sum >/dev/null 2>&1; then _MINT_HASHER="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then _MINT_HASHER="shasum -a 256"
 else _MINT_HASHER=""
@@ -455,13 +455,13 @@ mint_ok(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); ok "$1"; }
 mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
 
 # Same reconciliation as the mint batch, for the ordinary population.
-EXPECTED_ORDINARY_PROBES=242
-EXPECTED_ORDINARY_MANIFEST_SHA256="f41d45bd78aab6f73db3e4345f79cacda5283269530d855133959e081ca3b5bd"
+EXPECTED_ORDINARY_PROBES=244
+EXPECTED_ORDINARY_MANIFEST_SHA256="0a2b6e4cc2216aabc4217a2ace809b84bc8c8d8c80e9dcdc57eaf96fffe27e93"
 # The ordinary and mint populations are pinned, but roughly 43 assertions belong to NEITHER — the
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
-EXPECTED_TOTAL_ASSERTIONS=312
-EXPECTED_ASSERTION_LABELS_SHA256="43e740f6cde8e7e91ca5a7fc4c1d3dfbe3304c6aa5314ecf4c1c9f828b4e4f47"
+EXPECTED_TOTAL_ASSERTIONS=315
+EXPECTED_ASSERTION_LABELS_SHA256="bc05bbec527eed31e24b0dd252661ca835e9db0a06e5a30693bab3515bbfcbe9"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
@@ -1082,14 +1082,87 @@ def elG (q : String) : EligibilityEntry :=
 # The subject has NO outgoing edges, which makes correspondence VACUOUSLY justified, so the only
 # thing that can move the verdict is the root conjunct. Without that isolation the downgrade would be
 # attributable to correspondence and would prove nothing about rooting.
-# THE STATUS THIS PINS REPORTS A FALSE CAUSE, and pinning it records that rather than blessing it.
-# `.correspondenceUnjustified` means per-edge correspondence was unusable. This subject's
-# correspondence is VACUOUSLY VALID — it has no edges — and the only thing wrong is that its closure
-# cannot be rooted, so the production pass reports the wrong reason for a correct downgrade. The
-# downgrade itself is right and is what this asserts; the mislabelled cause is a product defect
-# recorded separately, and this probe will change when the pass grows a root-specific status or a
-# typed reason.
-probe "applyCorrespondenceAuthority DOWNGRADES a proved subject whose closure cannot root" "DOWNGRADED" \
+# THE ROOT CONJUNCT IS CONSUMED, ASSERTED BEHAVIOURALLY AND WITHOUT BLESSING ITS DIAGNOSIS.
+#
+# Counting call sites cannot establish consumption: a compile-valid mutation can KEEP the call to
+# `dependencyRootMaterial` and discard its result — `let _ := ...; true` — leaving the site count
+# unchanged while the `rooted e` conjunct goes inert. Measured against exactly that mutation, the
+# site count stayed 2 and these probes flipped.
+#
+# WHAT IS DELIBERATELY NOT ASSERTED: the resulting STATUS. The pass reports
+# `.correspondenceUnjustified` for a root-only refusal, which is a false cause — that subject's
+# correspondence is vacuously VALID and only its closure cannot be assembled. Pinning that string
+# would freeze a diagnosis already known to be wrong. The DOWNGRADE is sound and is asserted here;
+# the diagnosis is a product defect tracked separately, and these assertions will not need changing
+# when it is fixed.
+#
+# The subject has NO outgoing edges, which is what makes the attribution exact: correspondence has
+# nothing to justify and cannot be the cause of any downgrade below.
+
+probe "the closure of a digest-less subject CANNOT be rooted (the internal refusal)" "ROOT-REFUSED" \
+'def aPk : String := Concrete.shortHash "authority-consumes-root"
+def aI (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def aFn (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def aEl (q : String) : EligibilityEntry :=
+  { qualName := q, eligible := true, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := false, loc := none }
+#eval show IO Unit from do
+  match aI "m" "solo", (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.solo", bareName := "solo"
+      , callableId := CallableId.ofUser "m" "solo", fn := aFn "solo"
+      , extracted := none, unsupported := [], fingerprint := "FP"
+      , params := [], eligibility := aEl "m.solo", loc := none, spec := none
+      , subjectDigest := none }
+    let obl : Obligation :=
+      { functionId := { qualName := "m.solo", fingerprint := "FP" }, bareName := "solo"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    match dependencyRootMaterial (dependencyNodesOf pc pc.callGraph) cid with
+    | .error _ => IO.println "ROOT-REFUSED"
+    | .ok _    => IO.println "ROOT-COMPUTED"
+  | _, _ => IO.println "could not build the control"'
+
+probe "...while the SAME subject's correspondence has nothing to justify (so it is not the cause)" "NOTHING-TO-JUSTIFY" \
+'def aPk : String := Concrete.shortHash "authority-consumes-root"
+def aI (m d : String) : Option DefinitionIdentity :=
+  (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
+def aFn (n : String) : CFnDef := { name := n, params := [], retTy := .i32, body := [] }
+def aEl (q : String) : EligibilityEntry :=
+  { qualName := q, eligible := true, sourceReasons := [], profileReasons := []
+  , exclusionKind := none, isTrusted := false, loc := none }
+#eval show IO Unit from do
+  match aI "m" "solo", (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.solo", bareName := "solo"
+      , callableId := CallableId.ofUser "m" "solo", fn := aFn "solo"
+      , extracted := none, unsupported := [], fingerprint := "FP"
+      , params := [], eligibility := aEl "m.solo", loc := none, spec := none
+      , subjectDigest := none }
+    let obl : Obligation :=
+      { functionId := { qualName := "m.solo", fingerprint := "FP" }, bareName := "solo"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    match correspondenceInputOf pc pc.callGraph entry.callableId with
+    | .error _ => IO.println "NO-CORRESPONDENCE-INPUT"
+    | .ok i =>
+      if i.requestedEdges.isEmpty && i.unscopedEdges.isEmpty then
+        IO.println "NOTHING-TO-JUSTIFY"
+      else IO.println s!"HAS-EDGES({i.requestedEdges.length},{i.unscopedEdges.length})"
+  | _, _ => IO.println "could not build the control"'
+
+probe "a subject whose closure cannot root LOSES every friendly disposition" "NOT-FRIENDLY" \
 'def aPk : String := Concrete.shortHash "authority-consumes-root"
 def aI (m d : String) : Option DefinitionIdentity :=
   (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
@@ -1115,15 +1188,17 @@ def aEl (q : String) : EligibilityEntry :=
       , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
       , obligations := [obl], diagnostics := [] }
     match (applyCorrespondenceAuthority pc pc.callGraph).obligations.head? with
-    | some o => IO.println (if o.status == .correspondenceUnjustified then "DOWNGRADED"
-                            else if o.status == .proved then "STILL-PROVED" else "OTHER-STATUS")
-    | none   => IO.println "NO-OBLIGATION"
+    | some o =>
+      -- The friendly set is exactly the one the policy pass waves through
+      -- (`.proved | .ineligible | .trusted => none`); naming the arms rather than the resulting
+      -- status keeps this true after the diagnosis is corrected.
+      match o.status with
+      | .proved | .ineligible | .trusted => IO.println "FRIENDLY"
+      | _ => IO.println "NOT-FRIENDLY"
+    | none => IO.println "NO-OBLIGATION"
   | _, _ => IO.println "could not build the control"'
 
-# THE VALID-ROOT CONTROL, so the assertion above cannot be satisfied by a pass that refuses
-# everything. Identical construction, one difference: the subject HAS a digest, so its closure roots
-# and the proved verdict must survive.
-probe "...and LEAVES a proved subject whose closure roots (the pass is not deny-all)" "STILL-PROVED" \
+probe "...and a subject whose closure DOES root keeps it (the pass is not deny-all)" "FRIENDLY" \
 'def aPk : String := Concrete.shortHash "authority-consumes-root"
 def aI (m d : String) : Option DefinitionIdentity :=
   (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
@@ -1149,9 +1224,11 @@ def aEl (q : String) : EligibilityEntry :=
       , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
       , obligations := [obl], diagnostics := [] }
     match (applyCorrespondenceAuthority pc pc.callGraph).obligations.head? with
-    | some o => IO.println (if o.status == .correspondenceUnjustified then "DOWNGRADED"
-                            else if o.status == .proved then "STILL-PROVED" else "OTHER-STATUS")
-    | none   => IO.println "NO-OBLIGATION"
+    | some o =>
+      match o.status with
+      | .proved | .ineligible | .trusted => IO.println "FRIENDLY"
+      | _ => IO.println "NOT-FRIENDLY"
+    | none => IO.println "NO-OBLIGATION"
   | _, _ => IO.println "could not build the control"'
 
 # TRUST PROPAGATES MONOTONICALLY THROUGH THE FULL CLOSURE, not one hop.
@@ -1618,6 +1695,45 @@ probe "an empty dependency ROOT refuses to mint" "REFUSED" \
 # minting token, so the receipt records the theorem the KERNEL accepted. The old "empty artifact
 # refuses" leg is gone because it became unfalsifiable — there is no argument left to make empty —
 # and this is what replaced it: the artifact equals what was replayed.
+# RECEIPT ISSUANCE CANNOT RESTORE WHAT THE AUTHORITY PASS TOOK AWAY. Issuance is gated on the
+# COMPOSED verdict — the status AFTER applyCorrespondenceAuthority — so a subject whose closure
+# cannot be rooted must be refused a receipt, not merely reported unfavourably. This runs the real
+# `issueFor` against the batch's own replay result, so it costs no additional kernel run, and it
+# matches on the REFUSAL CONSTRUCTOR rather than its rendered string.
+probe_mint "receipt issuance REFUSES a subject whose closure cannot root" "ISSUANCE-REFUSED-notProved"  \
+'#eval show IO Unit from do
+  -- NO top-level defs here: a probe_mint body is inlined into the shared do-block of its batch, so
+  -- everything it needs must be a binding inside that block.
+  let aPk := Concrete.shortHash "authority-consumes-root"
+  let cid? := (DefinitionIdentity.of? aPk "m" "solo" (Concrete.shortHash "impl:m.solo")).toOption
+  match cid?, (PackageIdentity.syntheticForModules ["m"] ["s"]).toOption with
+  | some cid, some pkg =>
+    let entry : ProofCoreEntry :=
+      { definitionIdentity := .ok cid, qualName := "m.solo", bareName := "solo"
+      , callableId := CallableId.ofUser "m" "solo"
+      , fn := { name := "solo", params := [], retTy := .i32, body := [] }
+      , extracted := none, unsupported := [], fingerprint := "FP", params := []
+      , eligibility := { qualName := "m.solo", eligible := true, sourceReasons := []
+                       , profileReasons := [], exclusionKind := none, isTrusted := false, loc := none }
+      , loc := none
+      , spec := some { specId := { name := "s" }, proofName := probeThm, source := .registry, expectedFp := "FP" }
+      , subjectDigest := none }
+    let obl : Obligation :=
+      { functionId := { qualName := "m.solo", fingerprint := "FP" }, bareName := "solo"
+      , status := .proved, spec := none, expectedFp := "", eligibilityReasons := []
+      , ineligCat := none, dependencies := [], notCurrentDeps := [], loc := none }
+    let pc : ProofCore :=
+      { packageIdentity := pkg, entries := [entry], excluded := [], structs := [], enums := []
+      , traitDefs := [], callGraph := [("m.solo", [])], recMap := [], externNames := []
+      , obligations := [obl], diagnostics := [] }
+    let after := applyCorrespondenceAuthority pc pc.callGraph
+    let env : IssueEnvironment := { compilerVersion := "v", workspaceId := "w", importsId := "i" }
+    match issueFor after rr env (fun _ => []) entry with
+    | .error (.notProved _ st) => IO.println s!"ISSUANCE-REFUSED-notProved({st})"
+    | .error other             => IO.println s!"ISSUANCE-REFUSED-OTHER({other.canonical})"
+    | .ok _                    => IO.println "ISSUANCE-MINTED"
+  | _, _ => IO.println "could not build the control"'
+
 probe_mint "the minted artifact is the theorem that was REPLAYED, not a caller's claim" "ARTIFACT-MATCHES" \
 '#eval show IO Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
