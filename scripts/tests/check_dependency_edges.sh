@@ -111,11 +111,14 @@ cc() {
   #   proof-status  24x0 1x1       consistency               24x0 1x1
   # The single 1 in each is the stale-proof fixture, which is SUPPOSED to be rejected.
   if [ -z "$why" ]; then
-    local okrc=""
+    # PER (FILE, REPORT), NOT PER REPORT. Accepting "0 or 1" for proof-status and consistency
+    # everywhere launders a real failure: a CLEAN consistency report exiting 1 would pass. Exactly
+    # ONE fixture in this corpus is supposed to be rejected — evidence_classes/stale_proof — and it
+    # is named here, so every other file must exit 0 on every report.
+    local okrc="0"
     case "$rep" in
-      subject-facts|generated-implementations) okrc="0" ;;
-      proof-status|consistency)                okrc="0 1" ;;
-      *)                                       okrc="0" ;;
+      proof-status|consistency)
+        case "$f" in */evidence_classes/stale_proof/*) okrc="1" ;; esac ;;
     esac
     case " $okrc " in
       *" $rc "*) ;;
@@ -456,12 +459,12 @@ mint_no(){ MINT_VERDICTS=$((MINT_VERDICTS + 1)); no "$1"; }
 
 # Same reconciliation as the mint batch, for the ordinary population.
 EXPECTED_ORDINARY_PROBES=244
-EXPECTED_ORDINARY_MANIFEST_SHA256="0a2b6e4cc2216aabc4217a2ace809b84bc8c8d8c80e9dcdc57eaf96fffe27e93"
+EXPECTED_ORDINARY_MANIFEST_SHA256="a721c0a702572652e19c2a76c26a334f01c7977053b958de985dd6c8ccbf8e1d"
 # The ordinary and mint populations are pinned, but roughly 43 assertions belong to NEITHER — the
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
 EXPECTED_TOTAL_ASSERTIONS=315
-EXPECTED_ASSERTION_LABELS_SHA256="bc05bbec527eed31e24b0dd252661ca835e9db0a06e5a30693bab3515bbfcbe9"
+EXPECTED_ASSERTION_LABELS_SHA256="3c1be63ddfddc66b746499caf78dcf5c3275cf37edc6954ee460f38946738ba6"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
@@ -1198,7 +1201,7 @@ def aEl (q : String) : EligibilityEntry :=
     | none => IO.println "NO-OBLIGATION"
   | _, _ => IO.println "could not build the control"'
 
-probe "...and a subject whose closure DOES root keeps it (the pass is not deny-all)" "FRIENDLY" \
+probe "...and a subject whose closure DOES root keeps .proved exactly (not deny-all)" "PROVED-PRESERVED" \
 'def aPk : String := Concrete.shortHash "authority-consumes-root"
 def aI (m d : String) : Option DefinitionIdentity :=
   (DefinitionIdentity.of? aPk m d (Concrete.shortHash ("impl:" ++ m ++ "." ++ d))).toOption
@@ -1225,9 +1228,12 @@ def aEl (q : String) : EligibilityEntry :=
       , obligations := [obl], diagnostics := [] }
     match (applyCorrespondenceAuthority pc pc.callGraph).obligations.head? with
     | some o =>
+      -- EXACTLY `.proved`, because that is what it started as and what issuance requires. Accepting
+      -- any friendly status here would let the pass silently rewrite a proved claim into another
+      -- agreeable one and still pass.
       match o.status with
-      | .proved | .ineligible | .trusted => IO.println "FRIENDLY"
-      | _ => IO.println "NOT-FRIENDLY"
+      | .proved => IO.println "PROVED-PRESERVED"
+      | _       => IO.println "STATUS-MOVED"
     | none => IO.println "NO-OBLIGATION"
   | _, _ => IO.println "could not build the control"'
 
