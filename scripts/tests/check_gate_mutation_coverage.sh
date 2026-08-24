@@ -299,6 +299,13 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   . "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null \
     || { echo "FATAL: supervisor cannot load treestate.sh — it would have nothing to reconcile with" >&2; exit 2; }
   ts_require || { echo "FATAL: supervisor tree-state producers unavailable" >&2; exit 2; }
+  # LOADED BEFORE ANYTHING IS MEASURED OR SPAWNED. Sourcing the decision library AFTER the final
+  # reconciliation left a window in which an edit to it was never remeasured: the supervisor would
+  # have judged this run with rules loaded after it finished looking. Bash binds functions at source
+  # time, so loading here freezes the rules, and the library is TRACKED, so an edit during the run
+  # also moves ts_tracked and is refused.
+  . "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" 2>/dev/null \
+    || { echo "FATAL: supervisor cannot load its decision library" >&2; exit 2; }
   _sup_head0="$(ts_head "$ROOT_DIR" 2>/dev/null)"
   _sup_tracked0="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
   _sup_untracked0="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
@@ -314,21 +321,25 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _final="$ROOT_DIR/.mutation-campaign-summary"
   [ -z "${FAMILY:-}" ] || _final="$_final.partial"
 
-  # ONE DECISION PRODUCER, and it lives in a library so a gate can attack it with hostile inputs
-  # directly instead of needing a full campaign to reach it. Inline here, it was reachable only by
-  # running the thing it judges.
-  . "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" 2>/dev/null \
-    || { echo "FATAL: supervisor cannot load its decision library" >&2; exit 2; }
+  # THE CANDIDATE IS SNAPSHOTTED BEFORE IT IS JUDGED. It is gitignored, so replacing it after
+  # reconciliation would not move ts_untracked — the supervisor would validate one file and publish
+  # another. Everything below reads the copy.
+  _cand_snap="$(mktemp "${TMPDIR:-/tmp}/mutcand.XXXXXX" 2>/dev/null)" \
+    || { echo "FATAL: supervisor cannot stage the candidate" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  : > "$_cand_snap"
+  [ ! -s "$_cand" ] || cp "$_cand" "$_cand_snap" 2>/dev/null || : > "$_cand_snap"
+  _cand="$_cand_snap"
   _sup_refusals="$(supervisor_refusals "$_child_rc" "$_cand" \
                     "$_sup_head0" "$_sup_head1" "$_sup_tracked0" "$_sup_tracked1" \
                     "$_sup_untracked0" "$_sup_untracked1")"
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
+  _sed_ok=1
   _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
   if [ -s "$_cand" ]; then
     # The qualified line is decided by the same library, not by a second rule here.
-    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp"
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp" || _sed_ok=0
   else
     printf 'completed=0
 mode=%s
@@ -339,8 +350,18 @@ integrity_ok=0
   printf 'supervisor_refusals=%s
 supervisor_child_exit=%s
 ' "${_sup_refusals:-none}" "$_child_rc" >> "$_tmp"
+  # EVERY WRITE IS CHECKED, not just the rename. A failed or truncated sed/printf — full disk, broken
+  # pipe — could otherwise be installed as the authoritative artifact with exit 0.
+  _pub_ok="$_sed_ok"
+  printf 'candidate_incoherent=%s\n' "$(candidate_incoherent "$_cand" 2>/dev/null || echo unknown)" >> "$_tmp" || _pub_ok=0
+  for _k in completed mode qualified; do grep -qE "^$_k=" "$_tmp" || _pub_ok=0; done
+  if [ "$_pub_ok" != "1" ]; then
+    rm -f "$_tmp" "$_cand_snap"
+    echo "FATAL: the authoritative artifact could not be written completely" >&2
+    _gate_lock_release 2>/dev/null; exit 2
+  fi
   mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
-  rm -f "$_cand" 2>/dev/null
+  rm -f "$_cand_snap" "$ROOT_DIR/.mutation-campaign-summary.candidate" 2>/dev/null
 
   if [ -n "$_sup_refusals" ]; then
     echo "SUPERVISOR REFUSED QUALIFICATION:$_sup_refusals" >&2

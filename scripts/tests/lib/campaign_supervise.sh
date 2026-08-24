@@ -54,10 +54,38 @@ supervisor_refusals() {
   printf '%s' "${out# }"
 }
 
+# candidate_incoherent <candidate-path>  -> reasons a candidate's OWN fields contradict qualified=1
+#
+# KEY PRESENCE IS NOT COHERENCE. Checking only that the fields exist and then trusting `qualified=1`
+# accepts a record that contradicts itself: completed=0 with qualified=1, integrity_ok=0 with
+# qualified=1, a single-family mode claiming full-campaign qualification, or counts that do not
+# reconcile. A supervisor that exists BECAUSE it does not trust the child cannot then take the
+# child's headline field at face value.
+candidate_incoherent() {
+  local c="$1" out="" v
+  _f() { sed -n "s/^$1=//p" "$c" | head -1; }
+  [ "$(_f qualified)" = "1" ] || { printf ''; return 0; }   # only qualification needs justifying
+  [ "$(_f completed)"    = "1" ]        || out="$out qualified_without_completed"
+  [ "$(_f integrity_ok)" = "1" ]        || out="$out qualified_without_integrity"
+  [ "$(_f mode)"         = "campaign" ] || out="$out qualified_in_$(_f mode)_mode"
+  # EVERY SELECTED UNIT REPORTED, AND EVERY ONE OF THEM KILLED. These are the counts the artifact
+  # itself publishes; if they do not reconcile, the headline is not describing this run.
+  local d s e r k
+  d="$(_f discovered)"; s="$(_f selected)"; e="$(_f executed)"; r="$(_f reported)"; k="$(_f killed)"
+  [ -n "$d" ] && [ "$d" = "$s" ] && [ "$s" = "$e" ] && [ "$e" = "$r" ] \
+    || out="$out qualified_with_counts($d/$s/$e/$r)"
+  [ "$k" = "$r" ] || out="$out qualified_with_unkilled($k/$r)"
+  for v in survived invalid could_not_apply; do
+    case "$(_f $v)" in ''|0) ;; *) out="$out qualified_with_$v($(_f $v))" ;; esac
+  done
+  printf '%s' "${out# }"
+}
+
 # supervisor_qualification <candidate-path> <refusals>  -> the qualified= line to publish
-# Only a clean candidate under a clean reconciliation may carry qualified=1 forward.
+# Only a clean candidate, under a clean reconciliation, whose OWN fields justify it.
 supervisor_qualification() {
   local cand="$1" refusals="$2"
   if [ -n "$refusals" ] || [ ! -s "$cand" ]; then printf 'qualified=0'; return 0; fi
-  grep -qE '^qualified=1$' "$cand" && printf 'qualified=1' || printf 'qualified=0'
+  grep -qE '^qualified=1$' "$cand" || { printf 'qualified=0'; return 0; }
+  [ -z "$(candidate_incoherent "$cand")" ] && printf 'qualified=1' || printf 'qualified=0'
 }

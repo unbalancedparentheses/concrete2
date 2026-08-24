@@ -39,6 +39,7 @@ integrity_ok=1
 qualified=1
 EOF
 H="headsha"; T="trackedsha"; U="untrackedsha"
+sed 's/^qualified=1$/qualified=0/' "$GOOD" > "$TMP/unqual"
 
 # expect <label> <expected-substring-or-EMPTY> <args...>
 expect() {
@@ -91,10 +92,42 @@ echo "=== qualification is the supervisor's to grant ==="
 [ "$(supervisor_qualification "$TMP/nope" "")" = "qualified=0" ] \
   && ok "a missing candidate cannot publish qualified=1" \
   || no "a missing candidate produced a qualification"
-sed 's/^qualified=1$/qualified=0/' "$GOOD" > "$TMP/unqual"
 [ "$(supervisor_qualification "$TMP/unqual" "")" = "qualified=0" ] \
   && ok "a candidate that did not claim qualification is not granted one" \
   || no "qualification was invented for a candidate that did not claim it"
+
+echo "=== a candidate must JUSTIFY its own qualification, not merely declare it ==="
+# Key presence was the only check, so a record that contradicts itself qualified. Each case below is
+# the good candidate with exactly one field made incoherent, so the refusal is attributable.
+inc() { # label field value expected-substring
+  local f="$TMP/inc.$2"; sed "s/^$2=.*/$2=$3/" "$GOOD" > "$f"
+  local got; got="$(candidate_incoherent "$f")"
+  case "$got" in *"$4"*) ok "$1" ;; *) no "$1 — expected /$4/, got '${got:-<none>}'" ;; esac
+  [ "$(supervisor_qualification "$f" "")" = "qualified=0" ] \
+    && ok "...and it cannot publish qualified=1" || no "$1 — it published qualification anyway"
+}
+inc "qualified=1 with completed=0 is incoherent"       completed 0     qualified_without_completed
+inc "qualified=1 with integrity_ok=0 is incoherent"    integrity_ok 0  qualified_without_integrity
+inc "qualified=1 in single-family mode is incoherent"  mode single     qualified_in_single_mode
+inc "qualified=1 with counts that do not reconcile"    reported 81     qualified_with_counts
+inc "qualified=1 with unkilled families"               killed 80       qualified_with_unkilled
+
+for v in survived invalid could_not_apply; do
+  f="$TMP/inc.$v"; { cat "$GOOD"; printf '%s=1\n' "$v"; } > "$f"
+  got="$(candidate_incoherent "$f")"
+  case "$got" in *"qualified_with_$v"*) ok "qualified=1 with $v=1 is incoherent" ;;
+    *) no "qualified=1 with $v=1 — expected refusal, got '${got:-<none>}'" ;; esac
+done
+
+# THE POSITIVE CONTROL FOR COHERENCE ITSELF: the good candidate must remain coherent, or every case
+# above would pass for the wrong reason.
+[ -z "$(candidate_incoherent "$GOOD")" ] \
+  && ok "a coherent candidate is not refused by the coherence check" \
+  || no "the coherence check refuses a well-formed candidate: $(candidate_incoherent "$GOOD")"
+# ...and a candidate that never claimed qualification is not judged on coherence at all.
+[ -z "$(candidate_incoherent "$TMP/unqual")" ] \
+  && ok "a candidate not claiming qualification is not held to it" \
+  || no "an unqualified candidate was judged on qualification coherence"
 
 echo ""
 echo "CAMPAIGN-SUPERVISOR: PASS=$PASS FAIL=$FAIL"
