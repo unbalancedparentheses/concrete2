@@ -1225,7 +1225,8 @@ write_summary() {
          echo "failed=${FAIL:-0}"
          # Where the per-family transcripts are, and how many exist. A reader can open them.
          echo "evidence_written=${EVIDENCE_WRITTEN:-0}"
-         echo "evidence_dir=.mutation-evidence/${START_HEAD:-unknown}"
+         echo "evidence_dir=.mutation-evidence/${RUN_ID:-unknown}"
+         echo "run_id=${RUN_ID:-unknown}"
          echo "head=$START_HEAD"
          # Both, because they answer different questions: what ran, and what the repository holds now.
          echo "executed_driver_sha=$EXECUTED_DRIVER_SHA"
@@ -1804,6 +1805,63 @@ _note_freshness_taint() { grep -q 'GATE-FRESHNESS-UNVERIFIED' "$1" 2>/dev/null &
 # would otherwise claim red/green/red for a family whose transcript nobody can read.
 EVIDENCE_WRITTEN=0
 EVIDENCE_FAILED=""
+# RUN IDENTITY, NOT JUST HEAD. Keying evidence on the SHA alone let a later single-family run
+# overwrite a family that an older full-campaign summary still points at — same HEAD, different run,
+# possibly different driver or working state. Each run publishes under its own directory and names
+# that directory in its summary, so a summary and its evidence cannot drift apart.
+RUN_ID="${START_HEAD:0:12}-$(date +%Y%m%dT%H%M%S)-$$"
+EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
+
+# The per-family transcript files. Named once: publication copies exactly these, and the family
+# preamble clears exactly these.
+EV_LOGS="build.log gate.log clean.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr"
+
+# PUBLISH ONE FAMILY'S RECORD. Called at EVERY exit from run_one, including the early ones: a family
+# that never reached its verdict is exactly the one whose transcript a reader needs, and those paths
+# used to delete it. Arguments are explicit so an early return cannot publish another family's
+# leftover variables.
+publish_evidence() { # nm index file gate killed invalid note
+  local nm="$1" idx="$2" file="$3" gate="$4" killed="$5" invalid="$6" note="$7"
+  local stage final l ok=1
+  final="$EVIDENCE_DIR/$nm"
+  # mktemp, not a predictable name: `mkdir -p .staging.$nm.$$` silently REUSED a stranded directory
+  # from an interrupted run, so a new record could inherit old files.
+  mkdir -p "$EVIDENCE_DIR" 2>/dev/null || { EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0; }
+  stage="$(mktemp -d "$EVIDENCE_DIR/.staging.XXXXXX" 2>/dev/null)" \
+    || { EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0; }
+  for l in $EV_LOGS; do
+    if [ -f "$TMP/$l" ]; then cp "$TMP/$l" "$stage/$l" 2>/dev/null || ok=0; fi
+  done
+  printf 'family=%s\nindex=%s\nfile=%s\ngate=%s\nkilled=%s\ninvalid=%s\nexpected_route=%s\nhead=%s\nrun_id=%s\nverdict=%s\n' \
+    "$nm" "$idx" "$file" "$gate" "$killed" "$invalid" \
+    "$(if build_kill_declared "$nm"; then echo build; else echo gate; fi)" \
+    "$START_HEAD" "$RUN_ID" "$note" > "$stage/verdict.txt" 2>/dev/null || ok=0
+  # VALIDATE BEFORE PUBLISHING. Every cp and the verdict write used to be `|| true`, and
+  # evidence_written incremented on the rename alone — so an EMPTY directory counted as evidence.
+  [ -s "$stage/verdict.txt" ] || ok=0
+  if [ "$ok" != "1" ]; then
+    rm -rf "$stage" 2>/dev/null; EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0
+  fi
+  # REPLACE WITHOUT A DESTRUCTIVE WINDOW. `rm -rf final && mv stage final` destroyed a good record
+  # before knowing the new one would land, and if the removal failed `mv` moved the stage INSIDE the
+  # existing directory and still reported success. Move the old record aside first, and only discard
+  # it once the new one is in place.
+  local old=""
+  if [ -e "$final" ]; then
+    old="$stage.previous"
+    mv "$final" "$old" 2>/dev/null || { rm -rf "$stage" 2>/dev/null; EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"; return 0; }
+  fi
+  if mv "$stage" "$final" 2>/dev/null && [ -s "$final/verdict.txt" ]; then
+    [ -z "$old" ] || rm -rf "$old" 2>/dev/null
+    EVIDENCE_WRITTEN=$((EVIDENCE_WRITTEN + 1))
+  else
+    # Put the old record back rather than leaving nothing behind.
+    [ -z "$old" ] || mv "$old" "$final" 2>/dev/null
+    rm -rf "$stage" 2>/dev/null
+    EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
+  fi
+  return 0
+}
 EXPECT_BUILD_KILL=" trap-quotient-condition reference-division transform-has-effect "
 build_kill_declared(){ case "$EXPECT_BUILD_KILL" in *" $1 "*) return 0;; *) return 1;; esac; }
 
@@ -1812,6 +1870,11 @@ run_one(){
   [ "$WORK_DIRTY" = "0" ] || return 0
   FAMILIES_RUN=$((FAMILIES_RUN + 1))
   local nm="${NAME[$i]}" file="${FILE[$i]}" gate="scripts/tests/${GATE[$i]}" needs="${BUILD[$i]}"
+  # CLEAR THE PREVIOUS FAMILY'S TRANSCRIPT. Every family reuses the campaign-wide $TMP and these logs
+  # were never removed, so publication copied whatever happened to be there: a BUILD=no family
+  # inherited the previous family's build.log, and clean.log was the last baseline gate's transcript
+  # copied into every record. A single-family run cannot expose that; a campaign silently would.
+  for _l in $EV_LOGS; do rm -f "$TMP/$_l" 2>/dev/null; done
   printf '%s\n' "${OLD[$i]}" > "$TMP/old"; printf '%s\n' "${NEW[$i]}" > "$TMP/new"
   # strip the trailing newline the printf added (match raw substring)
   perl -i -pe 'chomp if eof' "$TMP/old" "$TMP/new"
@@ -1822,11 +1885,16 @@ run_one(){
   if ! gate_clean_ok "${GATE[$i]}"; then
     echo "  FAIL $nm: INVALID — ${GATE[$i]} does not pass on the UNMUTATED workspace, so its failure"
     echo "       under mutation is not evidence. Fix the gate (or its fixtures/lock) first."
-    FAIL=$((FAIL+1)); INVALID=$((INVALID+1)); return
+    FAIL=$((FAIL+1)); INVALID=$((INVALID+1))
+    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 1 "INVALID — gate not green on the unmutated workspace"
+    return
   fi
   if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
     echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"
-    FAIL=$((FAIL+1)); COULD_NOT_APPLY=$((COULD_NOT_APPLY+1)); restore_work "$file"; return
+    FAIL=$((FAIL+1)); COULD_NOT_APPLY=$((COULD_NOT_APPLY+1))
+    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 1 "could not apply mutation ($(cat "$TMP/aerr" 2>/dev/null))"
+    restore_work "$file"
+    return
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
@@ -2027,7 +2095,10 @@ $_RED_LEG_WHY)"
       note="$note (UNDECLARED build kill — ${GATE[$i]} never ran, so it is NOT shown load-bearing)"
     fi
   fi
-  restore_work "$file" || return
+  if ! restore_work "$file"; then
+    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" "${killed:-0}" 1 "restore FAILED after the experiment — workspace state is not trustworthy"
+    return 1
+  fi
   # Where this family's wall-clock went, so the aggregate below can be trusted and a single slow
   # family is visible rather than averaged away.
   printf '  [t] family=%ds build=%ds gate=%ds\n' \
@@ -2040,43 +2111,9 @@ $_RED_LEG_WHY)"
     # and stayed green: a real coverage gap. Invalid = the experiment did not establish anything.
     if [ "$invalid" -eq 1 ]; then INVALID=$((INVALID+1)); else SURVIVED_N=$((SURVIVED_N+1)); fi
   fi
-  # EVIDENCE IS RETAINED FOR EVERY FAMILY, KILLS INCLUDED. Keeping only failures was an own-goal in
-  # both directions: the 8 findings lost their diagnosis, and the 73 kills left no transcript at all,
-  # so "reproduced red/green/red" was a claim with nothing behind it that anyone could inspect. A
-  # kill is the assertion this harness exists to make; it is exactly the one that needs evidence.
-  #
-  # DURABLE means keyed by the SHA it was produced against and by the family NAME — the old record
-  # carried only the family INDEX, and a single mutable artifact that the next run overwrites is not
-  # evidence of anything. Two runs against different HEADs no longer collide; the same family at the
-  # same HEAD is legitimately rewritten.
-  #
-  # ATOMIC means the record is assembled in a temporary directory and RENAMED into place. A reader
-  # that finds the directory finds a complete record: a run interrupted midway leaves the staging
-  # directory behind, never a half-written record that looks whole.
-  _ev_root="$ROOT_DIR/.mutation-evidence/$START_HEAD"
-  _ev_final="$_ev_root/$nm"
-  _ev_stage="$_ev_root/.staging.$nm.$$"
-  if mkdir -p "$_ev_stage" 2>/dev/null; then
-    for _l in build.log gate.log clean.log confirm_clean.log confirm_red.log \
-              confirm_build.log confirm_build2.log aerr; do
-      [ -f "$TMP/$_l" ] && cp "$TMP/$_l" "$_ev_stage/$_l" 2>/dev/null
-    done
-    # The disposition and the causal route, in the record itself, so the transcript can be read
-    # without reconstructing which family it belonged to or what was claimed about it.
-    printf 'family=%s\nindex=%s\nfile=%s\ngate=%s\nkilled=%s\ninvalid=%s\nexpected_route=%s\nhead=%s\nverdict=%s\n' \
-      "$nm" "$i" "$file" "${GATE[$i]}" "$killed" "$invalid" \
-      "$(if build_kill_declared "$nm"; then echo build; else echo gate; fi)" \
-      "$START_HEAD" "$note" > "$_ev_stage/verdict.txt" 2>/dev/null
-    rm -rf "$_ev_final" 2>/dev/null
-    if mv "$_ev_stage" "$_ev_final" 2>/dev/null; then
-      EVIDENCE_WRITTEN=$((EVIDENCE_WRITTEN + 1))
-    else
-      rm -rf "$_ev_stage" 2>/dev/null
-      EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
-    fi
-  else
-    EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
-  fi
+  # The record is published here for the families that reached a verdict, and at every early
+  # return above for those that did not. One producer, called from every exit.
+  publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" "$killed" "$invalid" "$note"
 }
 
 echo "=== gate mutation coverage: $N families ==="
