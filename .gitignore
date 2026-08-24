@@ -153,3 +153,4 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 .mutation-failures/
 .mutation-campaign-summary.partial.*
 .mutation-campaign-summary.??????
+.mutation-evidence/

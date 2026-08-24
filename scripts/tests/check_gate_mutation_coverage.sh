@@ -1223,6 +1223,9 @@ write_summary() {
          # results but leave their gate unexercised, so they are excluded here on purpose.
          echo "gates_proven=${KILLED_BY_GATE:-0}/${N:-0}"
          echo "failed=${FAIL:-0}"
+         # Where the per-family transcripts are, and how many exist. A reader can open them.
+         echo "evidence_written=${EVIDENCE_WRITTEN:-0}"
+         echo "evidence_dir=.mutation-evidence/${START_HEAD:-unknown}"
          echo "head=$START_HEAD"
          # Both, because they answer different questions: what ran, and what the repository holds now.
          echo "executed_driver_sha=$EXECUTED_DRIVER_SHA"
@@ -1797,6 +1800,10 @@ _note_freshness_taint() { grep -q 'GATE-FRESHNESS-UNVERIFIED' "$1" 2>/dev/null &
 # intended outcome, and each says so in its own comment; the mutation is unrepresentable, which is
 # stronger than a gate going red. For any OTHER family, a build kill means the mutation broke the
 # build instead of exercising the rule, and the run must say so rather than bank it as coverage.
+# Evidence accounting. A record that could not be written is a REFUSAL, not a silent gap: the run
+# would otherwise claim red/green/red for a family whose transcript nobody can read.
+EVIDENCE_WRITTEN=0
+EVIDENCE_FAILED=""
 EXPECT_BUILD_KILL=" trap-quotient-condition reference-division transform-has-effect "
 build_kill_declared(){ case "$EXPECT_BUILD_KILL" in *" $1 "*) return 0;; *) return 1;; esac; }
 
@@ -2033,20 +2040,42 @@ $_RED_LEG_WHY)"
     # and stayed green: a real coverage gap. Invalid = the experiment did not establish anything.
     if [ "$invalid" -eq 1 ]; then INVALID=$((INVALID+1)); else SURVIVED_N=$((SURVIVED_N+1)); fi
   fi
-  # FAILURE EVIDENCE IS RETAINED. Per-family logs live in the run's temp directory and are deleted on
-  # completion — correct for the 73 kills, and an own-goal for the 8 findings, whose diagnosis was
-  # discarded with them. The 898d9a7b run reported four "build failed for an unrecognised reason"
-  # families and kept nothing to inspect. Only failing families are kept, so this cannot grow without
-  # bound.
-  if [ "$killed" -ne 1 ]; then
-    _keep="$ROOT_DIR/.mutation-failures/$nm"
-    mkdir -p "$_keep" 2>/dev/null \
-      && { for _l in build.log gate.log clean.log confirm_clean.log confirm_red.log \
-                     confirm_build.log confirm_build2.log aerr; do
-             [ -f "$TMP/$_l" ] && cp "$TMP/$_l" "$_keep/$_l" 2>/dev/null
-           done
-           printf 'family=%s\nfile=%s\ngate=%s\nverdict=%s\n' \
-             "$nm" "$file" "${GATE[$i]}" "$note" > "$_keep/verdict.txt" 2>/dev/null; }
+  # EVIDENCE IS RETAINED FOR EVERY FAMILY, KILLS INCLUDED. Keeping only failures was an own-goal in
+  # both directions: the 8 findings lost their diagnosis, and the 73 kills left no transcript at all,
+  # so "reproduced red/green/red" was a claim with nothing behind it that anyone could inspect. A
+  # kill is the assertion this harness exists to make; it is exactly the one that needs evidence.
+  #
+  # DURABLE means keyed by the SHA it was produced against and by the family NAME — the old record
+  # carried only the family INDEX, and a single mutable artifact that the next run overwrites is not
+  # evidence of anything. Two runs against different HEADs no longer collide; the same family at the
+  # same HEAD is legitimately rewritten.
+  #
+  # ATOMIC means the record is assembled in a temporary directory and RENAMED into place. A reader
+  # that finds the directory finds a complete record: a run interrupted midway leaves the staging
+  # directory behind, never a half-written record that looks whole.
+  _ev_root="$ROOT_DIR/.mutation-evidence/$START_HEAD"
+  _ev_final="$_ev_root/$nm"
+  _ev_stage="$_ev_root/.staging.$nm.$$"
+  if mkdir -p "$_ev_stage" 2>/dev/null; then
+    for _l in build.log gate.log clean.log confirm_clean.log confirm_red.log \
+              confirm_build.log confirm_build2.log aerr; do
+      [ -f "$TMP/$_l" ] && cp "$TMP/$_l" "$_ev_stage/$_l" 2>/dev/null
+    done
+    # The disposition and the causal route, in the record itself, so the transcript can be read
+    # without reconstructing which family it belonged to or what was claimed about it.
+    printf 'family=%s\nindex=%s\nfile=%s\ngate=%s\nkilled=%s\ninvalid=%s\nexpected_route=%s\nhead=%s\nverdict=%s\n' \
+      "$nm" "$i" "$file" "${GATE[$i]}" "$killed" "$invalid" \
+      "$(if build_kill_declared "$nm"; then echo build; else echo gate; fi)" \
+      "$START_HEAD" "$note" > "$_ev_stage/verdict.txt" 2>/dev/null
+    rm -rf "$_ev_final" 2>/dev/null
+    if mv "$_ev_stage" "$_ev_final" 2>/dev/null; then
+      EVIDENCE_WRITTEN=$((EVIDENCE_WRITTEN + 1))
+    else
+      rm -rf "$_ev_stage" 2>/dev/null
+      EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
+    fi
+  else
+    EVIDENCE_FAILED="$EVIDENCE_FAILED $nm"
   fi
 }
 
@@ -2214,6 +2243,11 @@ EXPECTED_RUN="$N"; [ -n "$ONLY" ] && EXPECTED_RUN=1
 # artifact as reported data, not as an assertion.
 VERDICTS=$(( PASS + FAIL ))
 # Every SELECTED unit reported a verdict. This is what `completed` asserts — not that they all passed.
+# EVERY REPORTED FAMILY MUST HAVE LEFT A RECORD. `reported` counts verdicts printed; this counts
+# transcripts a reader can actually open. If they disagree, the run claims more than it can show.
+[ -z "$EVIDENCE_FAILED" ] || REFUSALS="$REFUSALS evidence_unwritable($(echo $EVIDENCE_FAILED | tr ' ' ','))"
+[ "$EVIDENCE_WRITTEN" = "$(( ${PASS:-0} + ${FAIL:-0} ))" ] \
+  || REFUSALS="$REFUSALS evidence_missing($EVIDENCE_WRITTEN/$(( ${PASS:-0} + ${FAIL:-0} )))"
 REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
 [ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
 
