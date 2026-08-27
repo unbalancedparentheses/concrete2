@@ -23,6 +23,10 @@ GATE="$ROOT_DIR/scripts/tests/check_dependency_edges.sh"
 [ -x "$GATE" ] || [ -f "$GATE" ] || { echo "error: $GATE missing" >&2; exit 2; }
 
 PASS=0; FAIL=0
+# COUNTED SEPARATELY FROM PASS. Using PASS to detect "no case selected" conflates it with "the
+# selected case FAILED" — which is precisely the state a mutation puts this gate in, so the guard
+# misfired exactly when the gate was doing its job.
+CASES_RUN=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -38,6 +42,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 case_run() {
   local label="$1" env_kv="$2" marker="$3"
   if [ -n "$MBA_ONLY" ] && [ "${env_kv%%=*}" != "$MBA_ONLY" ]; then return 0; fi
+  CASES_RUN=$((CASES_RUN + 1))
   local log="$TMP/$(echo "$env_kv" | tr '=/ ' '___').log" rc=0
   # GATE_DONE=1 is exported on purpose: an inherited value once disarmed the failure trap for a whole
   # run, so every case here also proves that no longer matters.
@@ -76,14 +81,20 @@ case_run "a process that prints the wanted string and exits nonzero still fails"
          "PROBE_SELFTEST_FAKE_EXIT=1" "probe exited 9"
 
 echo ""
+# SELECTION IS CHECKED BEFORE THE SUMMARY IS PRINTED. Emitting a refusal AFTER the final line breaks
+# the end-of-run shape every consumer authenticates — the campaign read this gate as never having
+# reached its end, and reported INVALID instead of the kill it had actually produced.
 if [ -n "$MBA_ONLY" ]; then
-  echo "MINT-BATCH-ACCOUNTING(SUBSET=$MBA_ONLY): PASS=$PASS FAIL=$FAIL"
-  [ "$PASS" -ge 1 ] || { echo "  FAIL MBA_ONLY=$MBA_ONLY selected no case" >&2; FAIL=$((FAIL+1)); }
+  [ "$CASES_RUN" -ge 1 ] || { echo "  FAIL MBA_ONLY=$MBA_ONLY selected no case"; FAIL=$((FAIL+1)); }
 else
   # THE FULL SET IS PINNED. A case silently deleted would otherwise shrink a green total.
   EXPECTED_CASES=8
-  [ "$((PASS + FAIL))" = "$EXPECTED_CASES" ] \
-    || { echo "  FAIL ran $((PASS + FAIL)) cases, expected $EXPECTED_CASES"; FAIL=$((FAIL+1)); }
+  [ "$CASES_RUN" = "$EXPECTED_CASES" ] \
+    || { echo "  FAIL ran $CASES_RUN cases, expected $EXPECTED_CASES"; FAIL=$((FAIL+1)); }
+fi
+if [ -n "$MBA_ONLY" ]; then
+  echo "MINT-BATCH-ACCOUNTING(SUBSET=$MBA_ONLY): PASS=$PASS FAIL=$FAIL"
+else
   echo "MINT-BATCH-ACCOUNTING: PASS=$PASS FAIL=$FAIL"
 fi
 [ "$FAIL" -eq 0 ]
