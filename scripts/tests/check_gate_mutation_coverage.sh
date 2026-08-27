@@ -1990,8 +1990,14 @@ EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log 
 # the single-family path did not, and the single-family run I used to verify the change could not
 # see the difference.
 keep_baseline_log() { # gate-name source-log
-  mkdir -p "$EVIDENCE_DIR/_baseline" 2>/dev/null || return 0
-  cp "$2" "$EVIDENCE_DIR/_baseline/$1.log" 2>/dev/null || true
+  # A SILENT COPY FAILURE LEAVES THE POSITIVE CONTROL UNEVIDENCED. `|| true` here meant a full disk
+  # or an unwritable path produced a campaign whose baseline transcript simply was not there, with
+  # nothing saying so — and every kill in that campaign rests on that baseline having been green.
+  if ! mkdir -p "$EVIDENCE_DIR/_baseline" 2>/dev/null \
+     || ! cp "$2" "$EVIDENCE_DIR/_baseline/$1.log" 2>/dev/null \
+     || [ ! -s "$EVIDENCE_DIR/_baseline/$1.log" ]; then
+    BASELINE_EVIDENCE_FAILED="${BASELINE_EVIDENCE_FAILED:-} $1"
+  fi
   return 0
 }
 
@@ -2490,8 +2496,20 @@ if [ -d "$EVIDENCE_DIR" ]; then
     [ -e "$_d" ] || continue
     if [ -s "$_d/verdict.txt" ]; then
       _census=$(( _census + 1 ))
+      # THE RECORD MUST NAME ITS OWN DIRECTORY. Counting non-empty verdict files cannot see a record
+      # written under the wrong family, which is what a swapped or duplicated publication looks like:
+      # the count still reconciles while two families describe the same experiment.
+      _rfam="$(sed -n 's/^family=//p' "$_d/verdict.txt" | head -1)"
+      [ "$_rfam" = "$_n" ] || _census_bad="$_census_bad $_n(record-names-${_rfam:-nothing})"
       if grep -qE '^build_required=no$' "$_d/verdict.txt" 2>/dev/null && [ -e "$_d/build.log" ]; then
         _census_bad="$_census_bad $_n(build.log-in-a-no-build-family)"
+      fi
+      # A KILL ATTRIBUTED TO A GATE MUST CARRY THAT GATE'S TRANSCRIPT, or the attribution cannot be
+      # checked by anyone reading the evidence later.
+      if grep -qE '^disposition=killed$' "$_d/verdict.txt" 2>/dev/null \
+         && grep -qE '^expected_route=gate$' "$_d/verdict.txt" 2>/dev/null \
+         && [ ! -s "$_d/gate.log" ]; then
+        _census_bad="$_census_bad $_n(gate-kill-without-gate-log)"
       fi
     else
       _census_bad="$_census_bad $_n(no-verdict)"
@@ -2499,6 +2517,8 @@ if [ -d "$EVIDENCE_DIR" ]; then
   done
 fi
 [ -z "$_census_bad" ] || REFUSALS="$REFUSALS evidence_census_bad($_census_bad )"
+[ -z "${BASELINE_EVIDENCE_FAILED:-}" ] \
+  || REFUSALS="$REFUSALS baseline_evidence_unwritable($(echo ${BASELINE_EVIDENCE_FAILED} | tr ' ' ','))"
 [ "$_census" = "$EVIDENCE_WRITTEN" ] \
   || REFUSALS="$REFUSALS evidence_census_disagrees(on-disk=$_census counter=$EVIDENCE_WRITTEN)"
 REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
