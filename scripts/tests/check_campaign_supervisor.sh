@@ -27,14 +27,20 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # A well-formed candidate claiming a fully qualified campaign. Every hostile case below is this file
 # with exactly one thing wrong, so a refusal is attributable to that one thing.
 GOOD="$TMP/good"
+# The disposition fields are PRESENT and zero. Omitting them from the fixture entrenched the
+# fail-open it was supposed to expose: a truncated record loses exactly the fields that would deny
+# qualification, so absent-means-zero qualifies precisely the records that should not.
 cat > "$GOOD" <<'EOF'
 completed=1
 mode=campaign
-discovered=82
-selected=82
-executed=82
-reported=82
-killed=82
+discovered=85
+selected=85
+executed=85
+reported=85
+killed=85
+invalid=0
+survived=0
+could_not_apply=0
 integrity_ok=1
 qualified=1
 EOF
@@ -113,10 +119,19 @@ inc "qualified=1 with counts that do not reconcile"    reported 81     qualified
 inc "qualified=1 with unkilled families"               killed 80       qualified_with_unkilled
 
 for v in survived invalid could_not_apply; do
-  f="$TMP/inc.$v"; { cat "$GOOD"; printf '%s=1\n' "$v"; } > "$f"
+  # SUBSTITUTED, not appended: appending leaves TWO values for the key and the reader takes the
+  # first, so the contradiction reads as the benign value. That is itself a defect, covered below.
+  f="$TMP/inc.$v"; sed "s/^$v=.*/$v=1/" "$GOOD" > "$f"
   got="$(candidate_incoherent "$f")"
   case "$got" in *"qualified_with_$v"*) ok "qualified=1 with $v=1 is incoherent" ;;
     *) no "qualified=1 with $v=1 — expected refusal, got '${got:-<none>}'" ;; esac
+done
+
+echo "=== a key with two values is not a record ==="
+for v in survived qualified killed; do
+  f="$TMP/dup.$v"; { cat "$GOOD"; printf '%s=1\n' "$v"; } > "$f"
+  expect "a duplicated '$v' is refused as a duplicate, not read as its first value" \
+    "candidate_duplicate($v)" 0 "$f" "$H" "$H" "$T" "$T" "$U" "$U"
 done
 
 # THE POSITIVE CONTROL FOR COHERENCE ITSELF: the good candidate must remain coherent, or every case
@@ -128,6 +143,67 @@ done
 [ -z "$(candidate_incoherent "$TMP/unqual")" ] \
   && ok "a candidate not claiming qualification is not held to it" \
   || no "an unqualified candidate was judged on qualification coherence"
+
+echo "=== counts must be numbers that reconcile, not strings that match ==="
+# String equality accepted five identical NON-NUMERIC values, so a record of five "x" qualified.
+for fld in discovered selected executed reported killed; do
+  sed "s/^$fld=.*/$fld=x/" "$GOOD" > "$TMP/nn.$fld"
+  got="$(candidate_incoherent "$TMP/nn.$fld")"
+  case "$got" in *nonnumeric*) ok "a non-numeric $fld is refused" ;;
+    *) no "a non-numeric $fld was accepted (got '${got:-<none>}')" ;; esac
+done
+sed 's/=8[0-9]*$/=x/' "$GOOD" > "$TMP/allx"
+got="$(candidate_incoherent "$TMP/allx")"
+[ -n "$got" ] && ok "five identical non-numeric counts do not reconcile" \
+  || no "five identical non-numeric counts qualified"
+for fld in discovered selected executed reported killed; do sed -i "s/^$fld=.*/$fld=0/" "$TMP/allx"; done
+sed -i 's/^qualified=.*/qualified=1/' "$TMP/allx"
+got="$(candidate_incoherent "$TMP/allx")"
+case "$got" in *zero_families*) ok "a campaign that discharged ZERO families does not qualify" ;;
+  *) no "zero families qualified (got '${got:-<none>}')" ;; esac
+
+echo "=== a missing disposition is absent evidence, not a zero ==="
+for v in invalid survived could_not_apply; do
+  grep -v "^$v=" "$GOOD" > "$TMP/nodisp.$v"
+  got="$(candidate_incoherent "$TMP/nodisp.$v")"
+  case "$got" in *"qualified_without_$v"*) ok "a candidate with no '$v' field does not qualify" ;;
+    *) no "a missing '$v' was treated as zero (got '${got:-<none>}')" ;; esac
+  # ...and it is a mandatory key, so the record is malformed as well as incoherent.
+  expect "a candidate missing '$v' is malformed" "candidate_malformed($v)" \
+    0 "$TMP/nodisp.$v" "$H" "$H" "$T" "$T" "$U" "$U"
+done
+
+echo "=== the four dispositions must account for the reported families ==="
+# Each disposition being zero and killed==reported still leaves the ledger unbalanced if a family is
+# reported under NO disposition. This is the identity that makes the four numbers one population.
+sed -e 's/^killed=.*/killed=84/' -e 's/^invalid=.*/invalid=0/' "$GOOD" > "$TMP/unbal"
+got="$(candidate_incoherent "$TMP/unbal")"
+case "$got" in *unbalanced_ledger*|*unkilled*) ok "reported families unaccounted by the dispositions is refused" ;;
+  *) no "an unbalanced ledger qualified (got '${got:-<none>}')" ;; esac
+# ...and a BALANCED ledger with real dispositions must not qualify either, since they are nonzero —
+# but it must be refused for the disposition, not for the ledger.
+sed -e 's/^killed=.*/killed=84/' -e 's/^survived=.*/survived=1/' "$GOOD" > "$TMP/bal"
+got="$(candidate_incoherent "$TMP/bal")"
+case "$got" in *qualified_with_survived*) ok "a balanced ledger with a survivor is refused for the survivor" ;;
+  *) no "a balanced ledger with a survivor was misdiagnosed (got '${got:-<none>}')" ;; esac
+
+echo "=== negative, noncanonical and implausible numbers are not numbers ==="
+for spec in "discovered=-1:nonnumeric" "killed=007:noncanonical" "reported=1234567:implausible"; do
+  fld="${spec%%=*}"; rest="${spec#*=}"; val="${rest%%:*}"; want="${rest##*:}"
+  sed "s/^$fld=.*/$fld=$val/" "$GOOD" > "$TMP/num.$fld"
+  got="$(candidate_incoherent "$TMP/num.$fld")"
+  case "$got" in *"$want"*) ok "$fld=$val is refused ($want)" ;;
+    *) no "$fld=$val was accepted (got '${got:-<none>}')" ;; esac
+done
+
+echo "=== duplicate keys are refused whether they contradict or agree ==="
+# An IDENTICAL duplicate is still not a record: it is evidence that two writers produced this file.
+for v in qualified killed invalid; do
+  val="$(sed -n "s/^$v=//p" "$GOOD" | head -1)"
+  { cat "$GOOD"; printf '%s=%s\n' "$v" "$val"; } > "$TMP/dupeq.$v"
+  expect "an identical duplicate '$v' is still refused" "candidate_duplicate($v)" \
+    0 "$TMP/dupeq.$v" "$H" "$H" "$T" "$T" "$U" "$U"
+done
 
 echo ""
 echo "CAMPAIGN-SUPERVISOR: PASS=$PASS FAIL=$FAIL"

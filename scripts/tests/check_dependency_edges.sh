@@ -113,8 +113,12 @@ cc() {
   if [ -z "$why" ]; then
     # PER (FILE, REPORT), NOT PER REPORT. Accepting "0 or 1" for proof-status and consistency
     # everywhere launders a real failure: a CLEAN consistency report exiting 1 would pass. Exactly
-    # ONE fixture in this corpus is supposed to be rejected — evidence_classes/stale_proof — and it
-    # is named here, so every other file must exit 0 on every report.
+    # ONE fixture is supposed to be rejected — evidence_classes/stale_proof — and it is named here,
+    # so every other file must exit 0 on every report.
+    #
+    # THIS RULE IS ENFORCED ONLY FOR CALLS THAT HAPPEN. The matrix is exercised across the whole
+    # fixture population by the block near the end of this gate; without it, a comment describing a
+    # one-off manual measurement would read like permanent coverage.
     local okrc="0"
     case "$rep" in
       proof-status|consistency)
@@ -3770,6 +3774,40 @@ else
 fi
 
 echo ""
+
+# THE EXIT MATRIX, ACROSS THE WHOLE FIXTURE POPULATION.
+#
+# `cc` enforces the expected status for calls that HAPPEN, and the gate does not otherwise run every
+# report on every fixture — generated-implementations reached three named inputs, while the rule it
+# is checked against was written from a manual measurement over twenty-five. A comment describing a
+# measurement is not coverage: it cannot fail, and it goes stale silently.
+#
+# So the population is enumerated and every (fixture, report) pair is executed here, with the
+# denominator pinned. cc records any status or completeness violation, and reconcile_compiler_runs
+# turns that into a failure, so this block asserts the matrix rather than asserting that someone
+# once checked it.
+EXPECTED_MATRIX_FIXTURES=25
+EXPECTED_MATRIX_REPORTS=4
+MATRIX_FILES="$(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' | sort)"
+MATRIX_N="$(printf '%s\n' "$MATRIX_FILES" | grep -c .)"
+if [ "$MATRIX_N" != "$EXPECTED_MATRIX_FIXTURES" ]; then
+  no "the proof-carrying fixture population is $MATRIX_N, pinned at $EXPECTED_MATRIX_FIXTURES — update the pin deliberately"
+else
+  ok "the proof-carrying fixture population is $EXPECTED_MATRIX_FIXTURES files"
+fi
+MATRIX_CALLS=0
+for _mf in $MATRIX_FILES; do
+  for _mr in subject-facts proof-status consistency generated-implementations; do
+    cc "$_mf" "$_mr" >/dev/null
+    MATRIX_CALLS=$((MATRIX_CALLS + 1))
+  done
+done
+if [ "$MATRIX_CALLS" = "$((EXPECTED_MATRIX_FIXTURES * EXPECTED_MATRIX_REPORTS))" ]; then
+  ok "every fixture was run against every report ($MATRIX_CALLS pairs), each held to its expected exit status"
+else
+  no "ran $MATRIX_CALLS (fixture, report) pairs, expected $((EXPECTED_MATRIX_FIXTURES * EXPECTED_MATRIX_REPORTS))"
+fi
+
 # Batched mint probes report here. Their verdicts are per-probe, not per-batch. This runs BEFORE
 # GATE_DONE=1: the ERR trap that catches an unexpected shell failure must still be armed while the
 # batch runs, or a crash inside the batch would leave a short but green-looking result.

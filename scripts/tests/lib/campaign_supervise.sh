@@ -18,7 +18,10 @@
 
 # The keys that must be present for a candidate to be a record at all. A truncated file parses as a
 # valid record with missing fields, and every one of these is load-bearing for what gets published.
-CAMPAIGN_CANDIDATE_KEYS="completed mode discovered selected executed reported killed integrity_ok qualified"
+# THE DISPOSITION FIELDS ARE MANDATORY. Treating a MISSING survived/invalid/could_not_apply as zero
+# is fail-open in the one direction that matters: a truncated record loses exactly the fields that
+# would have denied qualification, and then qualifies.
+CAMPAIGN_CANDIDATE_KEYS="completed mode discovered selected executed reported killed invalid survived could_not_apply integrity_ok qualified"
 
 # supervisor_refusals <child_rc> <candidate-path> <head0> <head1> <tracked0> <tracked1> <untracked0> <untracked1>
 supervisor_refusals() {
@@ -33,7 +36,14 @@ supervisor_refusals() {
     out="$out candidate_missing"
   else
     for k in $CAMPAIGN_CANDIDATE_KEYS; do
-      grep -qE "^$k=" "$cand" || out="$out candidate_malformed($k)"
+      # EXACTLY ONE VALUE PER KEY. A record carrying `survived=0` AND `survived=1` is not a record;
+      # every reader picks whichever its parser reaches first, and this one takes the head — so an
+      # appended contradiction reads as the benign value and qualifies.
+      case "$(grep -cE "^$k=" "$cand")" in
+        1) ;;
+        0) out="$out candidate_malformed($k)" ;;
+        *) out="$out candidate_duplicate($k)" ;;
+      esac
     done
   fi
 
@@ -70,13 +80,46 @@ candidate_incoherent() {
   [ "$(_f mode)"         = "campaign" ] || out="$out qualified_in_$(_f mode)_mode"
   # EVERY SELECTED UNIT REPORTED, AND EVERY ONE OF THEM KILLED. These are the counts the artifact
   # itself publishes; if they do not reconcile, the headline is not describing this run.
-  local d s e r k
+  # STRING EQUALITY IS NOT RECONCILIATION. Comparing the counts as text lets five identical
+  # non-numeric values — or five empty strings — satisfy every equality and qualify. Each must be a
+  # number first, and a qualifying campaign must have discharged a POSITIVE number of families.
+  local d s e r k v
   d="$(_f discovered)"; s="$(_f selected)"; e="$(_f executed)"; r="$(_f reported)"; k="$(_f killed)"
-  [ -n "$d" ] && [ "$d" = "$s" ] && [ "$s" = "$e" ] && [ "$e" = "$r" ] \
-    || out="$out qualified_with_counts($d/$s/$e/$r)"
-  [ "$k" = "$r" ] || out="$out qualified_with_unkilled($k/$r)"
+  # NEGATIVE, NONCANONICAL AND OVERSIZED VALUES ARE NOT NUMBERS EITHER. `-1` and `007` both survive a
+  # naive digit test in one direction or the other, and a value too large to be a family count is a
+  # corrupted field rather than a big campaign.
+  for v in "$d" "$s" "$e" "$r" "$k"; do
+    case "$v" in
+      ''|*[!0-9]*) out="$out qualified_with_nonnumeric_counts"; break ;;
+      0) ;;
+      0*) out="$out qualified_with_noncanonical_count($v)"; break ;;
+    esac
+    [ "${#v}" -le 6 ] || { out="$out qualified_with_implausible_count($v)"; break; }
+  done
+  case "$out" in *nonnumeric*) ;; *)
+    [ "$d" -gt 0 ] || out="$out qualified_with_zero_families"
+    { [ "$d" = "$s" ] && [ "$s" = "$e" ] && [ "$e" = "$r" ]; } \
+      || out="$out qualified_with_counts($d/$s/$e/$r)"
+    [ "$k" = "$r" ] || out="$out qualified_with_unkilled($k/$r)"
+    # THE DISPOSITIONS MUST ACCOUNT FOR THE REPORTED FAMILIES. Checking each disposition is zero and
+    # that killed equals reported leaves the ledger unbalanced if a family is reported under no
+    # disposition at all; this is the identity that makes the four numbers describe one population.
+    local iv sv ca sum
+    iv="$(_f invalid)"; sv="$(_f survived)"; ca="$(_f could_not_apply)"
+    case "$iv$sv$ca" in
+      ''|*[!0-9]*) ;;   # the per-field checks below name the offender
+      *) sum=$(( k + iv + sv + ca ))
+         [ "$sum" = "$r" ] || out="$out qualified_with_unbalanced_ledger($k+$iv+$sv+$ca=$sum vs reported=$r)" ;;
+    esac
+  esac
+  # A MISSING DISPOSITION IS NOT A ZERO ONE. It is absent evidence, and absence must not qualify.
   for v in survived invalid could_not_apply; do
-    case "$(_f $v)" in ''|0) ;; *) out="$out qualified_with_$v($(_f $v))" ;; esac
+    case "$(_f $v)" in
+      0) ;;
+      '') out="$out qualified_without_$v" ;;
+      *[!0-9]*) out="$out qualified_with_nonnumeric_$v" ;;
+      *) out="$out qualified_with_$v($(_f $v))" ;;
+    esac
   done
   printf '%s' "${out# }"
 }

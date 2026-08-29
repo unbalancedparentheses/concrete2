@@ -51,8 +51,13 @@ case_run() {
     no "$label — the gate exited 0 under $env_kv, so this control is inert"
     return
   fi
-  if grep -qF -- "$marker" "$log"; then
+  # THE MARKER MUST APPEAR ON A FAILURE LINE. Searching the whole log accepts a marker printed on an
+  # `ok` line — which is exactly what a mutation that neutralises the REFUSAL while preserving its
+  # MESSAGE produces. The control would then pass while the accounting it guards was disabled.
+  if grep -E '^(  FAIL|FATAL)' "$log" | grep -qF -- "$marker"; then
     ok "$label"
+  elif grep -qF -- "$marker" "$log"; then
+    no "$label — /$marker/ appears, but NOT on a failure line: the message survived while the refusal did not"
   else
     no "$label — red, but never named /$marker/ (failed for an unrelated reason): $(grep -m1 -E '^  FAIL|FATAL' "$log" | cut -c1-120)"
   fi

@@ -332,29 +332,39 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _sup_refusals="$(supervisor_refusals "$_child_rc" "$_cand" \
                     "$_sup_head0" "$_sup_head1" "$_sup_tracked0" "$_sup_tracked1" \
                     "$_sup_untracked0" "$_sup_untracked1")"
+  # INCOHERENCE IS A REFUSAL, NOT MERELY A DOWNGRADE. It used to affect only the substituted
+  # `qualified=` line, so a child that exited ZERO with a self-contradicting candidate got its record
+  # published with qualified=0 and the supervisor exited 0 behind it — a passing process beside a
+  # record that says the run did not qualify. That is precisely the PASS-versus-exit disagreement
+  # this boundary exists to remove, reintroduced one layer up.
+  _cand_incoh="$(candidate_incoherent "$_cand" 2>/dev/null || echo candidate_unreadable)"
+  [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
-  _sed_ok=1
+  _pub_ok=1
   _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
   if [ -s "$_cand" ]; then
     # The qualified line is decided by the same library, not by a second rule here.
-    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp" || _sed_ok=0
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp" || _pub_ok=0
   else
     printf 'completed=0
 mode=%s
 qualified=0
 integrity_ok=0
-' "${FAMILY:+single}${FAMILY:-campaign}" > "$_tmp"
+' "${FAMILY:+single}${FAMILY:-campaign}" > "$_tmp" || _pub_ok=0
   fi
   printf 'supervisor_refusals=%s
 supervisor_child_exit=%s
-' "${_sup_refusals:-none}" "$_child_rc" >> "$_tmp"
+' "${_sup_refusals:-none}" "$_child_rc" >> "$_tmp" || _pub_ok=0
   # EVERY WRITE IS CHECKED, not just the rename. A failed or truncated sed/printf — full disk, broken
   # pipe — could otherwise be installed as the authoritative artifact with exit 0.
-  _pub_ok="$_sed_ok"
-  printf 'candidate_incoherent=%s\n' "$(candidate_incoherent "$_cand" 2>/dev/null || echo unknown)" >> "$_tmp" || _pub_ok=0
-  for _k in completed mode qualified; do grep -qE "^$_k=" "$_tmp" || _pub_ok=0; done
+  printf 'candidate_incoherent=%s\n' "${_cand_incoh:-none}" >> "$_tmp" || _pub_ok=0
+  # EXACTLY ONE OF EACH. Presence alone lets a duplicated, contradictory field survive publication —
+  # two `qualified=` lines, and every reader picks whichever its parser reaches first.
+  for _k in completed mode qualified supervisor_refusals supervisor_child_exit candidate_incoherent; do
+    [ "$(grep -cE "^$_k=" "$_tmp")" = "1" ] || _pub_ok=0
+  done
   if [ "$_pub_ok" != "1" ]; then
     rm -f "$_tmp" "$_cand_snap"
     echo "FATAL: the authoritative artifact could not be written completely" >&2
@@ -1227,7 +1237,7 @@ $'    | .ok d    => let _ := (Proof.dependencyRootMaterial (dependencyNodesOf pc
 # check_mint_batch_accounting.sh, which is the only thing that exercises that path.
 add "mint-missing-result-refusal" "scripts/tests/check_dependency_edges.sh" "check_mint_missing_result.sh" no \
 $'      mint_no "${MINT_LABEL[$i]} — MISSING from group \'$grp\' (no <<P$id>> result)"' \
-$'      mint_ok "${MINT_LABEL[$i]}"'
+$'      mint_ok "${MINT_LABEL[$i]} — MISSING from group \'$grp\' (no <<P$id>> result)"'
 
 N=${#NAME[@]}
 
