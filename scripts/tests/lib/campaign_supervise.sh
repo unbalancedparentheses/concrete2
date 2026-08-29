@@ -132,3 +132,22 @@ supervisor_qualification() {
   grep -qE '^qualified=1$' "$cand" || { printf 'qualified=0'; return 0; }
   [ -z "$(candidate_incoherent "$cand")" ] && printf 'qualified=1' || printf 'qualified=0'
 }
+
+# evidence_root_digest <evidence-dir> -> digest over canonical (family id, record digest) pairs
+#
+# ONE PRODUCER, USED BY BOTH ROLES. The child computes this over the evidence it just published; the
+# supervisor recomputes it after the child exits, over the same tree. If the two disagree, the bytes
+# changed under the verdict — which is the race that "validate one object, publish a later-mutated
+# object" describes. Two implementations could differ and agree with themselves, so there is one.
+evidence_root_digest() {
+  local root="$1" d n out=""
+  [ -d "$root" ] || { printf 'no-evidence-dir'; return 0; }
+  for d in "$root"/*/; do
+    [ -e "$d" ] || continue
+    n="$(basename "$d")"
+    out="$out$n $(find "$d" -type f -print0 2>/dev/null | LC_ALL=C sort -z \
+        | xargs -0 cat 2>/dev/null | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+"
+  done
+  printf '%s' "$out" | LC_ALL=C sort | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}

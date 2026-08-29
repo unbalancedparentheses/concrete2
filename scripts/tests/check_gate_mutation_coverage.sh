@@ -288,6 +288,14 @@ cd "$ROOT_DIR"
 # The lock is acquired by the launcher and survives the exec by pid identity; the child inherits the
 # exported token and is a verified descendant. Only the supervisor releases it, so the tree stays
 # held until the artifact is installed.
+# LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
+# supervisor recomputes it; they must use the SAME function or two implementations could each agree
+# with themselves and disagree with each other. Loading here also freezes the rules for this run —
+# bash binds functions at source time — and the library is tracked, so a mid-run edit moves
+# ts_tracked and is refused.
+. "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" 2>/dev/null \
+  || { echo "FATAL: cannot load the campaign decision library" >&2; exit 2; }
+
 CONCRETE_MUT_ROLE="${CONCRETE_MUT_ROLE:-supervisor}"
 
 # Anchor and coverage modes publish nothing and are not campaigns; supervising them would add a fork
@@ -304,8 +312,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # have judged this run with rules loaded after it finished looking. Bash binds functions at source
   # time, so loading here freezes the rules, and the library is TRACKED, so an edit during the run
   # also moves ts_tracked and is refused.
-  . "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" 2>/dev/null \
-    || { echo "FATAL: supervisor cannot load its decision library" >&2; exit 2; }
+
   _sup_head0="$(ts_head "$ROOT_DIR" 2>/dev/null)"
   _sup_tracked0="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
   _sup_untracked0="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
@@ -339,6 +346,32 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # this boundary exists to remove, reintroduced one layer up.
   _cand_incoh="$(candidate_incoherent "$_cand" 2>/dev/null || echo candidate_unreadable)"
   [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
+
+  # THE EVIDENCE MUST BE THE EVIDENCE THAT WAS VALIDATED.
+  #
+  # .mutation-evidence/ is gitignored, so tree-state reconciliation cannot see it: a record or a gate
+  # transcript could be removed or replaced between the child's census and this publication, and the
+  # supervisor would install a qualifying summary describing evidence that no longer exists. The
+  # child publishes an evidence ROOT — a digest over canonical (family id, record digest) pairs — and
+  # the supervisor recomputes it here, over the same tree, after the child has exited. Disagreement
+  # means the bytes changed under the verdict, whatever moved them.
+  #
+  # The recomputation uses the child's own function, loaded from the snapshot, so the two sides
+  # cannot drift into computing different digests of the same directory.
+  _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
+  _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null || echo unreadable)"
+  if [ -z "$_cand_root" ]; then
+    _sup_refusals="$_sup_refusals evidence_root_absent"
+  elif [ "$_cand_root" != "$_sup_root" ]; then
+    _sup_refusals="$_sup_refusals evidence_changed_after_census($_cand_root->$_sup_root)"
+  fi
+
+  # NO DESCENDANT MAY STILL BE WRITING. A surviving child process can mutate evidence after this
+  # check and before the artifact lands; the reconciliation above would then describe a tree that no
+  # longer exists by the time anyone reads it.
+  if pgrep -P $$ >/dev/null 2>&1; then
+    _sup_refusals="$_sup_refusals descendants_alive_at_publication"
+  fi
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
@@ -1384,6 +1417,7 @@ write_summary() {
          echo "failed=${FAIL:-0}"
          # Where the per-family transcripts are, and how many exist. A reader can open them.
          echo "evidence_written=${EVIDENCE_WRITTEN:-0}"
+         echo "evidence_root=${EVIDENCE_ROOT:-unknown}"
          echo "evidence_dir=.mutation-evidence/${RUN_ID:-unknown}"
          echo "run_id=${RUN_ID:-unknown}"
          echo "head=$START_HEAD"
@@ -2494,43 +2528,83 @@ VERDICTS=$(( PASS + FAIL ))
 [ -z "$EVIDENCE_FAILED" ] || REFUSALS="$REFUSALS evidence_unwritable($(echo $EVIDENCE_FAILED | tr ' ' ','))"
 [ "$EVIDENCE_WRITTEN" = "$(( ${PASS:-0} + ${FAIL:-0} ))" ] \
   || REFUSALS="$REFUSALS evidence_missing($EVIDENCE_WRITTEN/$(( ${PASS:-0} + ${FAIL:-0} )))"
-# A COUNTER IS A CLAIM ABOUT THE PAST; A CENSUS IS THE PRESENT STATE. Incrementing in memory says a
-# record was written, not that it still exists and is readable — over a 15-hour campaign a record can
-# be deleted, truncated or overwritten after the fact and the counter would never notice. The census
-# counts directories that actually hold a non-empty verdict.txt, and a BUILD=no family must NOT carry
-# a build.log, which is the shape cross-family contamination takes.
-_census=0; _census_bad=""
+# EXACT SET RECONCILIATION OVER FAMILY IDS, NOT A COUNT.
+#
+# Counting records reconciles a number: an unknown directory can stand in for a missing expected
+# family and the total still agrees. What must reconcile is the SET — the families this run SELECTED
+# against the families that left a record — with missing, unexpected and duplicate each named. The
+# counts are then DERIVED from that reconciled set rather than compared to it.
+#
+# The record contract is checked per family, not once: a record must name its own directory, a
+# gate-route kill must carry the transcripts that show red/green/red (gate.log, confirm_clean.log,
+# confirm_red.log), a build-route kill must carry its build transcript, and a family that needed no
+# build must not carry one — that last being the shape cross-family log contamination takes.
+# THE EXPECTED SET COMES FROM THE SELECTION RULE ITSELF, so it cannot drift from what ran: a single
+# family selects one id, a campaign selects the whole inventory.
+_ev_expected=""
+if [ -n "${ONLY:-}" ]; then
+  _ev_expected="${NAME[$((ONLY-1))]}
+"
+else
+  for (( _i=0; _i<N; _i++ )); do _ev_expected="$_ev_expected${NAME[$_i]}
+"; done
+fi
+_ev_expected="$(printf '%s' "$_ev_expected" | LC_ALL=C sort)"
+
+_ev_found=""
+_census_bad=""
 if [ -d "$EVIDENCE_DIR" ]; then
   for _d in "$EVIDENCE_DIR"/*/; do
     _n="$(basename "$_d")"; [ "$_n" != "_baseline" ] || continue
     [ -e "$_d" ] || continue
-    if [ -s "$_d/verdict.txt" ]; then
-      _census=$(( _census + 1 ))
-      # THE RECORD MUST NAME ITS OWN DIRECTORY. Counting non-empty verdict files cannot see a record
-      # written under the wrong family, which is what a swapped or duplicated publication looks like:
-      # the count still reconciles while two families describe the same experiment.
-      _rfam="$(sed -n 's/^family=//p' "$_d/verdict.txt" | head -1)"
-      [ "$_rfam" = "$_n" ] || _census_bad="$_census_bad $_n(record-names-${_rfam:-nothing})"
-      if grep -qE '^build_required=no$' "$_d/verdict.txt" 2>/dev/null && [ -e "$_d/build.log" ]; then
-        _census_bad="$_census_bad $_n(build.log-in-a-no-build-family)"
-      fi
-      # A KILL ATTRIBUTED TO A GATE MUST CARRY THAT GATE'S TRANSCRIPT, or the attribution cannot be
-      # checked by anyone reading the evidence later.
-      if grep -qE '^disposition=killed$' "$_d/verdict.txt" 2>/dev/null \
-         && grep -qE '^expected_route=gate$' "$_d/verdict.txt" 2>/dev/null \
-         && [ ! -s "$_d/gate.log" ]; then
-        _census_bad="$_census_bad $_n(gate-kill-without-gate-log)"
-      fi
-    else
-      _census_bad="$_census_bad $_n(no-verdict)"
+    _ev_found="$_ev_found$_n
+"
+    if [ ! -s "$_d/verdict.txt" ]; then
+      _census_bad="$_census_bad $_n(no-verdict)"; continue
+    fi
+    # THE RECORD MUST NAME ITS OWN DIRECTORY: a record written under another family's name is what a
+    # swapped or duplicated publication looks like, and a count cannot see it.
+    _rfam="$(sed -n 's/^family=//p' "$_d/verdict.txt" | head -1)"
+    [ "$_rfam" = "$_n" ] || _census_bad="$_census_bad $_n(record-names-${_rfam:-nothing})"
+    _rdisp="$(sed -n 's/^disposition=//p' "$_d/verdict.txt" | head -1)"
+    _rroute="$(sed -n 's/^expected_route=//p' "$_d/verdict.txt" | head -1)"
+    _rbuild="$(sed -n 's/^build_required=//p' "$_d/verdict.txt" | head -1)"
+    if [ "$_rdisp" = "killed" ] && [ "$_rroute" = "gate" ]; then
+      # RED/GREEN/RED IS THREE TRANSCRIPTS. Requiring only gate.log lets a kill be published with no
+      # evidence that the gate went green again on restored source, which is the leg that makes the
+      # red attributable to the mutation rather than to the workspace.
+      for _need in gate.log confirm_clean.log confirm_red.log; do
+        [ -s "$_d/$_need" ] || _census_bad="$_census_bad $_n(gate-kill-without-$_need)"
+      done
+    fi
+    if [ "$_rdisp" = "killed" ] && [ "$_rroute" = "build" ] && [ ! -s "$_d/build.log" ]; then
+      _census_bad="$_census_bad $_n(build-kill-without-build-log)"
+    fi
+    if [ "$_rbuild" = "no" ] && [ -e "$_d/build.log" ]; then
+      _census_bad="$_census_bad $_n(build.log-in-a-no-build-family)"
     fi
   done
 fi
+_ev_found="$(printf '%s' "$_ev_found" | LC_ALL=C sort)"
+
+# MISSING, UNEXPECTED AND DUPLICATE, EACH BY NAME.
+_ev_missing="$(comm -23 <(printf '%s\n' "$_ev_expected") <(printf '%s\n' "$_ev_found" | LC_ALL=C sort -u) | grep -c . || true)"
+[ "$_ev_missing" = "0" ] || REFUSALS="$REFUSALS evidence_missing_families($(comm -23 <(printf '%s\n' "$_ev_expected") <(printf '%s\n' "$_ev_found" | LC_ALL=C sort -u) | tr '\n' ',' ))"
+_ev_unexpected="$(comm -13 <(printf '%s\n' "$_ev_expected") <(printf '%s\n' "$_ev_found" | LC_ALL=C sort -u) | grep -c . || true)"
+[ "$_ev_unexpected" = "0" ] || REFUSALS="$REFUSALS evidence_unexpected_families($(comm -13 <(printf '%s\n' "$_ev_expected") <(printf '%s\n' "$_ev_found" | LC_ALL=C sort -u) | tr '\n' ',' ))"
+_ev_dupes="$(printf '%s\n' "$_ev_found" | LC_ALL=C sort | uniq -d | tr '\n' ',')"
+[ -z "$_ev_dupes" ] || REFUSALS="$REFUSALS evidence_duplicate_families($_ev_dupes)"
+
+# COUNTS DERIVED FROM THE RECONCILED SET, not compared against it.
+_census="$(printf '%s\n' "$_ev_found" | grep -c . || true)"
 [ -z "$_census_bad" ] || REFUSALS="$REFUSALS evidence_census_bad($_census_bad )"
-[ -z "${BASELINE_EVIDENCE_FAILED:-}" ] \
-  || REFUSALS="$REFUSALS baseline_evidence_unwritable($(echo ${BASELINE_EVIDENCE_FAILED} | tr ' ' ','))"
 [ "$_census" = "$EVIDENCE_WRITTEN" ] \
   || REFUSALS="$REFUSALS evidence_census_disagrees(on-disk=$_census counter=$EVIDENCE_WRITTEN)"
+
+# THE EVIDENCE ROOT: a digest over canonical (family id, record digest) pairs. The supervisor
+# revalidates this after the child exits, so validating one set of bytes and publishing a different,
+# later-mutated set is no longer possible.
+EVIDENCE_ROOT="$(evidence_root_digest "$EVIDENCE_DIR")"
 REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
 [ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
 
