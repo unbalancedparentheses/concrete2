@@ -468,7 +468,7 @@ EXPECTED_ORDINARY_MANIFEST_SHA256="a721c0a702572652e19c2a76c26a334f01c7977053b95
 # hand-written checks scattered through this gate — and deleting one of those still shrank a green
 # total. One pinned grand total covers every assertion this gate makes, whatever its shape.
 EXPECTED_TOTAL_ASSERTIONS=317
-EXPECTED_ASSERTION_LABELS_SHA256="3c1be63ddfddc66b746499caf78dcf5c3275cf37edc6954ee460f38946738ba6"
+EXPECTED_ASSERTION_LABELS_SHA256="8edcce27f227a567c62d531335def0eba60f68c8d04a1f34a95401e59d700809"
 reconcile_assertion_total() {
   local total=$((PASS + FAIL))
   if [ "$total" -ne "$EXPECTED_TOTAL_ASSERTIONS" ]; then
