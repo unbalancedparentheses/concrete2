@@ -206,7 +206,14 @@ LEAN
     no "$label — probe exited $rc: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"
   elif grep -qE "error:|error\(lean" <<<"$out"; then
     no "$label — probe did not elaborate: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"
-  elif grep -qF -- "$want" <<<"$out"; then ok "$label"
+  # WHOLE WORD, NOT SUBSTRING. `grep -F "BOUND"` is satisfied by "NOTBOUND", and "COMPARABLE" by
+  # "INCOMPARABLE" — so a predicate could be INVERTED and its own positive control would still pass.
+  # Measured: ten such pairs among these expectations, and that negation-of-itself case is the one
+  # that matters, because it is the failure a positive control exists to catch. Whole-LINE matching
+  # would also be sound but is wrong here: many probes legitimately assert a token inside a rendered
+  # Lean value, and requiring the entire line would pin incidental formatting as if it were the
+  # claim.
+  elif grep -qwF -- "$want" <<<"$out"; then ok "$label"
   else no "$label — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-180)"; fi
 }
 
@@ -253,7 +260,7 @@ EXPECTED_MINT_PROBES=19
 # Digest of the full manifest, not just the names — see mint_manifest_digest below. The constant is
 # a sha256 because this repository supports macOS, where GNU md5sum does not exist; the hasher
 # fallback follows the one in lib/treestate.sh rather than adding a third way to hash a thing.
-EXPECTED_MINT_MANIFEST_SHA256="2ddb0cedc814928de392e53ae21e2f85873b69c088e79f71b3e74cedef6ceb18"
+EXPECTED_MINT_MANIFEST_SHA256="8713fc18b540d6e676765ef9e495073cd960ccdd5ac3b1cf75e77ab363a1c93b"
 if command -v sha256sum >/dev/null 2>&1; then _MINT_HASHER="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then _MINT_HASHER="shasum -a 256"
 else _MINT_HASHER=""
@@ -431,7 +438,9 @@ LEAN
       continue
     fi
     got="$(grep -m1 -E "^<<P$id>> " <<<"$out" | sed "s/^<<P$id>> //")"
-    if grep -qF -- "${MINT_WANT[$i]}" <<<"$got"; then
+    # EXACT EQUALITY on the parsed result, for the same reason: a substring test cannot tell
+    # COMPARABLE from INCOMPARABLE, which is precisely the pair this batch asserts.
+    if [ "$got" = "${MINT_WANT[$i]}" ]; then
       mint_ok "${MINT_LABEL[$i]}"
     else
       mint_no "${MINT_LABEL[$i]} — want '${MINT_WANT[$i]}' got '$(printf '%s' "$got" | cut -c1-160)'"
@@ -1643,14 +1652,14 @@ probe_mint "an EDGE-KIND change makes the receipt non-current" "NOT" '
 # ONE disposition, not two booleans in the right order. `comparable` then `isCurrentAgainst` was
 # a sequencing a consumer had to remember, and reading them out of order reports "the proof went
 # stale" when the ENVELOPE changed — a claim about the program rather than the format.
-probe_mint "disposition: unchanged material is current" "current" '
+probe_mint "disposition: unchanged material is current" "Concrete.Proof.ReceiptDisposition.current" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
   | some r => IO.println (toString (repr (r.disposition "v2:s" .body [] "ROOT" r.theoremArtifact false [] r.toolchainId "ws" "im")))
   | none => IO.println "MINT-REFUSED"'
 
-probe_mint "disposition: moved material is notCurrent (not needsRecheck)" "notCurrent" '
+probe_mint "disposition: moved material is notCurrent (not needsRecheck)" "Concrete.Proof.ReceiptDisposition.notCurrent" '
 #eval show MetaM Unit from do
   let ev : EdgeEvidence := { edge := .body, tables := [], tableDigests := [], quantifiesOverTable := true }
   match ← mintProbe (some "v2:s") ev "ROOT" false [] "tc" "ws" "im" with
@@ -1739,7 +1748,9 @@ probe_mint "receipt issuance REFUSES a subject whose closure cannot root" "ISSUA
     let after := applyCorrespondenceAuthority pc pc.callGraph
     let env : IssueEnvironment := { compilerVersion := "v", workspaceId := "w", importsId := "i" }
     match issueFor after rr env (fun _ => []) entry with
-    | .error (.notProved _ st) => IO.println s!"ISSUANCE-REFUSED-notProved({st})"
+    -- The CONSTRUCTOR, not the rendered status. `st` here is the known-false cause tracked
+    -- separately; printing it would make this assertion pin a diagnosis that is due to change.
+    | .error (.notProved _ _) => IO.println "ISSUANCE-REFUSED-notProved"
     | .error other             => IO.println s!"ISSUANCE-REFUSED-OTHER({other.canonical})"
     | .ok _                    => IO.println "ISSUANCE-MINTED"
   | _, _ => IO.println "could not build the control"'

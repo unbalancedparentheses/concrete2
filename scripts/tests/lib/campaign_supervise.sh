@@ -71,8 +71,8 @@ supervisor_refusals() {
 # qualified=1, a single-family mode claiming full-campaign qualification, or counts that do not
 # reconcile. A supervisor that exists BECAUSE it does not trust the child cannot then take the
 # child's headline field at face value.
-candidate_incoherent() {
-  local c="$1" out="" v
+candidate_incoherent() { # candidate [expected-family-count]
+  local c="$1" expected="${2:-}" out="" v
   _f() { sed -n "s/^$1=//p" "$c" | head -1; }
   [ "$(_f qualified)" = "1" ] || { printf ''; return 0; }   # only qualification needs justifying
   [ "$(_f completed)"    = "1" ]        || out="$out qualified_without_completed"
@@ -98,6 +98,16 @@ candidate_incoherent() {
   done
   case "$out" in *nonnumeric*) ;; *)
     [ "$d" -gt 0 ] || out="$out qualified_with_zero_families"
+    # SELF-AGREEMENT IS NOT ENOUGH. Five counts that agree with each other say nothing about whether
+    # they describe the CORPUS: a candidate reporting 1/1/1/1/1 satisfies every internal equality
+    # while eighty-four families went unexamined. The child compares its kill count against the
+    # pinned inventory; a supervisor that did not was strictly LOOSER than the process it audits,
+    # which makes it a rubber stamp rather than a check.
+    if [ -n "$expected" ]; then
+      [ "$d" = "$expected" ] || out="$out qualified_against_wrong_population($d vs pinned $expected)"
+    else
+      out="$out qualified_without_a_pinned_population"
+    fi
     { [ "$d" = "$s" ] && [ "$s" = "$e" ] && [ "$e" = "$r" ]; } \
       || out="$out qualified_with_counts($d/$s/$e/$r)"
     [ "$k" = "$r" ] || out="$out qualified_with_unkilled($k/$r)"
@@ -126,11 +136,11 @@ candidate_incoherent() {
 
 # supervisor_qualification <candidate-path> <refusals>  -> the qualified= line to publish
 # Only a clean candidate, under a clean reconciliation, whose OWN fields justify it.
-supervisor_qualification() {
-  local cand="$1" refusals="$2"
+supervisor_qualification() { # candidate refusals [expected-family-count]
+  local cand="$1" refusals="$2" expected="${3:-}"
   if [ -n "$refusals" ] || [ ! -s "$cand" ]; then printf 'qualified=0'; return 0; fi
   grep -qE '^qualified=1$' "$cand" || { printf 'qualified=0'; return 0; }
-  [ -z "$(candidate_incoherent "$cand")" ] && printf 'qualified=1' || printf 'qualified=0'
+  [ -z "$(candidate_incoherent "$cand" "$expected")" ] && printf 'qualified=1' || printf 'qualified=0'
 }
 
 # evidence_root_digest <evidence-dir> -> digest over canonical (family id, record digest) pairs
@@ -139,15 +149,113 @@ supervisor_qualification() {
 # supervisor recomputes it after the child exits, over the same tree. If the two disagree, the bytes
 # changed under the verdict — which is the race that "validate one object, publish a later-mutated
 # object" describes. Two implementations could differ and agree with themselves, so there is one.
-evidence_root_digest() {
-  local root="$1" d n out=""
+evidence_root_digest() { # evidence-dir -> digest, or a marker; nonzero on producer failure
+  local root="$1" d n f out="" rec
   [ -d "$root" ] || { printf 'no-evidence-dir'; return 0; }
   for d in "$root"/*/; do
     [ -e "$d" ] || continue
     n="$(basename "$d")"
-    out="$out$n $(find "$d" -type f -print0 2>/dev/null | LC_ALL=C sort -z \
-        | xargs -0 cat 2>/dev/null | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+    rec=""
+    # THE LISTING IS PRODUCED FIRST, WITH ITS STATUS CHECKED. Inside the here-doc the substitution's
+    # status is discarded, so an unreadable directory yielded an empty listing and a confident digest
+    # over nothing — a hash that agrees with itself while describing no evidence at all.
+    local listing
+    listing="$(cd "$d" 2>/dev/null && find . -type f 2>/dev/null | LC_ALL=C sort)" || return 1
+    # NAMES AND BOUNDARIES ARE PART OF THE EVIDENCE. Hashing concatenated CONTENTS alone let a
+    # required transcript be RENAMED — gate.log to gate2.log, same sort position — without moving the
+    # digest, even though the file the census demands had disappeared. Each file contributes its
+    # path, its byte length and its own digest, so a rename, a truncation and a swap are all visible.
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      local sz dg
+      sz="$(wc -c < "$d$f" 2>/dev/null)" || return 1
+      dg="$({ sha256sum "$d$f" 2>/dev/null || shasum -a 256 "$d$f"; } | cut -d' ' -f1)" || return 1
+      [ -n "$dg" ] || return 1
+      rec="$rec$f $sz $dg
 "
+    done <<EOF
+$listing
+EOF
+    # A PRODUCER FAILURE IS NOT AN EMPTY DIRECTORY. Ignoring the status of find/sort/cat produced a
+    # confident digest over partial or empty data — a hash that agrees with itself while describing
+    # nothing. `find` failing here returns nonzero to the caller instead.
+    [ -d "$d" ] || return 1
+    out="$out$n
+$rec"
   done
   printf '%s' "$out" | LC_ALL=C sort | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}
+
+# family_set_digest <newline-separated family ids> -> canonical digest of the SET
+#
+# A COUNT CANNOT SEE A SUBSTITUTION. Pinning only the population size lets one family be swapped for
+# another — the total stays 85 while a mutation silently leaves the corpus and a foreign one joins
+# it. The identity of the set is what the campaign's evidence is about.
+family_set_digest() {
+  printf '%s' "$1" | grep -v '^$' | LC_ALL=C sort -u \
+    | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}
+
+# family_set_from_driver <driver-path> -> the declared family ids, one per line
+#
+# READ FROM THE SOURCE, not from the arrays the child built. The point is double entry: the child
+# derives its set from what it RAN, the supervisor from what the driver DECLARES, and a disagreement
+# means one of them is describing a different corpus. Two readings of the same array would agree with
+# themselves and prove nothing.
+family_set_from_driver() {
+  grep -oE '^add "[^"]+"' "$1" 2>/dev/null | sed 's/^add "//; s/"$//'
+}
+
+# records_disposition_totals <evidence-dir> -> "killed invalid survived could_not_apply other"
+#
+# THE RECORDS ARE THE EVIDENCE; THE SUMMARY IS A CLAIM ABOUT THEM. Deriving the totals from the
+# per-family records and comparing them with the summary is what stops a summary asserting that
+# every family was killed while a record on disk says `survived`. A summary may never override a
+# record, so the record side is computed first and independently.
+records_disposition_totals() {
+  local root="$1" d k=0 i=0 sv=0 c=0 o=0 disp
+  [ -d "$root" ] || { printf '0 0 0 0 0'; return 0; }
+  for d in "$root"/*/; do
+    [ -e "$d" ] || continue
+    [ "$(basename "$d")" != "_baseline" ] || continue
+    [ -s "$d/verdict.txt" ] || { o=$((o+1)); continue; }
+    # EXACTLY ONE disposition line, or the record does not state one.
+    if [ "$(grep -cE '^disposition=' "$d/verdict.txt")" != "1" ]; then o=$((o+1)); continue; fi
+    disp="$(sed -n 's/^disposition=//p' "$d/verdict.txt")"
+    case "$disp" in
+      killed)          k=$((k+1)) ;;
+      invalid)         i=$((i+1)) ;;
+      survived)        sv=$((sv+1)) ;;
+      could_not_apply) c=$((c+1)) ;;
+      *)               o=$((o+1)) ;;
+    esac
+  done
+  printf '%s %s %s %s %s' "$k" "$i" "$sv" "$c" "$o"
+}
+
+# records_unkilled_or_unevidenced <evidence-dir> -> family ids that cannot support qualification
+#
+# QUALIFICATION IS A CLAIM ABOUT EVERY FAMILY. It requires each record to say `killed` AND to carry
+# the transcripts that make that kill checkable — a gate kill needs its red, its restored green and
+# its reapplied red, because without the green leg the red is not attributable to the mutation.
+records_unkilled_or_unevidenced() {
+  local root="$1" d n bad="" disp route
+  [ -d "$root" ] || { printf 'no-evidence-dir'; return 0; }
+  for d in "$root"/*/; do
+    [ -e "$d" ] || continue
+    n="$(basename "$d")"; [ "$n" != "_baseline" ] || continue
+    disp="$(sed -n 's/^disposition=//p' "$d/verdict.txt" 2>/dev/null | head -1)"
+    route="$(sed -n 's/^expected_route=//p' "$d/verdict.txt" 2>/dev/null | head -1)"
+    [ "$disp" = "killed" ] || { bad="$bad $n(${disp:-no-disposition})"; continue; }
+    if [ "$route" = "gate" ]; then
+      for f in gate.log confirm_clean.log confirm_red.log; do
+        [ -s "$d/$f" ] || bad="$bad $n(missing-$f)"
+      done
+    elif [ "$route" = "build" ]; then
+      [ -s "$d/build.log" ] || bad="$bad $n(missing-build.log)"
+    else
+      bad="$bad $n(unknown-route-${route:-none})"
+    fi
+  done
+  printf '%s' "${bad# }"
 }

@@ -288,6 +288,12 @@ cd "$ROOT_DIR"
 # The lock is acquired by the launcher and survives the exec by pid identity; the child inherits the
 # exported token and is a verified descendant. Only the supervisor releases it, so the tree stays
 # held until the artifact is installed.
+# THE PINNED INVENTORY, HOISTED ABOVE THE DISPATCH. The supervisor needs it to judge whether a
+# candidate's population describes the CORPUS rather than merely agreeing with itself, and it exits
+# inside its own branch long before the inventory is built — so a constant defined next to that
+# build is invisible to the role that audits it.
+EXPECTED_FAMILIES=85
+
 # LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
 # supervisor recomputes it; they must use the SAME function or two implementations could each agree
 # with themselves and disagree with each other. Loading here also freezes the rules for this run —
@@ -344,8 +350,25 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # published with qualified=0 and the supervisor exited 0 behind it — a passing process beside a
   # record that says the run did not qualify. That is precisely the PASS-versus-exit disagreement
   # this boundary exists to remove, reintroduced one layer up.
-  _cand_incoh="$(candidate_incoherent "$_cand" 2>/dev/null || echo candidate_unreadable)"
+  _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" 2>/dev/null || echo candidate_unreadable)"
   [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
+
+  # THE EXACT FAMILY SET, NOT ITS SIZE. A one-for-one substitution keeps the count at 85 while a
+  # mutation leaves the corpus and a foreign one takes its place. The supervisor derives the declared
+  # set from the DRIVER SOURCE it is executing, the child derived its set from the inventory it
+  # BUILT, and the two must agree — independent readings, not two looks at the same array.
+  _sup_fams="$(family_set_from_driver "$0")"
+  _sup_famn="$(printf '%s\n' "$_sup_fams" | grep -cv '^$' || true)"
+  _sup_famdig="$(family_set_digest "$_sup_fams")"
+  _cand_famdig="$(sed -n 's/^families_digest=//p' "$_cand" | head -1)"
+  if [ "$_sup_famn" != "$EXPECTED_FAMILIES" ]; then
+    _sup_refusals="$_sup_refusals driver_declares_${_sup_famn}_families_not_$EXPECTED_FAMILIES"
+  fi
+  if [ -z "$_cand_famdig" ]; then
+    _sup_refusals="$_sup_refusals candidate_names_no_family_set"
+  elif [ "$_cand_famdig" != "$_sup_famdig" ]; then
+    _sup_refusals="$_sup_refusals family_set_mismatch($_cand_famdig vs $_sup_famdig)"
+  fi
 
   # THE EVIDENCE MUST BE THE EVIDENCE THAT WAS VALIDATED.
   #
@@ -359,7 +382,9 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # The recomputation uses the child's own function, loaded from the snapshot, so the two sides
   # cannot drift into computing different digests of the same directory.
   _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
-  _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null || echo unreadable)"
+  _sup_rootrc=0
+  _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null)" || _sup_rootrc=$?
+  [ "$_sup_rootrc" = "0" ] || _sup_refusals="$_sup_refusals evidence_root_unreadable($_sup_rootrc)"
   if [ -z "$_cand_root" ]; then
     _sup_refusals="$_sup_refusals evidence_root_absent"
   elif [ "$_cand_root" != "$_sup_root" ]; then
@@ -369,9 +394,34 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # NO DESCENDANT MAY STILL BE WRITING. A surviving child process can mutate evidence after this
   # check and before the artifact lands; the reconciliation above would then describe a tree that no
   # longer exists by the time anyone reads it.
-  if pgrep -P $$ >/dev/null 2>&1; then
-    _sup_refusals="$_sup_refusals descendants_alive_at_publication"
+  # THE RECORDS OUTRANK THE SUMMARY. Totals are derived from the per-family records on disk and
+  # compared with what the candidate claims; a disagreement means the artifact is describing a run
+  # other than the one that left this evidence.
+  _ev_run_dir="$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)"
+  set -- $(records_disposition_totals "$_ev_run_dir")
+  _rk="$1"; _ri="$2"; _rs="$3"; _rc="$4"; _ro="$5"
+  [ "$_ro" = "0" ] || _sup_refusals="$_sup_refusals records_with_unreadable_disposition($_ro)"
+  for _pair in "killed:$_rk" "invalid:$_ri" "survived:$_rs" "could_not_apply:$_rc"; do
+    _k="${_pair%%:*}"; _v="${_pair##*:}"
+    _claim="$(sed -n "s/^$_k=//p" "$_cand" | head -1)"
+    [ "$_claim" = "$_v" ] \
+      || _sup_refusals="$_sup_refusals summary_contradicts_records($_k claimed=$_claim records=$_v)"
+  done
+  # ...and qualification additionally requires EVERY record to be a killed one carrying its causal
+  # transcripts. This is checked only when qualification is claimed, so a legitimately unqualified
+  # run is not refused for having survivors it already reported.
+  if grep -qE '^qualified=1$' "$_cand"; then
+    _unq="$(records_unkilled_or_unevidenced "$_ev_run_dir")"
+    [ -z "$_unq" ] || _sup_refusals="$_sup_refusals qualified_with_unevidenced_records($_unq )"
   fi
+
+  # NOT JUST IMMEDIATE CHILDREN. `pgrep -P $$` sees one generation, and by this point the campaign
+  # child has been reaped — a surviving grandchild is reparented away and would never appear. What
+  # matters is whether anything is still working THIS repository, so the check is by workspace and
+  # by the driver's own snapshot, the same way the lock identifies its owner.
+  _live="$(pgrep -af "concrete-mut\.|$ROOT_DIR/scripts/tests/" 2>/dev/null \
+            | grep -v "^$$ " | grep -v 'pgrep' | awk 'END{print NR}')"
+  [ "${_live:-0}" = "0" ] || _sup_refusals="$_sup_refusals processes_still_working_the_tree($_live)"
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
@@ -379,7 +429,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
   if [ -s "$_cand" ]; then
     # The qualified line is decided by the same library, not by a second rule here.
-    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals")/" "$_cand" > "$_tmp" || _pub_ok=0
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals" "$EXPECTED_FAMILIES")/" "$_cand" > "$_tmp" || _pub_ok=0
   else
     printf 'completed=0
 mode=%s
@@ -1284,7 +1334,6 @@ N=${#NAME[@]}
 # while still reporting a "full" campaign: `EXPECTED_RUN` is derived from whatever `N` happens to be,
 # so a reduced corpus passes as complete. Retiring a mutation is a deliberate act and must be recorded
 # in the same commit as the removal, exactly like the identity freezes.
-EXPECTED_FAMILIES=85
 if [ "$N" != "$EXPECTED_FAMILIES" ]; then
   echo "FATAL: the mutation inventory holds $N families, pinned at $EXPECTED_FAMILIES." >&2
   echo "       Mutations are the evidence that gates are load-bearing, so losing some silently" >&2
@@ -1418,6 +1467,7 @@ write_summary() {
          # Where the per-family transcripts are, and how many exist. A reader can open them.
          echo "evidence_written=${EVIDENCE_WRITTEN:-0}"
          echo "evidence_root=${EVIDENCE_ROOT:-unknown}"
+         echo "families_digest=${FAMILIES_DIGEST:-unknown}"
          echo "evidence_dir=.mutation-evidence/${RUN_ID:-unknown}"
          echo "run_id=${RUN_ID:-unknown}"
          echo "head=$START_HEAD"
@@ -2598,6 +2648,11 @@ _ev_dupes="$(printf '%s\n' "$_ev_found" | LC_ALL=C sort | uniq -d | tr '\n' ',')
 # COUNTS DERIVED FROM THE RECONCILED SET, not compared against it.
 _census="$(printf '%s\n' "$_ev_found" | grep -c . || true)"
 [ -z "$_census_bad" ] || REFUSALS="$REFUSALS evidence_census_bad($_census_bad )"
+# RESTORED. keep_baseline_log records BASELINE_EVIDENCE_FAILED, and the refusal that consumed it was
+# dropped when this census block was rewritten — so a silently unwritable baseline transcript went
+# back to being invisible, which is the exact defect that check was added to close.
+[ -z "${BASELINE_EVIDENCE_FAILED:-}" ] \
+  || REFUSALS="$REFUSALS baseline_evidence_unwritable($(echo ${BASELINE_EVIDENCE_FAILED} | tr ' ' ','))"
 [ "$_census" = "$EVIDENCE_WRITTEN" ] \
   || REFUSALS="$REFUSALS evidence_census_disagrees(on-disk=$_census counter=$EVIDENCE_WRITTEN)"
 
@@ -2605,6 +2660,8 @@ _census="$(printf '%s\n' "$_ev_found" | grep -c . || true)"
 # revalidates this after the child exits, so validating one set of bytes and publishing a different,
 # later-mutated set is no longer possible.
 EVIDENCE_ROOT="$(evidence_root_digest "$EVIDENCE_DIR")"
+# THE SET THIS RUN ACTUALLY HELD, digested from the inventory it built.
+FAMILIES_DIGEST="$(family_set_digest "$(printf '%s\n' "${NAME[@]}")")"
 REPORTED_ALL=0; [ "$VERDICTS" = "$EXPECTED_RUN" ] && REPORTED_ALL=1
 [ "$VERDICTS" = "$EXPECTED_RUN" ]            || REFUSALS="$REFUSALS verdicts_missing($VERDICTS/$EXPECTED_RUN)"
 
