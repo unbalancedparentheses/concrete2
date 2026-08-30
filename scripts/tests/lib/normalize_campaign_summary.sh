@@ -18,7 +18,28 @@
 # agree on it — not because it is inconvenient.
 set -uo pipefail
 
-VOLATILE_KEYS="secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root"
+# THE VOLATILE SET, BY EXACT NAME, AND THE ONE PLACE IT IS DEFINED.
+#
+# A key is here only because two runs of the SAME producer, against a repository that has legitimately
+# moved forward, cannot agree on it. Each is named with its reason, because "eight fields" is not a
+# contract and a set that can be widened silently is not a pin.
+#
+#   timings          two runs never take the same number of seconds
+#   run_id           timestamp + pid + entropy, unique by construction
+#   evidence_dir     derived from run_id
+#   evidence_root    digests transcripts containing timestamps and temp paths
+#   head             THE COMMIT UNDER TEST. Pinning it makes the baseline stale the instant anything
+#                    is committed — including committing the baseline itself, which is circular.
+#   workspace_head   the same commit, observed in the disposable workspace
+#   *_driver_sha     digest of the driver; changes whenever the harness changes
+#   inventory_sha    digest of the mutation inventory; changes when families change
+#   families_digest  the family-id set; changes when families change
+#   baseline_compiler_sha  the compiler binary; changes on any rebuild
+#
+# What REMAINS compared is the whole semantic record: every count, every disposition, mode,
+# integrity, qualification, the gate-proven split, and the tree-state digests, which for a clean tree
+# are the constant empty-diff digest and so are genuine evidence rather than noise.
+VOLATILE_KEYS="secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root head workspace_head executed_driver_sha preamble_driver_sha repo_driver_sha inventory_sha families_digest baseline_compiler_sha"
 
 usage() { echo "usage: normalize_campaign_summary.sh <artifact-path>" >&2; exit 2; }
 [ $# -eq 1 ] || usage

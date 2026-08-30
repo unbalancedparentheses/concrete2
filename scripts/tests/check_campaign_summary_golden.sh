@@ -21,7 +21,7 @@
 #   REGENERATE WITH:
 #       rm -rf .mutation-evidence
 #       FAMILY_ID=mint-missing-result-refusal \
-#       FAMILY_SPEC=e13065919c92a291aa6feebce1e65326969017d6b8ac69dafce4146516b1d16b \
+#       FAMILY_SPEC=bd4fae0e3629767ff4a4cd2a71c753e3555f8eb389c10ef089e36833cc0030a6 \
 #         bash scripts/tests/check_gate_mutation_coverage.sh
 #       bash scripts/tests/lib/normalize_campaign_summary.sh .mutation-campaign-summary.partial \
 #           > scripts/tests/fixtures/campaign-summary.golden
@@ -57,16 +57,23 @@ echo "=== the baseline is a NORMALISED PROJECTION, and is checked as one ==="
 # So the RAW artifact is what must decode, below, after the producer runs; what is checked here is
 # the property normalisation actually preserves — the key set — plus that every declared volatile
 # key really was masked, so a masked field cannot quietly become an unmasked one.
+# THE LIST COMES FROM THE NORMALISER, not a second copy here. Two lists that agree today are two
+# lists that can disagree tomorrow, and the one that would silently win is whichever the comparison
+# happens to consult.
+_VOL="$(sed -n 's/^VOLATILE_KEYS="\(.*\)"$/\1/p' "$NORMALIZE")"
+[ -n "$_VOL" ] || { echo "error: could not read VOLATILE_KEYS from $NORMALIZE" >&2; exit 2; }
 _vol_missing=""
-for _k in secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root; do
+for _k in $_VOL; do
   grep -qxF "$_k=<VOLATILE>" "$GOLDEN" || _vol_missing="$_vol_missing $_k"
 done
 [ -z "$_vol_missing" ] && ok "every declared volatile key is masked in the baseline" \
                        || no "unmasked volatile keys in the baseline:$_vol_missing"
 # ...and nothing ELSE is masked, or the baseline would be comparing less than it appears to.
+_vol_declared="$(printf '%s\n' $_VOL | grep -c .)"
 _vol_extra="$(grep -c '=<VOLATILE>' "$GOLDEN")"
-[ "$_vol_extra" = "8" ] && ok "exactly the 8 declared volatile keys are masked, nothing more" \
-                        || no "$_vol_extra masked values, expected exactly 8"
+[ "$_vol_extra" = "$_vol_declared" ] \
+  && ok "exactly the $_vol_declared declared volatile keys are masked, nothing more" \
+  || no "$_vol_extra masked values, expected exactly $_vol_declared — a masked field that is not declared hides a real difference"
 
 echo "=== its key set equals the declared schema exactly ==="
 printf '%s\n' $CAMPAIGN_SCHEMA_PUBLISHED | LC_ALL=C sort > "$TMP/declared"
@@ -78,9 +85,14 @@ _extra="$(comm -13 "$TMP/declared" "$TMP/published" | tr '\n' ',')"
   || no "schema disagreement — declared-but-absent: ${_missing:-none}  published-but-undeclared: ${_extra:-none}"
 
 echo "=== regenerating from the production publisher ==="
-rm -rf "$ROOT_DIR/.mutation-evidence"
+# THE GATE DOES NOT DESTROY EVIDENCE IT DID NOT CREATE. This was an unconditional
+# `rm -rf .mutation-evidence`, which deletes every retained transcript from every prior run — the
+# durable per-family evidence the rest of this harness exists to produce. A gate that clears the
+# workspace by deleting the archive is trading the thing being protected for a convenience.
+# Records are already keyed by run id and cannot collide, so nothing needs removing.
+:
 GOLDEN_FAMILY_ID="mint-missing-result-refusal"
-GOLDEN_FAMILY_SPEC="e13065919c92a291aa6feebce1e65326969017d6b8ac69dafce4146516b1d16b"
+GOLDEN_FAMILY_SPEC="bd4fae0e3629767ff4a4cd2a71c753e3555f8eb389c10ef089e36833cc0030a6"
 if FAMILY_ID="$GOLDEN_FAMILY_ID" FAMILY_SPEC="$GOLDEN_FAMILY_SPEC" \
      bash "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" > "$TMP/producer.log" 2>&1; then
   ok "the producer ran and published"
@@ -102,7 +114,13 @@ fi
 
 echo "=== the regenerated artifact matches the baseline byte for byte ==="
 if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
-  bash "$NORMALIZE" "$ROOT_DIR/.mutation-campaign-summary.partial" > "$TMP/fresh"
+  # THE NORMALISER'S STATUS IS CHECKED. Ignoring it meant a failed subprocess that had already
+  # written plausible bytes would be compared as if it had succeeded — the same "no output means
+  # success" inference this harness refuses everywhere else.
+  if ! bash "$NORMALIZE" "$ROOT_DIR/.mutation-campaign-summary.partial" > "$TMP/fresh"; then
+    no "the normaliser failed; its output cannot be compared"
+    printf '%s\n' "" > "$TMP/fresh"
+  fi
   if cmp -s "$TMP/fresh" "$GOLDEN"; then
     ok "regenerated output is byte-identical to the committed baseline"
   else
