@@ -20,7 +20,8 @@
 # The rule is now structural: the child is launched into its own session, so its process-group id is
 # its pid, the supervisor and every ancestor are outside that group, and liveness is whatever the
 # kernel says about that group. No patterns, no exclusion lists, nothing depending on how a worker
-# spells its command line. POSIX, so Linux and macOS decide qualification identically.
+# spells its command line. Designed using portable POSIX mechanisms; whether Linux and macOS agree
+# is established by running this gate on both in CI, not by claiming it here.
 set -uEo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"

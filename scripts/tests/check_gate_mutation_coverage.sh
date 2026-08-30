@@ -327,7 +327,8 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # kernel — does the child's process group still have members — rather than by matching command
   # lines or walking /proc. The supervisor and every ancestor are outside that group by
   # construction, so there is no exclusion list to get wrong, and a worker that rewrites its argv is
-  # still a member. POSIX, so Linux and macOS decide qualification the same way; /proc is Linux-only
+  # still a member. Built on portable POSIX mechanisms so the two platforms are INTENDED to agree,
+  # with CI on both as the confirmation; /proc is Linux-only
   # and this repository has already taken a macOS outage from depending on it.
   _launch_report="$(mktemp "${TMPDIR:-/tmp}/mutlaunch.XXXXXX")" || {
     echo "FATAL: supervisor cannot stage the launch report" >&2; _gate_lock_release 2>/dev/null; exit 2; }

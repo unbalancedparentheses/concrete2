@@ -27,7 +27,9 @@ answered by asking the kernel whether that group still has members — `killpg(p
 no exclusion list, and nothing that depends on how a worker spells its command line: a process that
 rewrites argv is still in the group, and an unrelated process with a similar name never was.
 
-POSIX, so it behaves the same on Linux and macOS.
+Designed using portable POSIX mechanisms (setsid via start_new_session, and killpg), so it is
+intended to behave identically on Linux and macOS — but that equivalence is CONFIRMED BY CI on both
+platforms, not by this file asserting it.
 
 Usage:
     run_campaign_child.py --report <path> -- <command> [args...]
