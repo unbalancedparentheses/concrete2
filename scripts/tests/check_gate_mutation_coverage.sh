@@ -100,12 +100,26 @@ _timed_gate(){ # gate-path logfile
   return $rc
 }
 
+# IS THIS A PARTIAL SELECTION? Decided ONCE, here, before anything derives from it.
+#
+# This was previously inferred twice from different evidence: the child set CAMPAIGN_MODE from ONLY,
+# and the supervisor chose its publication target from ${FAMILY}. Adding FAMILY_ID gave the two
+# inferences different inputs — ONLY was resolved late, so the child had already recorded
+# mode=campaign, and FAMILY was unset, so the supervisor published a ONE-FAMILY result over the
+# authoritative FULL-campaign artifact. Measured, on this repository: a record reading
+# `mode=campaign discovered=85 selected=1` replaced the full record.
+#
+# A sample must never be able to destroy evidence about the whole corpus, so the question is asked
+# once and both roles read the same answer.
+CAMPAIGN_PARTIAL=0
+{ [ -z "${FAMILY:-}" ] && [ -z "${FAMILY_ID:-}" ]; } || CAMPAIGN_PARTIAL=1
+export CONCRETE_MUT_PARTIAL="$CAMPAIGN_PARTIAL"
 ONLY="${FAMILY:-}"
 # A single-family probe and a full campaign make different claims. Only a campaign can ever qualify;
 # a probe must be able to SUCCEED on a sound selected result without ever storing or printing campaign
 # qualification. Conflating the two would break the registered FAMILY=n consumers, including
 # check_phase6c_observability.sh, which chains two of them with `&&`.
-CAMPAIGN_MODE=campaign; [ -z "$ONLY" ] || CAMPAIGN_MODE=single
+CAMPAIGN_MODE=campaign; [ "$CAMPAIGN_PARTIAL" = "0" ] || CAMPAIGN_MODE=single
 
 # ---------------------------------------------------------------------------
 # IMMUTABLE DRIVER SNAPSHOT.
@@ -404,7 +418,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
 
   _cand="$ROOT_DIR/.mutation-campaign-summary.candidate"
   _final="$ROOT_DIR/.mutation-campaign-summary"
-  [ -z "${FAMILY:-}" ] || _final="$_final.partial"
+  [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ] || _final="$_final.partial"
 
   # THE CANDIDATE IS SNAPSHOTTED BEFORE IT IS JUDGED. It is gitignored, so replacing it after
   # reconciliation would not move ts_untracked — the supervisor would validate one file and publish
@@ -1519,7 +1533,12 @@ write_summary() {
   # with a one-family partial. The full record is evidence about all 81 families and a sample cannot
   # be allowed to destroy it; the sample still gets a durable artifact, under its own name.
   local target="$CAMPAIGN_ARTIFACT"
-  [ -z "${ONLY:-}" ] || target="$CAMPAIGN_ARTIFACT.partial"
+  [ "${CAMPAIGN_PARTIAL:-0}" = "0" ] || target="$CAMPAIGN_ARTIFACT.partial"
+  # PUBLISHED FOR THE CALLER, because `target` is a local and the reporting below runs outside this
+  # function. Reading a function-local from its caller is unbound under `set -u`, which killed a run
+  # whose work had already completed — the child died after its verdict and the supervisor correctly
+  # refused on child_exit(1).
+  WROTE_ARTIFACT_PATH=""
   # UNDER SUPERVISION THE CHILD MAY ONLY PROPOSE. The authoritative name is installed by the
   # supervisor after it has observed this process exit and re-reconciled the tree.
   [ "${CONCRETE_MUT_ROLE:-supervisor}" != "child" ] || target="$CAMPAIGN_ARTIFACT.candidate"
@@ -1611,6 +1630,10 @@ write_summary() {
   # "summary written" and could still exit zero.
   mv -f "$tmp" "$target" 2>/dev/null || {
     echo "error: could not install the campaign artifact" >&2; rm -f "$tmp" 2>/dev/null; return 1; }
+  # RECORDED INSIDE THE FUNCTION, where `target` is in scope. The reporting below runs in the
+  # caller, and reading a function-local from there is unbound under `set -u` — which killed a run
+  # after its verdict was already complete.
+  WROTE_ARTIFACT_PATH="${target#$ROOT_DIR/}"
   return 0
 }
 # INVALIDATE FIRST. Measured 2026-08-21: a run refused by the dirty-target guard exited before
@@ -2897,12 +2920,9 @@ if [ "$ARTIFACT_OK" = "1" ]; then
     # NAMES THE FILE IT ACTUALLY WROTE. A partial run writes .partial and deliberately leaves the full
     # record alone, but this line always said ".mutation-campaign-summary" — so following it led a
     # reader to an OLDER full-campaign record and let it be read as this run's result.
-    if [ -n "${ONLY:-}" ]; then
-      echo "summary written to .mutation-campaign-summary.partial (completed=$COMPLETED)"
-      echo "  the full-campaign record .mutation-campaign-summary was NOT touched by this partial run"
-    else
-      echo "summary written to .mutation-campaign-summary (completed=$COMPLETED)"
-    fi
+    echo "summary written to ${WROTE_ARTIFACT_PATH:-<unrecorded>} (completed=$COMPLETED)"
+    [ "${CAMPAIGN_PARTIAL:-0}" = "0" ] \
+      || echo "  the full-campaign record .mutation-campaign-summary was NOT touched by this partial run"
   fi
 else
   echo "error: the campaign artifact could NOT be written — this run has no completion record" >&2
