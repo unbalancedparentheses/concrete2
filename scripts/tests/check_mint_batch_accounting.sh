@@ -73,13 +73,17 @@ case_run() {
 }
 
 echo "=== the batch must account for every probe it registered ==="
-# AND ITS PEERS ARE STILL ACCOUNTED. One MISSING line satisfies the marker even if every other
-# per-member report vanished with it — the same defect repaired for the replay-failure case and
-# left standing in its sibling. Exactly one probe is broken, so exactly one must be missing and the
-# remaining assertions must all still be reported.
-case_run "a broken probe is named, and does not take its peers' accounting with it" \
+# EVERY MEMBER IS NAMED, NOT SILENTLY DROPPED.
+#
+# The marker alone was satisfied by a single MISSING line even if every other per-member report had
+# vanished with it. The first predicate written here demanded exactly ONE missing probe, which
+# MEASUREMENT refuted: the probes share one replay file, so a broken body stops that file compiling
+# and all EXPECTED_MINT_PROBES members go unresolved together. That is inherent to batching and is
+# not the defect. The defect would be losing them quietly — so what must hold is that every declared
+# member is individually reported missing, which is exactly what "accounting" means here.
+case_run "a broken probe body breaks its shared group, and every member is still named" \
          "MINT_SELFTEST_BREAK=0" "MISSING from group" \
-         'm=$(grep -c "MISSING from group" "$LOG"); t=$(sed -n "s/^EXPECTED_TOTAL_ASSERTIONS=//p" scripts/tests/check_dependency_edges.sh); o=$(grep -c "^  ok " "$LOG"); [ "$m" = "1" ] && [ "$o" = "$((t-1))" ]' 
+         'm=$(grep -c "MISSING from group" "$LOG"); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$m" = "$want" ]' 
 case_run "a result nobody declared is rejected by id" \
          "MINT_SELFTEST_FOREIGN=1" "UNEXPECTED result id"
 # EVERY MEMBER, COUNTED. The marker alone is printed once by the group header, so this passed even

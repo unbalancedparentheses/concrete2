@@ -513,6 +513,10 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
     _ev_undeclared=""
     while IFS= read -r _evd; do
       [ -n "$_evd" ] || continue
+      # `_baseline` is the RUN-LEVEL transcript, deliberately kept outside any family because it
+      # belongs to the run rather than to one experiment. It is reserved by construction: no family
+      # name may begin with an underscore, so this exclusion cannot hide a real family.
+      case "$_evd" in _*) continue ;; esac
       printf '%s\n' "$_sup_fams" | grep -qxF -- "$_evd" \
         || _ev_undeclared="$_ev_undeclared $_evd"
     done <<EOF
@@ -523,7 +527,7 @@ EOF
     if [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ]; then
       # family_set_digest takes its input as an ARGUMENT, not on stdin; piping to it would have
       # digested the empty string and agreed with any evidence tree that was also empty.
-      _ev_setdig="$(family_set_digest "$_ev_dirs")"
+      _ev_setdig="$(family_set_digest "$(printf '%s\n' "$_ev_dirs" | grep -v '^_')")"
       [ "$_ev_setdig" = "$_sup_famdig" ] \
         || _sup_refusals="$_sup_refusals evidence_families_not_the_declared_set($_ev_setdig vs $_sup_famdig)"
     fi
@@ -1542,6 +1546,18 @@ N=${#NAME[@]}
 # said nothing, so a duplicated family name silently made one of the two unreachable by identity and
 # made every evidence record keyed by that name ambiguous. Identity that is not unique is not
 # identity; this is checked over the whole inventory rather than only on the selection path.
+# THE UNDERSCORE PREFIX IS RESERVED, AND THAT IS ENFORCED HERE RATHER THAN ASSUMED.
+# The supervisor skips evidence directories beginning with `_` because the run-level baseline
+# transcript lives in `_baseline` and belongs to the run, not to any family. If a family could be
+# named `_something`, that skip would silently exempt it from the evidence reconciliation — the
+# exclusion would become a hole. It is a hole only if the reservation is unchecked.
+_reserved_names="$(printf '%s\n' "${NAME[@]}" | grep '^_' || true)"
+if [ -n "$_reserved_names" ]; then
+  echo "FATAL: family names may not begin with '_' (reserved for run-level evidence):" >&2
+  printf '       %s\n' $_reserved_names >&2
+  _gate_lock_release; exit 2
+fi
+
 _dupe_names="$(printf '%s\n' "${NAME[@]}" | LC_ALL=C sort | uniq -d)"
 if [ -n "$_dupe_names" ]; then
   echo "FATAL: the family inventory contains duplicate names:" >&2

@@ -429,6 +429,15 @@ fi
 _spec "$_SB/renamed.sh" corecheck-unsafe-op >/dev/null 2>&1 \
   && no "the pre-rename name still resolves" \
   || ok "the pre-rename name no longer names a family"
+# The underscore prefix is reserved for run-level evidence, and the supervisor's evidence check
+# SKIPS those directories — so a family able to take that prefix would be silently exempt from
+# evidence reconciliation. The reservation is enforced, and here it is attacked.
+sed '0,/^add "copy-predicate"/s//add "_sneaky"/' "$_DRV" > "$_SB/reserved.sh"
+_res_out="$(bash "$_SB/reserved.sh" --spec corecheck-unsafe-op 2>&1)"; _res_rc=$?
+{ [ "$_res_rc" = "2" ] && printf '%s' "$_res_out" | grep -q "may not begin with '_'"; } \
+  && ok "a family claiming the reserved underscore prefix is refused" \
+  || no "a family named '_sneaky' was accepted (rc=$_res_rc)"
+
 _dupe_out="$(bash "$_SB/dupe.sh" --spec corecheck-unsafe-op 2>&1)"; _dupe_rc=$?
 { [ "$_dupe_rc" = "2" ] && printf '%s' "$_dupe_out" | grep -q 'duplicate names'; } \
   && ok "a duplicated family name is refused, not silently resolved to the first match" \
