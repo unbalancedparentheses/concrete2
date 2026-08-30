@@ -49,6 +49,13 @@ for f in check_*.sh test_*.sh; do
     propagates=true
   elif grep -qE "exit [1-9]|gate_finish|return 1|-eq 0[[:space:]]*\]|-gt 0|-ne 0|\|\|[[:space:]]*exit" "$f"; then
     propagates=true
+  # A GATE THAT `exec`s ANOTHER GATE HAS THE STRONGEST PROPAGATION THERE IS. `exec` REPLACES this
+  # process, so the delegate's exit status is this script's exit status with nothing in between to
+  # lose it — there is no `exit 1` to find because there is no shell left to run one. Thin wrappers
+  # that run one scoped case of an expensive gate, so a single refusal can be mutation-covered
+  # without paying for the full suite, were being reported as unable to fail.
+  elif grep -qE '^[[:space:]]*exec ([a-z]+ )*(env [A-Za-z_]+=[^ ]+ )*bash "?\$' "$f"; then
+    propagates=true
   fi
 
   if $pipe_safe && $propagates; then
