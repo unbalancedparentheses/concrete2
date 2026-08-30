@@ -73,8 +73,13 @@ case_run() {
 }
 
 echo "=== the batch must account for every probe it registered ==="
+# AND ITS PEERS ARE STILL ACCOUNTED. One MISSING line satisfies the marker even if every other
+# per-member report vanished with it — the same defect repaired for the replay-failure case and
+# left standing in its sibling. Exactly one probe is broken, so exactly one must be missing and the
+# remaining assertions must all still be reported.
 case_run "a broken probe is named, and does not take its peers' accounting with it" \
-         "MINT_SELFTEST_BREAK=0" "MISSING from group"
+         "MINT_SELFTEST_BREAK=0" "MISSING from group" \
+         'm=$(grep -c "MISSING from group" "$LOG"); t=$(sed -n "s/^EXPECTED_TOTAL_ASSERTIONS=//p" scripts/tests/check_dependency_edges.sh); o=$(grep -c "^  ok " "$LOG"); [ "$m" = "1" ] && [ "$o" = "$((t-1))" ]' 
 case_run "a result nobody declared is rejected by id" \
          "MINT_SELFTEST_FOREIGN=1" "UNEXPECTED result id"
 # EVERY MEMBER, COUNTED. The marker alone is printed once by the group header, so this passed even

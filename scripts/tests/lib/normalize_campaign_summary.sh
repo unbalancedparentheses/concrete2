@@ -31,15 +31,27 @@ set -uo pipefail
 #   head             THE COMMIT UNDER TEST. Pinning it makes the baseline stale the instant anything
 #                    is committed — including committing the baseline itself, which is circular.
 #   workspace_head   the same commit, observed in the disposable workspace
-#   *_driver_sha     digest of the driver; changes whenever the harness changes
-#   inventory_sha    digest of the mutation inventory; changes when families change
-#   families_digest  the family-id set; changes when families change
-#   baseline_compiler_sha  the compiler binary; changes on any rebuild
+#   baseline_compiler_sha
+#                    the compiler binary built during the run. MEASURED, not assumed: the binary
+#                    embeds its own absolute build path, and the campaign builds in a fresh
+#                    /tmp/concrete-mut.<pid>.<rand> workspace, so two runs at the SAME commit
+#                    produce different bytes. Comparing it would make this gate flaky rather than
+#                    strict, which is the one failure mode a freshness gate must not have.
 #
-# What REMAINS compared is the whole semantic record: every count, every disposition, mode,
-# integrity, qualification, the gate-proven split, and the tree-state digests, which for a clean tree
-# are the constant empty-diff digest and so are genuine evidence rather than noise.
-VOLATILE_KEYS="secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root head workspace_head executed_driver_sha preamble_driver_sha repo_driver_sha inventory_sha families_digest baseline_compiler_sha"
+# DELIBERATELY NOT VOLATILE, though an earlier version of this list masked them:
+#
+#   *_driver_sha, inventory_sha, families_digest
+#                    These are digests of FILE CONTENT and are stable across runs at one commit.
+#                    Masking them was over-correction: it removed exactly the signal that makes this
+#                    a FRESHNESS gate. A changed producer, or a one-for-one family substitution that
+#                    leaves every count identical, must make the baseline stale — that is the whole
+#                    point of committing one. The cost is that a commit touching the driver requires
+#                    a deliberate regeneration, which is the intended price.
+#
+# What REMAINS compared is therefore the whole semantic record — every count, every disposition,
+# mode, integrity, qualification, the gate-proven split — plus the producer's own identity and the
+# tree-state digests, which for a clean tree are the constant empty-diff digest.
+VOLATILE_KEYS="secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root head workspace_head baseline_compiler_sha"
 
 usage() { echo "usage: normalize_campaign_summary.sh <artifact-path>" >&2; exit 2; }
 [ $# -eq 1 ] || usage

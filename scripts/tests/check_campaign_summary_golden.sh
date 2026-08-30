@@ -19,7 +19,7 @@
 #   fails here instead of quietly redefining the baseline.
 #
 #   REGENERATE WITH:
-#       rm -rf .mutation-evidence
+#       (nothing to remove: evidence is keyed by run id and cannot collide)
 #       FAMILY_ID=mint-missing-result-refusal \
 #       FAMILY_SPEC=bd4fae0e3629767ff4a4cd2a71c753e3555f8eb389c10ef089e36833cc0030a6 \
 #         bash scripts/tests/check_gate_mutation_coverage.sh
@@ -101,11 +101,23 @@ else
   tail -5 "$TMP/producer.log" | sed 's/^/       /'
 fi
 
+# THE ARTIFACT IS SNAPSHOTTED THE MOMENT THE PRODUCER RETURNS.
+#
+# The inner campaign releases the repository lock when it exits, so between production and the two
+# reads below there is a window in which another partial run could replace the shared artifact — and
+# this gate would then decode one file and compare another. Everything downstream reads the copy.
+RAW="$TMP/raw.partial"
+if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
+  cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
+else
+  : > "$RAW"
+fi
+
 echo "=== the RAW artifact decodes as a published record, before normalisation ==="
 # VALIDATED BEFORE NORMALISATION. Normalising first would mask the very fields a malformed publisher
 # would corrupt, so the raw bytes are what get decoded.
-if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
-  _rawdec="$(decode_candidate "$ROOT_DIR/.mutation-campaign-summary.partial" "$CAMPAIGN_SCHEMA_PUBLISHED")"
+if [ -s "$RAW" ]; then
+  _rawdec="$(decode_candidate "$RAW" "$CAMPAIGN_SCHEMA_PUBLISHED")"
   [ -z "$_rawdec" ] && ok "the freshly published artifact decodes under the published schema" \
                     || no "the freshly published artifact does not decode: $_rawdec"
 else
@@ -113,11 +125,11 @@ else
 fi
 
 echo "=== the regenerated artifact matches the baseline byte for byte ==="
-if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
+if [ -s "$RAW" ]; then
   # THE NORMALISER'S STATUS IS CHECKED. Ignoring it meant a failed subprocess that had already
   # written plausible bytes would be compared as if it had succeeded — the same "no output means
   # success" inference this harness refuses everywhere else.
-  if ! bash "$NORMALIZE" "$ROOT_DIR/.mutation-campaign-summary.partial" > "$TMP/fresh"; then
+  if ! bash "$NORMALIZE" "$RAW" > "$TMP/fresh"; then
     no "the normaliser failed; its output cannot be compared"
     printf '%s\n' "" > "$TMP/fresh"
   fi
