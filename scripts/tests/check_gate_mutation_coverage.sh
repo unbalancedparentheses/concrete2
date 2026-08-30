@@ -501,12 +501,32 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # same producer and compared against the driver's declared set.
   _ev_dirs="$(cd "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null \
               && for _d in */; do [ -e "$_d" ] || continue; printf '%s\n' "${_d%/}"; done)"
+  # SUBSET ALWAYS, EQUALITY ONLY FOR A FULL CAMPAIGN.
+  #
+  # The first version of this check compared the evidence set with the DECLARED set unconditionally,
+  # which refused every correct partial run: a single-family run leaves one directory, and the
+  # declared set has eighty-five. A check that fires on the runs it is meant to permit carries no
+  # information — it is the same failure as the four liveness attempts. What is actually wrong is an
+  # evidence directory that names NO declared family, and, for a full campaign, a set that is not
+  # the whole population.
   if [ -n "$_ev_dirs" ]; then
-    # family_set_digest takes its input as an ARGUMENT, not on stdin; piping to it would have
-    # digested the empty string and then agreed with any evidence tree that was also empty.
-    _ev_setdig="$(family_set_digest "$_ev_dirs")"
-    [ "$_ev_setdig" = "$_sup_famdig" ] \
-      || _sup_refusals="$_sup_refusals evidence_families_not_the_declared_set($_ev_setdig vs $_sup_famdig)"
+    _ev_undeclared=""
+    while IFS= read -r _evd; do
+      [ -n "$_evd" ] || continue
+      printf '%s\n' "$_sup_fams" | grep -qxF -- "$_evd" \
+        || _ev_undeclared="$_ev_undeclared $_evd"
+    done <<EOF
+$_ev_dirs
+EOF
+    [ -z "$_ev_undeclared" ] \
+      || _sup_refusals="$_sup_refusals evidence_for_undeclared_families($_ev_undeclared )"
+    if [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ]; then
+      # family_set_digest takes its input as an ARGUMENT, not on stdin; piping to it would have
+      # digested the empty string and agreed with any evidence tree that was also empty.
+      _ev_setdig="$(family_set_digest "$_ev_dirs")"
+      [ "$_ev_setdig" = "$_sup_famdig" ] \
+        || _sup_refusals="$_sup_refusals evidence_families_not_the_declared_set($_ev_setdig vs $_sup_famdig)"
+    fi
   fi
 
   _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
