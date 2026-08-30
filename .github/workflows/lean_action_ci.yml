@@ -923,6 +923,9 @@ jobs:
       - name: Mint missing-result refusal (the single case the mutation family covers)
         run: bash scripts/tests/check_mint_missing_result.sh
 
+      - name: Child process-group liveness (publication waits for an empty group)
+        run: bash scripts/tests/check_child_process_group.sh
+
       - name: concrete prove CLI gate
         run: bash scripts/tests/test_prove_cli.sh
 

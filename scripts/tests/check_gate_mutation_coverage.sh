@@ -323,8 +323,28 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _sup_tracked0="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
   _sup_untracked0="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
 
-  CONCRETE_MUT_ROLE=child bash "$0" "$@"
-  _child_rc=$?
+  # THE CHILD RUNS IN ITS OWN SESSION, so "is any campaign work still running" is answered by the
+  # kernel — does the child's process group still have members — rather than by matching command
+  # lines or walking /proc. The supervisor and every ancestor are outside that group by
+  # construction, so there is no exclusion list to get wrong, and a worker that rewrites its argv is
+  # still a member. POSIX, so Linux and macOS decide qualification the same way; /proc is Linux-only
+  # and this repository has already taken a macOS outage from depending on it.
+  _launch_report="$(mktemp "${TMPDIR:-/tmp}/mutlaunch.XXXXXX")" || {
+    echo "FATAL: supervisor cannot stage the launch report" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
+    --report "$_launch_report" -- bash "$0" "$@"
+  _launch_rc=$?
+  _child_rc="$(sed -n 's/^child_rc=//p' "$_launch_report" | head -1)"
+  _group_empty="$(sed -n 's/^group_empty=//p' "$_launch_report" | head -1)"
+  _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
+  rm -f "$_launch_report"
+  # A LAUNCHER THAT DID NOT REPORT IS NOT A CLEAN RUN. Missing fields mean the supervisor never
+  # learned the child's status, and inventing one would be the fail-open this boundary exists to
+  # remove.
+  case "${_child_rc:-}${_group_empty:-}" in
+    *[!0-9]*|'') echo "FATAL: the child launcher produced no usable report (launcher rc=$_launch_rc)" >&2
+                 _gate_lock_release 2>/dev/null; exit 2 ;;
+  esac
 
   _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
   _sup_tracked1="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
@@ -419,12 +439,10 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # child has been reaped — a surviving grandchild is reparented away and would never appear. What
   # matters is whether anything is still working THIS repository, so the check is by workspace and
   # by the driver's own snapshot, the same way the lock identifies its owner.
-  # NARROWED TO THE WORKSPACES. Matching "$ROOT_DIR/scripts/tests/" also matched the LAUNCHER that
-  # started this run — the supervisor counted its own ancestor and refused every publication. Only a
-  # disposable workspace indicates work still touching this campaign's tree.
-  _live="$(pgrep -af 'concrete-mut\.' 2>/dev/null \
-            | grep -v "^$$ " | grep -v 'pgrep' | awk 'END{print NR}')"
-  [ "${_live:-0}" = "0" ] || _sup_refusals="$_sup_refusals processes_still_working_the_tree($_live)"
+  # PUBLICATION ONLY AFTER THE GROUP IS EMPTY. Anything still in the child's process group can write
+  # evidence after the census, which the artifact would then describe without having seen it.
+  [ "$_group_empty" = "1" ] \
+    || _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)"
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
