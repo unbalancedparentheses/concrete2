@@ -55,8 +55,11 @@ _set killed_by_gate 85
 _set integrity_ok 1
 _set qualified 1
 _set refusals ""
-_set baseline_gates_green yes
-_set gates_proven all
+# PRODUCTION SHAPES, taken from what the publisher actually writes: both are `<n>/<m>`.
+# The fixture previously said `yes` and `all`, which no producer emits — a fixture that does not
+# look like the artifact cannot test the checks that read the artifact.
+_set baseline_gates_green 85/85
+_set gates_proven 85/85
 # The record must decode cleanly before any case can attribute a refusal to its own mutation.
 # THE PINNED POPULATION IS PART OF THE CALL. `candidate_incoherent` takes the family count a
 # qualifying campaign must have discharged, and every call here omitted it — so the positive control
@@ -146,7 +149,11 @@ inc() { # label field value expected-substring
   local f="$TMP/inc.$2"; sed "s/^$2=.*/$2=$3/" "$GOOD" > "$f"
   local got; got="$(candidate_incoherent "$f" "$POP")"
   case "$got" in *"$4"*) ok "$1" ;; *) no "$1 — expected /$4/, got '${got:-<none>}'" ;; esac
-  [ "$(supervisor_qualification "$f" "")" = "qualified=0" ] \
+  # THE POPULATION IS PASSED HERE TOO. Omitting it made every one of these five second assertions
+  # pass for the same irrelevant reason — a missing pinned population already forces qualified=0 —
+  # so each would have stayed green with its named field-specific check deleted. A control that
+  # cannot distinguish "the field is wrong" from "I forgot an argument" is not a control.
+  [ "$(supervisor_qualification "$f" "" "$POP")" = "qualified=0" ] \
     && ok "...and it cannot publish qualified=1" || no "$1 — it published qualification anyway"
 }
 inc "qualified=1 with completed=0 is incoherent"       completed 0     qualified_without_completed
@@ -264,11 +271,44 @@ _falsify killed_by_gate x qualified_with_nonnumeric_kill_split \
 _falsify baseline_gates_green "" qualified_without_baseline_gates_green \
   "qualification with no baseline-gates result is refused"
 _falsify gates_proven "" qualified_without_gates_proven \
-  "qualification proving no gates is refused"
+  "qualification with no gates-proven result is refused"
+# NONEMPTY IS NOT A VALUE. These are the production shapes that are perfectly well-formed and mean
+# the opposite of what qualification claims.
+_falsify baseline_gates_green 0/33 qualified_with_baseline_gates_red \
+  "a campaign qualifying on 0 of 33 green baseline gates is refused"
+_falsify gates_proven 0/85 qualified_with_gates_unproven \
+  "a campaign qualifying with 0 of 85 gates proven is refused"
+_falsify gates_proven 84/85 qualified_with_gates_unproven \
+  "a campaign qualifying with one gate unproven is refused"
+_falsify gates_proven all qualified_with_unparsable_gates_proven \
+  "a gates-proven value that is not <n>/<m> is refused rather than accepted as nonempty"
+_falsify families_declared 84 qualified_with_families_declared \
+  "a record declaring a different population than the pinned one is refused"
+_falsify failed 1 qualified_with_failures \
+  "a campaign with a failure does not qualify"
 # ...and the unfalsified record still qualifies, or the six checks above are just refusing everything.
 [ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
   && ok "the unfalsified record still qualifies (positive control for the six checks above)" \
   || no "the new field checks refuse a well-formed record: $(candidate_incoherent "$GOOD" "$POP")"
+
+echo "=== the evidence directories must BE the declared family set ==="
+# Naming the right digest is not the same as HOLDING the right evidence: a candidate could publish
+# the correct family digest beside arbitrarily named killed directories and every total would still
+# self-agree. This is the comparison the supervisor now makes on the names found on disk.
+_declared="$(printf 'famA\nfamB\nfamC\n')"
+_dig_declared="$(family_set_digest "$_declared")"
+[ "$(family_set_digest "$(printf 'famC\nfamA\nfamB\n')")" = "$_dig_declared" ] \
+  && ok "the family-set digest is order-independent (positive control)" \
+  || no "the family-set digest depends on order"
+[ "$(family_set_digest "$(printf 'famA\nfamB\nfamX\n')")" != "$_dig_declared" ] \
+  && ok "a one-for-one family substitution changes the set digest" \
+  || no "substituting a family left the set digest unchanged"
+[ "$(family_set_digest "$(printf 'famA\nfamB\n')")" != "$_dig_declared" ] \
+  && ok "a missing family changes the set digest" \
+  || no "dropping a family left the set digest unchanged"
+[ "$(family_set_digest "")" != "$_dig_declared" ] \
+  && ok "an empty evidence tree does not digest as the declared set" \
+  || no "the empty set digests as the declared set"
 
 echo "=== the candidate must be THIS run's candidate ==="
 sed 's|^run_id=.*|run_id=THIS-RUN|' "$GOOD" | sed 's|^head=.*|head=THIS-HEAD|' > "$TMP/bound"
@@ -319,6 +359,17 @@ _r_after="$(evidence_root_digest "$_EV")"
 [ "$_r_before" != "$_r_after" ] \
   && ok "swapping two families' complete contents moves the evidence root" \
   || no "the root is blind to which family produced which record"
+# A SYMLINK IS NOT EVIDENCE. `find -type f` did not match one, but every consumer of this evidence
+# follows it — so a verdict could be replaced by a link to content outside the tree, be read as
+# authoritative, and never appear in the digest meant to detect exactly that.
+mkdir -p "$_EV/famC"
+ln -s /etc/hostname "$_EV/famC/record" 2>/dev/null || ln -s /dev/null "$_EV/famC/record"
+_sym_out="$(evidence_root_digest "$_EV" 2>/dev/null)"; _sym_rc=$?
+{ [ "$_sym_rc" != "0" ] && case "$_sym_out" in *symlink*) true ;; *) false ;; esac; } \
+  && ok "a symlink in the evidence tree is refused with its own status, not silently omitted" \
+  || no "a symlinked record was accepted (rc=$_sym_rc out='$_sym_out')"
+rm -rf "$_EV/famC"
+
 # ...and the same bytes in the same places still agree with themselves, or the digest is just noise.
 mv "$_EV/famA/record" "$_EV/.swap" && mv "$_EV/famB/record" "$_EV/famA/record" && mv "$_EV/.swap" "$_EV/famB/record"
 [ "$(evidence_root_digest "$_EV")" = "$_r_before" ] \

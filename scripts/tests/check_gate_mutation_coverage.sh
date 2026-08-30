@@ -373,6 +373,14 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
     fi
     _gate_lock_release 2>/dev/null || true
   }
+  # AND FROM HERE THE TRAP IS THE ONLY RELEASE SITE.
+  #
+  # Every path below used to call _gate_lock_release itself before exiting. The refusal path did it
+  # too — so the supervisor printed "campaign work may still be running", released the lock, and only
+  # then reported that it was retaining it. Adding the hold rule to the trap while leaving eight
+  # explicit releases in front of it produced exactly the shape this harness exists to catch: a
+  # protection that reads as present and never runs. There is one release, it is here, and it asks
+  # supervisor_must_hold_lock first.
   trap '_sup_exit_cleanup' EXIT
 
   # THE CHILD RUNS IN ITS OWN SESSION, so "is any campaign work still running" is answered by the
@@ -383,7 +391,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # with CI on both as the confirmation; /proc is Linux-only
   # and this repository has already taken a macOS outage from depending on it.
   _launch_report="$(mktemp "${TMPDIR:-/tmp}/mutlaunch.XXXXXX")" || {
-    echo "FATAL: supervisor cannot stage the launch report" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+    echo "FATAL: supervisor cannot stage the launch report" >&2; exit 2; }
   # THE STATUS IS BOUND TO THIS RUN. Without a run id a report left by an earlier launch is
   # indistinguishable from this one's, and the supervisor would publish against a stale answer.
   CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
@@ -408,7 +416,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # the fail-open this boundary exists to remove.
   if [ -n "$_launch_bad" ]; then
     echo "FATAL: the child launcher report is unusable:$_launch_bad (launcher rc=$_launch_rc)" >&2
-    _gate_lock_release 2>/dev/null; exit 2
+    exit 2
   fi
 
   _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
@@ -423,7 +431,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # reconciliation would not move ts_untracked — the supervisor would validate one file and publish
   # another. Everything below reads the copy.
   _cand_snap="$(mktemp "${TMPDIR:-/tmp}/mutcand.XXXXXX" 2>/dev/null)" \
-    || { echo "FATAL: supervisor cannot stage the candidate" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+    || { echo "FATAL: supervisor cannot stage the candidate" >&2; exit 2; }
   : > "$_cand_snap"
   [ ! -s "$_cand" ] || cp "$_cand" "$_cand_snap" 2>/dev/null || : > "$_cand_snap"
   _cand="$_cand_snap"
@@ -486,6 +494,21 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # binding would then be comparing the candidate against an observation nothing else validated.
   _sup_refusals="$_sup_refusals$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"
 
+  # THE DIRECTORIES MUST BE THE FAMILIES. The family digest was compared candidate-to-driver, which
+  # proves the candidate can name the right set — not that the evidence on disk IS that set. A
+  # candidate could publish the correct digest beside eighty-five arbitrarily named killed
+  # directories, and root and totals would all self-agree. The names on disk are digested with the
+  # same producer and compared against the driver's declared set.
+  _ev_dirs="$(cd "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null \
+              && for _d in */; do [ -e "$_d" ] || continue; printf '%s\n' "${_d%/}"; done)"
+  if [ -n "$_ev_dirs" ]; then
+    # family_set_digest takes its input as an ARGUMENT, not on stdin; piping to it would have
+    # digested the empty string and then agreed with any evidence tree that was also empty.
+    _ev_setdig="$(family_set_digest "$_ev_dirs")"
+    [ "$_ev_setdig" = "$_sup_famdig" ] \
+      || _sup_refusals="$_sup_refusals evidence_families_not_the_declared_set($_ev_setdig vs $_sup_famdig)"
+  fi
+
   _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
   _sup_rootrc=0
   _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null)" || _sup_rootrc=$?
@@ -536,12 +559,12 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # the exclusion it was asserting, and the operator is told exactly which pgid to inspect and what
   # to remove once it is gone. One repository writer at a time has to survive the case where the
   # previous writer did not stop.
-  case "$_group_state" in
-    empty)             ;;
-    nonempty)          _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)" ;;
-    permission_denied) _sup_refusals="$_sup_refusals campaign_group_unreadable(permission_denied,pgid=$_child_pgid)" ;;
-    *)                 _sup_refusals="$_sup_refusals campaign_group_unreadable($_group_state,pgid=$_child_pgid)" ;;
-  esac
+  if ! group_state_permits_publication "$_group_state"; then
+    case "$_group_state" in
+      nonempty) _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)" ;;
+      *)        _sup_refusals="$_sup_refusals campaign_group_unreadable($_group_state,pgid=$_child_pgid)" ;;
+    esac
+  fi
   # PUBLICATION ONLY AFTER THE CHILD'S ORIGINAL PROCESS GROUP IS EMPTY. Anything still in it can
   # write evidence after the census, which the artifact would then describe without having seen it.
   #
@@ -557,16 +580,38 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
   _pub_ok=1
-  _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; exit 2; }
   if [ -s "$_cand" ]; then
     # The qualified line is decided by the same library, not by a second rule here.
     sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals" "$EXPECTED_FAMILIES")/" "$_cand" > "$_tmp" || _pub_ok=0
   else
-    printf 'completed=0
-mode=%s
-qualified=0
-integrity_ok=0
-' "${FAMILY:+single}${FAMILY:-campaign}" > "$_tmp" || _pub_ok=0
+    # A FAILURE RECORD IS STILL A RECORD.
+    #
+    # This emitted four keys where the published schema declares forty-five, so the artifact the
+    # supervisor installs when the child leaves no candidate — the case this boundary exists for —
+    # could not be decoded by the very decoder that gates every other path. A second, looser
+    # producer of the same artifact is the defect class this harness keeps finding; it was here, in
+    # the failure path, where nobody looks.
+    #
+    # The mode was also computed as "${FAMILY:+single}${FAMILY:-campaign}", which concatenates BOTH
+    # expansions: FAMILY=5 produced the mode `single5`, and an identity-selected run produced
+    # `campaign` because FAMILY is unset even though the run is a single family. Partial-ness has
+    # one fact, and this reads it like every other site.
+    {
+      for _sk in $CAMPAIGN_SCHEMA_NUMERIC;  do printf '%s=0\n' "$_sk"; done
+      for _sk in $CAMPAIGN_SCHEMA_FREEFORM; do printf '%s=unavailable\n' "$_sk"; done
+      for _sk in $CAMPAIGN_SCHEMA_SUPERVISOR; do printf '%s=unavailable\n' "$_sk"; done
+    } > "$_tmp.skel" || _pub_ok=0
+    _mode="campaign"; [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ] || _mode="single"
+    sed -e "s|^mode=.*|mode=$_mode|" \
+        -e "s|^refusals=.*|refusals= child_left_no_candidate|" \
+        -e "s|^run_id=.*|run_id=$RUN_ID|" \
+        -e "s|^head=.*|head=${_sup_head1:-unavailable}|" \
+        -e "s|^supervisor_refusals=.*|supervisor_refusals=${_sup_refusals:-candidate_missing}|" \
+        -e "s|^supervisor_child_exit=.*|supervisor_child_exit=${_child_rc:-0}|" \
+        -e "s|^candidate_incoherent=.*|candidate_incoherent=${_cand_incoh:-none}|" \
+        "$_tmp.skel" > "$_tmp" || _pub_ok=0
+    rm -f "$_tmp.skel"
   fi
   printf 'supervisor_refusals=%s
 supervisor_child_exit=%s
@@ -582,17 +627,17 @@ supervisor_child_exit=%s
   if [ "$_pub_ok" != "1" ]; then
     rm -f "$_tmp" "$_cand_snap"
     echo "FATAL: the authoritative artifact could not be written completely" >&2
-    _gate_lock_release 2>/dev/null; exit 2
+    exit 2
   fi
-  mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; exit 2; }
   rm -f "$_cand_snap" "$ROOT_DIR/.mutation-campaign-summary.candidate" 2>/dev/null
 
   if [ -n "$_sup_refusals" ]; then
     echo "SUPERVISOR REFUSED QUALIFICATION:$_sup_refusals" >&2
-    _gate_lock_release 2>/dev/null
+
     [ "$_child_rc" = "0" ] && exit 1 || exit "$_child_rc"
   fi
-  _gate_lock_release 2>/dev/null
+
   exit "$_child_rc"
 fi
 
@@ -1495,9 +1540,17 @@ if [ "${1:-}" = "--spec" ]; then
   [ -n "${2:-}" ] || { echo "usage: --spec <FAMILY_ID>" >&2; exit 2; }
   for (( _i=0; _i<N; _i++ )); do
     [ "${NAME[$_i]}" = "$2" ] || continue
-    family_spec_digest "${NAME[$_i]}" "${FILE[$_i]}" "${GATE[$_i]}" \
-                       "${BUILD[$_i]}" "${OLD[$_i]}" "${NEW[$_i]}"
-    exit 0
+    # THE PRODUCER'S STATUS AND ITS OUTPUT ARE BOTH CHECKED. `exit 0` sat directly beneath the
+    # call, so with no sha256 implementation — or a hasher that succeeded and printed nothing —
+    # this printed an empty line and reported success. A caller pinning that value would pin the
+    # empty string, and the pin would then match any family whose digest also failed to compute.
+    _spec_out="$(family_spec_digest "${NAME[$_i]}" "${FILE[$_i]}" "${GATE[$_i]}" \
+                                    "${BUILD[$_i]}" "${OLD[$_i]}" "${NEW[$_i]}")" || {
+      echo "FATAL: the mutation-spec digest producer failed for '$2'" >&2; exit 2; }
+    case "$_spec_out" in
+      [0-9a-f][0-9a-f]*) printf '%s\n' "$_spec_out"; exit 0 ;;
+      *) echo "FATAL: the mutation-spec digest for '$2' is not a digest: '$_spec_out'" >&2; exit 2 ;;
+    esac
   done
   echo "no family named '$2' in this inventory of $N" >&2; exit 2
 fi

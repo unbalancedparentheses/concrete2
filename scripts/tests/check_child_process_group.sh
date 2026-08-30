@@ -212,8 +212,10 @@ _b="$(sed -n 's/^child_rc=//p' "$_rep4")|$(sed -n 's/^child_signalled=//p' "$_re
   || no "exit 143 vs signal 15 not distinguished (got $_a vs $_b)"
 # SIGNAL FIELDS MUST AGREE. Either alone would lead a consumer to the opposite conclusion.
 _mk 'protocol_version=1' 'run_id=X' 'child_rc=143' 'child_signalled=1' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
-_coh() { local sg sn; sg="$(sed -n 's/^child_signalled=//p' "$TMP/probe")"; sn="$(sed -n 's/^child_signal=//p' "$TMP/probe")"
-         case "$sg:$sn" in 0:0|1:[1-9]*) return 0 ;; *) return 1 ;; esac; }
+# THE SAME DECODER AGAIN, not a third rule. This helper had its own case expression for signal
+# coherence, which made it a second decoder of the same fields inside the gate that exists to prove
+# there is only one — and a looser one, since it never checked the 128+N status agreement.
+_coh() { [ -z "$(decode_launch_report "$TMP/probe" "X" 0)" ]; }
 _coh && no "signalled=1 with signal=0 was accepted" || ok "signalled=1 with signal=0 is incoherent"
 _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=9' 'process_group_state=empty' 'pgid=1'
 _coh && no "signal=9 with signalled=0 was accepted" || ok "a signal without signalled is incoherent"
@@ -223,10 +225,18 @@ _coh && ok "coherent signal fields are accepted (positive control)" || no "coher
 echo "=== only a PROVEN-empty group may permit publication ==="
 # A boolean collapsed these: permission_denied means the group EXISTS but is not ours to signal, and
 # error:<n> means the question was never answered. Neither is absence.
-for st in nonempty permission_denied error:13; do
-  _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' "process_group_state=$st" 'pgid=1'
-  [ "$(sed -n 's/^process_group_state=//p' "$TMP/probe")" = "empty" ] \
-    && no "'$st' would have been read as empty" || ok "'$st' is not empty, so it cannot permit publication"
+# THE DECISION IS EXERCISED, NOT RESTATED.
+#
+# These controls used to write a state into a file and then assert that the string read back was not
+# "empty" — a tautology about sed, satisfied with the supervisor's entire refusal block deleted. They
+# now call the predicate the supervisor itself calls, so removing that decision turns them red.
+group_state_permits_publication empty \
+  && ok "a proven-empty group permits publication (positive control)" \
+  || no "a proven-empty group was refused"
+for st in nonempty permission_denied error:13 "" garbage; do
+  group_state_permits_publication "$st" \
+    && no "'${st:-<empty>}' was allowed to permit publication" \
+    || ok "'${st:-<empty>}' is not absence, so it cannot permit publication"
 done
 
 echo ""

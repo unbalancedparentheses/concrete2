@@ -157,10 +157,29 @@ candidate_incoherent() { # candidate [expected-family-count]
     else
       out="$out qualified_with_nonnumeric_kill_split($kg/$kb)"
     fi
-    # A qualifying campaign rests on a green baseline and on having proved something; empty or
-    # absent values here are not modest results, they are the absence of the claim.
-    [ -n "$bg" ] || out="$out qualified_without_baseline_gates_green"
-    [ -n "$gp" ] || out="$out qualified_without_gates_proven"
+    # NONEMPTY IS NOT A VALUE. Requiring only that these be non-blank accepted the production
+    # shapes that mean the OPPOSITE of what qualification claims: `0/33` green baseline gates, or
+    # `0/85` gates proven, are perfectly non-empty and describe a campaign that established
+    # nothing. Both fields are published as `<n>/<m>`, so both are read as such and must be whole.
+    case "$bg" in
+      '') out="$out qualified_without_baseline_gates_green" ;;
+      */*) [ "${bg%%/*}" = "${bg##*/}" ] || out="$out qualified_with_baseline_gates_red($bg)" ;;
+      *) out="$out qualified_with_unparsable_baseline_gates($bg)" ;;
+    esac
+    case "$gp" in
+      '') out="$out qualified_without_gates_proven" ;;
+      */*) [ "${gp%%/*}" = "${gp##*/}" ] || out="$out qualified_with_gates_unproven($gp)"
+           case "${gp%%/*}" in ''|*[!0-9]*) out="$out qualified_with_unparsable_gates_proven($gp)" ;;
+             0) out="$out qualified_with_zero_gates_proven" ;; esac ;;
+      *) out="$out qualified_with_unparsable_gates_proven($gp)" ;;
+    esac
+    # THE REMAINING PUBLISHED COUNTS. families_declared must be the pinned population, and a
+    # qualifying campaign cannot have failures.
+    local fd fl
+    fd="$(_f families_declared)"; fl="$(_f failed)"
+    [ -z "$expected" ] || [ "$fd" = "$expected" ] \
+      || out="$out qualified_with_families_declared($fd vs pinned $expected)"
+    [ "$fl" = "0" ] || out="$out qualified_with_failures($fl)"
     # THE DISPOSITIONS MUST ACCOUNT FOR THE REPORTED FAMILIES. Checking each disposition is zero and
     # that killed equals reported leaves the ledger unbalanced if a family is reported under no
     # disposition at all; this is the identity that makes the four numbers describe one population.
@@ -210,6 +229,16 @@ evidence_root_digest() { # evidence-dir -> digest, or a marker; nonzero on produ
     # status is discarded, so an unreadable directory yielded an empty listing and a confident digest
     # over nothing — a hash that agrees with itself while describing no evidence at all.
     local listing
+    # SYMLINKS ARE REFUSED, NOT SKIPPED.
+    #
+    # `-type f` does not match a symlink, but every consumer of this evidence — the `-s` tests, the
+    # `sed` that reads a verdict, the census — FOLLOWS one. So a verdict or a transcript could be
+    # replaced by a link to content outside the evidence tree, be read as authoritative by all of
+    # them, and never appear in the digest that is supposed to detect exactly that. Evidence is
+    # regular files; anything else is a refusal with its own status, not a silent omission.
+    if [ -n "$(cd "$d" 2>/dev/null && find . -type l -print -quit 2>/dev/null)" ]; then
+      printf 'evidence-contains-symlink'; return 3
+    fi
     listing="$(cd "$d" 2>/dev/null && find . -type f 2>/dev/null | LC_ALL=C sort)" || return 1
     # NAMES AND BOUNDARIES ARE PART OF THE EVIDENCE. Hashing concatenated CONTENTS alone let a
     # required transcript be RENAMED — gate.log to gate2.log, same sort position — without moving the
@@ -357,6 +386,20 @@ candidate_run_binding() {
     ''|*TREESTATE-UNAVAILABLE*) out="$out supervisor_head_unreadable($want_head)" ;;
   esac
   printf '%s' "$out"
+}
+
+# group_state_permits_publication <process-group-state> -> 0 (may publish) / 1 (must not)
+#
+# ONLY A PROVEN-EMPTY GROUP. The launcher distinguishes four outcomes and a boolean would collapse
+# them: `permission_denied` means the group EXISTS but is not ours to signal, and `error:<n>` means
+# the question was not answered at all. Neither is absence. This was an inline `case` in the driver
+# and a gate that re-stated the enumeration beside it, so the gate's controls could pass with the
+# driver's refusal deleted — they were comparing strings, not exercising a decision.
+group_state_permits_publication() {
+  case "${1:-}" in
+    empty) return 0 ;;
+    *)     return 1 ;;
+  esac
 }
 
 # supervisor_must_hold_lock <process-group-state> -> 0 (hold) / 1 (release)
