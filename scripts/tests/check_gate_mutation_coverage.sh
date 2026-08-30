@@ -323,6 +323,22 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _sup_tracked0="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
   _sup_untracked0="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
 
+  # ONE OWNER FOR THE RUN ID, COMPUTED BEFORE THE CHILD EXISTS. The child used to derive it from
+  # START_HEAD, which is established a thousand lines after the supervisor has already spawned and
+  # bound its launcher status to it — `set -u` caught that immediately as an unbound variable. The
+  # supervisor computes it here from tree state it already holds and exports it, so both roles name
+  # the same run by construction rather than by two derivations agreeing.
+  RUN_ID="$(printf '%.12s' "${_sup_head0:-nohead}")-$(date +%Y%m%dT%H%M%S)-$$-$(basename "$(mktemp -u XXXXXX)")"
+  export CONCRETE_MUT_RUN_ID="$RUN_ID"
+
+  # THE SUPERVISOR OWNS THE LOCK, SO IT RELEASES IT ON EVERY EXIT. Acquisition happens before the
+  # exec, and the supervisor previously released only along its normal paths — so a supervisor that
+  # died first (measured: an unbound variable at dispatch) left the lock held by a dead pid, and the
+  # next campaign refused. That refusal is correct, since this harness deliberately never reclaims
+  # from a dead pid, but requiring a human for every crash is a poor trade when the owner can simply
+  # release on the way out. Release is creator-checked, so releasing twice is safe.
+  trap '_rm_snapdir; _gate_lock_release 2>/dev/null || true' EXIT
+
   # THE CHILD RUNS IN ITS OWN SESSION, so "is any campaign work still running" is answered by the
   # kernel — does the child's process group still have members — rather than by matching command
   # lines or walking /proc. The supervisor and every ancestor are outside that group by
@@ -2142,7 +2158,10 @@ EVIDENCE_FAILED=""
 # HEAD + second + pid can repeat across hosts sharing a checkout, and the run directory is supposed
 # to be unique. A random component removes the coincidence; `mktemp -u` is used because it draws from
 # the same entropy the rest of this script relies on.
-RUN_ID="${START_HEAD:0:12}-$(date +%Y%m%dT%H%M%S)-$$-$(basename "$(mktemp -u XXXXXX)")"
+# INHERITED FROM THE SUPERVISOR when there is one, so the id the launcher status is bound to and the
+# id the evidence is filed under cannot diverge. The fallback exists for the modes that run without a
+# supervisor at all (anchor and coverage checks), which publish nothing.
+RUN_ID="${CONCRETE_MUT_RUN_ID:-${START_HEAD:0:12}-$(date +%Y%m%dT%H%M%S)-$$-$(basename "$(mktemp -u XXXXXX)")}"
 EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 
 # The per-family transcript files. Named once: publication copies exactly these, and the family
