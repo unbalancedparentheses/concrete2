@@ -35,7 +35,7 @@ ok(){ echo "  ok   $1"; PASS=$((PASS+1)); ASSERT_LABELS+="$1
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); ASSERT_LABELS+="$1
 "; }
 
-# THE ORDINARY PROBES ARE A POPULATION TOO. Only the 18 minting probes were pinned, so deleting an
+# THE ORDINARY PROBES ARE A POPULATION TOO. Only the minting probes were pinned, so deleting an
 # ordinary probe left PASS=309 FAIL=0 and exit 0 — the same silent-deletion hole, thirteen times
 # larger. Registration happens here, at the single point every ordinary probe passes through, so it
 # cannot be bypassed by adding a call site.
@@ -223,7 +223,7 @@ LEAN
 #
 # `mintProbe` runs `Concrete.Proof.replay`, a real kernel run, MEASURED at ~17.5s. Eighteen probes
 # called it, each in its own `lake env lean` process: ~315s of this gate's measured 675s spent
-# replaying the same theorem eighteen times. What differs between these probes is the material handed
+# replaying the same theorem once per probe. What differs between these probes is the material handed
 # to `ReceiptMaterial.of?`, and that is PURE — as the preamble above already says.
 #
 # WHAT THIS DOES NOT WEAKEN. `SuccessfulReplay` has a private constructor and `replay` is its only
@@ -236,7 +236,7 @@ LEAN
 # its OWN driver process and therefore its own replay, so a result for probe X can only have come
 # from the driver of X's declared group — cross-group substitution is structurally impossible rather
 # than merely checked, and no replay outlives its `$TMP` driver, so nothing survives into another
-# gate invocation or mutation state. All 18 probes currently declare one group because all 18 replay
+# gate invocation or mutation state. Every probe currently declares one group because they all replay
 # `parse_byte_correct` with identical targets; adding a probe with a different target adds a group
 # and a second replay automatically.
 #
@@ -306,6 +306,12 @@ probe_mint() {
 : "${MINT_SELFTEST_BREAK:=}"
 : "${MINT_SELFTEST_FOREIGN:=}"
 : "${MINT_SELFTEST_REPLAY_FAIL:=}"
+# DUPLICATE-RESULT DETECTION HAD NO CONTROL. The batch refuses duplicate ids, but nothing ever made
+# one, so the refusal was an unexercised branch — indistinguishable, from the outside, from a branch
+# that had been deleted. Boolean, and it re-emits the FIRST declared member's own line rather than
+# taking any value from the environment, so the seam cannot fabricate a result or name an id that is
+# not already this group's.
+: "${MINT_SELFTEST_DUPLICATE:=}"
 : "${MINT_SELFTEST_SECOND_GROUP:=}"
 # SHELL_FAIL runs a failing command inside the batch: it proves the ERR trap actually reaches into
 # these functions, which it did NOT before errtrace was set. Run it with GATE_DONE=1 exported to
@@ -385,11 +391,16 @@ LEAN
   local rc=0
   out="$(lake env lean "$f" 2>&1)" || rc=$?
   # BOOLEAN, WITH A HARDCODED IMPOSSIBLE ID. This used to append the variable's VALUE verbatim to
-  # authoritative batch output, so a multiline value could fabricate all eighteen <<Pnnn>> records
+  # authoritative batch output, so a multiline value could fabricate every <<Pnnn>> record
   # with the expected texts and no duplicates — an environment variable that manufactures a green
   # batch, which is far worse than the accounting hole the control exists to demonstrate.
   [ "$MINT_SELFTEST_FOREIGN" != "1" ] || out="$out
 <<P999>> INJECTED-BY-SELFTEST"
+  if [ "$MINT_SELFTEST_DUPLICATE" = "1" ]; then
+    _dup_line="$(grep -m1 -E '^<<P[0-9]{3}>> ' <<<"$out")"
+    [ -z "$_dup_line" ] || out="$out
+$_dup_line"
+  fi
 
   # A SHARED-REPLAY FAILURE IS ONE CAUSE, and it names every affected member rather than becoming an
   # empty green batch: no probe in this group ran.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # THE MINT-BATCH ACCOUNTING CONTROLS, ACTUALLY RUN.
 #
-# `check_dependency_edges.sh` batches its eighteen receipt-minting probes into one kernel replay,
+# `check_dependency_edges.sh` batches its receipt-minting probes — EXPECTED_MINT_PROBES of them,
+# pinned in that gate rather than counted again here — into one kernel replay,
 # which is sound only because the batch reconciles what it ASKED FOR against what it was ANSWERED:
 # a missing result, a duplicate result, a foreign result, a failed replay, a broken probe or a
 # grouping failure must each turn the gate red rather than shrink a green total.
@@ -55,6 +56,14 @@ case_run() {
   # `ok` line — which is exactly what a mutation that neutralises the REFUSAL while preserving its
   # MESSAGE produces. The control would then pass while the accounting it guards was disabled.
   if grep -E '^(  FAIL|FATAL)' "$log" | grep -qF -- "$marker"; then
+    # A MARKER IS NECESSARY, NOT SUFFICIENT. Several of these cases assert something about the SHAPE
+    # of the failure — that it is confined to one group, or that it names every affected member —
+    # and a single matching failure line is equally consistent with the whole gate collapsing. The
+    # optional predicate is that extra claim, evaluated against the log with $LOG bound to it.
+    if [ -n "${4:-}" ] && ! LOG="$log" bash -c "$4"; then
+      no "$label — /$marker/ appeared, but the failure has the wrong shape: $4"
+      return
+    fi
     ok "$label"
   elif grep -qF -- "$marker" "$log"; then
     no "$label — /$marker/ appears, but NOT on a failure line: the message survived while the refusal did not"
@@ -68,10 +77,23 @@ case_run "a broken probe is named, and does not take its peers' accounting with 
          "MINT_SELFTEST_BREAK=0" "MISSING from group"
 case_run "a result nobody declared is rejected by id" \
          "MINT_SELFTEST_FOREIGN=1" "UNEXPECTED result id"
+# EVERY MEMBER, COUNTED. The marker alone is printed once by the group header, so this passed even
+# if the per-member reporting loop beneath it were deleted — the exact regression the case is named
+# for. The count of `unproven (replay failed)` lines must equal the pinned probe population.
 case_run "a failed shared replay names every affected member instead of emptying the batch" \
-         "MINT_SELFTEST_REPLAY_FAIL=1" "the shared kernel replay FAILED"
+         "MINT_SELFTEST_REPLAY_FAIL=1" "the shared kernel replay FAILED" \
+         'n=$(grep -c "unproven (replay failed)" "$LOG"); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$n" = "$want" ]'
+
+# ALONE MEANS ALONE. A second group failing to replay must not disturb the real probes, but the
+# marker appears just as readily when EVERY probe failed too. The real assertions must still be
+# reported ok, so the passing count must be the gate's full pinned total.
 case_run "a second group that cannot replay fails ALONE, leaving the real probes accounted" \
-         "MINT_SELFTEST_SECOND_GROUP=1" "unproven (replay failed): SELFTEST"
+         "MINT_SELFTEST_SECOND_GROUP=1" "unproven (replay failed): SELFTEST" \
+         'n=$(grep -c "^  ok " "$LOG"); want=$(sed -n "s/^EXPECTED_TOTAL_ASSERTIONS=//p" scripts/tests/check_dependency_edges.sh); [ "$n" = "$want" ]'
+
+# The batch refuses duplicate result ids, but nothing had ever produced one.
+case_run "a duplicated result id is refused, not read as two independent confirmations" \
+         "MINT_SELFTEST_DUPLICATE=1" "DUPLICATE result ids"
 
 echo "=== a failure inside the batch cannot be swallowed ==="
 case_run "a shell failure inside the batch reaches the trap (errtrace is load-bearing)" \
@@ -93,7 +115,7 @@ if [ -n "$MBA_ONLY" ]; then
   [ "$CASES_RUN" -ge 1 ] || { echo "  FAIL MBA_ONLY=$MBA_ONLY selected no case"; FAIL=$((FAIL+1)); }
 else
   # THE FULL SET IS PINNED. A case silently deleted would otherwise shrink a green total.
-  EXPECTED_CASES=8
+  EXPECTED_CASES=9
   [ "$CASES_RUN" = "$EXPECTED_CASES" ] \
     || { echo "  FAIL ran $CASES_RUN cases, expected $EXPECTED_CASES"; FAIL=$((FAIL+1)); }
 fi
