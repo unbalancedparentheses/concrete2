@@ -47,11 +47,26 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 [ -s "$GOLDEN" ] || { echo "error: golden baseline missing at $GOLDEN — regenerate it (see header)" >&2; exit 2; }
 
-echo "=== the golden baseline is itself a valid published record ==="
-# A baseline that does not decode is not a baseline; it would freeze whatever malformation it holds.
-_dec="$(decode_candidate "$GOLDEN" "$CAMPAIGN_SCHEMA_PUBLISHED")"
-[ -z "$_dec" ] && ok "the committed baseline decodes under the published schema" \
-                || no "the committed baseline does not decode: $_dec"
+echo "=== the baseline is a NORMALISED PROJECTION, and is checked as one ==="
+# A NORMALISED RECORD IS NOT A PUBLISHED RECORD. Decoding the baseline under the published schema
+# fails by construction: the volatile values are replaced by <VOLATILE>, which is not the canonical
+# number the schema requires for secs_*. Measured, and it is the decoder being right — I asserted
+# the opposite in a commit message on the strength of a diagnostic that had errored instead of
+# printing its result.
+#
+# So the RAW artifact is what must decode, below, after the producer runs; what is checked here is
+# the property normalisation actually preserves — the key set — plus that every declared volatile
+# key really was masked, so a masked field cannot quietly become an unmasked one.
+_vol_missing=""
+for _k in secs_total secs_copy secs_build secs_gate secs_other run_id evidence_dir evidence_root; do
+  grep -qxF "$_k=<VOLATILE>" "$GOLDEN" || _vol_missing="$_vol_missing $_k"
+done
+[ -z "$_vol_missing" ] && ok "every declared volatile key is masked in the baseline" \
+                       || no "unmasked volatile keys in the baseline:$_vol_missing"
+# ...and nothing ELSE is masked, or the baseline would be comparing less than it appears to.
+_vol_extra="$(grep -c '=<VOLATILE>' "$GOLDEN")"
+[ "$_vol_extra" = "8" ] && ok "exactly the 8 declared volatile keys are masked, nothing more" \
+                        || no "$_vol_extra masked values, expected exactly 8"
 
 echo "=== its key set equals the declared schema exactly ==="
 printf '%s\n' $CAMPAIGN_SCHEMA_PUBLISHED | LC_ALL=C sort > "$TMP/declared"
@@ -72,6 +87,17 @@ if FAMILY_ID="$GOLDEN_FAMILY_ID" FAMILY_SPEC="$GOLDEN_FAMILY_SPEC" \
 else
   no "the producer failed (exit $?) — see the tail below"
   tail -5 "$TMP/producer.log" | sed 's/^/       /'
+fi
+
+echo "=== the RAW artifact decodes as a published record, before normalisation ==="
+# VALIDATED BEFORE NORMALISATION. Normalising first would mask the very fields a malformed publisher
+# would corrupt, so the raw bytes are what get decoded.
+if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
+  _rawdec="$(decode_candidate "$ROOT_DIR/.mutation-campaign-summary.partial" "$CAMPAIGN_SCHEMA_PUBLISHED")"
+  [ -z "$_rawdec" ] && ok "the freshly published artifact decodes under the published schema" \
+                    || no "the freshly published artifact does not decode: $_rawdec"
+else
+  no "no artifact to decode"
 fi
 
 echo "=== the regenerated artifact matches the baseline byte for byte ==="
