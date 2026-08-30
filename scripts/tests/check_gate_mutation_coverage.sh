@@ -332,29 +332,48 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # and this repository has already taken a macOS outage from depending on it.
   _launch_report="$(mktemp "${TMPDIR:-/tmp}/mutlaunch.XXXXXX")" || {
     echo "FATAL: supervisor cannot stage the launch report" >&2; _gate_lock_release 2>/dev/null; exit 2; }
+  # THE STATUS IS BOUND TO THIS RUN. Without a run id a report left by an earlier launch is
+  # indistinguishable from this one's, and the supervisor would publish against a stale answer.
   CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
-    --report "$_launch_report" -- bash "$0" "$@"
+    --report "$_launch_report" --run-id "$RUN_ID" -- bash "$0" "$@"
   _launch_rc=$?
   # THE REPORT IS DECODED STRICTLY, not sed-ed for whatever happens to be there. Every field must
   # appear EXACTLY ONCE with a canonical value, and no other key may be present: a launcher that
   # emitted a field twice, or a partial write, would otherwise be read as whichever line came first.
   _launch_bad=""
-  for _f in child_rc child_signalled child_signal process_group_empty pgid; do
+  for _f in protocol_version run_id child_rc child_signalled child_signal process_group_state pgid; do
     _n="$(grep -cE "^$_f=" "$_launch_report" 2>/dev/null || true)"
     [ "$_n" = "1" ] || _launch_bad="$_launch_bad $_f($_n)"
   done
   _unknown="$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$_launch_report" 2>/dev/null \
-              | grep -vxE 'child_rc|child_signalled|child_signal|process_group_empty|pgid' | tr '\n' ',')"
+              | grep -vxE 'protocol_version|run_id|child_rc|child_signalled|child_signal|process_group_state|pgid' \
+              | tr '\n' ',')"
   [ -z "$_unknown" ] || _launch_bad="$_launch_bad unknown($_unknown)"
+  _proto="$(sed -n 's/^protocol_version=//p' "$_launch_report" | head -1)"
+  _rid="$(sed -n 's/^run_id=//p' "$_launch_report" | head -1)"
   _child_rc="$(sed -n 's/^child_rc=//p' "$_launch_report" | head -1)"
   _child_sig="$(sed -n 's/^child_signalled=//p' "$_launch_report" | head -1)"
-  _group_empty="$(sed -n 's/^process_group_empty=//p' "$_launch_report" | head -1)"
+  _child_signum="$(sed -n 's/^child_signal=//p' "$_launch_report" | head -1)"
+  _group_state="$(sed -n 's/^process_group_state=//p' "$_launch_report" | head -1)"
   _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
-  for _pair in "child_rc:$_child_rc" "child_signalled:$_child_sig" "process_group_empty:$_group_empty" "pgid:$_child_pgid"; do
+  # AN UNSUPPORTED CONTRACT IS NOT A REPORT. Reading fields whose meaning this supervisor does not
+  # know would be interpreting bytes, not decoding a record.
+  [ "$_proto" = "1" ] || _launch_bad="$_launch_bad unsupported_protocol($_proto)"
+  # A STALE REPORT BELONGS TO ANOTHER RUN and must never answer for this one.
+  [ "$_rid" = "$RUN_ID" ] || _launch_bad="$_launch_bad stale_run_id($_rid)"
+  for _pair in "child_rc:$_child_rc" "child_signalled:$_child_sig" "child_signal:$_child_signum" "pgid:$_child_pgid"; do
     case "${_pair##*:}" in ''|*[!0-9]*) _launch_bad="$_launch_bad noncanonical(${_pair%%:*})" ;; esac
   done
   case "$_child_sig" in 0|1) ;; *) _launch_bad="$_launch_bad child_signalled_not_boolean($_child_sig)" ;; esac
-  case "$_group_empty" in 0|1) ;; *) _launch_bad="$_launch_bad group_empty_not_boolean($_group_empty)" ;; esac
+  # SIGNAL FIELDS MUST AGREE WITH EACH OTHER. signalled=1 with signal=0, or signalled=0 with a
+  # nonzero signal, is a record contradicting itself — and a consumer reading either field alone
+  # would draw the opposite conclusion from a consumer reading the other.
+  case "$_child_sig:$_child_signum" in
+    0:0) ;;
+    1:0) _launch_bad="$_launch_bad signal_fields_incoherent(signalled_without_signal)" ;;
+    0:*) _launch_bad="$_launch_bad signal_fields_incoherent(signal_without_signalled)" ;;
+    1:*) ;;
+  esac
   rm -f "$_launch_report"
   # A LAUNCHER THAT DID NOT REPORT CLEANLY IS NOT A CLEAN RUN. Inventing a status would be exactly
   # the fail-open this boundary exists to remove.
@@ -456,6 +475,16 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # child has been reaped — a surviving grandchild is reparented away and would never appear. What
   # matters is whether anything is still working THIS repository, so the check is by workspace and
   # by the driver's own snapshot, the same way the lock identifies its owner.
+  # ONLY A PROVEN-EMPTY GROUP PERMITS PUBLICATION. The launcher distinguishes four outcomes and a
+  # boolean would collapse them: `permission_denied` means the group EXISTS but is not ours to
+  # signal, and `error:<n>` means the question was not answered at all. Neither is absence, and
+  # treating either as empty would be the fail-open this check exists to remove.
+  case "$_group_state" in
+    empty)             ;;
+    nonempty)          _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)" ;;
+    permission_denied) _sup_refusals="$_sup_refusals campaign_group_unreadable(permission_denied,pgid=$_child_pgid)" ;;
+    *)                 _sup_refusals="$_sup_refusals campaign_group_unreadable($_group_state,pgid=$_child_pgid)" ;;
+  esac
   # PUBLICATION ONLY AFTER THE CHILD'S ORIGINAL PROCESS GROUP IS EMPTY. Anything still in it can
   # write evidence after the census, which the artifact would then describe without having seen it.
   #
@@ -465,8 +494,6 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # their group, and the hazard here is an accidental survivor rather than a child hiding from its
   # supervisor. The refusal and the published field both say process GROUP, so no reader infers a
   # containment guarantee that was never made.
-  [ "$_group_empty" = "1" ] \
-    || _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)"
   # A signalled child is a failure even if its group emptied cleanly.
   [ "$_child_sig" = "0" ] || _sup_refusals="$_sup_refusals child_terminated_by_signal"
 

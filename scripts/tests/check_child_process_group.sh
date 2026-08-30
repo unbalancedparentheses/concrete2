@@ -37,10 +37,11 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 run_case() {
   local label="$1" want_rc="$2" want_empty="$3"; shift 3
   local rep="$TMP/report.$$.$RANDOM"
-  python3 "$LAUNCH" --report "$rep" -- "$@" >/dev/null 2>&1
+  python3 "$LAUNCH" --report "$rep" --run-id "GATE-$$" -- "$@" >/dev/null 2>&1
   local rc empty
   rc="$(sed -n 's/^child_rc=//p' "$rep" | head -1)"
-  empty="$(sed -n 's/^process_group_empty=//p' "$rep" | head -1)"
+  local state; state="$(sed -n 's/^process_group_state=//p' "$rep" | head -1)"
+  case "$state" in empty) empty=1 ;; nonempty) empty=0 ;; *) empty="state:$state" ;; esac
   if [ "$rc" = "$want_rc" ] && [ "$empty" = "$want_empty" ]; then
     ok "$label"
   else
@@ -99,7 +100,7 @@ echo "=== a signalled child is reported unambiguously ==="
 # status must say plainly that the child was killed, and child_rc must still look like a failure to
 # a consumer that reads nothing else.
 _rep="$TMP/sig"
-python3 "$LAUNCH" --report "$_rep" -- sh -c 'kill -TERM $$' >/dev/null 2>&1
+python3 "$LAUNCH" --report "$_rep" --run-id "GATE-$$" -- sh -c 'kill -TERM $$' >/dev/null 2>&1
 _rc="$(sed -n 's/^child_rc=//p' "$_rep")"; _sg="$(sed -n 's/^child_signalled=//p' "$_rep")"
 _sn="$(sed -n 's/^child_signal=//p' "$_rep")"
 { [ "$_rc" = "143" ] && [ "$_sg" = "1" ] && [ "$_sn" = "15" ]; } \
@@ -113,21 +114,21 @@ echo "=== the report is a strict channel ==="
 _mk() { printf '%s\n' "$@" > "$TMP/probe"; }
 _decodes_clean() {
   local bad=""
-  for f in child_rc child_signalled child_signal process_group_empty pgid; do
+  for f in protocol_version run_id child_rc child_signalled child_signal process_group_state pgid; do
     [ "$(grep -cE "^$f=" "$TMP/probe")" = "1" ] || bad="$bad $f"
   done
-  [ -z "$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$TMP/probe" | grep -vxE 'child_rc|child_signalled|child_signal|process_group_empty|pgid')" ] || bad="$bad unknown"
+  [ -z "$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$TMP/probe" | grep -vxE 'protocol_version|run_id|child_rc|child_signalled|child_signal|process_group_state|pgid')" ] || bad="$bad unknown"
   [ -z "$bad" ]
 }
-_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
 _decodes_clean && ok "a complete report decodes cleanly (positive control)" || no "a complete report was rejected"
-_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'pgid=1'
-_decodes_clean && no "a report missing process_group_empty was accepted" || ok "a MISSING field is refused"
-_mk 'child_rc=0' 'child_rc=1' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'pgid=1'
+_decodes_clean && no "a report missing process_group_state was accepted" || ok "a MISSING field is refused"
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_rc=1' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
 _decodes_clean && no "a contradictory duplicate was accepted" || ok "a CONTRADICTORY duplicate is refused"
-_mk 'child_rc=0' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
 _decodes_clean && no "an identical duplicate was accepted" || ok "an IDENTICAL duplicate is refused"
-_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1' 'extra=1'
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1' 'extra=1'
 _decodes_clean && no "an unknown key was accepted" || ok "an UNKNOWN key is refused"
 
 echo "=== the stated guarantee is process GROUP, not descendants ==="
@@ -137,13 +138,55 @@ echo "=== the stated guarantee is process GROUP, not descendants ==="
 # none of which leave their group — and the field is named process_group_empty precisely so no
 # reader infers containment that was never established.
 _rep2="$TMP/escape"
-python3 "$LAUNCH" --report "$_rep2" -- python3 -c 'import subprocess,sys; subprocess.Popen(["sleep","4"], start_new_session=True); sys.exit(0)' >/dev/null 2>&1
-_esc="$(sed -n 's/^process_group_empty=//p' "$_rep2")"
-if [ "$_esc" = "1" ]; then
+python3 "$LAUNCH" --report "$_rep2" --run-id "GATE-$$" -- python3 -c 'import subprocess,sys; subprocess.Popen(["sleep","4"], start_new_session=True); sys.exit(0)' >/dev/null 2>&1
+_esc="$(sed -n 's/^process_group_state=//p' "$_rep2")"
+if [ "$_esc" = "empty" ]; then
   ok "a session-escaping descendant is NOT detected — documented limitation, not a containment claim"
 else
   no "a session-escaping descendant was detected; the documented limitation is now wrong and the comments must be corrected"
 fi
+
+echo "=== the v2 contract: version, run binding, and coherent signal fields ==="
+# AN UNSUPPORTED CONTRACT IS NOT A REPORT. Reading fields whose meaning a consumer does not know is
+# interpreting bytes, not decoding a record.
+_rep3="$TMP/proto"
+python3 "$LAUNCH" --report "$_rep3" --run-id "PROTO-1" -- sh -c 'exit 0' >/dev/null 2>&1
+[ "$(sed -n 's/^protocol_version=//p' "$_rep3")" = "1" ] \
+  && ok "the report declares its protocol version" || no "no protocol_version in the report"
+# A STALE REPORT BELONGS TO ANOTHER RUN. Binding it to the run id is what stops one being reused.
+[ "$(sed -n 's/^run_id=//p' "$_rep3")" = "PROTO-1" ] \
+  && ok "the report is bound to the run that requested it" || no "run_id not echoed"
+python3 "$LAUNCH" --report "$_rep3" --run-id "PROTO-2" -- sh -c 'exit 0' >/dev/null 2>&1
+[ "$(sed -n 's/^run_id=//p' "$_rep3")" = "PROTO-2" ] \
+  && ok "a later run overwrites the binding rather than inheriting it" || no "run_id not rebound"
+# THE DISTINCTION child_rc ALONE CANNOT MAKE: a child that EXITED 143 and one KILLED by signal 15
+# both report child_rc=143. Only child_signalled separates them, so it is asserted directly.
+_rep4="$TMP/exit143"
+python3 "$LAUNCH" --report "$_rep4" --run-id "X" -- sh -c 'exit 143' >/dev/null 2>&1
+_a="$(sed -n 's/^child_rc=//p' "$_rep4")|$(sed -n 's/^child_signalled=//p' "$_rep4")|$(sed -n 's/^child_signal=//p' "$_rep4")"
+python3 "$LAUNCH" --report "$_rep4" --run-id "X" -- sh -c 'kill -TERM $$' >/dev/null 2>&1
+_b="$(sed -n 's/^child_rc=//p' "$_rep4")|$(sed -n 's/^child_signalled=//p' "$_rep4")|$(sed -n 's/^child_signal=//p' "$_rep4")"
+{ [ "$_a" = "143|0|0" ] && [ "$_b" = "143|1|15" ]; } \
+  && ok "exit 143 and signal 15 share child_rc but are distinguished (got $_a vs $_b)" \
+  || no "exit 143 vs signal 15 not distinguished (got $_a vs $_b)"
+# SIGNAL FIELDS MUST AGREE. Either alone would lead a consumer to the opposite conclusion.
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=143' 'child_signalled=1' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
+_coh() { local sg sn; sg="$(sed -n 's/^child_signalled=//p' "$TMP/probe")"; sn="$(sed -n 's/^child_signal=//p' "$TMP/probe")"
+         case "$sg:$sn" in 0:0|1:[1-9]*) return 0 ;; *) return 1 ;; esac; }
+_coh && no "signalled=1 with signal=0 was accepted" || ok "signalled=1 with signal=0 is incoherent"
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=9' 'process_group_state=empty' 'pgid=1'
+_coh && no "signal=9 with signalled=0 was accepted" || ok "a signal without signalled is incoherent"
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
+_coh && ok "coherent signal fields are accepted (positive control)" || no "coherent fields rejected"
+
+echo "=== only a PROVEN-empty group may permit publication ==="
+# A boolean collapsed these: permission_denied means the group EXISTS but is not ours to signal, and
+# error:<n> means the question was never answered. Neither is absence.
+for st in nonempty permission_denied error:13; do
+  _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' "process_group_state=$st" 'pgid=1'
+  [ "$(sed -n 's/^process_group_state=//p' "$TMP/probe")" = "empty" ] \
+    && no "'$st' would have been read as empty" || ok "'$st' is not empty, so it cannot permit publication"
+done
 
 echo ""
 echo "CHILD-PROCESS-GROUP: PASS=$PASS FAIL=$FAIL"
