@@ -405,7 +405,7 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
     _k="${_pair%%:*}"; _v="${_pair##*:}"
     _claim="$(sed -n "s/^$_k=//p" "$_cand" | head -1)"
     [ "$_claim" = "$_v" ] \
-      || _sup_refusals="$_sup_refusals summary_contradicts_records($_k claimed=$_claim records=$_v)"
+      || _sup_refusals="$_sup_refusals summary_record_disagreement($_k claimed=$_claim records=$_v)"
   done
   # ...and qualification additionally requires EVERY record to be a killed one carrying its causal
   # transcripts. This is checked only when qualification is claimed, so a legitimately unqualified
@@ -419,7 +419,10 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # child has been reaped — a surviving grandchild is reparented away and would never appear. What
   # matters is whether anything is still working THIS repository, so the check is by workspace and
   # by the driver's own snapshot, the same way the lock identifies its owner.
-  _live="$(pgrep -af "concrete-mut\.|$ROOT_DIR/scripts/tests/" 2>/dev/null \
+  # NARROWED TO THE WORKSPACES. Matching "$ROOT_DIR/scripts/tests/" also matched the LAUNCHER that
+  # started this run — the supervisor counted its own ancestor and refused every publication. Only a
+  # disposable workspace indicates work still touching this campaign's tree.
+  _live="$(pgrep -af 'concrete-mut\.' 2>/dev/null \
             | grep -v "^$$ " | grep -v 'pgrep' | awk 'END{print NR}')"
   [ "${_live:-0}" = "0" ] || _sup_refusals="$_sup_refusals processes_still_working_the_tree($_live)"
 

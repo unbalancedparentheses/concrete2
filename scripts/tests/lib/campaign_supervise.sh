@@ -35,16 +35,11 @@ supervisor_refusals() {
   if [ ! -s "$cand" ]; then
     out="$out candidate_missing"
   else
-    for k in $CAMPAIGN_CANDIDATE_KEYS; do
-      # EXACTLY ONE VALUE PER KEY. A record carrying `survived=0` AND `survived=1` is not a record;
-      # every reader picks whichever its parser reaches first, and this one takes the head — so an
-      # appended contradiction reads as the benign value and qualifies.
-      case "$(grep -cE "^$k=" "$cand")" in
-        1) ;;
-        0) out="$out candidate_malformed($k)" ;;
-        *) out="$out candidate_duplicate($k)" ;;
-      esac
-    done
+    # THE WHOLE RECORD IS DECODED AGAINST THE SCHEMA, before any qualification logic reads a field.
+    # Per-key greps checked the handful of fields someone remembered; a decoder cannot be outgrown by
+    # adding a field, because an undeclared key is refused rather than ignored.
+    local dec; dec="$(decode_candidate "$cand")"
+    [ -z "$dec" ] || out="$out candidate_schema($dec)"
   fi
 
   # THE SUPERVISOR'S OWN OBSERVATION, not a re-read of what the child claimed. These are captured
@@ -258,4 +253,63 @@ records_unkilled_or_unevidenced() {
     fi
   done
   printf '%s' "${bad# }"
+}
+
+# ---------------------------------------------------------------------------------------------
+# THE PUBLISHED SCHEMA, AND A DECODER THAT REFUSES ANYTHING OUTSIDE IT.
+#
+# Field-specific greps checked six keys and left the rest — evidence_root, run_id, head — free to be
+# duplicated, blank or absent, and every reader took whichever value its parser reached first. A
+# schema is the only form of this check that cannot be outgrown by adding a field: the decoder walks
+# the record, and a key nobody declared is refused rather than ignored.
+#
+# DUPLICATES ARE DETECTED BEFORE ANY VALUE IS STORED. Parsing into a map first and checking after is
+# how last-wins (or first-wins) silently resolves a contradiction that should have been fatal.
+CAMPAIGN_SCHEMA_NUMERIC="completed discovered selected executed reported killed invalid survived could_not_apply integrity_ok qualified secs_total secs_copy secs_build secs_gate secs_other families_declared families_run killed_by_gate killed_by_build failed evidence_written"
+CAMPAIGN_SCHEMA_FREEFORM="mode baseline_gates_green gates_proven evidence_root evidence_dir run_id head executed_driver_sha preamble_driver_sha repo_driver_sha inventory_sha tracked_sha workspace_tracked_sha workspace_head workspace_untracked_sha baseline_compiler_sha compilers_tested untracked_sha refusals families_digest"
+
+# THE SUPERVISOR'S OWN FIELDS ARE NOT THE CHILD'S TO PROVIDE. These are appended at publication, so
+# requiring them of a CANDIDATE rejects every legitimate one — which is exactly what the first
+# version of this decoder did. The published artifact carries both sets; the candidate carries one.
+CAMPAIGN_SCHEMA_SUPERVISOR="supervisor_refusals supervisor_child_exit candidate_incoherent"
+CAMPAIGN_SCHEMA_NUMERIC_SUPERVISOR="supervisor_child_exit"
+
+CAMPAIGN_SCHEMA="$CAMPAIGN_SCHEMA_NUMERIC $CAMPAIGN_SCHEMA_FREEFORM"
+CAMPAIGN_SCHEMA_PUBLISHED="$CAMPAIGN_SCHEMA $CAMPAIGN_SCHEMA_SUPERVISOR"
+
+# decode_candidate <path> -> refusals; empty means the record is well formed under the schema
+decode_candidate() { # record [schema] — defaults to the CHILD schema
+  local c="$1" schema="${2:-$CAMPAIGN_SCHEMA}" line key val out="" seen="" k
+  [ -s "$c" ] || { printf 'record_absent_or_empty'; return 0; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    # MALFORMED LINES ARE REFUSED, not skipped: a record containing anything but declared
+    # assignments is not a record, and skipping is how a corrupted half-write reads as valid.
+    case "$line" in
+      '') out="$out blank_line" ; continue ;;
+      *=*) ;;
+      *) out="$out malformed_line(${line%%[!A-Za-z_]*}...)" ; continue ;;
+    esac
+    key="${line%%=*}"; val="${line#*=}"
+    [ -n "$key" ] || { out="$out blank_key"; continue; }
+    case "$key" in *[!a-z_]*) out="$out noncanonical_key($key)"; continue ;; esac
+    # BEFORE ANY STORE. Checked against what has already been seen, so a duplicate is a refusal
+    # rather than an overwrite.
+    case " $seen " in *" $key "*) out="$out duplicate_key($key)"; continue ;; esac
+    seen="$seen $key"
+    case " $schema " in *" $key "*) ;; *) out="$out undeclared_key($key)"; continue ;; esac
+    case " $CAMPAIGN_SCHEMA_NUMERIC $CAMPAIGN_SCHEMA_NUMERIC_SUPERVISOR " in
+      *" $key "*)
+        case "$val" in
+          ''|*[!0-9]*) out="$out noncanonical_number($key=$val)" ;;
+          0) ;;
+          0*) out="$out noncanonical_number($key=$val)" ;;
+        esac ;;
+    esac
+  done < "$c"
+  # EVERY DECLARED KEY MUST BE PRESENT. Absence is how a truncated record loses exactly the field
+  # that would have denied it.
+  for k in $schema; do
+    case " $seen " in *" $k "*) ;; *) out="$out missing_key($k)" ;; esac
+  done
+  printf '%s' "${out# }"
 }
