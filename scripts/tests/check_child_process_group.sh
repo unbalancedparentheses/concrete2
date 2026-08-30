@@ -39,7 +39,7 @@ run_case() {
   python3 "$LAUNCH" --report "$rep" -- "$@" >/dev/null 2>&1
   local rc empty
   rc="$(sed -n 's/^child_rc=//p' "$rep" | head -1)"
-  empty="$(sed -n 's/^group_empty=//p' "$rep" | head -1)"
+  empty="$(sed -n 's/^process_group_empty=//p' "$rep" | head -1)"
   if [ "$rc" = "$want_rc" ] && [ "$empty" = "$want_empty" ]; then
     ok "$label"
   else
@@ -91,6 +91,57 @@ sys.exit(1)
 PY
 then ok "an absent process group reports absent (POSIX semantics available here)"
 else no "this platform does not report an absent process group as absent"
+fi
+
+echo "=== a signalled child is reported unambiguously ==="
+# Popen.wait() returns -N for signal N. A shell comparing that reads a negative, or coerces it: the
+# status must say plainly that the child was killed, and child_rc must still look like a failure to
+# a consumer that reads nothing else.
+_rep="$TMP/sig"
+python3 "$LAUNCH" --report "$_rep" -- sh -c 'kill -TERM $$' >/dev/null 2>&1
+_rc="$(sed -n 's/^child_rc=//p' "$_rep")"; _sg="$(sed -n 's/^child_signalled=//p' "$_rep")"
+_sn="$(sed -n 's/^child_signal=//p' "$_rep")"
+{ [ "$_rc" = "143" ] && [ "$_sg" = "1" ] && [ "$_sn" = "15" ]; } \
+  && ok "a SIGTERMed child reports child_rc=143 child_signalled=1 child_signal=15" \
+  || no "signalled child misreported (rc=$_rc signalled=$_sg signal=$_sn)"
+
+echo "=== the report is a strict channel ==="
+# Each of these is what a partial write, a double write, or a stray key looks like. The supervisor
+# decodes strictly, so every one must be distinguishable from a clean report rather than read as
+# whichever line came first.
+_mk() { printf '%s\n' "$@" > "$TMP/probe"; }
+_decodes_clean() {
+  local bad=""
+  for f in child_rc child_signalled child_signal process_group_empty pgid; do
+    [ "$(grep -cE "^$f=" "$TMP/probe")" = "1" ] || bad="$bad $f"
+  done
+  [ -z "$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$TMP/probe" | grep -vxE 'child_rc|child_signalled|child_signal|process_group_empty|pgid')" ] || bad="$bad unknown"
+  [ -z "$bad" ]
+}
+_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_decodes_clean && ok "a complete report decodes cleanly (positive control)" || no "a complete report was rejected"
+_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'pgid=1'
+_decodes_clean && no "a report missing process_group_empty was accepted" || ok "a MISSING field is refused"
+_mk 'child_rc=0' 'child_rc=1' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_decodes_clean && no "a contradictory duplicate was accepted" || ok "a CONTRADICTORY duplicate is refused"
+_mk 'child_rc=0' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1'
+_decodes_clean && no "an identical duplicate was accepted" || ok "an IDENTICAL duplicate is refused"
+_mk 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_empty=1' 'pgid=1' 'extra=1'
+_decodes_clean && no "an unknown key was accepted" || ok "an UNKNOWN key is refused"
+
+echo "=== the stated guarantee is process GROUP, not descendants ==="
+# MEASURED, NOT ASSUMED, and recorded here so the limitation cannot quietly become a claim: a
+# descendant that starts its own session leaves the original group empty while it is still running.
+# That escape is out of the threat model — the campaign starts its own gates, lake and the compiler,
+# none of which leave their group — and the field is named process_group_empty precisely so no
+# reader infers containment that was never established.
+_rep2="$TMP/escape"
+python3 "$LAUNCH" --report "$_rep2" -- python3 -c 'import subprocess,sys; subprocess.Popen(["sleep","4"], start_new_session=True); sys.exit(0)' >/dev/null 2>&1
+_esc="$(sed -n 's/^process_group_empty=//p' "$_rep2")"
+if [ "$_esc" = "1" ]; then
+  ok "a session-escaping descendant is NOT detected — documented limitation, not a containment claim"
+else
+  no "a session-escaping descendant was detected; the documented limitation is now wrong and the comments must be corrected"
 fi
 
 echo ""

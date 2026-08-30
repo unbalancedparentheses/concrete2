@@ -334,17 +334,33 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
     --report "$_launch_report" -- bash "$0" "$@"
   _launch_rc=$?
+  # THE REPORT IS DECODED STRICTLY, not sed-ed for whatever happens to be there. Every field must
+  # appear EXACTLY ONCE with a canonical value, and no other key may be present: a launcher that
+  # emitted a field twice, or a partial write, would otherwise be read as whichever line came first.
+  _launch_bad=""
+  for _f in child_rc child_signalled child_signal process_group_empty pgid; do
+    _n="$(grep -cE "^$_f=" "$_launch_report" 2>/dev/null || true)"
+    [ "$_n" = "1" ] || _launch_bad="$_launch_bad $_f($_n)"
+  done
+  _unknown="$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$_launch_report" 2>/dev/null \
+              | grep -vxE 'child_rc|child_signalled|child_signal|process_group_empty|pgid' | tr '\n' ',')"
+  [ -z "$_unknown" ] || _launch_bad="$_launch_bad unknown($_unknown)"
   _child_rc="$(sed -n 's/^child_rc=//p' "$_launch_report" | head -1)"
-  _group_empty="$(sed -n 's/^group_empty=//p' "$_launch_report" | head -1)"
+  _child_sig="$(sed -n 's/^child_signalled=//p' "$_launch_report" | head -1)"
+  _group_empty="$(sed -n 's/^process_group_empty=//p' "$_launch_report" | head -1)"
   _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
+  for _pair in "child_rc:$_child_rc" "child_signalled:$_child_sig" "process_group_empty:$_group_empty" "pgid:$_child_pgid"; do
+    case "${_pair##*:}" in ''|*[!0-9]*) _launch_bad="$_launch_bad noncanonical(${_pair%%:*})" ;; esac
+  done
+  case "$_child_sig" in 0|1) ;; *) _launch_bad="$_launch_bad child_signalled_not_boolean($_child_sig)" ;; esac
+  case "$_group_empty" in 0|1) ;; *) _launch_bad="$_launch_bad group_empty_not_boolean($_group_empty)" ;; esac
   rm -f "$_launch_report"
-  # A LAUNCHER THAT DID NOT REPORT IS NOT A CLEAN RUN. Missing fields mean the supervisor never
-  # learned the child's status, and inventing one would be the fail-open this boundary exists to
-  # remove.
-  case "${_child_rc:-}${_group_empty:-}" in
-    *[!0-9]*|'') echo "FATAL: the child launcher produced no usable report (launcher rc=$_launch_rc)" >&2
-                 _gate_lock_release 2>/dev/null; exit 2 ;;
-  esac
+  # A LAUNCHER THAT DID NOT REPORT CLEANLY IS NOT A CLEAN RUN. Inventing a status would be exactly
+  # the fail-open this boundary exists to remove.
+  if [ -n "$_launch_bad" ]; then
+    echo "FATAL: the child launcher report is unusable:$_launch_bad (launcher rc=$_launch_rc)" >&2
+    _gate_lock_release 2>/dev/null; exit 2
+  fi
 
   _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
   _sup_tracked1="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
@@ -439,10 +455,19 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # child has been reaped — a surviving grandchild is reparented away and would never appear. What
   # matters is whether anything is still working THIS repository, so the check is by workspace and
   # by the driver's own snapshot, the same way the lock identifies its owner.
-  # PUBLICATION ONLY AFTER THE GROUP IS EMPTY. Anything still in the child's process group can write
-  # evidence after the census, which the artifact would then describe without having seen it.
+  # PUBLICATION ONLY AFTER THE CHILD'S ORIGINAL PROCESS GROUP IS EMPTY. Anything still in it can
+  # write evidence after the census, which the artifact would then describe without having seen it.
+  #
+  # THIS IS NOT "NO DESCENDANTS REMAIN". A descendant that changes process group, or starts its own
+  # session, outlives this check — measured, not assumed. That escape is out of the threat model:
+  # the processes a campaign starts are its own gates, lake and the compiler, none of which leave
+  # their group, and the hazard here is an accidental survivor rather than a child hiding from its
+  # supervisor. The refusal and the published field both say process GROUP, so no reader infers a
+  # containment guarantee that was never made.
   [ "$_group_empty" = "1" ] \
     || _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)"
+  # A signalled child is a failure even if its group emptied cleanly.
+  [ "$_child_sig" = "0" ] || _sup_refusals="$_sup_refusals child_terminated_by_signal"
 
   # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
   # the child claimed it AND the supervisor's own reconciliation is clean.
