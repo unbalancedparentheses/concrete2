@@ -27,23 +27,47 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # A well-formed candidate claiming a fully qualified campaign. Every hostile case below is this file
 # with exactly one thing wrong, so a refusal is attributable to that one thing.
 GOOD="$TMP/good"
-# The disposition fields are PRESENT and zero. Omitting them from the fixture entrenched the
-# fail-open it was supposed to expose: a truncated record loses exactly the fields that would deny
-# qualification, so absent-means-zero qualifies precisely the records that should not.
-cat > "$GOOD" <<'EOF'
-completed=1
-mode=campaign
-discovered=85
-selected=85
-executed=85
-reported=85
-killed=85
-invalid=0
-survived=0
-could_not_apply=0
-integrity_ok=1
-qualified=1
-EOF
+# THE FIXTURE IS BUILT FROM THE SCHEMA, NOT ALONGSIDE IT.
+#
+# It used to be a hand-written list of twelve fields. When the decoder began requiring the full
+# declared key set, every case below started failing on `missing_key(...)` for thirty other fields
+# instead of on the one thing it had deliberately broken — so a suite that reported 41/24 was not
+# testing what its labels said, and the 65/0 it had reported earlier described a decoder that no
+# longer existed. A fixture derived from CAMPAIGN_SCHEMA cannot fall behind it: a new declared key
+# appears here automatically, and a key removed from the schema disappears from here too.
+#
+# Numeric fields default to 0 and freeform ones to a placeholder; the semantic values that the cases
+# actually reason about are then set explicitly, so the fixture reads as "a fully qualified campaign"
+# and every hostile variant below is this file with exactly one thing wrong.
+: > "$GOOD"
+for _k in $CAMPAIGN_SCHEMA_NUMERIC;  do echo "$_k=0" >> "$GOOD"; done
+for _k in $CAMPAIGN_SCHEMA_FREEFORM; do echo "$_k=fixture" >> "$GOOD"; done
+_set() { # key value — replace in place, refusing to invent a key the schema does not declare
+  grep -q "^$1=" "$GOOD" || { echo "FIXTURE BUG: '$1' is not a declared schema key" >&2; exit 2; }
+  sed -i.bak "s|^$1=.*|$1=$2|" "$GOOD" && rm -f "$GOOD.bak"
+}
+_set completed 1
+_set mode campaign
+for _k in discovered selected executed reported killed families_declared families_run evidence_written; do
+  _set "$_k" 85
+done
+_set killed_by_gate 85
+_set integrity_ok 1
+_set qualified 1
+_set refusals ""
+_set baseline_gates_green yes
+_set gates_proven all
+# The record must decode cleanly before any case can attribute a refusal to its own mutation.
+# THE PINNED POPULATION IS PART OF THE CALL. `candidate_incoherent` takes the family count a
+# qualifying campaign must have discharged, and every call here omitted it — so the positive control
+# was refused with `qualified_without_a_pinned_population` and the suite could not have been green.
+POP=85
+_fixture_refusals="$(decode_candidate "$GOOD")"
+if [ -n "$_fixture_refusals" ]; then
+  echo "FIXTURE BUG: the positive control does not decode:$_fixture_refusals" >&2
+  exit 2
+fi
+
 H="headsha"; T="trackedsha"; U="untrackedsha"
 sed 's/^qualified=1$/qualified=0/' "$GOOD" > "$TMP/unqual"
 
@@ -60,9 +84,22 @@ expect() {
 
 echo "=== positive control: a clean child and an unchanged tree must NOT refuse ==="
 expect "a clean run publishes (no refusal)" EMPTY 0 "$GOOD" "$H" "$H" "$T" "$T" "$U" "$U"
-[ "$(supervisor_qualification "$GOOD" "")" = "qualified=1" ] \
+# The population argument is required here too — see POP above.
+[ "$(supervisor_qualification "$GOOD" "" "$POP")" = "qualified=1" ] \
   && ok "...and its qualified=1 is carried forward" \
-  || no "a clean run's qualification was dropped"
+  || no "a clean run's qualification was dropped: $(supervisor_qualification "$GOOD" "" "$POP")"
+
+# AND THE POPULATION MAY NOT BE OMITTED. Every call above passes it, so nothing above would notice
+# if the requirement were dropped and an unpinned campaign began qualifying itself.
+case "$(candidate_incoherent "$GOOD")" in
+  *qualified_without_a_pinned_population*) ok "omitting the pinned population is itself a refusal" ;;
+  *) no "a candidate qualified with no population pinned: '$(candidate_incoherent "$GOOD")'" ;;
+esac
+# A population that disagrees with the record is a refusal, not a rounding difference.
+case "$(candidate_incoherent "$GOOD" 84)" in
+  ?*) ok "a record discharging 85 families does not qualify against a pinned 84" ;;
+  *)  no "population mismatch accepted" ;;
+esac
 
 echo "=== the child's exit is evidence ==="
 expect "a child that exits nonzero refuses"            "child_exit(1)"  1 "$GOOD" "$H" "$H" "$T" "$T" "$U" "$U"
@@ -76,7 +113,7 @@ expect "an empty candidate refuses"  "candidate_missing" 0 "$TMP/empty" "$H" "$H
 # missing, and each missing field is named so the diagnosis does not require guessing.
 for k in $CAMPAIGN_CANDIDATE_KEYS; do
   grep -v "^$k=" "$GOOD" > "$TMP/miss.$k"
-  expect "a candidate missing '$k' refuses by name" "candidate_malformed($k)" 0 "$TMP/miss.$k" "$H" "$H" "$T" "$T" "$U" "$U"
+  expect "a candidate missing '$k' refuses by name" "candidate_schema(missing_key($k))" 0 "$TMP/miss.$k" "$H" "$H" "$T" "$T" "$U" "$U"
 done
 
 echo "=== the supervisor's own reconciliation ==="
@@ -107,7 +144,7 @@ echo "=== a candidate must JUSTIFY its own qualification, not merely declare it 
 # the good candidate with exactly one field made incoherent, so the refusal is attributable.
 inc() { # label field value expected-substring
   local f="$TMP/inc.$2"; sed "s/^$2=.*/$2=$3/" "$GOOD" > "$f"
-  local got; got="$(candidate_incoherent "$f")"
+  local got; got="$(candidate_incoherent "$f" "$POP")"
   case "$got" in *"$4"*) ok "$1" ;; *) no "$1 — expected /$4/, got '${got:-<none>}'" ;; esac
   [ "$(supervisor_qualification "$f" "")" = "qualified=0" ] \
     && ok "...and it cannot publish qualified=1" || no "$1 — it published qualification anyway"
@@ -122,7 +159,7 @@ for v in survived invalid could_not_apply; do
   # SUBSTITUTED, not appended: appending leaves TWO values for the key and the reader takes the
   # first, so the contradiction reads as the benign value. That is itself a defect, covered below.
   f="$TMP/inc.$v"; sed "s/^$v=.*/$v=1/" "$GOOD" > "$f"
-  got="$(candidate_incoherent "$f")"
+  got="$(candidate_incoherent "$f" "$POP")"
   case "$got" in *"qualified_with_$v"*) ok "qualified=1 with $v=1 is incoherent" ;;
     *) no "qualified=1 with $v=1 — expected refusal, got '${got:-<none>}'" ;; esac
 done
@@ -131,16 +168,16 @@ echo "=== a key with two values is not a record ==="
 for v in survived qualified killed; do
   f="$TMP/dup.$v"; { cat "$GOOD"; printf '%s=1\n' "$v"; } > "$f"
   expect "a duplicated '$v' is refused as a duplicate, not read as its first value" \
-    "candidate_duplicate($v)" 0 "$f" "$H" "$H" "$T" "$T" "$U" "$U"
+    "candidate_schema(duplicate_key($v))" 0 "$f" "$H" "$H" "$T" "$T" "$U" "$U"
 done
 
 # THE POSITIVE CONTROL FOR COHERENCE ITSELF: the good candidate must remain coherent, or every case
 # above would pass for the wrong reason.
-[ -z "$(candidate_incoherent "$GOOD")" ] \
+[ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
   && ok "a coherent candidate is not refused by the coherence check" \
-  || no "the coherence check refuses a well-formed candidate: $(candidate_incoherent "$GOOD")"
+  || no "the coherence check refuses a well-formed candidate: $(candidate_incoherent "$GOOD" "$POP")"
 # ...and a candidate that never claimed qualification is not judged on coherence at all.
-[ -z "$(candidate_incoherent "$TMP/unqual")" ] \
+[ -z "$(candidate_incoherent "$TMP/unqual" "$POP")" ] \
   && ok "a candidate not claiming qualification is not held to it" \
   || no "an unqualified candidate was judged on qualification coherence"
 
@@ -148,28 +185,28 @@ echo "=== counts must be numbers that reconcile, not strings that match ==="
 # String equality accepted five identical NON-NUMERIC values, so a record of five "x" qualified.
 for fld in discovered selected executed reported killed; do
   sed "s/^$fld=.*/$fld=x/" "$GOOD" > "$TMP/nn.$fld"
-  got="$(candidate_incoherent "$TMP/nn.$fld")"
+  got="$(candidate_incoherent "$TMP/nn.$fld" "$POP")"
   case "$got" in *nonnumeric*) ok "a non-numeric $fld is refused" ;;
     *) no "a non-numeric $fld was accepted (got '${got:-<none>}')" ;; esac
 done
 sed 's/=8[0-9]*$/=x/' "$GOOD" > "$TMP/allx"
-got="$(candidate_incoherent "$TMP/allx")"
+got="$(candidate_incoherent "$TMP/allx" "$POP")"
 [ -n "$got" ] && ok "five identical non-numeric counts do not reconcile" \
   || no "five identical non-numeric counts qualified"
 for fld in discovered selected executed reported killed; do sed -i "s/^$fld=.*/$fld=0/" "$TMP/allx"; done
 sed -i 's/^qualified=.*/qualified=1/' "$TMP/allx"
-got="$(candidate_incoherent "$TMP/allx")"
+got="$(candidate_incoherent "$TMP/allx" "$POP")"
 case "$got" in *zero_families*) ok "a campaign that discharged ZERO families does not qualify" ;;
   *) no "zero families qualified (got '${got:-<none>}')" ;; esac
 
 echo "=== a missing disposition is absent evidence, not a zero ==="
 for v in invalid survived could_not_apply; do
   grep -v "^$v=" "$GOOD" > "$TMP/nodisp.$v"
-  got="$(candidate_incoherent "$TMP/nodisp.$v")"
+  got="$(candidate_incoherent "$TMP/nodisp.$v" "$POP")"
   case "$got" in *"qualified_without_$v"*) ok "a candidate with no '$v' field does not qualify" ;;
     *) no "a missing '$v' was treated as zero (got '${got:-<none>}')" ;; esac
   # ...and it is a mandatory key, so the record is malformed as well as incoherent.
-  expect "a candidate missing '$v' is malformed" "candidate_malformed($v)" \
+  expect "a candidate missing '$v' is malformed" "candidate_schema(missing_key($v))" \
     0 "$TMP/nodisp.$v" "$H" "$H" "$T" "$T" "$U" "$U"
 done
 
@@ -177,13 +214,13 @@ echo "=== the four dispositions must account for the reported families ==="
 # Each disposition being zero and killed==reported still leaves the ledger unbalanced if a family is
 # reported under NO disposition. This is the identity that makes the four numbers one population.
 sed -e 's/^killed=.*/killed=84/' -e 's/^invalid=.*/invalid=0/' "$GOOD" > "$TMP/unbal"
-got="$(candidate_incoherent "$TMP/unbal")"
+got="$(candidate_incoherent "$TMP/unbal" "$POP")"
 case "$got" in *unbalanced_ledger*|*unkilled*) ok "reported families unaccounted by the dispositions is refused" ;;
   *) no "an unbalanced ledger qualified (got '${got:-<none>}')" ;; esac
 # ...and a BALANCED ledger with real dispositions must not qualify either, since they are nonzero —
 # but it must be refused for the disposition, not for the ledger.
 sed -e 's/^killed=.*/killed=84/' -e 's/^survived=.*/survived=1/' "$GOOD" > "$TMP/bal"
-got="$(candidate_incoherent "$TMP/bal")"
+got="$(candidate_incoherent "$TMP/bal" "$POP")"
 case "$got" in *qualified_with_survived*) ok "a balanced ledger with a survivor is refused for the survivor" ;;
   *) no "a balanced ledger with a survivor was misdiagnosed (got '${got:-<none>}')" ;; esac
 
@@ -191,7 +228,7 @@ echo "=== negative, noncanonical and implausible numbers are not numbers ==="
 for spec in "discovered=-1:nonnumeric" "killed=007:noncanonical" "reported=1234567:implausible"; do
   fld="${spec%%=*}"; rest="${spec#*=}"; val="${rest%%:*}"; want="${rest##*:}"
   sed "s/^$fld=.*/$fld=$val/" "$GOOD" > "$TMP/num.$fld"
-  got="$(candidate_incoherent "$TMP/num.$fld")"
+  got="$(candidate_incoherent "$TMP/num.$fld" "$POP")"
   case "$got" in *"$want"*) ok "$fld=$val is refused ($want)" ;;
     *) no "$fld=$val was accepted (got '${got:-<none>}')" ;; esac
 done
@@ -201,10 +238,150 @@ echo "=== duplicate keys are refused whether they contradict or agree ==="
 for v in qualified killed invalid; do
   val="$(sed -n "s/^$v=//p" "$GOOD" | head -1)"
   { cat "$GOOD"; printf '%s=%s\n' "$v" "$val"; } > "$TMP/dupeq.$v"
-  expect "an identical duplicate '$v' is still refused" "candidate_duplicate($v)" \
+  expect "an identical duplicate '$v' is still refused" "candidate_schema(duplicate_key($v))" \
     0 "$TMP/dupeq.$v" "$H" "$H" "$T" "$T" "$U" "$U"
 done
 
 echo ""
+echo "=== qualification reads every field it publishes, not just the headline counts ==="
+# Each case is GOOD with exactly one field falsified, so the refusal is attributable to that field.
+# Without these the new checks would be unexercised branches — indistinguishable from deleted ones.
+_falsify() { # key value expected-substring label
+  sed "s|^$1=.*|$1=$2|" "$GOOD" > "$TMP/fal"
+  case "$(candidate_incoherent "$TMP/fal" "$POP")" in
+    *"$3"*) ok "$4" ;;
+    *) no "$4 — expected /$3/, got '$(candidate_incoherent "$TMP/fal" "$POP")'" ;;
+  esac
+}
+_falsify families_run 0 qualified_with_families_run \
+  "a campaign claiming 85 kills while running 0 families is refused"
+_falsify evidence_written 0 qualified_with_evidence_written \
+  "a campaign that reported 85 families but wrote no evidence is refused"
+_falsify killed_by_gate 84 qualified_with_kill_split \
+  "kills that do not split into gate and build routes are refused"
+_falsify killed_by_gate x qualified_with_nonnumeric_kill_split \
+  "a non-numeric kill split is refused rather than coerced"
+_falsify baseline_gates_green "" qualified_without_baseline_gates_green \
+  "qualification with no baseline-gates result is refused"
+_falsify gates_proven "" qualified_without_gates_proven \
+  "qualification proving no gates is refused"
+# ...and the unfalsified record still qualifies, or the six checks above are just refusing everything.
+[ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
+  && ok "the unfalsified record still qualifies (positive control for the six checks above)" \
+  || no "the new field checks refuse a well-formed record: $(candidate_incoherent "$GOOD" "$POP")"
+
+echo "=== the candidate must be THIS run's candidate ==="
+sed 's|^run_id=.*|run_id=THIS-RUN|' "$GOOD" | sed 's|^head=.*|head=THIS-HEAD|' > "$TMP/bound"
+[ -z "$(candidate_run_binding "$TMP/bound" THIS-RUN THIS-HEAD)" ] \
+  && ok "a candidate from this run against this head binds (positive control)" \
+  || no "a correctly bound candidate was refused: $(candidate_run_binding "$TMP/bound" THIS-RUN THIS-HEAD)"
+case "$(candidate_run_binding "$TMP/bound" OTHER-RUN THIS-HEAD)" in
+  *candidate_from_other_run*) ok "a candidate left by an EARLIER run cannot answer for this one" ;;
+  *) no "a stale candidate was accepted" ;;
+esac
+case "$(candidate_run_binding "$TMP/bound" THIS-RUN OTHER-HEAD)" in
+  *candidate_head_mismatch*) ok "a candidate describing another commit is refused" ;;
+  *) no "a candidate for a different head was accepted" ;;
+esac
+case "$(candidate_run_binding "$TMP/bound" THIS-RUN "")" in
+  *supervisor_head_unreadable*) ok "an unreadable supervisor head is not a matching head" ;;
+  *) no "an empty observed head was treated as agreement" ;;
+esac
+case "$(candidate_run_binding "$TMP/nonexistent" THIS-RUN THIS-HEAD)" in
+  *candidate_missing*) ok "an absent candidate is refused, not silently bound" ;;
+  *) no "an absent candidate passed the binding check" ;;
+esac
+
+echo "=== a lock is released only when the group is PROVEN empty ==="
+supervisor_must_hold_lock empty \
+  && no "a proven-empty group held the lock" \
+  || ok "a proven-empty group releases the lock"
+supervisor_must_hold_lock no_child_launched \
+  && no "an early failure before any child stranded the lock" \
+  || ok "an early failure with no child launched releases the lock"
+for _st in nonempty permission_denied error:13 unexpected_value ""; do
+  supervisor_must_hold_lock "$_st" \
+    && ok "state '${_st:-<empty>}' holds the lock rather than admitting the next run" \
+    || no "state '${_st:-<empty>}' released the lock while work may survive"
+done
+
+echo "=== the evidence root binds records to the family that produced them ==="
+# A root that digests every line and then sorts globally attests that some evidence exists
+# somewhere. What must be attested is that THIS family was killed by THIS transcript, so the
+# strongest attack is the one that preserves the multiset of lines: swap two families' contents.
+_EV="$TMP/ev"; mkdir -p "$_EV/famA" "$_EV/famB"
+printf 'family=famA\ndisposition=killed\n' > "$_EV/famA/record"
+printf 'family=famB\ndisposition=killed\n' > "$_EV/famB/record"
+_r_before="$(evidence_root_digest "$_EV")"
+mv "$_EV/famA/record" "$_EV/.swap" && mv "$_EV/famB/record" "$_EV/famA/record" && mv "$_EV/.swap" "$_EV/famB/record"
+_r_after="$(evidence_root_digest "$_EV")"
+[ -n "$_r_before" ] && [ -n "$_r_after" ] || no "the evidence-root producer failed; the swap control proves nothing"
+[ "$_r_before" != "$_r_after" ] \
+  && ok "swapping two families' complete contents moves the evidence root" \
+  || no "the root is blind to which family produced which record"
+# ...and the same bytes in the same places still agree with themselves, or the digest is just noise.
+mv "$_EV/famA/record" "$_EV/.swap" && mv "$_EV/famB/record" "$_EV/famA/record" && mv "$_EV/.swap" "$_EV/famB/record"
+[ "$(evidence_root_digest "$_EV")" = "$_r_before" ] \
+  && ok "restoring the contents restores the root" \
+  || no "the root is not a function of the evidence"
+
+echo "=== a record that contradicts itself is refused whether or not it claims qualification ==="
+# This exact shape was published once: a single-family run wearing a full-campaign label. It carries
+# qualified=0, so a coherence check that returns early for unqualified records accepts it.
+sed -e 's/^selected=85$/selected=1/' -e 's/^executed=85$/executed=1/' -e 's/^reported=85$/reported=1/' \
+    -e 's/^qualified=1$/qualified=0/' "$GOOD" > "$TMP/subset"
+case "$(candidate_incoherent "$TMP/subset" "$POP")" in
+  *campaign_mode_selected_subset*) ok "mode=campaign with selected<discovered is refused at qualified=0" ;;
+  *) no "a single-family run may still describe itself as a campaign: '$(candidate_incoherent "$TMP/subset" "$POP")'" ;;
+esac
+sed -e 's/^mode=campaign$/mode=single/' -e 's/^selected=85$/selected=85/' "$GOOD" > "$TMP/badsingle"
+case "$(candidate_incoherent "$TMP/badsingle" "$POP")" in
+  *single_mode_selected*) ok "mode=single claiming 85 selected is refused" ;;
+  *) no "single mode accepted an 85-family selection" ;;
+esac
+sed -e 's/^qualified=1$/qualified=0/' -e 's/^reported=85$/reported=86/' "$GOOD" > "$TMP/overreport"
+case "$(candidate_incoherent "$TMP/overreport" "$POP")" in
+  *reported_exceeds_executed*) ok "reporting more families than were executed is refused" ;;
+  *) no "an invented report was accepted" ;;
+esac
+# The honest unqualified record must still pass, or the check above is just refusing everything.
+[ -z "$(candidate_incoherent "$TMP/unqual" "$POP")" ] \
+  && ok "an honest unqualified campaign is not refused by the coherence check" \
+  || no "unconditional coherence refuses a well-formed unqualified record"
+
+echo "=== family identity: the label and the experiment are separable ==="
+# The driver is the producer of both, so it is asked rather than reimplemented here. Copies live in
+# a scratch tree whose ROOT_DIR still resolves to this repository, so no gate writes the real tree.
+_DRV="$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh"
+# The copy derives its own ROOT_DIR from its location, so the sandbox needs the same shape: a
+# scripts/tests holding the driver and a lib/ it can source. Symlinking the real lib keeps the
+# controls exercising the production decision library rather than a stale duplicate of it.
+_SB="$TMP/sb/scripts/tests"; mkdir -p "$_SB"
+ln -s "$ROOT_DIR/scripts/tests/lib" "$_SB/lib" 2>/dev/null || { echo "cannot build the identity sandbox" >&2; exit 2; }
+_spec() { local out rc; out="$(bash "$1" --spec "$2" 2>/dev/null)"; rc=$?
+          { [ "$rc" = "0" ] && [ -n "$out" ]; } || return 1; printf '%s' "$out"; }
+cp "$_DRV" "$_SB/base.sh"
+sed 's/^add "corecheck-unsafe-op"/add "corecheck-unsafe-op-RENAMED"/' "$_DRV" > "$_SB/renamed.sh"
+sed '0,\|^add "corecheck-unsafe-op" "Concrete/Check/CoreCheck.lean"|s||add "corecheck-unsafe-op" "Concrete/Check/Elsewhere.lean"|' "$_DRV" > "$_SB/mutated.sh"
+sed '0,/^add "copy-predicate"/s//add "corecheck-unsafe-op"/' "$_DRV" > "$_SB/dupe.sh"
+_base="$(_spec "$_SB/base.sh" corecheck-unsafe-op)" || _base=""
+_ren="$(_spec "$_SB/renamed.sh" corecheck-unsafe-op-RENAMED)" || _ren=""
+_mut="$(_spec "$_SB/mutated.sh" corecheck-unsafe-op)" || _mut=""
+if [ -z "$_base" ] || [ -z "$_ren" ] || [ -z "$_mut" ]; then
+  no "the --spec producer failed; the identity controls below would prove nothing (base='$_base' ren='$_ren' mut='$_mut')"
+else
+  [ "$_base" = "$_ren" ] && ok "a renamed family keeps its mutation spec" \
+                         || no "renaming changed the spec: $_base -> $_ren"
+  [ "$_base" != "$_mut" ] && ok "a family that changed what it mutates gets a new spec" \
+                          || no "the spec is blind to the mutation it names"
+fi
+_spec "$_SB/renamed.sh" corecheck-unsafe-op >/dev/null 2>&1 \
+  && no "the pre-rename name still resolves" \
+  || ok "the pre-rename name no longer names a family"
+_dupe_out="$(bash "$_SB/dupe.sh" --spec corecheck-unsafe-op 2>&1)"; _dupe_rc=$?
+{ [ "$_dupe_rc" = "2" ] && printf '%s' "$_dupe_out" | grep -q 'duplicate names'; } \
+  && ok "a duplicated family name is refused, not silently resolved to the first match" \
+  || no "duplicate names accepted (rc=$_dupe_rc): $_dupe_out"
+
 echo "CAMPAIGN-SUPERVISOR: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

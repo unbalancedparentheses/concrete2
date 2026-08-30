@@ -179,9 +179,14 @@ _rm_snapdir() {
 # lock, overwrote `.mutation-campaign-summary` with `completed=0` — destroying the authoritative
 # record — and then exited through a trap that only removes the snapshot, never releasing the lock. A
 # reporting command must not be able to do any of that.
+# ONE LIST OF QUERY MODES, CONSULTED BY BOTH DECISIONS. Whether a mode takes the repository lock and
+# whether it is supervised are the same question — "does this invocation run a campaign?" — and they
+# were answered by two separately maintained enumerations of `--coverage`. Adding a third reporting
+# mode to one and not the other yields a query that forks a supervisor, or one that takes the lock.
+_mut_query_mode() { case "${1:-}" in --coverage|--spec) return 0 ;; *) return 1 ;; esac; }
 _MUT_READ_ONLY_MODE=0
 [ "${ANCHORS_ONLY:-0}" = "1" ] && _MUT_READ_ONLY_MODE=1
-[ "${1:-}" = "--coverage" ] && _MUT_READ_ONLY_MODE=1
+_mut_query_mode "${1:-}" && _MUT_READ_ONLY_MODE=1
 if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
   # shellcheck source=scripts/tests/lib/fresh.sh
   # THE ONE GAP THAT CANNOT BE CLOSED BY ORDERING, so it is stated instead of papered over.
@@ -214,8 +219,12 @@ if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
     exit 2
   }
   export CAMPAIGN_HELD_LOCK=1
+  # THE SAME PARTIAL-NESS FACT AS EVERY OTHER SITE. This keyed on ONLY, which FAMILY_ID does not
+  # resolve until the inventory is built — so an identity-selected run invalidated the FULL record
+  # at startup, before doing any work. That is the same defect as the publication target, in the one
+  # place that runs FIRST.
   _early_target="$ROOT_DIR/.mutation-campaign-summary"
-  [ -z "${ONLY:-}" ] || _early_target="$_early_target.partial"
+  [ "${CAMPAIGN_PARTIAL:-0}" = "0" ] || _early_target="$_early_target.partial"
   if ! { _early="$(mktemp "$_early_target.XXXXXX" 2>/dev/null)" \
          && printf 'completed=0\nrefusals= run_started_and_did_not_finish\n' > "$_early" \
          && mv -f "$_early" "$_early_target"; }; then
@@ -321,7 +330,7 @@ CONCRETE_MUT_ROLE="${CONCRETE_MUT_ROLE:-supervisor}"
 # Anchor and coverage modes publish nothing and are not campaigns; supervising them would add a fork
 # and a second set of failure modes for no verdict.
 if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] \
-   && [ "${1:-}" != "--coverage" ]; then
+   && ! _mut_query_mode "${1:-}"; then
   # The supervisor forks BEFORE the campaign preamble, so it loads the tree-state library itself
   # rather than relying on the child's later sourcing. One producer, used by both roles.
   . "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null \
@@ -351,7 +360,20 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # next campaign refused. That refusal is correct, since this harness deliberately never reclaims
   # from a dead pid, but requiring a human for every crash is a poor trade when the owner can simply
   # release on the way out. Release is creator-checked, so releasing twice is safe.
-  trap '_rm_snapdir; _gate_lock_release 2>/dev/null || true' EXIT
+  # The trap consults supervisor_must_hold_lock on the OBSERVED group state rather than releasing
+  # unconditionally. A flag set at the refusal site would be a second copy of that rule, and the trap
+  # can fire on paths that never reach the refusal — where the state is still not `empty`, and where
+  # an unset state must therefore hold rather than release.
+  _sup_exit_cleanup() {
+    _rm_snapdir
+    if supervisor_must_hold_lock "${_group_state:-no_child_launched}"; then
+      echo "REFUSING TO RELEASE THE REPOSITORY LOCK: campaign work may still be running." >&2
+      echo "  Inspect pgid ${_child_pgid:-unknown}; remove the lock only once nothing remains." >&2
+      return 0
+    fi
+    _gate_lock_release 2>/dev/null || true
+  }
+  trap '_sup_exit_cleanup' EXIT
 
   # THE CHILD RUNS IN ITS OWN SESSION, so "is any campaign work still running" is answered by the
   # kernel — does the child's process group still have members — rather than by matching command
@@ -367,43 +389,20 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
     --report "$_launch_report" --run-id "$RUN_ID" -- bash "$0" "$@"
   _launch_rc=$?
-  # THE REPORT IS DECODED STRICTLY, not sed-ed for whatever happens to be there. Every field must
-  # appear EXACTLY ONCE with a canonical value, and no other key may be present: a launcher that
-  # emitted a field twice, or a partial write, would otherwise be read as whichever line came first.
-  _launch_bad=""
-  for _f in protocol_version run_id child_rc child_signalled child_signal process_group_state pgid; do
-    _n="$(grep -cE "^$_f=" "$_launch_report" 2>/dev/null || true)"
-    [ "$_n" = "1" ] || _launch_bad="$_launch_bad $_f($_n)"
-  done
-  _unknown="$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$_launch_report" 2>/dev/null \
-              | grep -vxE 'protocol_version|run_id|child_rc|child_signalled|child_signal|process_group_state|pgid' \
-              | tr '\n' ',')"
-  [ -z "$_unknown" ] || _launch_bad="$_launch_bad unknown($_unknown)"
-  _proto="$(sed -n 's/^protocol_version=//p' "$_launch_report" | head -1)"
-  _rid="$(sed -n 's/^run_id=//p' "$_launch_report" | head -1)"
+  # THE REPORT IS DECODED BY THE SHARED DECODER, which is the same function the child-process gate
+  # exercises. This block used to be an inline decoder with a gate-side reimplementation beside it;
+  # two decoders of one format is one decoder too many, and the looser of the two is the one that
+  # decides what "tested" means.
+  _launch_bad="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"
+  # EVERY FIELD THIS SUPERVISOR LATER READS IS EXTRACTED HERE, while the report still exists.
+  # Extracting only three of them left `_child_sig` read at the signal refusal below with nothing
+  # assigning it — `set -u` aborted the supervisor mid-run, so the campaign died after doing its
+  # work and published nothing. Removing a decoder means removing the reads it fed, or keeping them.
   _child_rc="$(sed -n 's/^child_rc=//p' "$_launch_report" | head -1)"
   _child_sig="$(sed -n 's/^child_signalled=//p' "$_launch_report" | head -1)"
   _child_signum="$(sed -n 's/^child_signal=//p' "$_launch_report" | head -1)"
   _group_state="$(sed -n 's/^process_group_state=//p' "$_launch_report" | head -1)"
   _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
-  # AN UNSUPPORTED CONTRACT IS NOT A REPORT. Reading fields whose meaning this supervisor does not
-  # know would be interpreting bytes, not decoding a record.
-  [ "$_proto" = "1" ] || _launch_bad="$_launch_bad unsupported_protocol($_proto)"
-  # A STALE REPORT BELONGS TO ANOTHER RUN and must never answer for this one.
-  [ "$_rid" = "$RUN_ID" ] || _launch_bad="$_launch_bad stale_run_id($_rid)"
-  for _pair in "child_rc:$_child_rc" "child_signalled:$_child_sig" "child_signal:$_child_signum" "pgid:$_child_pgid"; do
-    case "${_pair##*:}" in ''|*[!0-9]*) _launch_bad="$_launch_bad noncanonical(${_pair%%:*})" ;; esac
-  done
-  case "$_child_sig" in 0|1) ;; *) _launch_bad="$_launch_bad child_signalled_not_boolean($_child_sig)" ;; esac
-  # SIGNAL FIELDS MUST AGREE WITH EACH OTHER. signalled=1 with signal=0, or signalled=0 with a
-  # nonzero signal, is a record contradicting itself — and a consumer reading either field alone
-  # would draw the opposite conclusion from a consumer reading the other.
-  case "$_child_sig:$_child_signum" in
-    0:0) ;;
-    1:0) _launch_bad="$_launch_bad signal_fields_incoherent(signalled_without_signal)" ;;
-    0:*) _launch_bad="$_launch_bad signal_fields_incoherent(signal_without_signalled)" ;;
-    1:*) ;;
-  esac
   rm -f "$_launch_report"
   # A LAUNCHER THAT DID NOT REPORT CLEANLY IS NOT A CLEAN RUN. Inventing a status would be exactly
   # the fail-open this boundary exists to remove.
@@ -467,6 +466,26 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   #
   # The recomputation uses the child's own function, loaded from the snapshot, so the two sides
   # cannot drift into computing different digests of the same directory.
+  # THE CANDIDATE MUST BE THIS RUN'S CANDIDATE.
+  #
+  # Every reconciliation below trusted the candidate's own `run_id` to name the evidence directory to
+  # check — so a stale candidate from an earlier run selected its own old evidence, reconciled
+  # perfectly against it, and answered on behalf of a child that had just exited cleanly. The digest
+  # agreeing with itself is not the property wanted; the property wanted is that the record describes
+  # THE RUN THE SUPERVISOR JUST SUPERVISED. The run id is compared with the one the supervisor
+  # minted, and the head the child observed with the head the supervisor observes.
+  # The comparison itself lives in the library so a gate can attack it; see candidate_run_binding.
+  # This site supplies the two observations only.
+  # THE SAME PRODUCER THE CHILD USED. A second `git rev-parse` written out here would be a
+  # reimplementation of `ts_head` — including its failure sentinel, which is the part that decides
+  # what an unreadable repository compares as — and the two would drift apart exactly when it
+  # mattered. This is the mistake that produced the CI extractor's 215-vs-208 disagreement.
+  # THE OBSERVATION ALREADY TAKEN, not a third reading. `_sup_head1` was captured immediately after
+  # the child was reaped and has already been reconciled against `_sup_head0`; reading HEAD again
+  # here would introduce a third value that could disagree with the pair just checked, and the
+  # binding would then be comparing the candidate against an observation nothing else validated.
+  _sup_refusals="$_sup_refusals$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"
+
   _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
   _sup_rootrc=0
   _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null)" || _sup_rootrc=$?
@@ -509,6 +528,14 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # boolean would collapse them: `permission_denied` means the group EXISTS but is not ours to
   # signal, and `error:<n>` means the question was not answered at all. Neither is absence, and
   # treating either as empty would be the fail-open this check exists to remove.
+  # AND THE LOCK IS NOT RELEASED WHEN WORK MAY SURVIVE.
+  #
+  # Refusing to publish was only half the response. The EXIT trap released the repository lock on
+  # every path, so the supervisor's own conclusion — "something may still be writing this tree" —
+  # was immediately followed by inviting the next run in. Holding the lock converts the refusal into
+  # the exclusion it was asserting, and the operator is told exactly which pgid to inspect and what
+  # to remove once it is gone. One repository writer at a time has to survive the case where the
+  # previous writer did not stop.
   case "$_group_state" in
     empty)             ;;
     nonempty)          _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)" ;;
@@ -607,10 +634,15 @@ add(){ NAME+=("$1"); FILE+=("$2"); GATE+=("$3"); BUILD+=("$4"); OLD+=("$5"); NEW
 # caller pins when it means "the mutation that did X", as opposed to "whatever is currently called
 # X" — a family may be renamed without changing what it tests, and may keep its name while becoming
 # a different experiment entirely. Only the second of those should invalidate a pinned reference.
+# THE NAME IS DELIBERATELY NOT A COMPONENT. It was, which made the paragraph above false: with the
+# label inside the digest, renaming a family necessarily changed its spec, so the two identifiers
+# moved together and there was no way to express "same experiment, new name" — the exact distinction
+# they exist to draw. The first argument is still accepted and ignored, so every call site reads as
+# the full family and the omission is stated once, here.
 family_spec_digest() {
   local LC_ALL=C
-  printf '%d:%s,%d:%s,%d:%s,%d:%s,%d:%s,%d:%s' \
-    "${#1}" "$1" "${#2}" "$2" "${#3}" "$3" "${#4}" "$4" "${#5}" "$5" "${#6}" "$6" \
+  printf '%d:%s,%d:%s,%d:%s,%d:%s,%d:%s' \
+    "${#2}" "$2" "${#3}" "$3" "${#4}" "$4" "${#5}" "$5" "${#6}" "$6" \
     | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
 }
 
@@ -1441,6 +1473,36 @@ $'      mint_ok "${MINT_LABEL[$i]} — MISSING from group \'$grp\' (no <<P$id>> 
 
 N=${#NAME[@]}
 
+# NO NAME MAY APPEAR TWICE, WHETHER OR NOT ANYONE SELECTS BY IT. Selection took the first match and
+# said nothing, so a duplicated family name silently made one of the two unreachable by identity and
+# made every evidence record keyed by that name ambiguous. Identity that is not unique is not
+# identity; this is checked over the whole inventory rather than only on the selection path.
+_dupe_names="$(printf '%s\n' "${NAME[@]}" | LC_ALL=C sort | uniq -d)"
+if [ -n "$_dupe_names" ]; then
+  echo "FATAL: the family inventory contains duplicate names:" >&2
+  printf '       %s\n' $_dupe_names >&2
+  echo "       Records and FAMILY_ID selection are both keyed by name and cannot disambiguate them." >&2
+  _gate_lock_release; exit 2
+fi
+
+# `--spec <FAMILY_ID>`: print the mutation-spec digest of one family and exit.
+#
+# Callers that pin a spec need its value, and the only sound way to obtain one is to ask the producer
+# that will later check it. Deriving the digest a second time by hand — in a gate, a script or a
+# commit message — is how a pin comes to describe something the driver never computes. This runs
+# before the workspace copy, so it costs nothing.
+if [ "${1:-}" = "--spec" ]; then
+  [ -n "${2:-}" ] || { echo "usage: --spec <FAMILY_ID>" >&2; exit 2; }
+  for (( _i=0; _i<N; _i++ )); do
+    [ "${NAME[$_i]}" = "$2" ] || continue
+    family_spec_digest "${NAME[$_i]}" "${FILE[$_i]}" "${GATE[$_i]}" \
+                       "${BUILD[$_i]}" "${OLD[$_i]}" "${NEW[$_i]}"
+    exit 0
+  done
+  echo "no family named '$2' in this inventory of $N" >&2; exit 2
+fi
+
+
 # VACUITY FLOOR, APPLIED TO EVERY MODE. `N` comes straight from the inventory array, so an inventory
 # that lost its entries — a renamed array, a truncated edit, a botched merge — would run zero
 # families, satisfy `VERDICTS == EXPECTED_RUN` as 0 == 0, and report `PASS=0 FAIL=0` with
@@ -1465,7 +1527,7 @@ if [ "$N" != "$EXPECTED_FAMILIES" ]; then
     # against a temporarily changed inventory destroyed the authoritative full-campaign record — the
     # identical defect fixed on the normal early path, reintroduced by a second producer.
     _vac_target="$ROOT_DIR/.mutation-campaign-summary"
-    [ -z "${ONLY:-}" ] || _vac_target="$_vac_target.partial"
+    [ "${CAMPAIGN_PARTIAL:-0}" = "0" ] || _vac_target="$_vac_target.partial"
     _t="$(mktemp "$_vac_target.XXXXXX" 2>/dev/null)" \
       && printf 'completed=0\nfamilies_declared=%s\nrefusals= mutation_inventory_pin_violated(%s)\n' "$N" "$N" > "$_t" \
       && mv -f "$_t" "$_vac_target"
@@ -1621,8 +1683,10 @@ write_summary() {
          echo "baseline_compiler_sha=${TESTED_BIN:-unknown}"
          echo "compilers_tested=per-family-rebuilds"
          echo "untracked_sha=$START_UNTRACKED"
-         [ -n "$2" ] && echo "refusals=$2"
-         true
+         # ALWAYS EMITTED, even when empty. `refusals` is a mandatory schema key, so omitting it on
+         # the happy path meant a CLEAN full campaign published a record the decoder then rejected as
+         # missing_key(refusals) — the one run that must succeed was the one that could not.
+         echo "refusals=$2"
        } > "$tmp" 2>/dev/null; then
     echo "error: could not write the campaign artifact at $tmp" >&2; rm -f "$tmp" 2>/dev/null; return 1
   fi

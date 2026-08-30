@@ -69,7 +69,37 @@ supervisor_refusals() {
 candidate_incoherent() { # candidate [expected-family-count]
   local c="$1" expected="${2:-}" out="" v
   _f() { sed -n "s/^$1=//p" "$c" | head -1; }
-  [ "$(_f qualified)" = "1" ] || { printf ''; return 0; }   # only qualification needs justifying
+  # A CONTRADICTION IS A CONTRADICTION AT qualified=0 TOO.
+  #
+  # Returning immediately for every unqualified candidate meant the exact shape this harness already
+  # shipped once — mode=campaign with discovered=85 and selected=1, a single-family run wearing a
+  # full-campaign label — stayed acceptable so long as it did not also claim qualification. But that
+  # record is not a modest result; it is a false description of what ran, and it is the artifact a
+  # reader consults. These checks therefore run unconditionally, and only the qualification-specific
+  # ones below are gated on qualified=1.
+  local _m _d _s _e _r
+  _m="$(_f mode)"; _d="$(_f discovered)"; _s="$(_f selected)"
+  _e="$(_f executed)"; _r="$(_f reported)"
+  case "$_m" in
+    campaign) [ "$_s" = "$_d" ] || out="$out campaign_mode_selected_subset($_s of $_d)" ;;
+    single)   [ "$_s" = "1" ]   || out="$out single_mode_selected($_s)" ;;
+    *)        out="$out unknown_mode($_m)" ;;
+  esac
+  # Reporting more than was executed is not a partial result, it is an invented one.
+  #
+  # EACH OPERAND IS TESTED SEPARATELY. Testing the CONCATENATION let an empty field through whenever
+  # its partner was numeric — "" and "12" concatenate to "12" — and `[ "" -le 12 ]` is not false, it
+  # is a bash usage error that writes to stderr and returns 2, so the `||` fired and the record was
+  # refused with `reported_exceeds_executed(>12)`: the right verdict attributed to the wrong cause.
+  # An absent field is already refused by name at decode; here it simply is not a comparison.
+  _num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
+  if _num "$_r" && _num "$_e"; then
+    [ "$_r" -le "$_e" ] || out="$out reported_exceeds_executed($_r>$_e)"
+  fi
+  if _num "$_e" && _num "$_s"; then
+    [ "$_e" -le "$_s" ] || out="$out executed_exceeds_selected($_e>$_s)"
+  fi
+  if [ "$(_f qualified)" != "1" ]; then printf '%s' "$out"; return 0; fi
   [ "$(_f completed)"    = "1" ]        || out="$out qualified_without_completed"
   [ "$(_f integrity_ok)" = "1" ]        || out="$out qualified_without_integrity"
   [ "$(_f mode)"         = "campaign" ] || out="$out qualified_in_$(_f mode)_mode"
@@ -106,6 +136,31 @@ candidate_incoherent() { # candidate [expected-family-count]
     { [ "$d" = "$s" ] && [ "$s" = "$e" ] && [ "$e" = "$r" ]; } \
       || out="$out qualified_with_counts($d/$s/$e/$r)"
     [ "$k" = "$r" ] || out="$out qualified_with_unkilled($k/$r)"
+    # THE FIELDS THAT WERE NEVER READ.
+    #
+    # Qualification reconciled the five headline counts and the disposition ledger and then ignored
+    # everything else the record publishes — so a candidate could claim a fully killed 85-family
+    # campaign while saying it ran zero families, wrote no evidence, split its kills into numbers
+    # that do not add up, or proved no gates at all. A field the artifact publishes and nothing ever
+    # reads is a field that can say anything.
+    local fr ew kg kb bg gp
+    fr="$(_f families_run)"; ew="$(_f evidence_written)"
+    kg="$(_f killed_by_gate)"; kb="$(_f killed_by_build)"
+    bg="$(_f baseline_gates_green)"; gp="$(_f gates_proven)"
+    # Every family selected must have RUN, and every one that ran must have left a record.
+    [ "$fr" = "$e" ] || out="$out qualified_with_families_run($fr vs executed=$e)"
+    [ "$ew" = "$r" ] || out="$out qualified_with_evidence_written($ew vs reported=$r)"
+    # A kill is attributed to the gate or to the build; the two routes must account for every kill.
+    if _num "$kg" && _num "$kb"; then
+      [ "$(( kg + kb ))" = "$k" ] \
+        || out="$out qualified_with_kill_split($kg+$kb vs killed=$k)"
+    else
+      out="$out qualified_with_nonnumeric_kill_split($kg/$kb)"
+    fi
+    # A qualifying campaign rests on a green baseline and on having proved something; empty or
+    # absent values here are not modest results, they are the absence of the claim.
+    [ -n "$bg" ] || out="$out qualified_without_baseline_gates_green"
+    [ -n "$gp" ] || out="$out qualified_without_gates_proven"
     # THE DISPOSITIONS MUST ACCOUNT FOR THE REPORTED FAMILIES. Checking each disposition is zero and
     # that killed equals reported leaves the ledger unbalanced if a family is reported under no
     # disposition at all; this is the identity that makes the four numbers describe one population.
@@ -175,8 +230,19 @@ EOF
     # confident digest over partial or empty data — a hash that agrees with itself while describing
     # nothing. `find` failing here returns nonzero to the caller instead.
     [ -d "$d" ] || return 1
-    out="$out$n
-$rec"
+    # EACH FAMILY'S RECORDS ARE DIGESTED AS A UNIT, BEFORE ANY SORTING.
+    #
+    # The family name and its file records used to be appended as sibling lines and then GLOBALLY
+    # sorted, which discards which record belonged to which family. Swapping the complete contents
+    # of two family directories permuted the same multiset of lines and left the root unchanged, so
+    # the digest attested that some evidence existed somewhere — not that THIS family was killed by
+    # THIS transcript. Hashing the record block per directory makes the binding part of the digest:
+    # a swap changes both family digests, so it changes the root.
+    local fam_dg
+    fam_dg="$(printf '%s' "$rec" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)"
+    [ -n "$fam_dg" ] || return 1
+    out="$out$n $fam_dg
+"
   done
   printf '%s' "$out" | LC_ALL=C sort | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
 }
@@ -265,6 +331,128 @@ records_unkilled_or_unevidenced() {
 #
 # DUPLICATES ARE DETECTED BEFORE ANY VALUE IS STORED. Parsing into a map first and checking after is
 # how last-wins (or first-wins) silently resolves a contradiction that should have been fatal.
+# LAUNCH_SCHEMA / decode_launch_report — the launcher report's contract, in one place.
+#
+# The supervisor used to decode this report inline and the child-process gate used to reimplement a
+# looser version of the same thing, which meant the gate could pass while the consumer that actually
+# gates publication rejected the identical bytes — or, worse, the reverse. There is one decoder now,
+# and the gate calls it.
+# candidate_run_binding <candidate> <expected-run-id> <observed-head> -> refusals
+#
+# THE RECORD MUST DESCRIBE THE RUN THAT WAS JUST SUPERVISED. Every reconciliation the supervisor
+# performs uses the candidate's OWN run id to locate the evidence it then checks, so a stale
+# candidate selects its own old evidence, reconciles perfectly against it, and answers on behalf of
+# a child that has only just exited. Self-agreement is not the property wanted. This lived inline in
+# the driver, where no gate could reach it; a refusal nothing can test is a refusal nothing can
+# prove is still there.
+candidate_run_binding() {
+  local c="$1" want_run="$2" want_head="$3" out="" v
+  [ -s "$c" ] || { printf ' candidate_missing'; return 0; }
+  v="$(sed -n 's/^run_id=//p' "$c" | head -1)"
+  [ "$v" = "$want_run" ] || out="$out candidate_from_other_run($v vs $want_run)"
+  v="$(sed -n 's/^head=//p' "$c" | head -1)"
+  [ "$v" = "$want_head" ] || out="$out candidate_head_mismatch($v vs $want_head)"
+  # An unreadable observation is not a matching one; comparing two sentinels would agree with itself.
+  case "$want_head" in
+    ''|*TREESTATE-UNAVAILABLE*) out="$out supervisor_head_unreadable($want_head)" ;;
+  esac
+  printf '%s' "$out"
+}
+
+# supervisor_must_hold_lock <process-group-state> -> 0 (hold) / 1 (release)
+#
+# REFUSING TO PUBLISH WAS ONLY HALF THE RESPONSE. The supervisor released the repository lock on
+# every exit path, so its own conclusion — "something from this run may still be writing the tree" —
+# was immediately followed by admitting the next run. Only a PROVEN-empty group releases: the other
+# three states are "still running", "exists but not ours to signal", and "the question was not
+# answered", and none of those is absence.
+# `no_child_launched` is its own answer, not a fall-through. The trap that consults this is
+# installed BEFORE the child is spawned, so it fires on early failures — cannot stage the report,
+# cannot load a library — where no campaign process group has ever existed. Letting those land in
+# the default would strand the lock on exactly the failures that left nothing running, and a lock
+# stranded by a clean refusal is indistinguishable to the next operator from one stranded by a
+# crash. Every state is named; there is no default.
+supervisor_must_hold_lock() {
+  case "${1:-}" in
+    empty|no_child_launched) return 1 ;;
+    nonempty|permission_denied|error:*|*) return 0 ;;
+  esac
+}
+
+LAUNCH_SCHEMA="protocol_version run_id child_rc child_signalled child_signal process_group_state pgid"
+LAUNCH_SCHEMA_NUMERIC="child_rc child_signalled child_signal pgid"
+
+# decode_launch_report <report> <expected-run-id> <launcher-rc> -> refusals; empty means usable
+decode_launch_report() {
+  local rep="$1" want_run="$2" lrc="${3:-0}" out="" line key n k
+  # THE LAUNCHER'S OWN EXIT STATUS IS PART OF THE REPORT. It was recorded and then only printed in
+  # the failure message, so a launcher that died after writing a plausible file was read as a clean
+  # run. A launcher that did not exit zero has not answered the question it was asked.
+  case "$lrc" in
+    0) ;;
+    *) out="$out launcher_exit($lrc)" ;;
+  esac
+  [ -s "$rep" ] || { printf '%s report_absent_or_empty' "$out"; return 0; }
+  # EVERY LINE MUST BE A DECLARED ASSIGNMENT. The old scan extracted `^[a-z_]*=`, which simply does
+  # not match `PGID=0` or `garbage`: an injected uppercase or malformed line was not an unknown key,
+  # it was invisible. Anything that is not a declared lowercase key is refused by name.
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '') out="$out blank_line"; continue ;;
+      *=*) key="${line%%=*}" ;;
+      *) out="$out malformed_line"; continue ;;
+    esac
+    case " $LAUNCH_SCHEMA " in
+      *" $key "*) ;;
+      *) out="$out undeclared_key($key)" ;;
+    esac
+  done < "$rep"
+  for k in $LAUNCH_SCHEMA; do
+    n="$(grep -cE "^$k=" "$rep" 2>/dev/null || true)"
+    [ "$n" = "1" ] || out="$out $k($n)"
+  done
+  local proto rid crc csig cnum gstate pgid
+  proto="$(sed -n 's/^protocol_version=//p' "$rep" | head -1)"
+  rid="$(sed -n 's/^run_id=//p' "$rep" | head -1)"
+  crc="$(sed -n 's/^child_rc=//p' "$rep" | head -1)"
+  csig="$(sed -n 's/^child_signalled=//p' "$rep" | head -1)"
+  cnum="$(sed -n 's/^child_signal=//p' "$rep" | head -1)"
+  gstate="$(sed -n 's/^process_group_state=//p' "$rep" | head -1)"
+  pgid="$(sed -n 's/^pgid=//p' "$rep" | head -1)"
+  [ "$proto" = "1" ] || out="$out unsupported_protocol($proto)"
+  [ "$rid" = "$want_run" ] || out="$out stale_run_id($rid)"
+  for k in $LAUNCH_SCHEMA_NUMERIC; do
+    case "$(sed -n "s/^$k=//p" "$rep" | head -1)" in
+      ''|*[!0-9]*) out="$out noncanonical($k)" ;;
+    esac
+  done
+  case "$csig" in 0|1) ;; *) out="$out child_signalled_not_boolean($csig)" ;; esac
+  case "$csig:$cnum" in
+    0:0) ;;
+    1:0) out="$out signal_fields_incoherent(signalled_without_signal)" ;;
+    0:*) out="$out signal_fields_incoherent(signal_without_signalled)" ;;
+    1:*)
+      # A SIGNALLED CHILD'S STATUS IS 128+N, AND THE TWO FIELDS MUST SAY SO. Left unchecked, a report
+      # could carry child_signal=9 beside child_rc=0 and a consumer reading the status alone would
+      # conclude the campaign exited cleanly.
+      # BOTH operands must be numbers before the arithmetic. `$(( 128 + cnum ))` on a non-numeric
+      # cnum resolves it as a variable NAME, yields 128, and reports a mismatch against a number
+      # that was never in the record.
+      case "$crc:$cnum" in
+        *[!0-9:]*|:*|*:) ;;
+        *) [ "$crc" = "$(( 128 + cnum ))" ] \
+             || out="$out signal_status_mismatch(rc=$crc signal=$cnum)" ;;
+      esac ;;
+  esac
+  # The state is an enumeration; anything else is not an answer, and `empty` is the only one that
+  # permits publication, so an unrecognised value must never reach that comparison unchallenged.
+  case "$gstate" in
+    empty|nonempty|permission_denied|error:*) ;;
+    *) out="$out unknown_process_group_state($gstate)" ;;
+  esac
+  printf '%s' "$out"
+}
+
 CAMPAIGN_SCHEMA_NUMERIC="completed discovered selected executed reported killed invalid survived could_not_apply integrity_ok qualified secs_total secs_copy secs_build secs_gate secs_other families_declared families_run killed_by_gate killed_by_build failed evidence_written"
 CAMPAIGN_SCHEMA_FREEFORM="mode baseline_gates_green gates_proven evidence_root evidence_dir run_id head executed_driver_sha preamble_driver_sha repo_driver_sha inventory_sha tracked_sha workspace_tracked_sha workspace_head workspace_untracked_sha baseline_compiler_sha compilers_tested untracked_sha refusals families_digest"
 

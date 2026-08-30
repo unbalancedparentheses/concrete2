@@ -26,6 +26,9 @@ set -uEo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 LAUNCH="$ROOT_DIR/scripts/tests/lib/run_campaign_child.py"
+# The decoder under test is the supervisor's, loaded from where the supervisor loads it.
+. "$ROOT_DIR/scripts/tests/lib/campaign_supervise.sh" \
+  || { echo "error: cannot load campaign_supervise.sh; there would be no decoder to test" >&2; exit 2; }
 [ -f "$LAUNCH" ] || { echo "error: $LAUNCH missing" >&2; exit 2; }
 
 PASS=0; FAIL=0
@@ -111,15 +114,15 @@ echo "=== the report is a strict channel ==="
 # Each of these is what a partial write, a double write, or a stray key looks like. The supervisor
 # decodes strictly, so every one must be distinguishable from a clean report rather than read as
 # whichever line came first.
+# THE PRODUCTION DECODER IS THE ONE UNDER TEST.
+#
+# This gate used to carry its own copy of the decoding rules, which is the failure it exists to
+# prevent: the copy was LOOSER than the supervisor's — its `^[a-z_]*=` scan cannot match `PGID=0` or
+# a line with no `=` at all, so an injected uppercase or malformed line was not reported as an
+# unknown key, it was invisible — and a gate that is weaker than the consumer certifies a strictness
+# the consumer does not have. Every case below now runs the function that actually gates publication.
 _mk() { printf '%s\n' "$@" > "$TMP/probe"; }
-_decodes_clean() {
-  local bad=""
-  for f in protocol_version run_id child_rc child_signalled child_signal process_group_state pgid; do
-    [ "$(grep -cE "^$f=" "$TMP/probe")" = "1" ] || bad="$bad $f"
-  done
-  [ -z "$(sed -n 's/^\([a-z_]*\)=.*/\1/p' "$TMP/probe" | grep -vxE 'protocol_version|run_id|child_rc|child_signalled|child_signal|process_group_state|pgid')" ] || bad="$bad unknown"
-  [ -z "$bad" ]
-}
+_decodes_clean() { [ -z "$(decode_launch_report "$TMP/probe" "X" 0)" ]; }
 _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
 _decodes_clean && ok "a complete report decodes cleanly (positive control)" || no "a complete report was rejected"
 _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'pgid=1'
@@ -130,6 +133,44 @@ _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_rc=0' 'child_signalled=0
 _decodes_clean && no "an identical duplicate was accepted" || ok "an IDENTICAL duplicate is refused"
 _mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1' 'extra=1'
 _decodes_clean && no "an unknown key was accepted" || ok "an UNKNOWN key is refused"
+# The three the old gate-local decoder could not see at all.
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1' 'PGID=0'
+_decodes_clean && no "an UPPERCASE key was accepted" || ok "an uppercase key is refused, not skipped"
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1' 'garbage'
+_decodes_clean && no "a line with no assignment was accepted" || ok "a malformed line is refused, not skipped"
+# A signalled child exits 128+N; a report saying otherwise is contradicting itself, and a consumer
+# reading child_rc alone would conclude the campaign exited cleanly.
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=1' 'child_signal=9' 'process_group_state=empty' 'pgid=1'
+_decodes_clean && no "child_rc=0 beside child_signal=9 was accepted" || ok "a status that disagrees with the signal is refused"
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=137' 'child_signalled=1' 'child_signal=9' 'process_group_state=empty' 'pgid=1'
+_decodes_clean && ok "...and the consistent 128+9=137 form is accepted" || no "a correctly signalled report was rejected"
+# An unrecognised state must never reach the comparison that only lets `empty` publish.
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=probably_fine' 'pgid=1'
+_decodes_clean && no "an unrecognised process_group_state was accepted" || ok "an unknown group state is refused"
+# THE LAUNCHER'S OWN EXIT STATUS IS PART OF THE ANSWER. A launcher that wrote a perfect report and
+# then died was previously read as a clean run.
+_mk 'protocol_version=1' 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
+[ -z "$(decode_launch_report "$TMP/probe" "X" 0)" ] \
+  && ok "a clean report with launcher rc=0 decodes (positive control for the status check)" \
+  || no "the positive control for launcher status failed"
+case "$(decode_launch_report "$TMP/probe" "X" 3)" in
+  *launcher_exit\(3\)*) ok "the same bytes are refused when the launcher itself exited 3" ;;
+  *) no "a nonzero launcher status was ignored" ;;
+esac
+case "$(decode_launch_report "$TMP/probe" "OTHER-RUN" 0)" in
+  *stale_run_id*) ok "a report from another run is refused" ;;
+  *) no "a stale report answered for this run" ;;
+esac
+# AN UNSUPPORTED CONTRACT, ATTACKED RATHER THAN OBSERVED. Confirming that the producer currently
+# writes version 1 shows the two agree today; it does not show the consumer would refuse a version
+# it cannot interpret. The refusal is what protects a future reader, so the refusal is what is tested.
+for _v in 2 0 '' 1.0 v1; do
+  _mk "protocol_version=$_v" 'run_id=X' 'child_rc=0' 'child_signalled=0' 'child_signal=0' 'process_group_state=empty' 'pgid=1'
+  case "$(decode_launch_report "$TMP/probe" "X" 0)" in
+    *unsupported_protocol*) ok "protocol_version='$_v' is refused as uninterpretable" ;;
+    *) no "protocol_version='$_v' was accepted as if it were version 1" ;;
+  esac
+done
 
 echo "=== the stated guarantee is process GROUP, not descendants ==="
 # MEASURED, NOT ASSUMED, and recorded here so the limitation cannot quietly become a claim: a
