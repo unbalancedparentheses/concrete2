@@ -587,6 +587,19 @@ NAME=();  FILE=();  GATE=();  BUILD=()
 OLD=();   NEW=()
 add(){ NAME+=("$1"); FILE+=("$2"); GATE+=("$3"); BUILD+=("$4"); OLD+=("$5"); NEW+=("$6"); }
 
+# family_spec_digest <name> <file> <gate> <build> <old> <new> -> digest of the EXPERIMENT
+#
+# Length-prefixed, so no field can be forged by embedding a separator in another. This is what a
+# caller pins when it means "the mutation that did X", as opposed to "whatever is currently called
+# X" — a family may be renamed without changing what it tests, and may keep its name while becoming
+# a different experiment entirely. Only the second of those should invalidate a pinned reference.
+family_spec_digest() {
+  local LC_ALL=C
+  printf '%d:%s,%d:%s,%d:%s,%d:%s,%d:%s,%d:%s' \
+    "${#1}" "$1" "${#2}" "$2" "${#3}" "$3" "${#4}" "$4" "${#5}" "$5" "${#6}" "$6" \
+    | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}
+
 add "corecheck-unsafe-op" "Concrete/Check/CoreCheck.lean" "check_corecheck_boundary.sh" yes \
   'addCCError (.missingCapability "*raw_ptr" "Unsafe" "")' \
   'pure ()'
@@ -2504,6 +2517,43 @@ echo "=== gate mutation coverage: $N families ==="
 # VALIDATED BEFORE INDEXING. `FAMILY=0` computes index -1, which bash resolves to the LAST element of
 # an indexed array — so the run executed family 81 while reporting `single_family_selected(0)`, and
 # exited zero. A non-numeric value would index 0 after arithmetic coercion.
+# SELECTION BY STABLE IDENTITY, NOT BY POSITION.
+#
+# An ordinal names a slot, not an experiment: inserting a family renumbers everything after it, so a
+# command, a golden baseline or a recorded verdict that said FAMILY=85 silently begins selecting a
+# DIFFERENT mutation. The evidence records already carry `selector=FAMILY=n` for reproduction, and
+# that reproduction is only sound while the inventory is unchanged — which is exactly the assumption
+# that fails when someone adds a family.
+#
+# FAMILY_ID names the family, and FAMILY_SPEC optionally pins the digest of the mutation it must
+# still be — file, gate, build requirement, and the exact old/new text. A family renamed keeps its
+# spec; a family whose MUTATION changed no longer answers to the old digest. The ordinal form is
+# still accepted, because a human reading a list wants to type a number, but it is resolved against
+# the same identity and reported alongside it.
+if [ -n "${FAMILY_ID:-}" ]; then
+  _fid_idx=""
+  for (( _i=0; _i<N; _i++ )); do
+    [ "${NAME[$_i]}" = "$FAMILY_ID" ] || continue
+    _fid_idx="$_i"; break
+  done
+  if [ -z "$_fid_idx" ]; then
+    echo "FATAL: FAMILY_ID='$FAMILY_ID' names no family in this inventory of $N." >&2
+    echo "       Selection is by identity: a renamed or removed family must be named, not guessed." >&2
+    _gate_lock_release; exit 2
+  fi
+  if [ -n "${FAMILY_SPEC:-}" ]; then
+    _fid_spec="$(family_spec_digest "${NAME[$_fid_idx]}" "${FILE[$_fid_idx]}" "${GATE[$_fid_idx]}" \
+                                    "${BUILD[$_fid_idx]}" "${OLD[$_fid_idx]}" "${NEW[$_fid_idx]}")"
+    if [ "$_fid_spec" != "$FAMILY_SPEC" ]; then
+      echo "FATAL: FAMILY_ID='$FAMILY_ID' resolves, but its mutation spec is $_fid_spec, not the pinned $FAMILY_SPEC." >&2
+      echo "       The family kept its name and changed what it does; a caller pinning the spec is" >&2
+      echo "       asking for the experiment, not the label. Update the pin deliberately." >&2
+      _gate_lock_release; exit 2
+    fi
+  fi
+  ONLY=$(( _fid_idx + 1 ))
+  echo "selected by identity: $FAMILY_ID (ordinal $ONLY of $N)"
+fi
 if [ -n "$ONLY" ]; then
   case "$ONLY" in
     ''|*[!0-9]*) echo "FATAL: FAMILY must be a positive integer, got '$ONLY'." >&2; _gate_lock_release; exit 2 ;;
