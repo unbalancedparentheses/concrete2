@@ -40,7 +40,20 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 run_case() {
   local label="$1" want_rc="$2" want_empty="$3"; shift 3
   local rep="$TMP/report.$$.$RANDOM"
+  # THE PRODUCER AND THE DECODER ARE TESTED TOGETHER.
+  #
+  # These cases discarded the launcher's own exit status and then read two fields with sed, so the
+  # real report was never put through the real decoder. The synthetic cases below hard-code launcher
+  # status 0, which means a launcher that writes plausible fields and exits nonzero — or emits an
+  # undeclared key — kept this gate green while the actual supervisor refused every run. Each real
+  # launch is now decoded by the production consumer, with the launcher's true status.
   python3 "$LAUNCH" --report "$rep" --run-id "GATE-$$" -- "$@" >/dev/null 2>&1
+  local _lrc=$?
+  local _bad; _bad="$(decode_launch_report "$rep" "GATE-$$" "$_lrc")"
+  if [ -n "$_bad" ]; then
+    no "$label — the launcher's own report does not decode:$_bad"
+    rm -f "$rep"; return
+  fi
   local rc empty
   rc="$(sed -n 's/^child_rc=//p' "$rep" | head -1)"
   local state; state="$(sed -n 's/^process_group_state=//p' "$rep" | head -1)"

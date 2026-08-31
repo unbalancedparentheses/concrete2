@@ -676,6 +676,25 @@ supervisor_child_exit=%s
     echo "FATAL: the authoritative artifact could not be written completely" >&2
     exit 2
   fi
+  # THE TREE IS RE-MEASURED IMMEDIATELY BEFORE INSTALL.
+  #
+  # Tree state was last read just after the child was reaped, and the evidence root just after that,
+  # with all of the reconciliation in between. The repository lock excludes another campaign run — it
+  # does not, and cannot, exclude an editor or any other process. So a qualifying artifact could be
+  # installed already describing a tree that had moved since it was measured. This narrows the window
+  # to the single rename below rather than closing it, which is the honest limit of a lock that only
+  # binds participants; it is not claimed to be atomic against arbitrary writers.
+  _sup_head2="$(ts_head "$ROOT_DIR" 2>/dev/null)"
+  _sup_tracked2="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
+  _sup_untracked2="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
+  if [ "$_sup_head2" != "$_sup_head1" ] || [ "$_sup_tracked2" != "$_sup_tracked1" ] \
+     || [ "$_sup_untracked2" != "$_sup_untracked1" ]; then
+    rm -f "$_tmp" "$_cand_snap"
+    echo "FATAL: the repository changed between reconciliation and publication." >&2
+    echo "       Refusing to install a record describing a tree that has already moved." >&2
+    echo "       The startup invalidation stands, so no earlier result reads as this run's." >&2
+    exit 2
+  fi
   mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; exit 2; }
   rm -f "$_cand_snap" "$ROOT_DIR/.mutation-campaign-summary.candidate" 2>/dev/null
 
