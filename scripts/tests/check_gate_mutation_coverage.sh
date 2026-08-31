@@ -187,6 +187,25 @@ _mut_query_mode() { case "${1:-}" in --coverage|--spec) return 0 ;; *) return 1 
 _MUT_READ_ONLY_MODE=0
 [ "${ANCHORS_ONLY:-0}" = "1" ] && _MUT_READ_ONLY_MODE=1
 _mut_query_mode "${1:-}" && _MUT_READ_ONLY_MODE=1
+
+# `CONCRETE_MUT_SNAPSHOT` MEANS "I AM THE SNAPSHOT", AND THAT IS CHECKABLE.
+#
+# Every step below — lock acquisition, invalidating the previous record, taking the snapshot — is
+# skipped when this variable is set, because a legitimate snapshot has already done all of it. But
+# the variable was TRUSTED: supplying it together with CONCRETE_MUT_ROOT skipped the lock and the
+# invalidation while still reaching the supervisor and publishing authoritatively.
+#
+# A real snapshot was re-exec'd AS the file the variable names, so `$0` and the variable agree by
+# construction. An inherited or forged value does not survive that comparison — and neither does
+# a stray export left in a shell or in CI.
+if [ -n "${CONCRETE_MUT_SNAPSHOT:-}" ] && [ "$0" != "${CONCRETE_MUT_SNAPSHOT}" ]; then
+  echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this process is not that snapshot." >&2
+  echo "       running: $0" >&2
+  echo "       claimed: ${CONCRETE_MUT_SNAPSHOT}" >&2
+  echo "       Honouring it would skip the repository lock and the invalidation of the previous" >&2
+  echo "       record, and still publish authoritatively. Refusing." >&2
+  exit 2
+fi
 if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
   # shellcheck source=scripts/tests/lib/fresh.sh
   # THE ONE GAP THAT CANNOT BE CLOSED BY ORDERING, so it is stated instead of papered over.
@@ -437,6 +456,19 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # two decoders of one format is one decoder too many, and the looser of the two is the one that
   # decides what "tested" means.
   _launch_bad="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"
+    # NOTHING IS READ FROM A REPORT THAT HAS NOT BEEN ACCEPTED.
+    #
+    # The fields were extracted first and the verdict consulted afterwards, so a malformed or
+    # duplicated report still populated `_group_state` — and the EXIT trap, which decides whether to
+    # hold the repository lock, then consulted a value taken from a record the supervisor had just
+    # rejected. A duplicated `process_group_state` whose FIRST line said `empty` released the lock on
+    # the strength of a report that was refused. `_group_state` stays unset on this path, so the trap
+    # holds.
+    if [ -n "$_launch_bad" ]; then
+      rm -f "$_launch_report"
+      echo "FATAL: the child launcher report is unusable:$_launch_bad (launcher rc=$_launch_rc)" >&2
+      exit 2
+    fi
   # EVERY FIELD THIS SUPERVISOR LATER READS IS EXTRACTED HERE, while the report still exists.
   # Extracting only three of them left `_child_sig` read at the signal refusal below with nothing
   # assigning it — `set -u` aborted the supervisor mid-run, so the campaign died after doing its
@@ -447,12 +479,6 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   _group_state="$(sed -n 's/^process_group_state=//p' "$_launch_report" | head -1)"
   _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
   rm -f "$_launch_report"
-  # A LAUNCHER THAT DID NOT REPORT CLEANLY IS NOT A CLEAN RUN. Inventing a status would be exactly
-  # the fail-open this boundary exists to remove.
-  if [ -n "$_launch_bad" ]; then
-    echo "FATAL: the child launcher report is unusable:$_launch_bad (launcher rc=$_launch_rc)" >&2
-    exit 2
-  fi
 
   _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
   _sup_tracked1="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
@@ -478,7 +504,9 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # published with qualified=0 and the supervisor exited 0 behind it — a passing process beside a
   # record that says the run did not qualify. That is precisely the PASS-versus-exit disagreement
   # this boundary exists to remove, reintroduced one layer up.
-  _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" 2>/dev/null || echo candidate_unreadable)"
+  # The gate population comes from the same source the families do — the driver's own `add` lines.
+  _sup_gates="$(gate_count_from_driver "$0" 2>/dev/null || echo "")"
+  _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" "$_sup_gates" 2>/dev/null || echo candidate_unreadable)"
   [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
 
   # THE EXACT FAMILY SET, NOT ITS SIZE. A one-for-one substitution keeps the count at 85 while a
@@ -683,6 +711,17 @@ supervisor_child_exit=%s
   for _k in completed mode qualified supervisor_refusals supervisor_child_exit candidate_incoherent; do
     [ "$(grep -cE "^$_k=" "$_tmp")" = "1" ] || _pub_ok=0
   done
+  # AND THE WHOLE RECORD IS DECODED BEFORE IT IS INSTALLED.
+  #
+  # Counting six keys leaves the other thirty-nine unchecked, so a candidate refused for being
+  # truncated, or for carrying duplicate or undeclared keys, was still COPIED into the authoritative
+  # artifact — the file every reader trusts could be one the decoder that gates every other path
+  # would reject. The supervisor already owns a decoder; it applies it to its own output.
+  _pub_dec="$(decode_candidate "$_tmp" "$CAMPAIGN_SCHEMA_PUBLISHED" 2>/dev/null || echo decoder_failed)"
+  if [ -n "$_pub_dec" ]; then
+    echo "REFUSING TO INSTALL A MALFORMED AUTHORITATIVE RECORD:$_pub_dec" >&2
+    _pub_ok=0
+  fi
   if [ "$_pub_ok" != "1" ]; then
     rm -f "$_tmp" "$_cand_snap"
     echo "FATAL: the authoritative artifact could not be written completely" >&2
@@ -2581,6 +2620,14 @@ rather than counting it as a kill)"
   fi
   if [ "$invalid" -eq 1 ]; then
     echo "  FAIL $nm $note"; FAIL=$((FAIL+1)); INVALID=$((INVALID+1))
+    # EVERY EXIT PUBLISHES ITS RECORD, INCLUDING THIS ONE.
+    #
+    # This path returned without calling publish_evidence, so a CORRECTLY detected invalid mutation
+    # lost its build transcript — the one artifact anyone would need to diagnose it — and then
+    # appeared to the supervisor census as a family that ran and left no evidence. A full campaign
+    # containing a single invalid family would have been refused for missing evidence rather than
+    # reported as having found an invalid experiment.
+    publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" "$killed" "$invalid" "$note"
     restore_work "$file"
     return
   fi

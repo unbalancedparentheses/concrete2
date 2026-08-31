@@ -66,8 +66,8 @@ supervisor_refusals() {
 # qualified=1, a single-family mode claiming full-campaign qualification, or counts that do not
 # reconcile. A supervisor that exists BECAUSE it does not trust the child cannot then take the
 # child's headline field at face value.
-candidate_incoherent() { # candidate [expected-family-count]
-  local c="$1" expected="${2:-}" out="" v
+candidate_incoherent() { # candidate [expected-family-count] [expected-gate-count]
+  local c="$1" expected="${2:-}" expgates="${3:-}" out="" v
   _f() { sed -n "s/^$1=//p" "$c" | head -1; }
   # A CONTRADICTION IS A CONTRADICTION AT qualified=0 TOO.
   #
@@ -184,6 +184,11 @@ candidate_incoherent() { # candidate [expected-family-count]
       set -- $_bgv
       if [ "$2" = "0" ]; then out="$out qualified_with_no_baseline_gates"
       elif [ "$1" != "$2" ]; then out="$out qualified_with_baseline_gates_red($bg)"; fi
+      # AND THE DENOMINATOR IS THE REAL GATE POPULATION. Self-agreement accepts `1/1` and `999/999`.
+      # A single-family run legitimately baselines ONE gate — but qualification requires
+      # mode=campaign, and a full campaign must have baselined every gate the inventory declares.
+      [ -z "$expgates" ] || [ "$2" = "$expgates" ] \
+        || out="$out qualified_with_baseline_gate_population($bg vs $expgates declared gates)"
     else
       case "$bg" in '') out="$out qualified_without_baseline_gates_green" ;;
                     *) out="$out qualified_with_unparsable_baseline_gates($bg)" ;; esac
@@ -225,11 +230,13 @@ candidate_incoherent() { # candidate [expected-family-count]
       *) case "$rf" in *[!\ ]*) out="$out qualified_with_refusals($rf)" ;; esac ;;
     esac
     [ -n "$ed" ] || out="$out qualified_without_evidence_dir"
-    # The evidence directory must be THIS run's. Its name is the run id by construction.
-    case "$ed" in
-      *"$rid") ;;
-      *) [ -z "$rid" ] || out="$out qualified_with_foreign_evidence_dir($ed vs run $rid)" ;;
-    esac
+    # THE EVIDENCE DIRECTORY MUST BE EXACTLY THIS RUN'S, NOT MERELY END WITH ITS NAME.
+    #
+    # A suffix test accepts `foreign-prefix/<run_id>` and even `evil<run_id>` — the published pointer
+    # could name a tree that is not the one reconciled, inside a record that qualifies. The path is
+    # constructed the same way the producer constructs it and compared whole.
+    [ -z "$rid" ] || [ "$ed" = ".mutation-evidence/$rid" ] \
+      || out="$out qualified_with_foreign_evidence_dir($ed, expected .mutation-evidence/$rid)"
     # THE DISPOSITIONS MUST ACCOUNT FOR THE REPORTED FAMILIES. Checking each disposition is zero and
     # that killed equals reported leaves the ledger unbalanced if a family is reported under no
     # disposition at all; this is the identity that makes the four numbers describe one population.
@@ -341,6 +348,16 @@ EOF
 family_set_digest() {
   printf '%s' "$1" | grep -v '^$' | LC_ALL=C sort -u \
     | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}
+
+# gate_count_from_driver <driver-path> -> how many DISTINCT gates the inventory declares
+#
+# READ FROM THE SOURCE, like the family set. `baseline_gates_green` is published as <green>/<total>,
+# and checking only that the two halves agree accepts `1/1` and `999/999` — a campaign that ran one
+# baseline gate, or a corrupted number, both reading as a fully green baseline. The denominator has a
+# correct value and it is derivable from the same `add` lines the families come from.
+gate_count_from_driver() {
+  grep -E '^add "' "$1" | awk '{print $4}' | tr -d '"' | grep -v '^$' | LC_ALL=C sort -u | grep -c .
 }
 
 # family_set_from_driver <driver-path> -> the declared family ids, one per line

@@ -55,16 +55,20 @@ _set killed_by_gate 85
 _set integrity_ok 1
 _set qualified 1
 _set refusals ""
+# The producer writes exactly `.mutation-evidence/<run_id>`; the fixture must look like the artifact.
+_set evidence_dir ".mutation-evidence/fixture"
 # PRODUCTION SHAPES, taken from what the publisher actually writes: both are `<n>/<m>`.
 # The fixture previously said `yes` and `all`, which no producer emits — a fixture that does not
 # look like the artifact cannot test the checks that read the artifact.
-_set baseline_gates_green 85/85
+_set baseline_gates_green 36/36
 _set gates_proven 85/85
 # The record must decode cleanly before any case can attribute a refusal to its own mutation.
 # THE PINNED POPULATION IS PART OF THE CALL. `candidate_incoherent` takes the family count a
 # qualifying campaign must have discharged, and every call here omitted it — so the positive control
 # was refused with `qualified_without_a_pinned_population` and the suite could not have been green.
 POP=85
+# The declared GATE population, distinct from the family population: 85 families target 36 gates.
+GATES=36
 _fixture_refusals="$(decode_candidate "$GOOD")"
 if [ -n "$_fixture_refusals" ]; then
   echo "FIXTURE BUG: the positive control does not decode:$_fixture_refusals" >&2
@@ -147,7 +151,7 @@ echo "=== a candidate must JUSTIFY its own qualification, not merely declare it 
 # the good candidate with exactly one field made incoherent, so the refusal is attributable.
 inc() { # label field value expected-substring
   local f="$TMP/inc.$2"; sed "s/^$2=.*/$2=$3/" "$GOOD" > "$f"
-  local got; got="$(candidate_incoherent "$f" "$POP")"
+  local got; got="$(candidate_incoherent "$f" "$POP" "$GATES")"
   case "$got" in *"$4"*) ok "$1" ;; *) no "$1 — expected /$4/, got '${got:-<none>}'" ;; esac
   # THE POPULATION IS PASSED HERE TOO. Omitting it made every one of these five second assertions
   # pass for the same irrelevant reason — a missing pinned population already forces qualified=0 —
@@ -166,7 +170,7 @@ for v in survived invalid could_not_apply; do
   # SUBSTITUTED, not appended: appending leaves TWO values for the key and the reader takes the
   # first, so the contradiction reads as the benign value. That is itself a defect, covered below.
   f="$TMP/inc.$v"; sed "s/^$v=.*/$v=1/" "$GOOD" > "$f"
-  got="$(candidate_incoherent "$f" "$POP")"
+  got="$(candidate_incoherent "$f" "$POP" "$GATES")"
   case "$got" in *"qualified_with_$v"*) ok "qualified=1 with $v=1 is incoherent" ;;
     *) no "qualified=1 with $v=1 — expected refusal, got '${got:-<none>}'" ;; esac
 done
@@ -180,11 +184,11 @@ done
 
 # THE POSITIVE CONTROL FOR COHERENCE ITSELF: the good candidate must remain coherent, or every case
 # above would pass for the wrong reason.
-[ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
+[ -z "$(candidate_incoherent "$GOOD" "$POP" "$GATES")" ] \
   && ok "a coherent candidate is not refused by the coherence check" \
-  || no "the coherence check refuses a well-formed candidate: $(candidate_incoherent "$GOOD" "$POP")"
+  || no "the coherence check refuses a well-formed candidate: $(candidate_incoherent "$GOOD" "$POP" "$GATES")"
 # ...and a candidate that never claimed qualification is not judged on coherence at all.
-[ -z "$(candidate_incoherent "$TMP/unqual" "$POP")" ] \
+[ -z "$(candidate_incoherent "$TMP/unqual" "$POP" "$GATES")" ] \
   && ok "a candidate not claiming qualification is not held to it" \
   || no "an unqualified candidate was judged on qualification coherence"
 
@@ -255,9 +259,9 @@ echo "=== qualification reads every field it publishes, not just the headline co
 # Without these the new checks would be unexercised branches — indistinguishable from deleted ones.
 _falsify() { # key value expected-substring label
   sed "s|^$1=.*|$1=$2|" "$GOOD" > "$TMP/fal"
-  case "$(candidate_incoherent "$TMP/fal" "$POP")" in
+  case "$(candidate_incoherent "$TMP/fal" "$POP" "$GATES")" in
     *"$3"*) ok "$4" ;;
-    *) no "$4 — expected /$3/, got '$(candidate_incoherent "$TMP/fal" "$POP")'" ;;
+    *) no "$4 — expected /$3/, got '$(candidate_incoherent "$TMP/fal" "$POP" "$GATES")'" ;;
   esac
 }
 _falsify families_run 0 qualified_with_families_run \
@@ -274,8 +278,18 @@ _falsify gates_proven "" qualified_without_gates_proven \
   "qualification with no gates-proven result is refused"
 # NONEMPTY IS NOT A VALUE. These are the production shapes that are perfectly well-formed and mean
 # the opposite of what qualification claims.
-_falsify baseline_gates_green 0/33 qualified_with_baseline_gates_red \
-  "a campaign qualifying on 0 of 33 green baseline gates is refused"
+_falsify baseline_gates_green 0/36 qualified_with_baseline_gates_red \
+  "a campaign qualifying on 0 of 36 green baseline gates is refused"
+# SELF-AGREEMENT IS NOT A POPULATION. `1/1` is correct for a single-family run and meaningless for a
+# campaign; the denominator must be the number of gates the inventory actually declares.
+_falsify baseline_gates_green 1/1 qualified_with_baseline_gate_population \
+  "a campaign qualifying on 1 of 1 baseline gates is refused"
+_falsify baseline_gates_green 999/999 qualified_with_baseline_gate_population \
+  "a self-agreeing ratio over an invented population is refused"
+# ...and the count is read from the driver, not restated here.
+[ "$(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")" = "$GATES" ] \
+  && ok "the pinned gate population matches what the driver declares" \
+  || no "GATES=$GATES but the driver declares $(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")"
 _falsify gates_proven 0/85 qualified_with_gates_proven_disagreeing \
   "a campaign qualifying with 0 of 85 gates proven is refused"
 _falsify gates_proven 84/85 qualified_with_gates_proven_disagreeing \
@@ -298,9 +312,9 @@ _falsify gates_proven 85/junk/85 qualified_with_unparsable_gates_proven \
 # no gate, so the honest build-kill shape is a positive control.
 sed -e 's/^killed_by_gate=.*/killed_by_gate=82/' -e 's/^killed_by_build=.*/killed_by_build=3/' \
     -e 's|^gates_proven=.*|gates_proven=82/85|' "$GOOD" > "$TMP/buildkills"
-[ -z "$(candidate_incoherent "$TMP/buildkills" "$POP")" ] \
+[ -z "$(candidate_incoherent "$TMP/buildkills" "$POP" "$GATES")" ] \
   && ok "a campaign with three build-route kills and gates_proven=82/85 qualifies" \
-  || no "the honest build-kill shape was refused: $(candidate_incoherent "$TMP/buildkills" "$POP")"
+  || no "the honest build-kill shape was refused: $(candidate_incoherent "$TMP/buildkills" "$POP" "$GATES")"
 _falsify gates_proven all qualified_with_unparsable_gates_proven \
   "a gates-proven value that is not <n>/<m> is refused rather than accepted as nonempty"
 _falsify families_declared 84 qualified_with_families_declared \
@@ -312,12 +326,17 @@ _falsify refusals " fatal_integrity_failure" qualified_with_refusals \
   "a record publishing its own integrity refusals does not qualify"
 _falsify evidence_dir ".mutation-evidence/some-other-run" qualified_with_foreign_evidence_dir \
   "a record pointing at another run's evidence does not qualify"
+# A SUFFIX TEST ACCEPTED BOTH OF THESE. They end with the run id and name a different tree.
+_falsify evidence_dir "foreign-prefix/fixture" qualified_with_foreign_evidence_dir \
+  "an evidence path merely ENDING in the run id does not qualify"
+_falsify evidence_dir "evilfixture" qualified_with_foreign_evidence_dir \
+  "an evidence path whose last component only ends in the run id does not qualify"
 _falsify evidence_dir "" qualified_without_evidence_dir \
   "a record naming no evidence directory does not qualify"
 # ...and the unfalsified record still qualifies, or the six checks above are just refusing everything.
-[ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
+[ -z "$(candidate_incoherent "$GOOD" "$POP" "$GATES")" ] \
   && ok "the unfalsified record still qualifies (positive control for the six checks above)" \
-  || no "the new field checks refuse a well-formed record: $(candidate_incoherent "$GOOD" "$POP")"
+  || no "the new field checks refuse a well-formed record: $(candidate_incoherent "$GOOD" "$POP" "$GATES")"
 
 echo "=== the evidence directories must BE the declared family set ==="
 # Naming the right digest is not the same as HOLDING the right evidence: a candidate could publish
@@ -397,6 +416,22 @@ _sym_out="$(evidence_root_digest "$_EV" 2>/dev/null)"; _sym_rc=$?
   && ok "a symlink in the evidence tree is refused with its own status, not silently omitted" \
   || no "a symlinked record was accepted (rc=$_sym_rc out='$_sym_out')"
 rm -rf "$_EV/famC"
+# THE FAMILY DIRECTORY AND THE RUN ROOT ARE LINKS TOO. `-d`, the `*/` glob and `cd` all follow one,
+# so `find .` starts inside the target and never sees what it walked through. Neither refusal had a
+# control; the only symlink test put a link INSIDE a real directory.
+mkdir -p "$TMP/outside"; printf 'family=famD\n' > "$TMP/outside/record"
+ln -s "$TMP/outside" "$_EV/famD"
+_symd_out="$(evidence_root_digest "$_EV" 2>&1)"; _symd_rc=$?
+{ [ "$_symd_rc" != "0" ] && case "$_symd_out" in *family-is-symlink*) true ;; *) false ;; esac; } \
+  && ok "a family DIRECTORY that is a symlink is refused" \
+  || no "a linked family directory was accepted (rc=$_symd_rc out='$_symd_out')"
+rm -f "$_EV/famD"
+ln -s "$_EV" "$TMP/linkedroot"
+_symr_out="$(evidence_root_digest "$TMP/linkedroot" 2>&1)"; _symr_rc=$?
+{ [ "$_symr_rc" != "0" ] && case "$_symr_out" in *root-is-symlink*) true ;; *) false ;; esac; } \
+  && ok "an evidence ROOT that is a symlink is refused" \
+  || no "a linked evidence root was accepted (rc=$_symr_rc out='$_symr_out')"
+rm -f "$TMP/linkedroot"
 
 # ...and the same bytes in the same places still agree with themselves, or the digest is just noise.
 mv "$_EV/famA/record" "$_EV/.swap" && mv "$_EV/famB/record" "$_EV/famA/record" && mv "$_EV/.swap" "$_EV/famB/record"
@@ -409,22 +444,22 @@ echo "=== a record that contradicts itself is refused whether or not it claims q
 # qualified=0, so a coherence check that returns early for unqualified records accepts it.
 sed -e 's/^selected=85$/selected=1/' -e 's/^executed=85$/executed=1/' -e 's/^reported=85$/reported=1/' \
     -e 's/^qualified=1$/qualified=0/' "$GOOD" > "$TMP/subset"
-case "$(candidate_incoherent "$TMP/subset" "$POP")" in
+case "$(candidate_incoherent "$TMP/subset" "$POP" "$GATES")" in
   *campaign_mode_selected_subset*) ok "mode=campaign with selected<discovered is refused at qualified=0" ;;
-  *) no "a single-family run may still describe itself as a campaign: '$(candidate_incoherent "$TMP/subset" "$POP")'" ;;
+  *) no "a single-family run may still describe itself as a campaign: '$(candidate_incoherent "$TMP/subset" "$POP" "$GATES")'" ;;
 esac
 sed -e 's/^mode=campaign$/mode=single/' -e 's/^selected=85$/selected=85/' "$GOOD" > "$TMP/badsingle"
-case "$(candidate_incoherent "$TMP/badsingle" "$POP")" in
+case "$(candidate_incoherent "$TMP/badsingle" "$POP" "$GATES")" in
   *single_mode_selected*) ok "mode=single claiming 85 selected is refused" ;;
   *) no "single mode accepted an 85-family selection" ;;
 esac
 sed -e 's/^qualified=1$/qualified=0/' -e 's/^reported=85$/reported=86/' "$GOOD" > "$TMP/overreport"
-case "$(candidate_incoherent "$TMP/overreport" "$POP")" in
+case "$(candidate_incoherent "$TMP/overreport" "$POP" "$GATES")" in
   *reported_exceeds_executed*) ok "reporting more families than were executed is refused" ;;
   *) no "an invented report was accepted" ;;
 esac
 # The honest unqualified record must still pass, or the check above is just refusing everything.
-[ -z "$(candidate_incoherent "$TMP/unqual" "$POP")" ] \
+[ -z "$(candidate_incoherent "$TMP/unqual" "$POP" "$GATES")" ] \
   && ok "an honest unqualified campaign is not refused by the coherence check" \
   || no "unconditional coherence refuses a well-formed unqualified record"
 
@@ -501,6 +536,21 @@ else
   else
     ok "...and it released the lock rather than stranding it"
   fi
+fi
+
+# THE POPULATION IS PINNED, NOT JUST THE FAILURE COUNT.
+#
+# Exiting on FAIL==0 alone means DELETING a control is indistinguishable from passing it: the gate
+# reports fewer assertions and still exits green. This harness has already been bitten by exactly
+# that — 240 probes were silently lost from another gate the same way — and this round's review
+# found controls here that had been inert for rounds without anyone noticing. Changing the count is
+# a deliberate act, recorded in the same commit as the control that changed it.
+EXPECTED_CONTROLS=125
+_total=$((PASS + FAIL))
+if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
+  echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"
+  echo "       without updating EXPECTED_CONTROLS in the same commit."
+  FAIL=$((FAIL + 1))
 fi
 
 echo "CAMPAIGN-SUPERVISOR: PASS=$PASS FAIL=$FAIL"

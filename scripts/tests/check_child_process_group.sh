@@ -253,5 +253,20 @@ for st in nonempty permission_denied error:13 "" garbage; do
 done
 
 echo ""
+# THE POPULATION IS PINNED, NOT JUST THE FAILURE COUNT.
+#
+# Exiting on FAIL==0 alone means DELETING a control is indistinguishable from passing it: the gate
+# reports fewer assertions and still exits green. This harness has already been bitten by exactly
+# that — 240 probes were silently lost from another gate the same way — and this round's review
+# found controls here that had been inert for rounds without anyone noticing. Changing the count is
+# a deliberate act, recorded in the same commit as the control that changed it.
+EXPECTED_CONTROLS=40
+_total=$((PASS + FAIL))
+if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
+  echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"
+  echo "       without updating EXPECTED_CONTROLS in the same commit."
+  FAIL=$((FAIL + 1))
+fi
+
 echo "CHILD-PROCESS-GROUP: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

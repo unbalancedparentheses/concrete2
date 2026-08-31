@@ -94,6 +94,14 @@ echo "=== regenerating from the production publisher ==="
 GOLDEN_FAMILY_ID="mint-missing-result-refusal"
 GOLDEN_FAMILY_SPEC="bd4fae0e3629767ff4a4cd2a71c753e3555f8eb389c10ef089e36833cc0030a6"
 PRODUCER_OK=1
+# THE ARTIFACT MUST BE NEWER THAN THE INVOCATION THAT CLAIMS TO HAVE WRITTEN IT.
+#
+# `.mutation-campaign-summary.partial` is a shared path and the producer releases the repository lock
+# when it exits, so the file read afterwards is not necessarily the file this run produced. A stale
+# artifact left by an earlier run is exactly what was compared once already, and the run id that
+# would have distinguished them is normalised away before the byte comparison. Recording the moment
+# the producer starts makes "this artifact predates the run that supposedly wrote it" detectable.
+_PROD_START="$(date +%s)"
 if FAMILY_ID="$GOLDEN_FAMILY_ID" FAMILY_SPEC="$GOLDEN_FAMILY_SPEC" \
      bash "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" > "$TMP/producer.log" 2>&1; then
   ok "the producer ran and published"
@@ -119,7 +127,16 @@ RAW="$TMP/raw.partial"
 if [ "$PRODUCER_OK" != "1" ]; then
   : > "$RAW"
 elif [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
-  cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
+  _art_mtime="$(stat -c %Y "$ROOT_DIR/.mutation-campaign-summary.partial" 2>/dev/null \
+                || stat -f %m "$ROOT_DIR/.mutation-campaign-summary.partial" 2>/dev/null || echo 0)"
+  if [ "$_art_mtime" -lt "$_PROD_START" ]; then
+    no "the artifact predates this run's producer — it is an earlier run's file, not this one's"
+    PRODUCER_OK=0
+    : > "$RAW"
+  else
+    ok "the artifact was written by this invocation, not left by an earlier one"
+    cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
+  fi
 else
   : > "$RAW"
 fi
@@ -160,5 +177,20 @@ else
 fi
 
 echo ""
+# THE POPULATION IS PINNED, NOT JUST THE FAILURE COUNT.
+#
+# Exiting on FAIL==0 alone means DELETING a control is indistinguishable from passing it: the gate
+# reports fewer assertions and still exits green. This harness has already been bitten by exactly
+# that — 240 probes were silently lost from another gate the same way — and this round's review
+# found controls here that had been inert for rounds without anyone noticing. Changing the count is
+# a deliberate act, recorded in the same commit as the control that changed it.
+EXPECTED_CONTROLS=7
+_total=$((PASS + FAIL))
+if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
+  echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"
+  echo "       without updating EXPECTED_CONTROLS in the same commit."
+  FAIL=$((FAIL + 1))
+fi
+
 echo "CAMPAIGN-SUMMARY-GOLDEN: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
