@@ -214,6 +214,22 @@ candidate_incoherent() { # candidate [expected-family-count]
     [ -z "$expected" ] || [ "$fd" = "$expected" ] \
       || out="$out qualified_with_families_declared($fd vs pinned $expected)"
     [ "$fl" = "0" ] || out="$out qualified_with_failures($fl)"
+    # THE FIELDS NOTHING EVER READ. `refusals` and `evidence_dir` are mandatory in the schema and
+    # were checked for PRESENCE only, so a record could qualify while publishing its own integrity
+    # refusals — `qualified=1` beside `refusals= fatal_integrity_failure` — or point evidence_dir at
+    # a different run's tree. A field the artifact publishes and no one reads can say anything.
+    local rf ed rid
+    rf="$(_f refusals)"; ed="$(_f evidence_dir)"; rid="$(_f run_id)"
+    case "$rf" in
+      ''|' '|'  ') ;;
+      *) case "$rf" in *[!\ ]*) out="$out qualified_with_refusals($rf)" ;; esac ;;
+    esac
+    [ -n "$ed" ] || out="$out qualified_without_evidence_dir"
+    # The evidence directory must be THIS run's. Its name is the run id by construction.
+    case "$ed" in
+      *"$rid") ;;
+      *) [ -z "$rid" ] || out="$out qualified_with_foreign_evidence_dir($ed vs run $rid)" ;;
+    esac
     # THE DISPOSITIONS MUST ACCOUNT FOR THE REPORTED FAMILIES. Checking each disposition is zero and
     # that killed equals reported leaves the ledger unbalanced if a family is reported under no
     # disposition at all; this is the identity that makes the four numbers describe one population.

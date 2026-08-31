@@ -307,6 +307,13 @@ _falsify families_declared 84 qualified_with_families_declared \
   "a record declaring a different population than the pinned one is refused"
 _falsify failed 1 qualified_with_failures \
   "a campaign with a failure does not qualify"
+# THE FIELDS NOTHING EVER READ. Both are mandatory in the schema and were checked for presence only.
+_falsify refusals " fatal_integrity_failure" qualified_with_refusals \
+  "a record publishing its own integrity refusals does not qualify"
+_falsify evidence_dir ".mutation-evidence/some-other-run" qualified_with_foreign_evidence_dir \
+  "a record pointing at another run's evidence does not qualify"
+_falsify evidence_dir "" qualified_without_evidence_dir \
+  "a record naming no evidence directory does not qualify"
 # ...and the unfalsified record still qualifies, or the six checks above are just refusing everything.
 [ -z "$(candidate_incoherent "$GOOD" "$POP")" ] \
   && ok "the unfalsified record still qualifies (positive control for the six checks above)" \

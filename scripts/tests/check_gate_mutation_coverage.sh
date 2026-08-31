@@ -3080,7 +3080,14 @@ echo
 GATES_PROVEN="${KILLED_BY_GATE:-0}/$N"
 DISPO="killed=$PASS invalid=${INVALID:-0} survived=${SURVIVED_N:-0} could_not_apply=${COULD_NOT_APPLY:-0}"
 if [ "$CAMPAIGN_MODE" = "campaign" ] && [ "$QUALIFIED" = "1" ]; then
-  echo "GATE-MUTATION-COVERAGE: QUALIFIED completed=1 $DISPO (of $N) gates_proven=$GATES_PROVEN"
+  # THE CHILD DOES NOT DECLARE QUALIFICATION. IT PROPOSES IT.
+  #
+  # This printed "QUALIFIED" before the supervisor had run one of its independent checks — and
+  # it is the line a human reads in a transcript. When the supervisor then refused and exited
+  # nonzero, the transcript still said QUALIFIED: the summary and the exit status disagreed
+  # about the one word that matters. Qualification is the supervisor's word.
+  echo "GATE-MUTATION-COVERAGE: QUALIFIABLE completed=1 $DISPO (of $N) gates_proven=$GATES_PROVEN"
+  echo "  (child verdict — only the supervisor's published artifact can say QUALIFIED)"
 elif [ "$CAMPAIGN_MODE" = "campaign" ] && [ "$COMPLETED" = "1" ]; then
   # COMPLETE BUT NOT QUALIFYING is the honest shape of a run that finished and found problems. Saying
   # only "REFUSED" would hide that the report itself is trustworthy and every family was accounted for.
