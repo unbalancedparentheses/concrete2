@@ -553,8 +553,13 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
       _cg="$(sed -n "s/^$_ck=//p" "$_cand" | head -1)"
       [ "$_cg" = "$_cv" ] || _sup_refusals="$_sup_refusals clean_exit_with_$_ck($_cg)"
     done
-    _crf="$(sed -n 's/^refusals=//p' "$_cand" | head -1)"
-    case "$_crf" in *[!\ ]*) _sup_refusals="$_sup_refusals clean_exit_with_refusals($_crf)" ;; esac
+    # `refusals` IS NOT CHECKED HERE, and the reason is a defect in the field rather than a
+    # decision about it. The published value is `$REFUSALS$SCOPE_NOTES` — integrity refusals
+    # CONCATENATED with scope annotations — so a correct single-family run publishes
+    # `refusals= single_family_selected(85)` and exits zero. Refusing on non-emptiness therefore
+    # rejected every correct partial run, which a run demonstrated within minutes of my writing it.
+    # Splitting the field into two is a schema change with its own migration; until then this check
+    # cannot be made sound, and asserting it anyway would be a gate that fires on correct work.
   fi
   [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
 

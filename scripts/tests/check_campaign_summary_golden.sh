@@ -130,23 +130,24 @@ fi
 # about a run that never happened, next to the red one saying so. Everything downstream is refused
 # when the producer did not publish; an absent result is not a passing one.
 RAW="$TMP/raw.partial"
+# THE IDENTITY CHECK RUNS ON EVERY PATH, so the control population is the same whether the producer
+# succeeded or not. A control that only exists on the happy path makes the pinned count disagree with
+# reality exactly when something has gone wrong — which is when the count matters most.
+( cd "$ROOT_DIR/.mutation-evidence" 2>/dev/null && ls -1 ) 2>/dev/null | LC_ALL=C sort > "$_EV_AFTER" || : > "$_EV_AFTER"
+_new_runs="$(comm -13 "$_EV_BEFORE" "$_EV_AFTER")"
+_new_count="$(printf '%s\n' "$_new_runs" | grep -c . || true)"
+_art_run="$(sed -n 's/^run_id=//p' "$ROOT_DIR/.mutation-campaign-summary.partial" 2>/dev/null | head -1)"
+if [ "$_new_count" = "1" ] && [ "$_art_run" = "$_new_runs" ]; then
+  ok "the artifact carries the run id of the evidence directory this invocation created"
+else
+  no "the artifact is not identifiable as this invocation's (created $_new_count evidence dirs; artifact names '${_art_run:-<none>}', this run created '${_new_runs:-<none>}')"
+  PRODUCER_OK=0
+fi
+
 if [ "$PRODUCER_OK" != "1" ]; then
   : > "$RAW"
 elif [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
-  ( cd "$ROOT_DIR/.mutation-evidence" 2>/dev/null && ls -1 ) 2>/dev/null | LC_ALL=C sort > "$_EV_AFTER" || : > "$_EV_AFTER"
-  _new_runs="$(comm -13 "$_EV_BEFORE" "$_EV_AFTER")"
-  _new_count="$(printf '%s\n' "$_new_runs" | grep -c . || true)"
-  _art_run="$(sed -n 's/^run_id=//p' "$ROOT_DIR/.mutation-campaign-summary.partial" | head -1)"
-  if [ "$_new_count" != "1" ]; then
-    no "this invocation created $_new_count evidence directories, expected exactly 1 — cannot identify its own run"
-    PRODUCER_OK=0; : > "$RAW"
-  elif [ "$_art_run" != "$_new_runs" ]; then
-    no "the artifact names run '$_art_run' but this invocation created '$_new_runs' — it is not this run's artifact"
-    PRODUCER_OK=0; : > "$RAW"
-  else
-    ok "the artifact carries the run id of the evidence directory this invocation created"
-    cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
-  fi
+  cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
 else
   : > "$RAW"
 fi
