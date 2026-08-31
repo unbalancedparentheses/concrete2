@@ -13,7 +13,7 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 ### Post-R-0004 Mutation Harness Hardening And Diagnostic Census
 
 _Harness and documentation, 2026-08-21/22. Causal harness landed at `898d9a7b`; typed campaign
-accounting landed at `98dee5e3`. No qualifying 81-family result is claimed._
+accounting landed at `98dee5e3`. No qualifying current-inventory 85-family result is claimed._
 
 The mutation harness now distinguishes “a gate went red” from “this mutation made its intended
 rule go red.” A scored kill requires a green pristine gate, a pristine build, an exact unique

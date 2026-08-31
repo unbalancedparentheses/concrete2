@@ -407,7 +407,7 @@ Phases 1–6E and completed Phase 7 foundations/workloads 1–8 are historical a
 live in [CHANGELOG.md](CHANGELOG.md). Phase 7.5's QBE backend is specified but
 has not started.
 
-## Current Execution State (2026-08-22)
+## Current Execution State (2026-08-31)
 
 ### Post-R-0004 mutation qualification — active; R-0482 has not started
 
@@ -467,9 +467,9 @@ non-qualifying; the authoritative mode retains full red-green-red confirmation.
 The checkpoint exits only when one clean pushed HEAD reports all of the following separately:
 
 - `completed=1`: the driver reached reconciliation and every selected family reported;
-- discovered = selected = executed = reported = killed = 81;
+- discovered = selected = executed = reported = killed = 85;
 - `invalid=0`, `survived=0`, `could_not_apply=0`, and `integrity_ok=1`;
-- `qualified=1`: all 81 families were killed by their intended attributable gate/build outcome;
+- `qualified=1`: all 85 families were killed by their intended attributable gate/build outcome;
 - the artifact and human summary agree, and the repository is clean afterward.
 
 Only then does implementation run R-0208's required toolchain/revocation drill and move to R-0482's
@@ -505,8 +505,6 @@ is named with the authority it affects.
 | **H-5 Production wiring is not mutation-covered.** Deleting the supervisor's actual process-group publication refusal, or the final-record decoder call site, leaves the helper-level controls green. `campaign_supervise.sh` carries one mutation family, targeting child-exit refusal only. | **Second highest.** The decisions are controlled but the CONTROLS are not proven load-bearing by mutation. Tracked as task #36. Adding families changes `EXPECTED_FAMILIES` and requires a fresh campaign, so it belongs before final qualification, not before preserving this checkpoint. |
 | **H-6 Mint accounting proves co-occurrence, not causation.** Each case requires a nonzero exit AND a named failure line, but never establishes that the dependency-edge gate is green WITHOUT its self-test hook. An unrelated permanent failure could supply the red exit. | Test-infrastructure. Mitigated in practice by `DEPENDENCY-EDGES` passing 317/0 in the same session, which is that missing positive control run separately rather than inside the gate. |
 | **H-7 `refusals` mixes two kinds of value.** It is published as `$REFUSALS$SCOPE_NOTES` — integrity refusals concatenated with scope annotations — so no predicate over the field alone can separate them. | Currently sound, by argument that must be preserved: the one authority consumer is inside `candidate_incoherent`'s qualification branch, qualification requires `mode=campaign`, and `mode=campaign` holds exactly when `ONLY` is unset, which is exactly when `SCOPE_NOTES` is empty. So the consumer only ever reads a pure integrity value. **Split the field before the first `qualified=1` campaign and before schema conformance/freeze**, because that argument depends on an invariant no gate currently enforces. |
-| **H-8 The exit criteria above still say 81 families.** The inventory is 85. | Documentation. The criteria are a ratified standard; they are reported rather than silently rewritten, because changing a ratified exit condition is a product decision, not a maintenance edit. |
-
 | **H-9 Lock ownership is not comparable across PID namespaces.** A campaign run inside a sandbox with `--unshare-pid` records its namespace-local pid — observed here as `pid=2` — and the host reclaim logic then tests pid 2, which is `kthreadd` and always alive. | **One-writer guarantee.** A lock stranded by a sandboxed run can never be reclaimed, because its owner always looks alive; and the dead-creator reclaim path is defeated in the other direction. Observed live, not hypothesised: a concurrent sandboxed campaign held `.gate.lock` with `pid=2 cmd=check_gate_mutation_coverage.sh`. Record the namespace identity, or a start-time-qualified owner token, alongside the pid. |
 
 ### R-0004 — CLOSED (2026-08-20)
@@ -605,7 +603,7 @@ signed build manifest is post-R-0004 provenance work and is not claimed today.
 
 The protected 205-gate run did not include the multi-hour mutation campaign. Its closure claim is
 therefore the production-gate and adversarial boundary above, not “every registered mutation was
-causally killed.” The registry contained 78 families at closure and contains 81 at the current
+causally killed.” The registry contained 78 families at closure and contains 85 at the current
 post-closure checkpoint.
 
 Subsequent review showed that anchor presence, a red exit, and a completion line were each too weak
@@ -614,8 +612,9 @@ break the build; a gate could be red before mutation; source restoration could l
 binary; and an empty result could be counted as success. The harness at `898d9a7b` now requires the
 stronger causal controls described in the current execution state.
 
-No **qualifying** 81-family result exists yet. The complete diagnostic run at `898d9a7b` reported
-73 causal kills, 6 invalid experiments, 2 survivors and zero could-not-apply results. Its immutable
+No **qualifying** 85-family current-inventory result exists yet. The complete 81-family diagnostic
+run at `898d9a7b` reported 73 causal kills, 6 invalid experiments, 2 survivors and zero
+could-not-apply results. Its immutable
 workspace stayed bound to that SHA, so the family dispositions are diagnostic evidence; the control
 checkout's concurrent move to `89a2bcb1`, the eight unresolved families, and the old schema's
 completion/qualification conflation correctly prevent it from discharging this checkpoint. The
@@ -1388,7 +1387,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 81 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
+| 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. The live inventory is now 85. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 85 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
 | 4 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |
@@ -6687,7 +6686,7 @@ is not completion; it is future archaeology with better folder names.
 **Identity separation, model attestations, exported interfaces, and proof-aware package linking.**
 
 **Scheduling:** R-0004's prerequisite is satisfied. Production work starts after the post-closure
-81-family qualification checkpoint and R-0208's toolchain/revocation fire drill. This task is
+85-family qualification checkpoint and R-0208's toolchain/revocation fire drill. This task is
 deliberately separate so R-0004 remains finite rather than becoming the entire future verification
 language.
 
