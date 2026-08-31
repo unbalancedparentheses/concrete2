@@ -477,6 +477,38 @@ full-row identity freeze and five-way identity separation. A product-authority d
 campaign is fixed before moving on; a harness defect does not retroactively become an R-0004 product
 defect, and an interrupted run is never evidence.
 
+
+#### Harness-hardening checkpoint — green under registered gates, explicitly unqualified
+
+This checkpoint pushes a harness whose registered gates are green and whose known limitations are
+recorded here. **It claims nothing about qualification.** There is no qualified 85-family campaign at
+this HEAD, the receipt schema is not frozen, F7 and F9 are not complete, and the post-R-0004
+qualification programme is not finished.
+
+Six adversarial review rounds were run against this work. Roughly half of each round's findings were
+defects introduced while repairing the previous round, and three separate times a repair produced a
+gate that REFUSED CORRECT RUNS — the evidence-set check, a `refusals` predicate, and a `gates_proven`
+check that would have rejected the qualifying campaign this programme exists to produce. Each was
+found by running, not by reading. The review policy going forward is bounded: design review, one
+adversarial implementation review, one confirmation review, then push on green gates with no known
+authority-breaking finding, carrying further hardening as tracked work.
+
+The following findings are known, reproducible, and deliberately not fixed in this checkpoint. Each
+is named with the authority it affects.
+
+| Finding | Authority impact |
+| --- | --- |
+| **H-1 Signal during launch releases the lock.** The holding state is set when the foreground launcher RETURNS. A supervisor signalled while waiting exits with the state unset, which maps to `no_child_launched` and releases. | Concurrency, not verdict content. A second run could start while a campaign group survives. Cannot produce a false `qualified=1`; can produce two writers. |
+| **H-2 A clean full-campaign exit is not cross-checked against `qualified=1`.** `candidate_incoherent` accepts a `mode=campaign` record with `qualified=0`, the supervisor checks only `completed` and `integrity_ok`, publishes `qualified=0`, and exits 0. | Under-claiming only. The published record is honest; the exit status does not distinguish "campaign ran and did not qualify" from "campaign ran and qualified". Blocks nothing that could over-claim. |
+| **H-3 Nine identity fields remain child-controlled.** The driver/inventory digests, workspace digests and head, `baseline_compiler_sha` and `compilers_tested` are schema-checked for shape but never compared with a supervisor observation. Only repository tracked/untracked digests and `head` are. | **Highest of these.** A child could publish false provenance in a record the supervisor then installs as authoritative. It cannot fake the counts, the dispositions, the evidence root or the family set, all of which are independently recomputed — but the metadata describing WHAT WAS TESTED is not all independently observed. Must close before any `qualified=1`. |
+| **H-4 Golden freshness has a residual TOCTOU.** The run id is read from the live shared artifact and the bytes are copied afterwards; the copy's own `run_id` is never re-checked. | Test-infrastructure only. Detects the stale-artifact case that actually occurred; a concurrent replacement inside the window is not excluded. No authority over campaign verdicts. |
+| **H-5 Production wiring is not mutation-covered.** Deleting the supervisor's actual process-group publication refusal, or the final-record decoder call site, leaves the helper-level controls green. `campaign_supervise.sh` carries one mutation family, targeting child-exit refusal only. | **Second highest.** The decisions are controlled but the CONTROLS are not proven load-bearing by mutation. Tracked as task #36. Adding families changes `EXPECTED_FAMILIES` and requires a fresh campaign, so it belongs before final qualification, not before preserving this checkpoint. |
+| **H-6 Mint accounting proves co-occurrence, not causation.** Each case requires a nonzero exit AND a named failure line, but never establishes that the dependency-edge gate is green WITHOUT its self-test hook. An unrelated permanent failure could supply the red exit. | Test-infrastructure. Mitigated in practice by `DEPENDENCY-EDGES` passing 317/0 in the same session, which is that missing positive control run separately rather than inside the gate. |
+| **H-7 `refusals` mixes two kinds of value.** It is published as `$REFUSALS$SCOPE_NOTES` — integrity refusals concatenated with scope annotations — so no predicate over the field alone can separate them. | Currently sound, by argument that must be preserved: the one authority consumer is inside `candidate_incoherent`'s qualification branch, qualification requires `mode=campaign`, and `mode=campaign` holds exactly when `ONLY` is unset, which is exactly when `SCOPE_NOTES` is empty. So the consumer only ever reads a pure integrity value. **Split the field before the first `qualified=1` campaign and before schema conformance/freeze**, because that argument depends on an invariant no gate currently enforces. |
+| **H-8 The exit criteria above still say 81 families.** The inventory is 85. | Documentation. The criteria are a ratified standard; they are reported rather than silently rewritten, because changing a ratified exit condition is a product decision, not a maintenance edit. |
+
+| **H-9 Lock ownership is not comparable across PID namespaces.** A campaign run inside a sandbox with `--unshare-pid` records its namespace-local pid — observed here as `pid=2` — and the host reclaim logic then tests pid 2, which is `kthreadd` and always alive. | **One-writer guarantee.** A lock stranded by a sandboxed run can never be reclaimed, because its owner always looks alive; and the dead-creator reclaim path is defeated in the other direction. Observed live, not hypothesised: a concurrent sandboxed campaign held `.gate.lock` with `pid=2 cmd=check_gate_mutation_coverage.sh`. Record the namespace identity, or a start-time-qualified owner token, alongside the pid. |
+
 ### R-0004 — CLOSED (2026-08-20)
 
 Closed on a protected serial run, not on a claim. The authorizing artifact is
