@@ -506,6 +506,29 @@ _dupe_out="$(bash "$_SB/dupe.sh" --spec corecheck-unsafe-op 2>&1)"; _dupe_rc=$?
   && ok "a duplicated family name is refused, not silently resolved to the first match" \
   || no "duplicate names accepted (rc=$_dupe_rc): $_dupe_out"
 
+echo "=== qualification has ONE authority, not two ==="
+# supervisor_qualification calls candidate_incoherent a second time to decide the published
+# `qualified=` line. It was omitting the gate count, so a `1/1` baseline the first call refused could
+# still be written as qualified=1 by the second. Production was safe only because the first call's
+# refusal short-circuited this one — an ordering coincidence, not a property.
+sed 's|^baseline_gates_green=.*|baseline_gates_green=1/1|' "$GOOD" > "$TMP/onegate"
+[ "$(supervisor_qualification "$TMP/onegate" "" "$POP" "$GATES")" = "qualified=0" ] \
+  && ok "a 1/1 baseline cannot be published as qualified even with no prior refusal" \
+  || no "the qualification call qualified a 1/1 baseline: $(supervisor_qualification "$TMP/onegate" "" "$POP" "$GATES")"
+[ "$(supervisor_qualification "$GOOD" "" "$POP" "$GATES")" = "qualified=1" ] \
+  && ok "...and the honest record still qualifies through the same call (positive control)" \
+  || no "the qualification call refused a well-formed record"
+# The two authorities must agree on every record, not just this one.
+for _f in "$GOOD" "$TMP/onegate" "$TMP/buildkills"; do
+  _inc="$(candidate_incoherent "$_f" "$POP" "$GATES")"
+  _qual="$(supervisor_qualification "$_f" "" "$POP" "$GATES")"
+  case "$_inc:$_qual" in
+    ":qualified=1"|?*":qualified=0") ;;
+    *) no "the two qualification authorities disagree on $(basename "$_f"): incoherent='$_inc' published='$_qual'"; continue ;;
+  esac
+  ok "both authorities agree on $(basename "$_f")"
+done
+
 echo "=== an early failure releases the repository lock ==="
 # The driver takes the lock, snapshots itself and re-execs — and `exec` CLEARS TRAPS. Every failure
 # between the re-exec and the supervisor's own trap therefore exited holding the lock, and the next
@@ -545,7 +568,7 @@ fi
 # that — 240 probes were silently lost from another gate the same way — and this round's review
 # found controls here that had been inert for rounds without anyone noticing. Changing the count is
 # a deliberate act, recorded in the same commit as the control that changed it.
-EXPECTED_CONTROLS=125
+EXPECTED_CONTROLS=130
 _total=$((PASS + FAIL))
 if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
   echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"

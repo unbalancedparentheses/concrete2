@@ -102,6 +102,12 @@ PRODUCER_OK=1
 # would have distinguished them is normalised away before the byte comparison. Recording the moment
 # the producer starts makes "this artifact predates the run that supposedly wrote it" detectable.
 _PROD_START="$(date +%s)"
+# AND THE RUN IS IDENTIFIED, NOT MERELY TIMED. A second-resolution mtime cannot distinguish this
+# run's artifact from a replacement written in the same second. Every campaign creates exactly one
+# evidence directory named for its run id, so the set of directories before and after names THIS
+# invocation — and the artifact must carry that id. That is identity, not chronology.
+_EV_BEFORE="$TMP/ev.before"; _EV_AFTER="$TMP/ev.after"
+( cd "$ROOT_DIR/.mutation-evidence" 2>/dev/null && ls -1 ) 2>/dev/null | LC_ALL=C sort > "$_EV_BEFORE" || : > "$_EV_BEFORE"
 if FAMILY_ID="$GOLDEN_FAMILY_ID" FAMILY_SPEC="$GOLDEN_FAMILY_SPEC" \
      bash "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" > "$TMP/producer.log" 2>&1; then
   ok "the producer ran and published"
@@ -127,14 +133,18 @@ RAW="$TMP/raw.partial"
 if [ "$PRODUCER_OK" != "1" ]; then
   : > "$RAW"
 elif [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
-  _art_mtime="$(stat -c %Y "$ROOT_DIR/.mutation-campaign-summary.partial" 2>/dev/null \
-                || stat -f %m "$ROOT_DIR/.mutation-campaign-summary.partial" 2>/dev/null || echo 0)"
-  if [ "$_art_mtime" -lt "$_PROD_START" ]; then
-    no "the artifact predates this run's producer — it is an earlier run's file, not this one's"
-    PRODUCER_OK=0
-    : > "$RAW"
+  ( cd "$ROOT_DIR/.mutation-evidence" 2>/dev/null && ls -1 ) 2>/dev/null | LC_ALL=C sort > "$_EV_AFTER" || : > "$_EV_AFTER"
+  _new_runs="$(comm -13 "$_EV_BEFORE" "$_EV_AFTER")"
+  _new_count="$(printf '%s\n' "$_new_runs" | grep -c . || true)"
+  _art_run="$(sed -n 's/^run_id=//p' "$ROOT_DIR/.mutation-campaign-summary.partial" | head -1)"
+  if [ "$_new_count" != "1" ]; then
+    no "this invocation created $_new_count evidence directories, expected exactly 1 — cannot identify its own run"
+    PRODUCER_OK=0; : > "$RAW"
+  elif [ "$_art_run" != "$_new_runs" ]; then
+    no "the artifact names run '$_art_run' but this invocation created '$_new_runs' — it is not this run's artifact"
+    PRODUCER_OK=0; : > "$RAW"
   else
-    ok "the artifact was written by this invocation, not left by an earlier one"
+    ok "the artifact carries the run id of the evidence directory this invocation created"
     cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
   fi
 else

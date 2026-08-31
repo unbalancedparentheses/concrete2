@@ -198,6 +198,30 @@ _mut_query_mode "${1:-}" && _MUT_READ_ONLY_MODE=1
 # A real snapshot was re-exec'd AS the file the variable names, so `$0` and the variable agree by
 # construction. An inherited or forged value does not survive that comparison — and neither does
 # a stray export left in a shell or in CI.
+# AND A REAL SNAPSHOT IS NEVER THE REPOSITORY'S OWN COPY OF THIS FILE.
+#
+# Comparing `$0` with the variable alone compares two caller-controlled strings, and pointing the
+# variable AT the repository driver satisfies it — MEASURED: invoked by absolute path, the claim
+# passed and the run proceeded with no lock and no invalidation. A legitimate snapshot is a copy
+# taken into a freshly created temporary directory and re-exec'd from there, so it is outside the
+# repository by construction and inside the snapdir the driver made. Both are checked. This is not
+# a security boundary — anyone who controls the environment controls everything — it is a guard
+# against an inherited or mistaken value, which is what actually happens.
+if [ -n "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
+  case "$0" in
+    "$ROOT_DIR"/*)
+      echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this file is inside the repository." >&2
+      echo "       A snapshot is a copy taken OUTSIDE the tree; the repository's own driver is" >&2
+      echo "       never one. Honouring it would skip the lock and the invalidation." >&2
+      exit 2 ;;
+  esac
+  case "$0" in
+    "${CONCRETE_MUT_SNAPDIR:-/nonexistent}"/*) ;;
+    *) echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this file is not inside the snapshot" >&2
+       echo "       directory the driver created (${CONCRETE_MUT_SNAPDIR:-<unset>}). Refusing." >&2
+       exit 2 ;;
+  esac
+fi
 if [ -n "${CONCRETE_MUT_SNAPSHOT:-}" ] && [ "$0" != "${CONCRETE_MUT_SNAPSHOT}" ]; then
   echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this process is not that snapshot." >&2
   echo "       running: $0" >&2
@@ -451,12 +475,22 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   CONCRETE_MUT_ROLE=child python3 "$ROOT_DIR/scripts/tests/lib/run_campaign_child.py" \
     --report "$_launch_report" --run-id "$RUN_ID" -- bash "$0" "$@"
   _launch_rc=$?
+  # FROM THIS MOMENT A CHILD HAS EXISTED, SO THE LOCK IS HELD UNTIL PROVEN OTHERWISE.
+  #
+  # Moving the report guard ahead of the field extraction stopped a REJECTED report populating
+  # `_group_state` — and created the opposite fail-open, because unset maps to `no_child_launched`,
+  # which means RELEASE. The comment written alongside that change claimed the trap would hold. It
+  # did not, and the claim was false the moment it was written. `no_child_launched` is only true
+  # BEFORE the launcher runs; after it the honest state is "a child ran and I do not yet know
+  # whether its group is empty", which the enumeration answers by holding.
+  _group_state="launched_state_unknown"
   # THE REPORT IS DECODED BY THE SHARED DECODER, which is the same function the child-process gate
   # exercises. This block used to be an inline decoder with a gate-side reimplementation beside it;
   # two decoders of one format is one decoder too many, and the looser of the two is the one that
   # decides what "tested" means.
   _launch_bad="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"
-    # NOTHING IS READ FROM A REPORT THAT HAS NOT BEEN ACCEPTED.
+    # NOTHING IS READ FROM A REPORT THAT HAS NOT BEEN ACCEPTED — and `_group_state` therefore keeps
+    # the holding value set at launch rather than a figure taken from a record just refused.
     #
     # The fields were extracted first and the verdict consulted afterwards, so a malformed or
     # duplicated report still populated `_group_state` — and the EXIT trap, which decides whether to
@@ -507,6 +541,21 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # The gate population comes from the same source the families do — the driver's own `add` lines.
   _sup_gates="$(gate_count_from_driver "$0" 2>/dev/null || echo "")"
   _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" "$_sup_gates" 2>/dev/null || echo candidate_unreadable)"
+  # A CLEAN EXIT AND AN UNFINISHED RECORD CANNOT BOTH BE TRUE.
+  #
+  # `candidate_incoherent` deliberately stops short for unqualified records, so a child could exit
+  # ZERO while its own candidate said completed=0, or integrity_ok=0, or carried refusals — and the
+  # supervisor, which returns the child's status, exited zero too. Those are two statements about
+  # one run and one of them is wrong; that is a refusal, not a partial result.
+  if [ "$_child_rc" = "0" ]; then
+    for _pair in "completed:1" "integrity_ok:1"; do
+      _ck="${_pair%%:*}"; _cv="${_pair##*:}"
+      _cg="$(sed -n "s/^$_ck=//p" "$_cand" | head -1)"
+      [ "$_cg" = "$_cv" ] || _sup_refusals="$_sup_refusals clean_exit_with_$_ck($_cg)"
+    done
+    _crf="$(sed -n 's/^refusals=//p' "$_cand" | head -1)"
+    case "$_crf" in *[!\ ]*) _sup_refusals="$_sup_refusals clean_exit_with_refusals($_crf)" ;; esac
+  fi
   [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
 
   # THE EXACT FAMILY SET, NOT ITS SIZE. A one-for-one substitution keeps the count at 85 while a
@@ -596,6 +645,18 @@ EOF
     fi
   fi
 
+  # THE CANDIDATE'S TREE DIGESTS ARE COMPARED WITH THE SUPERVISOR'S OBSERVATIONS.
+  #
+  # head was checked; tracked and untracked were not. The supervisor compared its OWN two readings
+  # with each other and never with what the child published, so a record could carry stale or simply
+  # false tree metadata and still be installed as authoritative — the fields describing what was
+  # tested, unchecked, inside the artifact that attests to it.
+  for _tpair in "tracked_sha:$_sup_tracked1" "untracked_sha:$_sup_untracked1"; do
+    _tk="${_tpair%%:*}"; _tv="${_tpair#*:}"
+    _tg="$(sed -n "s/^$_tk=//p" "$_cand" | head -1)"
+    [ "$_tg" = "$_tv" ] || _sup_refusals="$_sup_refusals candidate_${_tk}_mismatch($_tg vs $_tv)"
+  done
+
   _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
   _sup_rootrc=0
   _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null)" || _sup_rootrc=$?
@@ -670,7 +731,7 @@ EOF
   _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; exit 2; }
   if [ -s "$_cand" ]; then
     # The qualified line is decided by the same library, not by a second rule here.
-    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals" "$EXPECTED_FAMILIES")/" "$_cand" > "$_tmp" || _pub_ok=0
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals" "$EXPECTED_FAMILIES" "$_sup_gates")/" "$_cand" > "$_tmp" || _pub_ok=0
   else
     # A FAILURE RECORD IS STILL A RECORD.
     #

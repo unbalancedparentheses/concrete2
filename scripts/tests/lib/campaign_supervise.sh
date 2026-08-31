@@ -262,11 +262,19 @@ candidate_incoherent() { # candidate [expected-family-count] [expected-gate-coun
 
 # supervisor_qualification <candidate-path> <refusals>  -> the qualified= line to publish
 # Only a clean candidate, under a clean reconciliation, whose OWN fields justify it.
-supervisor_qualification() { # candidate refusals [expected-family-count]
-  local cand="$1" refusals="$2" expected="${3:-}"
+supervisor_qualification() { # candidate refusals [expected-family-count] [expected-gate-count]
+  # THE SAME ARGUMENTS AS THE PRELIMINARY CALL, OR THIS IS A SECOND, LOOSER AUTHORITY.
+  #
+  # The supervisor asks candidate_incoherent twice: once to build its refusal list, and once here to
+  # decide the published `qualified=` line. This call was omitting the gate count, so a `1/1`
+  # baseline that the first call refused could still be written as qualified=1 by the second.
+  # Production happened to be safe only because the first call's refusal was non-empty and short-
+  # circuited this one — a coincidence of ordering, not a property.
+  local cand="$1" refusals="$2" expected="${3:-}" expgates="${4:-}"
   if [ -n "$refusals" ] || [ ! -s "$cand" ]; then printf 'qualified=0'; return 0; fi
   grep -qE '^qualified=1$' "$cand" || { printf 'qualified=0'; return 0; }
-  [ -z "$(candidate_incoherent "$cand" "$expected")" ] && printf 'qualified=1' || printf 'qualified=0'
+  [ -z "$(candidate_incoherent "$cand" "$expected" "$expgates")" ] \
+    && printf 'qualified=1' || printf 'qualified=0'
 }
 
 # evidence_root_digest <evidence-dir> -> digest over canonical (family id, record digest) pairs
