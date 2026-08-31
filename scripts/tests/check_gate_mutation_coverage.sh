@@ -296,7 +296,19 @@ if [ "${CAMPAIGN_HELD_LOCK:-0}" = "1" ]; then
   . "$ROOT_DIR/scripts/tests/lib/fresh.sh" 2>/dev/null || {
     echo "FATAL: could not load fresh.sh in the snapshot phase — cannot release the lock." >&2; exit 2; }
 fi
-trap '_rm_snapdir' EXIT
+# AND IT RELEASES THE LOCK, BECAUSE `exec` CLEARED THE TRAP THAT DID.
+#
+# The lock is taken before the snapshot and survives the re-exec — but traps do not. So the
+# releasing trap installed at acquisition was gone by the time this image started, and every failure
+# between here and the supervisor's own trap exited HOLDING the lock: the decision library not
+# loading, treestate not loading, ts_require unsatisfied. I had already 'fixed' this once and
+# confirmed it with a control that looked for the wrong lock filename — the control passed, the lock
+# was stranded every time, and the next run refused to start against a repository where nothing was
+# running.
+#
+# The role is not decided at install time but IS decided when this fires, and the child must never
+# release: the supervisor holds the tree until the artifact is installed.
+trap '_rm_snapdir; [ "${CONCRETE_MUT_ROLE:-supervisor}" = "child" ] || _gate_lock_release 2>/dev/null || true' EXIT
 cd "$ROOT_DIR"
 
 # =================================================================================================

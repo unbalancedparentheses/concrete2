@@ -93,11 +93,13 @@ echo "=== regenerating from the production publisher ==="
 :
 GOLDEN_FAMILY_ID="mint-missing-result-refusal"
 GOLDEN_FAMILY_SPEC="bd4fae0e3629767ff4a4cd2a71c753e3555f8eb389c10ef089e36833cc0030a6"
+PRODUCER_OK=1
 if FAMILY_ID="$GOLDEN_FAMILY_ID" FAMILY_SPEC="$GOLDEN_FAMILY_SPEC" \
      bash "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" > "$TMP/producer.log" 2>&1; then
   ok "the producer ran and published"
 else
   no "the producer failed (exit $?) — see the tail below"
+  PRODUCER_OK=0
   tail -5 "$TMP/producer.log" | sed 's/^/       /'
 fi
 
@@ -106,8 +108,17 @@ fi
 # The inner campaign releases the repository lock when it exits, so between production and the two
 # reads below there is a window in which another partial run could replace the shared artifact — and
 # this gate would then decode one file and compare another. Everything downstream reads the copy.
+# A FAILED PRODUCER LEAVES THE PREVIOUS RUN'S ARTIFACT IN PLACE, AND IT MUST NOT BE COMPARED.
+#
+# MEASURED: a run whose producer could not take the repository lock wrote nothing, and this gate then
+# decoded and byte-compared the artifact from forty minutes earlier — reporting "decodes under the
+# published schema" and "byte-identical to the committed baseline" as ok lines. Two green assertions
+# about a run that never happened, next to the red one saying so. Everything downstream is refused
+# when the producer did not publish; an absent result is not a passing one.
 RAW="$TMP/raw.partial"
-if [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
+if [ "$PRODUCER_OK" != "1" ]; then
+  : > "$RAW"
+elif [ -s "$ROOT_DIR/.mutation-campaign-summary.partial" ]; then
   cp "$ROOT_DIR/.mutation-campaign-summary.partial" "$RAW" || : > "$RAW"
 else
   : > "$RAW"
@@ -116,7 +127,9 @@ fi
 echo "=== the RAW artifact decodes as a published record, before normalisation ==="
 # VALIDATED BEFORE NORMALISATION. Normalising first would mask the very fields a malformed publisher
 # would corrupt, so the raw bytes are what get decoded.
-if [ -s "$RAW" ]; then
+if [ "$PRODUCER_OK" != "1" ]; then
+  no "the producer did not publish, so there is nothing this run produced to decode"
+elif [ -s "$RAW" ]; then
   _rawdec="$(decode_candidate "$RAW" "$CAMPAIGN_SCHEMA_PUBLISHED")"
   [ -z "$_rawdec" ] && ok "the freshly published artifact decodes under the published schema" \
                     || no "the freshly published artifact does not decode: $_rawdec"
@@ -125,7 +138,9 @@ else
 fi
 
 echo "=== the regenerated artifact matches the baseline byte for byte ==="
-if [ -s "$RAW" ]; then
+if [ "$PRODUCER_OK" != "1" ]; then
+  no "the producer did not publish, so no comparison against the baseline is possible"
+elif [ -s "$RAW" ]; then
   # THE NORMALISER'S STATUS IS CHECKED. Ignoring it meant a failed subprocess that had already
   # written plausible bytes would be compared as if it had succeeded — the same "no output means
   # success" inference this harness refuses everywhere else.

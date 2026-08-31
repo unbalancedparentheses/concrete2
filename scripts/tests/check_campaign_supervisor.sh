@@ -471,5 +471,37 @@ _dupe_out="$(bash "$_SB/dupe.sh" --spec corecheck-unsafe-op 2>&1)"; _dupe_rc=$?
   && ok "a duplicated family name is refused, not silently resolved to the first match" \
   || no "duplicate names accepted (rc=$_dupe_rc): $_dupe_out"
 
+echo "=== an early failure releases the repository lock ==="
+# The driver takes the lock, snapshots itself and re-execs — and `exec` CLEARS TRAPS. Every failure
+# between the re-exec and the supervisor's own trap therefore exited holding the lock, and the next
+# run refused to start against a repository where nothing was running. This is registered because I
+# fixed it once already and confirmed the fix with a control that looked for the wrong lock filename.
+# THE SANDBOX'S LOCK, NOT THE REPOSITORY'S.
+#
+# The copy derives ROOT_DIR from its own location, so it locks $TMP/sb — checking the repository's
+# lock here observed a file this control never creates, and passed identically with the fix reverted.
+# It is also the safe path: a control must not compete for the real repository lock.
+_LOCK="$TMP/sb/.gate.lock"
+if [ -e "$_LOCK" ]; then
+  no "a lock is already present before this control runs; skipping rather than deleting it"
+else
+  cp "$_DRV" "$_SB/lockfail.sh"
+  # The sandbox copy resolves ROOT_DIR to this repository, so it takes the REAL lock — which is
+  # exactly what must be released. Injected failure: the decision library cannot be loaded.
+  sed -i 's|scripts/tests/lib/campaign_supervise.sh" 2>/dev/null|scripts/tests/lib/NO_SUCH_LIBRARY.sh" 2>/dev/null|' "$_SB/lockfail.sh"
+  _lf_out="$(bash "$_SB/lockfail.sh" 2>&1)"; _lf_rc=$?
+  case "$_lf_out" in
+    *"cannot load the campaign decision library"*)
+      ok "a driver that cannot load its decision library refuses (rc=$_lf_rc)" ;;
+    *) no "the injected failure did not occur, so the lock control proves nothing: $_lf_out" ;;
+  esac
+  if [ -e "$_LOCK" ]; then
+    no "the failed run STRANDED its lock: $(cat "$_LOCK/owner" 2>/dev/null | tr '\n' ' ')"
+    rm -rf "$_LOCK"
+  else
+    ok "...and it released the lock rather than stranding it"
+  fi
+fi
+
 echo "CAMPAIGN-SUPERVISOR: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
