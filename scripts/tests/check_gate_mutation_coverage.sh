@@ -208,14 +208,19 @@ _mut_query_mode "${1:-}" && _MUT_READ_ONLY_MODE=1
 # a security boundary — anyone who controls the environment controls everything — it is a guard
 # against an inherited or mistaken value, which is what actually happens.
 if [ -n "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
-  case "$0" in
+  # `$0` IS RESOLVED BEFORE IT IS COMPARED WITH ABSOLUTE PATHS. Invoked as
+  # `scripts/tests/check_gate_mutation_coverage.sh` it is RELATIVE, so the `"$ROOT_DIR"/*` test
+  # never matched and the ordinary invocation walked straight past the check written to catch it.
+  # A comparison between paths of different kinds is not a comparison.
+  _self_abs="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/$(basename "$0")"
+  case "$_self_abs" in
     "$ROOT_DIR"/*)
       echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this file is inside the repository." >&2
       echo "       A snapshot is a copy taken OUTSIDE the tree; the repository's own driver is" >&2
       echo "       never one. Honouring it would skip the lock and the invalidation." >&2
       exit 2 ;;
   esac
-  case "$0" in
+  case "$_self_abs" in
     "${CONCRETE_MUT_SNAPDIR:-/nonexistent}"/*) ;;
     *) echo "FATAL: CONCRETE_MUT_SNAPSHOT is set but this file is not inside the snapshot" >&2
        echo "       directory the driver created (${CONCRETE_MUT_SNAPDIR:-<unset>}). Refusing." >&2

@@ -548,7 +548,11 @@ else
   # exactly what must be released. Injected failure: the decision library cannot be loaded.
   sed -i 's|scripts/tests/lib/campaign_supervise.sh" 2>/dev/null|scripts/tests/lib/NO_SUCH_LIBRARY.sh" 2>/dev/null|' "$_SB/lockfail.sh"
   _lf_out="$(bash "$_SB/lockfail.sh" 2>&1)"; _lf_rc=$?
-  case "$_lf_out" in
+  # THE STATUS IS ASSERTED, NOT PRINTED. This checked the message and the lock and never that the
+  # run FAILED, so a driver that printed the expected fatal line, released its lock and exited zero
+  # satisfied both assertions — a control about refusal that never checked for one.
+  case "$_lf_rc:$_lf_out" in
+    0:*) no "the injected failure exited 0; a control about refusing must require a refusal" ;;
     *"cannot load the campaign decision library"*)
       ok "a driver that cannot load its decision library refuses (rc=$_lf_rc)" ;;
     *) no "the injected failure did not occur, so the lock control proves nothing: $_lf_out" ;;
