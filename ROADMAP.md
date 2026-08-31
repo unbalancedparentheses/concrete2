@@ -1367,7 +1367,7 @@ the next transition; completed milestones move to the changelog rather than accu
 | 9 | **Two-state mutation contracts** | add a narrow record/array state model, `old`, `modifies`/frames, then ghost locals and parameters; unsupported heap/reborrow shapes refuse explicitly |
 | 10 | **Ninth-table conversion** | use the narrow mutable-state model to extract and replay the three currently fail-closed `proofFnsExt` links; until then they remain unable to provide authority |
 | 11 | **Totality and specification library** | add checked `#[decreases]`/total functions, then canonical `int`, list, map, set and bitvector theories before richer or relational logic |
-| 12 | **External-user workflow and productization** | a non-author receives evidence, replays it, upgrades a dependency, and sees exact machine/human diffs; add bounded parser/file-integrity/protocol flagships, IDE/CI lenses and recurring ergonomics audits |
+| 12 | **External-user workflow and productization** | a non-author receives evidence, replays it, upgrades a dependency, and sees exact machine/human diffs; graduate exactly three deep public flagships—HMAC-SHA256, a secure update-bundle verifier that absorbs bounded parsing and file-integrity work, and a small protocol state machine—plus IDE/CI lenses and recurring ergonomics audits. Compiler regressions, hostile inputs and benchmarks remain fixtures, adversarial cases and workloads rather than additional public flagships |
 | 13 | **R-0440/package evidence and typed policy** | compose partial dependency evidence, revocation/advisories, trust and release requirements without turning receipt validity into policy acceptance |
 
 `ProofCache` remains performance-pulled. A second proof-producing kernel remains research-gated and
@@ -4664,8 +4664,11 @@ their implementation detail and gates.
 - External-user dependency-upgrade workflow: receive package/evidence, replay independently, replace
   a dependency, and obtain an exact machine-readable and human explanation of every claim that stayed
   current or moved without access to the producer checkout.
-- IDE/CI evidence lenses, bounded parser/file-integrity/protocol flagships and a recurring non-author
-  ergonomics audit follow that vertical workflow rather than substituting for it.
+- IDE/CI evidence lenses and a recurring non-author ergonomics audit follow that vertical workflow
+  rather than substituting for it. The public example portfolio is capped at three deep flagships:
+  HMAC-SHA256, a secure update-bundle verifier that combines bounded parsing with file integrity,
+  rollback policy and transferable evidence, and a small protocol state machine. New compiler
+  behaviours use dedicated fixtures; they do not create another showcase by default.
 - Human-readable evidence explanations: which exact subject, theorem, dependency, trust boundary,
   or environment field moved.
 - Evidence-diff format: stable machine-readable diff for upgrades, toolchain changes, trust widening,
@@ -6477,6 +6480,20 @@ stored proof links. Each row has a stable owner and classification such as posit
 negative fixture, showcase, workload, oracle, performance case, migration link or hostile input.
 The manifest records whether the item reached the relevant phase and, if not, its typed refusal.
 
+The manifest is also the prerequisite for reducing `examples/`. Classify before moving or deleting:
+
+- `examples/` ultimately contains the three public flagships, one deliberately small onboarding
+  sequence and only complete user-facing workflows; prefer documentation snippets over another
+  standalone tutorial project;
+- minimal compiler/language regressions belong under `tests/fixtures/` or the existing equivalent;
+- hostile and substitution inputs belong under `tests/adversarial/`;
+- performance inputs belong with benchmarks; and
+- larger compatibility/porting programs are workloads, not additional flagships.
+
+Existing paths are not renamed merely to make the tree look tidy. A shallow example moves only
+after its regression value has a manifest row, an owning gate and—when needed—a replacement fixture.
+This keeps fewer examples from becoming fewer tests.
+
 This manifest owns denominators such as discovered/measured/unmeasured files and prevents two gates
 from using identical-looking but independently maintained regexes. Per-file and per-subject joins
 must be explicit; equal totals are not evidence that two inventories describe the same population.
@@ -8029,8 +8046,9 @@ fail-closed branch that should catch this cannot fire — it triggers when the
 report has NO numeric max, and the defect guarantees a finite one is always
 printed. So a budget would pass on unbounded stack rather than refuse it.
 
-Not live: all five budgeted projects (`crypto_verify`, `parse_validate`,
-`fixed_capacity`, `hmac_sha256`, `constant_time_tag` — three flagships) are
+Not live: all five budgeted regression/evidence projects (`crypto_verify`, `parse_validate`,
+`fixed_capacity`, `hmac_sha256`, `constant_time_tag`; only HMAC remains in the ratified public
+flagship portfolio) are
 recursion-free, so every enforced number is currently correct. That is a property
 of the corpus, not the mechanism, and it is the reason this sits after R-0471 and
 R-0470 rather than at the front: lowest urgency of the three, but an unpredictable
@@ -8808,14 +8826,22 @@ red.
 Every example carries `example.toml` with stable `id`, lifecycle class
 (`tutorial`, `showcase`, `workload`, `evidence`, or `known_hole`), owner,
 status, entrypoints, supported targets/profiles, gates, evidence/claim IDs, and
-its proof/fixture paths. All five categories use the same
+its proof/fixture paths. While an item remains under `examples/`, all five lifecycle classes use the same
 `examples/<category>/<name>/{src,proofs,fixtures,expected,README.md}` project
-shape; absent optional children are allowed, alternative homes are not.
+shape; absent optional children are allowed and alternative shapes within that tree are not. The
+corpus manifest may move a whole regression/workload item to its actual owning home.
 `examples/evidence/hmac_sha256` is the proof-colocation migration control.
 Reusable theorems may move from an example into `Concrete/ProofKit` only with a
 second consumer and a gate for both. A regression extracted from an example
 receives a case manifest under `tests/bugs/` before the example copy is
 removed.
+
+That common shape describes items that remain in `examples/`; it is not an admission rule that
+keeps every historical test program there. The corpus-manifest migration classifies each existing
+directory and moves regression-only, hostile, performance and bulk-workload material to its owning
+test/workload home before removal. Public `showcase` admission is capped by the three-flagship
+portfolio below. A new showcase must replace or deepen an existing portfolio role rather than
+silently creating a fourth.
 
 Documentation and research classification lives in the ownership manifest with
 `path`, `class`, `owner`, `status`, and `canonical_source`. Normative reference
@@ -10030,12 +10056,13 @@ keeping two nominal owners.
  Elm's ports without copying Elm's web-application architecture: authority
  enters through a small named module, the wrapper exposes a narrow safe API,
  and the audit report names the capability, trusted/FFI boundary,
- assumptions, allocation behavior, and evidence class. Concrete examples:
+ assumptions, allocation behavior, and evidence class. Concrete boundary patterns:
  `std.fs.boundary` wraps ambient filesystem entry points behind directory
  handles; `std.net.boundary` wraps socket creation before pure parsers see
  bytes; `std.libc.boundary` wraps extern calls before safe code sees owned
- values. Add `docs/stdlib/STDLIB_BOUNDARY_MODULES.md`,
- `examples/stdlib_recipes/{fs_boundary,net_boundary,ffi_boundary}/`, and
+ values. Add `docs/stdlib/STDLIB_BOUNDARY_MODULES.md`, checked snippets backed by
+ `tests/fixtures/stdlib_boundary/{fs_boundary,net_boundary,ffi_boundary}/` (or the corpus
+ manifest's canonical fixture home), and
  `scripts/tests/check_stdlib_boundary_modules.sh`; the gate must prove that
  the public safe wrapper surface has narrower authority than the underlying
  trusted/extern implementation and that the audit transcript shows both
@@ -10155,12 +10182,13 @@ keeping two nominal owners.
 
 ### Task R-0066
 
-**Objective:** Add stdlib docs and examples for C/Rust users:
+**Objective:** Add stdlib documentation and checked recipes for C/Rust users without creating a
+gallery of standalone public examples:
 
- `docs/stdlib/STDLIB_GUIDE.md` plus `examples/stdlib_recipes/bytes_text`,
- `path_fs`, `result_errors`, `vec_map`, `parser_cursor`, `json_scan`,
- `base64_cli`, `uri_parse`, `checksum`, `deterministic_rand`, `time_log`,
- and `capability_io`. Each recipe must show the exact `std.*` imports,
+ `docs/stdlib/STDLIB_GUIDE.md` contains `bytes_text`, `path_fs`, `result_errors`, `vec_map`,
+ `parser_cursor`, `json_scan`, `base64_cli`, `uri_parse`, `checksum`, `deterministic_rand`,
+ `time_log`, and `capability_io` snippets sourced from an owning test-fixture corpus so they compile
+ rather than rot. Each recipe must show the exact `std.*` imports,
  capability set, allocation behavior, and expected audit line.
  Add one blessed systems-program shape, inspired by Elm's success at
  teaching a single architecture but adapted to Concrete's domain:
@@ -10168,9 +10196,9 @@ keeping two nominal owners.
  not a framework and not hidden control flow; it is an example/documentation
  convention for ordinary tools and protocol handlers. The guide must show
  which stages are pure, which carry capabilities, where `Result` flows, where
- runtime obligations attach, and which report proves each claim. Add
- `examples/stdlib_recipes/pipeline_shape/` with a tiny byte-oriented CLI and
- a no-alloc parser variant; both must include the source, expected
+ runtime obligations attach, and which report proves each claim. Exercise the pipeline shape in the
+ minimal onboarding sequence and later in `secure_update_verifier`/`protocol_state_machine`; its
+ tiny byte-oriented CLI and no-allocation parser fixtures must include the source and expected
  `--report caps`, `--report contracts`, and `--report profile` snippets.
  Include a small **stdlib style-coherence pass** in this item: each module
  must choose and document when an operation is a method versus a free
@@ -10180,19 +10208,27 @@ keeping two nominal owners.
  for operations whose receiver clearly owns/borrows the authority; free
  functions are fine for cross-type operations or functions whose capability
  story would be clearer outside a receiver. Add examples that teach the
- chosen style instead of preserving accidental historical names.
+ chosen style instead of preserving accidental historical names. These are checked documentation
+ snippets and fixtures, not additional flagships.
 ### Task R-0067
 
-**Objective:** Add a stdlib compatibility/oracle corpus under `examples/stdlib_compat/`: `fmt_parse_vectors`, `bytes_text_vectors`, `path_vectors`, `collection_vectors`, `base64_vectors`, `uri_vectors`, `json_vectors`, `semver_vectors`, `sort_search_vectors`, `checksum_vectors`, `rand_vectors`, and `cli_io_vectors`. Wire it with `scripts/tests/check_stdlib_compat.sh`; every vector must declare exactly one mode in `manifest.toml`: `oracle_python`, `oracle_system_tool`, `interp_vs_compiled`, `audit_only`, or `negative_expected_failure`.
+**Objective:** Add a stdlib compatibility/oracle corpus under `tests/compat/stdlib/` (or the corpus
+manifest's canonical compatibility home): `fmt_parse_vectors`, `bytes_text_vectors`, `path_vectors`,
+`collection_vectors`, `base64_vectors`, `uri_vectors`, `json_vectors`, `semver_vectors`,
+`sort_search_vectors`, `checksum_vectors`, `rand_vectors`, and `cli_io_vectors`. Wire it with
+`scripts/tests/check_stdlib_compat.sh`; every vector must declare exactly one mode in `manifest.toml`:
+`oracle_python`, `oracle_system_tool`, `interp_vs_compiled`, `audit_only`, or
+`negative_expected_failure`. Compatibility vectors are not public examples.
 
 ### Task R-0068
 
 **Objective:** Add real stdlib workload checks before Phase 8 relies on the library.
 
- Start with `examples/base64_cli`; it is the first
- workload, not just one item in the set. Then broaden to
- `json_validator`, `ini_parser`, `checksum_cli`, `http_headers`,
- `path_normalizer`, and `lru_cache` or `ring_buffer`. Wire them with
+ Start with the existing `base64_cli`, classifying it as a workload rather than a flagship. Then
+ select forcing workloads from `json_validator`, `ini_parser`, `checksum_cli`, `http_headers`,
+ `path_normalizer`, and `lru_cache` or `ring_buffer`; do not instantiate the whole list when the
+ three flagships or an existing workload already exercise the same surface. Keep them in the corpus
+ manifest's workload home and wire them with
  `scripts/tests/check_stdlib_workloads.sh`. Each workload must build, run,
  compare interpreter-vs-compiled output, and report authority/allocation/
  evidence classes. The oracle requirement is explicit per workload:
@@ -10212,9 +10248,10 @@ keeping two nominal owners.
  post-arithmetic validation does not overfit to numeric examples.
 ### Task R-0070
 
-**Objective:** Add the Phase 7 validation project:
+**Objective:** Add the Phase 7 validation workload under the corpus manifest's workload home (for
+example `tests/workloads/stdlib_client/`) plus `scripts/tests/check_phase6_stdlib.sh`. It validates
+the library and is not a fourth public flagship.
 
- `examples/stdlib_client/` plus `scripts/tests/check_phase6_stdlib.sh`.
  The client must use `std.option`, `std.result`, `std.bytes`, `std.text`,
  `std.path`, `std.vec`, `std.map`, `std.fs`, `std.io`, `std.fmt`,
  `std.parse`, either `std.json` or `std.base64`, deterministic RNG or
@@ -10665,11 +10702,15 @@ retain their artifacts.
 Goal: produce examples that outside systems engineers find impressive, not only
 internally coherent.
 
-Done when: the showcase set includes a serious security/crypto or protocol
-example with proof/evidence strong enough to anchor the public pitch.
+Done when: the showcase set is capped at **three deep flagships** — one
+cryptographic correctness example, one systems-security verifier, and one
+temporal/stateful protocol example — each with proof/evidence strong enough to
+anchor the public pitch.
 
-Maintain the graduated showcase, deepen theorem coverage where it strengthens
+Maintain only those flagships, deepen theorem coverage where it strengthens
 public claims, and add examples only when they force a named surface or claim.
+Everything else moves to the owning fixture, adversarial, benchmark, workload or proof-pattern
+corpus rather than becoming a user-facing example.
 
 This phase is also the external-credibility probe for the compiler/evidence
 pipeline: Phase 6B's `diff-caps` artifact gives the first narrow reviewable
@@ -10757,21 +10798,49 @@ inventories are deleted or reduced to generated snapshots.
 
 ### Task R-0119
 
-**Objective:** Maintain the five graduated flagships and keep their evidence bundles green:
+**Objective:** Graduate and maintain exactly three public flagships, keeping their evidence bundles
+green:
 
-`parse_validate`, `crypto_verify`, `fixed_capacity`, `constant_time_tag`,
-and `hmac_sha256`.
+1. **`hmac_sha256`** — cryptographic correctness and exact extraction/spec-drift refinement.
+2. **`secure_update_verifier`** — systems-security showcase that absorbs the parser/serializer and
+   file-integrity stories: canonical manifest decoding, target identity, segment
+   bounds/overlap/overflow, payload hash or HMAC, version monotonicity/rollback prevention,
+   trusted-key/advisory changes, exact manifest-to-payload binding, receipt currency and R-0353
+   independent verification.
+3. **`protocol_state_machine`** — temporal/stateful correctness with a canonical bounded packet
+   codec, explicit state transitions, invalid-input/transition refusal, bounded resources and a
+   replayable safety claim.
+
+`parse_validate`, `crypto_verify`, `fixed_capacity`, and `constant_time_tag`
+are demoted from flagship status; they may remain as tests, fixtures, proof
+patterns, or components absorbed into the three flagships above, but they do
+not expand the public example set.
+
+Do not add a new public flagship before R-0353 supplies an independently implemented consumer.
+Deepen HMAC first. Build the secure-update evidence workflow after R-0353, add its bounded mutable
+parser after two-state contracts, and add richer rollback/chunk/Merkle properties only after the
+specification library supports them. Graduate the protocol state machine after the same
+identity/task/verifier seam and when its state/totality requirements are supported rather than
+simulated.
+
+A public showcase is admitted only when it has a distinct user/security purpose, README and threat
+model, positive and negative workflows, evidence production and independent consumption,
+stale/revoked/substitution demonstrations, permanent CI ownership and a maintenance owner. A
+proposed fourth showcase must replace or merge with an existing role. This cap does not limit
+regression, adversarial, compatibility or performance coverage.
 ### Task R-0120
 
-**Objective:** Add stretch theorem for `fixed_capacity`: multi-iteration ring invariant or stronger push/search property.
+**Objective:** Add a stretch theorem for `secure_update_verifier`: manifest-to-payload binding, version monotonicity / rollback prevention, or trusted-key rotation invariant. This is the flagship theorem that demonstrates fail-closed evidence for a real systems-security workflow.
 
 ### Task R-0121
 
-**Objective:** Add stretch theorem for `parse_validate`: success-path / failure-completeness theorem once proof ergonomics support it.
+**Objective:** Add a stretch theorem for `protocol_state_machine`: success-path / failure-completeness or invalid-transition refusal theorem once proof ergonomics support it.
 
 ### Task R-0122
 
-**Objective:** Audit the next stronger real-crypto candidate only if it forces a new public claim: Ed25519 verification subset, AEAD, or a post-quantum primitive.
+**Objective:** Audit the next stronger real-crypto candidate only if it forces a new public claim:
+Ed25519 verification subset, AEAD, or a post-quantum primitive. It extends or replaces HMAC's
+portfolio role; it does not automatically create another public flagship.
 
 ### Task R-0123
 
@@ -10796,35 +10865,45 @@ fact is pinned.”
 
 ### Task R-0127
 
-**Objective:** Graduate one runtime-error-obligation flagship: parser/protocol example with no OOB/div-zero/overflow obligations discharged.
+**Objective:** Satisfy the runtime-error-obligation claim through the `secure_update_verifier` or
+`protocol_state_machine` flagship: demonstrate that no OOB/div-zero/overflow obligation remains
+undischarged on its bounded parser/validator, with the evidence visible in the bundle.
 
 ### Task R-0128
 
-**Objective:** Graduate one authority/capability flagship: a privilege-separated tool whose trusted core cannot touch files/network/processes except through named wrappers.
+**Objective:** Satisfy the authority/capability claim through the `secure_update_verifier` flagship: a privilege-separated verification core that cannot touch files/network/processes except through named wrappers, and whose authority boundary is independently auditable.
 
 ### Task R-0129
 
-**Objective:** Graduate one FFI-wrapper flagship: trusted C boundary, safe pure core, explicit assumptions, layout/ABI evidence.
+**Objective:** Demonstrate one trusted C/FFI boundary as part of the `secure_update_verifier` or as a standalone evidence-class fixture. Do not promote it to a fourth flagship; keep the public example set capped at three.
 
 ### Task R-0130
 
-**Objective:** Graduate one ownership-heavy resource flagship: explicit cleanup, borrow-heavy APIs, no leaks/double-use, and evidence explaining why.
+**Objective:** Satisfy the ownership-heavy resource claim through the `secure_update_verifier` or
+`protocol_state_machine` flagship: explicit cleanup, borrow-heavy APIs, no leaks/double-use and
+evidence explaining why. If a separate resource demo is needed, place it in the owning test or
+benchmark corpus, not `examples/`.
 
 ### Task R-0131
 
-**Objective:** Keep the curated showcase balanced: parser/protocol, bounded state, crypto/security, authority, FFI/trust, ownership-heavy.
+**Objective:** Keep the three-program portfolio collectively balanced across parser/protocol,
+bounded state, crypto/security, authority, FFI/trust and ownership-heavy behavior. An axis may have
+multiple fixtures or workloads, but the public flagship count remains three.
 
 ### Task R-0132
 
-**Objective:** Add a Unix-tool/protocol compatibility flagship that demonstrates bugs memory safety alone does not catch: byte-preserving I/O, path/OS-string handling, handle-relative filesystem authority, exit-code compatibility, error behavior compatibility, ignored-result diagnostics, and oracle tests against a reference implementation.
+**Objective:** Add Unix-tool/protocol compatibility as a workload and fold the relevant behavior
+into `secure_update_verifier` or `protocol_state_machine`: byte-preserving I/O, path/OS-string
+handling, handle-relative filesystem authority, exit-code/error compatibility, ignored-result
+diagnostics and oracle tests. This work does not create a fourth public flagship.
 
 ### Task R-0133
 
-**Objective:** Add a thin end-to-end credibility slice before the larger workload ladder, so skeptical users can replay one compelling artifact before the full Phase 5/6/12/13 surface is complete. Target:
+**Objective:** Add a thin end-to-end credibility slice before the larger workload ladder, so skeptical users can replay one compelling artifact before the full Phase 5/6/12/13 surface is complete. This is the entrance version of `protocol_state_machine`, not a temporary fourth showcase. Target:
 
- `examples/credibility_slice/packet_window/` or an equivalent no-alloc
- protocol parser/verifier (WebSocket frame decoder, TLS record-header parser,
- DNS packet parser, or HTTP/1 header parser). The slice must demonstrate the
+ `examples/showcase/protocol_state_machine/`, beginning with a no-allocation
+ packet-window parser/verifier (WebSocket frame decoder, TLS record-header parser,
+ DNS packet parser, or HTTP/1 header parser) and growing in place. The slice must demonstrate the
  actual production-readiness claim, not a toy proof: fixed buffers, `Bytes`,
  `ByteView`, arrays, `Result`, pattern matching, explicit capabilities,
  value-model accessors / scoped borrows, no returned references, and bounded
@@ -10844,7 +10923,8 @@ fact is pinned.”
  blockers that directly affect parser/buffer code are either done or
  explicitly deferred with examples: the historical Phase 6 array-literal
  element-inference item, match guards / OR patterns / match-on-reference item,
- and `defer`/cleanup item if the chosen slice owns resources.
+ and `defer`/cleanup item if the chosen slice owns resources. It also does not graduate or become
+ public before R-0353 supplies the independent-consumer workflow required by R-0119.
 ### Task R-0134
 
 **Objective:** Add a graduated real-workload ladder. The goal is to make sure Concrete builds real things that can be checked against references, not only tiny proof demos. Each workload must name the surface or public claim it forces;
@@ -10862,24 +10942,28 @@ fact is pinned.”
  feed the linear roadmap or prove that no new item is needed.
  Sequence:
  - **Main compiler repo:** keep tiny proof patterns
-   (`examples/proof_patterns/`), evidence-class examples, small real programs
-   that gate the compiler, and showcase flagships here. These protect
-   compiler/proof correctness and should stay close to the tests.
+   (`examples/proof_patterns/` until the corpus-manifest migration assigns their final home),
+   evidence-class fixtures, small real programs that gate the compiler, and the three showcase
+   flagships here. These protect compiler/proof correctness and should stay close to the tests, but
+   only the three portfolio programs are presented as public flagships.
  - **Medium in-repo real programs after the Phase 5 core slab and Phase 7
-   stdlib:** build exactly these first six examples under
-   `examples/workloads_medium/`: `mini_toml`, `http_headers`, `tar_index`,
-   `bytecode_vm`, `lru_cache`, and `checksum_cli`. Wire
-   `scripts/tests/check_medium_workloads.sh`. `mini_toml` forces
+   stdlib:** maintain a forcing-surface candidate list—`mini_toml`, `http_headers`, `tar_index`,
+   `bytecode_vm`, `lru_cache`, and `checksum_cli`—but do not pre-commit to six new public examples.
+   Select at most two active medium workloads whose surfaces are not already exercised deeply by
+   `secure_update_verifier` or `protocol_state_machine`, keep them under a workload-owned path such
+   as `tests/workloads/medium/`, and wire `scripts/tests/check_medium_workloads.sh` from the corpus
+   manifest. `mini_toml` forces
    bytes/text/path diagnostics and parse errors; `http_headers` forces
    ignored-result diagnostics and byte-preserving parsing; `tar_index`
    forces path/OS-string boundaries, archive offsets, overflow/cast
    obligations; `bytecode_vm` forces modules, dispatch, bounded loops;
    `lru_cache` forces collections, ownership, frame facts; `checksum_cli`
-   forces project model, `concrete test`, and oracle comparison. Tier exits
-   only when at least two medium programs build, run, pass
+   forces project model, `concrete test`, and oracle comparison. A candidate already covered by a
+   flagship is absorbed there rather than duplicated. The tier exits only when the selected medium
+   workloads build, run, pass
    interpreter-vs-compiled checks, carry full evidence/trust classification,
    and are covered by runtime-obligation audit.
-   At least two of these must follow the Phase 7 pipeline recipe
+   The selected workloads must follow the Phase 7 pipeline recipe
    (`read/acquire -> parse -> validate -> transform -> emit/release`) and
    include a short transcript showing where capabilities enter and where the
    pure core starts. This borrows the teaching value of Elm's one clear app
@@ -10957,7 +11041,7 @@ the comparison detects, and no gating threshold derived from a single sample.
 
 ### Task R-0135
 
-**Objective:** Do not run broad examples cleanup/polish sweeps. Clean examples opportunistically when a roadmap task touches them. Improve examples only when they serve proof-link migration, `concrete prove` authoring, external validation, or a release-facing tutorial. Add an example-refresh checkpoint at every phase closure, and after every two substantial Phase-6/7 usability increments. The checkpoint is not a broad rewrite; it is a small, gate-backed audit that asks whether graduated examples and release-facing docs still teach the current language. It must remove stale "deferred" language for newly landed features; update examples that should
+**Objective:** Do not run broad examples cleanup/polish sweeps. Clean examples opportunistically when a roadmap task touches them. Improve examples only when they serve proof-link migration, `concrete prove` authoring, external validation, or a release-facing tutorial. Add an example-refresh checkpoint at every phase closure, and after every two substantial Phase-6/7 usability increments. The checkpoint is not a broad rewrite; it is a small, gate-backed audit that asks whether the three graduated flagships, minimal onboarding sequence and release-facing docs still teach the current language. It must remove stale "deferred" language for newly landed features; update examples that should
 
  now use the preferred surface (`if let` / `while let`, range patterns,
  future guards/OR patterns, value-model collection access, `ByteView`,
@@ -10984,10 +11068,10 @@ through these refresh checkpoints, and fail new examples that omit their
 lifecycle/owner record.
 ### Task R-0136
 
-**Objective:** Upgrade the constant-time flagship from `reported` to `enforced` with a secret-dependent-flow checker. Today `constant_time_tag` reports a constant-time source shape and leaves machine timing `assumed`; add a source/IR information-flow pass that rejects secret-tagged values reaching branch conditions, loop bounds, or array indices, so the discipline becomes a compiler-enforced structural property, not a reported shape. This needs no hardware/timing model and must not claim machine-level timing: it produces `enforced` for the source-flow property only, with machine timing still named `assumed`. Mark secrets with an explicit annotation (e.g. `#[secret]`); the
+**Objective:** Upgrade the `constant_time_tag` evidence workload from `reported` to `enforced` with a secret-dependent-flow checker. Today it reports a constant-time source shape and leaves machine timing `assumed`; add a source/IR information-flow pass that rejects secret-tagged values reaching branch conditions, loop bounds, or array indices, so the discipline becomes a compiler-enforced structural property, not a reported shape. This needs no hardware/timing model and must not claim machine-level timing: it produces `enforced` for the source-flow property only, with machine timing still named `assumed`. Mark secrets with an explicit annotation (e.g. `#[secret]`); the
 
- checker reports `enforced` or a counterexample flow path back to source. Add
- `examples/secret_flow/` with a clean constant-time case and negatives for a
+ checker reports `enforced` or a counterexample flow path back to source. Add a clean positive
+ fixture in the owning test corpus and `tests/adversarial/secret_flow/` negatives for a
  secret-dependent branch, a secret-dependent index, and a secret-dependent
  loop bound. Wire `scripts/tests/check_secret_flow.sh`; the gate must reject
  every negative and must never present source-flow enforcement as timing
@@ -11490,8 +11574,8 @@ Measure both sides of the investment:
 Never invent a telemetry-only definition of “eligible”; use the compiler's
 canonical eligibility facts so the denominator cannot be improved by excluding
 hard cases. Seed the coverage side from R-0004's honest post-migration baseline.
-Publish a small table for hmac_sha256/constant_time_tag, refresh it per flagship
-and release, and retain comparable history rather than replacing the previous
+Publish a small table for the HMAC flagship and the `constant_time_tag` evidence workload, refresh
+it per relevant portfolio release, and retain comparable history rather than replacing the previous
 number. R-0438's generated claim records eventually own the durable trend; this
 task owns the measurement definition and initial series. The result may justify
 changing the later R-0169/R-0170 investment, but it must not move automation
@@ -11863,7 +11947,7 @@ Goal: let a reviewer answer "what can this program do, what is proved, what is
 assumed, and what changed?" without reading compiler internals.
 
 Done when: `concrete audit`, semantic diff, and an artifact viewer cover the
-five graduated flagships and one package-scale example.
+three graduated flagships and one package-scale workload.
 
 ### Task R-0178
 
@@ -12511,7 +12595,8 @@ bounds, explicit backend timing assumptions.
 
 ### Task R-0237
 
-**Objective:** Add one small `ProvableFloatV1` flagship only after the profile exists:
+**Objective:** Add one small `ProvableFloatV1` proof-profile witness only after the profile exists.
+It is a fixture/workload, not a fourth public flagship:
 
  a fixed-order `f32`/`f64` kernel such as clamp/normalize, tiny FIR/IIR, PID,
  or dot product. Prove exact IEEE behavior first; real-valued epsilon-bound
@@ -12705,7 +12790,8 @@ target byte claims distinct in the resulting evidence.
 
 ### Task R-0252
 
-**Objective:** Add a runtime-error-obligation flagship requirement: one graduated example must demonstrate no OOB/div-zero/overflow under a named profile.
+**Objective:** Add a runtime-error-obligation portfolio requirement: `secure_update_verifier` or
+`protocol_state_machine` must demonstrate no OOB/div-zero/overflow under a named profile.
 
 ### Task R-0253
 
@@ -14617,7 +14703,12 @@ not a release-note afterthought.
 the Phase 10 verified-profile command, not just written in prose.
 ### Task R-0342
 
-**Objective:** Add public examples policy: public-facing examples, website copy, README snippets, paper examples, and showcase manifests must not outclaim their proof status. Active candidates can be shown as active work, but cannot be presented as proved or graduated until their bars land.
+**Objective:** Add public examples policy: public-facing examples, website copy, README snippets,
+paper examples and showcase manifests must not outclaim their proof status. The public flagship
+portfolio is exactly HMAC-SHA256, `secure_update_verifier` and `protocol_state_machine`; active
+candidates can be shown as active work, but cannot be presented as proved or graduated until their
+bars land. Other fixtures/workloads may be documented without being marketed as additional
+flagships.
 
 ### Task R-0343
 
