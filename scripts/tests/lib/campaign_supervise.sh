@@ -161,18 +161,52 @@ candidate_incoherent() { # candidate [expected-family-count]
     # shapes that mean the OPPOSITE of what qualification claims: `0/33` green baseline gates, or
     # `0/85` gates proven, are perfectly non-empty and describe a campaign that established
     # nothing. Both fields are published as `<n>/<m>`, so both are read as such and must be whole.
-    case "$bg" in
-      '') out="$out qualified_without_baseline_gates_green" ;;
-      */*) [ "${bg%%/*}" = "${bg##*/}" ] || out="$out qualified_with_baseline_gates_red($bg)" ;;
-      *) out="$out qualified_with_unparsable_baseline_gates($bg)" ;;
-    esac
-    case "$gp" in
-      '') out="$out qualified_without_gates_proven" ;;
-      */*) [ "${gp%%/*}" = "${gp##*/}" ] || out="$out qualified_with_gates_unproven($gp)"
-           case "${gp%%/*}" in ''|*[!0-9]*) out="$out qualified_with_unparsable_gates_proven($gp)" ;;
-             0) out="$out qualified_with_zero_gates_proven" ;; esac ;;
-      *) out="$out qualified_with_unparsable_gates_proven($gp)" ;;
-    esac
+    # BOTH RATIOS ARE PARSED AS <n>/<m>, WITH BOTH PARTS REQUIRED TO BE NUMBERS.
+    #
+    # An earlier version compared the two halves as strings, so `x/x` and `0/0` both satisfied
+    # "numerator equals denominator" — the first is not a ratio and the second describes a campaign
+    # with nothing in it. And `85/junk/85` slipped through because `%%/*` and `##*/` ignore the
+    # middle. One parser, used for both fields, that rejects anything which is not exactly two
+    # numbers separated by one slash.
+    _ratio() { # value -> "n m", or nothing if it is not a ratio
+      case "$1" in
+        */*/*|'') return 1 ;;
+        */*) ;;
+        *) return 1 ;;
+      esac
+      local _n="${1%%/*}" _m="${1#*/}"
+      case "$_n" in ''|*[!0-9]*) return 1 ;; esac
+      case "$_m" in ''|*[!0-9]*) return 1 ;; esac
+      printf '%s %s' "$_n" "$_m"
+    }
+    # A GREEN BASELINE MEANS ALL OF THEM, AND AT LEAST ONE. Nothing was proved by zero gates.
+    if _bgv="$(_ratio "$bg")"; then
+      set -- $_bgv
+      if [ "$2" = "0" ]; then out="$out qualified_with_no_baseline_gates"
+      elif [ "$1" != "$2" ]; then out="$out qualified_with_baseline_gates_red($bg)"; fi
+    else
+      case "$bg" in '') out="$out qualified_without_baseline_gates_green" ;;
+                    *) out="$out qualified_with_unparsable_baseline_gates($bg)" ;; esac
+    fi
+    # GATES_PROVEN IS NOT REQUIRED TO BE COMPLETE — IT IS REQUIRED TO BE TRUE.
+    #
+    # Demanding numerator == denominator REJECTED a correct campaign. `gates_proven` is published as
+    # killed_by_gate/N, and a family whose mutation is killed by the BUILD rather than by its gate is
+    # a legitimate complete result: this driver's own header gives `78/81` with three build kills as
+    # the example. A check that refuses the exact shape a qualifying campaign produces would have
+    # blocked the result this whole program exists to reach. What must hold is that the published
+    # ratio agrees with the counts published beside it — otherwise `85/85` beside killed_by_gate=82
+    # qualifies on a number nothing produced.
+    if _gpv="$(_ratio "$gp")"; then
+      set -- $_gpv
+      [ "$1" = "$kg" ] || out="$out qualified_with_gates_proven_disagreeing($gp vs killed_by_gate=$kg)"
+      [ -z "$expected" ] || [ "$2" = "$expected" ] \
+        || out="$out qualified_with_gates_proven_population($gp vs pinned $expected)"
+      [ "$1" != "0" ] || out="$out qualified_with_zero_gates_proven"
+    else
+      case "$gp" in '') out="$out qualified_without_gates_proven" ;;
+                    *) out="$out qualified_with_unparsable_gates_proven($gp)" ;; esac
+    fi
     # THE REMAINING PUBLISHED COUNTS. families_declared must be the pinned population, and a
     # qualifying campaign cannot have failures.
     local fd fl
@@ -221,6 +255,8 @@ supervisor_qualification() { # candidate refusals [expected-family-count]
 evidence_root_digest() { # evidence-dir -> digest, or a marker; nonzero on producer failure
   local root="$1" d n f out="" rec
   [ -d "$root" ] || { printf 'no-evidence-dir'; return 0; }
+  # The run directory too: a linked evidence root means everything below it is somewhere else.
+  [ -L "${root%/}" ] && { printf 'evidence-root-is-symlink'; return 3; }
   for d in "$root"/*/; do
     [ -e "$d" ] || continue
     n="$(basename "$d")"
@@ -236,6 +272,11 @@ evidence_root_digest() { # evidence-dir -> digest, or a marker; nonzero on produ
     # replaced by a link to content outside the evidence tree, be read as authoritative by all of
     # them, and never appear in the digest that is supposed to detect exactly that. Evidence is
     # regular files; anything else is a refusal with its own status, not a silent omission.
+    # INCLUDING THE DIRECTORY ITSELF. Testing only inside it missed the case where the family
+    # DIRECTORY is a link: `-d`, the `*/` glob and `cd` all follow it, so `find .` starts in the
+    # target and cannot see what it walked through to get there. The whole family's evidence could
+    # then live outside the tree the root is supposed to describe.
+    if [ -L "${d%/}" ]; then printf 'evidence-family-is-symlink'; return 3; fi
     if [ -n "$(cd "$d" 2>/dev/null && find . -type l -print -quit 2>/dev/null)" ]; then
       printf 'evidence-contains-symlink'; return 3
     fi

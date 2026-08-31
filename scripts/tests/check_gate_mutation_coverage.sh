@@ -219,6 +219,15 @@ if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
     exit 2
   }
   export CAMPAIGN_HELD_LOCK=1
+  # RELEASED FROM THE MOMENT IT IS HELD.
+  #
+  # The supervisor's cleanup trap is installed much later, just before the child is spawned. Every
+  # failure between here and there — the decision library not loading, treestate not loading,
+  # ts_require unsatisfied — exited holding the lock, and the next run would then refuse to start
+  # against a repository where nothing was running. Naming those three sites individually would fix
+  # the three that exist today; a trap fixes the ones added tomorrow. No child exists yet on any of
+  # these paths, so releasing is unconditionally correct here. The richer trap replaces this one.
+  trap '_gate_lock_release 2>/dev/null || true' EXIT
   # THE SAME PARTIAL-NESS FACT AS EVERY OTHER SITE. This keyed on ONLY, which FAMILY_ID does not
   # resolve until the inventory is built — so an identity-selected run invalidated the FULL record
   # at startup, before doing any work. That is the same defect as the publication target, in the one
@@ -326,6 +335,20 @@ EXPECTED_FAMILIES=85
   || { echo "FATAL: cannot load the campaign decision library" >&2; exit 2; }
 
 CONCRETE_MUT_ROLE="${CONCRETE_MUT_ROLE:-supervisor}"
+# THERE ARE EXACTLY TWO ROLES, AND AN UNRECOGNISED ONE IS NOT A THIRD.
+#
+# Supervision was selected by `= supervisor` and the child path by `= child`, so ANY other value fell
+# through both: the run proceeded with no supervisor at all, and write_summary — which redirects to
+# the candidate file only for the child — targeted the AUTHORITATIVE artifact directly. An inherited
+# or mistyped CONCRETE_MUT_ROLE was therefore a way to publish qualified=1 with the entire supervisor
+# boundary bypassed. It is an enumeration; anything else is a refusal.
+case "$CONCRETE_MUT_ROLE" in
+  supervisor|child) ;;
+  *) echo "FATAL: CONCRETE_MUT_ROLE='$CONCRETE_MUT_ROLE' is not a role." >&2
+     echo "       Only 'supervisor' and 'child' exist. Any other value would run this campaign with" >&2
+     echo "       no supervisor and publish straight to the authoritative artifact." >&2
+     exit 2 ;;
+esac
 
 # Anchor and coverage modes publish nothing and are not campaigns; supervising them would add a fork
 # and a second set of failure modes for no verdict.
@@ -624,16 +647,16 @@ EOF
     {
       for _sk in $CAMPAIGN_SCHEMA_NUMERIC;  do printf '%s=0\n' "$_sk"; done
       for _sk in $CAMPAIGN_SCHEMA_FREEFORM; do printf '%s=unavailable\n' "$_sk"; done
-      for _sk in $CAMPAIGN_SCHEMA_SUPERVISOR; do printf '%s=unavailable\n' "$_sk"; done
+      # NOT the supervisor's own fields: they are appended below, for both branches, and emitting
+      # them here as well produced two of each. The exactly-once check then refused publication — so
+      # the repair that made this record complete also made it impossible to write. The candidate
+      # branch does not carry them either; this branch must match it.
     } > "$_tmp.skel" || _pub_ok=0
     _mode="campaign"; [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ] || _mode="single"
     sed -e "s|^mode=.*|mode=$_mode|" \
         -e "s|^refusals=.*|refusals= child_left_no_candidate|" \
         -e "s|^run_id=.*|run_id=$RUN_ID|" \
         -e "s|^head=.*|head=${_sup_head1:-unavailable}|" \
-        -e "s|^supervisor_refusals=.*|supervisor_refusals=${_sup_refusals:-candidate_missing}|" \
-        -e "s|^supervisor_child_exit=.*|supervisor_child_exit=${_child_rc:-0}|" \
-        -e "s|^candidate_incoherent=.*|candidate_incoherent=${_cand_incoh:-none}|" \
         "$_tmp.skel" > "$_tmp" || _pub_ok=0
     rm -f "$_tmp.skel"
   fi
@@ -1583,9 +1606,14 @@ if [ "${1:-}" = "--spec" ]; then
     _spec_out="$(family_spec_digest "${NAME[$_i]}" "${FILE[$_i]}" "${GATE[$_i]}" \
                                     "${BUILD[$_i]}" "${OLD[$_i]}" "${NEW[$_i]}")" || {
       echo "FATAL: the mutation-spec digest producer failed for '$2'" >&2; exit 2; }
-    case "$_spec_out" in
-      [0-9a-f][0-9a-f]*) printf '%s\n' "$_spec_out"; exit 0 ;;
-      *) echo "FATAL: the mutation-spec digest for '$2' is not a digest: '$_spec_out'" >&2; exit 2 ;;
+    # A DIGEST IS SIXTY-FOUR HEX CHARACTERS AND NOTHING ELSE. The first version of this check was
+    # `[0-9a-f][0-9a-f]*`, which is "two hex characters followed by ANYTHING" — it accepted
+    # `abNOT_A_DIGEST`, and `af/../../x`, and any truncation. Length and alphabet are both checked.
+    case "${#_spec_out}:$_spec_out" in
+      64:*[!0-9a-f]*) echo "FATAL: the spec digest for '$2' is not hex: '$_spec_out'" >&2; exit 2 ;;
+      64:*) printf '%s\n' "$_spec_out"; exit 0 ;;
+      *) echo "FATAL: the spec digest for '$2' is ${#_spec_out} characters, not 64: '$_spec_out'" >&2
+         exit 2 ;;
     esac
   done
   echo "no family named '$2' in this inventory of $N" >&2; exit 2

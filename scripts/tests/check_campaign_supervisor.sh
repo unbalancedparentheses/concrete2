@@ -276,10 +276,31 @@ _falsify gates_proven "" qualified_without_gates_proven \
 # the opposite of what qualification claims.
 _falsify baseline_gates_green 0/33 qualified_with_baseline_gates_red \
   "a campaign qualifying on 0 of 33 green baseline gates is refused"
-_falsify gates_proven 0/85 qualified_with_gates_unproven \
+_falsify gates_proven 0/85 qualified_with_gates_proven_disagreeing \
   "a campaign qualifying with 0 of 85 gates proven is refused"
-_falsify gates_proven 84/85 qualified_with_gates_unproven \
-  "a campaign qualifying with one gate unproven is refused"
+_falsify gates_proven 84/85 qualified_with_gates_proven_disagreeing \
+  "a gates-proven numerator that disagrees with killed_by_gate is refused"
+_falsify gates_proven 85/84 qualified_with_gates_proven_population \
+  "a gates-proven denominator that is not the pinned population is refused"
+_falsify baseline_gates_green 0/0 qualified_with_no_baseline_gates \
+  "a campaign qualifying on zero baseline gates is refused"
+_falsify baseline_gates_green x/x qualified_with_unparsable_baseline_gates \
+  "a ratio whose halves are equal but are not numbers is refused"
+_falsify gates_proven 85/junk/85 qualified_with_unparsable_gates_proven \
+  "a three-part value is not a ratio, however its ends compare"
+
+# THE SHAPE A CORRECT CAMPAIGN ACTUALLY PUBLISHES MUST QUALIFY.
+#
+# Three families are killed by the BUILD rather than by their gate, so a complete campaign publishes
+# gates_proven=82/85 — this driver's own header gives 78/81 as the same case. An earlier version of
+# this check demanded numerator == denominator and would have REFUSED the qualifying result the whole
+# programme exists to produce. A gate that rejects the outcome it is meant to certify is worse than
+# no gate, so the honest build-kill shape is a positive control.
+sed -e 's/^killed_by_gate=.*/killed_by_gate=82/' -e 's/^killed_by_build=.*/killed_by_build=3/' \
+    -e 's|^gates_proven=.*|gates_proven=82/85|' "$GOOD" > "$TMP/buildkills"
+[ -z "$(candidate_incoherent "$TMP/buildkills" "$POP")" ] \
+  && ok "a campaign with three build-route kills and gates_proven=82/85 qualifies" \
+  || no "the honest build-kill shape was refused: $(candidate_incoherent "$TMP/buildkills" "$POP")"
 _falsify gates_proven all qualified_with_unparsable_gates_proven \
   "a gates-proven value that is not <n>/<m> is refused rather than accepted as nonempty"
 _falsify families_declared 84 qualified_with_families_declared \

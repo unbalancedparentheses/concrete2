@@ -73,7 +73,9 @@ case_run() {
 }
 
 echo "=== the batch must account for every probe it registered ==="
-# EVERY MEMBER IS NAMED, NOT SILENTLY DROPPED.
+# EVERY MEMBER IS NAMED, NOT SILENTLY DROPPED — and DISTINCT members, not nineteen lines.
+# A count is satisfied by one member repeated nineteen times while another is omitted
+# entirely, so result IDs and labels are deduplicated before being counted.
 #
 # The marker alone was satisfied by a single MISSING line even if every other per-member report had
 # vanished with it. The first predicate written here demanded exactly ONE missing probe, which
@@ -83,7 +85,7 @@ echo "=== the batch must account for every probe it registered ==="
 # member is individually reported missing, which is exactly what "accounting" means here.
 case_run "a broken probe body breaks its shared group, and every member is still named" \
          "MINT_SELFTEST_BREAK=0" "MISSING from group" \
-         'm=$(grep -c "MISSING from group" "$LOG"); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$m" = "$want" ]' 
+         'm=$(grep -o "no <<P[0-9][0-9][0-9]>> result" "$LOG" | sort -u | grep -c .); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$m" = "$want" ]' 
 case_run "a result nobody declared is rejected by id" \
          "MINT_SELFTEST_FOREIGN=1" "UNEXPECTED result id"
 # EVERY MEMBER, COUNTED. The marker alone is printed once by the group header, so this passed even
@@ -91,7 +93,7 @@ case_run "a result nobody declared is rejected by id" \
 # for. The count of `unproven (replay failed)` lines must equal the pinned probe population.
 case_run "a failed shared replay names every affected member instead of emptying the batch" \
          "MINT_SELFTEST_REPLAY_FAIL=1" "the shared kernel replay FAILED" \
-         'n=$(grep -c "unproven (replay failed)" "$LOG"); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$n" = "$want" ]'
+         'n=$(grep "unproven (replay failed)" "$LOG" | sed "s/.*unproven (replay failed)://" | sort -u | grep -c .); want=$(sed -n "s/^EXPECTED_MINT_PROBES=//p" scripts/tests/check_dependency_edges.sh); [ "$n" = "$want" ]'
 
 # ALONE MEANS ALONE. A second group failing to replay must not disturb the real probes, but the
 # marker appears just as readily when EVERY probe failed too. The real assertions must still be
