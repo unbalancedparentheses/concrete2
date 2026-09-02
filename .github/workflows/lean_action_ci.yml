@@ -548,6 +548,24 @@ jobs:
       - name: "Gate lock (a lock is refused, never reclaimed on a dead creator PID)"
         run: bash scripts/tests/check_gate_lock.sh
 
+      # REGISTERED 2026-09-02. These four existed, passed, and were run by nothing. The registration
+      # gate reported them reachable because their names appeared somewhere in a file CI runs — for
+      # check_classification_freshness.sh, inside a comment saying the gate runs elsewhere.
+      - name: "Assumptions ledger (declared assumptions match the recorded set)"
+        run: bash scripts/tests/check_assumptions.sh
+
+      - name: "Builtin enum ownership (one owner computes the list and the result flag)"
+        run: bash scripts/tests/check_builtin_enum_owner.sh
+
+      - name: "Policy enforcement (the [policy] surface is gated, not merely documented)"
+        run: bash scripts/tests/check_policy.sh
+
+      - name: "Evidence reproducibility (retained evidence regenerates to the same digests)"
+        run: bash scripts/tests/check_evidence_reproducibility.sh
+
+      - name: "Subject facts (identity-threaded facts; v1 values become needs_recheck)"
+        run: bash scripts/tests/check_subject_facts.sh
+
       - name: "Identity freeze (the pre-migration attestation population is pinned)"
         run: bash scripts/tests/check_identity_freeze.sh
 

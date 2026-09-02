@@ -668,12 +668,30 @@ if grep -q "subjectDigest" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
 else
   no "entries do not carry a subject digest"
 fi
-# STILL OPEN, asserted as a tripwire so "the digest exists" cannot read as "the
-# bugs are closed". The freshness decision still compares the BODY fingerprint.
-if grep -q "if shortHash currentFp != h then" "$ROOT_DIR/Concrete/Proof/ProofCore.lean"; then
-  ok "TRIPWIRE: freshness still compares the body fingerprint — 059/060 remain OPEN"
+# 059/060 ARE CLOSED, AND THIS NOW ASSERTS THE FIX RATHER THAN THE BUG.
+#
+# This was a tripwire: it grepped for the old body-fingerprint comparison and failed if that
+# comparison CHANGED, so that "the digest exists" could not be read as "the bugs are closed". The
+# comparison did change — `88145c64 fix: the consistency checker audited freshness with a rule the
+# deriver had stopped using` — and the tripwire fired as designed, asking someone to re-examine.
+# Verified: ProofCore now routes a v1 stored value to `.needsRecheck`, and does so BEFORE the
+# staleness comparison, which is the whole substance. Running the v1 check afterwards would compare
+# a v2 digest against a v1 hash and report the guaranteed mismatch as a body change — the defect
+# 059/060 named. Asserting the fix is strictly stronger than asserting the bug.
+_PC="$ROOT_DIR/Concrete/Proof/ProofCore.lean"
+_v1_line="$(grep -n 'storedIsV1 a then \.needsRecheck' "$_PC" | head -1 | cut -d: -f1)"
+_stale_line="$(grep -n 'isStale a then \.stale' "$_PC" | head -1 | cut -d: -f1)"
+if [ -n "$_v1_line" ] && [ -n "$_stale_line" ] && [ "$_v1_line" -lt "$_stale_line" ]; then
+  ok "a v1 stored value becomes needs_recheck, decided BEFORE the staleness comparison (059/060 closed)"
 else
-  no "the freshness comparison changed: v1 stored hashes must become needs_recheck, never stale, and backfill only from kernel replay"
+  no "the v1 -> needs_recheck routing is missing or is decided AFTER staleness (v1=${_v1_line:-absent} stale=${_stale_line:-absent}) — a v2 digest compared against a v1 hash reports a body change that never happened"
+fi
+# ...and the status it produces must not count as established for anything downstream.
+if grep -qE '^\s*\|.*\.needsRecheck' "$_PC" && \
+   grep -A6 'def ObligationStatus.isCurrentForDependents' "$_PC" | grep -q 'needsRecheck'; then
+  ok "needs_recheck is enumerated as NOT current for dependents"
+else
+  no "needs_recheck is not excluded from isCurrentForDependents — an older, weaker answer would propagate as established"
 fi
 
 GATE_DONE=1

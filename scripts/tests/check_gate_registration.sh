@@ -42,27 +42,69 @@ declare -A SKIP=(
 
 # Seed the reachable set with everything the workflow names directly, then repeatedly add any script
 # invoked by something already reachable, until nothing new appears.
-REACHABLE_FILE="$(mktemp)"; trap 'rm -f "$REACHABLE_FILE"' EXIT
+REACHABLE_FILE="$(mktemp)"; trap 'rm -f "$REACHABLE_FILE"; rm -rf "${STRIP_DIR:-}"' EXIT
+# A MENTION IS NOT AN INVOCATION.
+#
+# Reachability was `grep -q "$b" "$file"`: the gate's NAME appearing anywhere counted, including in
+# a comment. `check_classification_freshness.sh` was certified reachable solely because
+# check_dependency_edges.sh contains the prose line "Table freshness lives in
+# check_classification_freshness.sh, NOT here" — a sentence saying the gate runs somewhere else read
+# as proof that it runs. Measured at 0df0d264: four gates had no non-comment reference anywhere,
+# three of them were RED, and CI had never executed any while this gate reported full reachability.
+#
+# A reference counts only from a comment-stripped line carrying an execution context. The direction
+# is deliberately CONSERVATIVE: a gate invoked in a form this cannot see is reported unreachable and
+# must be registered or skipped explicitly, which demands clarity rather than granting a silent pass.
+#
+# A '#' is only a comment when it starts a word. Stripping every '#' destroyed the real invocation
+# `nix develop .#provers --command bash ./scripts/tests/check_bv_certificates.sh`, whose flake
+# selector contains one, and reported a registered gate as unreachable.
+#
+# ONE SCAN PER FILE, NOT ONE PER PAIR. Testing each (file, candidate) pair separately meant two
+# processes for each of ~220x220 pairs per fixpoint round; the gate went from a second to being
+# killed at five minutes. The adjacency is built once — each file scanned for every gate name in a
+# single pass — and the fixpoint then walks it with no further subprocesses.
+NAMES_FILE="$(mktemp)"; EDGES_FILE="$(mktemp)"
+trap 'rm -f "$REACHABLE_FILE" "$NAMES_FILE" "$EDGES_FILE"' EXIT
+for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh; do
+  [ -f "$f" ] || continue; basename "$f"
+done | sort -u > "$NAMES_FILE"
+
+_exec_lines() { # path -> comment-stripped lines that INVOKE something
+  # Two forms count, because this repository dispatches gates both ways.
+  #
+  #   1. a literal interpreter/exec/source/./ invocation;
+  #   2. DATA-DRIVEN DISPATCH: a gate named as a quoted argument, which is how the mutation
+  #      campaign runs the gate each family declares — `add "fam" "File.lean" "check_foo.sh"` — and
+  #      how test_mutation.sh does it via `gate_for_last "scripts/tests/check_foo.sh"`. CI runs the
+  #      full campaign (workflow step "Gate mutation coverage ... heavy; rebuilds per mutation"), so
+  #      those gates genuinely execute in CI. Ignoring this form reported three registered gates as
+  #      unreachable — a false alarm is as damaging here as a false pass, because it trains the
+  #      reader to ignore the gate.
+  #
+  # Comments are stripped first, so the prose that caused the original defect — "Table freshness
+  # lives in check_classification_freshness.sh, NOT here" — cannot satisfy either form.
+  sed -E 's/(^|[[:space:]])#.*$/\1/' "$1" 2>/dev/null \
+    | grep -E '(^|[[:space:];&|(=])(bash|sh|zsh|exec|source|python3|python|\./)([[:space:]]|/|$)|["'"'"'][^"'"'"']*check_[A-Za-z0-9_]+\.sh["'"'"']'
+}
+
+# edges: "<container> <invoked-gate>", container "" meaning the workflow itself
+_exec_lines "$WORKFLOW" | grep -oFf "$NAMES_FILE" 2>/dev/null | sort -u \
+  | while IFS= read -r n; do [ -n "$n" ] && echo "WORKFLOW $n"; done > "$EDGES_FILE"
 for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh; do
   [ -f "$f" ] || continue
-  b="$(basename "$f")"
-  grep -q "$b" "$WORKFLOW" && echo "$b" >> "$REACHABLE_FILE"
+  src="$(basename "$f")"
+  _exec_lines "$f" | grep -oFf "$NAMES_FILE" 2>/dev/null | sort -u \
+    | while IFS= read -r n; do
+        [ -n "$n" ] && [ "$n" != "$src" ] && echo "$src $n"
+      done >> "$EDGES_FILE"
 done
+
+awk '$1=="WORKFLOW"{print $2}' "$EDGES_FILE" | sort -u > "$REACHABLE_FILE"
 while :; do
   before="$(wc -l < "$REACHABLE_FILE")"
-  while IFS= read -r seed; do
-    [ -z "$seed" ] && continue
-    src="$(ls scripts/tests/"$seed" scripts/ci/"$seed" scripts/gen/"$seed" 2>/dev/null | head -1)"
-    [ -n "$src" ] || continue
-    for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh; do
-      [ -f "$f" ] || continue
-      cand="$(basename "$f")"
-      [ "$cand" = "$seed" ] && continue
-      if grep -q "$cand" "$src" 2>/dev/null && ! grep -qxF "$cand" "$REACHABLE_FILE"; then
-        echo "$cand" >> "$REACHABLE_FILE"
-      fi
-    done
-  done < <(sort -u "$REACHABLE_FILE")
+  awk 'NR==FNR{r[$0]=1;next} ($1 in r){print $2}' "$REACHABLE_FILE" "$EDGES_FILE" \
+    >> "$REACHABLE_FILE"
   sort -u "$REACHABLE_FILE" -o "$REACHABLE_FILE"
   [ "$(wc -l < "$REACHABLE_FILE")" = "$before" ] && break
 done
