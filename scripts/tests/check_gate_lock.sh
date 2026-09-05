@@ -502,6 +502,36 @@ _clear; rm -f "$SB/nb.marker"; _run nobashpid.sh
   || no "with BASHPID unavailable a subshell released the parent's lock ($(cat "$SB/nb.marker" 2>/dev/null)) — macOS would strand or mis-release"
 _clear
 
+# THE IDENTITY MUST BE STABLE, AND WITHOUT BASHPID THE LOCK MUST STILL BE RELEASED.
+#
+# This is the macOS regression, and only the macOS job could show it. `sh -c 'echo $PPID'` inside
+# `$( )` reports the PPID of that `sh`, which is the SUBSTITUTION'S OWN SUBSHELL — a different pid
+# on every call. bash 5 optimises the fork away so it looked stable locally and a control built on
+# `unset BASHPID` passed; bash 3.2 forks, the identity differed between arming and release, the
+# release declined silently, and one gate held the lock for the rest of the job while nine later
+# ones were refused. Stability is asserted here, not assumed.
+_mkprobe idstable.sh 'unset BASHPID
+source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+echo "method=${_GATE_LOCK_ID_METHOD:-unset}" > id.marker
+case "${_GATE_LOCK_ID_METHOD:-pid}" in
+  ppid) a="$(exec sh -c "echo \$PPID")"; b="$(exec sh -c "echo \$PPID")" ;;
+  *)    a="$$"; b="$$" ;;
+esac
+[ "$a" = "$b" ] && echo STABLE >> id.marker || echo "UNSTABLE:$a:$b" >> id.marker
+exit 0'
+_clear; rm -f "$SB/id.marker"; _run idstable.sh
+if grep -q '^STABLE$' "$SB/id.marker" 2>/dev/null; then
+  ok "without BASHPID the shell identity is stable across reads ($(head -1 "$SB/id.marker"))"
+else
+  no "without BASHPID the shell identity is UNSTABLE ($(tr '\n' ' ' < "$SB/id.marker" 2>/dev/null)) — arming and release would disagree and the lock would never be released"
+fi
+# ...and the consequence that actually matters: the lock is released.
+! _held \
+  && ok "without BASHPID the lock is still released on exit (the macOS failure mode)" \
+  || no "without BASHPID the lock was STRANDED — this is exactly what wedged the macOS job"
+_clear
+
 # THE RUNNER'S OPT-OUT IS ASSERTED WHERE IT ACTUALLY LIVES. A synthetic probe that hardcodes
 # `_GATE_LOCK_SELF_MANAGED=1` stays green if the real declaration is deleted, which would silently
 # restore the premature unlock this control exists to prevent.

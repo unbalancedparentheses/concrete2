@@ -253,19 +253,50 @@ _GATE_LOCK_SIGNAL_SNIPPET='_gate_lock_release_auto; builtin trap - %s; kill -%s 
 # Expanded INLINE rather than through a helper, because `BASHPID` inside `$( ... )` reports the
 # command substitution's own subshell, not the caller's — a helper would have returned the wrong
 # identity in exactly the case this is here to get right.
+# THE FALLBACK WAS WRONG, AND ONLY THE macOS JOB COULD SHOW IT.
+#
+# `sh -c 'echo $PPID'` inside `$( )` reports the PPID of that `sh` — which is the COMMAND
+# SUBSTITUTION'S OWN SUBSHELL, a different pid on every call. bash 5 optimises the fork away for a
+# simple command, so locally the value looked stable and a control built on `unset BASHPID` passed.
+# bash 3.2 on the macOS runner does fork, so the identity differed between arming and release, the
+# release silently declined every time, and check_lex_escapes held the lock for the rest of the job
+# while nine later gates were refused with `repository-busy`. That is what the retained diagnostics
+# showed, and no local simulation established it.
+#
+# `exec sh -c` REPLACES the substitution subshell, so the reported PPID is the shell instance that
+# forked it — the caller — on any shell. Stability is then VERIFIED rather than assumed: if two
+# consecutive readings disagree, neither identity is usable and the process id is used instead. A
+# subshell shares `$$`, so the subshell protection is weaker on such a shell — but never releasing
+# at all wedges the tree, which is the failure being repaired.
 _gate_lock_note_creator() {
   if [ -n "${BASHPID:-}" ]; then
+    _GATE_LOCK_ID_METHOD=bashpid
     _GATE_LOCK_CREATED_BY="$BASHPID"
+    return 0
+  fi
+  local _a _b
+  _a="$(exec sh -c 'echo $PPID' 2>/dev/null || true)"
+  _b="$(exec sh -c 'echo $PPID' 2>/dev/null || true)"
+  if [ -n "$_a" ] && [ "$_a" = "$_b" ]; then
+    _GATE_LOCK_ID_METHOD=ppid
+    _GATE_LOCK_CREATED_BY="$_a"
   else
-    _GATE_LOCK_CREATED_BY="$(sh -c 'echo $PPID' 2>/dev/null || printf '%s' "$$")"
+    _GATE_LOCK_ID_METHOD=pid
+    _GATE_LOCK_CREATED_BY="$$"
   fi
 }
 
 _gate_lock_release_auto() {
   [ "${_GATE_LOCK_CREATED:-0}" = "1" ] || return 0
+  # READ BY THE SAME METHOD THAT RECORDED IT, and never through a helper: `BASHPID` inside `$( )`
+  # reports the substitution's subshell, so a helper would return the wrong identity in exactly the
+  # case this exists to get right.
   local _me
-  if [ -n "${BASHPID:-}" ]; then _me="$BASHPID"
-  else _me="$(sh -c 'echo $PPID' 2>/dev/null || printf '%s' "$$")"; fi
+  case "${_GATE_LOCK_ID_METHOD:-pid}" in
+    bashpid) _me="${BASHPID:-$$}" ;;
+    ppid)    _me="$(exec sh -c 'echo $PPID' 2>/dev/null || printf '%s' "$$")" ;;
+    *)       _me="$$" ;;
+  esac
   [ "$_me" = "${_GATE_LOCK_CREATED_BY:-}" ] || return 0
   if ! _gate_lock_release; then
     # A FAILED RELEASE MUST REACH THE EXIT STATUS. Returning non-zero from an EXIT trap does not
