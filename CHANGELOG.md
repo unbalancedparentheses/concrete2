@@ -10,6 +10,50 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### The Repository Lock Had No Lifetime
+
+_Gate infrastructure, 2026-09-05. Landed at `a6e4ab68`, `f6bc158b`, `be924d68`, `f90cb4be`._
+
+CI had been red on `main` since 2026-08-23 across six job families. The cause was one defect:
+`_gate_lock_acquire` took the repository lock and nothing gave it back. Release was explicit only,
+on the stated theory that gates set their own trap — of the 167 gates that take the lock, 137
+install no trap at all. The first gate in a run that rebuilt kept the lock, every later lock-taking
+gate was refused, and aggregators counted each refusal as a failure. The gates were never broken:
+each passed standalone, and all eleven of a failing aggregate passed once the lock was cleared
+between them.
+
+The repair is a lifetime, not a cleanup call. The lock is armed for release at the moment of
+creation so it covers the whole run — releasing it when the rebuild finishes would reopen the
+window while a gate is still collecting evidence about the binary it just verified. Only the
+creating shell instance arms and releases, so a re-entrant child cannot release its parent's lock.
+`trap` is wrapped so a later gate trap composes with the release instead of replacing it: 29 gates
+install theirs after acquiring and would have silently lost it.
+
+Two adversarial reviews found ten further defects in that repair, each reproduced before being
+fixed: a plain subshell deleted its parent's lock (`$$` is shared, `BASHPID` is not); the macOS
+shell has no `BASHPID`, so the fallback silently reinstated that bug on the platform with an active
+job; a terminating signal released the lock and then let the gate keep running unlocked; the CI
+runner's deliberate fail-closed retention on interruption was reversed by composition; a failed
+release exited 0, because returning non-zero from an EXIT trap does not change the status; and
+composing with `;` let a cleanup ending in a comment comment out the release.
+
+`check_gate_lock` grew from 4 verdicts to 45. Reverting the library to the stranded implementation
+turns 14 of them red.
+
+With the leak gone, CI surfaced a genuine failure it had been masking. A portability gate reported
+"the binary still references /proc/self/exe — receipt issuance would refuse on macOS"; that
+conclusion about Concrete came from a fact about `libuv`, which Lean links — shared locally, static
+in CI. Concrete's own sources contain the string once, inside the docstring recording why it was
+removed. The check now tests Concrete's sources with controls in both directions.
+
+Also recorded: `grep -q` at the end of a pipeline is a false negative under `pipefail` — grep exits
+at the first match, the producer dies of SIGPIPE, and a successful match reads as a failed
+pipeline. It bit twice while writing these controls. 64 files under `scripts/tests` contain the
+pattern; a canonical sweep is carried as follow-up.
+
+Result: six failing CI job families reduced to one, which is a pre-existing macOS-only failure
+whose evidence the smoke batch had been discarding.
+
 ### Generated Evidence Freshness And Dormant-Gate Repair
 
 _Compiler evidence and CI gates, 2026-09-02._
