@@ -636,6 +636,15 @@ echo "=== injected live cases: two defensive branches the corpus cannot exercise
 # pinned identity denominators for no extra evidence. The injection runs the PRODUCTION generator
 # over a REAL input boundary.
 INJ="$TMP/inj"; rm -rf "$INJ"; mkdir -p "$INJ"
+# Compare the root targets against THEIR BYTES AT INJECTION START. `git diff --quiet` cannot
+# answer whether an injection escaped: it also reports an intentional change that predated this
+# gate (for example, a freshly regenerated classification table). Pin the two root locations the
+# injections could reach instead, so an already-dirty but stable tree is not blamed on this test.
+ROOT_CT="$ROOT_DIR/Concrete/Proof/ClassificationTable.lean"
+ROOT_PROBE="$ROOT_DIR/examples/zz_postcond_probe"
+ROOT_PROBE_ABSENT=0
+cp -f "$ROOT_CT" "$INJ/root-classification.before" 2>/dev/null || true
+[ ! -e "$ROOT_PROBE" ] && ROOT_PROBE_ABSENT=1
 cp -a "$ROOT_DIR/." "$INJ/repo" 2>/dev/null || true
 IW="$INJ/repo"
 if [ ! -d "$IW/examples" ] || [ ! -f "$IW/scripts/gen/attestation_manifest.sh" ]; then
@@ -744,12 +753,13 @@ PY
     fi
   fi
 
-  # ---- 3. the real corpus is untouched ----------------------------------------------------------
-  if git -C "$ROOT_DIR" diff --quiet -- Concrete/Proof/ClassificationTable.lean 2>/dev/null \
-     && [ ! -d "$ROOT_DIR/examples/zz_postcond_probe" ]; then
-    ok "the real corpus is byte-identical afterwards (both injections stayed in the copy)"
+  # ---- 3. the real injection targets are untouched ----------------------------------------------
+  if [ -f "$INJ/root-classification.before" ] \
+     && cmp -s "$INJ/root-classification.before" "$ROOT_CT" \
+     && [ "$ROOT_PROBE_ABSENT" -eq 1 ] && [ ! -e "$ROOT_PROBE" ]; then
+    ok "the real injection targets are byte-identical afterwards (both injections stayed in the copy)"
   else
-    no "the real corpus changed — an injection escaped its copy"
+    no "a real injection target changed — an injection escaped its copy or its baseline was not clean"
   fi
   rm -rf "$INJ"
 fi

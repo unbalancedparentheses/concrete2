@@ -9,10 +9,10 @@
 #
 # TWO DENOMINATORS, RECONCILED. They are different things and quoting either alone misleads:
 #
-#   * 44 STORED LINKS — `#[proof_fingerprint]` annotations across the selected migration
+#   * 43 STORED LINKS — `#[proof_fingerprint]` annotations across the selected migration
 #     examples. This is what `check_v1_fingerprint_golden.sh` establishes and what the step-7
-#     migration must rewrite, one by one.
-#   * 64 UNIQUE SUBJECTS — the callables in the files those links live in. The hand-run number
+#     migration rewrote, one by one (44 before one misattached proof claim was deleted).
+#   * SUBJECT BLOCKS / UNIQUE SUBJECTS — the callables in the files those links live in. The hand-run number
 #     recorded in the roadmap was 39, from a narrower file set (`examples/*/src/main.con` only);
 #     that is the third way this denominator has been miscounted, and the reason the count now
 #     comes from a gate instead of a memory.
@@ -40,20 +40,18 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 # The migration set is defined by where links are STORED, not by a directory listing: a fixture
 # that never had a link has nothing to migrate, and including it would inflate the denominator
-# the same way the raw `grep examples/` count did (53) against the normative one (44).
+# the same way the raw `grep examples/` count did (53) against the normative one (43 today).
 # The pattern and file set come from `lib/fingerprints.sh`, which is the ONE definition. They
 # used to be duplicated text in two gates — same characters, not the same definition, so either
 # could drift alone and the two would measure different populations while both reporting a count.
-mapfile -t SRCS < <(grep -rlE "$FP_PATTERN" examples/ 2>/dev/null | sort -u)
+mapfile -t SRCS < <(fp_files)
 
 # Subject IDENTITIES, deduplicated — not a count of report blocks. The same subject can appear
 # in more than one file's report (an import surfaces in both), and counting blocks reported it
 # twice. "64 unique subjects" was therefore overstated: it was 64 block occurrences.
-LINKS=0; DIGESTED=0; REFUSED=0; MISMATCH=""
+LINKS="$(fp_count)"; DIGESTED=0; REFUSED=0; MISMATCH=""
 SEEN_FILE="$(mktemp)"; DIG_FILE="$(mktemp)"; trap 'rm -f "$SEEN_FILE" "$DIG_FILE"' EXIT
 for src in "${SRCS[@]}"; do
-  n="$(grep -cE "$FP_PATTERN" "$src" || true)"
-  LINKS=$((LINKS + n))
   rep="$("$BIN" "$src" --report subject-facts 2>/dev/null || true)"
   # Walk the report block by block: a subject header, then its own bodyV2 and freshness lines.
   # Correlating by position within the block is what makes this per-subject rather than a sum.
@@ -69,7 +67,7 @@ for src in "${SRCS[@]}"; do
         fi
         cur="$line"; body=""; fresh="" ;;
       *"shadow bodyV2:"*) body="$line" ;;
-      *"subjectFreshness:"*) case "$line" in *"current would be v2:"*) fresh="$line" ;; esac ;;
+      "  subject digest: "*) fresh="$line" ;;
     esac
   done <<< "$rep"
   if [ -n "$cur" ]; then
@@ -92,7 +90,7 @@ echo "  stored links: $LINKS   unique subjects: $SUBJECTS"
 echo "  subjects with a complete V2 digest: $DIGESTED   structurally refused: $REFUSED"
 
 # The normative link denominator, cross-checked against the V1 golden gate rather than restated.
-EXPECT_LINKS=44
+EXPECT_LINKS="$FP_EXPECTED_COUNT"
 [ "$LINKS" = "$EXPECT_LINKS" ] \
   && ok "stored links = $EXPECT_LINKS (matches the V1 golden denominator)" \
   || no "stored links = $LINKS, expected $EXPECT_LINKS — the migration denominator moved; update this gate AND the roadmap together, or one will quote a number the other has abandoned"
@@ -116,7 +114,7 @@ EXPECT_LINKS=44
   || no "$REFUSED migration subject(s) refused: those links cannot migrate until the producer describes their constructs"
 
 # === THE EXACT JOIN (compiler-produced, one row per link) ====================================
-# Everything above is CO-OCCURRENCE: 44 links live in files containing N digestible subjects.
+# Everything above is CO-OCCURRENCE: 43 links live in files containing N digestible subjects.
 # That admits a link which is dangling, duplicated, or attached to the wrong function, because
 # nothing associated a link with an owner. `--report migration-manifest` is the join, produced
 # by the compiler, which is the only layer that knows both sides.
@@ -138,7 +136,7 @@ for src in "${SRCS[@]}"; do
 "
 done
 # DEDUPLICATED. An imported function appears in several files' manifests, so summing per-file
-# row counts double-counts it — and the sum happened to reach exactly 44, which made the gap
+# row counts double-counts it — and the sum once happened to reach exactly 44, which made the gap
 # below invisible. Distinct rows is the only count that means anything here.
 MROWS="$(printf '%s' "$MROWS" | sort -u)"
 MLINKS="$(printf '%s' "$MROWS" | grep -c " | owner=" || true)"
@@ -167,84 +165,6 @@ echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  dup
 [ "$MLINKS" = "$LINKS" ] \
   && ok "every stored link has a manifest row ($MLINKS = $LINKS)" \
   || no "manifest has $MLINKS rows for $LINKS stored links — $((LINKS - MLINKS)) link(s) missing from the authoritative inventory"
-
-# Every subject either digests or is explicitly refused. Silence is the failure mode: a subject
-# that is neither would be migrating against nothing.
-[ "$((DIGESTED + REFUSED))" = "$SUBJECTS" ] \
-  && ok "every subject is accounted for: $DIGESTED digested + $REFUSED refused = $SUBJECTS" \
-  || no "$((SUBJECTS - DIGESTED - REFUSED)) subject(s) neither digested nor refused — unaccounted, which is how a link migrates against nothing"
-
-# The per-subject correlation, which the aggregate version could not see.
-[ -z "$MISMATCH" ] \
-  && ok "no subject disagrees with its own body line (per-subject, not summed)" \
-  || no "subject/body disagreement:$MISMATCH"
-
-# The fail-closed body requirement must cost the migration nothing. If this ever fires, some
-# link cannot migrate until its construct becomes describable — which is a real blocker and
-# should be loud, not discovered during step 7.
-[ "$REFUSED" = "0" ] \
-  && ok "no migration subject is structurally refused — fail-closed costs this set nothing" \
-  || no "$REFUSED migration subject(s) refused: those links cannot migrate until the producer describes their constructs"
-
-# === THE EXACT JOIN (compiler-produced, one row per link) ====================================
-# Everything above is CO-OCCURRENCE: 44 links live in files containing N digestible subjects.
-# That admits a link which is dangling, duplicated, or attached to the wrong function, because
-# nothing associated a link with an owner. `--report migration-manifest` is the join, produced
-# by the compiler, which is the only layer that knows both sides.
-#
-# The shell measurement above stays as a coarse regression check; these assertions are the
-# authoritative ones.
-echo "=== exact link ownership ==="
-MROWS=""
-for src in "${SRCS[@]}"; do
-  # SOURCE LOCATION FIRST, which the row schema specified from the start and I omitted. Without
-  # it two files defining the same callable id — `elf_header/src/main.con` and its
-  # `main_drifted.con` sibling — produce identical rows that deduplicate into one, silently
-  # losing a link that has its own stored fingerprint and must migrate separately.
-  #
-  # That is what the "9 missing links" were: not absent, MERGED. A link key without its source
-  # location cannot distinguish a duplicate from two distinct links that happen to name the same
-  # callable.
-  MROWS="$MROWS$("$BIN" "$src" --report migration-manifest 2>/dev/null | grep " | owner=" | sed "s|^|$src \| |" || true)
-"
-done
-# DEDUPLICATED. An imported function appears in several files' manifests, so summing per-file
-# row counts double-counts it — and the sum happened to reach exactly 44, which made the gap
-# below invisible. Distinct rows is the only count that means anything here.
-MROWS="$(printf '%s' "$MROWS" | sort -u)"
-MLINKS="$(printf '%s' "$MROWS" | grep -c " | owner=" || true)"
-MUNOWNED="$(printf '%s' "$MROWS" | grep -c "owner=NONE" || true)"
-MNOSUBJ="$(printf '%s' "$MROWS" | grep -c "| no_subject$" || true)"
-MSUBJ="$(printf '%s' "$MROWS" | grep -oE "owner=[^ ]+" | grep -v "owner=NONE" | sort -u | wc -l | tr -d ' ')"
-# Distinct LINKS are keyed by (source file, callable) — distinct SUBJECTS by callable alone.
-# Duplicate = the same (function, spec) pair twice. The same FUNCTION twice is legitimate — a
-# callable can be proved against more than one specification, and each link migrates separately.
-MDUPES="$(printf '%s' "$MROWS" | grep -oE "^[^ ]+ \| [^ ]+ \| owner=[^ ]+ \| stored=[^ ]+ \| spec=[^ ]+" | sort | uniq -d | wc -l | tr -d ' ')"
-
-echo "  manifest rows: $MLINKS  unowned: $MUNOWNED  distinct owners: $MSUBJ  duplicate link keys: $MDUPES"
-
-# Every stored link must appear as a row. A link the manifest cannot see is one the migration
-# will not migrate, and it would be counted nowhere.
-# KNOWN GAP, ratcheted rather than asserted green. 36 distinct rows exist for 44 stored links:
-# EIGHT links have no manifest row, so the compiler's inventory cannot see them. The co-occurrence
-# checks above all pass — this is precisely the class of defect the exact join was built to find,
-# and it was invisible while per-file rows were summed to a coincidental 44.
-#
-# Step 7 CANNOT migrate a link the manifest does not contain: it would be counted nowhere, remain
-# on its v1 value, and read as successfully migrated because nothing enumerated it. So this is a
-# blocker for the migration, not a cosmetic gap.
-# 35, not 36. The determinism repair COLLAPSED the duplicated key — one callable had two rows
-# with different digests, and it now has one — so the old floor of 36 was counting an inflated
-# row. Lowering it is not a relaxation: the same links are represented, by one fewer row.
-MANIFEST_ROWS_TODAY=35
-if [ "$MLINKS" = "$LINKS" ]; then
-  ok "every stored link has a manifest row ($MLINKS = $LINKS) — GAP CLOSED, tighten this to an equality assertion"
-elif [ "$MLINKS" -ge "$MANIFEST_ROWS_TODAY" ]; then
-  ok "manifest rows $MLINKS of $LINKS stored links (known gap: $((LINKS - MLINKS)) unaccounted; floor $MANIFEST_ROWS_TODAY)"
-  echo "       BLOCKS STEP 7: a link with no manifest row migrates against nothing and is counted nowhere."
-else
-  no "manifest rows fell to $MLINKS (floor $MANIFEST_ROWS_TODAY) — MORE links became invisible to the inventory"
-fi
 
 # An UNOWNED row is a dangling link: a stored fingerprint whose function is not in ProofCore.
 # It is emitted rather than dropped precisely so this can fail.
@@ -307,22 +227,19 @@ else
   ok "the subject digest takes no source location"
 fi
 
-# === CLOSURE GATE (separate from the ratchets above) =========================================
-# The assertions above are RATCHETS: they stop things getting worse while known blockers stand.
-# This is the completion condition, and it is expected to FAIL until step 1 is genuinely done.
-# Kept separate so "9/0 green" can never be read as "the manifest is finished" — a ratchet and a
-# completion gate answer different questions, and merging them loses the second.
-echo "=== closure (required state before dependency roots and receipts resume) ==="
+# Render the strict assertions above as one closure state as well. This is deliberately derived
+# from the same measurements: the old duplicated closure/ratchet block drifted after migration and
+# printed "CLOSED 44/44" beside a failing 43-link measurement.
+echo "=== closure state ==="
 CLOSED=1
 [ "$MLINKS" = "$LINKS" ] || { echo "  OPEN  missing links: $((LINKS - MLINKS)) (required 0)"; CLOSED=0; }
 [ "$MUNOWNED" = "0" ]    || { echo "  OPEN  unowned links: $MUNOWNED (required 0)"; CLOSED=0; }
 [ "$MDUPES" = "0" ]      || { echo "  OPEN  nondeterministic subjects: $MDUPES (required 0)"; CLOSED=0; }
 [ "$MNOSUBJ" = "0" ]     || { echo "  OPEN  links with no subject: $MNOSUBJ (required 0)"; CLOSED=0; }
 if [ "$CLOSED" = "1" ]; then
-  echo "  CLOSED  44/44 accounted, 0 unowned, 0 nondeterministic — dependency roots may resume"
+  echo "  CLOSED  $MLINKS/$LINKS accounted, 0 unowned, 0 nondeterministic"
 else
-  echo "  NOT CLOSED — dependency-root integration and receipt issuance stay PAUSED."
-  echo "  This is the intended state, not a regression: the ratchets above are green and this is not."
+  echo "  NOT CLOSED — the strict assertions above name the migration regression."
 fi
 
 echo ""

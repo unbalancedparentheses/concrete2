@@ -10,6 +10,29 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Generated Evidence Freshness And Dormant-Gate Repair
+
+_Compiler evidence and CI gates, 2026-09-02._
+
+Classification refresh now owns the complete generated surface it advertises: the source-linked
+theorem inventory, classification rows, external table rows and scoped external rows are derived by
+one command before either file is installed, and are reproducible under `--check`. The classification
+freshness gate uses that same producer instead of naming a partial remedy. This refreshed stale package/table
+bindings without deleting the five live theorem links that an earlier truncated diff had appeared to
+blame.
+
+The stricter CI-reachability analysis then exposed two genuinely dormant gates. Classification
+freshness and the migration manifest are now direct workflow steps. The latter was red: it retained
+two conflicting exact-join implementations, parsed an obsolete V2 report phrase, pinned the retired
+44-link count locally, and printed `CLOSED 44/44` while measuring 43. It now consumes the same
+43-link population pin as the V1 golden gate and reports `MIGRATION-MANIFEST: PASS=12 FAIL=0` with
+43/43 links, 52/52 subjects accounted, and zero unowned, subject-less or nondeterministic rows.
+
+The attestation-manifest injection control also stopped using pre-existing Git dirtiness as evidence
+that an injection escaped. It now compares the actual root targets byte-for-byte from the start and
+end of the injection, retaining the escape check while allowing an intentional generated-table
+refresh to be validated before commit.
+
 ### Post-R-0004 Mutation Harness Hardening And Diagnostic Census
 
 _Harness and documentation, 2026-08-21/22. Causal harness landed at `898d9a7b`; typed campaign

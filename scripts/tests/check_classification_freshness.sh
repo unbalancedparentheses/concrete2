@@ -84,11 +84,24 @@ if lake env lean scripts/gen/classifications.lean > "$FRESH" 2>&1; then
   elif [ "$CHECKED" = "$LIVE" ]; then
     ok "the checked-in classification table matches a fresh derivation ($(printf '%s\n' "$LIVE" | wc -l) rows)"
   else
-    no "STALE classification table — regenerate with scripts/gen/refresh_classifications.sh. A row whose theorem digest moved types edges from a theorem that no longer exists."
+    no "STALE classification table — regenerate with scripts/gen/refresh_classifications.sh. A changed theorem artifact or dependency identity must move the checked-in row."
     diff <(printf '%s\n' "$CHECKED") <(printf '%s\n' "$LIVE") | head -6 | sed 's/^/      /'
   fi
 else
   no "the classification generator failed to run — table freshness is unverified"
+fi
+
+# The command named by the failure above must be the producer that actually writes every generated
+# block. It once refreshed only `sourceLinkedThms`, printed success, and left the trusted table
+# untouched. `--check` derives both files through the production refresh path and compares their
+# complete bytes, including external and external-scoped rows the row-only check above does not see.
+echo "=== the advertised refresh command owns every generated block ==="
+REFRESH_LOG="$TMP/refresh-check.log"
+if bash scripts/gen/refresh_classifications.sh --check > "$REFRESH_LOG" 2>&1; then
+  ok "refresh_classifications.sh --check reproduces the theorem inventory and all three table blocks"
+else
+  no "refresh_classifications.sh --check found generated output the checked-in files do not carry"
+  sed -n '1,12p' "$REFRESH_LOG" | sed 's/^/      /'
 fi
 
 

@@ -4831,11 +4831,11 @@ non-determinism is exactly the sentence someone would quote to justify not trust
 >    visited two constants differently would report drift that did not happen. Sorting hides
 >    order and NOT a swap — exchanging two tables' digests changes which name carries which
 >    value, gated in both directions.
-> 2. **Clean the closed-manifest gate before building on it.** `check_migration_manifest.sh`
->    currently contains the exact-join block twice: the first is the new 44/44 equality closure;
->    the second retains the obsolete 35-row ratchet and old nondeterminism narrative. It still
->    exits green, but one executable gate must not carry two conflicting definitions of its own
->    state. Remove the duplicate historical block and retain one equality-based closure section.
+> 2. **[done 2026-09-02] Clean the closed-manifest gate before building on it.**
+>    `check_migration_manifest.sh` now has one equality-based closure section. The obsolete duplicate
+>    35-row ratchet was removed, its subject parser follows the live V2 report, and both migration
+>    gates consume the shared 43-link population pin. The registered gate is 12/0: 43/43 links,
+>    52/52 subjects accounted, 0 unowned, 0 without subjects and 0 nondeterministic keys.
 > 3. **Integrate slice 6** — feed the typed `DepNode` graph into the deterministic dependency-root
 >    builder; combine compiler-produced edges with Lean-side theorem classification; handle direct,
 >    transitive and recursive dependencies; bind dynamic table access to the WHOLE table rather
@@ -6100,7 +6100,7 @@ snapshot explains the work that remained on that date; it is not current status.
 | contract-witness precision | **DEFERRED 2026-08-16 to the typed-contract milestone, and REMOVED from R-0004's closure list.** Contract/body witness kinds cannot substitute for each other; a contract request conservatively binds exact implementation identity, which is strictly stronger than the contract question, so nothing is unsound — it is simply not contract composition. Deferred on this roadmap's own dependency order, not on the absence of a corpus case: evidence-affecting language features are frozen until Slice 8 closes, the typed contract substrate lands after R-0004, and binding evidence to today's untyped `requires`/`ensures` encoding would freeze an incomplete internal representation, which the same order refuses. **Tripwire:** `check_dependency_edges.sh` measures the corpus at 0 contract dependency edges (45 body, 1 trusted) and goes RED if one appears, so the deferral cannot go stale silently. |
 | friendly claims require valid receipts | **NOT STARTED IN PRODUCTION** — the private structural core now binds dependency root, theorem artifact and trust boundaries in addition to subject/table/environment material, and every field participates in currency. No production-derived successful replay mints, stores or authorizes a receipt; no status consumes one. |
 | legacy/schema migration | **MANIFEST CLOSED, REPLAY/MIGRATION NOT STARTED** — `needs_recheck` vocabulary and exact 44-row input exist; no replay-backed V2 rewrite or authoritative activation yet |
-| exact migration manifest | **CLOSED 44/44** — compiler emits one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. Cleanup owed: remove the duplicated obsolete exact-join/35-row-ratchet block from `check_migration_manifest.sh` |
+| exact migration manifest | **CLOSED 44/44 at this historical snapshot** — compiler emitted one row per source link; 0 unowned, 0 without subject, 0 nondeterministic. **Post-closure cleanup completed 2026-09-02:** the duplicated obsolete ratchet was removed; after deletion of the misattached claim the live registered gate is 12/0 at 43/43. |
 | repository replay into receipts | **NOT STARTED** |
 | reproducibility and weakening mutations | **PARTIAL** — project/path-independent material is 5/0 with content-mutation non-vacuity; repository-root/project-root, fresh checkout, cache and production receipt replay remain absent. |
 | run-completion integrity | **CLOSED 2026-08-16** — the fast suite writes a machine-readable summary with `completed=1`; death before the summary emits a banner and exits 97, distinct from assertion failures, so an absent summary cannot look green. |
@@ -7309,12 +7309,12 @@ now produces exactly one row per stored source link:
 source-location | callable-id | stored-v1 | selected-spec-id | current-v2 | disposition
 ```
 
-The closure gate establishes 44/44 rows, 0 unowned, 0 links without subjects and 0
+The closure gate established 44/44 rows, 0 unowned, 0 links without subjects and 0
 nondeterministic keys, covering 33 distinct callable owners. Source location is repository-relative
-migration metadata only; it is absent from subject and receipt identity. One cleanup remains:
-`check_migration_manifest.sh` accidentally retains a second copy of the exact-join block with the
-obsolete 35-row ratchet and historical blocker prose. Remove that duplicate so the executable gate
-has one authoritative definition of closure before Slice 6 builds on it.
+migration metadata only; it is absent from subject and receipt identity. **Post-closure cleanup
+completed 2026-09-02:** the duplicate exact-join/obsolete 35-row ratchet was removed, the parser was
+updated to the live V2 subject report, and the live 43-link denominator is shared with the V1 golden
+gate rather than restated.
 
 **Slice 6 starting sequence, in order.** Recorded because the order is what keeps a partial
 consumer away from the `proved` decision path:

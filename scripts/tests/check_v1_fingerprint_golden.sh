@@ -100,8 +100,8 @@ stored="$(fp_count)"
 # It was repaired by DELETING THE CLAIM rather than attaching a different theorem — no theorem proves
 # that body, and substituting the nearest plausible one is the defect being repaired, not a fix. So
 # the population is genuinely one smaller, and the pin says so.
-[ "$stored" = "43" ] && okk "43 stored #[proof_fingerprint] values (V1 migration corpus; 44 before the retargeted link was deleted)" \
-  || note "expected 43 stored fingerprints, found $stored"
+[ "$stored" = "$FP_EXPECTED_COUNT" ] && okk "$FP_EXPECTED_COUNT stored #[proof_fingerprint] values (V1 migration corpus; 44 before the retargeted link was deleted)" \
+  || note "expected $FP_EXPECTED_COUNT stored fingerprints, found $stored"
 
 # (4) CROSS-VALIDATE the compiler's shortHash against the system SHA-256. Hashing
 # with shasum alone only checks the golden against itself.
@@ -125,5 +125,5 @@ if diff -u "$GOLDEN" "$TMP/current" > "$TMP/diff" 2>&1; then okk "$n V1 fingerpr
 else note "V1 BODY FINGERPRINTS CHANGED — V2 must be built ALONGSIDE V1"; head -20 "$TMP/diff" >&2; fi
 
 echo ""
-[ "$fail" = "0" ] && { echo "V1-FINGERPRINT-GOLDEN: PASS ($n extracted, 43 stored)"; exit 0; }
+[ "$fail" = "0" ] && { echo "V1-FINGERPRINT-GOLDEN: PASS ($n extracted, $FP_EXPECTED_COUNT stored)"; exit 0; }
 echo "V1-FINGERPRINT-GOLDEN: FAIL" >&2; exit 1

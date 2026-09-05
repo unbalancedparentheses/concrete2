@@ -19,6 +19,11 @@
 # its corpus went empty and the gate aborted — the precise failure this file's header predicts.
 FP_PATTERN='#\[proof_fingerprint\("(v2:)?[a-f0-9]+"\)\]'
 
+# The pinned migration population. Keep the value beside the population definition so the V1
+# golden and migration-manifest gates cannot silently certify different denominators.
+# 44 -> 43 on 2026-08-18 when the misattached proof_pressure.validate_header claim was deleted.
+FP_EXPECTED_COUNT=43
+
 # Files under `examples/` containing at least one stored link.
 fp_files() { grep -rlE "$FP_PATTERN" examples/ 2>/dev/null | sort -u; }
 

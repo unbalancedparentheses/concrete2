@@ -548,9 +548,15 @@ jobs:
       - name: "Gate lock (a lock is refused, never reclaimed on a dead creator PID)"
         run: bash scripts/tests/check_gate_lock.sh
 
-      # REGISTERED 2026-09-02. These four existed, passed, and were run by nothing. The registration
+      # REGISTERED 2026-09-02. These gates existed, passed, and were run by nothing. The registration
       # gate reported them reachable because their names appeared somewhere in a file CI runs — for
       # check_classification_freshness.sh, inside a comment saying the gate runs elsewhere.
+      - name: "Classification freshness (the checked-in theorem inventory and table match their canonical producer)"
+        run: bash scripts/tests/check_classification_freshness.sh
+
+      - name: "Migration manifest (every source proof link has one owned, deterministic migration row)"
+        run: bash scripts/tests/check_migration_manifest.sh
+
       - name: "Assumptions ledger (declared assumptions match the recorded set)"
         run: bash scripts/tests/check_assumptions.sh
 

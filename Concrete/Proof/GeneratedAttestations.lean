@@ -121,10 +121,10 @@ def shaFns_5edd5267_big_sigma0 : Except DefinitionIdentityRefusal DefinitionIden
   DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "big_sigma0" "2fc56fcc1fe1179b08d9634389f4e6da"
 def shaFns_5edd5267_big_sigma1 : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "big_sigma1" "bf9e5f67627630de3db89a6a505259bb"
-def shaFns_5edd5267_block_to_words_at : Except DefinitionIdentityRefusal DefinitionIdentity :=
-  DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "block_to_words_at" "db8c024f5788e80b30e6997a0e84f903"
 def shaFns_5edd5267_block_to_words : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "block_to_words" "2566f0877ae2ddb261ffb5ffe3d745ff"
+def shaFns_5edd5267_block_to_words_at : Except DefinitionIdentityRefusal DefinitionIdentity :=
+  DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "block_to_words_at" "db8c024f5788e80b30e6997a0e84f903"
 def shaFns_5edd5267_ch : Except DefinitionIdentityRefusal DefinitionIdentity :=
   DefinitionIdentity.of? "5edd526793ddf6eace21bd5848c8f14b" "hmac_sha256" "ch" "3e315e17b9a1420dc0c9c4988af52511"
 def shaFns_5edd5267_maj : Except DefinitionIdentityRefusal DefinitionIdentity :=
