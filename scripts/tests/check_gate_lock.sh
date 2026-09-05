@@ -62,6 +62,15 @@ rm -rf "$SB/.gate.lock"
   || no "a free tree could not acquire the lock — the lock is broken shut"
 
 # THE REGRESSION THIS GATE EXISTS FOR. A dead creator must NOT be reclaimed.
+# THE HELD STATE IS CONSTRUCTED, NOT INHERITED FROM THE PROBE ABOVE.
+#
+# These controls used to write an owner file into the lock directory the PREVIOUS probe had left
+# behind — which only existed because a gate that acquired the lock LEAKED it. When that leak was
+# fixed (it was the cause of FAST-SURFACE-GATES 8/3 and weeks of red CI) the directory was gone, the
+# owner write went nowhere, and these controls silently began testing a FREE tree: the dead-creator
+# control then reported the lock had been "RECLAIMED" when nothing had been held at all.
+# A control whose precondition is another control's bug fails the moment the bug is fixed.
+mkdir -p "$SB/.gate.lock"
 printf 'pid=999999\ncmd=dead_creator.sh\n' > "$SB/.gate.lock/owner"
 R="$(probe)"
 if [ "$R" = "REFUSED" ]; then
@@ -77,6 +86,7 @@ grep -q 'creator pid 999999 is dead' "$TMP/err" \
   || no "the refusal does not report creator liveness — the operator cannot judge the situation"
 
 # A live creator must also be refused, and for a plainer reason.
+mkdir -p "$SB/.gate.lock"
 printf 'pid=%s\ncmd=live.sh\n' "$$" > "$SB/.gate.lock/owner"
 [ "$(probe)" = "REFUSED" ] \
   && ok "a lock whose creator is ALIVE is refused" \
@@ -179,6 +189,203 @@ rm -rf "$SB/.gate.lock"
 rm -rf "$SB/.gate.lock"
 
 echo ""
+echo "=== the lock's LIFETIME is the run's lifetime ==="
+# THE REGRESSION THIS SECTION EXISTS FOR. Release used to be entirely explicit, on the stated theory
+# that "gates set their own trap". MEASURED: 137 of the 167 gates that take this lock install no EXIT
+# trap at all, and 29 more install one AFTER acquiring — which would silently replace a release armed
+# at acquisition. So the first gate in a run that actually rebuilt kept the lock forever, every later
+# lock-taking gate refused, and aggregators counted each refusal as a FAILURE: FAST-SURFACE-GATES 8/3
+# and weeks of red CI, produced entirely by the leak.
+#
+# Every probe below runs in the sandbox tree, never against the repository's own lock.
+mkdir -p "$SB"
+_mkprobe() { printf '%s\n' "$2" > "$SB/$1"; }
+_held()   { [ -d "$SB/.gate.lock" ]; }
+_clear()  { rm -rf "$SB/.gate.lock"; }
+_run()    { ( cd "$SB" && env -u CONCRETE_GATE_LOCK bash "$1" >"$TMP/out" 2>"$TMP/err" ); }
+
+_mkprobe ok.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+exit 0'
+_clear; _run ok.sh; rc=$?
+{ [ "$rc" = "0" ] && ! _held; } \
+  && ok "a gate that acquires and SUCCEEDS leaves no lock" \
+  || no "lock survived a successful gate (rc=$rc held=$(_held && echo yes || echo no))"
+
+_mkprobe bad.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+exit 3'
+_clear; _run bad.sh; rc=$?
+{ [ "$rc" = "3" ] && ! _held; } \
+  && ok "a gate that acquires and FAILS leaves no lock, and keeps its exit code" \
+  || no "lock survived a failing gate, or its exit code changed (rc=$rc)"
+
+# TWO SEQUENTIAL LOCK-TAKING GATES. This is the aggregate failure in miniature: under the leak the
+# second could never acquire.
+_clear; _run ok.sh; a=$?; _run ok.sh; b=$?
+{ [ "$a" = "0" ] && [ "$b" = "0" ] && ! _held; } \
+  && ok "two lock-taking gates run in sequence and BOTH acquire" \
+  || no "the second sequential gate could not acquire (first=$a second=$b)"
+
+# A GATE'S OWN CLEANUP IS PRESERVED, whether it is installed before or after the acquisition.
+_mkprobe trap_before.sh 'source scripts/tests/lib/fresh.sh
+trap "echo CLEANUP > cleanup.marker" EXIT
+_gate_lock_acquire || exit 9
+exit 0'
+_clear; rm -f "$SB/cleanup.marker"; _run trap_before.sh
+{ [ -f "$SB/cleanup.marker" ] && ! _held; } \
+  && ok "a cleanup trap installed BEFORE the acquisition still runs, and the lock is released" \
+  || no "trap-before-acquire: cleanup=$([ -f "$SB/cleanup.marker" ] && echo ran || echo lost) lock=$(_held && echo held || echo free)"
+
+# THE 29-GATE CASE, and the one a release armed at acquisition would have silently lost.
+_mkprobe trap_after.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+trap "echo CLEANUP > cleanup.marker" EXIT
+exit 0'
+_clear; rm -f "$SB/cleanup.marker"; _run trap_after.sh
+{ [ -f "$SB/cleanup.marker" ] && ! _held; } \
+  && ok "a cleanup trap installed AFTER the acquisition runs AND does not clobber the release" \
+  || no "trap-after-acquire: cleanup=$([ -f "$SB/cleanup.marker" ] && echo ran || echo lost) lock=$(_held && echo HELD || echo free)"
+
+# A RESET DROPS THE GATE'S CLEANUP, NOT THE REPOSITORY LOCK.
+_mkprobe trap_reset.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+trap "echo CLEANUP > cleanup.marker" EXIT
+trap - EXIT
+exit 0'
+_clear; rm -f "$SB/cleanup.marker"; _run trap_reset.sh
+{ [ ! -f "$SB/cleanup.marker" ] && ! _held; } \
+  && ok "'trap - EXIT' drops the gate's own cleanup but still releases the lock" \
+  || no "trap reset: cleanup=$([ -f "$SB/cleanup.marker" ] && echo ran || echo dropped) lock=$(_held && echo HELD || echo free)"
+
+# TERMINATING SIGNALS. SIGKILL is excluded on purpose and asserted below.
+# `sleep 60 & wait` RATHER THAN `sleep 60`. Bash defers a trapped signal until the current
+# FOREGROUND command finishes, so a plain `sleep 60` would swallow SIGTERM for a full minute and the
+# control would time out instead of observing the release. Waiting on a background child lets the
+# trap run at once.
+_mkprobe hold.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+echo ready > ready.marker
+sleep 60 &
+wait $!'
+for sig in TERM INT HUP; do
+  _clear; rm -f "$SB/ready.marker"
+  # `exec` so $! is the gate process itself. Without it the pid is the wrapping subshell, and a
+  # signal sent there never reaches the shell that holds the lock — SIGTERM and SIGHUP appeared not
+  # to release while SIGINT did, purely because INT reached the group and the others did not.
+  ( cd "$SB" && exec env -u CONCRETE_GATE_LOCK bash hold.sh >/dev/null 2>&1 ) & pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -f "$SB/ready.marker" ] && break; sleep 0.2; done
+  if [ ! -f "$SB/ready.marker" ]; then
+    no "SIG$sig: the probe never acquired, so this control proves nothing"
+    kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  else
+    kill -"$sig" "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    _held && no "SIG$sig did not release the lock" || ok "SIG$sig releases the lock"
+  fi
+done
+
+# THE STATED LIMIT, ASSERTED so that a change to it is noticed rather than assumed.
+_clear; rm -f "$SB/ready.marker"
+# `exec` so $! is the gate process itself. Without it the pid is the wrapping subshell, and a
+  # signal sent there never reaches the shell that holds the lock — SIGTERM and SIGHUP appeared not
+  # to release while SIGINT did, purely because INT reached the group and the others did not.
+  ( cd "$SB" && exec env -u CONCRETE_GATE_LOCK bash hold.sh >/dev/null 2>&1 ) & pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -f "$SB/ready.marker" ] && break; sleep 0.2; done
+if [ -f "$SB/ready.marker" ]; then
+  kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  _held \
+    && ok "SIGKILL leaves the lock — untrappable by anyone, so recovery stays an operator action" \
+    || no "SIGKILL released the lock, which no trap can do: the lifetime mechanism is not what it claims"
+else
+  no "the SIGKILL limit control never acquired, so it proves nothing"
+fi
+_clear
+
+# RE-ENTRANCY: a child must not release the lock its parent is still working under.
+_mkprobe child.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+exit 0'
+_mkprobe parent.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+bash child.sh || exit 8
+[ -d .gate.lock ] && echo PARENT_STILL_HOLDS > parent.marker || echo PARENT_LOST_LOCK > parent.marker
+exit 0'
+_clear; rm -f "$SB/parent.marker"; _run parent.sh
+m="$(cat "$SB/parent.marker" 2>/dev/null)"
+[ "$m" = "PARENT_STILL_HOLDS" ] \
+  && ok "a re-entrant child does NOT release its parent's lock" \
+  || no "the child released the parent's lock (marker=${m:-none}) — that hands the tree to a concurrent run"
+! _held \
+  && ok "...and the parent's own exit does release it" \
+  || no "the parent kept the lock after exiting"
+_clear
+
+# POSITIVE CONTROL FOR THE WHOLE SECTION: the lock must still EXCLUDE. If releasing on exit had
+# quietly turned the lock into a no-op, every control above would pass and the mechanism would be
+# gone. A live, non-ancestor holder must still refuse an independent run.
+_clear; rm -f "$SB/ready.marker"
+# `exec` so $! is the gate process itself. Without it the pid is the wrapping subshell, and a
+  # signal sent there never reaches the shell that holds the lock — SIGTERM and SIGHUP appeared not
+  # to release while SIGINT did, purely because INT reached the group and the others did not.
+  ( cd "$SB" && exec env -u CONCRETE_GATE_LOCK bash hold.sh >/dev/null 2>&1 ) & pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -f "$SB/ready.marker" ] && break; sleep 0.2; done
+if [ -f "$SB/ready.marker" ]; then
+  _run ok.sh; rc=$?
+  [ "$rc" != "0" ] \
+    && ok "CONTROL: an independent run is still REFUSED while a live holder has the lock" \
+    || no "an independent run acquired while another process held the lock — the lock excludes nothing"
+  kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+else
+  no "the exclusion control never acquired, so it proves nothing"
+fi
+_clear
+
+# THE DELIBERATE-HOLD OPT-OUT, EXERCISED IN BOTH DIRECTIONS.
+#
+# The mutation supervisor decides release by its own rule: a campaign group that is not proven empty
+# must KEEP the lock. An unconditional release composed into its EXIT trap would reverse that — and
+# did, until `_GATE_LOCK_SELF_MANAGED` was added. Both directions are asserted here, because an
+# opt-out nobody tests is an opt-out that silently becomes universal.
+_mkprobe selfmanaged.sh '_GATE_LOCK_SELF_MANAGED=1
+source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+trap "echo OWN_CLEANUP > cleanup.marker" EXIT
+exit 0'
+_clear; rm -f "$SB/cleanup.marker"; _run selfmanaged.sh
+{ [ -f "$SB/cleanup.marker" ] && _held; } \
+  && ok "a self-managed holder keeps its lock on exit, and its own cleanup still runs" \
+  || no "self-managed: cleanup=$([ -f "$SB/cleanup.marker" ] && echo ran || echo lost) lock=$(_held && echo held || echo RELEASED-against-its-decision)"
+# ...and it can still release explicitly, which is how the supervisor releases when it decides to.
+_mkprobe selfmanaged_rel.sh '_GATE_LOCK_SELF_MANAGED=1
+source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+_gate_lock_release
+exit 0'
+_clear; _run selfmanaged_rel.sh
+! _held \
+  && ok "...and an explicit release by a self-managed holder still works" \
+  || no "a self-managed holder could not release explicitly"
+# The opt-out must not leak into ordinary gates: the default is still automatic release.
+_clear; _run ok.sh
+! _held \
+  && ok "CONTROL: without the opt-out, the default is still automatic release" \
+  || no "the opt-out leaked into ordinary gates — every gate would strand its lock again"
+_clear
+
+# NO NEW PLATFORM AUTHORITY. The release path must not depend on flock or /proc; macOS has neither
+# flock nor /proc, and this repository has already taken an outage from a /proc dependency.
+# USE, NOT MENTION. The library's header explains WHY it cannot use flock ("flock is absent on
+# macOS"), so grepping for the word failed on the sentence documenting the constraint — the same
+# mention-versus-invocation error just fixed in the CI-reachability gate.
+if sed -E 's/(^|[[:space:]])#.*$/\1/' "$LIB" | grep -qE '(^|[^[:alnum:]_])flock([[:space:]]|$)'; then
+  no "the lock library CALLS flock, which macOS does not have"
+else
+  ok "the lock library requires no flock (checked against code, not comments)"
+fi
+awk '/^_gate_lock_release\(\)/,/^}/' "$LIB" | grep -q '/proc' \
+  && no "the RELEASE path reads /proc — it would behave differently on macOS" \
+  || ok "the release path requires no /proc"
+
 echo "=== the real repository lock was not touched ==="
 # COMPARED AGAINST A SNAPSHOT TAKEN BEFORE ANY PROBE RAN. Both branches of this used to call `ok`, so
 # the assertion could not fail — it would have reported success even if this gate had deleted or

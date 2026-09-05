@@ -124,6 +124,22 @@ _gate_lock_acquire() {
       return 1
     fi
     export CONCRETE_GATE_LOCK="$$:$_GATE_LOCK_DIR"
+    # THE LOCK'S LIFETIME IS THIS PROCESS'S LIFETIME, ARMED AT THE MOMENT OF CREATION.
+    #
+    # Release used to be entirely explicit, on the stated theory that "gates set their own trap".
+    # They do not: of the 167 gates that call require_fresh_binary, 137 install no EXIT trap at all.
+    # So the first gate in a run that actually rebuilt kept the lock forever, every later
+    # lock-taking gate refused, and the aggregator counted each refusal as a FAILURE —
+    # FAST-SURFACE-GATES 8/3, and weeks of red CI, produced entirely by this leak.
+    #
+    # Armed HERE rather than in require_fresh_binary, because the lock must cover the WHOLE gate
+    # run: releasing it when the rebuild finishes would reopen the window while the gate is still
+    # collecting evidence about the binary it just verified.
+    #
+    # `_GATE_LOCK_CREATED` distinguishes the creator from a re-entrant child that merely inherited a
+    # valid token. Only the creator arms, and only the creator releases.
+    _GATE_LOCK_CREATED=1
+    _gate_lock_arm_release
     return 0
   fi
 
@@ -186,6 +202,79 @@ _gate_lock_acquire() {
 # ONLY THE CREATOR MAY RELEASE. A re-entrant child that merely inherited the token must not remove a
 # lock its parent is still working under; that would hand the tree to a concurrent run, which is the
 # same failure as reclaiming on a dead PID.
+# THE RELEASE IS COMPOSED INTO EXISTING TRAPS, NEVER SUBSTITUTED FOR THEM.
+#
+# MEASURED before writing this: 29 of the gates that take this lock install their own `trap ... EXIT`
+# AFTER the acquisition. A release armed at acquisition would have been silently replaced in exactly
+# those 29 — present in the source, absent at runtime, which is the failure mode this repository
+# keeps finding in its own controls.
+#
+# So `trap` itself is wrapped. Any later installation on a terminating signal is COMPOSED with the
+# release rather than replacing it, and the gate's own cleanup runs FIRST, because it may still need
+# the tree the lock protects. Queries (`-p`, `-l`) and non-terminating signals — notably ERR, which
+# nine gates use — pass through untouched.
+#
+# SIGKILL cannot be trapped by anyone, so a lock stranded by `kill -9` still needs an operator. That
+# limit is stated rather than papered over, and the refusal message already says it.
+_GATE_LOCK_RELEASE_SNIPPET='_gate_lock_release >/dev/null 2>&1 || true'
+
+# ARMING COMPOSES TOO. A gate may already have installed its cleanup BEFORE it asked for the lock —
+# 1 of the 167 does exactly that — and arming by plain assignment DESTROYED that cleanup. The first
+# version of this function did, and the control for it failed on the first run: cleanup=lost.
+# Whatever is already installed runs first, then the release.
+# ONE COMPONENT MANAGES THIS LOCK DELIBERATELY, AND MUST BE ABLE TO SAY SO.
+#
+# The mutation supervisor decides whether to release by asking `supervisor_must_hold_lock`: when the
+# campaign's process group is not proven empty, it REFUSES to release, because handing the tree to
+# the next run while work may still be writing it is the failure the whole boundary exists to
+# prevent. Composing an unconditional release into its EXIT trap would have silently reversed that
+# decision — verified by running it: the supervisor's trap became
+# `{ _sup_exit_cleanup ; } ; _gate_lock_release`, releasing exactly when it had decided to hold.
+#
+# `_GATE_LOCK_SELF_MANAGED=1` opts out of both the arming and the composition. It is for components
+# that release on their own explicit rule, not for gates that would simply rather not clean up.
+_gate_lock_arm_release() {
+  [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ] && return 0
+  local s prev
+  for s in EXIT INT TERM HUP; do
+    prev="$(builtin trap -p "$s" 2>/dev/null)"
+    # `trap -p` prints: trap -- 'CMD' SIG   (nothing at all when no handler is installed)
+    if [ -n "$prev" ]; then
+      prev="${prev#*\'}"; prev="${prev%\'*}"
+    fi
+    if [ -n "$prev" ]; then
+      builtin trap "{ $prev ; } ; $_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
+    else
+      builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
+    fi
+  done
+}
+
+trap() {
+  case "${1:-}" in
+    -p|-l|"") builtin trap "$@"; return $? ;;
+  esac
+  local cmd="$1"; shift
+  [ "$#" -gt 0 ] || { builtin trap "$cmd"; return $?; }
+  local s rc=0 composed
+  for s in "$@"; do
+    case "$s" in
+      EXIT|0|INT|2|TERM|15|HUP|1)
+        if [ "${_GATE_LOCK_CREATED:-0}" != "1" ] || [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ]; then
+          builtin trap "$cmd" "$s" || rc=1
+        elif [ "$cmd" = "-" ]; then
+          # A reset drops the GATE'S cleanup, not the repository lock it holds on everyone's behalf.
+          builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" || rc=1
+        else
+          composed="{ $cmd ; } ; $_GATE_LOCK_RELEASE_SNIPPET"
+          builtin trap "$composed" "$s" || rc=1
+        fi ;;
+      *) builtin trap "$cmd" "$s" || rc=1 ;;
+    esac
+  done
+  return $rc
+}
+
 _gate_lock_release() {
   [ -n "${CONCRETE_GATE_LOCK:-}" ] || return 0
   local tok_pid tok_dir owner

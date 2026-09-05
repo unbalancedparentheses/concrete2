@@ -253,6 +253,13 @@ if [ "$_MUT_READ_ONLY_MODE" = "0" ] && [ -z "${CONCRETE_MUT_SNAPSHOT:-}" ]; then
     echo "       completed=1. Do not read it as describing this attempt." >&2
     exit 2
   }
+  # THIS DRIVER MANAGES THE LOCK ITSELF, and says so before the library can arm anything.
+  #
+  # The supervisor decides release by `supervisor_must_hold_lock`: a campaign group that is not
+  # proven empty must KEEP the lock, so the next run cannot start while work may still be writing
+  # the tree. The library's automatic release — correct for every ordinary gate, which otherwise
+  # strands the lock — would compose itself into this driver's EXIT trap and reverse that decision.
+  _GATE_LOCK_SELF_MANAGED=1
   . "$ROOT_DIR/scripts/tests/lib/fresh.sh" 2>/dev/null \
     || _fresh_fail "could not load scripts/tests/lib/fresh.sh — refusing to run unlocked."
   command -v _gate_lock_acquire >/dev/null 2>&1 \
