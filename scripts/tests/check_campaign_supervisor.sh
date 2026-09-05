@@ -357,6 +357,78 @@ _dig_declared="$(family_set_digest "$_declared")"
   && ok "an empty evidence tree does not digest as the declared set" \
   || no "the empty set digests as the declared set"
 
+echo "=== what was tested is verified, not taken on the child's word ==="
+# Nine fields described WHAT a qualification is about and nothing checked any of them. The three
+# kinds of check are asserted separately, because they are not equally strong and the code says so.
+_PV="$TMP/prov"
+cat > "$_PV" <<'PVEOF'
+executed_driver_sha=aaaa1111
+preamble_driver_sha=bbbb2222
+repo_driver_sha=cccc3333
+inventory_sha=dddd4444
+head=HEADSHA
+workspace_head=HEADSHA
+tracked_sha=TRACKED
+workspace_tracked_sha=TRACKED
+untracked_sha=UNTRACKED
+workspace_untracked_sha=UNTRACKED
+baseline_compiler_sha=0123456789abcdef0123456789abcdef
+compilers_tested=per-family-rebuilds
+PVEOF
+_pv() { candidate_provenance "$_PV" aaaa1111 bbbb2222 cccc3333 dddd4444; }
+[ -z "$(_pv)" ] \
+  && ok "a coherent record passes provenance (positive control)" \
+  || no "a coherent record was refused: $(_pv)"
+
+# OBSERVED: the supervisor minted these before exec'ing the snapshot, so a mismatch is exact.
+for _pair in "executed_driver_sha:executed_driver_mismatch" \
+             "preamble_driver_sha:preamble_driver_mismatch" \
+             "repo_driver_sha:repo_driver_mismatch" \
+             "inventory_sha:inventory_mismatch"; do
+  _k="${_pair%%:*}"; _want="${_pair##*:}"
+  _sav="$(sed -n "s/^$_k=//p" "$_PV")"
+  sed -i.bak "s|^$_k=.*|$_k=FORGED|" "$_PV" && rm -f "$_PV.bak"
+  case "$(_pv)" in
+    *"$_want"*) ok "a forged $_k is refused by comparison with the supervisor's own value" ;;
+    *) no "a forged $_k was accepted: $(_pv)" ;;
+  esac
+  sed -i.bak "s|^$_k=.*|$_k=$_sav|" "$_PV" && rm -f "$_PV.bak"
+done
+
+# CROSS-FIELD: the workspace is a copy of this repository at this commit, and no longer exists.
+for _pair in "workspace_head:workspace_head_differs" \
+             "workspace_tracked_sha:workspace_tracked_differs" \
+             "workspace_untracked_sha:workspace_untracked_differs"; do
+  _k="${_pair%%:*}"; _want="${_pair##*:}"
+  _sav="$(sed -n "s/^$_k=//p" "$_PV")"
+  sed -i.bak "s|^$_k=.*|$_k=DRIFTED|" "$_PV" && rm -f "$_PV.bak"
+  case "$(_pv)" in
+    *"$_want"*) ok "a workspace record that disagrees with the repository is refused ($_k)" ;;
+    *) no "$_k drift was accepted: $(_pv)" ;;
+  esac
+  sed -i.bak "s|^$_k=.*|$_k=$_sav|" "$_PV" && rm -f "$_PV.bak"
+done
+
+# SHAPE: unrecoverable once the workspace is gone, so only well-formedness is claimed.
+for _bad in unknown absent "" 0123456789abcdef 0123456789abcdef0123456789abcdeZ; do
+  sed -i.bak "s|^baseline_compiler_sha=.*|baseline_compiler_sha=$_bad|" "$_PV" && rm -f "$_PV.bak"
+  case "$(_pv)" in
+    *baseline_compiler_malformed*|*baseline_compiler_not_hex*)
+      ok "baseline_compiler_sha='${_bad:-<empty>}' is refused as malformed" ;;
+    *) no "baseline_compiler_sha='${_bad:-<empty>}' was accepted as a compiler digest" ;;
+  esac
+done
+sed -i.bak "s|^baseline_compiler_sha=.*|baseline_compiler_sha=0123456789abcdef0123456789abcdef|" "$_PV" && rm -f "$_PV.bak"
+sed -i.bak "s|^compilers_tested=.*|compilers_tested=something-new|" "$_PV" && rm -f "$_PV.bak"
+case "$(_pv)" in
+  *compilers_tested_unrecognised*) ok "an undeclared compilers_tested mode is refused, not recorded silently" ;;
+  *) no "an undeclared compilers_tested mode was accepted" ;;
+esac
+sed -i.bak "s|^compilers_tested=.*|compilers_tested=per-family-rebuilds|" "$_PV" && rm -f "$_PV.bak"
+[ -z "$(_pv)" ] \
+  && ok "...and the record still passes once restored (the checks above are not refusing everything)" \
+  || no "the restored record is still refused: $(_pv)"
+
 echo "=== the candidate must be THIS run's candidate ==="
 sed 's|^run_id=.*|run_id=THIS-RUN|' "$GOOD" | sed 's|^head=.*|head=THIS-HEAD|' > "$TMP/bound"
 [ -z "$(candidate_run_binding "$TMP/bound" THIS-RUN THIS-HEAD)" ] \
@@ -572,7 +644,7 @@ fi
 # that — 240 probes were silently lost from another gate the same way — and this round's review
 # found controls here that had been inert for rounds without anyone noticing. Changing the count is
 # a deliberate act, recorded in the same commit as the control that changed it.
-EXPECTED_CONTROLS=130
+EXPECTED_CONTROLS=145
 _total=$((PASS + FAIL))
 if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
   echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"

@@ -48,6 +48,23 @@ ts_head() { # root
 # THE CALLER MUST PROVE THE LIBRARY LOADED. Sourcing is not checked by `set -u`, and neither caller
 # uses `set -e`, so a missing or truncated library degrades silently into the empty-equals-empty
 # path above. Callers invoke this immediately after sourcing.
+# ONE DIGEST PRODUCER, USED BY BOTH ROLES.
+#
+# The child had its own `_d` and its own driver/inventory digests, and the supervisor had no way to
+# compute either — so it published the child's word for what driver and inventory had run. Two
+# producers of one fact is the defect class this repository keeps finding; here there would not even
+# have been two, because the supervisor had none and simply trusted.
+ts_digest() { # stdin -> 32 hex characters
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -c1-32
+  else shasum -a 256 | cut -c1-32; fi
+}
+ts_driver_digest() { # root -> digest of the campaign driver AS IT SITS IN THAT TREE
+  cat "$1/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | ts_digest
+}
+ts_inventory_digest() { # root -> digest of the driver's `add` inventory lines only
+  grep -h '^add "' "$1/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | ts_digest
+}
+
 ts_available() { echo "treestate-v1"; }
 ts_require() { # called by consumers right after sourcing
   local v fn

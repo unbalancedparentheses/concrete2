@@ -448,6 +448,72 @@ records_unkilled_or_unevidenced() {
 # looser version of the same thing, which meant the gate could pass while the consumer that actually
 # gates publication rejected the identical bytes — or, worse, the reverse. There is one decoder now,
 # and the gate calls it.
+# candidate_provenance <candidate> <exec-driver> <preamble> <repo-driver> <inventory> -> refusals
+#
+# NINE FIELDS DESCRIBED WHAT WAS TESTED AND NOTHING CHECKED ANY OF THEM.
+#
+# The supervisor verified the repository's head and tree digests and the family set, and took the
+# child's word for the rest: which driver bytes executed, which inventory they came from, what the
+# disposable workspace looked like, and which compiler was tested. Those are exactly the fields a
+# reader consults to know WHAT a qualification is about, and a field nothing reads can say anything.
+#
+# Three kinds of check, and the difference between them is stated because it is the whole point:
+#
+#   OBSERVED — the supervisor computed the value itself and compares. The executed driver and the
+#   preamble are digests IT minted before exec'ing the snapshot; the repository driver and inventory
+#   it digests directly with the shared producer. A child cannot alter these without being caught.
+#
+#   CROSS-FIELD — the workspace is a disposable copy that no longer exists when this runs, so it
+#   cannot be observed after the fact. What CAN be required is internal consistency: a faithful copy
+#   of the repository at the same commit must report the same head and the same tree digests. This
+#   is weaker than observation and is labelled as such.
+#
+#   SHAPE — the compiler digest and the tested-compilers note cannot be recovered at all once the
+#   workspace is gone. They are required to be well formed and non-sentinel, which excludes the
+#   `unknown` a failed measurement would leave behind, and nothing more is claimed.
+candidate_provenance() {
+  local c="$1" exec_d="$2" pre_d="$3" repo_d="$4" inv_d="$5" out="" v
+  _p() { sed -n "s/^$1=//p" "$c" | head -1; }
+
+  # OBSERVED
+  v="$(_p executed_driver_sha)"
+  [ -z "$exec_d" ] || [ "$v" = "$exec_d" ] \
+    || out="$out executed_driver_mismatch($v vs $exec_d)"
+  v="$(_p preamble_driver_sha)"
+  [ -z "$pre_d" ] || [ "$v" = "$pre_d" ] \
+    || out="$out preamble_driver_mismatch($v vs $pre_d)"
+  v="$(_p repo_driver_sha)"
+  [ -z "$repo_d" ] || [ "$v" = "$repo_d" ] \
+    || out="$out repo_driver_mismatch($v vs $repo_d)"
+  v="$(_p inventory_sha)"
+  [ -z "$inv_d" ] || [ "$v" = "$inv_d" ] \
+    || out="$out inventory_mismatch($v vs $inv_d)"
+
+  # CROSS-FIELD: the workspace is a copy of this repository at this commit.
+  local h wh t wt u wu
+  h="$(_p head)";          wh="$(_p workspace_head)"
+  t="$(_p tracked_sha)";   wt="$(_p workspace_tracked_sha)"
+  u="$(_p untracked_sha)"; wu="$(_p workspace_untracked_sha)"
+  [ "$wh" = "$h" ] || out="$out workspace_head_differs($wh vs $h)"
+  [ "$wt" = "$t" ] || out="$out workspace_tracked_differs($wt vs $t)"
+  [ "$wu" = "$u" ] || out="$out workspace_untracked_differs($wu vs $u)"
+
+  # SHAPE: 32 hex characters, and never the sentinel a failed measurement leaves.
+  v="$(_p baseline_compiler_sha)"
+  case "${#v}:$v" in
+    32:*[!0-9a-f]*) out="$out baseline_compiler_not_hex($v)" ;;
+    32:*) ;;
+    *) out="$out baseline_compiler_malformed($v)" ;;
+  esac
+  # A declared enumeration, so a new mode has to be added deliberately rather than appear in a record.
+  v="$(_p compilers_tested)"
+  case "$v" in
+    per-family-rebuilds|single-baseline) ;;
+    *) out="$out compilers_tested_unrecognised($v)" ;;
+  esac
+  printf '%s' "$out"
+}
+
 # candidate_run_binding <candidate> <expected-run-id> <observed-head> -> refusals
 #
 # THE RECORD MUST DESCRIBE THE RUN THAT WAS JUST SUPERVISED. Every reconciliation the supervisor

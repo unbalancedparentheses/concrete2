@@ -623,6 +623,18 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # binding would then be comparing the candidate against an observation nothing else validated.
   _sup_refusals="$_sup_refusals$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"
 
+  # WHAT WAS TESTED IS CHECKED, NOT TAKEN ON THE CHILD'S WORD.
+  #
+  # The executed-driver and preamble digests are values THIS process minted before exec'ing the
+  # snapshot, so comparing them is exact: a child that published anything else did not run what the
+  # supervisor launched. The repository driver and inventory are digested here with the same shared
+  # producer the child uses. The workspace and compiler fields cannot be observed after the run —
+  # the workspace is deleted — so they are checked for internal consistency and shape, and
+  # candidate_provenance labels which is which rather than implying they are all equally established.
+  _sup_refusals="$_sup_refusals$(candidate_provenance "$_cand" \
+    "${CONCRETE_MUT_DRIVER_SHA:-}" "${CONCRETE_MUT_PREAMBLE_SHA:-}" \
+    "$(ts_driver_digest "$ROOT_DIR")" "$(ts_inventory_digest "$ROOT_DIR")")"
+
   # THE DIRECTORIES MUST BE THE FAMILIES. The family digest was compared candidate-to-driver, which
   # proves the candidate can name the right set — not that the evidence on disk IS that set. A
   # candidate could publish the correct digest beside eighty-five arbitrarily named killed
@@ -1809,9 +1821,12 @@ PASS=0; FAIL=0
 # printed 78 verdicts and stopped without a summary, and nothing distinguished that from a finished
 # run except a human noticing the missing line. These dimensions are recorded now, recomputed at the
 # end, and any difference NAMES itself and suppresses the completion record.
-_d(){ if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -c1-32; else shasum -a 256 | cut -c1-32; fi; }
-snap_driver()    { cat "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | _d; }
-snap_inventory() { grep -h '^add "' "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" 2>/dev/null | _d; }
+# DELEGATED TO THE SHARED LIBRARY, so the supervisor computes these with the SAME code the child
+# does. They used to be defined only here, which is why the supervisor could not check them and
+# published the child's word for which driver and inventory had run.
+_d(){ ts_digest; }
+snap_driver()    { ts_driver_digest "$ROOT_DIR"; }
+snap_inventory() { ts_inventory_digest "$ROOT_DIR"; }
 snap_head()      { ts_head "$ROOT_DIR"; }
 # TREE STATE COMES FROM THE SHARED LIBRARY, not from a second implementation here. The runner had its
 # own copy of these and the two disagreed after each was fixed separately; see lib/treestate.sh.
