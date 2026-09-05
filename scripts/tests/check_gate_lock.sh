@@ -422,9 +422,13 @@ chmod 500 . 2>/dev/null
 exit 0'
 _clear; _run relfail.sh
 chmod 700 "$SB" 2>/dev/null
-grep -q 'could not be released' "$TMP/err" \
-  && ok "a release that FAILS says so instead of exiting quietly" \
-  || no "a failed automatic release was silent — a gate can exit 0 with the lock stranded"
+# Matched on the MACHINE-READABLE marker, not on prose: the human sentence was reworded to
+# "could NOT be released" and this control went red on the capitalisation alone.
+if grep -q 'lock-not-released' "$TMP/err"; then
+  ok "a release that FAILS emits its machine-readable postcondition marker"
+else
+  no "a failed automatic release was silent — a gate can exit 0 with the lock stranded"
+fi
 _clear
 
 # THE SELF-MANAGED HOLDER KEEPS ITS LOCK ON A SIGNAL. This is the CI runner's fail-closed policy:
@@ -449,6 +453,81 @@ else
   no "the self-managed signal control never acquired, so it proves nothing"
 fi
 _clear
+
+# A TERMINATING SIGNAL MUST TERMINATE, NOT JUST UNLOCK. Composing only a release meant the handler
+# released the lock and execution CONTINUED — the gate kept working with no lock at all and then
+# exited 0, which is worse than stranding it.
+_mkprobe sigterm.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+echo ready > ready.marker
+sleep 60 & wait $!
+echo CONTINUED > continued.marker'
+_clear; rm -f "$SB/ready.marker" "$SB/continued.marker"
+( cd "$SB" && exec env -u CONCRETE_GATE_LOCK bash sigterm.sh >/dev/null 2>&1 ) & pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -f "$SB/ready.marker" ] && break; sleep 0.2; done
+if [ -f "$SB/ready.marker" ]; then
+  kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; _rc=$?
+  { [ "$_rc" = "143" ] && ! _held && [ ! -f "$SB/continued.marker" ]; } \
+    && ok "SIGTERM releases, does not continue running unlocked, and exits 128+15" \
+    || no "SIGTERM: exit=$_rc lock=$(_held && echo HELD || echo free) continued=$([ -f "$SB/continued.marker" ] && echo YES || echo no)"
+else
+  no "the SIGTERM termination control never acquired, so it proves nothing"
+fi
+_clear
+
+# A FAILED RELEASE MUST REACH THE EXIT STATUS. Returning non-zero from an EXIT trap does not change
+# the status bash already chose, so the gate exited 0 with the lock stranded and only a warning.
+_mkprobe relfail2.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+chmod 500 . 2>/dev/null
+exit 0'
+_clear; _run relfail2.sh; _rc=$?
+chmod 700 "$SB" 2>/dev/null
+[ "$_rc" != "0" ] \
+  && ok "a gate whose release FAILS exits nonzero instead of reporting success" \
+  || no "a stranded lock still produced exit 0 — the postcondition is invisible to every consumer"
+_clear
+
+# THE macOS SHELL HAS NO BASHPID. Falling back to `$$` silently reinstated the subshell bug there,
+# because `$$` is shared with every subshell. The fallback is exercised directly.
+_mkprobe nobashpid.sh 'unset BASHPID
+source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+( trap "true" EXIT; true )
+[ -d .gate.lock ] && echo PARENT_STILL_HOLDS > nb.marker || echo PARENT_LOST_LOCK > nb.marker
+exit 0'
+_clear; rm -f "$SB/nb.marker"; _run nobashpid.sh
+[ "$(cat "$SB/nb.marker" 2>/dev/null)" = "PARENT_STILL_HOLDS" ] \
+  && ok "without BASHPID (the macOS shell), a subshell still does not release its parent's lock" \
+  || no "with BASHPID unavailable a subshell released the parent's lock ($(cat "$SB/nb.marker" 2>/dev/null)) — macOS would strand or mis-release"
+_clear
+
+# THE RUNNER'S OPT-OUT IS ASSERTED WHERE IT ACTUALLY LIVES. A synthetic probe that hardcodes
+# `_GATE_LOCK_SELF_MANAGED=1` stays green if the real declaration is deleted, which would silently
+# restore the premature unlock this control exists to prevent.
+_runner="$ROOT_DIR/scripts/tests/run_ci_gates_local.sh"
+if [ -f "$_runner" ]; then
+  # `grep -q` INSIDE A PIPELINE IS A FALSE NEGATIVE UNDER `pipefail`. grep exits as soon as it
+  # matches, sed is killed by SIGPIPE and reports 141, and pipefail then makes a SUCCESSFUL match
+  # look like a failed pipeline — this control reported the declaration missing while it sat at line
+  # 63. The stripped text is captured first and matched without a pipeline.
+  _runner_code="$(sed -E 's/(^|[[:space:]])#.*$/\1/' "$_runner")"
+  case "$_runner_code" in
+    *_GATE_LOCK_SELF_MANAGED=1*)
+      ok "run_ci_gates_local.sh really declares the self-managed opt-out its policy depends on" ;;
+    *)
+      no "the runner no longer declares _GATE_LOCK_SELF_MANAGED — its interrupted-run policy is silently defeated" ;;
+  esac
+  # ORDER IS COMPARED AGAINST THE REAL CALL, NOT A MENTION OF IT. The first version matched the word
+  # `_gate_lock_acquire` inside a comment on line 42 and concluded the declaration came too late.
+  _decl="$(printf '%s\n' "$_runner_code" | grep -n '_GATE_LOCK_SELF_MANAGED=1' | head -1 | cut -d: -f1)"
+  _acq="$(printf '%s\n' "$_runner_code" | grep -nE '(^|[^[:alnum:]_])_gate_lock_acquire[[:space:]]*(\|\||$|&&)' | head -1 | cut -d: -f1)"
+  { [ -n "$_decl" ] && [ -n "$_acq" ] && [ "$_decl" -lt "$_acq" ]; } \
+    && ok "...and declares it BEFORE acquiring, which is the only point at which it can take effect" \
+    || no "the runner declares the opt-out after acquiring (decl=${_decl:-none} acquire=${_acq:-none}); arming has already happened"
+else
+  no "run_ci_gates_local.sh is missing; its lock policy cannot be checked"
+fi
 
 # THE CORPUS INVARIANT BEHIND THE ONE LIMIT THAT REMAINS. A cleanup that calls `exit` or `exec`
 # terminates the handler before the composed release runs. No gate does that today; asserting it

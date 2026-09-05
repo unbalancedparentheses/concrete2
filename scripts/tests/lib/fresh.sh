@@ -140,7 +140,7 @@ _gate_lock_acquire() {
     # valid token. Only the creator arms, and only the creator releases.
     _GATE_LOCK_CREATED=1
     # The creating SHELL INSTANCE, not just the process: `$$` is shared with every subshell.
-    _GATE_LOCK_CREATED_BY="${BASHPID:-$$}"
+    _gate_lock_note_creator
     _gate_lock_arm_release
     return 0
   fi
@@ -224,6 +224,13 @@ _gate_lock_acquire() {
 # goes in a group on its own lines and the release follows on its own line, so nothing the action
 # contains can reach past it.
 _GATE_LOCK_RELEASE_SNIPPET='_gate_lock_release_auto'
+# A TERMINATING SIGNAL MUST TERMINATE. Composing only a release meant the handler released the lock
+# and then execution CONTINUED — the gate carried on doing work with no lock at all, which is worse
+# than stranding it, and then exited 0. And `trap - TERM` was rewritten into a release handler, so
+# the default "die on TERM" disposition could not be restored either. The signal form releases, then
+# restores the default and re-raises, so the process dies of the signal it was sent.
+_GATE_LOCK_SIGNAL_SNIPPET='_gate_lock_release_auto; builtin trap - %s; kill -%s $$'
+
 
 # THE AUTOMATIC RELEASE IS NOT THE SAME OPERATION AS THE EXPLICIT ONE, and conflating them produced
 # two defects at once.
@@ -237,28 +244,55 @@ _GATE_LOCK_RELEASE_SNIPPET='_gate_lock_release_auto'
 #   A FAILED RELEASE IS NOT A RELEASE. The snippet was `_gate_lock_release >/dev/null 2>&1 || true`,
 #   which discarded the library's own "could not release" warning and forced success — a gate could
 #   exit 0 having stranded the lock, with nothing said. The diagnostic is kept and the caller is told.
+# THE SHELL INSTANCE, PORTABLY. `BASHPID` distinguishes a subshell from its parent, and bash 3.2 —
+# which is what `bash` still is on the macOS runner this workflow uses — does not have it. Falling
+# back to `$$` silently reinstated the bug the identity exists to prevent: on macOS a subshell would
+# again have deleted its parent's lock. A child's PPID is the shell instance that forked it, which is
+# the same fact and is available everywhere.
+#
+# Expanded INLINE rather than through a helper, because `BASHPID` inside `$( ... )` reports the
+# command substitution's own subshell, not the caller's — a helper would have returned the wrong
+# identity in exactly the case this is here to get right.
+_gate_lock_note_creator() {
+  if [ -n "${BASHPID:-}" ]; then
+    _GATE_LOCK_CREATED_BY="$BASHPID"
+  else
+    _GATE_LOCK_CREATED_BY="$(sh -c 'echo $PPID' 2>/dev/null || printf '%s' "$$")"
+  fi
+}
+
 _gate_lock_release_auto() {
   [ "${_GATE_LOCK_CREATED:-0}" = "1" ] || return 0
-  [ "${BASHPID:-$$}" = "${_GATE_LOCK_CREATED_BY:-}" ] || return 0
-  _gate_lock_release || {
-    echo "warning: the repository lock could not be released automatically on exit." >&2
-    return 1
-  }
+  local _me
+  if [ -n "${BASHPID:-}" ]; then _me="$BASHPID"
+  else _me="$(sh -c 'echo $PPID' 2>/dev/null || printf '%s' "$$")"; fi
+  [ "$_me" = "${_GATE_LOCK_CREATED_BY:-}" ] || return 0
+  if ! _gate_lock_release; then
+    # A FAILED RELEASE MUST REACH THE EXIT STATUS. Returning non-zero from an EXIT trap does not
+    # change the status bash has already selected, so the gate exited 0 with the lock stranded and
+    # only a warning nobody reads. `exit` inside an EXIT trap does set it.
+    echo "GATE-POSTCONDITION-FAILED: lock-not-released" >&2
+    echo "error: the repository lock could NOT be released; the next run will refuse." >&2
+    echo "       Verify nothing is working the tree, then: rm -rf ${_GATE_LOCK_DIR:-.gate.lock}" >&2
+    exit 1
+  fi
   return 0
 }
 
 _gate_lock_arm_release() {
   [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ] && return 0
-  local s prev
+  local s prev tail
   for s in EXIT INT TERM HUP; do
+    if [ "$s" = "EXIT" ]; then tail="$_GATE_LOCK_RELEASE_SNIPPET"
+    else tail="$(printf "$_GATE_LOCK_SIGNAL_SNIPPET" "$s" "$s")"; fi
     prev="$(_gate_lock_trap_body "$s")"
     if [ -n "$prev" ]; then
       builtin trap "{
 $prev
 }
-$_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
+$tail" "$s" 2>/dev/null || true
     else
-      builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
+      builtin trap "$tail" "$s" 2>/dev/null || true
     fi
   done
 }
@@ -293,13 +327,18 @@ trap() {
         if [ "${_GATE_LOCK_CREATED:-0}" != "1" ] || [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ] \
            || [ "${BASHPID:-$$}" != "${_GATE_LOCK_CREATED_BY:-}" ]; then
           builtin trap "$cmd" "$s" || rc=1
-        elif [ "$cmd" = "-" ]; then
-          builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" || rc=1
         else
-          builtin trap "{
+          local _tail
+          if [ "$norm" = "EXIT" ] || [ "$norm" = "0" ]; then _tail="$_GATE_LOCK_RELEASE_SNIPPET"
+          else _tail="$(printf "$_GATE_LOCK_SIGNAL_SNIPPET" "$s" "$s")"; fi
+          if [ "$cmd" = "-" ]; then
+            builtin trap "$_tail" "$s" || rc=1
+          else
+            builtin trap "{
 $cmd
 }
-$_GATE_LOCK_RELEASE_SNIPPET" "$s" || rc=1
+$_tail" "$s" || rc=1
+          fi
         fi ;;
       *) builtin trap "$cmd" "$s" || rc=1 ;;
     esac
