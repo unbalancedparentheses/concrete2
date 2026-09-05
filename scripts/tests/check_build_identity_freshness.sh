@@ -148,13 +148,61 @@ echo "=== nothing at run time depends on a non-portable tool ==="
 
 # THE PORTABILITY REGRESSION THIS REPLACED. An earlier identity shelled out to `sha256sum` on
 # `/proc/self/exe`; macOS has neither, and it is an active CI platform, so receipt issuance refused
-# there outright. Asserted against the compiled BINARY rather than against the source text, because
-# what matters is what the shipped artifact needs at run time.
-if [ "$(strings "$BIN" 2>/dev/null | grep -c '/proc/self/exe' || true)" = "0" ]; then
-  ok "the binary contains no /proc/self/exe reference"
+# there outright.
+#
+# ASSERTED AGAINST CONCRETE'S OWN SOURCES, NOT AGAINST THE LINKED BINARY.
+#
+# The previous form ran `strings` over the compiled artifact. That measures the LINKAGE MODE of
+# third-party code, not anything about Concrete: MEASURED on this machine, `libuv` — which Lean links
+# — contains `/proc/self/exe`, and it is a shared object here, so the string is absent from the
+# binary and the check passed. In CI the same dependency is linked statically, the string appears,
+# and the check failed while reporting that "receipt issuance would refuse on macOS" — a conclusion
+# about Concrete drawn from a fact about libuv. It was red on every CI run for that reason alone.
+#
+# The property that actually matters is that CONCRETE does not inspect its own executable at run
+# time, and it is established by two checks that do not depend on how a dependency is linked: no
+# non-comment use in Concrete's own sources, and — asserted above — that the reported identity is the
+# committed constant, i.e. a value compiled in rather than derived by reading the binary.
+# THE SCANNER MUST EXIST, or its silence is not evidence. Without this the loop below would strip
+# nothing, find nothing, and report the property as established — a fail-open in the check whose
+# whole job is to refuse.
+_bi_strip='s{/-.*?-/}{}gs; s{--[^\n]*}{}g'
+if ! command -v perl >/dev/null 2>&1; then
+  no "perl is unavailable, so Lean block comments cannot be stripped and this scan cannot be trusted"
+  _bi_src_hits="SCANNER-UNAVAILABLE"
 else
-  no "the binary still references /proc/self/exe — receipt issuance would refuse on macOS"
+_bi_src_hits=""
+for _f in $(git ls-files 'Concrete/**/*.lean' 'Main.lean' 2>/dev/null); do
+  # NO PIPELINE INTO `grep -q`. grep exits at the first match, perl dies of SIGPIPE and reports 141,
+  # and `pipefail` then turns a SUCCESSFUL match into a failed command — which this `if` would read
+  # as "no use found". That is the exact false negative recorded as a follow-up elsewhere in this
+  # session; it would have made this check fail open. The text is captured, then matched.
+  _bi_text="$(perl -0777 -pe "$_bi_strip" "$_f" 2>/dev/null)" || _bi_text=""
+  case "$_bi_text" in
+    */proc/self/exe*|*sha256sum*) _bi_src_hits="$_bi_src_hits $_f" ;;
+  esac
+done
 fi
+if [ -z "$_bi_src_hits" ]; then
+  ok "no Concrete source uses /proc/self/exe or sha256sum outside a comment"
+else
+  no "Concrete sources use /proc/self/exe or sha256sum:$_bi_src_hits — receipt issuance would refuse on macOS"
+fi
+# NON-VACUITY: the check must actually fire on a real use, or it is a green line that proves nothing.
+_bi_probe="$(mktemp)"
+printf 'def f : String := "sha256sum /proc/self/exe"\n' > "$_bi_probe"
+_bi_t="$(perl -0777 -pe "$_bi_strip" "$_bi_probe" 2>/dev/null)" || _bi_t=""
+case "$_bi_t" in
+  */proc/self/exe*) ok "CONTROL: the source scan detects a real use (it is not matching nothing)" ;;
+  *) no "CONTROL FAILED: the source scan cannot see a use even when one is present" ;;
+esac
+printf '/-- sha256sum /proc/self/exe -/\ndef g : Nat := 0\n' > "$_bi_probe"
+_bi_t="$(perl -0777 -pe "$_bi_strip" "$_bi_probe" 2>/dev/null)" || _bi_t=""
+case "$_bi_t" in
+  */proc/self/exe*) no "CONTROL FAILED: the scan counts a docstring mention as a use — the old false alarm returns" ;;
+  *) ok "CONTROL: a mention inside a docstring is not counted as a use" ;;
+esac
+rm -f "$_bi_probe"
 
 GATE_DONE=1
 echo "BUILD-IDENTITY-FRESHNESS: PASS=$PASS FAIL=$FAIL"
