@@ -1861,15 +1861,92 @@ echo ""
 flush_jobs
 if section_active gatesmoke; then
 echo "=== gate smoke (lex escapes, mixed-width, trailing values) ==="
+# THE CONSTITUENT'S OUTPUT IS RETAINED, NOT DISCARDED.
+#
+# This ran each gate as `bash ... >/dev/null 2>&1`, so a failure recorded THAT the gate failed and
+# nothing about why. Ten of these fail on macOS and only there; the log said so for weeks and could
+# not say more, because the evidence was discarded at the moment it was produced. A batch that
+# reports a verdict it cannot explain is barely better than one that does not run.
+#
+# stdout and stderr are captured SEPARATELY: a gate's refusal goes to stderr and its assertions to
+# stdout, and merging them loses which was which. Aggregation is unchanged and still fail-closed —
+# every non-zero exit increments FAIL exactly as before.
+_gs_show() { # label file
+    local _n
+    _n="$(awk 'END{print NR+0}' "$2")"
+    if [ "$_n" -eq 0 ]; then
+        echo "        $1: <empty>"
+        return 0
+    fi
+    if [ "$_n" -gt 40 ]; then
+        echo "        $1 ($_n lines, last 40 shown):"
+    else
+        echo "        $1 ($_n lines):"
+    fi
+    # `tail | awk`, not a consumer that exits early: awk reads everything tail writes, so nothing can
+    # be lost to SIGPIPE under `pipefail` the way `grep -q` would lose it.
+    tail -40 "$2" | awk '{ print "          | " $0 }'
+}
+
+_gs_run() { # name script -> prints the report, returns the constituent's exit status
+    local _name="$1" _script="$2" _rc=0 _out _err
+    _out="$(mktemp)"; _err="$(mktemp)"
+    if bash "$_script" > "$_out" 2> "$_err"; then
+        echo "  ok  $_name"
+    else
+        _rc=$?
+        echo "FAIL  $_name (exit $_rc; run: bash $_script)"
+        _gs_show "stdout" "$_out"
+        _gs_show "stderr" "$_err"
+    fi
+    rm -f "$_out" "$_err"
+    return $_rc
+}
+
 for g in check_lex_escapes check_mixed_width_binops check_type_agreement check_differential_positions check_copy_judgment check_ownership_judgment check_totality_judgment check_corecheck_boundary check_capability_judgment check_trailing_value_blocks; do
-    if bash "scripts/tests/$g.sh" >/dev/null 2>&1; then
-        echo "  ok  $g"
+    if _gs_run "$g" "scripts/tests/$g.sh"; then
         PASS=$((PASS + 1))
     else
-        echo "FAIL  $g (run: bash scripts/tests/$g.sh)"
         FAIL=$((FAIL + 1))
     fi
 done
+
+# THE RETENTION IS SELF-TESTED, because a diagnostic path that quietly stops working recreates
+# exactly the situation it was added to end. A synthetic constituent writes a known marker to each
+# stream and exits non-zero; both markers must appear, and the status must survive unchanged.
+_gs_probe="$(mktemp)"; _gs_report="$(mktemp)"
+printf '#!/usr/bin/env bash\necho "GS_STDOUT_MARKER"\necho "GS_STDERR_MARKER" >&2\nexit 7\n' > "$_gs_probe"
+_gs_probe_rc=0
+_gs_run "gate-smoke-retention-selftest" "$_gs_probe" > "$_gs_report" 2>&1 || _gs_probe_rc=$?
+if [ "$_gs_probe_rc" = "7" ]; then
+    echo "  ok  gate smoke preserves a constituent's exact exit status"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  gate smoke lost the constituent's exit status (saw $_gs_probe_rc, expected 7)"
+    FAIL=$((FAIL + 1))
+fi
+_gs_missing=""
+grep -q 'GS_STDOUT_MARKER' "$_gs_report" || _gs_missing="$_gs_missing stdout"
+grep -q 'GS_STDERR_MARKER' "$_gs_report" || _gs_missing="$_gs_missing stderr"
+if [ -z "$_gs_missing" ]; then
+    echo "  ok  gate smoke retains a failing constituent's stdout and stderr"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  gate smoke lost:$_gs_missing — a failure would again be reported with no evidence"
+    FAIL=$((FAIL + 1))
+fi
+# NON-VACUITY: nothing is printed for a PASSING constituent, or the check above would be satisfied
+# by output that appears regardless of what the gate did.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$_gs_probe"
+_gs_run "gate-smoke-quiet-selftest" "$_gs_probe" > "$_gs_report" 2>&1 || true
+if grep -q 'GS_STDOUT_MARKER' "$_gs_report" || grep -q 'stdout (' "$_gs_report"; then
+    echo "FAIL  gate smoke printed a diagnostic for a PASSING gate — the retention check proves nothing"
+    FAIL=$((FAIL + 1))
+else
+    echo "  ok  gate smoke stays quiet for a passing constituent (the retention check is not vacuous)"
+    PASS=$((PASS + 1))
+fi
+rm -f "$_gs_probe" "$_gs_report"
 fi # end section: gatesmoke
 
 # === Report output tests ===
