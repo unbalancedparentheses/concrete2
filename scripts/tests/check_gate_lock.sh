@@ -372,6 +372,93 @@ _clear; _run ok.sh
   || no "the opt-out leaked into ordinary gates — every gate would strand its lock again"
 _clear
 
+# THE FIVE DEFECTS THE ADVERSARIAL REVIEW FOUND IN THE FIRST VERSION OF THIS LIFETIME.
+# Each is asserted behaviourally, because each was real and reproduced before it was fixed.
+
+# A SUBSHELL IS NOT THE CREATOR. `$$` is identical inside `( ... )` and `_GATE_LOCK_CREATED` is
+# inherited, so a subshell that merely installed a trap became a "creator" and deleted its PARENT's
+# lock on leaving. Reproduced: this printed PARENT_LOST_LOCK.
+_mkprobe subshell.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+( trap "true" EXIT; true )
+[ -d .gate.lock ] && echo PARENT_STILL_HOLDS > sub.marker || echo PARENT_LOST_LOCK > sub.marker
+exit 0'
+_clear; rm -f "$SB/sub.marker"; _run subshell.sh
+[ "$(cat "$SB/sub.marker" 2>/dev/null)" = "PARENT_STILL_HOLDS" ] \
+  && ok "a subshell that installs a trap does NOT release its parent's lock" \
+  || no "a subshell released the parent's lock ($(cat "$SB/sub.marker" 2>/dev/null))"
+_clear
+
+# AN APOSTROPHE IN A CLEANUP. `trap -p` prints a SHELL-QUOTED action; recovering it by stripping the
+# outer quotes left an embedded '\'' malformed, so both the cleanup and the release could be lost
+# while the gate still exited 0.
+_mkprobe apostrophe.sh 'source scripts/tests/lib/fresh.sh
+trap "echo ok > apos.marker # it'"'"'s fine" EXIT
+_gate_lock_acquire || exit 9
+exit 0'
+_clear; rm -f "$SB/apos.marker"; _run apostrophe.sh
+{ [ -f "$SB/apos.marker" ] && ! _held; } \
+  && ok "a cleanup containing an apostrophe survives composition, and the lock is released" \
+  || no "apostrophe cleanup: marker=$([ -f "$SB/apos.marker" ] && echo ran || echo LOST) lock=$(_held && echo HELD || echo free)"
+
+# SIGTERM AND TERM NAME THE SAME SIGNAL. Matching only the bare form let `trap x SIGTERM` replace
+# the release outright.
+_mkprobe sigform.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+trap "echo T > sig.marker" SIGTERM
+builtin trap -p SIGTERM > sigform.out
+exit 0'
+_clear; _run sigform.sh
+grep -q '_gate_lock_release_auto' "$SB/sigform.out" 2>/dev/null \
+  && ok "'trap ... SIGTERM' composes with the release, like the bare TERM form" \
+  || no "the SIG-prefixed form replaced the release outright"
+_clear
+
+# A FAILED RELEASE IS NOT A RELEASE. The snippet discarded the library's own warning and forced
+# success, so a gate could exit 0 having stranded the lock silently.
+_mkprobe relfail.sh 'source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+chmod 500 . 2>/dev/null
+exit 0'
+_clear; _run relfail.sh
+chmod 700 "$SB" 2>/dev/null
+grep -q 'could not be released' "$TMP/err" \
+  && ok "a release that FAILS says so instead of exiting quietly" \
+  || no "a failed automatic release was silent — a gate can exit 0 with the lock stranded"
+_clear
+
+# THE SELF-MANAGED HOLDER KEEPS ITS LOCK ON A SIGNAL. This is the CI runner's fail-closed policy:
+# its gates run as backgrounded children, so releasing on TERM would hand the tree to a new run
+# while they are still building. Composition would have released on exactly that signal.
+_mkprobe smsignal.sh '_GATE_LOCK_SELF_MANAGED=1
+source scripts/tests/lib/fresh.sh
+_gate_lock_acquire || exit 9
+trap "RUN_INTERRUPTED=1" INT TERM HUP
+echo ready > ready.marker
+sleep 60 &
+wait $!'
+_clear; rm -f "$SB/ready.marker"
+( cd "$SB" && exec env -u CONCRETE_GATE_LOCK bash smsignal.sh >/dev/null 2>&1 ) & pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -f "$SB/ready.marker" ] && break; sleep 0.2; done
+if [ -f "$SB/ready.marker" ]; then
+  kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  _held \
+    && ok "a self-managed holder KEEPS its lock through SIGTERM (the runner's fail-closed policy)" \
+    || no "SIGTERM released a self-managed holder's lock — the interrupted-run policy is defeated"
+else
+  no "the self-managed signal control never acquired, so it proves nothing"
+fi
+_clear
+
+# THE CORPUS INVARIANT BEHIND THE ONE LIMIT THAT REMAINS. A cleanup that calls `exit` or `exec`
+# terminates the handler before the composed release runs. No gate does that today; asserting it
+# keeps the limit from starting to apply silently.
+_bad_traps="$(grep -lE "^[[:space:]]*trap '[^']*\\b(exit|exec)\\b[^']*' *(EXIT|INT|TERM|HUP|SIG)" \
+  "$ROOT_DIR"/scripts/tests/check_*.sh 2>/dev/null | head -5)"
+[ -z "$_bad_traps" ] \
+  && ok "no gate's terminating-signal cleanup calls exit/exec, so none can skip the release" \
+  || no "these gates' cleanups call exit/exec and would skip the composed release: $_bad_traps"
+
 # NO NEW PLATFORM AUTHORITY. The release path must not depend on flock or /proc; macOS has neither
 # flock nor /proc, and this repository has already taken an outage from a /proc dependency.
 # USE, NOT MENTION. The library's header explains WHY it cannot use flock ("flock is absent on

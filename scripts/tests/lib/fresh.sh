@@ -139,6 +139,8 @@ _gate_lock_acquire() {
     # `_GATE_LOCK_CREATED` distinguishes the creator from a re-entrant child that merely inherited a
     # valid token. Only the creator arms, and only the creator releases.
     _GATE_LOCK_CREATED=1
+    # The creating SHELL INSTANCE, not just the process: `$$` is shared with every subshell.
+    _GATE_LOCK_CREATED_BY="${BASHPID:-$$}"
     _gate_lock_arm_release
     return 0
   fi
@@ -204,70 +206,100 @@ _gate_lock_acquire() {
 # same failure as reclaiming on a dead PID.
 # THE RELEASE IS COMPOSED INTO EXISTING TRAPS, NEVER SUBSTITUTED FOR THEM.
 #
-# MEASURED before writing this: 29 of the gates that take this lock install their own `trap ... EXIT`
-# AFTER the acquisition. A release armed at acquisition would have been silently replaced in exactly
-# those 29 — present in the source, absent at runtime, which is the failure mode this repository
-# keeps finding in its own controls.
+# MEASURED on the committed tree, counting the first `trap` line naming EXIT/INT/TERM/HUP against the
+# first `require_fresh_binary` line in each of the 167 callers: 137 install no such trap at all, 29
+# install one AFTER the acquisition, 1 before. The method is stated because a different scan (for
+# instance one that also counts `trap fatal ERR`) reaches different numbers, and a bare figure in a
+# comment cannot be rechecked. What matters is the shape: a release armed at acquisition would have
+# been silently replaced in the 29, and absent entirely for the 137.
 #
-# So `trap` itself is wrapped. Any later installation on a terminating signal is COMPOSED with the
-# release rather than replacing it, and the gate's own cleanup runs FIRST, because it may still need
-# the tree the lock protects. Queries (`-p`, `-l`) and non-terminating signals — notably ERR, which
-# nine gates use — pass through untouched.
+# So `trap` is wrapped: later installation on a terminating signal COMPOSES with the release instead
+# of replacing it, the gate's own cleanup runs first because it may still need the tree, and queries
+# (`-p`, `-l`) and non-terminating signals — notably ERR, which nine gates use — pass through.
 #
-# SIGKILL cannot be trapped by anyone, so a lock stranded by `kill -9` still needs an operator. That
-# limit is stated rather than papered over, and the refusal message already says it.
-_GATE_LOCK_RELEASE_SNIPPET='_gate_lock_release >/dev/null 2>&1 || true'
+# SIGKILL is untrappable by anyone, so a lock stranded by `kill -9` still needs an operator.
+# COMPOSED ACROSS NEWLINES, NOT WITH `;`. A cleanup ending in a `# comment` — or containing one —
+# would have commented out an appended `; release` on the same line, losing it silently. The control
+# for this found it: the handler ran the cleanup and kept the lock while exiting 0. The user action
+# goes in a group on its own lines and the release follows on its own line, so nothing the action
+# contains can reach past it.
+_GATE_LOCK_RELEASE_SNIPPET='_gate_lock_release_auto'
 
-# ARMING COMPOSES TOO. A gate may already have installed its cleanup BEFORE it asked for the lock —
-# 1 of the 167 does exactly that — and arming by plain assignment DESTROYED that cleanup. The first
-# version of this function did, and the control for it failed on the first run: cleanup=lost.
-# Whatever is already installed runs first, then the release.
-# ONE COMPONENT MANAGES THIS LOCK DELIBERATELY, AND MUST BE ABLE TO SAY SO.
+# THE AUTOMATIC RELEASE IS NOT THE SAME OPERATION AS THE EXPLICIT ONE, and conflating them produced
+# two defects at once.
 #
-# The mutation supervisor decides whether to release by asking `supervisor_must_hold_lock`: when the
-# campaign's process group is not proven empty, it REFUSES to release, because handing the tree to
-# the next run while work may still be writing it is the failure the whole boundary exists to
-# prevent. Composing an unconditional release into its EXIT trap would have silently reversed that
-# decision — verified by running it: the supervisor's trap became
-# `{ _sup_exit_cleanup ; } ; _gate_lock_release`, releasing exactly when it had decided to hold.
+#   A SUBSHELL IS NOT THE CREATOR. `$$` is identical inside `( ... )`, and `_GATE_LOCK_CREATED` is a
+#   plain variable a subshell inherits — so a subshell that merely installed its own trap became a
+#   creator by both tests and DELETED ITS PARENT'S LOCK on leaving. Verified before this fix:
+#   `( trap ... EXIT; true )` printed PARENT_LOST_LOCK_TO_SUBSHELL. `BASHPID` differs in a subshell
+#   where `$$` does not, so the creating shell instance is recorded and compared.
 #
-# `_GATE_LOCK_SELF_MANAGED=1` opts out of both the arming and the composition. It is for components
-# that release on their own explicit rule, not for gates that would simply rather not clean up.
+#   A FAILED RELEASE IS NOT A RELEASE. The snippet was `_gate_lock_release >/dev/null 2>&1 || true`,
+#   which discarded the library's own "could not release" warning and forced success — a gate could
+#   exit 0 having stranded the lock, with nothing said. The diagnostic is kept and the caller is told.
+_gate_lock_release_auto() {
+  [ "${_GATE_LOCK_CREATED:-0}" = "1" ] || return 0
+  [ "${BASHPID:-$$}" = "${_GATE_LOCK_CREATED_BY:-}" ] || return 0
+  _gate_lock_release || {
+    echo "warning: the repository lock could not be released automatically on exit." >&2
+    return 1
+  }
+  return 0
+}
+
 _gate_lock_arm_release() {
   [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ] && return 0
   local s prev
   for s in EXIT INT TERM HUP; do
-    prev="$(builtin trap -p "$s" 2>/dev/null)"
-    # `trap -p` prints: trap -- 'CMD' SIG   (nothing at all when no handler is installed)
+    prev="$(_gate_lock_trap_body "$s")"
     if [ -n "$prev" ]; then
-      prev="${prev#*\'}"; prev="${prev%\'*}"
-    fi
-    if [ -n "$prev" ]; then
-      builtin trap "{ $prev ; } ; $_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
+      builtin trap "{
+$prev
+}
+$_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
     else
       builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" 2>/dev/null || true
     fi
   done
 }
 
+# `trap -p` PRINTS A SHELL-QUOTED ACTION, and it must be UNQUOTED before being re-composed.
+# Stripping the outer quotes textually left an embedded `'\''` sequence malformed, so a cleanup
+# containing an apostrophe produced a handler that could fail to run — losing both the gate's cleanup
+# and the release while the process still exited 0. `eval` on the printed form is exactly the inverse
+# of the quoting bash applied.
+_gate_lock_trap_body() {
+  local line body
+  line="$(builtin trap -p "$1" 2>/dev/null)" || return 0
+  [ -n "$line" ] || return 0
+  body="$(eval "set -- $(printf '%s' "$line" | sed -e 's/^trap -- //' -e "s/ $1\$//")"; printf '%s' "${1:-}")" 2>/dev/null || body=""
+  printf '%s' "$body"
+}
+
 trap() {
   case "${1:-}" in
     -p|-l|"") builtin trap "$@"; return $? ;;
+    --) shift ;;
   esac
-  local cmd="$1"; shift
+  local cmd="${1:-}"; shift 2>/dev/null || true
   [ "$#" -gt 0 ] || { builtin trap "$cmd"; return $?; }
-  local s rc=0 composed
+  local s rc=0 norm
   for s in "$@"; do
-    case "$s" in
+    # SIGTERM AND TERM ARE THE SAME SIGNAL. The first version matched only the bare names, so
+    # `trap cleanup SIGTERM` would have replaced the release outright.
+    norm="${s#SIG}"
+    case "$norm" in
       EXIT|0|INT|2|TERM|15|HUP|1)
-        if [ "${_GATE_LOCK_CREATED:-0}" != "1" ] || [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ]; then
+        if [ "${_GATE_LOCK_CREATED:-0}" != "1" ] || [ "${_GATE_LOCK_SELF_MANAGED:-0}" = "1" ] \
+           || [ "${BASHPID:-$$}" != "${_GATE_LOCK_CREATED_BY:-}" ]; then
           builtin trap "$cmd" "$s" || rc=1
         elif [ "$cmd" = "-" ]; then
-          # A reset drops the GATE'S cleanup, not the repository lock it holds on everyone's behalf.
           builtin trap "$_GATE_LOCK_RELEASE_SNIPPET" "$s" || rc=1
         else
-          composed="{ $cmd ; } ; $_GATE_LOCK_RELEASE_SNIPPET"
-          builtin trap "$composed" "$s" || rc=1
+          builtin trap "{
+$cmd
+}
+$_GATE_LOCK_RELEASE_SNIPPET" "$s" || rc=1
         fi ;;
       *) builtin trap "$cmd" "$s" || rc=1 ;;
     esac

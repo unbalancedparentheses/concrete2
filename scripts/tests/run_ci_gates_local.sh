@@ -53,6 +53,14 @@ _ci_fresh_fail() {
   echo "       Do not read it as describing this attempt." >&2
   exit 2
 }
+# THIS RUNNER MANAGES THE LOCK ITSELF, and must say so before the library can arm anything.
+#
+# Its policy is fail-closed on interruption: gates run as backgrounded children, so a TERM delivered
+# only to this runner leaves them building, and releasing would hand the repository to a new run
+# while they work. The library's automatic release — correct for an ordinary gate, which otherwise
+# strands the lock — composes itself into the `trap 'RUN_INTERRUPTED=1' INT TERM HUP` below and
+# would release on exactly the signal this runner refuses to release on.
+_GATE_LOCK_SELF_MANAGED=1
 source "$ROOT_DIR/scripts/tests/lib/fresh.sh" 2>/dev/null \
   || _ci_fresh_fail "could not load scripts/tests/lib/fresh.sh — refusing to run unlocked."
 command -v _gate_lock_acquire >/dev/null 2>&1 \
