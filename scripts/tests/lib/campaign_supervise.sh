@@ -475,19 +475,27 @@ candidate_provenance() {
   local c="$1" exec_d="$2" pre_d="$3" repo_d="$4" inv_d="$5" out="" v
   _p() { sed -n "s/^$1=//p" "$c" | head -1; }
 
-  # OBSERVED
-  v="$(_p executed_driver_sha)"
-  [ -z "$exec_d" ] || [ "$v" = "$exec_d" ] \
-    || out="$out executed_driver_mismatch($v vs $exec_d)"
-  v="$(_p preamble_driver_sha)"
-  [ -z "$pre_d" ] || [ "$v" = "$pre_d" ] \
-    || out="$out preamble_driver_mismatch($v vs $pre_d)"
-  v="$(_p repo_driver_sha)"
-  [ -z "$repo_d" ] || [ "$v" = "$repo_d" ] \
-    || out="$out repo_driver_mismatch($v vs $repo_d)"
-  v="$(_p inventory_sha)"
-  [ -z "$inv_d" ] || [ "$v" = "$inv_d" ] \
-    || out="$out inventory_mismatch($v vs $inv_d)"
+  # OBSERVED — AND AN UNAVAILABLE OBSERVATION IS A REFUSAL, NOT A SKIP.
+  #
+  # The first version skipped a comparison whose expected value was empty. That made a hashing
+  # failure silently DISABLE the check: delete `ts_inventory_digest` and the child's two snapshots
+  # both become empty, agree with each other, satisfy the freeform schema, and the supervisor
+  # compares nothing — the exact fail-open shape this tier exists to remove, introduced by the change
+  # that claimed to remove it. An observation that could not be made is not evidence of agreement.
+  local _obs
+  for _obs in "executed_driver_sha:$exec_d" "preamble_driver_sha:$pre_d" \
+              "repo_driver_sha:$repo_d" "inventory_sha:$inv_d"; do
+    local _k="${_obs%%:*}" _want="${_obs#*:}"
+    v="$(_p "$_k")"
+    case "$_want" in
+      ''|*TREESTATE-UNAVAILABLE*|*UNAVAILABLE*)
+        out="$out ${_k}_unobservable(${_want:-<empty>})" ; continue ;;
+    esac
+    case "$v" in
+      ''|*TREESTATE-UNAVAILABLE*) out="$out ${_k}_unpublished(${v:-<empty>})" ; continue ;;
+    esac
+    [ "$v" = "$_want" ] || out="$out ${_k}_mismatch($v vs $_want)"
+  done
 
   # CROSS-FIELD: the workspace is a copy of this repository at this commit.
   local h wh t wt u wu

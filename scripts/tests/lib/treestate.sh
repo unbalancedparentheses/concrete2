@@ -78,7 +78,11 @@ ts_require() { # called by consumers right after sourcing
   # loaded: a file truncated immediately after this function would pass while ts_tracked,
   # ts_untracked and ts_dirty_files were all absent — and absent producers are exactly the
   # empty-equals-empty path this guard exists to stop.
-  for fn in ts_head ts_tracked ts_untracked ts_dirty_files; do
+    # THE DIGEST PRODUCERS ARE REQUIRED TOO. Without them a missing `ts_inventory_digest` made the
+    # child's start and end inventory snapshots BOTH empty, their comparison succeed, the published
+    # `inventory_sha=` satisfy the freeform schema, and the supervisor skip its own check — a hashing
+    # failure silently disabling the verification it exists to perform.
+  for fn in ts_head ts_tracked ts_untracked ts_dirty_files ts_digest ts_driver_digest ts_inventory_digest; do
     if ! command -v "$fn" >/dev/null 2>&1; then
       echo "FATAL: treestate.sh loaded but '$fn' is missing — the library is truncated." >&2
       return 1

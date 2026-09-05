@@ -381,10 +381,11 @@ _pv() { candidate_provenance "$_PV" aaaa1111 bbbb2222 cccc3333 dddd4444; }
   || no "a coherent record was refused: $(_pv)"
 
 # OBSERVED: the supervisor minted these before exec'ing the snapshot, so a mismatch is exact.
-for _pair in "executed_driver_sha:executed_driver_mismatch" \
-             "preamble_driver_sha:preamble_driver_mismatch" \
-             "repo_driver_sha:repo_driver_mismatch" \
-             "inventory_sha:inventory_mismatch"; do
+# The diagnostic names the FIELD exactly, so a reader is not left mapping a refusal back to a key.
+for _pair in "executed_driver_sha:executed_driver_sha_mismatch" \
+             "preamble_driver_sha:preamble_driver_sha_mismatch" \
+             "repo_driver_sha:repo_driver_sha_mismatch" \
+             "inventory_sha:inventory_sha_mismatch"; do
   _k="${_pair%%:*}"; _want="${_pair##*:}"
   _sav="$(sed -n "s/^$_k=//p" "$_PV")"
   sed -i.bak "s|^$_k=.*|$_k=FORGED|" "$_PV" && rm -f "$_PV.bak"
@@ -428,6 +429,37 @@ sed -i.bak "s|^compilers_tested=.*|compilers_tested=per-family-rebuilds|" "$_PV"
 [ -z "$(_pv)" ] \
   && ok "...and the record still passes once restored (the checks above are not refusing everything)" \
   || no "the restored record is still refused: $(_pv)"
+
+# AN OBSERVATION THAT COULD NOT BE MADE IS NOT AGREEMENT.
+#
+# The first version SKIPPED a comparison whose expected value was empty, so a hashing failure
+# silently disabled the check: with `ts_inventory_digest` gone, the child's start and end snapshots
+# are both empty, agree with each other, satisfy the freeform schema, and the supervisor compares
+# nothing. That is the fail-open this tier exists to remove, introduced by the change removing it.
+case "$(candidate_provenance "$_PV" aaaa1111 bbbb2222 cccc3333 "")" in
+  *inventory_sha_unobservable*) ok "an EMPTY expected digest is refused, not skipped" ;;
+  *) no "an empty expected digest silently skipped the comparison: $(candidate_provenance "$_PV" aaaa1111 bbbb2222 cccc3333 "")" ;;
+esac
+case "$(candidate_provenance "$_PV" aaaa1111 bbbb2222 cccc3333 'TREESTATE-UNAVAILABLE:no-hasher')" in
+  *inventory_sha_unobservable*) ok "an UNAVAILABLE expected digest is refused, not compared as a string" ;;
+  *) no "the unavailable marker was compared as if it were a digest" ;;
+esac
+_pv_sav="$(sed -n 's/^inventory_sha=//p' "$_PV")"
+sed -i.bak 's|^inventory_sha=.*|inventory_sha=|' "$_PV" && rm -f "$_PV.bak"
+case "$(_pv)" in
+  *inventory_sha_unpublished*) ok "a candidate that PUBLISHED nothing for an observed field is refused" ;;
+  *) no "an empty published digest was accepted: $(_pv)" ;;
+esac
+sed -i.bak "s|^inventory_sha=.*|inventory_sha=$_pv_sav|" "$_PV" && rm -f "$_PV.bak"
+
+# THE PRODUCERS THEMSELVES MUST BE PRESENT, or the supervisor computes an empty expectation and the
+# refusal above fires for the wrong reason — correct, but pointing at the candidate instead of the
+# broken library.
+( . "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null
+  unset -f ts_inventory_digest 2>/dev/null
+  ts_require >/dev/null 2>&1 ) \
+  && no "ts_require accepts a treestate library missing ts_inventory_digest" \
+  || ok "ts_require refuses a treestate library missing a digest producer"
 
 echo "=== the candidate must be THIS run's candidate ==="
 sed 's|^run_id=.*|run_id=THIS-RUN|' "$GOOD" | sed 's|^head=.*|head=THIS-HEAD|' > "$TMP/bound"
@@ -644,7 +676,7 @@ fi
 # that — 240 probes were silently lost from another gate the same way — and this round's review
 # found controls here that had been inert for rounds without anyone noticing. Changing the count is
 # a deliberate act, recorded in the same commit as the control that changed it.
-EXPECTED_CONTROLS=145
+EXPECTED_CONTROLS=149
 _total=$((PASS + FAIL))
 if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
   echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"
