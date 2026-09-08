@@ -391,7 +391,7 @@ cd "$ROOT_DIR"
 # candidate's population describes the CORPUS rather than merely agreeing with itself, and it exits
 # inside its own branch long before the inventory is built — so a constant defined next to that
 # build is invisible to the role that audits it.
-EXPECTED_FAMILIES=85
+EXPECTED_FAMILIES=91
 
 # LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
 # supervisor recomputes it; they must use the SAME function or two implementations could each agree
@@ -1363,6 +1363,51 @@ $'      IO.println (Report.generatedImplementationsReport (pc := pc))'
 add "supervisor-child-exit-refusal" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
 $'  [ "$rc" = "0" ] || out="$out child_exit($rc)"' \
 $'  [ "$rc" = "0" ] || out="$out"'
+
+# H-5: THE SUPERVISOR'S WIRING, NOT ONLY ITS DECISIONS.
+#
+# Each of these keeps the decision function intact and severs the ONE line that consults it. That is
+# the failure these exist to catch: a helper suite at 169/0 over decisions the production path had
+# quietly stopped asking. Every one was measured pristine-green then mutated-red on a disposable
+# copy, failing the control that names its own call site, before being written down here.
+
+# A DECISION NOTHING CONSULTS IS NOT A CONTROL. This keeps the call to candidate_provenance and
+# DISCARDS its answer, so every helper-level control stays green while the supervisor stops acting
+# on identity refusals entirely — the exact shape that made H-5 necessary. Measured: it also takes
+# the cross-field workspace comparison with it, since both refusals travel this one call site.
+add "supervisor-asks-provenance" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  '_sup_refusals="$_sup_refusals$(candidate_provenance "$_cand" \\' \
+  '_wiring_discarded="$(candidate_provenance "$_cand" \\'
+
+# THE CANDIDATE MUST BE THIS RUN'S. Discarding the binding lets a stale candidate from an earlier run
+# answer for a child that just exited cleanly.
+add "supervisor-asks-run-binding" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  '_sup_refusals="$_sup_refusals$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"' \
+  '_wiring_discarded="$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"'
+
+# INCOHERENCE MUST REACH THE REFUSALS. The check still runs and its result is still computed; it just
+# stops being appended, so a record that contradicts itself publishes.
+add "supervisor-asks-incoherence" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  '[ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"' \
+  '[ -z "$_cand_incoh" ] || _wiring_discarded="candidate_incoherent($_cand_incoh)"'
+
+# PUBLICATION WHILE WORK SURVIVES. Short-circuiting the guard lets the supervisor install an
+# authoritative record while a process that can still modify the evidence is running.
+add "supervisor-asks-group-state" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  'if ! group_state_permits_publication "$_group_state"; then' \
+  'if false && ! group_state_permits_publication "$_group_state"; then'
+
+# THE LAUNCHER'S ANSWER MUST BE READ. The decoder still runs; its verdict is thrown away, so a report
+# naming a different run is accepted as this run's.
+add "supervisor-asks-launch-report" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  '_launch_bad="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"' \
+  '_launch_bad=""; _wiring_discarded="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"'
+
+# EVIDENCE CHANGED AFTER THE CENSUS MUST REFUSE. The digests are still computed and compared; the
+# refusal is simply not recorded, so post-census tampering publishes.
+add "supervisor-asks-evidence-root" "scripts/tests/lib/campaign_supervise.sh" "check_campaign_supervisor.sh" no \
+  '_sup_refusals="$_sup_refusals evidence_changed_after_census($_cand_root->$_sup_root)"' \
+  '_wiring_discarded="evidence_changed_after_census($_cand_root->$_sup_root)"'
 
 # THE ROOT CONJUNCT MUST BE CONSUMED, NOT MERELY CALLED. This mutation keeps the call to
 # dependencyRootMaterial and DISCARDS its result, so every lexical control — including the pinned

@@ -703,8 +703,13 @@ _wire_sandbox() {
 # A CANDIDATE WHOSE EVERY FIELD AGREES WITH WHAT THE SUPERVISOR WILL OBSERVE, built with the same
 # producers the body uses so it cannot go stale. A committed fixture would carry a head that is
 # wrong the moment anything is committed.
+# THE DECLARED COUNT FOLLOWS THE INVENTORY. Writing 85 here made these controls fail the moment H-5
+# added families — a denominator restated in a second place is a denominator that goes stale.
+_wire_famcount() { family_set_from_driver "$1/scripts/tests/check_gate_mutation_coverage.sh" | grep -c .; }
+
 _wire_populate() {
-  local w="$1" run="$2" h t u ed root
+  local w="$1" run="$2" h t u ed root n
+  n="$(_wire_famcount "$w")"
   h="$(ts_head "$w")"; t="$(ts_tracked "$w")"; u="$(ts_untracked "$w")"
   ed="$w/.mutation-evidence/$run/$WFAM"; mkdir -p "$ed"
   cat > "$ed/verdict.txt" <<EOF
@@ -735,7 +740,7 @@ EOF
   cat > "$w/.mutation-campaign-summary.candidate" <<EOF
 completed=1
 mode=single
-discovered=85
+discovered=$n
 selected=1
 executed=1
 reported=1
@@ -745,7 +750,7 @@ survived=0
 could_not_apply=0
 integrity_ok=1
 qualified=0
-families_declared=85
+families_declared=$n
 families_run=1
 killed_by_gate=1
 killed_by_build=0
@@ -782,7 +787,7 @@ EOF
 # supervisor's last act.
 _wire_run() {
   local w="$1" run="$2"
-  ( ROOT_DIR="$w"; RUN_ID="$run"; EXPECTED_FAMILIES=85; FAMILY="$WFAM"
+  ( ROOT_DIR="$w"; RUN_ID="$run"; EXPECTED_FAMILIES="$(_wire_famcount "$w")"; FAMILY="$WFAM"
     REFUSALS=""; SCOPE_NOTES=""
     _launch_report="$w/launch"; _launch_rc=0; _group_state="launched_state_unknown"
     _sup_head0="$(ts_head "$w")"; _sup_tracked0="$(ts_tracked "$w")"
@@ -891,7 +896,7 @@ _wnam="$(_wire_sandbox noname)"
 if [ -n "$_wnam" ]; then
   _wnrun="$(ts_head "$_wnam" | cut -c1-12)-20260101T000000-1234-AAAAAA"
   _wire_populate "$_wnam" "$_wnrun"
-  ( ROOT_DIR="$_wnam"; RUN_ID="$_wnrun"; EXPECTED_FAMILIES=85; FAMILY="$WFAM"
+  ( ROOT_DIR="$_wnam"; RUN_ID="$_wnrun"; EXPECTED_FAMILIES="$(_wire_famcount "$_wnam")"; FAMILY="$WFAM"
     REFUSALS=""; SCOPE_NOTES=""
     _launch_report="$_wnam/launch"; _launch_rc=0; _group_state="launched_state_unknown"
     _sup_head0="$(ts_head "$_wnam")"; _sup_tracked0="$(ts_tracked "$_wnam")"
