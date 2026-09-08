@@ -669,6 +669,66 @@ else
   fi
 fi
 
+# EVERY PUBLISHED FIELD HAS A DECLARED AUTHORITY STATUS, AND TWO OF THEM ESTABLISH NOTHING.
+#
+# A reader who sees `baseline_compiler_sha=<32 hex>` in a qualified record will take it to mean the
+# supervisor knows which compiler ran. It does not. That compiler existed only inside a disposable
+# workspace the supervisor never entered, and the workspace is deleted before reconciliation, so the
+# field is child-reported and unobservable — well-formedness is the ONLY property that can be
+# checked. The library says so; these controls make the saying enforceable.
+_cls_all="$CAMPAIGN_FIELDS_OBSERVED $CAMPAIGN_FIELDS_CROSSFIELD $CAMPAIGN_FIELDS_NON_AUTHORITATIVE $CAMPAIGN_FIELDS_SEMANTIC"
+_cls_missing="$(comm -23 <(printf '%s\n' $CAMPAIGN_SCHEMA_PUBLISHED | sort -u) <(printf '%s\n' $_cls_all | sort -u) | tr '\n' ' ')"
+_cls_extra="$(comm -13 <(printf '%s\n' $CAMPAIGN_SCHEMA_PUBLISHED | sort -u) <(printf '%s\n' $_cls_all | sort -u) | tr '\n' ' ')"
+_cls_dup="$(printf '%s\n' $_cls_all | sort | uniq -d | tr '\n' ' ')"
+[ -z "$_cls_missing" ] \
+  && ok "every published field has a declared authority status" \
+  || no "published fields with NO declared authority status: $_cls_missing"
+[ -z "$_cls_extra" ] \
+  && ok "...and nothing is classified that the schema does not publish" \
+  || no "classified but unpublished: $_cls_extra"
+[ -z "$_cls_dup" ] \
+  && ok "...and no field is claimed by two authority tiers at once" \
+  || no "a field is in two tiers, so its status is ambiguous: $_cls_dup"
+
+# THE NON-AUTHORITATIVE SET IS EXACTLY THE TWO UNOBSERVABLE COMPILER FIELDS. Pinning it means
+# demoting a third field to shape-only is a visible edit here, not a quiet loss of authority.
+case "$(printf '%s\n' $CAMPAIGN_FIELDS_NON_AUTHORITATIVE | sort | tr '\n' ' ')" in
+  "baseline_compiler_sha compilers_tested ") ok "the non-authoritative set is exactly the two unobservable compiler fields" ;;
+  *) no "the non-authoritative set changed: $CAMPAIGN_FIELDS_NON_AUTHORITATIVE" ;;
+esac
+
+# AND THE CLAIM THEY CANNOT SUPPORT: qualification must not move when they do.
+#
+# This is the control that gives the words above their meaning. If a future change made
+# candidate_incoherent consult either field, a well-formed lie would start buying qualification and
+# this control would go red — which is the whole reason the fields are labelled rather than trusted.
+# Run on $GOOD, the QUALIFIED fixture: on an already-refused record every check returns the same
+# refusals whatever the compiler fields say, and the qualification-specific branch never executes —
+# the comparison would be true and meaningless. This one has to travel the qualified=1 path.
+grep -q '^qualified=1$' "$GOOD" \
+  && ok "the invariance fixture is qualified=1, so the qualification-specific checks actually run" \
+  || no "the fixture is not qualified, so the invariance comparison below would be vacuous"
+_NA="$TMP/nonauth"; cp "$GOOD" "$_NA"
+_na_before="$(candidate_incoherent "$_NA" 85 "$GATES")"; _na_rc=$?
+sed -i.bak 's|^baseline_compiler_sha=.*|baseline_compiler_sha=ffffffffffffffffffffffffffffffff|' "$_NA" && rm -f "$_NA.bak"
+sed -i.bak 's|^compilers_tested=.*|compilers_tested=single-baseline|' "$_NA" && rm -f "$_NA.bak"
+_na_after="$(candidate_incoherent "$_NA" 85 "$GATES")"; _na_rc2=$?
+if [ "$_na_rc" = "$_na_rc2" ] && [ "$_na_before" = "$_na_after" ]; then
+  ok "qualification does not change when the non-authoritative compiler fields do"
+else
+  no "qualification CONSULTED a non-authoritative field: rc $_na_rc->$_na_rc2, '$_na_before' -> '$_na_after'"
+fi
+
+# NON-AUTHORITATIVE IS NOT UNCHECKED. Both are still refused when malformed, so the label describes
+# what the value means, not a hole where a check used to be. (A control above already proves the
+# malformed cases fire; this one proves the well-formed substitution just made is still accepted by
+# provenance, so the pair above compared two ACCEPTED records rather than two refused ones.)
+sed -i.bak 's|^baseline_compiler_sha=.*|baseline_compiler_sha=ffffffffffffffffffffffffffffffff|' "$_PV" && rm -f "$_PV.bak"
+sed -i.bak 's|^compilers_tested=.*|compilers_tested=single-baseline|' "$_PV" && rm -f "$_PV.bak"
+[ -z "$(_pv)" ] \
+  && ok "...and both substituted values are well-formed, so that comparison was between accepted records" \
+  || no "the substitution was itself refused, making the comparison above vacuous: $(_pv)"
+
 # THE POPULATION IS PINNED, NOT JUST THE FAILURE COUNT.
 #
 # Exiting on FAIL==0 alone means DELETING a control is indistinguishable from passing it: the gate
@@ -676,7 +736,7 @@ fi
 # that — 240 probes were silently lost from another gate the same way — and this round's review
 # found controls here that had been inert for rounds without anyone noticing. Changing the count is
 # a deliberate act, recorded in the same commit as the control that changed it.
-EXPECTED_CONTROLS=149
+EXPECTED_CONTROLS=156
 _total=$((PASS + FAIL))
 if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
   echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"

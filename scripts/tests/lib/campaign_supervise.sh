@@ -448,6 +448,33 @@ records_unkilled_or_unevidenced() {
 # looser version of the same thing, which meant the gate could pass while the consumer that actually
 # gates publication rejected the identical bytes — or, worse, the reverse. There is one decoder now,
 # and the gate calls it.
+# EVERY PUBLISHED FIELD HAS A DECLARED AUTHORITY STATUS.
+#
+# A record is read as though all of its fields were equally established. They are not, and the
+# difference is the whole of what a reader needs in order to know what a qualification is worth. The
+# four sets below partition the published schema, and a control asserts the partition is exact — so
+# a field cannot be added without someone deciding, in this file, what its status is.
+#
+#   OBSERVED — the supervisor computed or minted the value itself and compared. A child cannot alter
+#   these without being caught.
+#
+#   CROSS-FIELD — cannot be observed after the run because the object is gone, but must be
+#   internally consistent with something that was observed.
+#
+#   NON-AUTHORITATIVE — child-reported, unobservable, and checked only for well-formedness. A
+#   well-formed value here does NOT establish the fact it names: `baseline_compiler_sha` is the
+#   digest of a compiler that existed only inside a disposable workspace the supervisor never
+#   entered and which is deleted before reconciliation, so it cannot show WHICH compiler ran. These
+#   fields therefore support no qualification or provenance claim, and a control asserts that
+#   qualification does not change when they do.
+#
+#   SEMANTIC — counts, dispositions and verdicts, reconciled against each other and against the
+#   evidence on disk by candidate_incoherent and the supervisor's census.
+CAMPAIGN_FIELDS_OBSERVED="executed_driver_sha preamble_driver_sha repo_driver_sha inventory_sha head tracked_sha untracked_sha run_id families_digest evidence_root evidence_dir"
+CAMPAIGN_FIELDS_CROSSFIELD="workspace_head workspace_tracked_sha workspace_untracked_sha"
+CAMPAIGN_FIELDS_NON_AUTHORITATIVE="baseline_compiler_sha compilers_tested"
+CAMPAIGN_FIELDS_SEMANTIC="completed mode discovered selected executed reported killed invalid survived could_not_apply integrity_ok qualified families_declared families_run killed_by_gate killed_by_build failed evidence_written baseline_gates_green gates_proven refusals secs_total secs_copy secs_build secs_gate secs_other supervisor_refusals supervisor_child_exit candidate_incoherent"
+
 # candidate_provenance <candidate> <exec-driver> <preamble> <repo-driver> <inventory> -> refusals
 #
 # NINE FIELDS DESCRIBED WHAT WAS TESTED AND NOTHING CHECKED ANY OF THEM.
