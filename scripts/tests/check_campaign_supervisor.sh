@@ -669,6 +669,246 @@ else
   fi
 fi
 
+# THE WIRING, NOT ONLY THE DECISIONS.
+#
+# Everything above attacks a decision function directly. None of it proves the supervisor ASKS. The
+# reconciliation body used to live inline in the driver where no gate could enter it, so deleting a
+# refusal's CALL SITE left every control here green — well-tested decisions nothing was obliged to
+# consult. These controls run the REAL supervisor_reconcile_and_publish against a sandbox: a tamper
+# that the body must refuse, asserted through its published artifact and its exit status.
+. "$ROOT_DIR/scripts/tests/lib/treestate.sh" 2>/dev/null || true
+WFAM=mint-missing-result-refusal
+
+# A SANDBOX THAT IS A REAL REPOSITORY. The body takes its own tree observations with the ts_*
+# producers; outside a repository every one of them is UNAVAILABLE and every control below would
+# pass for the wrong reason. It carries production's ignores too — without them the artifact the
+# body writes is itself untracked content, the tree "moves" between reconciliation and publication,
+# and the run refuses over the sandbox rather than over the code under test.
+_wire_sandbox() {
+  local w="$TMP/wire.$1"
+  mkdir -p "$w/scripts/tests" || return 1
+  cp "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh" "$w/scripts/tests/" || return 1
+  printf '%s\n' .mutation-campaign-summary .mutation-campaign-summary.partial \
+    .mutation-campaign-summary.candidate '.mutation-campaign-summary.??????' \
+    '.mutation-campaign-summary.partial.*' .mutation-evidence/ .gate.lock/ \
+    launch out err 'mutcand.*' '*.b' > "$w/.gitignore" || return 1
+  # '*.b' because the tampers below use `sed -i.b`, and an unignored backup file moves
+  # ts_untracked — every case would then also carry a spurious untracked mismatch, which is
+  # noise in exactly the place these controls read their answer.
+  ( cd "$w" && git init -q && git add -A \
+    && git -c user.email=h@h -c user.name=h commit -qm base ) >/dev/null 2>&1 || return 1
+  printf '%s' "$w"
+}
+
+# A CANDIDATE WHOSE EVERY FIELD AGREES WITH WHAT THE SUPERVISOR WILL OBSERVE, built with the same
+# producers the body uses so it cannot go stale. A committed fixture would carry a head that is
+# wrong the moment anything is committed.
+_wire_populate() {
+  local w="$1" run="$2" h t u ed root
+  h="$(ts_head "$w")"; t="$(ts_tracked "$w")"; u="$(ts_untracked "$w")"
+  ed="$w/.mutation-evidence/$run/$WFAM"; mkdir -p "$ed"
+  cat > "$ed/verdict.txt" <<EOF
+family=$WFAM
+selector=FAMILY=85
+array_index=84
+file=scripts/tests/check_dependency_edges.sh
+gate=check_mint_missing_result.sh
+disposition=killed
+killed=1
+invalid=0
+build_required=no
+expected_route=gate
+head=$h
+run_id=$run
+verdict=(killed by check_mint_missing_result.sh; reproduced red/green/red)
+EOF
+  cat > "$w/launch" <<EOF
+protocol_version=1
+run_id=$run
+child_rc=0
+child_signalled=0
+child_signal=0
+process_group_state=empty
+pgid=0
+EOF
+  root="$(evidence_root_digest "$w/.mutation-evidence/$run")"
+  cat > "$w/.mutation-campaign-summary.candidate" <<EOF
+completed=1
+mode=single
+discovered=85
+selected=1
+executed=1
+reported=1
+killed=1
+invalid=0
+survived=0
+could_not_apply=0
+integrity_ok=1
+qualified=0
+families_declared=85
+families_run=1
+killed_by_gate=1
+killed_by_build=0
+failed=0
+evidence_written=1
+baseline_gates_green=1
+gates_proven=1/1
+refusals=
+secs_total=1
+secs_copy=1
+secs_build=1
+secs_gate=1
+secs_other=1
+run_id=$run
+head=$h
+tracked_sha=$t
+untracked_sha=$u
+workspace_head=$h
+workspace_tracked_sha=$t
+workspace_untracked_sha=$u
+executed_driver_sha=$(ts_driver_digest "$w")
+preamble_driver_sha=$(ts_driver_digest "$w")
+repo_driver_sha=$(ts_driver_digest "$w")
+inventory_sha=$(ts_inventory_digest "$w")
+families_digest=$(family_set_digest "$(family_set_from_driver "$w/scripts/tests/check_gate_mutation_coverage.sh")")
+evidence_dir=.mutation-evidence/$run
+evidence_root=$root
+baseline_compiler_sha=0123456789abcdef0123456789abcdef
+compilers_tested=per-family-rebuilds
+EOF
+}
+
+# THE PRODUCTION ENTRY POINT, in a subshell because the body exits rather than returning — it is the
+# supervisor's last act.
+_wire_run() {
+  local w="$1" run="$2"
+  ( ROOT_DIR="$w"; RUN_ID="$run"; EXPECTED_FAMILIES=85; FAMILY="$WFAM"
+    REFUSALS=""; SCOPE_NOTES=""
+    _launch_report="$w/launch"; _launch_rc=0; _group_state="launched_state_unknown"
+    _sup_head0="$(ts_head "$w")"; _sup_tracked0="$(ts_tracked "$w")"
+    _sup_untracked0="$(ts_untracked "$w")"
+    CAMPAIGN_DRIVER="$w/scripts/tests/check_gate_mutation_coverage.sh"
+    export CONCRETE_MUT_DRIVER_SHA="$(ts_driver_digest "$w")"
+    export CONCRETE_MUT_PREAMBLE_SHA="$(ts_driver_digest "$w")"
+    export CONCRETE_MUT_PARTIAL=1
+    supervisor_reconcile_and_publish ) >"$w/out" 2>"$w/err"
+}
+
+_wire_refusals() { sed -n 's/^supervisor_refusals=//p' "$1/.mutation-campaign-summary.partial" 2>/dev/null | head -1; }
+
+# A CASE IS A TAMPER PLUS THE REFUSAL IT MUST PRODUCE. `_want` empty means "must publish cleanly".
+_wire_case() {
+  local tag="$1" want="$2" tamper="$3" w run rc refs
+  w="$(_wire_sandbox "$tag")" || { no "wiring[$tag]: sandbox could not be built"; return; }
+  run="$(ts_head "$w" | cut -c1-12)-20260101T000000-1234-AAAAAA"
+  _wire_populate "$w" "$run"
+  [ -z "$tamper" ] || eval "$tamper"
+  _wire_run "$w" "$run"; rc=$?
+  refs="$(_wire_refusals "$w")"
+  if [ -z "$want" ]; then
+    if [ "$rc" = "0" ] && [ "$refs" = "none" ]; then
+      ok "wiring[$tag]: an honest run publishes cleanly through the production body"
+    else
+      no "wiring[$tag]: an honest run was refused (rc=$rc): $refs $(head -2 "$w/err" | tr '\n' ' ')"
+    fi
+    return
+  fi
+  case "$refs" in
+    *"$want"*) [ "$rc" = "0" ] \
+      && no "wiring[$tag]: refused with '$want' yet exited 0 — the refusal did not reach the status" \
+      || ok "wiring[$tag]: $want" ;;
+    *) no "wiring[$tag]: expected '$want', got rc=$rc refusals='$refs' $(head -2 "$w/err" | tr '\n' ' ')" ;;
+  esac
+}
+
+# THE POSITIVE CONTROL FIRST. Without it every refusal below is satisfied by a body that refuses
+# everything, which is the failure mode these controls are least able to notice on their own.
+_wire_case clean "" ""
+
+# Each of these is a call site inside the body. Neuter the call and the matching control goes red.
+_wire_case provenance   inventory_sha_mismatch \
+  'sed -i.b "s|^inventory_sha=.*|inventory_sha=deadbeefdeadbeefdeadbeefdeadbeef|" "$w/.mutation-campaign-summary.candidate"'
+_wire_case runbinding   candidate_from_other_run \
+  'sed -i.b "s|^run_id=.*|run_id=ffffffffffff-20200101T000000-1-ZZZZZZ|" "$w/.mutation-campaign-summary.candidate"'
+_wire_case incoherence  candidate_incoherent \
+  'sed -i.b "s|^reported=1$|reported=86|" "$w/.mutation-campaign-summary.candidate"'
+_wire_case childexit    child_exit \
+  'sed -i.b "s|^child_rc=0$|child_rc=1|" "$w/launch"'
+# A REPORT NAMING ANOTHER RUN IS FATAL, NOT A REFUSAL RECORD. Measured: the body cannot describe a
+# run it cannot identify, so it writes nothing and exits 2. The first version of this control expected
+# a published refusal and failed — the control was wrong, not the body.
+_wls="$(_wire_sandbox launchstale)"
+if [ -n "$_wls" ]; then
+  _wlsrun="$(ts_head "$_wls" | cut -c1-12)-20260101T000000-1234-AAAAAA"
+  _wire_populate "$_wls" "$_wlsrun"
+  sed -i.b 's|^run_id=.*|run_id=ffffffffffff-20200101T000000-1-ZZZZZZ|' "$_wls/launch"
+  _wire_run "$_wls" "$_wlsrun"; _wlsrc=$?
+  if [ "$_wlsrc" = "2" ] && grep -q 'stale_run_id' "$_wls/err" \
+     && [ ! -e "$_wls/.mutation-campaign-summary.partial" ]; then
+    ok "wiring[launchstale]: a report naming another run is fatal and publishes nothing"
+  else
+    no "wiring[launchstale]: rc=$_wlsrc artifact=$([ -e "$_wls/.mutation-campaign-summary.partial" ] && echo present || echo absent): $(head -1 "$_wls/err")"
+  fi
+else
+  no "wiring[launchstale]: sandbox could not be built"
+fi
+_wire_case evidence     evidence_changed_after_census \
+  'echo tampered >> "$w/.mutation-evidence/$run/$WFAM/verdict.txt"'
+_wire_case familyset    family_set_mismatch \
+  'sed -i.b "s|^families_digest=.*|families_digest=00000000000000000000000000000000000000000000000000000000000000ff|" "$w/.mutation-campaign-summary.candidate"'
+_wire_case treedigest   workspace_head_differs \
+  'sed -i.b "s|^workspace_head=.*|workspace_head=0000000000000000000000000000000000000000|" "$w/.mutation-campaign-summary.candidate"'
+
+# A NON-EMPTY PROCESS GROUP FORBIDS PUBLICATION OUTRIGHT — this one is checked by absence of the
+# artifact, not by a refusal string, because the body must not install a record at all.
+_wgrp="$(_wire_sandbox group)"
+if [ -n "$_wgrp" ]; then
+  _wgrun="$(ts_head "$_wgrp" | cut -c1-12)-20260101T000000-1234-AAAAAA"
+  _wire_populate "$_wgrp" "$_wgrun"
+  sed -i.b 's|^process_group_state=empty$|process_group_state=nonempty|' "$_wgrp/launch"
+  _wire_run "$_wgrp" "$_wgrun"; _wgrc=$?
+  # A FAILURE RECORD IS STILL A RECORD: the body writes one naming the refusal rather than leaving a
+  # reader with nothing to read. What it must never do is let that record claim qualification.
+  _wgref="$(_wire_refusals "$_wgrp")"
+  case "$_wgref" in
+    *campaign_group_not_empty*) ok "wiring[group]: a surviving process group refuses qualification by name" ;;
+    *) no "wiring[group]: the surviving group produced no named refusal: '$_wgref'" ;;
+  esac
+  case "$(sed -n 's/^qualified=//p' "$_wgrp/.mutation-campaign-summary.partial" 2>/dev/null | head -1)" in
+    0) ok "wiring[group]: ...and the record it writes does not claim qualification" ;;
+    *) no "wiring[group]: a record was published claiming qualification with a surviving group" ;;
+  esac
+  [ "$_wgrc" = "0" ] \
+    && no "wiring[group]: refused publication yet exited 0" \
+    || ok "wiring[group]: ...and the refusal reaches the exit status"
+else
+  no "wiring[group]: sandbox could not be built"
+fi
+
+# THE INVENTORY IS NAMED, NOT INFERRED. Unset CAMPAIGN_DRIVER must refuse rather than fall back to
+# $0 — the fallback read this gate's own path and reported an inventory of zero families.
+_wnam="$(_wire_sandbox noname)"
+if [ -n "$_wnam" ]; then
+  _wnrun="$(ts_head "$_wnam" | cut -c1-12)-20260101T000000-1234-AAAAAA"
+  _wire_populate "$_wnam" "$_wnrun"
+  ( ROOT_DIR="$_wnam"; RUN_ID="$_wnrun"; EXPECTED_FAMILIES=85; FAMILY="$WFAM"
+    REFUSALS=""; SCOPE_NOTES=""
+    _launch_report="$_wnam/launch"; _launch_rc=0; _group_state="launched_state_unknown"
+    _sup_head0="$(ts_head "$_wnam")"; _sup_tracked0="$(ts_tracked "$_wnam")"
+    _sup_untracked0="$(ts_untracked "$_wnam")"
+    unset CAMPAIGN_DRIVER
+    export CONCRETE_MUT_PARTIAL=1
+    supervisor_reconcile_and_publish ) >/dev/null 2>"$_wnam/err2"
+  _wnrc=$?
+  if [ "$_wnrc" = "2" ] && grep -q CAMPAIGN_DRIVER "$_wnam/err2"; then
+    ok "wiring[noname]: an unnamed inventory is a refusal, not a fallback to \$0"
+  else
+    no "wiring[noname]: expected rc=2 naming CAMPAIGN_DRIVER, got rc=$_wnrc: $(head -1 "$_wnam/err2")"
+  fi
+else
+  no "wiring[noname]: sandbox could not be built"
+fi
+
 # EVERY PUBLISHED FIELD HAS A DECLARED AUTHORITY STATUS, AND TWO OF THEM ESTABLISH NOTHING.
 #
 # A reader who sees `baseline_compiler_sha=<32 hex>` in a qualified record will take it to mean the
@@ -736,7 +976,7 @@ sed -i.bak 's|^compilers_tested=.*|compilers_tested=single-baseline|' "$_PV" && 
 # that — 240 probes were silently lost from another gate the same way — and this round's review
 # found controls here that had been inert for rounds without anyone noticing. Changing the count is
 # a deliberate act, recorded in the same commit as the control that changed it.
-EXPECTED_CONTROLS=156
+EXPECTED_CONTROLS=169
 _total=$((PASS + FAIL))
 if [ "$_total" -ne "$EXPECTED_CONTROLS" ]; then
   echo "  FAIL this gate ran $_total controls, expected $EXPECTED_CONTROLS — one was added or removed"

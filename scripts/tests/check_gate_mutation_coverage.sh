@@ -496,6 +496,10 @@ if [ "${ANCHORS_ONLY:-0}" != "1" ] && [ "${CONCRETE_MUT_ROLE}" = "supervisor" ] 
   # BEFORE the launcher runs; after it the honest state is "a child ran and I do not yet know
   # whether its group is empty", which the enumeration answers by holding.
   _group_state="launched_state_unknown"
+  # THE DRIVER NAMES ITSELF, rather than letting the body infer the inventory from $0 — which was
+  # correct only for as long as the body was inside this file.
+  CAMPAIGN_DRIVER="$0"
+
   # THE RECONCILIATION AND PUBLICATION BODY LIVES IN THE DECISION LIBRARY, so that a gate can run
   # these exact lines and a mutation neutering a refusal has something to turn red. It was inline
   # here, unreachable by any gate: the decisions were well controlled, the asking was not.

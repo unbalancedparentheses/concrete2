@@ -812,7 +812,24 @@ supervisor_reconcile_and_publish() {
   # record that says the run did not qualify. That is precisely the PASS-versus-exit disagreement
   # this boundary exists to remove, reintroduced one layer up.
   # The gate population comes from the same source the families do — the driver's own `add` lines.
-  _sup_gates="$(gate_count_from_driver "$0" 2>/dev/null || echo "")"
+  # THE INVENTORY IS NAMED, NOT INHERITED FROM $0.
+  #
+  # These two producers read "$0" while this body lived inside the driver, where $0 WAS the driver.
+  # Moving it into a library did not change $0 — it is still the top-level script — so production is
+  # unaffected; but the dependency became invisible, and the first gate to call this function read
+  # its OWN path and saw an inventory of zero families. A refusal about the harness, wearing the
+  # words of a refusal about the campaign.
+  #
+  # So the driver names itself. Settable from the environment, which is acceptable here and nowhere
+  # else: the supervisor sets it for itself before the call, and anything able to set the
+  # supervisor's environment could already substitute this library wholesale. Unset or unreadable is
+  # a refusal, not a fallback — a defaulted path is how "which inventory" quietly becomes "whichever
+  # file happened to be there".
+  if [ -z "${CAMPAIGN_DRIVER:-}" ] || [ ! -r "${CAMPAIGN_DRIVER:-}" ]; then
+    echo "FATAL: CAMPAIGN_DRIVER is unset or unreadable: '${CAMPAIGN_DRIVER:-<unset>}'" >&2
+    exit 2
+  fi
+  _sup_gates="$(gate_count_from_driver "$CAMPAIGN_DRIVER" 2>/dev/null || echo "")"
   _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" "$_sup_gates" 2>/dev/null || echo candidate_unreadable)"
   # A CLEAN EXIT AND AN UNFINISHED RECORD CANNOT BOTH BE TRUE.
   #
@@ -840,7 +857,7 @@ supervisor_reconcile_and_publish() {
   # mutation leaves the corpus and a foreign one takes its place. The supervisor derives the declared
   # set from the DRIVER SOURCE it is executing, the child derived its set from the inventory it
   # BUILT, and the two must agree — independent readings, not two looks at the same array.
-  _sup_fams="$(family_set_from_driver "$0")"
+  _sup_fams="$(family_set_from_driver "$CAMPAIGN_DRIVER")"
   _sup_famn="$(printf '%s\n' "$_sup_fams" | grep -cv '^$' || true)"
   _sup_famdig="$(family_set_digest "$_sup_fams")"
   _cand_famdig="$(sed -n 's/^families_digest=//p' "$_cand" | head -1)"
