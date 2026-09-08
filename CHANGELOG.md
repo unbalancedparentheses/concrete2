@@ -10,6 +10,52 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### What A Record Says Versus What Anyone Checked
+
+_Campaign supervision, 2026-09-08. Landed at `591224f2`, `c7c6cd45`, `b7b7c2cf`, `9ea22652`,
+`738a99a2`, `dbf00d0c`._
+
+The macOS residue of the lock repair was one line. Shell-instance identity fell back to
+`sh -c 'echo $PPID'` inside a command substitution, which reports the substitution subshell's parent
+— stable on bash 5 because it elides the fork, unstable on the bash 3.2 macOS ships. The fix is
+`exec sh -c` plus a stability check at arm time. It was found only after the macOS smoke batch was
+made to retain each constituent's command, exit status, stdout and stderr separately; the previous
+batch reported that ten gates failed and nothing about why. All thirteen CI jobs are green.
+
+Nine identity fields in the campaign artifact were checked for SHAPE and described as provenance.
+Four driver and inventory digests are now compared against values the supervisor computes itself,
+and three workspace fields must reconcile with observations it already took. Two cannot be observed
+at all: `baseline_compiler_sha` names a compiler that existed only inside a disposable workspace the
+supervisor never enters, deleted before reconciliation. A well-formed digest there does not say
+which compiler ran. Rather than imply otherwise, both are declared NON-AUTHORITATIVE, every one of
+the 45 published fields is partitioned by authority status, and the partition is asserted exact — a
+field cannot be added without someone deciding what its status is. The load-bearing control is that
+qualification does not move when those two fields do.
+
+An OBSERVED comparison whose expected value was empty used to be skipped, so a hashing failure
+silently disabled it: both snapshots empty, in agreement, schema satisfied, nothing compared. That
+is the fail-open the tier exists to remove, and it was introduced by the change removing it.
+
+The decisions were well controlled; the asking was not. The 350 lines that decode the launcher
+report, reconcile the candidate and install or refuse the artifact lived inside an
+`if [ role = supervisor ]` no gate could enter, so deleting a refusal's CALL SITE left every
+helper-level control green. They now live in the decision library, driven by thirteen controls that
+run the real publication path against a sandbox, and six mutation families sever one call site each
+while leaving the decision intact — measured pristine-green then mutated-red, red on the control
+naming that call site.
+
+Moving the code exposed a dependency it had hidden: the body found its inventory through `$0`,
+correct only for as long as it lived in the driver. The first gate to call it read its own path and
+reported an inventory of zero families — a refusal about the harness wearing the words of a refusal
+about the campaign. The driver names itself now, and an unnamed inventory is a refusal rather than a
+fallback.
+
+Two control expectations written here were wrong and the body was right: an unusable launcher report
+is fatal and publishes nothing, and a surviving process group refuses qualification while still
+writing a record that names the refusal. The controls were corrected, not the code.
+
+The mutation inventory is 91 families, not 85. No qualifying campaign is claimed.
+
 ### The Repository Lock Had No Lifetime
 
 _Gate infrastructure, 2026-09-05. Landed at `a6e4ab68`, `f6bc158b`, `be924d68`, `f90cb4be`._
@@ -51,7 +97,8 @@ at the first match, the producer dies of SIGPIPE, and a successful match reads a
 pipeline. It bit twice while writing these controls. 64 files under `scripts/tests` contain the
 pattern; a canonical sweep is carried as follow-up.
 
-Result: six failing CI job families reduced to one, which is a pre-existing macOS-only failure
+Result: six failing CI job families reduced to zero. The macOS residue that survived this fix is
+recorded below
 whose evidence the smoke batch had been discarding.
 
 ### Generated Evidence Freshness And Dormant-Gate Repair
@@ -80,7 +127,7 @@ refresh to be validated before commit.
 ### Post-R-0004 Mutation Harness Hardening And Diagnostic Census
 
 _Harness and documentation, 2026-08-21/22. Causal harness landed at `898d9a7b`; typed campaign
-accounting landed at `98dee5e3`. No qualifying current-inventory 85-family result is claimed._
+accounting landed at `98dee5e3`. No qualifying current-inventory result is claimed; the inventory is now 91 families, not 85._
 
 The mutation harness now distinguishes “a gate went red” from “this mutation made its intended
 rule go red.” A scored kill requires a green pristine gate, a pristine build, an exact unique

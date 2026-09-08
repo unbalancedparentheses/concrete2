@@ -469,7 +469,7 @@ The checkpoint exits only when one clean pushed HEAD reports all of the followin
 - `completed=1`: the driver reached reconciliation and every selected family reported;
 - discovered = selected = executed = reported = killed = 85;
 - `invalid=0`, `survived=0`, `could_not_apply=0`, and `integrity_ok=1`;
-- `qualified=1`: all 85 families were killed by their intended attributable gate/build outcome;
+- `qualified=1`: all 91 families were killed by their intended attributable gate/build outcome;
 - the artifact and human summary agree, and the repository is clean afterward.
 
 Only then does implementation run R-0208's required toolchain/revocation drill and move to R-0482's
@@ -481,7 +481,7 @@ defect, and an interrupted run is never evidence.
 #### Harness-hardening checkpoint — green under registered gates, explicitly unqualified
 
 This checkpoint pushes a harness whose registered gates are green and whose known limitations are
-recorded here. **It claims nothing about qualification.** There is no qualified 85-family campaign at
+recorded here. **It claims nothing about qualification.** There is no qualified 91-family campaign at
 this HEAD, the receipt schema is not frozen, F7 and F9 are not complete, and the post-R-0004
 qualification programme is not finished.
 
@@ -502,7 +502,7 @@ is named with the authority it affects.
 | **H-2 A clean full-campaign exit is not cross-checked against `qualified=1`.** `candidate_incoherent` accepts a `mode=campaign` record with `qualified=0`, the supervisor checks only `completed` and `integrity_ok`, publishes `qualified=0`, and exits 0. | Under-claiming only. The published record is honest; the exit status does not distinguish "campaign ran and did not qualify" from "campaign ran and qualified". Blocks nothing that could over-claim. |
 | **H-3 CLOSED. Nine identity fields were child-controlled; seven are now supervisor-observed and two are declared non-authoritative.** The four driver/inventory digests are compared against `ts_driver_digest`/`ts_inventory_digest` computed by the supervisor (OBSERVED); the three workspace fields must agree with the observed repository digests (CROSS-FIELD). `baseline_compiler_sha` and `compilers_tested` **cannot** be observed — that compiler existed only inside a disposable workspace the supervisor never enters and which is deleted before reconciliation — so they are declared NON-AUTHORITATIVE in `CAMPAIGN_FIELDS_NON_AUTHORITATIVE` and support no qualification or provenance claim. | **Resolved.** A well-formed child-reported digest does not prove which compiler ran, so it is labelled rather than trusted. All 45 published fields now carry a declared authority status and the partition is asserted exact, so a new field cannot be added without classifying it. A control asserts qualification does not move when the two non-authoritative fields do; mutations making qualification consult one, adding an unclassified field, and silently demoting a third field to shape-only were each confirmed to turn the gate red. |
 | **H-4 Golden freshness has a residual TOCTOU.** The run id is read from the live shared artifact and the bytes are copied afterwards; the copy's own `run_id` is never re-checked. | Test-infrastructure only. Detects the stale-artifact case that actually occurred; a concurrent replacement inside the window is not excluded. No authority over campaign verdicts. |
-| **H-5 Production wiring is not mutation-covered.** Deleting the supervisor's actual process-group publication refusal, or the final-record decoder call site, leaves the helper-level controls green. `campaign_supervise.sh` carries one mutation family, targeting child-exit refusal only. | **Second highest.** The decisions are controlled but the CONTROLS are not proven load-bearing by mutation. Tracked as task #36. Adding families changes `EXPECTED_FAMILIES` and requires a fresh campaign, so it belongs before final qualification, not before preserving this checkpoint. |
+| **H-5 CLOSED. Production wiring is now mutation-covered.** The reconciliation body was inline in the driver where no gate could reach it; it is now `supervisor_reconcile_and_publish` in the decision library, driven by thirteen controls that run the real publication path against a sandbox. Six families sever one call site each — provenance, run-binding, incoherence, group-state, launcher report, evidence root — leaving the decision function intact. | **Resolved.** Each family was measured pristine-green then mutated-red on a disposable copy, red on the control naming its own call site. Building the harness also found the body locating its inventory through `$0`, which was correct only while the code lived in the driver; the driver now names itself through `CAMPAIGN_DRIVER` and unset is a refusal. The inventory is **91 families**, not 85. |
 | **H-6 Mint accounting proves co-occurrence, not causation.** Each case requires a nonzero exit AND a named failure line, but never establishes that the dependency-edge gate is green WITHOUT its self-test hook. An unrelated permanent failure could supply the red exit. | Test-infrastructure. Mitigated in practice by `DEPENDENCY-EDGES` passing 317/0 in the same session, which is that missing positive control run separately rather than inside the gate. |
 | **H-7 `refusals` mixes two kinds of value.** It is published as `$REFUSALS$SCOPE_NOTES` — integrity refusals concatenated with scope annotations — so no predicate over the field alone can separate them. | Currently sound, by argument that must be preserved: the one authority consumer is inside `candidate_incoherent`'s qualification branch, qualification requires `mode=campaign`, and `mode=campaign` holds exactly when `ONLY` is unset, which is exactly when `SCOPE_NOTES` is empty. So the consumer only ever reads a pure integrity value. **Split the field before the first `qualified=1` campaign and before schema conformance/freeze**, because that argument depends on an invariant no gate currently enforces. |
 | **H-9 Lock ownership is not comparable across PID namespaces.** A campaign run inside a sandbox with `--unshare-pid` records its namespace-local pid — observed here as `pid=2` — and the host reclaim logic then tests pid 2, which is `kthreadd` and always alive. | **One-writer guarantee.** A lock stranded by a sandboxed run can never be reclaimed, because its owner always looks alive; and the dead-creator reclaim path is defeated in the other direction. Observed live, not hypothesised: a concurrent sandboxed campaign held `.gate.lock` with `pid=2 cmd=check_gate_mutation_coverage.sh`. Record the namespace identity, or a start-time-qualified owner token, alongside the pid. |
@@ -612,7 +612,7 @@ break the build; a gate could be red before mutation; source restoration could l
 binary; and an empty result could be counted as success. The harness at `898d9a7b` now requires the
 stronger causal controls described in the current execution state.
 
-No **qualifying** 85-family current-inventory result exists yet. The complete 81-family diagnostic
+No **qualifying** 91-family current-inventory result exists yet. The complete 81-family diagnostic
 run at `898d9a7b` reported 73 causal kills, 6 invalid experiments, 2 survivors and zero
 could-not-apply results. Its immutable
 workspace stayed bound to that SHA, so the family dispositions are diagnostic evidence; the control
@@ -6686,7 +6686,7 @@ is not completion; it is future archaeology with better folder names.
 **Identity separation, model attestations, exported interfaces, and proof-aware package linking.**
 
 **Scheduling:** R-0004's prerequisite is satisfied. Production work starts after the post-closure
-85-family qualification checkpoint and R-0208's toolchain/revocation fire drill. This task is
+91-family qualification checkpoint and R-0208's toolchain/revocation fire drill. This task is
 deliberately separate so R-0004 remains finite rather than becoming the entire future verification
 language.
 
