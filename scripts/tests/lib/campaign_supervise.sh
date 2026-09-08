@@ -727,3 +727,384 @@ decode_candidate() { # record [schema] — defaults to the CHILD schema
   done
   printf '%s' "${out# }"
 }
+
+# supervisor_reconcile_and_publish — THE WIRING, NOT JUST THE DECISIONS.
+#
+# Every function above decides one thing, and each is attacked directly by a gate. None of that
+# proves the driver CONSULTS them. This body is what actually runs after the child exits: it decodes
+# the launcher report, reconciles the candidate against the supervisor's own observations, digests
+# the evidence, and either installs the authoritative artifact or refuses. It lived inline in the
+# driver, where no gate could reach it, so deleting a refusal's CALL SITE left every helper-level
+# control green — a set of well-tested decisions nothing was obliged to ask.
+#
+# It is here so that check_campaign_supervisor.sh executes these exact lines, and so that a mutation
+# neutering one of them has a gate to turn red. It exits rather than returning, because it is the
+# supervisor's last act; a caller that is not the supervisor must run it in a subshell.
+#
+# Reads the supervisor's state as globals rather than parameters — deliberately, because it was
+# extracted verbatim from the driver and a parameter list would have been a rewrite disguised as a
+# move. The names it needs are asserted present below, so a missing one is a refusal and not an
+# empty string treated as an observation.
+supervisor_reconcile_and_publish() {
+  local _need _missing=""
+  # `_cand` and `_child_rc` are deliberately NOT here: both are established inside this body, from
+  # the launcher report. Requiring them was measured wrong on the first real run — the guard fired
+  # on a correct campaign, which is the cheap direction for a guard to be wrong in.
+  for _need in _launch_report _launch_rc _group_state RUN_ID ROOT_DIR EXPECTED_FAMILIES; do
+    eval "[ -n \"\${$_need+set}\" ]" || _missing="$_missing $_need"
+  done
+  if [ -n "$_missing" ]; then
+    echo "FATAL: supervisor_reconcile_and_publish called without:$_missing" >&2
+    exit 2
+  fi
+  # THE REPORT IS DECODED BY THE SHARED DECODER, which is the same function the child-process gate
+  # exercises. This block used to be an inline decoder with a gate-side reimplementation beside it;
+  # two decoders of one format is one decoder too many, and the looser of the two is the one that
+  # decides what "tested" means.
+  _launch_bad="$(decode_launch_report "$_launch_report" "$RUN_ID" "$_launch_rc")"
+    # NOTHING IS READ FROM A REPORT THAT HAS NOT BEEN ACCEPTED — and `_group_state` therefore keeps
+    # the holding value set at launch rather than a figure taken from a record just refused.
+    #
+    # The fields were extracted first and the verdict consulted afterwards, so a malformed or
+    # duplicated report still populated `_group_state` — and the EXIT trap, which decides whether to
+    # hold the repository lock, then consulted a value taken from a record the supervisor had just
+    # rejected. A duplicated `process_group_state` whose FIRST line said `empty` released the lock on
+    # the strength of a report that was refused. `_group_state` stays unset on this path, so the trap
+    # holds.
+    if [ -n "$_launch_bad" ]; then
+      rm -f "$_launch_report"
+      echo "FATAL: the child launcher report is unusable:$_launch_bad (launcher rc=$_launch_rc)" >&2
+      exit 2
+    fi
+  # EVERY FIELD THIS SUPERVISOR LATER READS IS EXTRACTED HERE, while the report still exists.
+  # Extracting only three of them left `_child_sig` read at the signal refusal below with nothing
+  # assigning it — `set -u` aborted the supervisor mid-run, so the campaign died after doing its
+  # work and published nothing. Removing a decoder means removing the reads it fed, or keeping them.
+  _child_rc="$(sed -n 's/^child_rc=//p' "$_launch_report" | head -1)"
+  _child_sig="$(sed -n 's/^child_signalled=//p' "$_launch_report" | head -1)"
+  _child_signum="$(sed -n 's/^child_signal=//p' "$_launch_report" | head -1)"
+  _group_state="$(sed -n 's/^process_group_state=//p' "$_launch_report" | head -1)"
+  _child_pgid="$(sed -n 's/^pgid=//p' "$_launch_report" | head -1)"
+  rm -f "$_launch_report"
+
+  _sup_head1="$(ts_head "$ROOT_DIR" 2>/dev/null)"
+  _sup_tracked1="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
+  _sup_untracked1="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
+
+  _cand="$ROOT_DIR/.mutation-campaign-summary.candidate"
+  _final="$ROOT_DIR/.mutation-campaign-summary"
+  [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ] || _final="$_final.partial"
+
+  # THE CANDIDATE IS SNAPSHOTTED BEFORE IT IS JUDGED. It is gitignored, so replacing it after
+  # reconciliation would not move ts_untracked — the supervisor would validate one file and publish
+  # another. Everything below reads the copy.
+  _cand_snap="$(mktemp "${TMPDIR:-/tmp}/mutcand.XXXXXX" 2>/dev/null)" \
+    || { echo "FATAL: supervisor cannot stage the candidate" >&2; exit 2; }
+  : > "$_cand_snap"
+  [ ! -s "$_cand" ] || cp "$_cand" "$_cand_snap" 2>/dev/null || : > "$_cand_snap"
+  _cand="$_cand_snap"
+  _sup_refusals="$(supervisor_refusals "$_child_rc" "$_cand" \
+                    "$_sup_head0" "$_sup_head1" "$_sup_tracked0" "$_sup_tracked1" \
+                    "$_sup_untracked0" "$_sup_untracked1")"
+  # INCOHERENCE IS A REFUSAL, NOT MERELY A DOWNGRADE. It used to affect only the substituted
+  # `qualified=` line, so a child that exited ZERO with a self-contradicting candidate got its record
+  # published with qualified=0 and the supervisor exited 0 behind it — a passing process beside a
+  # record that says the run did not qualify. That is precisely the PASS-versus-exit disagreement
+  # this boundary exists to remove, reintroduced one layer up.
+  # The gate population comes from the same source the families do — the driver's own `add` lines.
+  _sup_gates="$(gate_count_from_driver "$0" 2>/dev/null || echo "")"
+  _cand_incoh="$(candidate_incoherent "$_cand" "$EXPECTED_FAMILIES" "$_sup_gates" 2>/dev/null || echo candidate_unreadable)"
+  # A CLEAN EXIT AND AN UNFINISHED RECORD CANNOT BOTH BE TRUE.
+  #
+  # `candidate_incoherent` deliberately stops short for unqualified records, so a child could exit
+  # ZERO while its own candidate said completed=0, or integrity_ok=0, or carried refusals — and the
+  # supervisor, which returns the child's status, exited zero too. Those are two statements about
+  # one run and one of them is wrong; that is a refusal, not a partial result.
+  if [ "$_child_rc" = "0" ]; then
+    for _pair in "completed:1" "integrity_ok:1"; do
+      _ck="${_pair%%:*}"; _cv="${_pair##*:}"
+      _cg="$(sed -n "s/^$_ck=//p" "$_cand" | head -1)"
+      [ "$_cg" = "$_cv" ] || _sup_refusals="$_sup_refusals clean_exit_with_$_ck($_cg)"
+    done
+    # `refusals` IS NOT CHECKED HERE, and the reason is a defect in the field rather than a
+    # decision about it. The published value is `$REFUSALS$SCOPE_NOTES` — integrity refusals
+    # CONCATENATED with scope annotations — so a correct single-family run publishes
+    # `refusals= single_family_selected(85)` and exits zero. Refusing on non-emptiness therefore
+    # rejected every correct partial run, which a run demonstrated within minutes of my writing it.
+    # Splitting the field into two is a schema change with its own migration; until then this check
+    # cannot be made sound, and asserting it anyway would be a gate that fires on correct work.
+  fi
+  [ -z "$_cand_incoh" ] || _sup_refusals="$_sup_refusals candidate_incoherent($_cand_incoh)"
+
+  # THE EXACT FAMILY SET, NOT ITS SIZE. A one-for-one substitution keeps the count at 85 while a
+  # mutation leaves the corpus and a foreign one takes its place. The supervisor derives the declared
+  # set from the DRIVER SOURCE it is executing, the child derived its set from the inventory it
+  # BUILT, and the two must agree — independent readings, not two looks at the same array.
+  _sup_fams="$(family_set_from_driver "$0")"
+  _sup_famn="$(printf '%s\n' "$_sup_fams" | grep -cv '^$' || true)"
+  _sup_famdig="$(family_set_digest "$_sup_fams")"
+  _cand_famdig="$(sed -n 's/^families_digest=//p' "$_cand" | head -1)"
+  if [ "$_sup_famn" != "$EXPECTED_FAMILIES" ]; then
+    _sup_refusals="$_sup_refusals driver_declares_${_sup_famn}_families_not_$EXPECTED_FAMILIES"
+  fi
+  if [ -z "$_cand_famdig" ]; then
+    _sup_refusals="$_sup_refusals candidate_names_no_family_set"
+  elif [ "$_cand_famdig" != "$_sup_famdig" ]; then
+    _sup_refusals="$_sup_refusals family_set_mismatch($_cand_famdig vs $_sup_famdig)"
+  fi
+
+  # THE EVIDENCE MUST BE THE EVIDENCE THAT WAS VALIDATED.
+  #
+  # .mutation-evidence/ is gitignored, so tree-state reconciliation cannot see it: a record or a gate
+  # transcript could be removed or replaced between the child's census and this publication, and the
+  # supervisor would install a qualifying summary describing evidence that no longer exists. The
+  # child publishes an evidence ROOT — a digest over canonical (family id, record digest) pairs — and
+  # the supervisor recomputes it here, over the same tree, after the child has exited. Disagreement
+  # means the bytes changed under the verdict, whatever moved them.
+  #
+  # The recomputation uses the child's own function, loaded from the snapshot, so the two sides
+  # cannot drift into computing different digests of the same directory.
+  # THE CANDIDATE MUST BE THIS RUN'S CANDIDATE.
+  #
+  # Every reconciliation below trusted the candidate's own `run_id` to name the evidence directory to
+  # check — so a stale candidate from an earlier run selected its own old evidence, reconciled
+  # perfectly against it, and answered on behalf of a child that had just exited cleanly. The digest
+  # agreeing with itself is not the property wanted; the property wanted is that the record describes
+  # THE RUN THE SUPERVISOR JUST SUPERVISED. The run id is compared with the one the supervisor
+  # minted, and the head the child observed with the head the supervisor observes.
+  # The comparison itself lives in the library so a gate can attack it; see candidate_run_binding.
+  # This site supplies the two observations only.
+  # THE SAME PRODUCER THE CHILD USED. A second `git rev-parse` written out here would be a
+  # reimplementation of `ts_head` — including its failure sentinel, which is the part that decides
+  # what an unreadable repository compares as — and the two would drift apart exactly when it
+  # mattered. This is the mistake that produced the CI extractor's 215-vs-208 disagreement.
+  # THE OBSERVATION ALREADY TAKEN, not a third reading. `_sup_head1` was captured immediately after
+  # the child was reaped and has already been reconciled against `_sup_head0`; reading HEAD again
+  # here would introduce a third value that could disagree with the pair just checked, and the
+  # binding would then be comparing the candidate against an observation nothing else validated.
+  _sup_refusals="$_sup_refusals$(candidate_run_binding "$_cand" "$RUN_ID" "$_sup_head1")"
+
+  # WHAT WAS TESTED IS CHECKED, NOT TAKEN ON THE CHILD'S WORD.
+  #
+  # The executed-driver and preamble digests are values THIS process minted before exec'ing the
+  # snapshot, so comparing them is exact: a child that published anything else did not run what the
+  # supervisor launched. The repository driver and inventory are digested here with the same shared
+  # producer the child uses. The workspace and compiler fields cannot be observed after the run —
+  # the workspace is deleted — so they are checked for internal consistency and shape, and
+  # candidate_provenance labels which is which rather than implying they are all equally established.
+  _sup_refusals="$_sup_refusals$(candidate_provenance "$_cand" \
+    "${CONCRETE_MUT_DRIVER_SHA:-}" "${CONCRETE_MUT_PREAMBLE_SHA:-}" \
+    "$(ts_driver_digest "$ROOT_DIR")" "$(ts_inventory_digest "$ROOT_DIR")")"
+
+  # THE DIRECTORIES MUST BE THE FAMILIES. The family digest was compared candidate-to-driver, which
+  # proves the candidate can name the right set — not that the evidence on disk IS that set. A
+  # candidate could publish the correct digest beside eighty-five arbitrarily named killed
+  # directories, and root and totals would all self-agree. The names on disk are digested with the
+  # same producer and compared against the driver's declared set.
+  _ev_dirs="$(cd "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null \
+              && for _d in */; do [ -e "$_d" ] || continue; printf '%s\n' "${_d%/}"; done)"
+  # SUBSET ALWAYS, EQUALITY ONLY FOR A FULL CAMPAIGN.
+  #
+  # The first version of this check compared the evidence set with the DECLARED set unconditionally,
+  # which refused every correct partial run: a single-family run leaves one directory, and the
+  # declared set has eighty-five. A check that fires on the runs it is meant to permit carries no
+  # information — it is the same failure as the four liveness attempts. What is actually wrong is an
+  # evidence directory that names NO declared family, and, for a full campaign, a set that is not
+  # the whole population.
+  if [ -n "$_ev_dirs" ]; then
+    _ev_undeclared=""
+    while IFS= read -r _evd; do
+      [ -n "$_evd" ] || continue
+      # `_baseline` is the RUN-LEVEL transcript, deliberately kept outside any family because it
+      # belongs to the run rather than to one experiment. It is reserved by construction: no family
+      # name may begin with an underscore, so this exclusion cannot hide a real family.
+      case "$_evd" in _*) continue ;; esac
+      printf '%s\n' "$_sup_fams" | grep -qxF -- "$_evd" \
+        || _ev_undeclared="$_ev_undeclared $_evd"
+    done <<EOF
+$_ev_dirs
+EOF
+    [ -z "$_ev_undeclared" ] \
+      || _sup_refusals="$_sup_refusals evidence_for_undeclared_families($_ev_undeclared )"
+    if [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ]; then
+      # family_set_digest takes its input as an ARGUMENT, not on stdin; piping to it would have
+      # digested the empty string and agreed with any evidence tree that was also empty.
+      _ev_setdig="$(family_set_digest "$(printf '%s\n' "$_ev_dirs" | grep -v '^_')")"
+      [ "$_ev_setdig" = "$_sup_famdig" ] \
+        || _sup_refusals="$_sup_refusals evidence_families_not_the_declared_set($_ev_setdig vs $_sup_famdig)"
+    fi
+  fi
+
+  # THE CANDIDATE'S TREE DIGESTS ARE COMPARED WITH THE SUPERVISOR'S OBSERVATIONS.
+  #
+  # head was checked; tracked and untracked were not. The supervisor compared its OWN two readings
+  # with each other and never with what the child published, so a record could carry stale or simply
+  # false tree metadata and still be installed as authoritative — the fields describing what was
+  # tested, unchecked, inside the artifact that attests to it.
+  for _tpair in "tracked_sha:$_sup_tracked1" "untracked_sha:$_sup_untracked1"; do
+    _tk="${_tpair%%:*}"; _tv="${_tpair#*:}"
+    _tg="$(sed -n "s/^$_tk=//p" "$_cand" | head -1)"
+    [ "$_tg" = "$_tv" ] || _sup_refusals="$_sup_refusals candidate_${_tk}_mismatch($_tg vs $_tv)"
+  done
+
+  _cand_root="$(sed -n 's/^evidence_root=//p' "$_cand" | head -1)"
+  _sup_rootrc=0
+  _sup_root="$(evidence_root_digest "$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)" 2>/dev/null)" || _sup_rootrc=$?
+  [ "$_sup_rootrc" = "0" ] || _sup_refusals="$_sup_refusals evidence_root_unreadable($_sup_rootrc)"
+  if [ -z "$_cand_root" ]; then
+    _sup_refusals="$_sup_refusals evidence_root_absent"
+  elif [ "$_cand_root" != "$_sup_root" ]; then
+    _sup_refusals="$_sup_refusals evidence_changed_after_census($_cand_root->$_sup_root)"
+  fi
+
+  # NO DESCENDANT MAY STILL BE WRITING. A surviving child process can mutate evidence after this
+  # check and before the artifact lands; the reconciliation above would then describe a tree that no
+  # longer exists by the time anyone reads it.
+  # THE RECORDS OUTRANK THE SUMMARY. Totals are derived from the per-family records on disk and
+  # compared with what the candidate claims; a disagreement means the artifact is describing a run
+  # other than the one that left this evidence.
+  _ev_run_dir="$ROOT_DIR/.mutation-evidence/$(sed -n 's/^run_id=//p' "$_cand" | head -1)"
+  set -- $(records_disposition_totals "$_ev_run_dir")
+  _rk="$1"; _ri="$2"; _rs="$3"; _rc="$4"; _ro="$5"
+  [ "$_ro" = "0" ] || _sup_refusals="$_sup_refusals records_with_unreadable_disposition($_ro)"
+  for _pair in "killed:$_rk" "invalid:$_ri" "survived:$_rs" "could_not_apply:$_rc"; do
+    _k="${_pair%%:*}"; _v="${_pair##*:}"
+    _claim="$(sed -n "s/^$_k=//p" "$_cand" | head -1)"
+    [ "$_claim" = "$_v" ] \
+      || _sup_refusals="$_sup_refusals summary_record_disagreement($_k claimed=$_claim records=$_v)"
+  done
+  # ...and qualification additionally requires EVERY record to be a killed one carrying its causal
+  # transcripts. This is checked only when qualification is claimed, so a legitimately unqualified
+  # run is not refused for having survivors it already reported.
+  if grep -qE '^qualified=1$' "$_cand"; then
+    _unq="$(records_unkilled_or_unevidenced "$_ev_run_dir")"
+    [ -z "$_unq" ] || _sup_refusals="$_sup_refusals qualified_with_unevidenced_records($_unq )"
+  fi
+
+  # NOT JUST IMMEDIATE CHILDREN. `pgrep -P $$` sees one generation, and by this point the campaign
+  # child has been reaped — a surviving grandchild is reparented away and would never appear. What
+  # matters is whether anything is still working THIS repository, so the check is by workspace and
+  # by the driver's own snapshot, the same way the lock identifies its owner.
+  # ONLY A PROVEN-EMPTY GROUP PERMITS PUBLICATION. The launcher distinguishes four outcomes and a
+  # boolean would collapse them: `permission_denied` means the group EXISTS but is not ours to
+  # signal, and `error:<n>` means the question was not answered at all. Neither is absence, and
+  # treating either as empty would be the fail-open this check exists to remove.
+  # AND THE LOCK IS NOT RELEASED WHEN WORK MAY SURVIVE.
+  #
+  # Refusing to publish was only half the response. The EXIT trap released the repository lock on
+  # every path, so the supervisor's own conclusion — "something may still be writing this tree" —
+  # was immediately followed by inviting the next run in. Holding the lock converts the refusal into
+  # the exclusion it was asserting, and the operator is told exactly which pgid to inspect and what
+  # to remove once it is gone. One repository writer at a time has to survive the case where the
+  # previous writer did not stop.
+  if ! group_state_permits_publication "$_group_state"; then
+    case "$_group_state" in
+      nonempty) _sup_refusals="$_sup_refusals campaign_group_not_empty(pgid=$_child_pgid)" ;;
+      *)        _sup_refusals="$_sup_refusals campaign_group_unreadable($_group_state,pgid=$_child_pgid)" ;;
+    esac
+  fi
+  # PUBLICATION ONLY AFTER THE CHILD'S ORIGINAL PROCESS GROUP IS EMPTY. Anything still in it can
+  # write evidence after the census, which the artifact would then describe without having seen it.
+  #
+  # THIS IS NOT "NO DESCENDANTS REMAIN". A descendant that changes process group, or starts its own
+  # session, outlives this check — measured, not assumed. That escape is out of the threat model:
+  # the processes a campaign starts are its own gates, lake and the compiler, none of which leave
+  # their group, and the hazard here is an accidental survivor rather than a child hiding from its
+  # supervisor. The refusal and the published field both say process GROUP, so no reader infers a
+  # containment guarantee that was never made.
+  # A signalled child is a failure even if its group emptied cleanly.
+  [ "$_child_sig" = "0" ] || _sup_refusals="$_sup_refusals child_terminated_by_signal"
+
+  # PUBLISH. Copy the candidate, but the supervisor decides qualification: it is forced to 0 unless
+  # the child claimed it AND the supervisor's own reconciliation is clean.
+  _pub_ok=1
+  _tmp="$(mktemp "$_final.XXXXXX" 2>/dev/null)" || { echo "FATAL: cannot stage the authoritative artifact" >&2; exit 2; }
+  if [ -s "$_cand" ]; then
+    # The qualified line is decided by the same library, not by a second rule here.
+    sed "s/^qualified=.*/$(supervisor_qualification "$_cand" "$_sup_refusals" "$EXPECTED_FAMILIES" "$_sup_gates")/" "$_cand" > "$_tmp" || _pub_ok=0
+  else
+    # A FAILURE RECORD IS STILL A RECORD.
+    #
+    # This emitted four keys where the published schema declares forty-five, so the artifact the
+    # supervisor installs when the child leaves no candidate — the case this boundary exists for —
+    # could not be decoded by the very decoder that gates every other path. A second, looser
+    # producer of the same artifact is the defect class this harness keeps finding; it was here, in
+    # the failure path, where nobody looks.
+    #
+    # The mode was also computed as "${FAMILY:+single}${FAMILY:-campaign}", which concatenates BOTH
+    # expansions: FAMILY=5 produced the mode `single5`, and an identity-selected run produced
+    # `campaign` because FAMILY is unset even though the run is a single family. Partial-ness has
+    # one fact, and this reads it like every other site.
+    {
+      for _sk in $CAMPAIGN_SCHEMA_NUMERIC;  do printf '%s=0\n' "$_sk"; done
+      for _sk in $CAMPAIGN_SCHEMA_FREEFORM; do printf '%s=unavailable\n' "$_sk"; done
+      # NOT the supervisor's own fields: they are appended below, for both branches, and emitting
+      # them here as well produced two of each. The exactly-once check then refused publication — so
+      # the repair that made this record complete also made it impossible to write. The candidate
+      # branch does not carry them either; this branch must match it.
+    } > "$_tmp.skel" || _pub_ok=0
+    _mode="campaign"; [ "${CONCRETE_MUT_PARTIAL:-0}" = "0" ] || _mode="single"
+    sed -e "s|^mode=.*|mode=$_mode|" \
+        -e "s|^refusals=.*|refusals= child_left_no_candidate|" \
+        -e "s|^run_id=.*|run_id=$RUN_ID|" \
+        -e "s|^head=.*|head=${_sup_head1:-unavailable}|" \
+        "$_tmp.skel" > "$_tmp" || _pub_ok=0
+    rm -f "$_tmp.skel"
+  fi
+  printf 'supervisor_refusals=%s
+supervisor_child_exit=%s
+' "${_sup_refusals:-none}" "$_child_rc" >> "$_tmp" || _pub_ok=0
+  # EVERY WRITE IS CHECKED, not just the rename. A failed or truncated sed/printf — full disk, broken
+  # pipe — could otherwise be installed as the authoritative artifact with exit 0.
+  printf 'candidate_incoherent=%s\n' "${_cand_incoh:-none}" >> "$_tmp" || _pub_ok=0
+  # EXACTLY ONE OF EACH. Presence alone lets a duplicated, contradictory field survive publication —
+  # two `qualified=` lines, and every reader picks whichever its parser reaches first.
+  for _k in completed mode qualified supervisor_refusals supervisor_child_exit candidate_incoherent; do
+    [ "$(grep -cE "^$_k=" "$_tmp")" = "1" ] || _pub_ok=0
+  done
+  # AND THE WHOLE RECORD IS DECODED BEFORE IT IS INSTALLED.
+  #
+  # Counting six keys leaves the other thirty-nine unchecked, so a candidate refused for being
+  # truncated, or for carrying duplicate or undeclared keys, was still COPIED into the authoritative
+  # artifact — the file every reader trusts could be one the decoder that gates every other path
+  # would reject. The supervisor already owns a decoder; it applies it to its own output.
+  _pub_dec="$(decode_candidate "$_tmp" "$CAMPAIGN_SCHEMA_PUBLISHED" 2>/dev/null || echo decoder_failed)"
+  if [ -n "$_pub_dec" ]; then
+    echo "REFUSING TO INSTALL A MALFORMED AUTHORITATIVE RECORD:$_pub_dec" >&2
+    _pub_ok=0
+  fi
+  if [ "$_pub_ok" != "1" ]; then
+    rm -f "$_tmp" "$_cand_snap"
+    echo "FATAL: the authoritative artifact could not be written completely" >&2
+    exit 2
+  fi
+  # THE TREE IS RE-MEASURED IMMEDIATELY BEFORE INSTALL.
+  #
+  # Tree state was last read just after the child was reaped, and the evidence root just after that,
+  # with all of the reconciliation in between. The repository lock excludes another campaign run — it
+  # does not, and cannot, exclude an editor or any other process. So a qualifying artifact could be
+  # installed already describing a tree that had moved since it was measured. This narrows the window
+  # to the single rename below rather than closing it, which is the honest limit of a lock that only
+  # binds participants; it is not claimed to be atomic against arbitrary writers.
+  _sup_head2="$(ts_head "$ROOT_DIR" 2>/dev/null)"
+  _sup_tracked2="$(ts_tracked "$ROOT_DIR" 2>/dev/null)"
+  _sup_untracked2="$(ts_untracked "$ROOT_DIR" 2>/dev/null)"
+  if [ "$_sup_head2" != "$_sup_head1" ] || [ "$_sup_tracked2" != "$_sup_tracked1" ] \
+     || [ "$_sup_untracked2" != "$_sup_untracked1" ]; then
+    rm -f "$_tmp" "$_cand_snap"
+    echo "FATAL: the repository changed between reconciliation and publication." >&2
+    echo "       Refusing to install a record describing a tree that has already moved." >&2
+    echo "       The startup invalidation stands, so no earlier result reads as this run's." >&2
+    exit 2
+  fi
+  mv "$_tmp" "$_final" 2>/dev/null || { rm -f "$_tmp"; echo "FATAL: cannot install the authoritative artifact" >&2; exit 2; }
+  rm -f "$_cand_snap" "$ROOT_DIR/.mutation-campaign-summary.candidate" 2>/dev/null
+
+  if [ -n "$_sup_refusals" ]; then
+    echo "SUPERVISOR REFUSED QUALIFICATION:$_sup_refusals" >&2
+
+    [ "$_child_rc" = "0" ] && exit 1 || exit "$_child_rc"
+  fi
+
+  exit "$_child_rc"
+}
