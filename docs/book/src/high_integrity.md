@@ -61,10 +61,17 @@ Ordinary Concrete might allow:
 extern fn read_sensor_raw(ptr: *mut u8) -> i32;
 
 fn sample() with(Unsafe, File, Alloc) -> Result<Int, String> {
-    let text: String = fs::read_to_string("/tmp/value")?;
+    let text: String = match fs::read_to_string("/tmp/value") {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
     let ptr: *mut u8 = ...;
     read_sensor_raw(ptr);
-    return Ok(parse::parse_int(text)?);
+    let value: Int = match parse::parse_int(text) {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
+    return Result::Ok { value: value };
 }
 ```
 

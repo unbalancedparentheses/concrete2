@@ -16,14 +16,11 @@ internal compiler errors, not user errors.
   validated Core it means elaboration silently dropped a type.
 
   **Documented exception (warning-only):** `Ty.placeholder` legitimately survives
-  elaboration in exactly two cases:
-  1. `try_` (the `?` operator) — the error-branch expression type is not resolved
-     until monomorphization instantiates the concrete Result type.
-  2. `defer` — deferred cleanup expressions may carry placeholder types when the
+  elaboration for `defer`: deferred cleanup expressions may carry placeholder types when the
      deferred value's type is inferred from context resolved later.
-  Both are resolved during lowering. This is an intentional pipeline design choice,
+  It is resolved during lowering. This is an intentional pipeline design choice,
   not a silent leak. The verifier reports these as warnings so they remain visible
-  for audit. Promoting to a hard error requires fixing try/defer elaboration to
+  for audit. Promoting to a hard error requires fixing defer elaboration to
   resolve types eagerly.
 
 **Post-Mono verifier** (`verifyNoTypeVars`):
@@ -99,7 +96,6 @@ partial def collectExprViolations (fnName : String) (pred : Ty → Bool) (label 
     | .borrowMut inner _ => collectExprViolations fnName pred label inner
     | .deref inner _ => collectExprViolations fnName pred label inner
     | .cast inner _ => collectExprViolations fnName pred label inner
-    | .try_ inner _ => collectExprViolations fnName pred label inner
     | .arrayLit elems _ =>
       elems.foldl (fun acc el => acc ++ collectExprViolations fnName pred label el) []
     | .arrayIndex arr idx _ =>

@@ -156,7 +156,6 @@ partial def arithSitesE : CExpr → List ArithSite
   | .deref inner _ => arithSitesE inner
   | .arrayLit elems _ => (elems.map arithSitesE).flatten
   | .arrayIndex arr idx _ => arithSitesE arr ++ arithSitesE idx
-  | .try_ inner _ => arithSitesE inner
   | .allocCall inner allocExpr _ => arithSitesE inner ++ arithSitesE allocExpr
   | .ifExpr cond then_ else_ _ =>
       arithSitesE cond ++ (then_.map arithSitesS).flatten ++ (else_.map arithSitesS).flatten

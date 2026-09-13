@@ -803,29 +803,6 @@ partial def evalExpr (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (e 
     | _ => .error "interp: deref of non-ref value"
 
   | .fnRef name _ => return (env, .val (.fnPtr name))
-  | .try_ inner _ => do
-    -- Mirrors Concrete/Lower.lean's `.try_` lowering: if `inner` is the
-    -- enum's first variant (tag 0 — by convention `Ok` / `Some`), unwrap
-    -- the single payload field; otherwise return the whole enum as an
-    -- early function return.
-    let (env, v) ← evalExprVal fns enums env inner
-    match v with
-    | .enum_ enumName variant fields =>
-      match findEnum enums enumName with
-      | none => .error s!"interp: try: enum '{enumName}' not found"
-      | some ed =>
-        match ed.variants with
-        | [] => .error s!"interp: try: enum '{enumName}' has no variants"
-        | (firstVariant, _) :: _ =>
-          if variant == firstVariant then
-            -- Success: unwrap the single payload field.
-            match fields with
-            | (_, payload) :: _ => return (env, .val payload)
-            | [] => .error s!"interp: try: success variant '{variant}' has no payload"
-          else
-            -- Failure: return the whole enum from the current function.
-            return (env, .ret (.enum_ enumName variant fields))
-    | _ => .error "interp: try: inner expression did not evaluate to an enum"
   | .allocCall _ _ _ => .error "interp: alloc expressions not yet supported"
 
 partial def evalExprVal (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (e : CExpr) : Except String (Env × IVal) := do

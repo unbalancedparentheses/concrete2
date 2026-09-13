@@ -1,4 +1,4 @@
-// Test: defer + ? operator interaction — defer runs on error path
+// Test: defer + explicit Result propagation — defer runs on error return
 // Expected: 42
 struct Resource { value: Int }
 
@@ -24,7 +24,10 @@ fn might_fail(succeed: Bool) -> Result {
 fn use_with_defer() -> Result {
     let mut r: Resource = Resource { value: 10 };
     defer destroy(r);
-    let v: Int = might_fail(true)?;
+    let v: Int = match might_fail(true) {
+        Result::Ok { value } => value,
+        Result::Err { code } => { return Result::Err { code: code }; },
+    };
     return Result::Ok { value: v };
 }
 

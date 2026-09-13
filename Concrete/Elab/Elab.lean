@@ -955,19 +955,6 @@ partial def elabExprEv (e : Expr) (hint : Option Ty := none) : ElabM ElaboratedE
       | _ => .placeholder
     return ElaboratedExprV2.mk (CExpr.deref cInner resultTy) (Proof.evDeref cInnerEv.evidence)
 
-  | .try_ _ inner =>
-    let cInnerEv ← elabExprEv inner
-    let cInner := cInnerEv.core
-    let resultTy := match cInner.ty with
-      | .named _enumName => .placeholder  -- would need enum lookup for Ok field
-      | .generic _ [okTy, _] => okTy
-      | _ => .placeholder
-    -- `x?` is not `x`: the propagation path is part of the meaning, and the RESIDUAL
-    -- type says what is propagated. Was a gap only because `TypeId` could not express it.
-    let residualRef ← typeRefOf resultTy
-    return ElaboratedExprV2.mk (CExpr.try_ cInner resultTy)
-      (Proof.evTryProp cInnerEv.evidence residualRef)
-
   | .arrayLit _ elems =>
     match elems with
     | [] => throwElab .arrayLiteralEmpty (some e.getSpan)
@@ -2105,7 +2092,6 @@ partial def renameFnExpr (rmap : List (String × String)) : CExpr → CExpr
   | .arrayIndex arr idx ty =>
     .arrayIndex (renameFnExpr rmap arr) (renameFnExpr rmap idx) ty
   | .cast inner t => .cast (renameFnExpr rmap inner) t
-  | .try_ inner ty => .try_ (renameFnExpr rmap inner) ty
   | .allocCall inner alloc ty =>
     .allocCall (renameFnExpr rmap inner) (renameFnExpr rmap alloc) ty
   | .ifExpr cond then_ else_ ty =>

@@ -607,7 +607,6 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       if !Capabilities.capsAllowUnsafeOp env.inTrusted env.currentCapSet then
         addCCError (.missingCapability "unsafe_cast" "Unsafe" "")
   | .fnRef _ _ => pure ()
-  | .try_ inner _ => ccCheckExpr inner
   | .allocCall inner allocExpr _ =>
     -- Verify caller has Alloc capability
     let env ← getEnv

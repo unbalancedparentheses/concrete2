@@ -130,15 +130,38 @@ rejected, and the required `Console`/`Alloc` authority remains visible.
 
 **Why:** Exceptions create hidden control flow. Every function call becomes a potential exit point. Cleanup code may or may not run depending on whether the exception is caught. This violates "no hidden control flow" and makes predictable execution analysis impossible.
 
-**What Concrete does instead:** `Result<T, E>` for all recoverable errors. `?` for ergonomic propagation (sugar for early return, not an exception throw). Abort-only for unrecoverable failures (OOM). See [FAILURE_STRATEGY.md](FAILURE_STRATEGY.md).
+**What Concrete does instead:** `Result<T, E>` for all recoverable errors, exhaustive `match`, and
+an explicit `return Result::Err ...` in the failure arm. Abort-only for unrecoverable failures
+(OOM). See [FAILURE_STRATEGY.md](FAILURE_STRATEGY.md).
 
 **Status:** Permanent. The abort-only, no-unwinding model is a load-bearing commitment.
 
 **Comparison:**
-- Rust: No exceptions. `Result<T, E>` + `?` operator. `panic!` exists but is not recoverable in the normal sense. Same reasoning as Concrete.
+- Rust: No exceptions. `Result<T, E>` + `?` operator. `panic!` exists but is not recoverable in the normal sense. Concrete keeps `Result` but chooses a more explicit propagation surface.
 - Zig: No exceptions. Error unions + `try`/`catch` syntax. Error values, not exception objects.
 - Go: No exceptions. Multiple return values + `error` interface. `panic`/`recover` exists but is discouraged for normal error handling.
 - C++/Java/Python: Exceptions are fundamental. Hidden control flow is the norm.
+
+### No postfix `?` error propagation
+
+**Why:** `expr?` places an early function exit behind punctuation attached to an expression. A
+reviewer must mentally expand it to see the error branch, cleanup boundary, returned error type, and
+any conversion. That is the wrong economy for an audit-first language, especially when most source
+is model-authored and explicit arms are cheap to generate.
+
+**What Concrete does instead:** Match the `Result` exhaustively. The `Ok` arm yields the payload;
+the `Err` arm explicitly returns the error. `Result.map_err` remains available when a named,
+explicit conversion is useful, but conversion never occurs implicitly during propagation.
+
+**Status:** Permanent. The previously shipped operator was removed. `?` may be tokenized only long
+enough to produce a targeted rejection diagnostic; it is not an expression form, Core node, or
+lowering rule.
+
+**Comparison:**
+- Rust: postfix `?` performs early return and may invoke implicit `From` conversion.
+- Zig: prefix `try` propagates an error union.
+- Go: callers spell and return the error branch explicitly.
+- Concrete: exhaustive match plus explicit return; the control-flow edge stays in source.
 
 ### No effect system beyond capabilities
 
@@ -355,6 +378,7 @@ workload-pulled structures.
 | Implicit bool (truthy/falsy) | Permanent | Ambiguous conditionals |
 | Hindley-Milner inference | Permanent | Worse diagnostics; breaks phase separation |
 | Exceptions / unwinding | Permanent | Hidden control flow; breaks predictable profile |
+| Postfix `?` propagation | Permanent | Hides a function exit behind expression punctuation |
 | Full algebraic effects | Permanent | Complexity; runtime cost |
 | Decorative contracts | Permanent | Contract claims must lower to obligations/evidence, never unchecked decoration |
 | Ghost code | Deferred | Erasure discipline not designed |

@@ -467,7 +467,7 @@ non-qualifying; the authoritative mode retains full red-green-red confirmation.
 The checkpoint exits only when one clean pushed HEAD reports all of the following separately:
 
 - `completed=1`: the driver reached reconciliation and every selected family reported;
-- discovered = selected = executed = reported = killed = 85;
+- discovered = selected = executed = reported = killed = 91;
 - `invalid=0`, `survived=0`, `could_not_apply=0`, and `integrity_ok=1`;
 - `qualified=1`: all 91 families were killed by their intended attributable gate/build outcome;
 - the artifact and human summary agree, and the repository is clean afterward.
@@ -732,9 +732,10 @@ pairing types to the Elab layer, which is also the correct layering, and gated b
    types by `TypeId`, and TYPE VARIABLES BY BINDER POSITION on the same rule as
    `binderRef` — renaming `T` to `Zed` leaves the digest identical, gated.
 
-   Applied to the four positions that name an arbitrary type — `cast`, `arrayLit`,
-   `tryProp`, `letBind`. `structLit` and `structPat` keep `TypeId`, because those genuinely
-   name a nominal type.
+   At that historical checkpoint this applied to four positions that named an arbitrary type —
+   `cast`, `arrayLit`, the since-removed postfix-propagation node, and `letBind`. The current tree
+   has no propagation node. `structLit` and `structPat` keep `TypeId`, because those genuinely name
+   a nominal type.
 
    FUNCTION TYPES are deliberately still a gap: encoding one means encoding a capability
    SET whose variables are identified against a different binder list, which is a second
@@ -1387,7 +1388,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. The live inventory is now 85. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 85 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
+| 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
 | 4 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |
@@ -3689,7 +3690,7 @@ not prose:
    fail / capability / proof-class), derived from compiler facts and gated
    (the stdlib manifest gate); the strict error rule (`Option` for absence, `Result` for
    recoverable domain/environment failure, trap/abort for invariants / OOM /
-   bounds / arithmetic, explicit cross-module wrapping, no hidden `?` conversion
+   bounds / arithmetic, explicit cross-module wrapping, no implicit conversion
    web); and the stable, workload-pulled pure core (`option`/`result`, selected
    `bytes`/`numeric` helpers, and checked conversion boundaries) carrying Lean
    evidence where the API has stopped moving. Do not try to prove all stdlib
@@ -4716,6 +4717,42 @@ their implementation detail and gates.
   reference only.
 - Verified or translation-validated compiler bridges.
 - Certificate-producing automation; keep non-certificate SMT results explicitly `solver_trusted`.
+
+**Language posture after the evidence-and-contract sequence**
+
+Concrete should be described as an **evidence-bearing sequential-language core with stated,
+bounded trust assumptions and an explicit, shrinking TCB**. Do not call the language or compiler
+"verified" while any of these boundaries remains:
+
+- **H19:** the Core-to-obligation bridge is unproven. Four of five Register A rows have their
+  semantics half discharged, but none proves that the emitted obligation denotes that condition.
+- **H20:** `bv_decide` certificate checking still runs as native code, so bitvector evidence trusts
+  the checker binary at that boundary.
+- **H21:** nonlinear SMT evidence cannot yet be certificate-replayed and therefore remains
+  `solver_trusted` by an upstream limitation.
+
+Keep three categories distinct when describing what follows:
+
+1. **Philosophical-core gaps.** Model correspondence is first: exact identity prevents
+   substitution, but it does not prove that a Lean model describes the selected implementation.
+   R-0482 owns independent model identity, explicit relation kinds, and independently checked
+   `CorrespondenceEvidence`. H19-H21 are the other named boundaries that the word "verified" waits
+   on.
+2. **Scheduled critical-path work.** Package evidence and typed policy (Phase 18/R-0440 and the
+   five-way identity migration), developer tooling (Phase 19 after schema stability), and resource
+   bounds (Phase 12 profiles plus Phase 13 obligations) are owned and sequenced work, not unowned
+   language holes.
+3. **Optional, workload-pulled research.** Typestate remains research-gated unless the
+   `protocol_state_machine` flagship demonstrates that ordinary contracts cannot express the
+   required compile-time state discipline. If that pressure appears, pull forward only the smallest
+   explicit mechanism that preserves auditability.
+
+Permanent exclusions remain design assets rather than missing features: garbage collection,
+exceptions/unwinding, hidden async runtimes, trait-object dispatch, capturing closures,
+source-generating macros, implicit conversions, ambient authority, and broad invisible `unsafe`.
+Postfix `?` joins this list: recoverable failure uses `Result`, exhaustive `match`, and explicit
+`return Result::Err ...`. Concrete does not hide a function exit behind expression punctuation;
+there is no implicit conversion, cleanup, drop, or capability use during propagation.
 
 **Strict post-R-0004 critical path**
 

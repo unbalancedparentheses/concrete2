@@ -41,7 +41,6 @@ params are borrows (exempt); `&T` params are Copy. See
 | `borrow` | **borrows** the place (no move); result `&T` is Copy | conservation (accept rows) |
 | `borrowMut` | **exclusive borrow**; result `&mut T` is non-Copy but carries NO consume obligation (it is a borrow, not an owner) | conservation |
 | `deref` | `*ref` reads (Copy pointee copies); `*heap_ident` **consumes** the Heap (load-and-free); `*rawptr` is the trusted idiom | conservation |
-| `try_` | **consumes** the ident operand; the Err path propagates out of the function | conservation |
 | `arrayLit` | **moves** each element in (H10) | conservation (E0205 rows) |
 | `arrayIndex` | place projection: Copy element **copies**; non-Copy by value **rejects** (**E0290**, H11); note: an owned `[linear; N]` currently has NO discharge (fails closed E0208) until array destructure lands | conservation (H11 + undischargeable rows) |
 | `cast` | reads a Copy numeric | — |
@@ -108,7 +107,6 @@ escape hatch.
 | `match_` `ifExpr` `whileExpr` | scrutinee/arm values in value mode; branch envs merged | n/a | n/a |
 | `borrow` `borrowMut` | inner checked as place; result &T Copy / &mut exclusive | same | n/a |
 | `deref` | inner checked as place (reading THROUGH a ref/ptr never consumes the binding); `*heap_ident` explicitly consumes | same | inner as place |
-| `try_` | operand in value mode (moved) | n/a | n/a |
 | `fnRef` | creates a Copy fn-pointer | same | n/a |
 | `allocCall` | inner/allocator checked; owned Heap result | n/a | n/a |
 

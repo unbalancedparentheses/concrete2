@@ -454,11 +454,11 @@ Building a string requires multiple append calls. There is no string interpolati
 | # | Pain Point | Relief Type | Status | Notes |
 |---|-----------|------------|--------|-------|
 | 1 | **Generic enum construction verbosity** (`Result::<T, E>::Ok`) | Elaboration-time inference | **CHANGE** | Highest-impact single improvement. No parser change. |
-| 2 | **Verbose error propagation (multi-step)** | Library: `map_err` + `?` | Freeze as-is | `?` exists. `map_err` is a library addition (ERROR_HANDLING_DESIGN.md). |
+| 2 | **Verbose error propagation (multi-step)** | Explicit `match` + library combinators | **DECIDED: no syntax sugar** | Postfix `?` was removed. The exit and conversion arm stay visible (ERROR_HANDLING_DESIGN.md). |
 | 3 | **Ad hoc result types instead of `Result<T, E>`** | Library: `unwrap_or` on Result/Option | Freeze as-is | Stdlib addition, not syntax. See ERROR_HANDLING_DESIGN.md items. |
 | 4 | **`Vec::<T>::new()` type repetition on let-binding** | Elaboration-time inference | **CHANGE** | Same mechanism as #1. `let mut v: Vec<i32> = Vec::new();` with type inferred from LHS. |
 | 5 | **`Option::<T>::None` / `Option::<T>::Some` everywhere** | Elaboration-time inference | **CHANGE** | Same mechanism as #1. |
-| 6 | **Custom result enums duplicating `Result<T, E>`** | Library: Result helpers | Freeze as-is | Once `unwrap_or` and `?` are usable, custom result enums become unnecessary. |
+| 6 | **Custom result enums duplicating `Result<T, E>`** | Library: Result helpers | Freeze as-is | `Result` helpers and explicit matching avoid parallel result types without new control-flow syntax. |
 | 7 | **Deeply nested if-else for byte dispatch** | Already supported: match on integer | Freeze as-is | Document integer match patterns. |
 | 8 | **Fixed-array construction boilerplate** | Library helpers | **Deferred** | `[0; 256]` already works. More complex initializations need either comptime (deferred) or helper functions. |
 | 9 | **String building without interpolation** | Library: `Writer` type | Freeze as-is | `Writer` exists. Document the pattern. No macro/interpolation syntax. |
@@ -658,7 +658,7 @@ pos = pos + 1;
 
 | Item | Rationale |
 |------|-----------|
-| `?` operator | Well-tested, sufficient. Cross-type conversion via `map_err`. |
+| Postfix `?` | Removed permanently; exhaustive `match` keeps return and conversion visible. |
 | Import syntax | Explicit, consistent, minimal overhead. |
 | Borrow block syntax | Every component carries meaning. |
 | Match arm syntax | Works well. Both `#` and `.` accepted in patterns. |

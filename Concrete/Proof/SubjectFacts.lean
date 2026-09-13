@@ -259,7 +259,6 @@ partial def contractCanonicalIn
   | .borrow _ _ => none
   | .borrowMut _ _ => none
   | .deref _ _ => none
-  | .try_ _ _ => none
   | .arrayLit _ _ => none
   | .cast _ _ _ => none
   | .methodCall _ _ _ _ _ => none

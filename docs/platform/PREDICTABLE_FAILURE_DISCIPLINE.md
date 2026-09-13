@@ -26,12 +26,13 @@ through hidden authority or unwinding.
 
 ### 1. Explicit error return (`Result<T, E>`)
 
-Predictable functions may return `Result<T, E>` and propagate errors with `?`.
+Predictable functions may return `Result<T, E>` and propagate errors with an exhaustive match and
+an explicit returning error arm.
 
 - Errors are values — they appear in the function signature
-- `?` is sugar for early return with `Err`, not an exception throw
+- the returning error arm is ordinary control flow, not an exception throw
 - Callers must handle or propagate — no silent dropping
-- Defer runs normally on `?`-triggered returns
+- Defer runs normally on explicit error returns
 
 This is the primary and preferred error mechanism for predictable code.
 
@@ -139,7 +140,7 @@ The reverse is not true: predictable functions may use loops, mutation, and Cons
 Predictable failure discipline = **explicit recoverable errors plus classified
 terminal checks**.
 
-- **Allowed**: `Result` return, error codes, sentinel values, `?` propagation
+- **Allowed**: `Result` return and explicit propagation, error codes, sentinel values
 - **Excluded by authority/profile gates**: user abort, OOM, panic, unwinding,
   exceptions, blocking I/O failure, FFI failure, `longjmp`
 - **Runtime-checked**: integer overflow/division/shift and raw safe array bounds

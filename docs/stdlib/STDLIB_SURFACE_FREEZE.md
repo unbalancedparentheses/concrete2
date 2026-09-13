@@ -71,7 +71,7 @@ Generic success/failure type.
 | `unwrap_or(self, default: T) -> T` | method |
 | `ok(self) -> Option<T>` | method |
 | `err(self) -> Option<E>` | method |
-| `?` operator (postfix) | syntax, desugars to match + early return |
+| Result propagation | exhaustive `match` plus explicit `return Result::Err ...`; no postfix operator |
 
 Tier 2 helpers (`map`, `map_err`, `and_then`, `or_else`, `unwrap_or_else`) are approved additions pending function-pointer-in-generic validation. They are not frozen because they do not yet exist.
 
@@ -558,7 +558,7 @@ Every syntax construct in the language and its freeze status.
 | `trusted` | Trust boundary marker for unsafe internals |
 | `extern fn` / `trusted extern fn` | FFI function declarations |
 | `with(...)` | Capability declaration on function signatures |
-| `?` | Postfix error propagation operator (desugars to match + early return) |
+| explicit Result propagation | `match` exposes both arms and the error arm writes the early return |
 | `as` | Explicit type cast (widening, narrowing, reinterpretation) |
 | `::` | Generic instantiation, enum/static qualification (`Type::Variant`, `Type::method(...)`), and module qualification |
 | `.` | Module path, field access, method call |
@@ -834,8 +834,8 @@ Per [STDLIB_VALIDATION_PLAN.md](STDLIB_VALIDATION_PLAN.md), the following canoni
 
 | Example | Status | Dependency |
 |---------|--------|-----------|
-| `examples/parse_validate/` | Required: rewrite with `Result<T, E>` and `?` | `Result.unwrap_or` (done), `?` (done) |
-| `examples/service_errors/` | Required: rewrite with `Result` + `map_err` + `?` | `Result.map_err` (Tier 2, pending) |
+| `examples/parse_validate/` | Required: use `Result<T, E>` with explicit propagation | `Result.unwrap_or` (done), exhaustive match |
+| `examples/service_errors/` | Required: use `Result` plus visible error conversion | `Result.map_err` where useful; explicit returning arm |
 | `examples/grep/` | Required: use `std.ascii`, `String` methods, remove magic constants | Existing stdlib surface |
 | `examples/fixed_capacity/` | Required: replace ad hoc `ValidateResult` with builtin `Result<T, E>` | Existing stdlib surface |
 | `examples/elf_header/` | Nice-to-have: use `ByteCursor` | `std.numeric` (implemented, 891d561) |

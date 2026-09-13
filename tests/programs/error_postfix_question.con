@@ -1,0 +1,7 @@
+// Postfix `?` is deliberately absent. The lexer retains this token solely so
+// the parser can issue the permanent, targeted removal diagnostic.
+fn main() -> Int {
+    let x: Int = 42;
+    let y: Int = x?;
+    return y;
+}

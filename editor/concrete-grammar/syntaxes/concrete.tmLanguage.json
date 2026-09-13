@@ -318,11 +318,6 @@
                     "comment": "hashrocket, fat arrow",
                     "name": "keyword.operator.arrow.fat.concrete",
                     "match": "=>"
-                },
-                {
-                    "comment": "question mark operator, questionably sized",
-                    "name": "keyword.operator.question.concrete",
-                    "match": "\\?"
                 }
             ]
         },

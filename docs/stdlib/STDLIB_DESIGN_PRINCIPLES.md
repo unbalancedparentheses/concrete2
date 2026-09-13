@@ -269,14 +269,14 @@ All fallible stdlib operations use the same error pattern:
 - Small enum error types per module: `FsError`, `NetError`, `IoError`, `ProcessError`.
 - Generic `Result<T, ModuleError>` for all fallible operations.
 - `Option<T>` for operations where absence (not failure) is the expected case.
-- The `?` operator propagates errors without hidden control flow.
+- Recoverable errors propagate through exhaustive `match` and an explicit returning arm.
 
 **The rules**:
 - No module invents its own result type. All use the canonical builtin `Result<T, E>`.
 - Error enums are small, flat, and named by module. `FsError` has variants like `NotFound`, `PermissionDenied`, `IoFailed`. Not `Error(String)`.
 - Conversion between error types is explicit. `ServiceError::from_auth_error(e)` is a function call, not an implicit trait implementation.
 
-**What Rust does well**: Rust's `Result<T, E>` is universal. Every fallible operation returns it. Error conversion through `From` and `?` is ergonomic.
+**What Rust does well**: Rust's `Result<T, E>` is universal. Every fallible operation returns it. Concrete adopts the value type but deliberately keeps propagation and conversion explicit.
 
 **What Rust does poorly**: the `anyhow`/`thiserror`/`eyre` ecosystem exists because Rust's built-in error handling is simultaneously too rigid (concrete error types) and too flexible (trait objects, dynamic dispatch). Concrete should stay with concrete error enums and explicit conversion.
 

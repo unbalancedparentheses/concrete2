@@ -731,8 +731,8 @@ partial def parsePostfixNoAs (e : Expr) : ParseM Expr := do
       else
         result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
-      advance
-      result := .try_ result.getSpan result
+      throwParse "postfix `?` was removed — propagate Result explicitly with `match` and `return`"
+        (hint := some "match the Result; continue from Ok and return Err explicitly")
     else if tk == .lbracket then
       advance
       let index ← parseExpr
@@ -775,8 +775,8 @@ partial def parsePostfix (e : Expr) : ParseM Expr := do
       else
         result := .fieldAccess result.getSpan result fieldName
     else if tk == .question then
-      advance
-      result := .try_ result.getSpan result
+      throwParse "postfix `?` was removed — propagate Result explicitly with `match` and `return`"
+        (hint := some "match the Result; continue from Ok and return Err explicitly")
     else if tk == .lbracket then
       -- Array index: expr[index]
       advance

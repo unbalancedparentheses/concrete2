@@ -285,7 +285,7 @@ match_body = block | stmt ;
 (*  10. * / %                                                       *)
 (*  11. 'as' type          (cast)                                   *)
 (*  12. - ! ~ & *          (unary prefix)                           *)
-(*  13. . [] -> ?          (postfix)                                *)
+(*  13. . [] ->            (postfix; -> is rejected legacy syntax)  *)
 (*                                                                  *)
 (* So postfix binds tighter than unary (`-c.n` is `-(c.n)`), and    *)
 (* unary binds tighter than 'as' (`-x as i32` is `(-x) as i32`;     *)
@@ -323,7 +323,6 @@ postfix_expr = primary_expr { postfix_op } ;
 (* fn return types.                                                          *)
 postfix_op = '.' postfix_dot
            | '[' expr ']'
-           | '?'
            ;
 
 postfix_dot = IDENT [ dot_ident_tail ]

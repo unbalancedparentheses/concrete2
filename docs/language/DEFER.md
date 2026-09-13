@@ -25,9 +25,10 @@ Implemented semantics (locked by the gate):
   order — the last `defer` runs first. (`defer a(); defer b();` runs `b` then
   `a`.)
 - **Runs on every exit path.** Deferred calls run on normal fall-through, on
-  early `return`, on `break`/`continue` out of the scope, and on `?`/`Err`
-  propagation. (`Concrete/IR/Lower.lean`: `emitFrameDeferredCalls` at scope pop,
-  `emitAllDeferredCalls` on return/Err, `emitDeferredUntilLoop` on break/continue.)
+  early `return` (including an explicit `Result::Err` return), and on
+  `break`/`continue` out of the scope. (`Concrete/IR/Lower.lean`:
+  `emitFrameDeferredCalls` at scope pop, `emitAllDeferredCalls` on return,
+  `emitDeferredUntilLoop` on break/continue.)
 - **Per-scope.** Each block scope has its own deferred list; exiting a block runs
   that block's defers, inner-to-outer.
 - **Linear arguments are reserved at registration.** Once `defer drop(x)` is

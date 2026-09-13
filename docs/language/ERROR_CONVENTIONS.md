@@ -28,9 +28,9 @@ Conventions:
 - Error payloads follow linearity like any value: non-Copy error types must be
   consumed on every path (the checker enforces this; see `ok_or`'s `E: Copy`
   bound in `std/src/option.con` for the pattern when a payload may be dropped).
-- `?` is the explicit propagation marker for `Result`/`Option`; it lowers to an
-  ordinary early return and runs `defer` for exited scopes. There is no
-  throw/catch, exception table, or hidden unwinding.
+- Propagation matches `Result`/`Option` exhaustively and writes the returning arm.
+  That ordinary early return runs `defer` for exited scopes. There is no postfix
+  propagation syntax, throw/catch, exception table, or hidden unwinding.
 - Ignored results are NOT silent: discarding a must-use value is E0286; a bare
   pure non-Unit Copy expression statement is E0294 with the `discard(expr)`
   escape. New stdlib `Result`-returning APIs are must-use by default.

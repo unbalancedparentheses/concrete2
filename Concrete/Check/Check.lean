@@ -1163,31 +1163,6 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) (mode : UseMode := .
       | _ => pure ()
       return t
     | _ => throwCheck .cannotDerefNonRef (some e.getSpan)
-  | .try_ _ inner =>
-    let innerTy ← checkExpr inner
-    let (enumName, typeArgs) := match innerTy with
-      | .named n => (n, ([] : List Ty))
-      | .generic n args => (n, args)
-      | _ => ("", [])
-    if enumName == "" then
-      throwCheck .tryRequiresResult (some e.getSpan)
-    else
-      match ← lookupEnum enumName with
-      | some ed =>
-        let okVariant := ed.variants.find? fun v => v.name == okVariantName
-        let errVariant := ed.variants.find? fun v => v.name == errVariantName
-        match okVariant, errVariant with
-        | some ok, some _ =>
-          -- Function must return the same Result type
-          let env ← getEnv
-          expectTy innerTy env.currentRetTy "try (?) operator: function must return same Result type" (some e.getSpan)
-          -- Return the type of the first field in Ok variant, with type substitution for generics
-          let mapping := ed.typeParams.zip typeArgs
-          match ok.fields.head? with
-          | some f => return (substTy mapping f.ty)
-          | none => throwCheck (.tryOkNoField enumName) (some e.getSpan)
-        | _, _ => throwCheck .tryRequiresOkErrVariants (some e.getSpan)
-      | none => throwCheck (.unknownEnumType enumName) (some e.getSpan)
   | .arrayLit _ elems =>
     match elems with
     | [] => return .array .placeholder 0  -- CoreCheck validates empty array literals

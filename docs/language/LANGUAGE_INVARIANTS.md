@@ -36,7 +36,7 @@ Each phase that adds a new consumption form must update this list.
 
 ## 3. No Hidden Control Flow
 
-`a + b` on integers is primitive addition, not a method call. The compiler never inserts destructor calls — you write `defer destroy(x)` explicitly. If it allocates, you see `with(Alloc)`. Errors propagate only where `?` appears.
+`a + b` on integers is primitive addition, not a method call. The compiler never inserts destructor calls — you write `defer destroy(x)` explicitly. If it allocates, you see `with(Alloc)`. Recoverable errors propagate only through an explicit `match` arm containing `return`.
 
 ### Note on `defer`
 
@@ -97,7 +97,7 @@ Optional values use `Option<T>`.
 
 ## 9. No Exceptions
 
-Errors are values (`Result<T, E>`), propagated with `?`.
+Errors are values (`Result<T, E>`), propagated with exhaustive `match` and explicit `return`.
 
 ## 10. No Global Mutable State
 

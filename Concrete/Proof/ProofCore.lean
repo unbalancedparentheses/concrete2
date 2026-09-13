@@ -59,7 +59,7 @@ partial def collectCallsExpr (e : CExpr) : List String :=
   | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectCallsExpr inner
   | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectCallsExpr e) []
   | .arrayIndex arr idx _ => collectCallsExpr arr ++ collectCallsExpr idx
-  | .cast inner _ | .try_ inner _ => collectCallsExpr inner
+  | .cast inner _ => collectCallsExpr inner
   | .allocCall inner alloc _ => collectCallsExpr inner ++ collectCallsExpr alloc
   | .ifExpr cond th el _ =>
     collectCallsExpr cond ++ collectCallsStmts th ++ collectCallsStmts el
@@ -129,7 +129,7 @@ partial def hasIndirectCallExpr (e : CExpr) : Bool :=
   | .borrow inner _ | .borrowMut inner _ | .deref inner _ => hasIndirectCallExpr inner
   | .arrayLit elems _ => elems.any hasIndirectCallExpr
   | .arrayIndex arr idx _ => hasIndirectCallExpr arr || hasIndirectCallExpr idx
-  | .cast inner _ | .try_ inner _ => hasIndirectCallExpr inner
+  | .cast inner _ => hasIndirectCallExpr inner
   | .allocCall inner alloc _ => hasIndirectCallExpr inner || hasIndirectCallExpr alloc
   | .ifExpr cond th el _ =>
     hasIndirectCallExpr cond || hasIndirectCallStmts th || hasIndirectCallStmts el
@@ -188,7 +188,7 @@ partial def collectDefersExpr (e : CExpr) : List String :=
   | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectDefersExpr inner
   | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectDefersExpr e) []
   | .arrayIndex arr idx _ => collectDefersExpr arr ++ collectDefersExpr idx
-  | .cast inner _ | .try_ inner _ => collectDefersExpr inner
+  | .cast inner _ => collectDefersExpr inner
   | .allocCall inner alloc _ => collectDefersExpr inner ++ collectDefersExpr alloc
   | _ => []
 
@@ -248,7 +248,7 @@ partial def hasRawPtrOpsExpr (e : CExpr) : Bool :=
   | .borrow inner _ | .borrowMut inner _ => hasRawPtrOpsExpr inner
   | .arrayLit elems _ => elems.any hasRawPtrOpsExpr
   | .arrayIndex arr idx _ => hasRawPtrOpsExpr arr || hasRawPtrOpsExpr idx
-  | .cast inner _ | .try_ inner _ => hasRawPtrOpsExpr inner
+  | .cast inner _ => hasRawPtrOpsExpr inner
   | .allocCall inner alloc _ => hasRawPtrOpsExpr inner || hasRawPtrOpsExpr alloc
   | _ => false
 
@@ -552,7 +552,7 @@ partial def collectLoopBoundsExpr (e : CExpr) : List LoopBound :=
   | .borrow inner _ | .borrowMut inner _ | .deref inner _ => collectLoopBoundsExpr inner
   | .arrayLit elems _ => elems.foldl (fun acc e => acc ++ collectLoopBoundsExpr e) []
   | .arrayIndex arr idx _ => collectLoopBoundsExpr arr ++ collectLoopBoundsExpr idx
-  | .cast inner _ | .try_ inner _ => collectLoopBoundsExpr inner
+  | .cast inner _ => collectLoopBoundsExpr inner
   | .allocCall inner alloc _ => collectLoopBoundsExpr inner ++ collectLoopBoundsExpr alloc
   | .ifExpr c t e _ => collectLoopBoundsExpr c ++ collectLoopBoundsStmts t ++ collectLoopBoundsStmts e
   | _ => []
@@ -632,7 +632,6 @@ private partial def fingerprintExpr : CExpr → String
   | .arrayIndex arr idx _ => s!"(index {fingerprintExpr arr} {fingerprintExpr idx})"
   | .cast inner ty => s!"(cast {fingerprintExpr inner} {repr ty})"
   | .fnRef name _ => s!"(fnref {name})"
-  | .try_ inner _ => s!"(try {fingerprintExpr inner})"
   | .allocCall inner alloc _ => s!"(alloc {fingerprintExpr inner} {fingerprintExpr alloc})"
   | .ifExpr cond th el _ => s!"(if {fingerprintExpr cond} {fingerprintStmts th} {fingerprintStmts el})"
 where
@@ -1225,7 +1224,6 @@ private partial def identifyUnsupportedExpr : CExpr → List String
   | .cast inner targetTy =>
     (if isFloatTy targetTy then [floatReason] else []) ++ identifyUnsupportedExpr inner
   | .fnRef .. => ["function reference"]
-  | .try_ .. => ["try expression"]
   | .allocCall .. => ["alloc call"]
   | .unaryOp .. => ["unary operator"]
   | .binOp op lhs rhs ty =>

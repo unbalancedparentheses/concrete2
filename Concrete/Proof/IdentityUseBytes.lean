@@ -214,7 +214,6 @@ partial def exprBytes : EvidenceExprV2 → String
   | .cast t x        => lp "A" (typeRefBytes t ++ "|" ++ exprBytes x)
   | .arrayLit t els  => lp "R" (typeRefBytes t ++ "|" ++ toString els.length ++ ":"
                                  ++ String.join (els.map exprBytes))
-  | .tryProp x t     => lp "T" (typeRefBytes t ++ "|" ++ exprBytes x)
   | .matchExpr sc arms => lp "Q" (exprBytes sc ++ "|" ++ toString arms.length ++ ":"
                                    ++ String.join (arms.map armBytes))
   -- "H", its own tag: an if-EXPRESSION is not the statement `branch` (tag below) and not
@@ -304,7 +303,6 @@ partial def exprFlatUses : EvidenceExprV2 → List BodyIdentityUse
   | .variantLit i fs => [.variant i] ++ fs.flatMap (fun fe => [.field fe.1] ++ exprFlatUses fe.2)
   | .cast t x        => (typeRefNominals t).map .typeRef ++ exprFlatUses x
   | .arrayLit t els  => (typeRefNominals t).map .typeRef ++ els.flatMap exprFlatUses
-  | .tryProp x t     => (typeRefNominals t).map .typeRef ++ exprFlatUses x
   | .matchExpr sc arms => exprFlatUses sc ++ arms.flatMap armFlatUses
   | .ifExpr c t e => exprFlatUses c ++ t.flatMap stmtFlatUses ++ e.flatMap stmtFlatUses
 
@@ -349,4 +347,3 @@ def bodyBytesV2 (b : CompleteEvidenceBodyV2) : String :=
     ++ String.join (b.val.statements.map stmtBytes)
 
 end Concrete.Proof
-

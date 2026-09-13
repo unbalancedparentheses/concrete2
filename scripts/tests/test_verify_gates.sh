@@ -4,7 +4,7 @@
 # is error-free.
 #
 # Warnings ARE tolerated — the post-elab gate has a documented
-# exception for Ty.placeholder leaks via `?` (try) and `defer`, and
+# exception for Ty.placeholder leaks via `defer`, and
 # the harness reports them but does not fail on them. Any new warning
 # class added in the future should be triaged through the contract in
 # docs/verification/VERIFY_GATES.md before the corpus accepts it silently.

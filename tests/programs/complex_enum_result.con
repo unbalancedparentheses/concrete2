@@ -1,4 +1,4 @@
-// Complex test: Result type with ? operator and match
+// Complex test: Result type with explicit propagation and match
 enum Result { Ok { value: Int }, Err { error: Int } }
 
 fn safe_divide(a: Int, b: Int) -> Result {
@@ -10,8 +10,14 @@ fn safe_divide(a: Int, b: Int) -> Result {
 }
 
 fn compute() -> Result {
-    let x: Int = safe_divide(100, 5)?;
-    let y: Int = safe_divide(x, 4)?;
+    let x: Int = match safe_divide(100, 5) {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
+    let y: Int = match safe_divide(x, 4) {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
     return Result::Ok { value: x + y };
 }
 

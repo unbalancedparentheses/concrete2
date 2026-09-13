@@ -39,7 +39,6 @@ Columns:
 | `match_` | via `EvidenceStmtV2.match_` | `VariantId` per arm | arm opens a frame | `unhandledPattern` | outer-from-arm |
 | `borrow` / `borrowMut` | `borrow isMut x` | — | — | — | `&p` vs `&mut p` differ |
 | `deref` | `deref x` | — | — | — | `*p` vs `p` differ |
-| `try_` | `tryProp operand residualTy` | residual `TypeId` | — | `unresolvedType` | `x?` differs from `x` |
 | `arrayLit` | `arrayLit elemTy elements` | element `TypeId` | — | `unresolvedType` | order + multiplicity |
 | `arrayIndex` | `index c i` | — | — | — | `a[i]` vs `a[j]` differ |
 | `cast` | `cast target x` | `TypeId` | — | `unresolvedType` | width-changing cast |
@@ -102,11 +101,9 @@ Inventoried, and neither has its own inductive in the AST:
 
 ## Decided (previously open)
 
-All five formerly-undecided constructors are now classified above. The reasoning that
+The remaining formerly-undecided constructors are classified above. The reasoning that
 mattered:
 
-- **`try_`** must differ from its operand: `x?` short-circuits on the error path and `x`
-  does not, so collapsing them would make adding or removing a `?` invisible.
 - **`defer`** registration order IS its list position, and cleanup is LIFO, so
   reordering two defers changes the program.
 - **`assert_` vs `assume_`** must never collide. An assert is DISCHARGED; an assume is

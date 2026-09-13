@@ -47,7 +47,7 @@ The interpreter currently models:
 - `if`, bounded `while`, `break`, `continue`, and labeled loop flow;
 - direct calls, function-pointer values, and indirect calls;
 - immutable/mutable path borrows across calls and named borrow regions;
-- `Result`/`Option`-shaped `?` propagation;
+- explicit `Result`/`Option` matching and returning error arms;
 - `defer` on fall-through, return, break, and continue, in LIFO scope order;
 - selected String/Vec/print intrinsics sufficient for the checked differential
   corpus.

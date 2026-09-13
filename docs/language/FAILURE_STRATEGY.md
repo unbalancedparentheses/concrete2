@@ -26,14 +26,15 @@ Concrete uses **abort-only failure**. There is no panic, no stack unwinding, no 
 | Situation | Response | Cleanup runs? |
 |-----------|----------|---------------|
 | Normal return | Function returns value | Yes — defer runs LIFO |
-| Error return via `?` | `Result::Err` propagated to caller | Yes — defer runs LIFO in each unwound frame |
+| Explicit error return | `Result::Err` returned from a match arm | Yes — defer runs LIFO in each returning frame |
 | `break` / `continue` | Loop control flow | Yes — defer runs for exited scopes |
 | Out-of-memory | terminal abort | **No** |
 | Stack overflow | OS guard page → SIGSEGV | **No** |
 | Hardware signal | OS kills process | **No** |
 | `abort()` call | terminal abort | **No** |
 
-The `?` operator is **not** unwinding. It is sugar for early return with a `Result::Err` value. Defer runs normally on `?`-triggered returns because they are normal returns from the caller's perspective.
+An explicit error return is ordinary control flow, not unwinding. `defer` runs because the source
+contains a normal `return`; Concrete has no postfix propagation syntax that hides that exit.
 
 ---
 
@@ -41,7 +42,8 @@ The `?` operator is **not** unwinding. It is sugar for early return with a `Resu
 
 ### 1. Explicit errors (normal control flow)
 
-Errors are values. The `Result<T, E>` type and `?` operator handle all recoverable failures.
+Errors are values. `Result<T, E>`, exhaustive matching, and explicit returns handle all recoverable
+failures.
 
 ```
 fn parse(input: &[u8]) -> Result<Header, ParseError> {
@@ -53,7 +55,7 @@ fn parse(input: &[u8]) -> Result<Header, ParseError> {
 
 Explicit errors:
 - Are visible in function signatures
-- Propagate via normal return (`?` is sugar, not magic)
+- Propagate via a normal return written in the error arm
 - Do not skip defer — all deferred cleanup runs
 - Are the **only** error mechanism in Concrete
 
@@ -123,7 +125,7 @@ ordinary arithmetic and indexing are not in this table.
 Deferred expressions run in LIFO order (last-deferred, first-executed) on:
 
 - Normal `return`
-- Error return via `?`
+- Explicit error return from a `Result::Err` arm
 - `break` and `continue` (for scopes being exited)
 - Implicit return at end of function body
 - End of scope block (if/else, while body, borrow block)
@@ -138,7 +140,7 @@ When the process terminates via `abort()`, SIGSEGV, or any signal, deferred expr
 
 ### No-leak guarantee for normal control flow
 
-For functions that return normally (including error returns via `?`):
+For functions that return normally (including explicit error returns):
 
 - All deferred expressions execute
 - All linear values are consumed (enforced by checker)
@@ -245,7 +247,7 @@ Proved functions cannot call extern functions (FFI gate in proof eligibility). T
 ## Summary of Commitments
 
 1. **Abort-only**: no panic, no unwinding, no catch. This is permanent.
-2. **Defer runs on normal paths**: every return, `?`, break, continue, scope exit.
+2. **Defer runs on normal paths**: every return, break, continue, and scope exit.
 3. **Defer skipped on abort/signal**: hosted execution terminates; freestanding
    invokes its non-returning handler. Neither promises language cleanup.
 4. **No leak on normal paths**: linear ownership + defer guarantees cleanup.

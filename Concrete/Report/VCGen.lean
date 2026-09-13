@@ -92,7 +92,7 @@ partial def vcExpr (e : Expr) : List Requirement :=
   requires e ++
     match e with
     | .paren _ x | .unaryOp _ _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-    | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => vcExpr x
+    | .cast _ x _ | .fieldAccess _ x _ => vcExpr x
     | .binOp _ _ l r => vcExpr l ++ vcExpr r
     | .arrayIndex _ a i => vcExpr a ++ vcExpr i
     | .allocCall _ x a => vcExpr x ++ vcExpr a

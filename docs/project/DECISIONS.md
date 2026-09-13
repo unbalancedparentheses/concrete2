@@ -62,6 +62,24 @@ syntax macros, or compile-time source generation inside the language.
 
 All dispatch in Concrete is either statically resolved (monomorphization) or explicitly indirect (typed function pointers). There is no mechanism where `x.method()` can silently become a runtime vtable lookup.
 
+### No postfix error-propagation operator
+
+**Status:** Decided (2026-09-08)
+
+Concrete has `Result<T, E>` but no postfix `?` operator. Recoverable failure is propagated with an
+exhaustive `match`: the success arm yields the payload and the error arm explicitly returns
+`Result::Err`. Cross-type propagation performs its conversion in that visible error arm.
+
+The syntax was previously implemented, then removed. Its one-character spelling hid a function
+exit at an expression site and made cleanup and authority review depend on remembering a
+desugaring. That trade is especially weak for model-authored code, where generating explicit arms
+is cheap and reviewing them is the expensive part. Concrete keeps `Result` and its ordinary library
+combinators; it rejects implicit propagation, implicit error conversion, implicit drop, and hidden
+capability use.
+
+The lexer may continue recognizing `?` solely to issue a targeted rejection diagnostic. Recognition
+for diagnostics does not make it part of the grammar.
+
 ### No inference-heavy abstraction layers
 
 **Status:** Decided (2026-03-09)

@@ -62,7 +62,7 @@ run_ok_O2 "$TESTDIR/generic_multi_bound_dispatch.con" 49
 # --- Result / Option ---
 run_ok_O2 "$TESTDIR/result_ok.con"      42
 run_ok_O2 "$TESTDIR/result_err.con"     99
-run_ok_O2 "$TESTDIR/result_generic_try.con" 42
+run_ok_O2 "$TESTDIR/result_generic_propagation.con" 42
 run_ok_O2 "$TESTDIR/result_string.con" 5
 run_ok_O2 "$TESTDIR/option_basic.con"  52
 run_ok_O2 "$TESTDIR/option_heap.con"   42
@@ -144,7 +144,7 @@ run_ok_O2 "$TESTDIR/defer_lifo.con" 42
 run_ok_O2 "$TESTDIR/defer_early_return.con" 10
 run_ok_O2 "$TESTDIR/defer_loop.con" 42
 run_ok_O2 "$TESTDIR/defer_nested_scope.con" 42
-run_ok_O2 "$TESTDIR/defer_try.con" 42
+run_ok_O2 "$TESTDIR/defer_result_return.con" 42
 run_ok_O2 "$TESTDIR/defer_multiple.con" 30
 
 # --- Copy / destroy ---

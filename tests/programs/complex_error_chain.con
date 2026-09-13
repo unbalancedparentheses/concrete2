@@ -1,4 +1,4 @@
-// Test: multiple ? operators in sequence with Result
+// Test: multiple explicit Result propagations in sequence
 // Expected: 40
 enum Result {
     Ok { value: Int },
@@ -18,9 +18,18 @@ fn step3(x: Int) -> Result {
 }
 
 fn pipeline(x: Int) -> Result {
-    let a: Int = step1(x)?;
-    let b: Int = step2(a)?;
-    let c: Int = step3(b)?;
+    let a: Int = match step1(x) {
+        Result::Ok { value } => value,
+        Result::Err { code } => { return Result::Err { code: code }; },
+    };
+    let b: Int = match step2(a) {
+        Result::Ok { value } => value,
+        Result::Err { code } => { return Result::Err { code: code }; },
+    };
+    let c: Int = match step3(b) {
+        Result::Ok { value } => value,
+        Result::Err { code } => { return Result::Err { code: code }; },
+    };
     return Result::Ok { value: c };
 }
 

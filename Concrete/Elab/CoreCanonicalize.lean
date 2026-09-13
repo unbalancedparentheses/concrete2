@@ -89,7 +89,6 @@ partial def canonExpr (structs : List CStructDef) : CExpr → CExpr
   | .arrayIndex arr idx ty => .arrayIndex (canonExpr structs arr) (canonExpr structs idx) (canonTy ty)
   | .cast inner t => .cast (canonExpr structs inner) (canonTy t)
   | .fnRef n ty => .fnRef n (canonTy ty)
-  | .try_ inner ty => .try_ (canonExpr structs inner) (canonTy ty)
   | .allocCall inner alloc ty =>
     .allocCall (canonExpr structs inner) (canonExpr structs alloc) (canonTy ty)
   | .ifExpr cond then_ else_ ty =>

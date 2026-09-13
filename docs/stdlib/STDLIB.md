@@ -471,7 +471,7 @@ Stdlib APIs use a uniform error pattern:
 
 - Small enum error types per module (e.g. `FsError`, `NetError`, `IoError`, `ProcessError`)
 - Generic `Result<T, ModuleError>` for all fallible operations — no module-specific result enums
-- The `?` operator works with both named and generic enum types (patched in Check.lean)
+- `Result` propagation uses exhaustive matching for both named and generic enum types; postfix `?` is deliberately absent
 - `std.bytes` provides `get`/`set` returning `Option<u8>`/`bool` for bounds-safe access
 - `std.string` provides `get` returning `Option<char>`
 - `std.vec` provides `get` returning `Option<&T>`

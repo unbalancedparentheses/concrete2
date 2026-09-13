@@ -10,6 +10,28 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Postfix `?` Removed; Explicit Result Propagation Is Permanent
+
+_Language surface and trust-story reconciliation, 2026-09-08._
+
+Concrete no longer accepts postfix `?`. Recoverable failure still uses `Result<T, E>`, but a caller
+must match it exhaustively and write the returning error arm. The lexer retains `?` only to produce
+a targeted migration diagnostic; the surface AST, checker, Core IR, monomorphizer, interpreter,
+lowering, proof extractor and evidence identity have no propagation-specific node or rule.
+
+Positive Result/defer fixtures now use the explicit form, the removed syntax has a permanent
+negative fixture, and the surface-simplification gate rejects both parser re-admission and a
+propagation node surviving below the parser. Historical entries below still describe the period in
+which the operator existed; diagnostic codes E0275-E0277 remain reserved and are not reassigned.
+
+The roadmap's end-state wording was tightened at the same boundary. Concrete is an
+**evidence-bearing sequential-language core with stated, bounded trust assumptions and an explicit,
+shrinking TCB**, not a verified compiler. The word "verified" waits on H19-H21. Model
+correspondence is named separately as R-0482's philosophical-core gap: exact identity prevents
+substitution but does not prove that a Lean model describes the implementation. Scheduled package,
+tooling and resource work is separated from unowned trust holes; typestate remains workload-pulled
+by the protocol flagship rather than pre-admitted.
+
 ### What A Record Says Versus What Anyone Checked
 
 _Campaign supervision, 2026-09-08. Landed at `591224f2`, `c7c6cd45`, `b7b7c2cf`, `9ea22652`,

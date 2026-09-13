@@ -13,7 +13,6 @@ Surface forms removed:
 - `p->field` → `deref(p).field`
 - `p->field = val` → `deref(p).field = val`
 - `for (init; cond; step) { body }` → `init; while cond { body; step }`
-- `expr?` → kept as `try_` in Core v1
 -/
 
 -- ============================================================
@@ -93,7 +92,6 @@ inductive CExpr where
   | arrayIndex (arr : CExpr) (index : CExpr) (ty : Ty)
   | cast (inner : CExpr) (targetTy : Ty)
   | fnRef (name : String) (ty : Ty)
-  | try_ (inner : CExpr) (ty : Ty)
   | allocCall (inner : CExpr) (allocExpr : CExpr) (ty : Ty)
   | ifExpr (cond : CExpr) (then_ : List CStmt) (else_ : List CStmt) (ty : Ty)
 
@@ -263,7 +261,6 @@ def CExpr.ty : CExpr → Ty
   | .arrayIndex _ _ t => t
   | .cast _ t => t
   | .fnRef _ t => t
-  | .try_ _ t => t
   | .allocCall _ _ t => t
   | .ifExpr _ _ _ t => t
 
@@ -354,7 +351,6 @@ partial def ppCExpr (e : CExpr) : String :=
   | .arrayIndex arr idx _ => s!"{ppCExpr arr}[{ppCExpr idx}]"
   | .cast inner t => s!"{ppCExpr inner} as {tyToStr t}"
   | .fnRef n _ => n
-  | .try_ inner _ => s!"{ppCExpr inner}?"
   | .allocCall inner alloc _ => s!"{ppCExpr inner} with(Alloc = {ppCExpr alloc})"
   | .ifExpr cond then_ else_ _ =>
     let thenStr := then_.map (ppCStmt 2)

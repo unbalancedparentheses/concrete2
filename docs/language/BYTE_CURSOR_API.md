@@ -324,16 +324,10 @@ fn parse_dns_header(buf: [u8; 64], len: u64) -> Result<DnsHeader, CursorError> {
 
 Improvements: correct types (`u16` for unsigned 16-bit values), bounds checking at every read, no manual offset tracking, `ByteCursor` works with any buffer size, the function signature communicates that parsing can fail.
 
-**Note on verbosity.** The match-on-every-read pattern is verbose. This is the intended cost today -- Concrete does not have `?` or `try` syntax. When Result ergonomics improve (roadmap item 58), the same code will collapse to:
-
-```
-let id: u16 = cur.read_u16_be()?;
-let raw_flags: u16 = cur.read_u16_be()?;
-let qdcount: u16 = cur.read_u16_be()?;
-// ...
-```
-
-The cursor API is designed for that future, but works without it.
+**Note on verbosity.** The match-on-every-read pattern is deliberate. Concrete does not have `?` or
+`try` propagation syntax: each truncation edge and returning arm stays visible. Callers may factor a
+coherent multi-read operation into a named helper, but the helper itself preserves the same explicit
+Result boundary.
 
 ### Example: binary protocol frame with mixed endianness
 
@@ -447,7 +441,8 @@ match cur.read_u32_be() {
 }
 ```
 
-When Result ergonomics improve (item 58: `?` operator, `unwrap_or`, `map_err`), error propagation will be less verbose. The cursor API is designed to work well with those future additions without requiring changes.
+`unwrap_or`, `map_err`, and other ordinary Result helpers may reduce data-flow boilerplate. They do
+not introduce an implicit return; propagation remains an exhaustive match with a visible error arm.
 
 ---
 

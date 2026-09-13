@@ -26,7 +26,10 @@ impl Counter {
 }
 
 fn count_if_present(path: String) with(File) -> Result<Int, String> {
-    let text: String = read_file(path)?;
+    let text: String = match read_file(path) {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
     let mut counter: Counter = Counter { value: 0 };
 
     if string_contains(text, "Concrete") {
@@ -42,7 +45,7 @@ This is already most of the language's personality:
 - plain structs and methods
 - explicit mutation through `&mut`
 - explicit capability requirements through `with(File)`
-- explicit error propagation with `?`
+- explicit error propagation with `match` and `return`
 - no hidden effectful magic in code that looks pure
 
 ## What Exists Today

@@ -213,12 +213,6 @@ inductive EvidenceExprV2 where
       `elements.length`, derived rather than stored. Order and repetition are semantic —
       `[a, b]` is not `[b, a]`, and `[a, a]` is not `[a]`. -/
   | arrayLit (elemTy : EvidenceTypeRef) (elements : List EvidenceExprV2)
-  /-- `expr?` — ERROR PROPAGATION, a distinct node from evaluating its operand.
-
-      It must differ from the operand alone: `x?` short-circuits on the error path and
-      `x` does not, so collapsing them would make adding or removing a `?` invisible to
-      the subject. Carries the resolved residual type. -/
-  | tryProp (operand : EvidenceExprV2) (residualTy : EvidenceTypeRef)
   /-- `match` used as an EXPRESSION.
 
       Concrete's match IS an expression — a match statement is `exprStmt (match ...)` — so
@@ -354,7 +348,6 @@ partial def exprGaps : EvidenceExprV2 → List EvidenceGap
   | .structLit _ fs => fs.flatMap fun fe => exprGaps fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprGaps fe.2
   | .arrayLit t els => typeRefGaps t ++ els.flatMap exprGaps
-  | .tryProp x t => exprGaps x ++ typeRefGaps t
   | .matchExpr sc arms => exprGaps sc ++ arms.flatMap armGaps
   | .ifExpr c t e => exprGaps c ++ t.flatMap stmtGaps ++ e.flatMap stmtGaps
 
@@ -445,7 +438,6 @@ partial def exprCallees : EvidenceExprV2 → List CallableId
   | .structLit _ fs => fs.flatMap (fun fe => exprCallees fe.2)
   | .variantLit _ fs => fs.flatMap (fun fe => exprCallees fe.2)
   | .arrayLit _ els => els.flatMap exprCallees
-  | .tryProp x _ => exprCallees x
   | .matchExpr sc arms => exprCallees sc ++ arms.flatMap armCallees
   | .ifExpr c t e => exprCallees c ++ t.flatMap stmtCallees ++ e.flatMap stmtCallees
 
@@ -501,7 +493,6 @@ partial def exprConstRefs : EvidenceExprV2 → List ConstId
   | .structLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .variantLit _ fs => fs.flatMap fun fe => exprConstRefs fe.2
   | .arrayLit _ els => els.flatMap exprConstRefs
-  | .tryProp x _ => exprConstRefs x
   | .matchExpr sc arms => exprConstRefs sc ++ arms.flatMap armConstRefs
   | .ifExpr c t e => exprConstRefs c ++ t.flatMap stmtConstRefs ++ e.flatMap stmtConstRefs
 

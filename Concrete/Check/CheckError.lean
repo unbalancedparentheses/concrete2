@@ -177,9 +177,6 @@ inductive CheckError where
   | destroyRequiresNamed (ty : String)
   | typeDoesNotImplDestroy (typeName : String)
   | freeRequiresHeap (ty : String)
-  | tryRequiresResult
-  | tryRequiresOkErrVariants
-  | tryOkNoField (enumName : String)
   -- Slice 6: Control flow/defer
   | breakOutsideLoop
   | continueOutsideLoop
@@ -315,9 +312,6 @@ def CheckError.message : CheckError → String
   | .destroyRequiresNamed ty => s!"destroy() requires a named type, got {ty}"
   | .typeDoesNotImplDestroy typeName => s!"type '{typeName}' does not implement Destroy"
   | .freeRequiresHeap ty => s!"free() requires Heap<T> type, got {ty}"
-  | .tryRequiresResult => "? operator requires a Result enum type"
-  | .tryRequiresOkErrVariants => "? operator requires an enum with Ok and Err variants"
-  | .tryOkNoField enumName => s!"Ok variant of '{enumName}' has no value field"
   -- Slice 6
   | .breakOutsideLoop => "break outside of loop"
   | .continueOutsideLoop => "continue outside of loop"
@@ -453,9 +447,6 @@ def CheckError.code : CheckError → String
   | .destroyRequiresNamed _ => "E0272"
   | .typeDoesNotImplDestroy _ => "E0273"
   | .freeRequiresHeap _ => "E0274"
-  | .tryRequiresResult => "E0275"
-  | .tryRequiresOkErrVariants => "E0276"
-  | .tryOkNoField _ => "E0277"
   -- Slice 6: Control flow (E0280–E0289)
   | .breakOutsideLoop => "E0280"
   | .continueOutsideLoop => "E0281"

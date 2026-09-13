@@ -513,7 +513,6 @@ partial def cexprTakesAddrOf (name : String) : CExpr → Bool
   | .arrayLit elems _ => elems.any (cexprTakesAddrOf name)
   | .arrayIndex a i _ => cexprTakesAddrOf name a || cexprTakesAddrOf name i
   | .cast inner _ => cexprTakesAddrOf name inner
-  | .try_ inner _ => cexprTakesAddrOf name inner
   | .allocCall inner alloc _ => cexprTakesAddrOf name inner || cexprTakesAddrOf name alloc
   | .ifExpr c t e _ => cexprTakesAddrOf name c || cstmtsTakeAddrOf name t || cstmtsTakeAddrOf name e
   | _ => false
@@ -1430,43 +1429,6 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
 
   | .fnRef name ty =>
     return .fnRef name ty
-
-  | .try_ inner ty =>
-    -- Try operator: unwrap Ok value or early-return Err
-    let iVal ← lowerExpr inner
-    -- Load tag as i32 from offset 0
-    let tagRaw ← freshReg
-    emit (.load tagRaw iVal .i32)
-    let tagVal ← freshReg
-    emit (.cast tagVal (.reg tagRaw .i32) .int)
-    -- Compare tag == 0 (Ok variant)
-    let cmpDst ← freshReg
-    emit (.binOp cmpDst .eq (.reg tagVal .int) (.intConst 0 .int) .bool)
-    let okLabel ← freshLabel "try.ok"
-    let errLabel ← freshLabel "try.err"
-    terminateBlock (.condBr (.reg cmpDst .bool) okLabel errLabel)
-    -- Err path: return the whole enum (run deferred calls first)
-    startBlock errLabel
-    emitAllDeferredCalls
-    terminateBlock (.ret (some iVal))
-    -- Ok path: extract the Ok value from payload using aligned offset
-    startBlock okLabel
-    let layoutCtx ← getLayoutCtx
-    let resultEnumName := match inner.ty with
-      | .named n => n
-      | .generic n _ => n
-      | _ => resultEnumName
-    let enumTypeArgs := typeArgsFromTy inner.ty
-    let s ← getState
-    let ed := s.enumDefs.find? fun ed => ed.name == resultEnumName
-    let payloadOff := match ed with
-      | some ed => Layout.enumPayloadOffset layoutCtx ed enumTypeArgs
-      | none => 8
-    let payloadGep ← freshReg
-    emit (.gep payloadGep iVal [.intConst (Int.ofNat payloadOff) .int] .i8)
-    let loadDst ← freshReg
-    emit (.load loadDst (.reg payloadGep ty) ty)
-    return .reg loadDst ty
 
   | .allocCall inner _allocExpr _ty =>
     lowerExpr inner

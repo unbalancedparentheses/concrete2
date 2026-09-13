@@ -27,7 +27,7 @@ mechanically-enforced part is `concrete fmt` (gated by `check_concrete_fmt.sh`).
 
 ## Functions
 
-- Keep bodies flat: prefer early `return` / `?` over deep nesting. Extraction into
+- Keep bodies flat: prefer small exhaustive matches and early `return` over deep nesting. Extraction into
   `ProvableV1` favors flat, non-nested control flow, so flat code is also more
   provable.
 - One responsibility per function; push branching into small helpers.
@@ -45,7 +45,7 @@ mechanically-enforced part is `concrete fmt` (gated by `check_concrete_fmt.sh`).
 
 - Prefer exhaustive `match` over chains of `if`; let the non-exhaustiveness error
   catch missing cases.
-- Use `Result`/`Option` and `?` for fallible paths; do not encode errors as
+- Use `Result`/`Option`, exhaustive `match`, and explicit error returns for fallible paths; do not encode errors as
   sentinel integers (the checked-arithmetic model will trap on a sentinel that
   overflows — model the error explicitly).
 - Keep match arms small; lift complex arm bodies into named helpers so each arm

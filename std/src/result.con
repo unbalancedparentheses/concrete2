@@ -48,7 +48,7 @@ mod result {
         }
 
         // Fallible chaining: feed the success payload to a fallible step; an
-        // Err short-circuits. The explicit spelling of what `?` does elsewhere.
+        // Err short-circuits. Callers propagate either arm with an explicit match.
         pub fn and_then<U>(self, f: fn(T) -> Result<U, E>) -> Result<U, E> {
             match self {
                 Result::Ok { value } => { return f(value); },

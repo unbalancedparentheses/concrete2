@@ -167,7 +167,6 @@ partial def fmtExprAt (ind : Nat) : Expr → String
   | .borrow _ inner => s!"&{fmtExprAt ind inner}"
   | .borrowMut _ inner => s!"&mut {fmtExprAt ind inner}"
   | .deref _ inner => s!"*{fmtExprParensAt ind inner}"
-  | .try_ _ inner => s!"{fmtExprAt ind inner}?"
   | .arrayLit _ elems => s!"[{", ".intercalate (elems.map (fmtExprAt ind))}]"
   | .arrayIndex _ arr index => s!"{fmtExprAt ind arr}[{fmtExprAt ind index}]"
   | .cast _ inner targetTy => s!"{fmtExprAt ind inner} as {fmtTy targetTy}"

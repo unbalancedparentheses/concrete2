@@ -171,7 +171,6 @@ inductive Expr where
   | borrow (span : Span) (inner : Expr)      -- &expr
   | borrowMut (span : Span) (inner : Expr)   -- &mut expr
   | deref (span : Span) (inner : Expr)       -- *expr
-  | try_ (span : Span) (inner : Expr)       -- expr?
   | arrayLit (span : Span) (elems : List Expr)              -- [1, 2, 3]
   | arrayIndex (span : Span) (arr : Expr) (index : Expr)    -- arr[i]
   | cast (span : Span) (inner : Expr) (targetTy : Ty)       -- expr as Type
@@ -232,7 +231,7 @@ def Expr.getSpan : Expr → Span
   | .binOp sp _ _ _ | .unaryOp sp _ _ | .paren sp _ => sp
   | .call sp _ _ _ | .structLit sp _ _ _ _ | .enumLit sp _ _ _ _ => sp
   | .fieldAccess sp _ _ => sp
-  | .match_ sp _ _ | .borrow sp _ | .borrowMut sp _ | .deref sp _ | .try_ sp _ => sp
+  | .match_ sp _ _ | .borrow sp _ | .borrowMut sp _ | .deref sp _ => sp
   | .arrayLit sp _ | .arrayIndex sp _ _ | .cast sp _ _ => sp
   | .methodCall sp _ _ _ _ | .staticMethodCall sp _ _ _ _ => sp
   | .allocCall sp _ _ | .ifExpr sp _ _ _ => sp
@@ -584,7 +583,7 @@ partial def collectFreeVarsExpr (e : Expr) (bound : List String) : List String :
       | .rangeArm _ lo hi _ guard body =>
         collectFreeVarsExpr lo bound ++ collectFreeVarsExpr hi bound ++
         (guard.map (collectFreeVarsExpr · bound)).getD [] ++ collectFreeVarsStmts body bound)
-  | .borrow _ inner | .borrowMut _ inner | .deref _ inner | .try_ _ inner =>
+  | .borrow _ inner | .borrowMut _ inner | .deref _ inner =>
     collectFreeVarsExpr inner bound
   | .arrayLit _ elems => elems.flatMap (fun e => collectFreeVarsExpr e bound)
   | .arrayIndex _ arr idx =>

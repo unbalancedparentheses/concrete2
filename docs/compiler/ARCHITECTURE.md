@@ -293,7 +293,7 @@ Accumulates errors at both module level (across functions) and statement level (
 
 This is where surface language ends.
 
-- remove surface sugar (`!`, `?`)
+- remove supported surface sugar (`!`); postfix `?` is rejected by the parser
 - lower method calls into explicit function/impl dispatch
 - normalize pattern matching, borrow-region syntax, struct/enum constructors
 - attach concrete types to expressions and bindings
@@ -379,7 +379,7 @@ Includes:
 - capability-bearing calls
 
 Excludes:
-- parser sugar (`!`, `?`, inline borrows)
+- parser sugar (`!`, inline borrows)
 - unresolved identifiers
 - multiple ways to express the same meaning
 - frontend convenience forms
@@ -426,7 +426,6 @@ second allowlist or a hand-counted theorem total.
 ### Codegen should not know
 
 - whether something came from method-call syntax
-- whether `?` was used
 - surface borrow syntax details
 - `!` sugar, alias syntax, most trait syntax
 

@@ -898,7 +898,7 @@ run_ok "$TESTDIR/string_basic.con"    5
 run_ok "$TESTDIR/string_borrow.con"   10
 run_ok "$TESTDIR/result_ok.con"      42
 run_ok "$TESTDIR/result_err.con"     99
-run_ok "$TESTDIR/result_generic_try.con" 42
+run_ok "$TESTDIR/result_generic_propagation.con" 42
 # Network test — skip in fast mode
 if [ "$MODE" != "fast" ]; then
     run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
@@ -1161,7 +1161,7 @@ run_ok "$TESTDIR/cap_nested_call.con" 42
 
 # Additional defer/Copy tests
 run_ok "$TESTDIR/defer_nested_scope.con" 42
-run_ok "$TESTDIR/defer_try.con" 42
+run_ok "$TESTDIR/defer_result_return.con" 42
 run_ok "$TESTDIR/copy_multiple_use.con" 50
 
 # Additional allocator tests
@@ -1397,8 +1397,7 @@ run_err "$TESTDIR/error_generic_infer_ambiguous.con" "type mismatch"
 run_err "$TESTDIR/error_generic_type.con"        "type mismatch"
 run_err "$TESTDIR/error_generic_unused_linear.con" "was never consumed"
 run_err "$TESTDIR/error_string_unconsumed.con"   "was never consumed"
-run_err "$TESTDIR/error_try_non_result.con"      "requires a Result enum"
-run_err "$TESTDIR/error_try_wrong_return.con"    "function must return same Result type"
+run_err "$TESTDIR/error_postfix_question.con"    'postfix `?` was removed'
 run_err "$TESTDIR/error_import_private.con"      "is not public"
 run_err "$TESTDIR/error_private_field.con"       "unknown module"
 run_err "$TESTDIR/error_array_type.con"          "type mismatch"
@@ -1620,7 +1619,7 @@ run_ok "$TESTDIR/test_defer_block_scope.con" "inner" 1
 run_ok "$TESTDIR/test_defer_loop_iteration.con" "xxx" 3
 run_ok "$TESTDIR/test_defer_loop_break_scope.con" "yyy" 2
 run_ok "$TESTDIR/test_defer_loop_continue_scope.con" "zzz" 3
-run_ok "$TESTDIR/test_defer_try_nested.con" "inner outer" 109
+run_ok "$TESTDIR/test_defer_result_nested.con" "inner outer" 109
 run_ok "$TESTDIR/test_defer_nested_lifo.con" "cba" 0
 run_ok "$TESTDIR/test_defer_loop_inner_return.con" "IIIIO" 3
 run_ok "$TESTDIR/test_alloca_loop_stress.con" 200000
@@ -6765,7 +6764,7 @@ run_ok_O2 "$TESTDIR/trait_numeric_abs.con" 57
 
 # Result/Option
 run_ok_O2 "$TESTDIR/result_ok.con" 42
-run_ok_O2 "$TESTDIR/result_generic_try.con" 42
+run_ok_O2 "$TESTDIR/result_generic_propagation.con" 42
 run_ok_O2 "$TESTDIR/option_basic.con" 52
 run_ok_O2 "$TESTDIR/option_heap.con" 42
 

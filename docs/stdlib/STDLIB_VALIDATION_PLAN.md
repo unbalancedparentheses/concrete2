@@ -21,7 +21,7 @@ An example program is "stdlib-validated" when all of the following are true:
 
 ### 1.1 Uses stdlib Result/Option instead of custom Copy enums
 
-The program uses `Result<T, E>` and `Option<T>` for fallible operations instead of defining its own structurally identical enums (`ParseResult`, `ValidateResult`, `AuthResult`, `ServiceResult`, etc.). The `?` operator is used where the error type matches the enclosing function's return type. Where error types differ, `map_err` + `?` is used instead of manual match-and-convert blocks.
+The program uses `Result<T, E>` and `Option<T>` for fallible operations instead of defining its own structurally identical enums (`ParseResult`, `ValidateResult`, `AuthResult`, `ServiceResult`, etc.). Propagation uses exhaustive matching and a visible returning error arm. Where error types differ, that arm performs a named conversion explicitly.
 
 ### 1.2 Uses stdlib String/Bytes instead of raw arrays where appropriate
 
@@ -33,7 +33,7 @@ Programs that parse binary protocols (DNS, ELF, packet formats) use `ByteCursor`
 
 ### 1.4 Uses stdlib error helpers instead of verbose match cascades
 
-Multi-stage pipelines that convert between error types use `Result.map_err` + `?` instead of 9-line match-and-convert blocks per stage. Single-type error propagation uses `?` instead of explicit match on every fallible call.
+Multi-stage pipelines may use `Result.map_err` to transform an error value, but the caller still matches the result and writes the returning arm. Single-type propagation uses the same explicit match pattern.
 
 ### 1.5 Uses stdlib collections where they exist
 
@@ -57,7 +57,7 @@ Programs that pass `--check predictable` continue to pass after rewriting. Progr
 
 ### 2.1 `examples/parse_validate/` --- Phase 3 exit criterion (DONE)
 
-**Status.** Rewritten to use `std.result.Result<Header, ParseError>` with `?` error propagation. Custom `ParseResult` enum removed. Validators return `Result<(), ParseError>`. Landed and verified (e29389e, 053472b).
+**Status.** Rewritten to use `std.result.Result<Header, ParseError>`; custom `ParseResult` was removed. Propagation is now explicit, and validators return `Result<(), ParseError>`.
 
 ### 2.2 `examples/service_errors/` --- Phase 3 exit criterion (DONE)
 
@@ -137,7 +137,7 @@ slice.
 2. Consider replacing the `(Val, pos)` pattern with a text Cursor that tracks position automatically.
 3. Define a proper `ParseError` enum instead of using `Val { tag: 6 }` as the error signal.
 4. Use `Result<Val, ParseError>` for parse functions.
-5. Use `?` for error propagation in the recursive parse calls.
+5. Use exhaustive matches with explicit error returns in recursive parse calls.
 
 **Priority.** Nice-to-have. The parser is large and the rewrite is significant. The example already works and demonstrates capability separation well. Stdlib validation here is about polish, not exit criteria.
 
@@ -295,7 +295,7 @@ Hand-rolls: `str_eq` for string comparison (has a local implementation despite `
 - Replace `is_digit`/`is_whitespace` with `std.ascii` functions.
 - Replace the manual `Cursor` struct with `std.parse.Cursor` (text cursor) since JSON is text, not binary.
 - Replace ad hoc `IntResult { ok: i32, value: i32 }` with `Result<IntValue, ParseError>`.
-- Use `?` for error propagation.
+- Use explicit Result matching for error propagation.
 
 **What stays manual.** Token representation, object parsing logic, array storage. These are domain-specific.
 
@@ -381,7 +381,7 @@ Hand-rolls: `str_eq` for string comparison (has a local implementation despite `
 
 #### Other defer pressure tests
 
-All defer pressure tests validate language semantics (LIFO ordering, interaction with early return, interaction with `?`). None should be rewritten to use stdlib types -- they are testing the mechanism that stdlib types depend on.
+All defer pressure tests validate language semantics (LIFO ordering and interaction with explicit early return). None should be rewritten to use stdlib types -- they are testing the mechanism that stdlib types depend on.
 
 ### 3.5 FFI pressure tests
 
@@ -496,7 +496,7 @@ If an example CANNOT be rewritten with stdlib, that is a stdlib gap. Each gap is
 
 **Stdlib gap.** `Result.map_err` is Tier 2 in ERROR_HANDLING_DESIGN.md, requiring function-pointer-in-generic validation.
 
-**Recommendation.** Validate function-pointer-in-generic methods and implement `map_err`. If this is not achievable before Phase 3 exit, the fallback is: use `Result<T, E>` with `?` where error types match, and explicit match blocks where they differ. The exit criterion is satisfied if custom result enums are eliminated even without `map_err`.
+**Recommendation.** Validate function-pointer-in-generic methods and implement `map_err`. Callers still use explicit match blocks for propagation. The exit criterion is satisfied when custom result enums are eliminated even without `map_err`.
 
 **Severity.** HIGH for full ergonomic validation. MEDIUM for the Phase 3 exit criterion (which requires stdlib types, not necessarily `map_err`).
 
@@ -520,15 +520,15 @@ The order below maximizes feedback on the stdlib surface by tackling the most co
 
 **Step 1: `examples/parse_validate/` --> stdlib Result**
 
-Difficulty: LOW. The rewrite is mechanical: replace `ParseResult` with `Result<Header, ParseError>`, adopt `?`. No new stdlib APIs needed beyond what exists (`Result`, `?`). Validates that `Result<T, E>` with Copy payloads works end-to-end.
+Difficulty: LOW. The rewrite is mechanical: replace `ParseResult` with `Result<Header, ParseError>` and make each propagation arm explicit. No new syntax is needed. Validates that `Result<T, E>` with Copy payloads works end-to-end.
 
-Validates: Result generic instantiation, `?` operator with user error enums, match on `Result::Ok`/`Result::Err`.
+Validates: Result generic instantiation, user error enums, and exhaustive match on `Result::Ok`/`Result::Err`.
 
 **Step 2: `examples/service_errors/` --> stdlib Result + map_err (or fallback)**
 
 Difficulty: MEDIUM. If `map_err` works: mechanical rewrite, three custom enums eliminated, pipeline collapses to one function. If `map_err` does not work: keep explicit match blocks but use `Result<T, E>` instead of custom result enums.
 
-Validates: Result with multiple error types, `map_err` + `?` chaining (or confirms the function-pointer-in-generic gap), error type conversion patterns.
+Validates: Result with multiple error types, `map_err` where useful, explicit propagation, and visible error type conversion patterns.
 
 **Step 3: `examples/grep/` --> stdlib string/ascii APIs**
 

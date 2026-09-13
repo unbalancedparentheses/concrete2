@@ -97,7 +97,7 @@ Concrete has no panic/unwind mechanism. Failure modes:
 
 | Failure | What happens | Who handles it |
 |---------|-------------|----------------|
-| Explicit error return | `Result<T, E>` propagated via `?` | User code |
+| Explicit error return | `Result<T, E>` matched and returned by an explicit arm | User code |
 | `exit(code)` | libc `exit()` terminates process | OS |
 | Out-of-memory | `malloc` returns null → `abort()` (see allocation section) | Process terminates |
 | Null pointer dereference | Hardware trap (SIGSEGV) | OS kills process |

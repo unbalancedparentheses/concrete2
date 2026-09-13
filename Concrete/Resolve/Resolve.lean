@@ -259,7 +259,7 @@ partial def resolveExpr (ctx : ResolveCtx) (e : Expr) : ResolveCtx :=
         let ctx := resolveGuard ctx guard
         resolveStmts ctx body
     ) ctx
-  | .borrow _ inner | .borrowMut _ inner | .deref _ inner | .try_ _ inner =>
+  | .borrow _ inner | .borrowMut _ inner | .deref _ inner =>
     resolveExpr ctx inner
   | .arrayLit _ elems => elems.foldl resolveExpr ctx
   | .arrayIndex _ arr idx => resolveExpr (resolveExpr ctx arr) idx

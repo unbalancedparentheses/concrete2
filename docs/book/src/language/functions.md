@@ -42,7 +42,10 @@ impl Counter {
 }
 
 fn count_lines(path: String) with(File) -> Result<Int, String> {
-    let text: String = read_file(path)?;
+    let text: String = match read_file(path) {
+        Result::Ok { value } => value,
+        Result::Err { error } => { return Result::Err { error: error }; },
+    };
     let mut counter: Counter = Counter { value: 0 };
 
     if string_contains(text, "\n") {
@@ -58,7 +61,7 @@ This example shows several things at once:
 - methods are ordinary functions attached through `impl`
 - mutation goes through `&mut`
 - authority stays visible with `with(File)`
-- fallible control flow stays visible with `Result` and `?`
+- fallible control flow stays visible with `Result`, exhaustive `match`, and explicit `return`
 
 ## Generics
 

@@ -90,10 +90,10 @@ tests/programs/adversarial_mut_ref_loop_deref.con
 tests/programs/adversarial_mut_ref_param_return.con
 tests/programs/adversarial_mut_ref_sequential_borrows.con
 
-# --- Result / Option / try (?) ---
+# --- Result / Option / explicit propagation ---
 tests/programs/result_ok.con
 tests/programs/result_err.con
-tests/programs/result_generic_try.con
+tests/programs/result_generic_propagation.con
 tests/programs/option_basic.con
 
 # --- Strings ---

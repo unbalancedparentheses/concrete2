@@ -83,10 +83,6 @@ def evDeref (inner : EvidenceExprV2) : EvidenceExprV2 := .deref inner
 def evBorrow (isMut : Bool) (inner : EvidenceExprV2) : EvidenceExprV2 := .borrow isMut inner
 def evCast (target : EvidenceTypeRef) (inner : EvidenceExprV2) : EvidenceExprV2 := .cast target inner
 
-/-- `expr?`. Distinct from its operand: the propagation path is part of the meaning. -/
-def evTryProp (operand : EvidenceExprV2) (residualTy : EvidenceTypeRef) : EvidenceExprV2 :=
-  .tryProp operand residualTy
-
 /-- Field projection. Owner-relative identity, so `a.x` and `b.x` on different types are
     different evidence even though the spelling matches. -/
 def evField (id : FieldId) (object : EvidenceExprV2) : EvidenceExprV2 := .field id object

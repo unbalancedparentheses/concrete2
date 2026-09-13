@@ -126,7 +126,7 @@ mutual
     | .call sp fn _ args => (sp, fn, args) :: args.flatMap collectCallsE
     | .binOp _ _ l r => collectCallsE l ++ collectCallsE r
     | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-    | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectCallsE x
+    | .cast _ x _ | .fieldAccess _ x _ => collectCallsE x
     | .arrayLit _ es => es.flatMap collectCallsE
     | .arrayIndex _ a i => collectCallsE a ++ collectCallsE i
     | .methodCall _ o _ _ args => collectCallsE o ++ args.flatMap collectCallsE
@@ -294,7 +294,7 @@ partial def contractImpureCalls (impureFns : List String) : Expr → List String
   | .methodCall _ o _ _ args => contractImpureCalls impureFns o ++ args.flatMap (contractImpureCalls impureFns)
   | .binOp _ _ l r => contractImpureCalls impureFns l ++ contractImpureCalls impureFns r
   | .unaryOp _ _ e | .paren _ e | .borrow _ e | .borrowMut _ e | .deref _ e
-  | .try_ _ e | .cast _ e _ | .fieldAccess _ e _ => contractImpureCalls impureFns e
+  | .cast _ e _ | .fieldAccess _ e _ => contractImpureCalls impureFns e
   | .structLit _ _ _ fs base => fs.flatMap (fun (_, e) => contractImpureCalls impureFns e) ++ (base.map (contractImpureCalls impureFns)).getD []
   | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, e) => contractImpureCalls impureFns e)
   | .arrayLit _ es => es.flatMap (contractImpureCalls impureFns)
@@ -328,7 +328,7 @@ mutual
   partial def localNamesE : Expr → List String
     | .binOp _ _ l r => localNamesE l ++ localNamesE r
     | .unaryOp _ _ e | .paren _ e | .borrow _ e | .borrowMut _ e | .deref _ e
-    | .try_ _ e | .cast _ e _ | .fieldAccess _ e _ => localNamesE e
+    | .cast _ e _ | .fieldAccess _ e _ => localNamesE e
     | .call _ _ _ args | .staticMethodCall _ _ _ _ args => args.flatMap localNamesE
     | .methodCall _ o _ _ args => localNamesE o ++ args.flatMap localNamesE
     | .structLit _ _ _ fs base => fs.flatMap (fun (_, e) => localNamesE e) ++ (base.map localNamesE).getD []
@@ -368,7 +368,7 @@ mutual
       validateContractExpr allowedVars callables obj ++ args.flatMap (validateContractExpr allowedVars callables)
     | .binOp _ _ l r => validateContractExpr allowedVars callables l ++ validateContractExpr allowedVars callables r
     | .unaryOp _ _ e | .paren _ e | .borrow _ e | .borrowMut _ e | .deref _ e
-    | .try_ _ e | .cast _ e _ | .fieldAccess _ e _ => validateContractExpr allowedVars callables e
+    | .cast _ e _ | .fieldAccess _ e _ => validateContractExpr allowedVars callables e
     | .structLit _ _ _ fs base => fs.flatMap (fun (_, e) => validateContractExpr allowedVars callables e) ++ (base.map (validateContractExpr allowedVars callables)).getD []
     | .enumLit _ _ _ _ fs => fs.flatMap (fun (_, e) => validateContractExpr allowedVars callables e)
     | .match_ _ s arms => validateContractExpr allowedVars callables s ++ arms.flatMap (validateContractArm allowedVars callables)

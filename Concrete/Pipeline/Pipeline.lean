@@ -395,7 +395,6 @@ partial def astExprNodes : Expr → Nat
   | .borrow _ x => 1 + astExprNodes x
   | .borrowMut _ x => 1 + astExprNodes x
   | .deref _ x => 1 + astExprNodes x
-  | .try_ _ x => 1 + astExprNodes x
   | .arrayLit _ elems => 1 + (elems.map astExprNodes).foldl (·+·) 0
   | .arrayIndex _ a i => 1 + astExprNodes a + astExprNodes i
   | .cast _ x _ => 1 + astExprNodes x
@@ -467,7 +466,6 @@ partial def cExprNT : CExpr → Nat × Nat
   | .arrayLit elems _ => let (n,t) := sumNT (elems.map cExprNT); (1+n, t)
   | .arrayIndex a i _ => let (na,ta) := cExprNT a; let (ni,ti) := cExprNT i; (1+na+ni, 1+ta+ti)
   | .cast x _ => let (n,t) := cExprNT x; (1+n, t)
-  | .try_ x _ => let (n,t) := cExprNT x; (1+n, t)
   | .allocCall x a _ => let (nx,tx) := cExprNT x; let (na,ta) := cExprNT a; (1+nx+na, tx+ta)
   | .ifExpr c t_ el _ => let (nc,tc):=cExprNT c; let (nt,tt):=sumNT (t_.map cStmtNT); let (ne,te):=sumNT (el.map cStmtNT); (1+nc+nt+ne, tc+tt+te)
 partial def cArmNT : CMatchArm → Nat × Nat

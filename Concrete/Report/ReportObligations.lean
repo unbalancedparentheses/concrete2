@@ -71,7 +71,7 @@ def collectIndexUsesE : Expr → List (Expr × Expr)
   | .arrayIndex _ a idx => (a, idx) :: (collectIndexUsesE a ++ collectIndexUsesE idx)
   | .binOp _ _ l r => collectIndexUsesE l ++ collectIndexUsesE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-  | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectIndexUsesE x
+  | .cast _ x _ | .fieldAccess _ x _ => collectIndexUsesE x
   | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
   | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
   | .methodCall _ o _ _ args => collectIndexUsesE o ++ args.attach.flatMap (fun ⟨e, _⟩ => collectIndexUsesE e)
@@ -673,7 +673,7 @@ def collectDivisorsE : Expr → List (Bool × Expr × Expr)
   | .binOp _ .mod l r => (true, l, r) :: (collectDivisorsE l ++ collectDivisorsE r)
   | .binOp _ _ l r => collectDivisorsE l ++ collectDivisorsE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-  | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectDivisorsE x
+  | .cast _ x _ | .fieldAccess _ x _ => collectDivisorsE x
   | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
   | .arrayIndex _ a i => collectDivisorsE a ++ collectDivisorsE i
   | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectDivisorsE e)
@@ -789,7 +789,7 @@ def collectArithE : Expr → List Expr
     let here := match op with | .add | .sub | .mul => [e] | _ => []
     here ++ collectArithE l ++ collectArithE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-  | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectArithE x
+  | .cast _ x _ | .fieldAccess _ x _ => collectArithE x
   | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
   | .arrayIndex _ a i => collectArithE a ++ collectArithE i
   | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectArithE e)
@@ -981,7 +981,7 @@ def collectShiftsE : Expr → List (Expr × Expr)
   | .binOp _ .shr l r => (l, r) :: (collectShiftsE l ++ collectShiftsE r)
   | .binOp _ _ l r => collectShiftsE l ++ collectShiftsE r
   | .unaryOp _ _ x | .paren _ x | .borrow _ x | .borrowMut _ x | .deref _ x
-  | .try_ _ x | .cast _ x _ | .fieldAccess _ x _ => collectShiftsE x
+  | .cast _ x _ | .fieldAccess _ x _ => collectShiftsE x
   | .arrayLit _ es => es.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)
   | .arrayIndex _ a i => collectShiftsE a ++ collectShiftsE i
   | .call _ _ _ args => args.attach.flatMap (fun ⟨e, _⟩ => collectShiftsE e)

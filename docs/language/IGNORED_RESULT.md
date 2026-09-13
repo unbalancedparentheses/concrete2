@@ -49,8 +49,7 @@ it ignores is `Copy`.
 Other forms that are *not* discards and so never trip E0286:
 
 - handling it: `match risky() { Ok { .. } => …, Err { .. } => … }`
-- propagating it: `risky()?` (the `?` unwraps; the statement's type is no longer
-  `Result`/`Option`)
+- propagating it: exhaustively match `risky()` and explicitly return the error arm
 - binding it: `let r = risky();` (then the linear checker requires `r` be used)
 - a **trailing value expression** (no `;`) — it is the block's value, not a
   discard, so `if c { maybe(1) } else { maybe(2) }` as a block value is fine.

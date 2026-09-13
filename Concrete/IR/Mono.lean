@@ -65,7 +65,6 @@ private partial def substExpr (sub : Ty → Ty) : CExpr → CExpr
   | .arrayIndex arr idx ty => .arrayIndex (substExpr sub arr) (substExpr sub idx) (sub ty)
   | .cast inner t => .cast (substExpr sub inner) (sub t)
   | .fnRef n ty => .fnRef n (sub ty)
-  | .try_ inner ty => .try_ (substExpr sub inner) (sub ty)
   | .allocCall inner alloc ty => .allocCall (substExpr sub inner) (substExpr sub alloc) (sub ty)
   | .ifExpr cond then_ else_ ty =>
     .ifExpr (substExpr sub cond) (substStmts sub then_) (substStmts sub else_) (sub ty)
@@ -135,7 +134,6 @@ private partial def rewriteCallNames (nameMap : List (String × String)) : CExpr
   | .arrayLit elems ty => .arrayLit (elems.map (rewriteCallNames nameMap)) ty
   | .arrayIndex arr idx ty => .arrayIndex (rewriteCallNames nameMap arr) (rewriteCallNames nameMap idx) ty
   | .cast inner t => .cast (rewriteCallNames nameMap inner) t
-  | .try_ inner ty => .try_ (rewriteCallNames nameMap inner) ty
   | .allocCall inner alloc ty => .allocCall (rewriteCallNames nameMap inner) (rewriteCallNames nameMap alloc) ty
   | .ifExpr cond then_ else_ ty =>
     .ifExpr (rewriteCallNames nameMap cond) (rewriteCallNamesStmts nameMap then_) (rewriteCallNamesStmts nameMap else_) ty
@@ -199,7 +197,6 @@ partial def injectTypeArgsExpr (genericNames : List String) (typeArgs : List Ty)
   | .arrayLit elems ty => .arrayLit (elems.map (injectTypeArgsExpr genericNames typeArgs)) ty
   | .arrayIndex arr idx ty => .arrayIndex (injectTypeArgsExpr genericNames typeArgs arr) (injectTypeArgsExpr genericNames typeArgs idx) ty
   | .cast inner t => .cast (injectTypeArgsExpr genericNames typeArgs inner) t
-  | .try_ inner ty => .try_ (injectTypeArgsExpr genericNames typeArgs inner) ty
   | .allocCall inner alloc ty => .allocCall (injectTypeArgsExpr genericNames typeArgs inner) (injectTypeArgsExpr genericNames typeArgs alloc) ty
   | .ifExpr cond then_ else_ ty =>
     .ifExpr (injectTypeArgsExpr genericNames typeArgs cond) (injectTypeArgsStmts genericNames typeArgs then_) (injectTypeArgsStmts genericNames typeArgs else_) ty
@@ -286,7 +283,7 @@ private partial def cexprTy (e : CExpr) : Ty := match e with
   | .unaryOp _ _ ty | .call _ _ _ ty | .structLit _ _ _ ty
   | .fieldAccess _ _ ty | .enumLit _ _ _ _ ty | .match_ _ _ ty
   | .borrow _ ty | .borrowMut _ ty | .deref _ ty | .arrayLit _ ty
-  | .arrayIndex _ _ ty | .fnRef _ ty | .try_ _ ty
+  | .arrayIndex _ _ ty | .fnRef _ ty
   | .allocCall _ _ ty | .ifExpr _ _ _ ty => ty
   | .cast _ t => t
   | .boolLit _ => .bool
@@ -528,7 +525,6 @@ partial def monoExpr (e : CExpr) : MonoM CExpr := do
   | .arrayIndex arr idx ty => return .arrayIndex (← monoExpr arr) (← monoExpr idx) ty
   | .cast inner t => return .cast (← monoExpr inner) t
   | .fnRef n ty => return .fnRef n ty
-  | .try_ inner ty => return .try_ (← monoExpr inner) ty
   | .allocCall inner alloc ty => return .allocCall (← monoExpr inner) (← monoExpr alloc) ty
   | .ifExpr cond then_ else_ ty =>
     return .ifExpr (← monoExpr cond) (← monoStmts then_) (← monoStmts else_) ty
@@ -686,7 +682,7 @@ mutual
 /-- Collect generic struct instances from a CExpr. -/
 private partial def collectExprInstances (gn : List String) : CExpr → List (String × List Ty)
   | .intLit _ ty | .floatLit _ ty | .ident _ ty | .binOp _ _ _ ty
-  | .unaryOp _ _ ty | .fnRef _ ty | .try_ _ ty | .allocCall _ _ ty => collectGenericTyInstances gn ty
+  | .unaryOp _ _ ty | .fnRef _ ty | .allocCall _ _ ty => collectGenericTyInstances gn ty
   | .boolLit _ | .strLit _ | .charLit _ => []
   | .call _ targs args ty =>
     targs.foldl (fun acc t => acc ++ collectGenericTyInstances gn t) [] ++
@@ -851,7 +847,6 @@ private partial def rewriteExprTys (m : List (String × List Ty × String)) : CE
   | .arrayIndex arr idx ty => .arrayIndex (rewriteExprTys m arr) (rewriteExprTys m idx) (rewriteTy m ty)
   | .cast inner t => .cast (rewriteExprTys m inner) (rewriteTy m t)
   | .fnRef n ty => .fnRef n (rewriteTy m ty)
-  | .try_ inner ty => .try_ (rewriteExprTys m inner) (rewriteTy m ty)
   | .allocCall inner alloc ty => .allocCall (rewriteExprTys m inner) (rewriteExprTys m alloc) (rewriteTy m ty)
   | .ifExpr cond then_ else_ ty =>
     .ifExpr (rewriteExprTys m cond) (rewriteStmtsTys m then_) (rewriteStmtsTys m else_) (rewriteTy m ty)

@@ -52,26 +52,21 @@ successfully — "did the pass corrupt the thing it should have built?"
 
 ## Documented exceptions
 
-### post-elab placeholder leak via `?` and `defer`
+### post-elab placeholder leak via `defer`
 
 `Ty.placeholder` is the sentinel type used during elaboration. After
 elab, a placeholder leak normally means a type silently dropped
 through the cracks. The verifier reports any such leak as a
-**warning** (not an error) because two specific cases legitimately
-survive elaboration:
-
-1. `try_` (the `?` operator) — the error-branch expression type is
-   not resolved until monomorphization instantiates the concrete
-   Result/Option enum.
-2. `defer` — deferred cleanup expressions can carry a placeholder
-   when the deferred value's type is inferred from later context.
+**warning** (not an error) because deferred cleanup expressions can
+legitimately carry a placeholder when the deferred value's type is
+inferred from later context.
 
 Both are resolved during lowering. The `--report verify` banner
 classifies these as warnings, and `make test-verify-gates` tolerates
 them without failing.
 
-Promoting these from warnings to errors requires fixing `try_` /
-`defer` elaboration to resolve types eagerly. Until then, the
+Promoting these warnings to errors requires fixing `defer` elaboration
+to resolve types eagerly. Until then, the
 warning surface stays visible so any *new* placeholder leak from an
 unrelated pass shows up clearly against the documented baseline.
 
@@ -107,7 +102,7 @@ When warnings are present:
 ```
 VERIFY-GATES: warn (1 warning(s))
   post-elab    warn (1 warning(s))
-      warning: [post-elab] try_stuff: Ty.placeholder found in expression type: _
+      warning: [post-elab] cleanup_resource: Ty.placeholder found in expression type: _
   post-mono    ok
   post-lower   ok
   post-cleanup ok
@@ -140,9 +135,9 @@ Runs the gates across the curated corpora — the oracle vectors
 `kind = "runtime"` entries. Asserts zero errors across all
 programs. Warnings are tallied but not fatal.
 
-Current state at first landing: 78 PASS / 0 FAIL / 0 SKIP / 2
-warnings (both warnings are the documented `try_` exception in
-`result_ok.con` and `result_err.con`).
+The original landing count is historical. Current gates derive their
+population from the curated corpus; postfix propagation no longer contributes
+a documented warning class.
 
 ## Never-delete rule
 

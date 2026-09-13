@@ -64,7 +64,6 @@ partial def shape : EvidenceExprV2 → String
   | .cast t x      => s!"A({typeRefBytes t},{shape x})"
   | .fnRef id      => s!"F({id.render})"
   | .arrayLit t els => s!"AR({typeRefBytes t},[{",".intercalate (els.map shape)}])"
-  | .tryProp x t   => s!"TRY({shape x},{typeRefBytes t})"
   | .matchExpr sc arms => s!"Q({shape sc},{arms.length})"
   -- Branch LENGTHS, not their contents: `shape` is declared before `sshape` and the two
   -- are not mutual, so this mirrors how `matchExpr` treats its arms.
@@ -220,8 +219,6 @@ def tref : EvidenceTypeRef := .nominal tid
     (shape (.arrayLit tref [p, q]) != shape (.arrayLit tref [q, p]))
   a "array element MULTIPLICITY is semantic"
     (shape (.arrayLit tref [p, p]) != shape (.arrayLit tref [p]))
-  a "`x?` differs from evaluating x normally"
-    (shape (.tryProp p tref) != shape p)
   a "reordering defers changes the body"
     (sshape (.block [.deferStmt p, .deferStmt q])
       != sshape (.block [.deferStmt q, .deferStmt p]))

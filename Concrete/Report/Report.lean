@@ -2654,7 +2654,7 @@ private partial def proveExprFeatures : CExpr → List String
   | .arrayIndex a i _ => "array" :: (proveExprFeatures a ++ proveExprFeatures i)
   | .arrayLit es _ => "array" :: es.flatMap proveExprFeatures
   | .unaryOp _ e _ | .cast e _ | .fieldAccess e _ _
-  | .borrow e _ | .borrowMut e _ | .deref e _ | .try_ e _ => proveExprFeatures e
+  | .borrow e _ | .borrowMut e _ | .deref e _ => proveExprFeatures e
   | .structLit _ _ fs _ | .enumLit _ _ _ fs _ => fs.flatMap (fun (_, e) => proveExprFeatures e)
   | .match_ s arms _ => proveExprFeatures s ++ arms.flatMap proveArmFeatures
   | .ifExpr c t e _ =>
@@ -6076,9 +6076,10 @@ def diagnosticCodesReport : String :=
     entry "E0272" "check" "error" "destroy requires named type",
     entry "E0273" "check" "error" "type does not implement Destroy",
     entry "E0274" "check" "error" "free requires Heap type",
-    entry "E0275" "check" "error" "? operator requires Result type",
-    entry "E0276" "check" "error" "? operator requires Ok/Err variants",
-    entry "E0277" "check" "error" "Ok variant has no value field",
+    -- Retired with postfix `?`; codes stay reserved and are never reassigned.
+    entry "E0275" "retired" "error" "former ? operator required Result type",
+    entry "E0276" "retired" "error" "former ? operator required Ok/Err variants",
+    entry "E0277" "retired" "error" "former ? operator required an Ok value field",
     -- Check: control flow (E0280–E0285)
     entry "E0280" "check" "error" "break outside loop",
     entry "E0281" "check" "error" "continue outside loop",

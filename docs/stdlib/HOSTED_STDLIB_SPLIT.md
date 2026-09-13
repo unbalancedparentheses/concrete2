@@ -30,7 +30,7 @@ A function that calls `malloc` cannot run on bare metal without an allocator. A 
 | Module | Purpose | Why core |
 |--------|---------|----------|
 | `option` | `Option<T>` with `Some`/`None` | Pure enum, no allocation |
-| `result` | `Result<T, E>` with `Ok`/`Err`, `?` support | Pure enum, no allocation |
+| `result` | `Result<T, E>` with `Ok`/`Err` and ordinary combinators | Pure enum, no allocation |
 | `math` | `abs`, `min`, `max`, `clamp`, numeric helpers | Pure arithmetic |
 | `mem` | `sizeof`, `alignof` | Compile-time queries, no runtime dependency |
 | `slice` | Borrowed contiguous views, checked indexing | Pointer + length, no allocation |
