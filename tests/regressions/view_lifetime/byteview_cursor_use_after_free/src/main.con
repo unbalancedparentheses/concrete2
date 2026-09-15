@@ -1,0 +1,21 @@
+mod byteview_cursor_use_after_free {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteView, ByteCursor, CursorError};
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(4);
+        b.push(65);
+        let v: ByteView = match ByteView::new(0, 1, &b) {
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 2; },
+        };
+        let mut c: ByteCursor = match v.cursor(&b) {
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 3; },
+        };
+        destroy(b);
+        match c.read_u8() {
+            Result::Ok { value } => { return value as Int; },
+            Result::Err { error } => { return 1; },
+        }
+    }
+}

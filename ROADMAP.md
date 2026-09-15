@@ -10430,11 +10430,38 @@ that all other wrappers or raw-pointer paths are sound. A trusted implementation
 uphold the lifetime invariant of its safe-callable API; a caller-lifetime comment alone
 does not repair an ordinary-call use-after-free.
 
-1. Preserve and independently replay the reported ByteCursor pair and the Unsafe
-   boundary probe, then wire them into permanent regression coverage with the repair.
-   Extend the investigation to reallocation/mutation, `Text::from_string`,
-   `ByteView::cursor`/`try_text` and sibling wrappers. Distinguish pointer-free coordinate
-   access from accessors returning pointer-bearing values. Those extensions remain open.
+**Classification (2026-09-15, checked directly).** The extension to `Text` and
+`ByteView` is done, and it separates two defect classes from one sound design:
+
+| API | stored shape | destroy-then-read | class |
+|---|---|---|---|
+| `ByteCursor::from_bytes(&Bytes)` | `*const u8` + len | accepted (rc 0) | representation |
+| `Text::from_string(&String)` | `*const u8` + len | accepted (rc 0) | representation |
+| `ByteView::cursor(&self, &Bytes)` | coordinates | accepted (rc 0) | conversion |
+| `ByteView::try_text(&self, &Bytes)` | coordinates | accepted (rc 0) | conversion |
+| `ByteView::byte(&self, &Bytes, i)` | coordinates | **rejected, E0205** | sound |
+
+`ByteView` stores `off`/`len`/`buf_len` and no pointer, so the representation is
+already correct; `cursor` and `try_text` extract a raw pointer and return a value of
+the representation class, giving the advantage back. `ByteView::byte` demands the
+buffer on every access, so destroy-then-read cannot be written — the owner is gone
+and the call does not typecheck. That row is the positive control for the repair
+direction: the intended design is demonstrated to work inside this stdlib today, not
+merely proposed. Accept/reject is a compile-time observation and is the reliable
+signal; the freed byte remains undefined and is not an oracle.
+
+`ByteCursor::from_raw` and `Text::from_raw_unchecked`/`try_from_raw` are deliberately
+excluded from the defect set: they take a pointer the caller already had to obtain,
+and they state a caller obligation rather than presenting a safe-looking borrow. The
+stack-array call sites in `numeric.con`'s own tests and `examples/packet` are that
+legitimate use.
+
+1. Preserved and replayed: the ByteCursor pair, the Unsafe boundary probe, and the
+   four new Text/ByteView fixtures live in `tests/regressions/view_lifetime/`. They
+   are retained inputs, not yet wired gates; wire them with the repair. Reallocation,
+   content mutation under a validated `Text`, and the `buf_len` brand against a
+   same-length wrong buffer remain open — length equality is not buffer identity, and
+   the sound row above shows only that an owner is demanded, not the right one.
 2. For confirmed failures, prefer pointer-free stored views and cursor positions with an explicit buffer
    borrow on each read. Use enforceable scoped callbacks where needed, or an owning
    representation when retention is required. A `Copy` raw pointer inside a struct

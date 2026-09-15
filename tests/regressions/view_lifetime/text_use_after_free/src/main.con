@@ -1,0 +1,11 @@
+mod text_use_after_free {
+    import std.string.{String};
+    import std.text.{Text};
+    fn main() with(Alloc) -> Int {
+        let mut s: String = String::new();
+        s.push_char(65);
+        let t: Text = Text::from_string(&s);
+        s.drop();                          // consume the owner
+        return t.get_unchecked(0) as Int;  // read the view afterwards
+    }
+}

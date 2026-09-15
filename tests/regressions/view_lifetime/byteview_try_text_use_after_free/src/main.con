@@ -1,0 +1,19 @@
+mod byteview_try_text_use_after_free {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteView};
+    import std.text.{Text};
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(4);
+        b.push(65);
+        let v: ByteView = match ByteView::new(0, 1, &b) {
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 2; },
+        };
+        let t: Text = match v.try_text(&b) {
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 3; },
+        };
+        destroy(b);
+        return t.get_unchecked(0) as Int;
+    }
+}

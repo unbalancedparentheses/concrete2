@@ -1,0 +1,3 @@
+[package]
+name = "text_use_after_free"
+version = "0.1.0"
