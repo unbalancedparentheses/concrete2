@@ -12,6 +12,8 @@ retained together on 2026-09-15. They are not yet an automated passing safety ga
 | `byteview_cursor_use_after_free` | Destroy Bytes, then read `ByteView::cursor` result | Accepted (check rc 0) |
 | `byteview_try_text_use_after_free` | Destroy Bytes, then read `ByteView::try_text` result | Accepted (check rc 0) |
 | `byteview_byte_rejected` | Destroy Bytes, then call `ByteView::byte(&b, _)` | **Rejected with E0205** |
+| `byteview_wrong_buffer_same_length` | Read a view of `a` against a *different* buffer of equal length | Accepted; returns `b`'s byte (exit 91) |
+| `cursor_across_realloc` | Hold a ByteCursor across pushes that outgrow capacity — **no destroy at all** | Accepted (check rc 0) |
 
 The first three rows are the original 2026-09-15 investigation; the last four were
 added when Text and ByteView coverage was extended, and each was checked directly.
@@ -23,10 +25,26 @@ added when Text and ByteView coverage was extended, and each was checked directl
 - *Conversion* — `ByteView` itself stores only `off`/`len`/`buf_len` and is sound,
   but `cursor` and `try_text` extract a raw pointer and hand back a value of the
   representation class, which gives the advantage back.
-- *Sound* — `ByteView::byte(&self, buf: &Bytes, i)` demands the buffer on every
-  access and validates `describes(buf)`. Destroy-then-read cannot be written: the
-  owner is gone, so the call does not typecheck. This is the positive control for
-  the repair direction, not merely a negative result.
+- *Lifetime-sound, identity-unsound* — `ByteView::byte(&self, buf: &Bytes, i)` demands
+  the buffer on every access, so destroy-then-read cannot be written: the owner is
+  gone and the call does not typecheck. That makes it the positive control for the
+  repair direction. It is **not** a validated accessor: `describes` compares
+  `buf.len() != self.buf_len` and nothing else, so a *different* buffer of the same
+  length passes the brand and is read silently. It demands an owner, not the right
+  one.
+
+**Two independent properties, and only one of them holds anywhere today.** Lifetime
+(does the buffer still exist?) and identity (is it the buffer this view describes?)
+fail separately. `byteview_byte_rejected` and `byteview_wrong_buffer_same_length` are
+the same accessor reaching opposite verdicts, which is why both are kept.
+`cursor_across_realloc` is the reason lifetime is not only about `destroy`: an
+ordinary append that outgrows capacity moves the buffer with the owner still alive
+and nothing consumed.
+
+Note that `examples/byte_view/wrong_buffer` exercises only a *different-length*
+buffer — the case the brand can catch. It used to report that all unsafe uses were
+rejected; it now reports what it actually checked, because the same-length fixture
+here is a counterexample to the broader claim.
 
 Accept/reject here is a **compile-time** observation and is the reliable signal.
 The use-after-free byte is undefined: do not assert exit zero, a changed byte, or a

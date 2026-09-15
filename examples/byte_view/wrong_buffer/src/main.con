@@ -71,7 +71,11 @@ mod wrong_buffer {
                 let overflow: bool = view_is_none(ByteView::new(big, 100, &a));
 
                 if ok_cur && wrong_cur && wrong_byte && oob && overflow {
-                    println("byte_view wrong_buffer: all unsafe uses rejected");
+                    // Says what was actually checked. The brand is `buf.len()` and
+                    // nothing more, so this rejects a WRONG-LENGTH buffer; a
+                    // different buffer of the SAME length passes it and is read
+                    // silently. See tests/regressions/view_lifetime (R-0483).
+                    println("byte_view wrong_buffer: wrong-length buffer and bad construction rejected");
                     rc = 0;
                 } else {
                     println("byte_view wrong_buffer: a guard did not fire");

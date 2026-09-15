@@ -1,0 +1,26 @@
+mod cursor_across_realloc {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteCursor, CursorError};
+
+    // No destroy anywhere. The owner stays alive the whole time; only its
+    // BUFFER moves, because pushing past capacity reallocates.
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(2);
+        b.push(65);
+        b.push(66);
+        let mut c: ByteCursor = ByteCursor::from_bytes(&b);
+
+        let mut i: u64 = 0;
+        while i < 64 {
+            b.push(67);
+            i = i + 1;
+        }
+
+        let got: Int = match c.read_u8() {
+            Result::Ok { value } => value as Int,
+            Result::Err { error } => -1,
+        };
+        destroy(b);
+        return got;
+    }
+}

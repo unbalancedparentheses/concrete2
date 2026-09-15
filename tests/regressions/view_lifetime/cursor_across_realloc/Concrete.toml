@@ -1,0 +1,3 @@
+[package]
+name = "cursor_across_realloc"
+version = "0.1.0"

@@ -10439,7 +10439,7 @@ does not repair an ordinary-call use-after-free.
 | `Text::from_string(&String)` | `*const u8` + len | accepted (rc 0) | representation |
 | `ByteView::cursor(&self, &Bytes)` | coordinates | accepted (rc 0) | conversion |
 | `ByteView::try_text(&self, &Bytes)` | coordinates | accepted (rc 0) | conversion |
-| `ByteView::byte(&self, &Bytes, i)` | coordinates | **rejected, E0205** | sound |
+| `ByteView::byte(&self, &Bytes, i)` | coordinates | **rejected, E0205** | lifetime-sound |
 
 `ByteView` stores `off`/`len`/`buf_len` and no pointer, so the representation is
 already correct; `cursor` and `try_text` extract a raw pointer and return a value of
@@ -10456,12 +10456,27 @@ and they state a caller obligation rather than presenting a safe-looking borrow.
 stack-array call sites in `numeric.con`'s own tests and `examples/packet` are that
 legitimate use.
 
-1. Preserved and replayed: the ByteCursor pair, the Unsafe boundary probe, and the
-   four new Text/ByteView fixtures live in `tests/regressions/view_lifetime/`. They
-   are retained inputs, not yet wired gates; wire them with the repair. Reallocation,
-   content mutation under a validated `Text`, and the `buf_len` brand against a
-   same-length wrong buffer remain open — length equality is not buffer identity, and
-   the sound row above shows only that an owner is demanded, not the right one.
+**Lifetime and identity fail separately, and step 3 was right to name them apart.**
+Two further results close the gaps this task listed as open:
+
+- **Identity is not checked at all.** `describes` compares `buf.len() != self.buf_len`
+  and nothing else, so a *different* buffer of the same length passes the brand.
+  `ByteView::byte` over a view of `a`, read against an equal-length `b`, returns `b`'s
+  byte (exit 91). The accessor demands an owner, not the right one — so the
+  lifetime-sound row above is not a validated accessor, and the repair needs buffer
+  identity, not only a buffer argument. `examples/byte_view/wrong_buffer` tested only
+  the wrong-LENGTH case and reported that all unsafe uses were rejected; its message
+  now states what it checked.
+- **Lifetime is not only about `destroy`.** A `ByteCursor` held across ordinary
+  `push`es that outgrow capacity is accepted with no consumption anywhere and the
+  owner alive throughout: growth reallocates and the captured pointer goes stale. Any
+  repair scoped to explicit destruction would miss this.
+
+1. Preserved and replayed: the ByteCursor pair, the Unsafe boundary probe, and six
+   further fixtures live in `tests/regressions/view_lifetime/`. They are retained
+   inputs, not yet wired gates; wire them with the repair. Still open: content
+   mutation beneath a validated `Text`, where a prior UTF-8 check must be shown not to
+   survive arbitrary source mutation.
 2. For confirmed failures, prefer pointer-free stored views and cursor positions with an explicit buffer
    borrow on each read. Use enforceable scoped callbacks where needed, or an owning
    representation when retention is required. A `Copy` raw pointer inside a struct

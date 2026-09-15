@@ -1,0 +1,3 @@
+[package]
+name = "byteview_wrong_buffer_same_length"
+version = "0.1.0"
