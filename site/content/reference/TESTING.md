@@ -187,7 +187,7 @@ After an `--affected` run, the summary shows which files triggered which section
    - Slow tests: 30s (compilation + complex runtime)
    - Network tests: 60s (TCP round-trip with fork/accept)
 
-4. **Network isolation by default**: `--fast` mode (the default) skips all network tests. Network tests run only under `--full`. The `SKIP_FLAKY_TCP_TEST=1` environment variable provides an additional escape hatch.
+4. **Network tests run in every mode**: they bind loopback and cost microseconds, so there is no speed reason to hide them. `SKIP_NETWORK_TESTS=1` opts out where loopback is genuinely unavailable. They were previously `--full`-only *and* quarantined, and since CI runs the default `fast` mode, nothing executed them at all — which is how `tcp_basic.con` and `net_tcp_roundtrip.con` sat broken on Linux, hardcoding the BSD `sockaddr_in` layout, without a single red build.
 
 5. **Stable temp directory handling**: test artifacts use `$TMPDIR` or `/tmp`, never the working directory. Compiler output cache uses a per-run temp directory cleaned up on exit.
 
@@ -197,11 +197,15 @@ After an `--affected` run, the summary shows which files triggered which section
    - Identify the non-determinism source (timing, file system, network, uninitialized memory)
    - Fix the root cause or move the test to `--full` only
    - Do not delete or skip flaky tests without a tracking comment
-   - The `SKIP_FLAKY_TCP_TEST` pattern is the model for temporary quarantine
+   - Name the skip after the real condition. `SKIP_FLAKY_TCP_TEST` was not the model for
+     quarantine; it was the cautionary tale. The test was not flaky — it failed
+     deterministically on one platform — and the false label is what kept anyone from
+     reading the failure for as long as it lasted. A skip whose stated reason is wrong is
+     a defect with a lid on it.
 
 ### Known flakiness risks
 
-- **TCP round-trip test**: depends on `fork()` + local socket bind. Can fail under port contention or slow CI. Quarantined behind `--full` and `SKIP_FLAKY_TCP_TEST`.
+- **TCP round-trip test**: depends on `fork()` + local socket bind, so port contention or a very slow runner remain plausible risks. It is no longer quarantined: it runs in every mode, and the failure once attributed to flakiness was a hardcoded BSD socket ABI that could never pass on Linux.
 - **Parser fuzz**: timeout-based crash detection could theoretically race on very slow machines. The 5s timeout is generous for the parser's workload.
 
 ## Compile-Time and Suite-Time Baselines

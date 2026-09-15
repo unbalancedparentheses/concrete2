@@ -116,7 +116,7 @@ jobs:
       - name: Run main test suite
         run: |
           for attempt in 1 2 3; do
-            if SKIP_FLAKY_TCP_TEST=1 ./scripts/tests/run_tests.sh; then
+            if ./scripts/tests/run_tests.sh; then
               exit 0
             fi
             echo "::warning file=run_tests::Main test suite failed on attempt $attempt of 3"
@@ -146,7 +146,7 @@ jobs:
       - name: Run main test suite
         run: |
           for attempt in 1 2 3; do
-            if SKIP_FLAKY_TCP_TEST=1 ./scripts/tests/run_tests.sh; then
+            if ./scripts/tests/run_tests.sh; then
               exit 0
             fi
             echo "::warning file=run_tests::Main test suite failed on attempt $attempt of 3 (macOS)"
@@ -252,7 +252,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang
 
       - name: Run SSA test suite
-        run: SKIP_FLAKY_TCP_TEST=1 bash ./scripts/tests/test_ssa.sh
+        run: bash ./scripts/tests/test_ssa.sh
 
   trust-gate:
     name: Trust gate (correctness contracts)

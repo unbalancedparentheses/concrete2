@@ -76,7 +76,7 @@ Options:
 Environment:
   TEST_JOBS=N         Same as -j N
   LLI_PATH=/path/lli  Use lli (LLVM interpreter) for ~15x faster tests
-  SKIP_FLAKY_TCP_TEST=1  Skip the flaky TCP test
+  SKIP_NETWORK_TESTS=1   Skip tests that need loopback networking
 
 Recommended workflows:
   ./scripts/tests/run_tests.sh                        # daily driver — fast parallel
@@ -899,12 +899,16 @@ run_ok "$TESTDIR/string_borrow.con"   10
 run_ok "$TESTDIR/result_ok.con"      42
 run_ok "$TESTDIR/result_err.con"     99
 run_ok "$TESTDIR/result_generic_propagation.con" 42
-# Network test — skip in fast mode
-if [ "$MODE" != "fast" ]; then
-    run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
-else
-    echo "skip tests/programs/net_tcp_roundtrip.con (fast mode)"
+# Network test. Runs in EVERY mode, including fast. It was `--full`-only, and CI runs
+# fast, so nothing executed it — which is exactly how it sat broken on Linux for as long
+# as it did, hardcoding the BSD `sockaddr_in` layout. A loopback bind costs microseconds;
+# there was never a speed reason to hide it. The opt-out below is for environments with
+# no loopback networking, which is a real condition and is named as itself.
+if [ "${SKIP_NETWORK_TESTS:-0}" = "1" ]; then
+    echo "skip tests/programs/net_tcp_roundtrip.con (SKIP_NETWORK_TESTS=1)"
     SKIP=$((SKIP + 1))
+else
+    run_ok "$TESTDIR/net_tcp_roundtrip.con" 42
 fi
 run_ok "$TESTDIR/module_basic.con"   42
 run_ok "$TESTDIR/module_struct.con"  30
@@ -1272,9 +1276,13 @@ run_ok "$TESTDIR/vec_stress_realloc.con" 249
 run_ok "$TESTDIR/vec_set_all.con" 60
 run_ok "$TESTDIR/vec_pop_until_empty.con" 29
 
-# Networking tests (skipped in fast mode)
-if [ "$MODE" = "fast" ] || [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
-    echo "skip tests/programs/tcp_basic.con (fast mode or SKIP_FLAKY_TCP_TEST=1)"
+# Networking tests. `tcp_basic` was guarded by `SKIP_FLAKY_TCP_TEST` and IS NOT FLAKY.
+# It failed deterministically, on Linux, every time, because it wrote a BSD `sockaddr_in`
+# with a `sin_len` byte Linux does not have. The label is what stopped anyone looking: a
+# skip whose stated reason is wrong is a defect with a lid on it. Both the reason and the
+# variable name are now the true one.
+if [ "${SKIP_NETWORK_TESTS:-0}" = "1" ]; then
+    echo "skip tests/programs/tcp_basic.con (SKIP_NETWORK_TESTS=1)"
     SKIP=$((SKIP + 1))
 else
     run_ok "$TESTDIR/tcp_basic.con" 1

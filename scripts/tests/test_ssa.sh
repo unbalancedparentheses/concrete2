@@ -46,12 +46,12 @@ for spec in "$RESDIR"/test_*.spec; do
     expected=$(tail -n +3 "$spec")
     name=$(basename "$file" .con)
     spec_id=$(basename "$spec" .spec)
-    # The scraper sees every run_ok call, including ones run_tests.sh guards
-    # behind the flaky-TCP skip — honor the same skip here.
-    if [ "${SKIP_FLAKY_TCP_TEST:-0}" = "1" ]; then
+    # The scraper sees every run_ok call, including the network tests run_tests.sh
+    # guards — honor the same skip here, under the same truthful name.
+    if [ "${SKIP_NETWORK_TESTS:-0}" = "1" ]; then
         case "$name" in
             tcp_basic|net_tcp_roundtrip)
-                echo "skip $name (SKIP_FLAKY_TCP_TEST=1)"
+                echo "skip $name (SKIP_NETWORK_TESTS=1)"
                 SKIP=$((SKIP + 1))
                 continue ;;
         esac
