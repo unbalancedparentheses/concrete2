@@ -500,6 +500,9 @@ jobs:
       - name: "Attestation manifest + generated-reference freshness (R-0004 — the tracked generated surface is re-derived and compared)"
         run: bash scripts/tests/check_attestation_manifest.sh
 
+      - name: "Attestation reference order (the byte-for-byte comparison above is a function of content, not of enumeration order)"
+        run: bash scripts/tests/check_attestation_refs_order.sh
+
       # PRE-EXISTING GATES THAT WERE ALSO MISSING. `check_snapshots.sh` was reachable only from the
       # Makefile and as an opaque nested sub-result of two obligation-view gates, so its 11 real
       # drifts surfaced as a one-line "snapshot gate failed" with the diff written to /tmp.

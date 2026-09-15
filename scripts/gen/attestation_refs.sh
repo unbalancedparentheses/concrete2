@@ -15,10 +15,22 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-MAN="$(bash scripts/gen/attestation_manifest.sh 2>/dev/null)" || {
-  echo "FATAL: the manifest refused; refusing to emit references from it" >&2; exit 1; }
+# TEST SEAMS, both unset in normal use, so the default path is exactly what it was.
+# `check_attestation_refs_order.sh` needs to run THIS generator — not a reimplementation
+# of its emit logic — over two permutations of one manifest and compare the results. It
+# cannot do that without supplying the input and diverting the output, and a gate that
+# reimplements the producer tests the reimplementation. Reading a manifest from a file
+# does not weaken the real path: the refusal below still applies when the seam is unused.
+MAN_FILE="${ATTESTATION_MANIFEST_FILE:-}"
+if [ -n "$MAN_FILE" ]; then
+  [ -r "$MAN_FILE" ] || { echo "FATAL: ATTESTATION_MANIFEST_FILE is not readable: $MAN_FILE" >&2; exit 1; }
+  MAN="$(cat "$MAN_FILE")"
+else
+  MAN="$(bash scripts/gen/attestation_manifest.sh 2>/dev/null)" || {
+    echo "FATAL: the manifest refused; refusing to emit references from it" >&2; exit 1; }
+fi
 
-OUT="Concrete/Proof/GeneratedAttestations.lean"
+OUT="${ATTESTATION_REFS_OUT:-Concrete/Proof/GeneratedAttestations.lean}"
 {
   echo "import Concrete.Proof.DefinitionIdentity"
   echo
@@ -45,7 +57,20 @@ OUT="Concrete/Proof/GeneratedAttestations.lean"
   # both a subject of its table and the target of a body edge, and emitting the symbol twice would not
   # compile. Deduping on anything less would silently drop a real distinction: two packages, or two
   # implementations of one declaration, are different references and must both exist.
+  # SORTED BEFORE DEDUPE, under `LC_ALL=C`, for the same reason `build_identity.sh`
+  # sorts its inventory: the emitted file is compared BYTE FOR BYTE by
+  # `check_attestation_manifest.sh`, so an order inherited from the manifest's
+  # enumeration makes that gate a function of the environment rather than of content.
+  # It did: one machine ordered `block_to_words_at` before `block_to_words` and the
+  # gate reported a correct tree as STALE, advising a regeneration that would have
+  # committed that machine's order and broken CI.
+  #
+  # BEFORE the dedupe, not after. `awk` keeps the FIRST row per key, so an unsorted
+  # input decides WHICH row survives as well as where it lands. Sorting afterwards
+  # would leave that selection environment-dependent while making the output look
+  # canonical — the worse failure, because it is invisible.
   printf '%s\n' "$MAN" | grep ' <- ' | grep -v EXCLUDED \
+    | LC_ALL=C sort \
     | awk '{ key = $1 FS $3 FS $4; if (!(key in seen)) { seen[key] = 1; print } }' \
     | while read -r line; do
     tbl="${line%% <-*}"
