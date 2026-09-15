@@ -10472,11 +10472,21 @@ Two further results close the gaps this task listed as open:
   owner alive throughout: growth reallocates and the captured pointer goes stale. Any
   repair scoped to explicit destruction would miss this.
 
-1. Preserved and replayed: the ByteCursor pair, the Unsafe boundary probe, and six
-   further fixtures live in `tests/regressions/view_lifetime/`. They are retained
-   inputs, not yet wired gates; wire them with the repair. Still open: content
-   mutation beneath a validated `Text`, where a prior UTF-8 check must be shown not to
-   survive arbitrary source mutation.
+- **Validity does not survive mutation either.** `try_text` checks UTF-8 once and
+  nothing revalidates, so mutating the source under a validated `Text` leaves it
+  yielding `0xFF` — again with no destruction and the owner alive. A validated `Text`
+  is a claim about the past, not a standing property.
+
+**Step 3's three-way split is therefore measured, not anticipated.** Lifetime,
+identity and validity fail independently; only lifetime holds anywhere today, and only
+in `ByteView::byte`. A repair addressing lifetime alone would leave the two SILENT
+failures standing — a wrong-buffer read and an invalid `Text` both present as ordinary
+successful calls, where the lifetime defect at least corrupts something observable.
+
+1. Preserved and replayed: the ByteCursor pair, the Unsafe boundary probe, and seven
+   further fixtures live in `tests/regressions/view_lifetime/`, covering all three
+   properties. They are retained inputs, not yet wired gates; wire them with the
+   repair. The investigation this step asked for is complete.
 2. For confirmed failures, prefer pointer-free stored views and cursor positions with an explicit buffer
    borrow on each read. Use enforceable scoped callbacks where needed, or an owning
    representation when retention is required. A `Copy` raw pointer inside a struct

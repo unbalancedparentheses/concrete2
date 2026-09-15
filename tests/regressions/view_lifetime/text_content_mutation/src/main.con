@@ -1,0 +1,29 @@
+mod text_content_mutation {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteView};
+    import std.text.{Text};
+
+    // try_text VALIDATES UTF-8 once, then returns a view. Nothing re-validates,
+    // and the source stays mutable. No destroy: the owner is alive throughout.
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::new();
+        b.push(65); b.push(66); b.push(67);          // "ABC", valid UTF-8
+
+        let v: ByteView = match ByteView::new(0, 3, &b) {
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 200; },
+        };
+        let t: Text = match v.try_text(&b) {          // validated here
+            Option::Some { value } => value,
+            Option::None => { destroy(b); return 201; },
+        };
+
+        // Mutate the source to a byte that is NOT well-formed UTF-8 on its own.
+        b.set(1, 255);
+
+        // The Text still claims the region. Read it back.
+        let got: Int = t.get_unchecked(1) as Int;
+        destroy(b);
+        return got;                                    // 255 => validation did not survive
+    }
+}
