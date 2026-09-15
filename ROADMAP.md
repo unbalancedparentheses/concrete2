@@ -1388,6 +1388,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
+| 0 | **R-0483 reproduced ByteCursor lifetime defect; then R-0484 authority investigation** | preserve the control/reproducer and Unsafe-boundary probe, repair the confirmed safe-callable wrapper defect, and extend coverage to Text/ByteView; then trace Writer through reports and proof eligibility before choosing the authority changes; ordinary safety repairs proceed without minting stronger evidence or bypassing the release blockers below |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -1404,6 +1405,37 @@ the next transition; completed milestones move to the changelog rather than accu
 
 `ProofCache` remains performance-pulled. A second proof-producing kernel remains research-gated and
 is not part of this strict queue. Why3 remains comparative prior art, never a backend.
+
+### Design-review priorities (ratified 2026-09-15)
+
+The next milestone is **sound, usable zero-copy parsing** (R-0483), with authority
+semantics clarified by R-0484. R-0485 improves review clarity within the existing
+error model. R-0486 carries the same workload into the typed-contract and external-user
+rows above; it is not an additional public flagship or a parallel execution queue.
+The ByteCursor lifetime defect is reproduced in the supplied investigation and its
+sources are retained under R-0483. Text/ByteView coverage and Writer consumer behavior
+remain investigations. Repairs and target guarantees are not yet shipped.
+
+- **Keep explicit error propagation.** Exhaustive `match` plus explicit `return`
+  remains the model. Postfix `?` stays rejected; this review does not reopen it.
+  Improve diagnostics, `defer` consistency and library APIs within that constraint.
+- **Prioritize semantic correspondence and composition over backend breadth.**
+  R-0473/R-0474/R-0477 own typed contracts, resolved lexical identities, capture-safe
+  substitution and call composition. R-0450/R-0454–R-0456/R-0460 own the single typed
+  obligation pipeline and H19 bridge work. Complete a useful fragment with explicit
+  trap semantics, call preconditions and unsupported coverage before expanding
+  proof backends. Agreement among kernels does not establish source correspondence.
+- **Double down on the compiler as an audit tool.** Authority paths, resource and
+  failure summaries, named trust boundaries, contract-preserving change detection,
+  and independently degradable evidence remain the product. Existing evidence schema
+  owners supply these facts; new renderers must not invent another source of truth.
+- **Retain the restricted systems core and evaluate its costs on workloads.** No GC,
+  no unwinding, explicit indirect calls, scoped references, monomorphization and
+  explicit cleanup remain the baseline. No closures or macros are proposed here.
+  Explain those exclusions through semantic complexity, allocation visibility and
+  analysis cost: finite callable enumeration alone does not require either ban.
+  Evaluate explicit function-plus-context callbacks on real composition patterns;
+  record awkward workarounds before considering any separately justified change.
 
 ### Unblocked repairs, off the strict queue (recorded 2026-09-15)
 
@@ -10369,6 +10401,134 @@ the library and is not a fourth public flagship.
 
 **Objective:** Close Phase 7 against the Phase 7 Completion Contract, move every fully completed task body to CHANGELOG, leave only future-relevant invariants in this document, and then continue directly with Task R-0072.
 
+
+### Task R-0483
+
+**Objective:** Make safe zero-copy parsing preserve owner lifetime through every
+stdlib wrapper, not only through syntactic `&T` references.
+
+**Status (2026-09-15): reproduced ByteCursor defect; repair pending, next implementation
+milestone.** The supplied investigation reports that both programs check and compile:
+read before `destroy(b)` exits 65 ('A'); read after it exits 0 through `Ok`, while
+the error arm would exit 1. The exact source pair and user-defined wrapper probe are
+retained in [the lifetime fixtures](tests/regressions/view_lifetime/README.md).
+These are reported execution results, not a new independent replay in this update.
+The source allocates capacity eight, pushes two bytes, and constructs a cursor with
+length two. Freed-memory contents are nondeterministic: zero is an observation, not
+the regression oracle. A matching byte on another run would not establish safety.
+
+The missing invariant relates owner consumption to later cursor access. Linearity
+requires consumption or ownership transfer, but accepts both read-then-destroy and
+destroy-then-read in this pair. Omitting consumption reportedly raises E0208;
+`b.destroy()` borrows its receiver and does not satisfy consumption. Linearity does
+not force premature freeing: the missing lifetime relation permits the unsafe order.
+
+**Measured scope:** the supplied user-defined wrapper probe without `trusted` or
+`with(Unsafe)` is rejected with E0521 for the pointer cast and dereference. This supports
+a stdlib trusted-wrapper repair first, not a checker redesign. It does not establish
+that all other wrappers or raw-pointer paths are sound. A trusted implementation must
+uphold the lifetime invariant of its safe-callable API; a caller-lifetime comment alone
+does not repair an ordinary-call use-after-free.
+
+1. Preserve and independently replay the reported ByteCursor pair and the Unsafe
+   boundary probe, then wire them into permanent regression coverage with the repair.
+   Extend the investigation to reallocation/mutation, `Text::from_string`,
+   `ByteView::cursor`/`try_text` and sibling wrappers. Distinguish pointer-free coordinate
+   access from accessors returning pointer-bearing values. Those extensions remain open.
+2. For confirmed failures, prefer pointer-free stored views and cursor positions with an explicit buffer
+   borrow on each read. Use enforceable scoped callbacks where needed, or an owning
+   representation when retention is required. A `Copy` raw pointer inside a struct
+   must not bypass the safe-reference escape rule.
+3. Specify bounds, buffer identity and content validity separately. Length equality
+   is not identity, and a prior UTF-8 validation does not survive arbitrary source
+   mutation. State whether a handle is reusable coordinates or tied to a particular
+   buffer/content version; enforce the chosen contract without implying branding
+   where only bounds are checked.
+4. Migrate one bounded binary parser and affected public stdlib APIs/examples. Keep
+   malformed input recoverable and test early returns, cleanup, buffer replacement,
+   mutation, same-length wrong buffers and boundary arithmetic.
+
+**Exit:** ordinary callers cannot retain dangling access through these APIs; positive
+zero-copy parsing remains usable; invalid lifetime/content transitions are rejected
+or safely revalidated; class-level negative controls cover all public constructors
+and access paths. Preserve the safe-order control and require the unsafe-order case
+to be rejected or made safe by the repaired API; never accept a particular freed byte
+as success. Keep the raw-pointer cast/dereference negative controls so library repairs
+cannot silently weaken the Unsafe boundary. If an investigated path already rejects,
+record the enforcing rule instead of redesigning it. Report remaining trusted operations explicitly. Record allocation,
+copying and checked-access costs and retire the unsafe safe-callable predecessors.
+R-0486 reuses this parser after the contract prerequisites; this task does not claim
+heap proofs or emitted-binary correctness.
+
+### Task R-0484
+
+**Objective:** Give capability headers, resource handles and operational effects
+one coherent meaning that checking, reports, proof eligibility and policy share.
+
+**Status (2026-09-15): planned; accompanies R-0483 before contract expansion.**
+The current `Writer` checks authority at acquisition and permits capability-free
+writes through a handle, while the headline model describes effects in headers.
+Resolve this distinction explicitly rather than equating an empty capset with purity.
+
+First trace a capability-free Writer helper through capability/effect reports, policy
+and proof/totality eligibility. Record exact outputs and enforcing/refusing rules:
+other eligibility checks may already reject it. Separate public-model ambiguity,
+misleading reporting and actual proof admission; do not infer the last from the header.
+Use that evidence to select the smallest implementation change below.
+
+Preserve resource handles as scoped authority. Specify and represent separately the
+authority required to acquire a resource, authority supplied through arguments, and
+effects invocation may perform. Decide how the existing capability judgment and
+interface summaries carry those facts, including callback/context forwarding,
+trusted wrappers, destruction and unknown indirect targets. Reconcile the Phase 7
+capability-completeness and authority-at-acquisition criteria under that decision.
+
+**Exit:** a capability-free helper accepting a `Writer` cannot be classified as
+effect-free merely from its header; file/console sinks, callbacks and cleanup have
+consistent checker/report/policy answers. Positive and negative controls expose
+authority laundering and conservative unknown effects. Proof/totality eligibility
+uses the relevant semantic facts, not an empty-capset shortcut. Update the capability,
+safety, identity and public-claims docs together without introducing a rival evidence
+schema or claiming unrestricted least-authority enforcement.
+
+### Task R-0485
+
+**Objective:** Improve review clarity without changing explicit error propagation
+or implicit-drop policy.
+
+**Status (2026-09-15): planned; apply during R-0483's parser migration.** Keep
+`match`/`return`, explicit error conversion and explicit cleanup. Align deferred-call
+argument coercions and diagnostics with ordinary calls; specify failure/divergence
+during cleanup and test normal-exit cleanup ordering. Improve named library helpers
+and ownership/error diagnostics where parser and CLI workloads expose friction.
+
+**Exit:** compare the migrated parser and base64 CLI for nesting, duplicated cleanup,
+missed I/O errors and reviewer ability to locate ownership transfers and exits.
+Retain concrete before/after examples and regression controls for any implemented
+change. Do not equate generated verbosity with human reviewability. `?`, implicit
+error conversion, implicit drop and unwinding remain excluded.
+
+### Task R-0486
+
+**Objective:** Use one bounded parser/state-machine component to validate compositional
+contracts, audit diffs and the external-consumer workflow end to end.
+
+**Status (2026-09-15): planned; workload selection begins with R-0483, proof graduation
+depends on the existing identity/task, typed-contract and two-state queue milestones.**
+Reuse the parser in the secure update-bundle verifier or protocol-state-machine
+flagship already selected in queue row 12. Expose a small C interface and exercise
+malformed input, bounded storage, state mutation, zero-copy access, recoverable
+failure, resource limits and named FFI assumptions. No fourth public flagship.
+
+**Exit:** a consumer relies on a public contract without inspecting private bodies;
+calls establish preconditions and use exported postconditions without inlining;
+frame/`old` semantics cover the admitted mutation fragment. A contract-preserving
+body change refreshes implementation evidence while leaving contract consumers
+current; behavior/authority/resource/trust changes produce precise policy and audit
+diffs. A non-author builds and consumes the component and replays its admitted
+evidence. Measure proof effort, source review clarity, callback/context friction and
+runtime costs; use those observations to prioritize subsequent features. Unsupported
+heap, relational, resource-proof and backend claims remain explicit.
 
 ## Phase 7.5: Usable QBE Backend And Independent Validation
 

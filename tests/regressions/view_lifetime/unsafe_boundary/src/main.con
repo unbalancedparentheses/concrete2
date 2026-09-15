@@ -1,0 +1,23 @@
+mod usr {
+    import std.bytes.{Bytes};
+
+    // A USER-defined Copy view holding a pointer into a borrowed owner.
+    // No `trusted` anywhere in this module.
+    pub struct Copy MyView {
+        ptr: *const u8,
+        len: u64,
+    }
+
+    fn make_view(b: &Bytes) -> MyView {
+        return MyView { ptr: b.raw_ptr() as *const u8, len: b.len() };
+    }
+
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(8);
+        b.push(65);
+        let v: MyView = make_view(&b);
+        destroy(b);
+        let p: *const u8 = v.ptr;
+        return (*p) as Int;
+    }
+}

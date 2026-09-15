@@ -1,0 +1,20 @@
+mod ctl {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteCursor, CursorError};
+
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(8);
+        b.push(65);
+        b.push(66);
+        let mut c: ByteCursor = ByteCursor::from_bytes(&b);
+
+        // CONTROL: read while the owner is still alive, destroy afterwards.
+        let r: Result<u8, CursorError> = c.read_u8();
+        destroy(b);
+
+        match r {
+            Result::Ok { value } => { return value as Int; },
+            Result::Err { error } => { return 1; },
+        }
+    }
+}
