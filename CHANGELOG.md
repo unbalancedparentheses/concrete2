@@ -12,7 +12,8 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ### Postfix `?` Removed; Explicit Result Propagation Is Permanent
 
-_Language surface and trust-story reconciliation, 2026-09-08._
+_Language surface and trust-story reconciliation, landed 2026-09-13 at `4fcc6a79`, `303f7223`,
+`8f9750fc`._
 
 Concrete no longer accepts postfix `?`. Recoverable failure still uses `Result<T, E>`, but a caller
 must match it exhaustively and write the returning error arm. The lexer retains `?` only to produce
@@ -23,6 +24,23 @@ Positive Result/defer fixtures now use the explicit form, the removed syntax has
 negative fixture, and the surface-simplification gate rejects both parser re-admission and a
 propagation node surviving below the parser. Historical entries below still describe the period in
 which the operator existed; diagnostic codes E0275-E0277 remain reserved and are not reassigned.
+
+**Two derived artifacts were left behind, and that is the part worth remembering.** Dropping the
+propagation tag from `exprBytes` moves every identity computed over the evidence encoding, and three
+checked-in files are derived from those identities. The first commit regenerated
+`GeneratedAttestations.lean` and missed both `ClassificationTable.lean` (`303f7223`, which also
+refreshes `BuildIdentity.lean`, since the table is in the build-identity inventory) and
+`campaign-summary.golden` (`8f9750fc`, whose driver digest moved because the mutation anchors name
+attestation symbols that had been renamed). Zero body digests moved in either repair, which is the
+expected result: no proved body used the operator, so a moving body digest would have meant the
+encoding change reached further than intended.
+
+Each omission had a freshness gate, each gate lives in a different CI job, and they therefore
+reported hours apart rather than together. A green local build and a green `--full` suite did not
+predict any of it, because those gates are not in the suite. Final state is all fifteen CI jobs
+green, the campaign golden verified byte-identical from a clean tree, and the lesson recorded as
+checklist items in [ROADMAP.md](ROADMAP.md): a change that moves a digest must be treated as a
+change to everything derived from it.
 
 The roadmap's end-state wording was tightened at the same boundary. Concrete is an
 **evidence-bearing sequential-language core with stated, bounded trust assumptions and an explicit,

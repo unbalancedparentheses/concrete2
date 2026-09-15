@@ -1405,6 +1405,21 @@ the next transition; completed milestones move to the changelog rather than accu
 `ProofCache` remains performance-pulled. A second proof-producing kernel remains research-gated and
 is not part of this strict queue. Why3 remains comparative prior art, never a backend.
 
+### Unblocked repairs, off the strict queue (recorded 2026-09-15)
+
+Small, owned, and independent of the sequence above. Each was reproduced during the postfix-`?`
+removal; none blocks a queue item, and none should be allowed to become furniture.
+
+| # | repair | why it matters | exit |
+|---|---|---|---|
+| a | **`attestation_refs.sh` canonical order** | the generator never sorts, so a byte-for-byte gate can call a correct tree stale and advise a "fix" that breaks CI — reproduced, see checklist item 9 | emit sorted under `LC_ALL=C` as `build_identity.sh` already does, regenerate once, and add a gate asserting two differing enumeration orders produce identical output |
+| b | **Diff-to-gate mapping for pre-push** | 204 CI gates against three in `run_ci_gates_local.sh`; a stale derived artifact currently surfaces one CI job at a time, hours apart | one command that takes a diff and runs the gates it can break, with the generated-artifact freshness set always included |
+| c | **TCP fixtures are broken on Linux** | `net_tcp_roundtrip.con` and `tcp_basic.con` hardcode the BSD socket ABI (`SOL_SOCKET` as `0xffff`, and a `sin_len` byte Linux lacks, landing `sa_family` on `0x210`); strace shows `ENOPROTOOPT` and `EAFNOSUPPORT` | decide port-vs-platform-conditional, then make the decision visible: they are `--full`-only while CI runs `fast` with `SKIP_FLAKY_TCP_TEST=1`, so CI cannot see either one today |
+
+Repair (c) carries a second finding worth stating separately: `tcp_basic.con` is labelled flaky and
+is not flaky. It fails deterministically on one platform, and the label is what kept anyone from
+looking. A skip whose reason is wrong is a defect with a lid on it.
+
 ### Historical execution queue snapshot (2026-08-05)
 
 The table below is retained only to explain older task-order references. It is not a current queue;
@@ -1826,6 +1841,29 @@ is consistent enough to be a rule rather than an anecdote.
    pinned so `∀ e, P e → Q e` is not read as global completeness when `P` is narrow.
 8. **A false number is worse than a missing one**, because it is quotable. `--report stack-depth`
    stated `Max stack bound: 32 bytes` for arbitrarily deep recursion.
+9. **A byte-for-byte comparison needs a canonical order, or it compares environments rather than
+   content.** `scripts/gen/attestation_refs.sh` emits in manifest order and never sorts —
+   `grep`/`awk` preserve input order — so `check_attestation_manifest.sh` reported a correct tree
+   as STALE and advised regenerating it. Following that advice would have committed one machine's
+   enumeration order and broken CI, which agreed with the checked-in file. Its sibling
+   `scripts/gen/build_identity.sh` already states the rule it needs: emit sorted, "so the digest is
+   a function of content and not of directory order." A generator feeding a byte comparison is not
+   finished until its order is a function of content alone.
+10. **A change that moves a digest is a change to everything derived from it.** Removing postfix
+    `?` altered the evidence encoding and left two derived artifacts stale; each had a freshness
+    gate, each gate lived in a different CI job, and they reported hours apart. Treat the
+    generators as the unit of change: when a digest moves, re-run every `scripts/gen/*` producer
+    and the freshness gates in one pass before pushing, rather than discovering the set one CI job
+    at a time.
+11. **A gate the local suite cannot run is a gate that only fails after you push.** CI invokes 204
+    distinct `scripts/tests/check_*.sh` gates; `scripts/tests/run_ci_gates_local.sh` invokes three,
+    and `run_tests.sh --full` covers a different axis entirely. The gap is not that the gates are
+    expensive — most are not — but that nothing maps a diff to the gates it can break.
+12. **A golden that records workspace cleanliness can only be verified from a clean tree.**
+    `campaign-summary.golden` carries `tracked_sha` over modified tracked files, and the baseline
+    holds the empty-string digest. Regenerate, commit, *then* verify: checking it while the
+    regenerated file is still uncommitted fails on `tracked_sha` and points at the wrong field.
+
 ## Design honesty: this is largely Why3's architecture, and one layer is worse than Why3's
 
 Worth writing down, because it reframes what is valuable to build next.
