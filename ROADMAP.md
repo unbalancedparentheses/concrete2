@@ -1388,7 +1388,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 investigation complete, repair blocked; R-0484 authority investigation** | **Investigation closed 2026-09-15:** ten fixtures measure lifetime, identity and validity as three independent failures; only lifetime holds, and only in `ByteView::byte`. **The repair is sequenced behind rows 2 and 4, not merely unscheduled** — an implemented brand was reverted because changing `std` bodies renames every generated attestation symbol and breaks hand-written proof links, so it needs the R-0482 identity migration and cannot cross R-0208. R-0484 is unaffected and is the available work here: trace `Writer` through capability/effect reports and proof eligibility before choosing the authority changes. Safety repairs outside the attestation surface still proceed without minting stronger evidence |
+| 0 | **R-0483 investigation complete, repair carries a migration dependency; R-0484 authority investigation** | **Investigation closed 2026-09-15:** ten fixtures measure lifetime, identity and validity as three independent failures; only lifetime holds, and only in `ByteView::byte`. A brand was implemented and reverted: touching `std` renames generated attestation symbols and breaks 23 hand-written proof references. Measured in isolation, that churn moves package SCOPE identity (39/53) while leaving every existing IMPLEMENTATION identity byte-identical (0/53) — a rename to migrate, not stale evidence, so this is a dependency on row 4's work rather than a bar on the repair; R-0208 constrains only whether regeneration introduces a new authoritative evidence transition. The raw-constructor exclusion is retracted: `from_raw` + `read_u8` give ordinary non-`trusted`, capability-free callers a dereference path. R-0484 is unaffected and available now: trace `Writer` through capability/effect reports and proof eligibility before choosing the authority changes |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -10450,11 +10450,33 @@ direction: the intended design is demonstrated to work inside this stdlib today,
 merely proposed. Accept/reject is a compile-time observation and is the reliable
 signal; the freed byte remains undefined and is not an oracle.
 
-`ByteCursor::from_raw` and `Text::from_raw_unchecked`/`try_from_raw` are deliberately
-excluded from the defect set: they take a pointer the caller already had to obtain,
-and they state a caller obligation rather than presenting a safe-looking borrow. The
-stack-array call sites in `numeric.con`'s own tests and `examples/packet` are that
-legitimate use.
+**That exclusion of the raw constructors is RETRACTED (2026-09-15).** An earlier
+revision here put `ByteCursor::from_raw` and the `Text` raw constructors out of scope on
+the grounds that they take a pointer the caller already had to obtain. Holding a pointer
+is not permission to dereference it later, and the two obligations are separate.
+Checked, and the call sites settle it:
+
+```
+pub fn from_raw(data: *const u8, len: u64) -> ByteCursor     // no capability
+pub fn read_u8(&mut self) -> Result<u8, CursorError>          // no capability
+
+examples/packet/src/main.con
+  fn compute_checksum(data: *const u8) -> u16 { ... }         // plain fn
+  fn decode_header(data: *const u8, len: u64) -> DecodeResult // plain fn
+```
+
+Neither caller is `trusted`, neither declares `with(Unsafe)`, and the file has no
+module-level grant. So an ordinary function takes a raw pointer, builds a cursor and
+dereferences through it with no obligation anywhere in its signature — while a
+user-written struct doing the same by hand is refused with E0521 (`unsafe_boundary`).
+The `trusted impl` permits the implementation's operations; it does not surface the
+caller's. The comment above `compute_checksum` reads "Uses ByteCursor — no raw pointer
+dereferences in this function", which is the laundering stated in the source.
+
+These constructors therefore belong in the audit, and the reachable-without-`Unsafe`
+dereference path is also R-0484 evidence: it is authority laundering through a trusted
+wrapper, not only a lifetime question. The stack-array sites in `numeric.con`'s own
+tests remain legitimate use of a raw constructor; that was never the issue.
 
 **BLOCKED ON THE IDENTITY PLUMBING — measured 2026-09-15 by attempting it, then
 reverted.** A brand carrying buffer token and mutation generation was implemented end
@@ -10464,24 +10486,42 @@ bounds. It works — the same-length wrong-buffer fixture flipped from returning
 byte to being refused, the valid-access control still returned 65, and `std` typechecked
 clean.
 
-It cannot land yet. Changing `std` bodies moved the package digest, which renames every
-symbol in `GeneratedAttestations.lean`, which breaks the hand-written proof links naming
-them: `lake build` failed on `unknown declaration
-Concrete.Proof.GeneratedAttestations.shaFns_d72fc77f_state_to_bytes`. Before that, with
-the old attestations in place, `crypto_verify` and `elf_header` fell from 4 proved to 2
-proved plus 2 closure-unjustified, taking eleven suite assertions with them. Reverting
-restored 4 proved and 1707/0.
+It does not land as-is. Changing `std` renames every symbol in
+`GeneratedAttestations.lean`, breaking the hand-written proof links naming them, and
+with the old attestations still in place `crypto_verify` and `elf_header` fell from 4
+proved to 2 proved plus 2 closure-unjustified. Reverting restored 4 proved and 1707/0.
 
-So row 0's premise needs qualifying. "Ordinary safety repairs proceed without minting
-stronger evidence" does not hold for repairs that touch `std`: the identity plumbing
-makes *any* `std` body edit an evidence-wide rename, so this safety repair cannot be
-completed without an attestation migration. That is queue row 4's work (R-0482 atomic
-identity migration), and row 2 (R-0208) stands in front of it. The repair is therefore
-sequenced behind them rather than merely unscheduled — and a second attempt should not
-rediscover this by running into it.
+**What the churn actually is, measured in an isolated worktree by adding ONE unused
+function to `std` and changing nothing else.** The three outcomes are distinct and only
+the first two occur:
 
-What this does NOT block: fixtures, classification, and any repair confined to files
-outside the attestation surface.
+| question | answer |
+|---|---|
+| does package scope identity move for existing definitions? | **yes — 39 of 53** |
+| do existing definitions' IMPLEMENTATION identities move? | **no — 0 of 53, byte-identical** |
+| do their generated symbol NAMES move? | yes — the same 39, because the name embeds the package digest |
+| does the file merely gain an entry? | no — 63 definitions before and after, none added or removed |
+
+(Keyed by `(module, declaration)`, which collapses 63 definitions into 53 unique keys
+where a declaration appears in more than one package.)
+
+So an added, unreferenced `std` definition moves dependents' *scope* identity while
+every existing implementation identity stays exactly as it was. **No evidence became
+stale**: the proofs still describe the same implementations, byte for byte. What breaks
+is a name — 23 hand-written references across `Concrete/Proof/Proof.lean`,
+`proofs/Examples/HmacSha256/Proofs.lean` and `proofs/Examples/ProofPatterns/Proofs.lean`
+stop resolving, and `lake build` fails on unknown identifiers.
+
+**That is a migration dependency, not a bar on the safety repair.** Row 0 permits safety
+repairs, and stable implementation identities make the rename mechanical and total
+rather than a re-judgement of anything. The open question is narrower and belongs to
+row 4: whether regenerating those references preserves honest, fail-closed evidence
+without introducing a new authoritative evidence transition — which is what R-0208 (row
+2) constrains. An earlier revision of this entry called the repair "blocked behind" rows
+2 and 4; that overstated it and is corrected here.
+
+Unaffected either way: fixtures, classification, R-0484, and any repair confined to
+files outside the attestation surface.
 
 **Lifetime and identity fail separately, and step 3 was right to name them apart.**
 Two further results close the gaps this task listed as open:
