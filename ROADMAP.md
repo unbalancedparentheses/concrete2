@@ -11,6 +11,9 @@ state or queue.
 > **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
 > and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
 > the dimensions along which proof support grows, and the limits that must remain visible.
+> **Remaining design scope:** [Language baseline and bounded verification milestone](#language-baseline-and-bounded-verification-milestone)
+> — the settled systems-language shape, remaining semantic decisions, and the first
+> compositional subset to validate on a real workload.
 > **Normative architecture:** [Evidence Architecture](docs/verification/EVIDENCE_ARCHITECTURE.md) defines the
 > five authoritative evidence objects; [Verification IR](docs/verification/VERIFICATION_IR.md) defines the
 > target portable proposition boundary. This roadmap sequences their implementation and must not
@@ -1388,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 investigation complete, repair carries a migration dependency; R-0484 authority investigation** | **Investigation closed 2026-09-15:** ten fixtures measure lifetime, identity and validity as three independent failures; only lifetime holds, and only in `ByteView::byte`. A brand was implemented and reverted: touching `std` renames generated attestation symbols and breaks 23 hand-written proof references. Measured in isolation, that churn moves package SCOPE identity (39/53) while leaving every existing IMPLEMENTATION identity byte-identical (0/53) — a rename to migrate, not stale evidence, so this is a dependency on row 4's work rather than a bar on the repair; R-0208 constrains only whether regeneration introduces a new authoritative evidence transition. The raw-constructor exclusion is retracted: `from_raw` + `read_u8` give ordinary non-`trusted`, capability-free callers a dereference path. R-0484 is unaffected and available now: trace `Writer` through capability/effect reports and proof eligibility before choosing the authority changes |
+| 0 | **R-0483 classification complete, repair pending migration assessment; R-0484 authority investigation** | Ten fixtures classify lifetime, identity and validity failures; raw constructors are included in the audit. The isolated unused-function experiment changes package scope and generated names while existing implementation identities remain unchanged; the full findings are under R-0483. Next: establish a total reference migration using full scoped rows and verify scope/dependency evidence under existing rules. Identity churn does not by itself establish that the full R-0482 migration must precede the safety repair. R-0208 still blocks new authoritative evidence transitions; any required R-0482 identity-model migration retains its queue prerequisites. R-0484 can proceed by tracing Writer through reports and proof eligibility |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -1406,15 +1409,65 @@ the next transition; completed milestones move to the changelog rather than accu
 `ProofCache` remains performance-pulled. A second proof-producing kernel remains research-gated and
 is not part of this strict queue. Why3 remains comparative prior art, never a backend.
 
+### Language baseline and bounded verification milestone
+
+**Direction ratified 2026-09-15; implementation and verification remain incomplete.**
+Concrete's systems-language shape is provisionally settled. The next phase implements
+and validates that shape, while completing the contract semantics needed for one useful,
+compositional verification subset.
+
+Linear ownership, scoped references, explicit capabilities and cleanup, exhaustive
+`match` plus explicit error returns, static or explicitly indirect dispatch,
+monomorphization, no GC and no unwinding are the baseline. This is a planning constraint,
+not a claim of soundness or a public compatibility freeze. Safety repairs, consistent
+diagnostics and library API corrections remain admissible. New ordinary-language syntax
+or abstractions require a concrete workload demonstrating why the existing model is
+insufficient, plus a stated semantic rule and verification boundary. Postfix `?` remains
+excluded. Broader language expressiveness is not the next milestone.
+
+The remaining design work has existing owners:
+
+| area | owner | decision or completion required |
+|---|---|---|
+| Safe library abstractions | R-0483, with R-0485 for review clarity | Make views, cursors, text and resource APIs preserve the existing ownership rules; distinguish reusable coordinates from access tied to an encapsulated owner, and preserve validated content against mutation. This is primarily library/API work, not a presumption that a new lifetime system is needed. |
+| Authority and effects | R-0484 | Define what headers promise when resource handles also supply authority; make checking, effect reports, proof eligibility and policy use consistent facts. This is an unresolved semantic boundary. |
+| Compositional contract semantics | R-0473/R-0474/R-0477, Phase 9 and the existing VC bridge tasks | Complete typed contracts, binding/substitution, call composition, narrow mutation/frame semantics and checked totality. This is the largest remaining language-design area; R-0486 supplies the forcing workload. |
+
+**First bounded verification milestone — planned, not shipped:** one sequential
+parser/state-machine component, drawn from the already selected flagships, with contracts
+over scalars, records and fixed arrays. R-0486 owns the workload; the existing typed-contract,
+two-state, totality and VC tasks own the semantics. Graduation requires:
+
+1. A stated admitted subset with bounded iteration and explicit failure behavior;
+   contract-callable helpers have a checked logical interpretation and required totality.
+2. Calls establish preconditions and use exported postconditions without callee inlining;
+   `old` and frame/`modifies` conditions describe the admitted record/array mutations.
+3. Bounds, arithmetic traps, assertions and call obligations have explicit evidence or
+   gaps. Unsupported constructs refuse or are classified visibly; runtime checks and
+   trusted FFI/backend boundaries do not become proofs by association.
+4. A caller consumes the component's interface without inspecting private bodies;
+   contract-preserving implementation changes preserve caller evidence after the required
+   implementation recheck, while contract/authority/trust changes produce precise diffs.
+5. The migrated component has functioning safety regression controls and measured proof
+   effort, review friction and runtime costs. Its results determine subsequent feature work.
+
+General heap proofs, concurrency, relational verification and general resource-bound proofs
+are not prerequisites for this milestone. Their existing research and later-phase owners
+remain in place. Fixed-capacity enforcement and resource reporting must state their actual
+evidence strength. This milestone narrows the first useful verification target; it does not
+waive the current queue's evidence-integrity prerequisites or the broader release gates.
+
 ### Design-review priorities (ratified 2026-09-15)
 
 The next milestone is **sound, usable zero-copy parsing** (R-0483), with authority
 semantics clarified by R-0484. R-0485 improves review clarity within the existing
 error model. R-0486 carries the same workload into the typed-contract and external-user
 rows above; it is not an additional public flagship or a parallel execution queue.
-The ByteCursor lifetime defect is reproduced in the supplied investigation and its
-sources are retained under R-0483. Text/ByteView coverage and Writer consumer behavior
-remain investigations. Repairs and target guarantees are not yet shipped.
+The ByteCursor defect and Text/ByteView lifetime, identity and content-validity
+classification are recorded under R-0483 with ten retained fixtures. The additive-change
+experiment and raw-constructor inspection are also recorded there. The remaining
+questions concern safe migration of the affected attestation references and Writer
+consumer behavior. Repairs and target guarantees are not yet shipped.
 
 - **Keep explicit error propagation.** Exhaustive `match` plus explicit `return`
   remains the model. Postfix `?` stays rejected; this review does not reopen it.
@@ -10407,10 +10460,13 @@ the library and is not a fourth public flagship.
 **Objective:** Make safe zero-copy parsing preserve owner lifetime through every
 stdlib wrapper, not only through syntactic `&T` references.
 
-**Status (2026-09-15): reproduced ByteCursor defect; repair pending, next implementation
-milestone.** The supplied investigation reports that both programs check and compile:
-read before `destroy(b)` exits 65 ('A'); read after it exits 0 through `Ok`, while
-the error arm would exit 1. The exact source pair and user-defined wrapper probe are
+**Status (2026-09-15): wrapper classification and additive-change experiment complete;
+repair pending attestation-migration assessment.** The experiment below isolates scope
+and symbol-name changes from unchanged implementation identities; regeneration still
+needs to preserve honest evidence under the existing rules. **Reported runtime observation
+for the original pair:** both programs check and compile; read before `destroy(b)` exits
+65 ('A'); read after it was observed to exit 0 through `Ok`, while the error arm would
+exit 1. The exact source pair and user-defined wrapper probe are
 retained in [the lifetime fixtures](tests/regressions/view_lifetime/README.md).
 These are reported execution results, not a new independent replay in this update.
 The source allocates capacity eight, pushes two bytes, and constructs a cursor with
@@ -10478,8 +10534,8 @@ dereference path is also R-0484 evidence: it is authority laundering through a t
 wrapper, not only a lifetime question. The stack-array sites in `numeric.con`'s own
 tests remain legitimate use of a raw constructor; that was never the issue.
 
-**BLOCKED ON THE IDENTITY PLUMBING — measured 2026-09-15 by attempting it, then
-reverted.** A brand carrying buffer token and mutation generation was implemented end
+**Migration dependency — 2026-09-15 attempt, then reverted; assessment below owns the
+current sequencing.** A brand carrying buffer token and mutation generation was implemented end
 to end: a `gen` counter on `Bytes` bumped by every mutator, `ByteView` and `ByteCursor`
 branded with `(raw_ptr, gen)`, and `describes` checking identity and validity before
 bounds. It works — the same-length wrong-buffer fixture flipped from returning `b`'s
@@ -10492,8 +10548,8 @@ with the old attestations still in place `crypto_verify` and `elf_header` fell f
 proved to 2 proved plus 2 closure-unjustified. Reverting restored 4 proved and 1707/0.
 
 **What the churn actually is, measured in an isolated worktree by adding ONE unused
-function to `std` and changing nothing else.** The three outcomes are distinct and only
-the first two occur:
+function to `std` and changing nothing else.** Scope identity, implementation identity,
+generated names and added entries are measured separately:
 
 | question | answer |
 |---|---|
@@ -10506,16 +10562,18 @@ the first two occur:
 where a declaration appears in more than one package.)
 
 So an added, unreferenced `std` definition moves dependents' *scope* identity while
-every existing implementation identity stays exactly as it was. **No evidence became
-stale**: the proofs still describe the same implementations, byte for byte. What breaks
-is a name — 23 hand-written references across `Concrete/Proof/Proof.lean`,
+every existing implementation identity stays exactly as it was. The measured implementation
+bytes did not change; this alone does not establish that scope-bound evidence and
+dependency attachments remain current. The immediate build failure is a name — 23
+hand-written references across `Concrete/Proof/Proof.lean`,
 `proofs/Examples/HmacSha256/Proofs.lean` and `proofs/Examples/ProofPatterns/Proofs.lean`
 stop resolving, and `lake build` fails on unknown identifiers.
 
 **That is a migration dependency, not a bar on the safety repair.** Row 0 permits safety
-repairs, and stable implementation identities make the rename mechanical and total
-rather than a re-judgement of anything. The open question is narrower and belongs to
-row 4: whether regenerating those references preserves honest, fail-closed evidence
+repairs, and stable implementation identities make a mechanical reference migration
+plausible. Its totality must still be checked against the full scoped rows: the
+module/declaration summary above collapses legitimate package distinctions. The open
+question belongs to row 4: whether regenerating those references preserves honest, fail-closed evidence
 without introducing a new authoritative evidence transition — which is what R-0208 (row
 2) constrains. An earlier revision of this entry called the repair "blocked behind" rows
 2 and 4; that overstated it and is corrected here.
