@@ -1391,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 partially repaired:** proof eligibility no longer reads an empty capability set as purity — any function that can REACH an indirect call is refused, transitively, gated by `check_effect_opacity.sh` 6/0 with a positive control. Two things remain and are recorded as gaps rather than done: the proof call graph has no dependency modules, so cross-package opacity (`base64_cli.print_bytes` through `std`'s `Writer`) is still eligible and the gate asserts that it is; and `--report caps`/`effects` still say `(pure)`, so reporting and eligibility now disagree and must be reconciled |
+| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 measured, repair blocked:** the empty-capset-means-pure rule is located and a transitive indirect-call refusal was implemented and REVERTED — `assessEligibility` gates admissibility and subject-fact extraction with one bit, so refusing higher-order functions dropped them from the evidence surface and `check_shadow_body_v2.sh` caught it. Separating "admissible as effect-free" from "extractable" is the blocking prerequisite. `check_effect_opacity.sh` 5/0 pins the defective behaviour so the fix must invert it; reports still print `(pure)` |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -10679,42 +10679,42 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-09-16): PARTIALLY REPAIRED — the rule is fixed and gated within a
-compilation unit; the cross-package case remains open and is asserted as a known gap.**
-The measurement below stands; what changed is that empty-capset-implies-pure is no
-longer the rule.
+**Status (2026-09-16): defect measured and mechanism located; the obvious repair was
+IMPLEMENTED AND REVERTED, and the reason is the real finding.**
 
-**What was repaired.** `CFnDef.isProofEligible` required `f.capSet.isEmpty`, i.e. it
-read "nothing was declared" as "nothing happens". Proof eligibility now also refuses any
-function that can REACH an indirect call, with the source reason *"effects may enter
-through an indirect call (authority supplied by a handle is not visible in the header)"*.
-The reachability is a least fixpoint over the existing proof call graph
-(`effectOpaqueSet`), so it is transitive — which is the whole point, since
-`print_bytes` makes no indirect call itself and reaches one two hops down.
+**What was tried.** `CFnDef.isProofEligible` requires `f.capSet.isEmpty` and reads that
+as "pure". It means "nothing was declared". The attempted repair refused eligibility to
+any function that can REACH an indirect call, transitively, via a least fixpoint over the
+proof call graph — chosen because `print_bytes` makes no indirect call itself and reaches
+one two hops down.
 
-This is deliberately a refusal to certify rather than an attempt to resolve the target
-set; resolving it is a whole-program analysis and a separate project. `ProofCore.lean`
-already made exactly this argument for `no recursion` and `--report stack-depth`:
-a body containing an indirect call cannot be shown acyclic, so it is excluded rather
-than assumed acyclic. Effect-freedom was the third guarantee built on that same call
-graph and the only one still assuming. The repair makes the three consistent.
+**Why it was reverted.** `assessEligibility` decides two things with one bit: whether a
+function is admissible as effect-free, AND whether it is extracted for subject facts at
+all. Measured, and not specific to the attempt — a function excluded for merely having
+`Console` also vanishes from `--report subject-facts`. So refusing higher-order functions
+removed them from the evidence surface, and `check_shadow_body_v2.sh` caught it: its
+"a function used as a VALUE is an edge" assertion exists precisely so a higher-order
+program does not look dependency-free. Trading a false purity claim for a missing
+dependency edge moves an R-0004 evidence gap rather than closing one, so the change came
+out rather than the gate being relaxed.
 
-**What is NOT repaired, and is gated as such.** The proof call graph contains only the
-user program's modules, so a call into `std` resolves to a name with no node and nothing
-propagates. `base64_cli.print_bytes` is therefore STILL reported eligible, and
-`check_effect_opacity.sh` asserts that it is — so the limit is visible, and closing it
-will make that check fail and force an update here rather than silently widening a green
-gate. Closing it means giving the proof call graph dependency modules.
+**What the repair therefore needs first.** The refusal belongs where effect-freedom is
+CLAIMED, not where extractability is decided. Those are currently the same predicate, and
+separating them is a change to the R-0004 extraction path that deserves its own design
+rather than being smuggled in under this task. That is the blocking prerequisite, and it
+was not visible before the attempt.
 
-Also unchanged: `--report caps` and `--report effects` still print `(pure)` and count a
-`1 pure` total for such functions. Eligibility and reporting therefore now DISAGREE for
-handle-taking helpers, which is worse than consistent-and-wrong for a reader and must be
-reconciled — the reports need the same opacity fact the eligibility rule now uses.
+**What is gated meanwhile.** `check_effect_opacity.sh` (5/0) pins the CURRENT, defective
+behaviour: `fire` and `fire2` are asserted to be STILL eligible, the totals are asserted
+to still count them provable, and `base64_cli.print_bytes` is asserted to still be
+eligible. Every one of those checks is written to FAIL when the repair lands, so the fix
+must invert them in the same commit. A gate that pins a defect is not an endorsement of
+it; it is the difference between a known gap and a forgotten one.
 
-**Verified no regression:** suite 1713/0, stdlib 313/0, and both flagships unchanged at
-`crypto_verify` 4 proved and `elf_header` 5 proved, 0 stale and 0 closure-unjustified.
-Nothing previously proved lost eligibility, and `EFFECT-OPACITY` 6/0 includes a positive
-control (`plain` stays eligible) so the rule is conservative rather than over-broad.
+Also still true and unreconciled: `--report caps`/`effects` print `(pure)` and count a
+`1 pure` total for these functions, because `ppCapSet .empty` renders "(pure)" with no
+knowledge of opacity. Reconciling the reports touches roughly 42 assertion and doc sites
+and wants its own commit.
 
 **THE MECHANISM, located 2026-09-16 — and it is not what the shape suggests.** A
 `Writer` dispatches through stored function pointers, so the obvious hypothesis is that

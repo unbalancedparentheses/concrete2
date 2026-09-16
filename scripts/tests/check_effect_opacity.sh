@@ -12,18 +12,27 @@
 # are capability-free. `println`, same module, same syscall, declares `Console`. Nothing
 # checks the difference.
 #
-# The repair refuses to certify what cannot be shown: a function that can REACH an
-# indirect call has effects this compiler cannot see and does not get to be called pure.
-# `Concrete/Proof/ProofCore.lean` already makes exactly that argument for `no recursion`
-# and `--report stack-depth`; effect-freedom was the third guarantee on the same call
-# graph and the only one still assuming.
+# THE REPAIR IS NOT YET IN PLACE, AND THIS GATE RECORDS WHY RATHER THAN ASSERTING A FIX.
 #
-# SCOPE, STATED: this closes the class WITHIN a compilation unit. The cross-package case
-# — a user function reaching a handle defined in `std` — is NOT yet closed, because the
-# proof call graph contains only the user program's modules, so a call into `std`
-# resolves to a name with no node and nothing propagates. `base64_cli.print_bytes` is
-# therefore still reported eligible, and that is asserted below rather than hidden, so
-# this gate tells the truth about how far the repair reaches.
+# The obvious repair — refuse proof eligibility to any function that can REACH an
+# indirect call — was implemented and reverted. `assessEligibility` decides TWO things
+# with one bit: whether a function is admissible as effect-free, AND whether it is
+# extracted for subject facts at all. Measured: a function excluded for ANY reason
+# vanishes from `--report subject-facts` entirely (checked for a capability exclusion
+# too, so this is the existing coupling and not something the attempt introduced).
+#
+# So refusing higher-order functions removed them from the evidence surface, and
+# `check_shadow_body_v2.sh` caught it: its "a function used as a VALUE is an edge"
+# assertion needs higher-order bodies to still produce dependency edges, precisely so a
+# higher-order program does not look dependency-free. Trading a false purity claim for
+# a missing dependency edge is not a repair; it moves an R-0004 evidence gap rather
+# than closing one.
+#
+# The refusal belongs where effect-freedom is CLAIMED, not where extractability is
+# decided, and separating those is a real change to the R-0004 extraction path. Until
+# then this gate pins the current, defective behaviour so the defect stays measured and
+# cannot drift silently. Every check below that says "still" is a known gap: when the
+# repair lands, these flip and must be inverted in the same commit.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
@@ -51,48 +60,38 @@ fi
 
 out="$(cd "$FIX" && $TO "$CC" src/main.con --report eligibility 2>&1)"
 
-echo "=== a genuinely effect-free function stays eligible (positive control) ==="
-# Without this the gate would pass on a compiler that simply called everything opaque,
-# which would be a different bug with the same green.
+echo "=== a genuinely effect-free function is eligible (control) ==="
+# Keeps the fixture honest: if this ever fails, the fixture stopped describing the
+# ordinary case and the gaps below would be measuring nothing.
 if printf '%s' "$out" | grep -qE 'eligible +`indirect_call_not_pure\.plain`'; then
-  ok "plain is still eligible"
+  ok "plain is eligible"
 else
-  no "plain lost eligibility — the rule is over-broad, not conservative"
+  no "plain is not eligible — the fixture no longer models the ordinary case"
 fi
 
-echo "=== reaching an indirect call refuses certification ==="
+echo "=== KNOWN GAP: reaching an indirect call does not refuse certification ==="
+# `fire` calls through a fn pointer; `fire2` reaches one a hop further away. Both are
+# admitted to the provable subset on an empty capability set, which is the defect.
 for fn in fire fire2; do
-  if printf '%s' "$out" | grep -A1 -E "excluded +\`indirect_call_not_pure\.$fn\`" \
-     | grep -q "effects may enter through an indirect call"; then
-    ok "$fn is excluded, and for the effect reason"
+  if printf '%s' "$out" | grep -qE "eligible +\`indirect_call_not_pure\.$fn\`"; then
+    ok "$fn is STILL eligible despite reaching an indirect call (expected; defect open)"
   else
-    no "$fn is not excluded for reaching an indirect call"
-    printf '%s\n' "$out" | grep -A1 -E "\`indirect_call_not_pure\.$fn\`" | sed 's/^/       /'
+    no "$fn is no longer eligible: the repair landed — invert this check and update R-0484"
   fi
 done
 
-echo "=== the exclusion is TRANSITIVE, not per-body ==="
-# fire2 makes no indirect call itself; it calls fire. The defect this came from reached
-# the indirect call two hops down, so a per-body predicate would have missed it.
-if printf '%s' "$out" | grep -A1 -E 'excluded +`indirect_call_not_pure\.fire2`' \
-   | grep -q "effects may enter through an indirect call"; then
-  ok "a caller two hops from the indirect call is also refused"
+echo "=== KNOWN GAP: totals still count the opaque functions as provable ==="
+if printf '%s' "$out" | grep -q "4 functions — 3 eligible, 1 excluded"; then
+  ok '3 eligible, 1 excluded (only main, as entry point) — the defect, pinned'
 else
-  no "transitivity is not being applied — only direct indirect calls are caught"
-fi
-
-echo "=== totals agree with the per-function verdicts ==="
-if printf '%s' "$out" | grep -q "4 functions — 1 eligible, 3 excluded"; then
-  ok "1 eligible, 3 excluded"
-else
-  no "unexpected totals"
+  no "totals moved; re-measure before changing this line"
   printf '%s\n' "$out" | grep "Totals:" | sed 's/^/       /'
 fi
 
-echo "=== KNOWN GAP: the cross-package case is not yet closed ==="
-# Asserted so the limit is visible and a future fix flips a failing check rather than
-# silently widening a passing one. When the proof call graph learns about dependency
-# modules, this check should START FAILING and be inverted in the same commit.
+echo "=== KNOWN GAP: the original cross-package instance ==="
+# The measured instance R-0484 came from. Even once the rule is fixed, this one needs
+# the proof call graph to contain dependency modules: a call into `std` resolves to a
+# name with no node, so nothing propagates.
 b64="$ROOT_DIR/examples/base64_cli"
 if [ -d "$b64" ]; then
   bout="$(cd "$b64" && $TO "$CC" src/main.con --report eligibility 2>&1)"
