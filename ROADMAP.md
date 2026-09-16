@@ -1391,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 is the open half:** the `(pure)` misclassification is measured and its mechanism located at the `trusted` boundary; trace `Writer` through extraction, proof attachment, closure, receipt issuance and policy before choosing containment |
+| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 partially repaired:** proof eligibility no longer reads an empty capability set as purity — any function that can REACH an indirect call is refused, transitively, gated by `check_effect_opacity.sh` 6/0 with a positive control. Two things remain and are recorded as gaps rather than done: the proof call graph has no dependency modules, so cross-package opacity (`base64_cli.print_bytes` through `std`'s `Writer`) is still eligible and the gate asserts that it is; and `--report caps`/`effects` still say `(pure)`, so reporting and eligibility now disagree and must be reconciled |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -10679,24 +10679,42 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-09-16): reporting and eligibility defect measured, mechanism located at
-the `trusted` boundary; proof-path impact and repair pending.** The supplied read-only measurement against `2c7d1ed3` examined
-`print_bytes(w: &Writer, b: &Bytes)` in `examples/base64_cli/src/main.con`. It calls
-`Writer::write`, exercising authority supplied through the handle. This record preserves
-the reported outputs; recording it is not an independent replay of the measurement.
+**Status (2026-09-16): PARTIALLY REPAIRED — the rule is fixed and gated within a
+compilation unit; the cross-package case remains open and is asserted as a known gap.**
+The measurement below stands; what changed is that empty-capset-implies-pure is no
+longer the rule.
 
-| report | reported result for `print_bytes` |
-|---|---|
-| `--report caps` | `print_bytes : (pure)` |
-| `--report effects` | `caps: (pure)`; the totals count `1 pure` |
-| `--report eligibility` | eligible: `in provable subset: pure, bounded, no FFI` |
-| `--report proof-status` | `eligible for proof but has no registered proof` |
+**What was repaired.** `CFnDef.isProofEligible` required `f.capSet.isEmpty`, i.e. it
+read "nothing was declared" as "nothing happens". Proof eligibility now also refuses any
+function that can REACH an indirect call, with the source reason *"effects may enter
+through an indirect call (authority supplied by a handle is not visible in the header)"*.
+The reachability is a least fixpoint over the existing proof call graph
+(`effectOpaqueSet`), so it is transitive — which is the whole point, since
+`print_bytes` makes no indirect call itself and reaches one two hops down.
 
-The same module's `usage` function prints a usage string but is excluded for
-`has capabilities: Console`. Both perform I/O; only the source of authority differs.
-The compiler affirmatively labels the handle-using helper pure and cites purity when
-classifying it as eligible. An empty declared capability set therefore cannot stand
-for effect-free behavior in these consumers.
+This is deliberately a refusal to certify rather than an attempt to resolve the target
+set; resolving it is a whole-program analysis and a separate project. `ProofCore.lean`
+already made exactly this argument for `no recursion` and `--report stack-depth`:
+a body containing an indirect call cannot be shown acyclic, so it is excluded rather
+than assumed acyclic. Effect-freedom was the third guarantee built on that same call
+graph and the only one still assuming. The repair makes the three consistent.
+
+**What is NOT repaired, and is gated as such.** The proof call graph contains only the
+user program's modules, so a call into `std` resolves to a name with no node and nothing
+propagates. `base64_cli.print_bytes` is therefore STILL reported eligible, and
+`check_effect_opacity.sh` asserts that it is — so the limit is visible, and closing it
+will make that check fail and force an update here rather than silently widening a green
+gate. Closing it means giving the proof call graph dependency modules.
+
+Also unchanged: `--report caps` and `--report effects` still print `(pure)` and count a
+`1 pure` total for such functions. Eligibility and reporting therefore now DISAGREE for
+handle-taking helpers, which is worse than consistent-and-wrong for a reader and must be
+reconciled — the reports need the same opacity fact the eligibility rule now uses.
+
+**Verified no regression:** suite 1713/0, stdlib 313/0, and both flagships unchanged at
+`crypto_verify` 4 proved and `elf_header` 5 proved, 0 stale and 0 closure-unjustified.
+Nothing previously proved lost eligibility, and `EFFECT-OPACITY` 6/0 includes a positive
+control (`plain` stays eligible) so the rule is conservative rather than over-broad.
 
 **THE MECHANISM, located 2026-09-16 — and it is not what the shape suggests.** A
 `Writer` dispatches through stored function pointers, so the obvious hypothesis is that

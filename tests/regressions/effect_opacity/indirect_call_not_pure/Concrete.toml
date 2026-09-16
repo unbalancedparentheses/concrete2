@@ -1,0 +1,3 @@
+[package]
+name = "indirect_call_not_pure"
+version = "0.1.0"

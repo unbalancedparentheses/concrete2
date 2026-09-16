@@ -1870,6 +1870,18 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== effect opacity (R-0484) ==="
+if bash "$ROOT_DIR/scripts/tests/check_effect_opacity.sh" > /tmp/effect_opacity.$$ 2>&1; then
+    _eo_pass=$(grep -c "^  ok  " /tmp/effect_opacity.$$ || true)
+    echo "  ok  effect opacity gate ($_eo_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  effect opacity gate"
+    grep "^  FAIL" /tmp/effect_opacity.$$ | head -5
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/effect_opacity.$$
+
 echo "=== view lifetime (R-0483) ==="
 if bash "$ROOT_DIR/scripts/tests/check_view_lifetime.sh" > /tmp/view_lifetime.$$ 2>&1; then
     _vl_pass=$(grep -c "^  ok  " /tmp/view_lifetime.$$ || true)

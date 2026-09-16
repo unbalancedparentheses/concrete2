@@ -1,0 +1,29 @@
+mod indirect_call_not_pure {
+    // R-0484. An empty capability set means "nothing was declared", not "nothing
+    // happens". These four functions pin the distinction:
+    //
+    //   plain  — genuinely effect-free, and must STAY eligible. Without it this
+    //            fixture would also pass on a compiler that called everything opaque.
+    //   fire   — calls through a fn pointer: the target is unknown, so its effects are.
+    //   fire2  — calls `fire`. Two hops, because the defect this came from reached the
+    //            indirect call two hops down and a per-body check misses that.
+    //   main   — entry point, excluded anyway; listed so the reason set is visible.
+
+    fn plain(x: i64) -> i64 { return x + 1; }
+
+    pub struct Copy Ops { f: fn(i64) -> i64 }
+
+    fn fire(o: &Ops, x: i64) -> i64 {
+        let g: fn(i64) -> i64 = o.f;
+        return g(x);
+    }
+
+    fn fire2(o: &Ops, x: i64) -> i64 {
+        return fire(o, x);
+    }
+
+    fn main() -> Int {
+        let o: Ops = Ops { f: plain };
+        return fire2(&o, 1) as Int;
+    }
+}

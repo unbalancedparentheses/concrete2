@@ -364,6 +364,62 @@ def buildCallGraph (modules : List CModule) : CallGraph :=
   let qualNameMap := modules.foldl (fun acc m => acc ++ buildQualNameMap m) []
   modules.foldl (fun acc m => acc ++ buildCallGraphModule qualNameMap m) []
 
+/-! ### Effect opacity (R-0484)
+
+An EMPTY CAPABILITY SET MEANS "NOTHING WAS DECLARED", NOT "NOTHING HAPPENS". The two were
+equated, and `examples/base64_cli`'s `print_bytes` is what it costs: it takes a `&Writer`,
+calls `Writer::write`, performs real I/O, and was reported `(pure)`, counted in a
+`1 pure` total, and admitted to the provable subset ON THE GROUNDS OF PURITY — while
+`usage`, which only prints a string, was excluded for honestly declaring `Console`.
+
+The erasure happens at the `trusted` boundary and travels on a function pointer.
+`console_write` and `console_err_write` both call `libc_write` and declare nothing, so
+their TYPE is capability-free, so they fit `Writer`'s `write_fn` field, so every call
+through the handle is capability-free. Nothing checks that a trusted body's declared
+capabilities cover what it does. (`println`, in the same module, declares `Console` for
+the same syscall — the inconsistency is not detectable today.)
+
+The fix here is not to resolve the target set; that is a whole-program analysis and a
+real project. It is to REFUSE TO CERTIFY what cannot be shown. This file already makes
+exactly that argument for `no recursion` and `--report stack-depth` a few hundred lines
+above: a body containing an indirect call cannot be shown acyclic, so it is excluded
+rather than assumed acyclic. Effect-freedom is the third guarantee built on the same
+call graph and the only one that was still assuming. A function that can reach an
+indirect call cannot be shown effect-free, so it does not get to be called pure.
+
+Transitivity is the whole point and the reason the existing per-body predicate is not
+enough: `print_bytes` makes no indirect call itself. It calls `Writer::write`, which
+calls `write_raw`, which calls through the stored `write_fn`. Two hops. -/
+
+/-- Qualified names of functions whose OWN body makes an indirect call. -/
+private partial def indirectSeedModule (m : CModule) (pfx : String := "") : List String :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let here := m.functions.filterMap fun f =>
+    if hasIndirectCallStmts f.body then some (qualPrefix ++ "." ++ f.name) else none
+  here ++ m.submodules.foldl (fun acc sub => acc ++ indirectSeedModule sub qualPrefix) []
+
+/-- One round: a function is opaque if any direct callee is. -/
+private def effectOpaqueStep (graph : CallGraph) (cur : List String) : List String :=
+  graph.foldl (fun acc (fn, callees) =>
+    if acc.contains fn then acc
+    else if callees.any (fun c => acc.contains c) then fn :: acc
+    else acc) cur
+
+/-- Least fixpoint of `effectOpaqueStep` over the seed. Bounded by the node count:
+    each round adds at least one name or stops, so the graph size is a sound fuel. -/
+private partial def effectOpaqueFix (graph : CallGraph) (fuel : Nat) (cur : List String) : List String :=
+  match fuel with
+  | 0 => cur
+  | fuel' + 1 =>
+    let nxt := effectOpaqueStep graph cur
+    if nxt.length == cur.length then cur else effectOpaqueFix graph fuel' nxt
+
+/-- Functions that can reach an indirect call, and therefore cannot be certified
+    effect-free however empty their declared capability set is. -/
+def effectOpaqueSet (modules : List CModule) (graph : CallGraph) : List String :=
+  let seed := (modules.foldl (fun acc m => acc ++ indirectSeedModule m) []).eraseDups
+  effectOpaqueFix graph (graph.length + 1) seed
+
 -- Tarjan's SCC
 
 private structure TarjanState where
@@ -2616,6 +2672,7 @@ private def assessEligibility
     (f : CFnDef) (qualName : String)
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
+    (opaqueSet : List String)
     (locMap : List (String × SourceLoc)) : EligibilityEntry :=
   let fnLoc := match locMap.find? fun (n, _) => n == qualName with
     | some (_, loc) => some loc
@@ -2627,7 +2684,14 @@ private def assessEligibility
       [s!"has capabilities: {", ".intercalate concreteCaps}"] else []) ++
     (if f.isTrusted then ["marked trusted"] else []) ++
     (if f.isEntryPoint then ["is entry point (main)"] else []) ++
-    (if f.trustedImplOrigin.isSome then ["from trusted impl"] else [])
+    (if f.trustedImplOrigin.isSome then ["from trusted impl"] else []) ++
+    -- R-0484: an empty capability set is "nothing declared", not "nothing happens".
+    -- A function that can reach an indirect call has effects this compiler cannot
+    -- see, so it is refused rather than certified. Named as a SOURCE reason because
+    -- it is a property of the program, not of the chosen profile.
+    (if opaqueSet.contains qualName then
+      ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
+     else [])
   let allocs := callees.filter isAllocCall
   let rec_ := match recMap.find? (fun (n, _, _) => n == qualName) with
     | some (_, .direct, _) => "direct"
@@ -2666,6 +2730,7 @@ private partial def extractModule
     (packageIdentity : Proof.PackageIdentity)
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
+    (opaqueSet : List String)
     (locMap : List (String × SourceLoc))
     (registry : ProofRegistry)
     (m : CModule) (modulePath : String := "")
@@ -2694,7 +2759,7 @@ private partial def extractModule
     let evBody? := (m.evidenceBodies.find? fun p => p.1 == cid).map Prod.snd
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
-    let elig := assessEligibility f qualName externNames recMap locMap
+    let elig := assessEligibility f qualName externNames recMap opaqueSet locMap
     let sa := resolveSpec qualName registry
     -- The spec IDENTITY, not the proof name: what the claim is about, rather than which Lean
     -- theorem happens to carry it. Re-pointing a link at a differently-named proof of the SAME
@@ -2762,7 +2827,7 @@ private partial def extractModule
   ) ([], [])
   -- Recurse into submodules
   let (subEntries, subExcluded) := m.submodules.foldl (fun (accE, accX) sub =>
-    let (e, x) := extractModule packageIdentity externNames recMap locMap registry sub qualPrefix
+    let (e, x) := extractModule packageIdentity externNames recMap opaqueSet locMap registry sub qualPrefix
     (accE ++ e, accX ++ x)) ([], [])
   (entries ++ subEntries, excluded ++ subExcluded)
 
@@ -3205,10 +3270,11 @@ def extractProofCore (vc : ValidatedCore) (packageIdentity : Proof.PackageIdenti
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
+  let opaqueSet := effectOpaqueSet modules graph
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   -- Extract entries and excluded (with spec attachment)
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
-    let (e, x) := extractModule packageIdentity externNames recMap locMap registry m
+    let (e, x) := extractModule packageIdentity externNames recMap opaqueSet locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
   -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph
