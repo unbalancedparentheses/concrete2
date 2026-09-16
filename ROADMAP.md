@@ -1391,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 classification complete, repair pending migration assessment; R-0484 authority investigation** | Ten fixtures classify lifetime, identity and validity failures; raw constructors are included in the audit. The isolated unused-function experiment changes package scope and generated names while existing implementation identities remain unchanged; the full findings are under R-0483. Next: establish a total reference migration using full scoped rows and verify scope/dependency evidence under existing rules. Identity churn does not by itself establish that the full R-0482 migration must precede the safety repair. R-0208 still blocks new authoritative evidence transitions; any required R-0482 identity-model migration retains its queue prerequisites. R-0484 can proceed by tracing Writer through reports and proof eligibility |
+| 0 | **R-0483 classification complete, repair pending migration assessment; R-0484 reporting/eligibility defect measured** | Ten fixtures classify lifetime, identity and validity failures; raw constructors are included in the audit. The isolated unused-function experiment changes package scope and generated names while existing implementation identities remain unchanged; the full findings are under R-0483. Next: establish a total reference migration using full scoped rows and verify scope/dependency evidence under existing rules. Identity churn does not by itself establish that the full R-0482 migration must precede the safety repair. R-0208 still blocks new authoritative evidence transitions; any required R-0482 identity-model migration retains its queue prerequisites. R-0484 next traces the misclassified Writer helper through extraction, proof attachment and receipt issuance before selecting containment |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -1466,8 +1466,9 @@ rows above; it is not an additional public flagship or a parallel execution queu
 The ByteCursor defect and Text/ByteView lifetime, identity and content-validity
 classification are recorded under R-0483 with ten retained fixtures. The additive-change
 experiment and raw-constructor inspection are also recorded there. The remaining
-questions concern safe migration of the affected attestation references and Writer
-consumer behavior. Repairs and target guarantees are not yet shipped.
+questions concern safe migration of the affected attestation references and the actual
+proof/evidence path for the Writer helper: its reporting and eligibility misclassification
+is now measured under R-0484. Repairs and target guarantees are not yet shipped.
 
 - **Keep explicit error propagation.** Exhaustive `match` plus explicit `return`
   remains the model. Postfix `?` stays rejected; this review does not reopen it.
@@ -10642,16 +10643,44 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-09-15): planned; accompanies R-0483 before contract expansion.**
-The current `Writer` checks authority at acquisition and permits capability-free
-writes through a handle, while the headline model describes effects in headers.
-Resolve this distinction explicitly rather than equating an empty capset with purity.
+**Status (2026-09-16): reporting and eligibility defect measured; proof-path impact
+and repair pending.** The supplied read-only measurement against `2c7d1ed3` examined
+`print_bytes(w: &Writer, b: &Bytes)` in `examples/base64_cli/src/main.con`. It calls
+`Writer::write`, exercising authority supplied through the handle. This record preserves
+the reported outputs; recording it is not an independent replay of the measurement.
 
-First trace a capability-free Writer helper through capability/effect reports, policy
-and proof/totality eligibility. Record exact outputs and enforcing/refusing rules:
-other eligibility checks may already reject it. Separate public-model ambiguity,
-misleading reporting and actual proof admission; do not infer the last from the header.
-Use that evidence to select the smallest implementation change below.
+| report | reported result for `print_bytes` |
+|---|---|
+| `--report caps` | `print_bytes : (pure)` |
+| `--report effects` | `caps: (pure)`; the totals count `1 pure` |
+| `--report eligibility` | eligible: `in provable subset: pure, bounded, no FFI` |
+| `--report proof-status` | `eligible for proof but has no registered proof` |
+
+The same module's `usage` function prints a usage string but is excluded for
+`has capabilities: Console`. Both perform I/O; only the source of authority differs.
+The compiler affirmatively labels the handle-using helper pure and cites purity when
+classifying it as eligible. An empty declared capability set therefore cannot stand
+for effect-free behavior in these consumers.
+
+**Evidence boundary:** this establishes incorrect reporting and eligibility
+classification, not that an effect-ignoring theorem can reach an authoritative verdict.
+The measurement did not exercise extraction, proof registration or receipt issuance
+with an attached claim. Later checks may refuse it. No false proof or receipt is
+demonstrated by the absence of a registered proof.
+
+**Next transition:** trace this helper through extraction, proof attachment, dependency
+closure, receipt issuance/consumption and policy. Record the exact accepting/refusing
+rule at each boundary and retain the `usage`/`print_bytes` contrast as a paired regression
+across all four reports. In isolated negative fixtures, test whether the effect can be
+omitted from a claim that reaches a production verdict. Preserve a genuinely effect-free
+positive control, and distinguish a report-only correction from any required containment
+in proof admission. R-0208 still governs authoritative evidence transitions.
+
+The repaired contract must distinguish no declared capability requirements from purity.
+Purity accounts for effects through resource handles, callback/context forwarding and
+trusted wrappers; unknown effects cannot establish affirmative purity or satisfy an
+effect-free proof-admission requirement. Use the measured consumer paths to choose the
+smallest implementation change, rather than inventing a parallel effect/evidence system.
 
 Preserve resource handles as scoped authority. Specify and represent separately the
 authority required to acquire a resource, authority supplied through arguments, and
