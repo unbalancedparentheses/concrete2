@@ -1867,6 +1867,21 @@ fi # end section: testflag
 echo ""
 flush_jobs
 if section_active gatesmoke; then
+# R-0483 view lifetime: the replacement API's positive/negative controls plus the
+# historical reproductions. Cheap (a handful of small builds) and it guards a
+# memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== view lifetime (R-0483) ==="
+if bash "$ROOT_DIR/scripts/tests/check_view_lifetime.sh" > /tmp/view_lifetime.$$ 2>&1; then
+    _vl_pass=$(grep -c "^  ok  " /tmp/view_lifetime.$$ || true)
+    echo "  ok  view lifetime gate ($_vl_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  view lifetime gate"
+    grep "^  FAIL" /tmp/view_lifetime.$$ | head -5
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/view_lifetime.$$
+
 echo "=== gate smoke (lex escapes, mixed-width, trailing values) ==="
 # THE CONSTITUENT'S OUTPUT IS RETAINED, NOT DISCARDED.
 #
@@ -7102,7 +7117,7 @@ check_collection_tests "Result" \
     result_test_result_ok result_test_result_err result_test_result_match
 
 check_collection_tests "Text" \
-    text_test_text_from_string text_test_text_get_unchecked text_test_text_eq text_test_text_empty
+    text_test_text_from_string text_test_text_byte_checked text_test_text_eq text_test_text_empty
 
 check_collection_tests "Slice" \
     slice_test_slice_len slice_test_slice_get_unchecked slice_test_slice_empty slice_test_mutslice_set_get

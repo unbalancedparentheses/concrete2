@@ -3,7 +3,7 @@
 // Thesis demonstration:
 //   1. Authority visible in signatures — parsing core has zero capabilities
 //   2. Bounded execution — all loops bounded by packet length, no recursion
-//   3. Trust boundary explicit — trusted marks raw pointer access
+//   3. Trust boundary explicit — and here it is EMPTY: the decoder needs none
 //   4. Evidence target — pure parsing core is a candidate for formal proof
 //
 // Protocol format (10-byte header + payload):
@@ -17,9 +17,16 @@
 // Capability design:
 //   compute_checksum    — PURE (no capabilities, bounded loop: 8 iters)
 //   decode_header       — PURE (no capabilities, no allocation, bounded)
-//   extract_payload     — PURE (no capabilities, bounded by payload_len)
+//   extract_payload     — PURE (no capabilities; writes into a caller buffer)
 //   report_result       — with(Console) only — cannot read files or network
 //   main                — with(Std) entry point
+//
+// R-0483: the core reads a borrowed `&Bytes` through a pointer-free `ByteCursor`. It
+// used to take `*const u8` and read through `ByteCursor::from_raw`, which declared no
+// capability — so "PURE" above was a comment rather than a checked fact, and an
+// ordinary `fn` dereferenced a raw pointer with nothing in its signature saying so.
+// The core is now genuinely capability-free and the compiler agrees, and the example
+// no longer contains a `trusted` function at all.
 //
 // Stdlib usage:
 //   std.numeric.ByteCursor  — sequential bounds-checked byte reading
@@ -29,6 +36,7 @@
 mod packet {
 
     import std.numeric.{ByteCursor, CursorError};
+    import std.bytes.{Bytes};
 
     // ---- Result types (Copy, stack-only, no heap) ----
 
@@ -52,14 +60,14 @@ mod packet {
 
     // ---- Checksum: XOR fold of header bytes 0-7 ----
     // Bounded: exactly 8 iterations.
-    // Uses ByteCursor — no raw pointer dereferences in this function.
+    // Reads a borrowed buffer; no raw pointers anywhere in this function.
 
-    fn compute_checksum(data: *const u8) -> u16 {
-        let mut cur: ByteCursor = ByteCursor::from_raw(data, 8);
+    fn compute_checksum(buf: &Bytes) -> u16 {
+        let mut cur: ByteCursor = ByteCursor::over(buf);
         let mut acc: u16 = 0;
         for (let mut i: u64 = 0; i < 8; i = i + 1) {
             let mut byte: u8 = 0;
-            let r: Result<u8, CursorError> = cur.read_u8();
+            let r: Result<u8, CursorError> = cur.read_u8(buf);
             match r {
                 Result::Ok { value } => { byte = value; },
                 Result::Err { error } => {},
@@ -77,16 +85,16 @@ mod packet {
     // Uses ByteCursor for sequential, bounds-checked reading.
     // No hand-rolled endian functions — std.numeric provides them.
 
-    fn decode_header(data: *const u8, len: u64) -> DecodeResult {
+    fn decode_header(buf: &Bytes, len: u64) -> DecodeResult {
         if len < 10 {
             return err_result(1);
         }
 
-        let mut cur: ByteCursor = ByteCursor::from_raw(data, len);
+        let mut cur: ByteCursor = ByteCursor::over(buf);
 
         // Byte 0: version
         let mut version: u8 = 0;
-        let rv: Result<u8, CursorError> = cur.read_u8();
+        let rv: Result<u8, CursorError> = cur.read_u8(buf);
         match rv {
             Result::Ok { value } => { version = value; },
             Result::Err { error } => { return err_result(1); },
@@ -97,7 +105,7 @@ mod packet {
 
         // Byte 1: message type
         let mut msg_type: u8 = 0;
-        let rt: Result<u8, CursorError> = cur.read_u8();
+        let rt: Result<u8, CursorError> = cur.read_u8(buf);
         match rt {
             Result::Ok { value } => { msg_type = value; },
             Result::Err { error } => { return err_result(1); },
@@ -105,7 +113,7 @@ mod packet {
 
         // Bytes 2-3: payload length (big-endian u16)
         let mut payload_len: u16 = 0;
-        let rp: Result<u16, CursorError> = cur.read_u16_be();
+        let rp: Result<u16, CursorError> = cur.read_u16_be(buf);
         match rp {
             Result::Ok { value } => { payload_len = value; },
             Result::Err { error } => { return err_result(1); },
@@ -113,7 +121,7 @@ mod packet {
 
         // Bytes 4-7: sequence number (big-endian u32)
         let mut seq_num: u32 = 0;
-        let rs: Result<u32, CursorError> = cur.read_u32_be();
+        let rs: Result<u32, CursorError> = cur.read_u32_be(buf);
         match rs {
             Result::Ok { value } => { seq_num = value; },
             Result::Err { error } => { return err_result(1); },
@@ -121,14 +129,14 @@ mod packet {
 
         // Bytes 8-9: checksum (big-endian u16)
         let mut checksum: u16 = 0;
-        let rc: Result<u16, CursorError> = cur.read_u16_be();
+        let rc: Result<u16, CursorError> = cur.read_u16_be(buf);
         match rc {
             Result::Ok { value } => { checksum = value; },
             Result::Err { error } => { return err_result(1); },
         }
 
         // Validate checksum (XOR fold of bytes 0-7)
-        let computed: u16 = compute_checksum(data);
+        let computed: u16 = compute_checksum(buf);
         if computed != checksum {
             return err_result(3);
         }
@@ -150,23 +158,32 @@ mod packet {
         };
     }
 
-    // Copy payload into a fixed output buffer.
-    // Bounded: loops at most payload_len iterations, capped at 1490.
-    // Uses ByteCursor for reads (starting after 10-byte header).
-    trusted fn extract_payload(data: *const u8, out: *mut u8, payload_len: u64) -> u64 {
+    // Copy the payload into a caller-supplied buffer.
+    // Bounded: at most payload_len iterations, capped at 1490.
+    //
+    // R-0483: this used to write through a `*mut u8` and was `trusted` for that reason.
+    // It now writes into a borrowed `Bytes` via the bounds-checked `set`, so an
+    // out-of-range write is a value rather than memory corruption, and the function
+    // needs neither `trusted` nor a capability.
+    //
+    // It writes into the caller's buffer rather than returning an owned one on purpose:
+    // returning `Bytes` would need `Alloc`, and this decoder's whole claim is that its
+    // parsing core is PREDICTABLE — no allocation, bounded loops. Buying safety with an
+    // allocation here would have cost the property the example exists to demonstrate.
+    fn extract_payload(buf: &Bytes, out: &mut Bytes, payload_len: u64) -> u64 {
         let max: u64 = 1490;
         let copy_len: u64 = if payload_len < max { payload_len } else { max };
-        let payload_start: *const u8 = data + 10;
-        let mut src: ByteCursor = ByteCursor::from_raw(payload_start, copy_len);
-        for (let mut i: u64 = 0; i < copy_len; i = i + 1) {
-            let mut byte: u8 = 0;
-            let r: Result<u8, CursorError> = src.read_u8();
-            match r {
-                Result::Ok { value } => { byte = value; },
-                Result::Err { error } => {},
-            }
-            let dst: *mut u8 = out + i;
-            *dst = byte;
+        match ByteCursor::window(10, copy_len, buf) {
+            Option::Some { value } => {
+                let mut src: ByteCursor = value;
+                for (let mut i: u64 = 0; i < copy_len; i = i + 1) {
+                    match src.read_u8(buf) {
+                        Result::Ok { value } => { let w: bool = out.set(i, value); },
+                        Result::Err { error } => {},
+                    }
+                }
+            },
+            Option::None => {},
         }
         return copy_len;
     }
@@ -205,61 +222,74 @@ mod packet {
         println(" bytes");
     }
 
-    // ---- Test packet construction (trusted byte writes) ----
+    // ---- Test packet construction ----
+    //
+    // R-0483: these were `trusted` and wrote through `*mut u8`. Writing into a borrowed
+    // `Bytes` needs no trust: `set` is bounds-checked and returns whether it landed, so
+    // an out-of-range write is a value rather than memory corruption.
 
-    trusted fn write_u8(buf: *mut u8, offset: u64, val: u8) {
-        let p: *mut u8 = buf + offset;
-        *p = val;
+    fn write_u8(buf: &mut Bytes, offset: u64, val: u8) -> bool {
+        return buf.set(offset, val);
     }
 
-    trusted fn write_u16_be(buf: *mut u8, offset: u64, val: u16) {
-        write_u8(buf, offset, (val >> 8) as u8);
-        write_u8(buf, offset + 1, (val & 255) as u8);
+    fn write_u16_be(buf: &mut Bytes, offset: u64, val: u16) -> bool {
+        let a: bool = write_u8(buf, offset, (val >> 8) as u8);
+        let b: bool = write_u8(buf, offset + 1, (val & 255) as u8);
+        return a && b;
     }
 
-    trusted fn write_u32_be(buf: *mut u8, offset: u64, val: u32) {
-        write_u8(buf, offset, (val >> 24) as u8);
-        write_u8(buf, offset + 1, ((val >> 16) & 255) as u8);
-        write_u8(buf, offset + 2, ((val >> 8) & 255) as u8);
-        write_u8(buf, offset + 3, (val & 255) as u8);
+    fn write_u32_be(buf: &mut Bytes, offset: u64, val: u32) -> bool {
+        let a: bool = write_u8(buf, offset, (val >> 24) as u8);
+        let b: bool = write_u8(buf, offset + 1, ((val >> 16) & 255) as u8);
+        let c: bool = write_u8(buf, offset + 2, ((val >> 8) & 255) as u8);
+        let d: bool = write_u8(buf, offset + 3, (val & 255) as u8);
+        return a && b && c && d;
     }
 
     // Build a valid test packet. Returns total packet length.
-    trusted fn build_packet(buf: *mut u8, msg_type: u8, payload_len: u16, seq: u32) -> u64 {
-        write_u8(buf, 0, 1);              // version = 1
-        write_u8(buf, 1, msg_type);
-        write_u16_be(buf, 2, payload_len);
-        write_u32_be(buf, 4, seq);
+    fn build_packet(buf: &mut Bytes, msg_type: u8, payload_len: u16, seq: u32) -> u64 {
+        let v: bool = write_u8(buf, 0, 1);              // version = 1
+        let t: bool = write_u8(buf, 1, msg_type);
+        let l: bool = write_u16_be(buf, 2, payload_len);
+        let q: bool = write_u32_be(buf, 4, seq);
 
-        // Compute and write checksum
-        let checksum: u16 = compute_checksum(buf as *const u8);
-        write_u16_be(buf, 8, checksum);
+        // Fold the checksum over the header written so far. Done inline because
+        // `build_packet` holds the buffer mutably and `compute_checksum` wants a
+        // shared borrow; the fold is the same eight-byte XOR.
+        let mut checksum: u16 = 0;
+        for (let mut k: u64 = 0; k < 8; k = k + 1) {
+            match buf.get(k) {
+                Option::Some { value } => { checksum = checksum ^ (value as u16); },
+                Option::None => {},
+            }
+        }
+        let c: bool = write_u16_be(buf, 8, checksum);
 
         // Fill payload with ascending bytes
         for (let mut i: u64 = 0; i < (payload_len as u64); i = i + 1) {
-            write_u8(buf, 10 + i, ((i & 255) as u8));
+            let w: bool = write_u8(buf, 10 + i, ((i & 255) as u8));
         }
 
         return 10 + (payload_len as u64);
     }
 
     // Build a packet with bad version for error testing
-    trusted fn build_bad_version(buf: *mut u8) -> u64 {
-        write_u8(buf, 0, 99);   // bad version
-        write_u8(buf, 1, 0);
-        write_u16_be(buf, 2, 0);
-        write_u32_be(buf, 4, 0);
-        write_u16_be(buf, 8, 0);
+    fn build_bad_version(buf: &mut Bytes) -> u64 {
+        let a: bool = write_u8(buf, 0, 99);   // bad version
+        let b: bool = write_u8(buf, 1, 0);
+        let c: bool = write_u16_be(buf, 2, 0);
+        let d: bool = write_u32_be(buf, 4, 0);
+        let e: bool = write_u16_be(buf, 8, 0);
         return 10;
     }
 
     // Build a packet with corrupted checksum
-    trusted fn build_bad_checksum(buf: *mut u8) -> u64 {
-        write_u8(buf, 0, 1);
-        write_u8(buf, 1, 1);
-        write_u16_be(buf, 2, 4);
-        write_u32_be(buf, 4, 1);
-        write_u16_be(buf, 8, 0xFFFF); // intentionally wrong
+    fn build_bad_checksum(buf: &mut Bytes) -> u64 {
+        let a: bool = write_u8(buf, 0, 1);
+        let b: bool = write_u8(buf, 1, 1);
+        let c: bool = write_u16_be(buf, 2, 4);
+        let d: bool = write_u32_be(buf, 4, 1);
+        let e: bool = write_u16_be(buf, 8, 0xFFFF); // intentionally wrong
         return 14;
     }
 
@@ -269,32 +299,39 @@ mod packet {
         println("=== Packet Decoder ===");
         println("");
 
-        let buf: [u8; 1500] = [0; 1500];
-        let payload_out: [u8; 1500] = [0; 1500];
+        // A 1500-byte zero-filled buffer. `set` writes in place; the length never
+        // changes after this, so every offset the builders use is in range.
+        let mut buf: Bytes = Bytes::with_capacity(1500);
+        for (let mut z: u64 = 0; z < 1500; z = z + 1) {
+            buf.push(0);
+        }
+        let mut payload_out: Bytes = Bytes::with_capacity(1500);
+        for (let mut z: u64 = 0; z < 1500; z = z + 1) {
+            payload_out.push(0);
+        }
         let mut failures: i32 = 0;
 
         // Test 1: valid ping packet, no payload
         println("Test 1: ping, no payload");
-        let len1: u64 = build_packet(&buf as *mut u8, 0, 0, 1);
-        let r1: DecodeResult = decode_header(&buf as *const u8, len1);
+        let len1: u64 = build_packet(&mut buf, 0, 0, 1);
+        let r1: DecodeResult = decode_header(&buf, len1);
         report_result(r1);
         if r1.error != 0 { failures = failures + 1; }
 
         // Test 2: valid data packet, 32 bytes payload
         println("Test 2: data, 32 bytes");
-        let len2: u64 = build_packet(&buf as *mut u8, 1, 32, 100);
-        let r2: DecodeResult = decode_header(&buf as *const u8, len2);
+        let len2: u64 = build_packet(&mut buf, 1, 32, 100);
+        let r2: DecodeResult = decode_header(&buf, len2);
         report_result(r2);
         if r2.error != 0 { failures = failures + 1; }
 
         // Test 3: valid ack, extract payload
         println("Test 3: ack, 8 bytes, extract payload");
-        let len3: u64 = build_packet(&buf as *mut u8, 2, 8, 200);
-        let r3: DecodeResult = decode_header(&buf as *const u8, len3);
+        let len3: u64 = build_packet(&mut buf, 2, 8, 200);
+        let r3: DecodeResult = decode_header(&buf, len3);
         report_result(r3);
         if r3.error == 0 {
-            let extracted: u64 = extract_payload(
-                &buf as *const u8, &payload_out as *mut u8, r3.payload_bytes as u64);
+            let extracted: u64 = extract_payload(&buf, &mut payload_out, r3.payload_bytes as u64);
             print("  extracted ");
             print(extracted as Int);
             println(" bytes");
@@ -303,21 +340,21 @@ mod packet {
 
         // Test 4: too short
         println("Test 4: truncated (5 bytes)");
-        let r4: DecodeResult = decode_header(&buf as *const u8, 5);
+        let r4: DecodeResult = decode_header(&buf, 5);
         report_result(r4);
         if r4.error != 1 { failures = failures + 1; }
 
         // Test 5: bad version
         println("Test 5: bad version");
-        let len5: u64 = build_bad_version(&buf as *mut u8);
-        let r5: DecodeResult = decode_header(&buf as *const u8, len5);
+        let len5: u64 = build_bad_version(&mut buf);
+        let r5: DecodeResult = decode_header(&buf, len5);
         report_result(r5);
         if r5.error != 2 { failures = failures + 1; }
 
         // Test 6: bad checksum
         println("Test 6: bad checksum");
-        let len6: u64 = build_bad_checksum(&buf as *mut u8);
-        let r6: DecodeResult = decode_header(&buf as *const u8, len6);
+        let len6: u64 = build_bad_checksum(&mut buf);
+        let r6: DecodeResult = decode_header(&buf, len6);
         report_result(r6);
         if r6.error != 3 { failures = failures + 1; }
 
@@ -330,6 +367,8 @@ mod packet {
             println(" test(s) failed.");
         }
 
+        buf.drop();
+        payload_out.drop();
         if failures > 0 { return 1; }
         return 0;
     }

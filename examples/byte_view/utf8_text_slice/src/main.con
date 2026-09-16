@@ -13,17 +13,24 @@ mod utf8_text_slice {
     import std.numeric.{ByteView};
     import std.text.{Text};
 
-    fn text_is_none(o: Option<Text>) -> bool {
+    // R-0483: a Text now OWNS its bytes, so these helpers consume what they inspect.
+    // That is the visible cost of the guarantee: validation that survives mutation of
+    // the source requires storage the source cannot reach.
+    fn text_is_none(o: Option<Text>) with(Alloc) -> bool {
         match o {
-            Option::Some { value } => { return false; },
+            Option::Some { value } => { value.drop(); return false; },
             Option::None => { return true; }
         }
     }
 
     // Return the Text length if the view is valid UTF-8, else a sentinel.
-    fn text_len_or(o: Option<Text>, sentinel: u64) -> u64 {
+    fn text_len_or(o: Option<Text>, sentinel: u64) with(Alloc) -> u64 {
         match o {
-            Option::Some { value } => { return value.len(); },
+            Option::Some { value } => {
+                let n: u64 = value.len();
+                value.drop();
+                return n;
+            },
             Option::None => { return sentinel; }
         }
     }
@@ -45,14 +52,14 @@ mod utf8_text_slice {
             Option::Some { value } => {
                 let gv: ByteView = value;
                 // Text view length is in BYTES (5), validated as 4 code points.
-                let glen: u64 = text_len_or(gv.try_text(&buf), 0);
+                let glen: u64 = text_len_or(gv.to_text(&buf), 0);
                 // A view over [0, 4): cuts the é in half (lands on the lead byte
                 // 0xC3 with no continuation). Must NOT validate as UTF-8.
                 let split: Option<ByteView> = ByteView::new(0, 4, &buf);
                 match split {
                     Option::Some { value } => {
                         let sv: ByteView = value;
-                        let bad_rejected: bool = text_is_none(sv.try_text(&buf));
+                        let bad_rejected: bool = text_is_none(sv.to_text(&buf));
                         if glen == 5 && bad_rejected {
                             println("byte_view utf8: 'cafe\\u{e9}' validates (5 bytes); split-codepoint rejected");
                             rc = 0;

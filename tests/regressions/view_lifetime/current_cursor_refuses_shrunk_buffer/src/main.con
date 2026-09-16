@@ -1,0 +1,22 @@
+mod current_cursor_refuses_shrunk_buffer {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteCursor, CursorError};
+
+    // NEGATIVE control on the replacement API, and the one that matters: the old
+    // cursor kept a pointer and a length captured at construction, so it read a buffer
+    // that had since been emptied. The new cursor re-derives bounds from the buffer it
+    // is handed, so the read refuses. This cannot be expressed as a compile error —
+    // it is a runtime refusal — which is exactly why it needs its own fixture.
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(8);
+        b.push(65); b.push(66);
+        let mut c: ByteCursor = ByteCursor::over(&b);
+        b.clear();
+        let rc: Int = match c.read_u8(&b) {
+            Result::Ok { value } => 1,   // must NOT read a cleared buffer
+            Result::Err { error } => 0,  // correct: refused
+        };
+        b.drop();
+        return rc;
+    }
+}

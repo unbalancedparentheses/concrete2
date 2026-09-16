@@ -1,0 +1,29 @@
+mod current_text_survives_mutation {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteView};
+    import std.text.{Text};
+
+    // The validity property, on the replacement API. `to_text` copies into storage the
+    // source cannot reach, so mutating the source afterwards cannot change what was
+    // validated. The old `try_text` returned a view and failed this.
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(4);
+        b.push(65); b.push(66); b.push(67);
+        let v: ByteView = match ByteView::new(0, 3, &b) {
+            Option::Some { value } => value,
+            Option::None => { b.drop(); return 2; },
+        };
+        let t: Text = match v.to_text(&b) {
+            Option::Some { value } => value,
+            Option::None => { b.drop(); return 3; },
+        };
+        b.set(1, 0xFF);                       // would have poisoned a borrowed Text
+        let got: Int = match t.byte(1) {
+            Option::Some { value } => value as Int,
+            Option::None => 4,
+        };
+        t.drop();
+        b.drop();
+        return got;                            // 66 = 'B', the validated byte
+    }
+}

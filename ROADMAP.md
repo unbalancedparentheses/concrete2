@@ -1391,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 classification complete, repair pending migration assessment; R-0484 reporting/eligibility defect measured** | Ten fixtures classify lifetime, identity and validity failures; raw constructors are included in the audit. The isolated unused-function experiment changes package scope and generated names while existing implementation identities remain unchanged; the full findings are under R-0483. Next: establish a total reference migration using full scoped rows and verify scope/dependency evidence under existing rules. Identity churn does not by itself establish that the full R-0482 migration must precede the safety repair. R-0208 still blocks new authoritative evidence transitions; any required R-0482 identity-model migration retains its queue prerequisites. R-0484 next traces the misclassified Writer helper through extraction, proof attachment and receipt issuance before selecting containment |
+| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 is the open half:** the `(pure)` misclassification is measured and its mechanism located at the `trusted` boundary; trace `Writer` through extraction, proof attachment, closure, receipt issuance and policy before choosing containment |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -10461,31 +10461,67 @@ the library and is not a fourth public flagship.
 **Objective:** Make safe zero-copy parsing preserve owner lifetime through every
 stdlib wrapper, not only through syntactic `&T` references.
 
-**Status (2026-09-15): wrapper classification and additive-change experiment complete;
-repair pending attestation-migration assessment.** The experiment below isolates scope
-and symbol-name changes from unchanged implementation identities; regeneration still
-needs to preserve honest evidence under the existing rules. **Reported runtime observation
-for the original pair:** both programs check and compile; read before `destroy(b)` exits
-65 ('A'); read after it was observed to exit 0 through `Ok`, while the error arm would
-exit 1. The exact source pair and user-defined wrapper probe are
-retained in [the lifetime fixtures](tests/regressions/view_lifetime/README.md).
-These are reported execution results, not a new independent replay in this update.
-The source allocates capacity eight, pushes two bytes, and constructs a cursor with
-length two. Freed-memory contents are nondeterministic: zero is an observation, not
-the regression oracle. A matching byte on another run would not establish safety.
+**Status (2026-09-16): REPAIRED AND GATED.** The three properties are fixed by
+structure rather than by checks, the attestation migration is done and validated, and
+`check_view_lifetime.sh` (13/0) runs in both the fast local suite and CI.
 
-The missing invariant relates owner consumption to later cursor access. Linearity
-requires consumption or ownership transfer, but accepts both read-then-destroy and
-destroy-then-read in this pair. Omitting consumption reportedly raises E0208;
-`b.destroy()` borrows its receiver and does not satisfy consumption. Linearity does
-not force premature freeing: the missing lifetime relation permits the unsafe order.
+| property | before | after |
+|---|---|---|
+| lifetime | `ByteCursor`/`Text` stored a captured `*const u8` | `ByteCursor` stores `off`/`len`/`pos` and takes the buffer on every access, re-deriving bounds from the buffer it is GIVEN |
+| identity | `describes` compared a length and read the wrong buffer silently | brand removed; a view is coordinates and says so, with `fits` naming a bounds test |
+| validity | `try_text` validated once into a borrowed view | `to_text` COPIES into a `Text` that owns immutable storage |
 
-**Measured scope:** the supplied user-defined wrapper probe without `trusted` or
-`with(Unsafe)` is rejected with E0521 for the pointer cast and dereference. This supports
-a stdlib trusted-wrapper repair first, not a checker redesign. It does not establish
-that all other wrappers or raw-pointer paths are sound. A trusted implementation must
-uphold the lifetime invariant of its safe-callable API; a caller-lifetime comment alone
-does not repair an ordinary-call use-after-free.
+`Text` is now linear rather than `Copy`, which is the visible price of the guarantee:
+validation that survives mutation needs storage the source cannot reach. Raw access did
+not disappear but stopped being invisible — `RawCursor` carries `with(Unsafe)` on
+construction and on every read, so the caller obligation appears in the caller's type.
+`ByteCursor` and `ByteView` need no `trusted impl` at all any more, because with no
+stored pointer and no brand nothing in them crosses a trust boundary.
+
+**The migrated parser is `examples/packet`,** and it is the clearest evidence. Its
+header claimed `compute_checksum`, `decode_header` and `extract_payload` were PURE while
+they took `*const u8` and read through `ByteCursor::from_raw`; the claim was a comment,
+not a checked fact. All three now report `(pure)` truthfully, the example contains no
+`trusted` function at all, and its **predictable** profile still reports exactly one
+failing function (`main`, for blocking I/O) — 1 failed / 13 passed, unchanged. Keeping
+that property forced `extract_payload` to write into a caller-supplied buffer rather
+than return an owned one: returning `Bytes` would have needed `Alloc` and cost the
+example the predictability it exists to demonstrate. That is the measured allocation
+cost of the repair, and it was paid by design rather than absorbed.
+
+**Attestation migration: regeneration sufficed; the full R-0482 migration was not
+required.** Mapping was built on full scoped rows, not the collapsed
+module/declaration summary. 63 rows collapse to 57 on `(table, module, declaration,
+implementation)` because six rows differ only by package — the legitimate many-to-one
+case — so packages were paired by identical definition set, with any package present
+unchanged on both sides pinned to itself. That yields 21/21 packages mapped and a total
+symbol rename of 42 entries, each verified to exist in the regenerated file before
+being applied. 38 references were rewritten across `Concrete/Proof/Proof.lean` and
+`proofs/Examples/HmacSha256/Proofs.lean`; no old symbol survives anywhere.
+
+Evidence was checked after, not assumed: `crypto_verify` is back to **4 proved, 0
+stale, 0 closure-unjustified** and `elf_header` to **5 proved, 0 stale, 0
+closure-unjustified**, matching their pre-change baselines. No stale proof was retained
+to make anything green — implementation identities were confirmed unchanged for every
+mapped row, which is precisely why this was a rename and not an evidence transition.
+R-0208's boundary is untouched: nothing new was minted.
+
+**Gating.** `check_view_lifetime.sh` asserts the replacement API positively (a valid
+borrowed read still returns its byte; a validated `Text` keeps its bytes after the
+source mutates), asserts the runtime refusal that cannot be a compile error (a read
+against an emptied buffer returns `Err`), asserts the `Unsafe` boundary still bites
+(E0521), and asserts each historical reproduction now fails FOR THE STATED REASON
+rather than merely failing. That last distinction is the point: a compile error caused
+only by deleting an API proves the old spelling is gone and nothing else, so the
+positive controls carry the weight. Five further tests in `std/src/numeric.con` cover
+the replacement directly. Stdlib 313/0, suite 1713/0.
+
+**Remaining, and not claimed as done:** `ByteView::of_cursor` still produces a view
+whose coordinates are meaningful only against the buffer the cursor was reading, which
+the coordinate contract permits but does not make obvious at a call site. Owner-bound
+parsed results — where substitution is unrepresentable rather than merely
+out-of-contract — remain future work and are the right answer whenever identity
+matters.
 
 **Classification (2026-09-15, checked directly).** The extension to `Text` and
 `ByteView` is done, and it separates two defect classes from one sound design:

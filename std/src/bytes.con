@@ -1,7 +1,7 @@
 mod bytes {
     import std.alloc.{grow,dealloc};
     import std.math.{max};
-    import std.text.{validate_utf8};
+    import std.text.{validate_utf8, Text};
 
     pub struct Bytes {
         ptr: *mut u8,
@@ -114,6 +114,25 @@ mod bytes {
 
         pub fn is_empty(&self) -> bool {
             return self.len == 0;
+        }
+
+        /// Copy `[off, off+len)` out as an OWNED, validated `Text`, or None if the
+        /// range is out of bounds or the bytes are not well-formed UTF-8.
+        ///
+        /// R-0483: this lives here rather than in `numeric` so that `ByteView::to_text`
+        /// needs no pointer arithmetic and therefore no `Unsafe` in its callers. This
+        /// impl is already a trusted boundary that crosses to raw pointers; adding one
+        /// more crossing here is cheaper than exporting the obligation to every caller
+        /// of a safe API.
+        pub fn range_to_text(&self, off: u64, len: u64) with(Alloc) -> Option<Text> {
+            if off > self.len {
+                return Option::<Text>::None;
+            }
+            if len > self.len - off {
+                return Option::<Text>::None;
+            }
+            let base: *const u8 = ((self.ptr as u64) + off) as *const u8;
+            return Text::copy_from_raw(base, len);
         }
 
         pub fn clear(&mut self) {

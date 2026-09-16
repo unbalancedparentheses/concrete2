@@ -1,0 +1,3 @@
+[package]
+name = "current_cursor_refuses_shrunk_buffer"
+version = "0.1.0"

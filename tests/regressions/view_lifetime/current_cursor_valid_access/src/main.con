@@ -1,0 +1,19 @@
+mod current_cursor_valid_access {
+    import std.bytes.{Bytes};
+    import std.numeric.{ByteCursor, CursorError};
+
+    // POSITIVE control for the replacement API. Deleting an unsafe constructor makes
+    // the old fixtures stop compiling, which proves the old spelling is gone and
+    // nothing else. This one proves the safe API actually works.
+    fn main() with(Alloc) -> Int {
+        let mut b: Bytes = Bytes::with_capacity(8);
+        b.push(65); b.push(66);
+        let mut c: ByteCursor = ByteCursor::over(&b);
+        let got: Int = match c.read_u8(&b) {
+            Result::Ok { value } => value as Int,
+            Result::Err { error } => 1,
+        };
+        b.drop();
+        return got;                    // 65 = 'A'
+    }
+}

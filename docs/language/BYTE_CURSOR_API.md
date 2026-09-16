@@ -1,6 +1,27 @@
 # Byte Cursor API
 
-Status: design reference (Phase 3, item 65)
+Status: design reference (Phase 3, item 65) — **signatures superseded by R-0483**
+
+> **R-0483 changed the cursor's shape; the rationale below still stands, the
+> signatures do not.** A `ByteCursor` stored a `*const u8` captured at construction.
+> It could therefore outlive its buffer, survive the buffer's destruction, and keep
+> reading an allocation that a reallocating `push` had already moved — with the owner
+> still alive and nothing consumed. Bounds checks did not help, because the length was
+> captured alongside the pointer and described a buffer that no longer existed.
+>
+> The cursor is now **pointer-free**: it stores `off`/`len`/`pos` and takes the buffer
+> on every access, re-deriving its bounds from the buffer it is GIVEN. So:
+>
+> - `ByteCursor::from_bytes(&b)` → `ByteCursor::over(&b)`; add `ByteCursor::window(off, len, &b)`
+> - `cur.read_u8()` → `cur.read_u8(&b)`, and likewise for every read and `skip`
+> - `ByteCursor::from_raw(ptr, len)` → `RawCursor::from_raw(ptr, len)`, whose
+>   construction and reads all carry `with(Unsafe)`. Holding a pointer is not
+>   permission to dereference it later, and the old spelling let an ordinary
+>   capability-free `fn` do exactly that.
+>
+> Read the endian/bounds discussion below as design rationale. For current
+> signatures see `std/src/numeric.con`; for the properties see
+> `scripts/tests/check_view_lifetime.sh` and `docs/language/BYTE_VIEW.md`.
 
 This document specifies the endian-aware byte cursor APIs for Concrete's stdlib. These APIs replace the hand-rolled byte-to-integer conversion patterns found in every parser pressure test with checked, library-first primitives. No bitfield syntax is proposed; the approach is plain functions on plain types.
 

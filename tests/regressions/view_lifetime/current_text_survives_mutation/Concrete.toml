@@ -1,0 +1,3 @@
+[package]
+name = "current_text_survives_mutation"
+version = "0.1.0"

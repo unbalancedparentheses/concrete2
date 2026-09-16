@@ -24,9 +24,8 @@ Today the only options for a stored parse result are: copy the bytes into an own
 
 ```
 pub struct Copy ByteView {
-    off:     u64,   // start offset into the source buffer
-    len:     u64,   // length of the viewed region
-    buf_len: u64,   // length of the buffer this view was branded against
+    off: u64,   // start offset into the source buffer
+    len: u64,   // length of the viewed region
 }
 ```
 
@@ -42,9 +41,10 @@ owned, `Copy` `ByteCursor` (std.numeric) scoped to the region — or `None` if t
 view does not validly describe that buffer:
 
 ```
-pub fn cursor(&self, buf: &Bytes) -> Option<ByteCursor>   // bounds + brand checked
-pub fn byte(&self, buf: &Bytes, i: u64) -> Option<u8>     // single checked element
-pub fn try_text(&self, buf: &Bytes) -> Option<Text>       // UTF-8-validated Text view
+pub fn cursor(&self, buf: &Bytes) -> Option<ByteCursor>          // bounds checked
+pub fn byte(&self, buf: &Bytes, i: u64) -> Option<u8>            // single checked element
+pub fn to_text(&self, buf: &Bytes) with(Alloc) -> Option<Text>   // COPIES into an owned Text
+pub fn fits(&self, buf: &Bytes) -> bool                          // bounds test, not identity
 pub fn off(&self) -> u64
 pub fn len(&self) -> u64
 pub fn is_empty(&self) -> bool
@@ -55,28 +55,40 @@ pub fn is_empty(&self) -> bool
 through it are already the bounds-checked cursor reads. The returned `ByteCursor`
 is `Copy` and owns no Concrete reference — value-model compliant.
 
-## Safety: the checks `cursor`/`byte`/`try_text` enforce
+## Safety: what access checks, and what it deliberately does not
 
 Every access validates, in order, and returns `None` on any failure:
 
 1. **No overflow**: `off + len` must not wrap `u64` (checked add).
-2. **In bounds**: `off + len <= buf.len()`.
-3. **Right buffer (brand)**: `buf.len() == self.buf_len`. A view carries the
-   length of the buffer it was created against; accessing it against a
-   different-length buffer is rejected. This is a *cheap* wrong-buffer guard, not
-   a proof of identity — a different buffer of the *same length* still passes (see
-   Limitations). It catches the common mistake (view from buffer A applied to a
-   reused/grown/shrunk buffer B) without lifetimes.
+2. **In bounds**: `off + len <= buf.len()`, against the buffer PASSED IN.
+
+**There is no third check, and there used to be one.** A `buf_len` field recorded
+the length of the buffer a view was built from, and access rejected a buffer of a
+different length. R-0483 removed it. It was never an identity check: it rejected a
+substitution only when the lengths happened to differ, and accepted a *different
+buffer of the same length* silently — which is the substitution that actually
+causes wrong answers. Worse, it read like validation at the call site, so
+`describes(buf)` looked like a guarantee nobody had.
+
+A `ByteView` is **coordinates**. It denotes a range and applies to any buffer that
+satisfies its bounds. That is now the stated contract rather than a gap in a brand.
+The bounds test is named `fits`, not `describes`, so a reader cannot mistake it for
+an identity test.
+
+**Where the owner's identity matters, do not reach for a brand.** Own the buffer and
+expose access through the owner, so substituting a different buffer is
+unrepresentable rather than rejected. A length is not an identity and should not be
+spelled like one.
 
 In **proved/predictable** code, checks (1) and (2) are ordinary runtime-safety
-obligations (`off + len` no-overflow and `off + len <= buf_len`), so a caller that
+obligations (`off + len` no-overflow and `off + len <= buf.len()`), so a caller that
 has established the bounds can discharge the checked-access cost through the
 normal obligation machinery rather than paying a runtime branch.
 
 ## Construction
 
 ```
-pub fn new(off: u64, len: u64, buf: &Bytes) -> Option<ByteView>   // checked; brands to buf.len()
+pub fn new(off: u64, len: u64, buf: &Bytes) -> Option<ByteView>   // checked against buf's bounds
 pub fn of_cursor(start: u64, cur: &ByteCursor) -> ByteView        // [start, cur.pos) just consumed
 ```
 
@@ -88,35 +100,39 @@ fields via the cursor, then capture `[start, cur.pos())` as a stored view.
 
 A `ByteView` over raw bytes becomes a `Text` view only after **explicit** UTF-8
 validation of the region — there is no implicit lossy conversion; raw `ByteView`
-stays bytes until validated, matching the Bytes/Text split. `try_text(&buf)`:
+stays bytes until validated, matching the Bytes/Text split. `to_text(&buf)`:
 
-1. checks the view validly describes `buf` (overflow / bounds / brand), then
-2. runs the region through `Text::try_from_raw`, which validates well-formed
-   UTF-8 (RFC 3629 / Unicode Table 3-7 — rejecting overlong encodings,
-   surrogates `U+D800..U+DFFF`, and code points above `U+10FFFF`),
+1. checks the range fits `buf` (overflow / bounds), then
+2. COPIES the region and validates well-formed UTF-8 (RFC 3629 / Unicode
+   Table 3-7 — rejecting overlong encodings, surrogates `U+D800..U+DFFF`, and
+   code points above `U+10FFFF`),
 
-returning `Some(Text)` only when both hold, else `None`. The returned `Text` is a
-non-owning view (`ptr + len`), so the buffer must outlive it — the same scoping
-rule as any view. std.text gained `Text::from_raw_unchecked(ptr, len)` (trusted; the _unchecked suffix names the caller's UTF-8 obligation per the stdlib naming rule)
-and `Text::try_from_raw(ptr, len)` (validated) to support this; the previous
-ASCII-only `AsciiText::try_new` remains for the owned-ASCII-newtype case.
+returning `Some(Text)` only when both hold, else `None`. The returned `Text` OWNS its
+storage and does not depend on `buf` afterwards. R-0483: `to_text` copies for exactly
+that reason, so the UTF-8 property it establishes holds for the value's whole life. The
+previous `try_text` returned a `Text` pointing into `buf`, and mutating the source
+afterwards left a "validated" value yielding bytes that were never validated.
+`Text` is consequently linear rather than `Copy`. The ASCII-only `AsciiText::try_new`
+remains for the owned-ASCII-newtype case.
 
 ## Limitations (documented, not hidden)
 
-- **Same-length wrong buffer** passes the brand check. Stronger branding (a
-  buffer role/id token threaded into the view) is a future option if a workload
-  shows the length brand is insufficient; the length brand is the cheap 80% guard.
+- **A view does not identify its buffer, by design.** Any buffer satisfying the
+  bounds is accepted. This was previously listed here as a limitation of the length
+  brand; R-0483 resolved it by removing the brand and stating the contract, because
+  a guard that catches some substitutions reads like one that catches all of them.
+  If a workload needs owner-bound access, the answer is an owning parsed result, not
+  a stronger token.
 - ByteView indexes one **contiguous** buffer; scatter/gather views are out of
   scope.
 
 ## Deliverables (landed)
 
 - `std.numeric` (alongside `ByteCursor`): the `ByteView` type + `new`/`of_cursor`/
-  `cursor`/`byte`/`try_text`/`off`/`len`/`is_empty`, in a `trusted impl` whose
-  boundary is documented.
-- `std.text`: `Text::from_raw_unchecked(ptr, len)` (trusted, obligation-named) and
-  `Text::try_from_raw(ptr, len)` (validated) + the `validate_utf8` well-formedness
-  checker.
+  `cursor`/`byte`/`to_text`/`fits`/`off`/`len`/`is_empty`. R-0483 made this a plain
+  `impl`: with no stored pointer and no brand, nothing in it crosses a trust boundary.
+- `std.text`: an owning `Text` with `copy_from_raw` (validated, copying) and
+  `from_string`, plus the `validate_utf8` well-formedness checker.
 - `examples/byte_view/{http_header_view,tlv_packet_view,utf8_text_slice,wrong_buffer}/`
   — store views in a result struct, access through the buffer, validate a region
   into `Text`, and show the wrong-buffer / overflow / split-codepoint cases

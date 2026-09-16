@@ -20,14 +20,14 @@ mod tlv_packet_view {
 
     // Read one TLV record starting at cursor position 0 of a cursor over `buf`.
     fn parse_tlv(buf: &Bytes) -> Option<Tlv> {
-        let mut cur: ByteCursor = ByteCursor::from_bytes(buf);
-        let tag_r: Result<u8, CursorError> = cur.read_u8();
+        let mut cur: ByteCursor = ByteCursor::over(buf);
+        let tag_r: Result<u8, CursorError> = cur.read_u8(buf);
         let mut tag: u8 = 0;
         match tag_r {
             Result::Ok { value } => { tag = value; },
             Result::Err { error } => { return Option::<Tlv>::None; }
         }
-        let len_r: Result<u8, CursorError> = cur.read_u8();
+        let len_r: Result<u8, CursorError> = cur.read_u8(buf);
         let mut vlen: u64 = 0;
         match len_r {
             Result::Ok { value } => { vlen = value as u64; },
@@ -35,7 +35,7 @@ mod tlv_packet_view {
         }
         // Mark the value start, then advance the cursor over the value bytes.
         let vstart: u64 = cur.pos();
-        let skip_r: Result<u64, CursorError> = cur.skip(vlen);
+        let skip_r: Result<u64, CursorError> = cur.skip(buf, vlen);
         match skip_r {
             Result::Ok { value } => {},
             Result::Err { error } => { return Option::<Tlv>::None; }
