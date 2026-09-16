@@ -10643,8 +10643,8 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-09-16): reporting and eligibility defect measured; proof-path impact
-and repair pending.** The supplied read-only measurement against `2c7d1ed3` examined
+**Status (2026-09-16): reporting and eligibility defect measured, mechanism located at
+the `trusted` boundary; proof-path impact and repair pending.** The supplied read-only measurement against `2c7d1ed3` examined
 `print_bytes(w: &Writer, b: &Bytes)` in `examples/base64_cli/src/main.con`. It calls
 `Writer::write`, exercising authority supplied through the handle. This record preserves
 the reported outputs; recording it is not an independent replay of the measurement.
@@ -10661,6 +10661,44 @@ The same module's `usage` function prints a usage string but is excluded for
 The compiler affirmatively labels the handle-using helper pure and cites purity when
 classifying it as eligible. An empty declared capability set therefore cannot stand
 for effect-free behavior in these consumers.
+
+**THE MECHANISM, located 2026-09-16 — and it is not what the shape suggests.** A
+`Writer` dispatches through stored function pointers, so the obvious hypothesis is that
+indirect calls lose effects. That hypothesis is WRONG, and a probe refutes it: function
+pointer types carry capabilities, and storing a `with(Console)` function in a
+capability-free field is rejected outright.
+
+```
+E0220: type mismatch in field 'f' of struct 'Sink': expected fn() -> i64,
+       found fn() with(Console) -> i64
+```
+
+The erasure happens one step earlier, at the `trusted` boundary. Three functions in
+`std/src/io.con` issue the same syscall and disagree about saying so:
+
+| function | performs | declares |
+|---|---|---|
+| `println` (L323) | `libc_write(1, ...)` | `with(Console)` |
+| `console_write` (L154) | `libc_write(1, ...)` | nothing |
+| `console_err_write` (L173) | `libc_write(2, ...)` | nothing |
+
+`trusted` permits a function to perform an effect without declaring it, and nothing
+checks a trusted function's declared capabilities against what its body does. The
+undeclared sinks are therefore *typed* capability-free, which is exactly what the
+`write_fn` field requires; every call through the handle is capability-free; and a
+helper that calls `w.write(b)` reports `(pure)`. The constructor's `with(Console)` is
+real and does check authority-to-acquire — the effect of USING the handle is what
+disappears.
+
+So the three facts this task must separate are not merely unreported, they diverge at a
+known point: acquisition authority is checked at the constructor, argument-supplied
+authority is invisible in the header, and the operational effect is erased where a
+trusted body declines to name it. The smallest candidate change is therefore a
+consistency obligation on `trusted` — a trusted function's declared capabilities must
+cover the effects its body performs — rather than new machinery. `println` already
+satisfies it; `console_write` and `console_err_write` do not. That candidate needs
+costing against every trusted wrapper before adoption, and it is stated here as the
+measured lead, not a decision.
 
 **Evidence boundary:** this establishes incorrect reporting and eligibility
 classification, not that an effect-ignoring theorem can reach an authoritative verdict.
