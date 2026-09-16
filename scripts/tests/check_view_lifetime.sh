@@ -28,11 +28,24 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 [ -x "$CC" ] || { echo "FATAL: compiler not built at $CC" >&2; exit 2; }
 
+# `timeout` is coreutils and is NOT present on a stock macOS runner. run_tests.sh
+# already degrades rather than skipping (see its PROJ_TIMEOUT), and this gate is
+# invoked FROM run_tests.sh, so it runs on macOS too and needs the same treatment.
+# A missing watchdog is worth saying out loud: a hang here would otherwise look
+# like an unexplained CI stall.
+if command -v timeout >/dev/null 2>&1; then
+  TO="timeout 300"
+else
+  TO=""
+  echo "  warn 'timeout' not found — running without a hang watchdog"
+fi
+
+
 # check_rejects <dir> <regex the diagnostic must match> <label>
 check_rejects() {
   local d="$FIX/$1" pat="$2" label="$3" out
   [ -d "$d" ] || { no "$label: fixture directory is missing"; return; }
-  out="$(cd "$d" && timeout 300 "$CC" check . 2>&1)"
+  out="$(cd "$d" && $TO "$CC" check . 2>&1)"
   if [ -z "$(printf '%s' "$out" | grep -E 'error\[')" ]; then
     no "$label: expected a compile error, got none"
     return
@@ -52,7 +65,7 @@ check_runs() {
   # Build OUT OF TREE. `concrete build` otherwise drops a binary next to the sources,
   # and a gate that litters the working tree gets its droppings committed eventually.
   local out="$TMP/$1"
-  if ! (cd "$d" && timeout 300 "$CC" build . -o "$out" >/dev/null 2>&1); then
+  if ! (cd "$d" && $TO "$CC" build . -o "$out" >/dev/null 2>&1); then
     no "$label: expected it to build, and it did not"
     return
   fi

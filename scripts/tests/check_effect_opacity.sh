@@ -36,7 +36,20 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 [ -x "$CC" ] || { echo "FATAL: compiler not built at $CC" >&2; exit 2; }
 
-out="$(cd "$FIX" && timeout 300 "$CC" src/main.con --report eligibility 2>&1)"
+# `timeout` is coreutils and is NOT present on a stock macOS runner. run_tests.sh
+# already degrades rather than skipping (see its PROJ_TIMEOUT), and this gate is
+# invoked FROM run_tests.sh, so it runs on macOS too and needs the same treatment.
+# A missing watchdog is worth saying out loud: a hang here would otherwise look
+# like an unexplained CI stall.
+if command -v timeout >/dev/null 2>&1; then
+  TO="timeout 300"
+else
+  TO=""
+  echo "  warn 'timeout' not found — running without a hang watchdog"
+fi
+
+
+out="$(cd "$FIX" && $TO "$CC" src/main.con --report eligibility 2>&1)"
 
 echo "=== a genuinely effect-free function stays eligible (positive control) ==="
 # Without this the gate would pass on a compiler that simply called everything opaque,
@@ -82,7 +95,7 @@ echo "=== KNOWN GAP: the cross-package case is not yet closed ==="
 # modules, this check should START FAILING and be inverted in the same commit.
 b64="$ROOT_DIR/examples/base64_cli"
 if [ -d "$b64" ]; then
-  bout="$(cd "$b64" && timeout 300 "$CC" src/main.con --report eligibility 2>&1)"
+  bout="$(cd "$b64" && $TO "$CC" src/main.con --report eligibility 2>&1)"
   if printf '%s' "$bout" | grep -qE 'eligible +`base64_cli\.print_bytes`'; then
     ok "base64_cli.print_bytes is STILL eligible — cross-package opacity remains open (expected)"
   else

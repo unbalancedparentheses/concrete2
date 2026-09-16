@@ -40,6 +40,7 @@ bytes	cap	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 bytes	raw_ptr	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> *mut u8
 bytes	set_len_unchecked	no	mut	infallible	none	trusted-boundary	gated	(&mut self, n: u64)
 bytes	is_empty	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> bool
+bytes	range_to_text	yes	borrows	option	Alloc	trusted-boundary	gated	(&self, off: u64, len: u64) with(Alloc) -> Option<Text>
 bytes	clear	no	mut	infallible	none	trusted-boundary	gated	(&mut self)
 bytes	eq	no	borrows	infallible	none	trusted-boundary	gated	(&self, other: &Bytes) -> bool
 bytes	index_of	no	borrows	option	none	trusted-boundary	gated	(&self, byte: u8, from: u64) -> Option<u64>
@@ -211,28 +212,45 @@ numeric	try_from_u64	no	constructs	option	none	pure-core	proved	(value: u64) -> 
 numeric	try_new	no	constructs	option	none	pure-core	proved	(value: u64) -> Option<NonZeroU64>
 numeric	try_new	no	constructs	option	none	pure-core	proved	(value: u16) -> Option<Port>
 numeric	try_from_u32	no	constructs	option	none	pure-core	proved	(value: u32) -> Option<Port>
-numeric	from_raw	no	constructs	infallible	none	trusted-boundary	gated	(data: *const u8, len: u64) -> ByteCursor
-numeric	from_bytes	no	constructs	infallible	none	trusted-boundary	gated	(b: &Bytes) -> ByteCursor
+numeric	over	no	constructs	infallible	none	pure-core	gated	(buf: &Bytes) -> ByteCursor
+numeric	window	no	constructs	option	none	pure-core	gated	(off: u64, len: u64, buf: &Bytes) -> Option<ByteCursor>
+numeric	pos	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	off	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	len	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	remaining	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	is_empty	no	borrows	infallible	none	pure-core	gated	(&self) -> bool
+numeric	has	no	borrows	infallible	none	pure-core	gated	(&self, buf: &Bytes, n: u64) -> bool
+numeric	read_u8	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u8, CursorError>
+numeric	peek_u8	no	borrows	result	none	pure-core	gated	(&self, buf: &Bytes) -> Result<u8, CursorError>
+numeric	skip	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes, n: u64) -> Result<u64, CursorError>
+numeric	read_u16_be	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u16, CursorError>
+numeric	read_u32_be	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u32, CursorError>
+numeric	read_u64_be	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u64, CursorError>
+numeric	read_u16_le	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u16, CursorError>
+numeric	read_u32_le	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u32, CursorError>
+numeric	read_u64_le	no	mut	result	none	pure-core	gated	(&mut self, buf: &Bytes) -> Result<u64, CursorError>
+numeric	from_raw	no	constructs	infallible	Unsafe	trusted-boundary	gated	(data: *const u8, len: u64) with(Unsafe) -> RawCursor
 numeric	pos	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 numeric	remaining	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 numeric	is_empty	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> bool
-numeric	read_u8	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u8, CursorError>
-numeric	peek_u8	no	borrows	result	none	trusted-boundary	gated	(&self) -> Result<u8, CursorError>
+numeric	read_u8	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u8, CursorError>
+numeric	peek_u8	no	borrows	result	Unsafe	trusted-boundary	gated	(&self) with(Unsafe) -> Result<u8, CursorError>
 numeric	skip	no	mut	result	none	trusted-boundary	gated	(&mut self, n: u64) -> Result<u64, CursorError>
-numeric	read_u16_be	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u16, CursorError>
-numeric	read_u32_be	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u32, CursorError>
-numeric	read_u64_be	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u64, CursorError>
-numeric	read_u16_le	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u16, CursorError>
-numeric	read_u32_le	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u32, CursorError>
-numeric	read_u64_le	no	mut	result	none	trusted-boundary	gated	(&mut self) -> Result<u64, CursorError>
-numeric	new	no	constructs	option	none	trusted-boundary	gated	(off: u64, len: u64, buf: &Bytes) -> Option<ByteView>
-numeric	of_cursor	no	constructs	infallible	none	trusted-boundary	gated	(start: u64, cur: &ByteCursor) -> ByteView
-numeric	off	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
-numeric	len	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
-numeric	is_empty	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> bool
-numeric	cursor	no	borrows	option	none	trusted-boundary	gated	(&self, buf: &Bytes) -> Option<ByteCursor>
-numeric	byte	no	borrows	option	none	trusted-boundary	gated	(&self, buf: &Bytes, i: u64) -> Option<u8>
-numeric	try_text	no	borrows	option	none	trusted-boundary	gated	(&self, buf: &Bytes) -> Option<Text>
+numeric	read_u16_be	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u16, CursorError>
+numeric	read_u32_be	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u32, CursorError>
+numeric	read_u64_be	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u64, CursorError>
+numeric	read_u16_le	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u16, CursorError>
+numeric	read_u32_le	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u32, CursorError>
+numeric	read_u64_le	no	mut	result	Unsafe	trusted-boundary	gated	(&mut self) with(Unsafe) -> Result<u64, CursorError>
+numeric	new	no	constructs	option	none	pure-core	gated	(off: u64, len: u64, buf: &Bytes) -> Option<ByteView>
+numeric	of_cursor	no	constructs	infallible	none	pure-core	gated	(start: u64, cur: &ByteCursor) -> ByteView
+numeric	off	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	len	no	borrows	infallible	none	pure-core	gated	(&self) -> u64
+numeric	is_empty	no	borrows	infallible	none	pure-core	gated	(&self) -> bool
+numeric	fits	no	borrows	infallible	none	pure-core	gated	(&self, buf: &Bytes) -> bool
+numeric	cursor	no	borrows	option	none	pure-core	gated	(&self, buf: &Bytes) -> Option<ByteCursor>
+numeric	byte	no	borrows	option	none	pure-core	gated	(&self, buf: &Bytes, i: u64) -> Option<u8>
+numeric	to_text	yes	borrows	option	Alloc	hosted-effect	gated	(&self, buf: &Bytes) with(Alloc) -> Option<Text>
 numeric	from_raw	no	constructs	infallible	none	trusted-boundary	gated	(data: *mut u8, len: u64) -> ByteWriter
 numeric	pos	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 numeric	remaining	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
@@ -401,13 +419,14 @@ test	expect_sink	no	constructs	infallible	Console	hosted-effect	gated	(buf: *con
 test	str_eq	no	constructs	infallible	none	deterministic	gated	(a: &String, b: &String) -> bool
 test	assert_str_eq	no	constructs	infallible	Console	hosted-effect	gated	(a: &String, b: &String, message: String) with(Console) -> bool
 text	try_new	yes	constructs	option	Alloc	trusted-boundary	gated	(s: String) with(Alloc) -> Option<AsciiText>
-text	from_string	no	constructs	infallible	none	trusted-boundary	gated	(s: &String) -> Text
+text	copy_from_raw	yes	constructs	option	Alloc	trusted-boundary	gated	(ptr: *const u8, len: u64) with(Alloc) -> Option<Text>
+text	from_string	yes	constructs	infallible	Alloc	trusted-boundary	gated	(s: &String) with(Alloc) -> Text
 text	len	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 text	is_empty	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> bool
-text	get_unchecked	no	borrows	infallible	none	trusted-boundary	gated	(&self, at: u64) -> u8
+text	byte	no	borrows	option	none	trusted-boundary	gated	(&self, at: u64) -> Option<u8>
 text	eq	no	borrows	infallible	none	trusted-boundary	gated	(&self, other: &Text) -> bool
-text	from_raw_unchecked	no	constructs	infallible	none	trusted-boundary	gated	(ptr: *const u8, len: u64) -> Text
-text	try_from_raw	no	constructs	option	none	trusted-boundary	gated	(ptr: *const u8, len: u64) -> Option<Text>
+text	drop	yes	consumes	infallible	Alloc	trusted-boundary	gated	(self) with(Alloc)
+text	destroy	yes	borrows	infallible	Alloc	trusted-boundary	gated	(&self) with(Alloc)
 text	validate_utf8	no	constructs	infallible	none	trusted-boundary	gated	(ptr: *const u8, len: u64) -> bool
 time	from_secs	no	constructs	infallible	none	deterministic	gated	(s: i64) -> Duration
 time	from_millis	no	constructs	infallible	none	deterministic	gated	(ms: i64) -> Duration

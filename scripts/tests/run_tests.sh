@@ -1877,7 +1877,7 @@ if bash "$ROOT_DIR/scripts/tests/check_effect_opacity.sh" > /tmp/effect_opacity.
     PASS=$((PASS + 1))
 else
     echo "FAIL  effect opacity gate"
-    grep "^  FAIL" /tmp/effect_opacity.$$ | head -5
+    grep "^  FAIL" /tmp/effect_opacity.$$ | awk "NR<=5"
     FAIL=$((FAIL + 1))
 fi
 rm -f /tmp/effect_opacity.$$
@@ -1889,7 +1889,7 @@ if bash "$ROOT_DIR/scripts/tests/check_view_lifetime.sh" > /tmp/view_lifetime.$$
     PASS=$((PASS + 1))
 else
     echo "FAIL  view lifetime gate"
-    grep "^  FAIL" /tmp/view_lifetime.$$ | head -5
+    grep "^  FAIL" /tmp/view_lifetime.$$ | awk "NR<=5"
     FAIL=$((FAIL + 1))
 fi
 rm -f /tmp/view_lifetime.$$
