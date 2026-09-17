@@ -45,11 +45,23 @@ if printf '%s\n' "$body" | grep -qE '\*\s*(const|mut)'; then
 else
   ok "ByteView struct has no pointer field (coordinates only)"
 fi
-for f in off len buf_len; do
+for f in off len; do
   printf '%s\n' "$body" | grep -qE "^\s*$f:\s*u64" \
     && ok "ByteView.$f : u64" \
     || no "ByteView.$f : u64 missing"
 done
+# R-0483: `buf_len` is GONE and its absence is the assertion. It was described as a
+# wrong-buffer brand, but it compared a LENGTH: it rejected a substituted buffer only
+# when the lengths happened to differ and accepted a different buffer of the same length
+# silently, which is the substitution that causes wrong answers. A guard that catches
+# some substitutions reads at the call site like one that catches all of them, so it was
+# removed rather than strengthened, and a ByteView is now documented as coordinates that
+# apply to any buffer satisfying its bounds. Re-adding a length brand must fail here.
+if printf '%s\n' "$body" | grep -qE "^\s*buf_len:"; then
+  no "ByteView.buf_len is back — a length is not a buffer identity (R-0483)"
+else
+  ok "ByteView has no length brand (coordinates, not a claimed identity)"
+fi
 
 echo "=== 2. access takes an explicit buffer and returns Option (no returned ref) ==="
 grep -qE 'pub fn cursor\(&self, buf: &Bytes\) -> Option<ByteCursor>' "$NUMERIC" \
@@ -69,17 +81,33 @@ else
 fi
 
 echo "=== 2b. raw-bytes -> Text is an explicit, UTF-8-validated step ==="
-grep -qE 'pub fn try_text\(&self, buf: &Bytes\) -> Option<Text>' "$NUMERIC" \
-  && ok "ByteView::try_text(&self, buf) -> Option<Text>" \
-  || no "ByteView::try_text signature changed/missing"
+# R-0483: `try_text` returned a Text BORROWING `buf`, so mutating the source afterwards
+# left a "validated" value yielding bytes that were never validated. `to_text` copies
+# into storage the source cannot reach; it needs Alloc, and that cost is the guarantee.
+grep -qE 'pub fn to_text\(&self, buf: &Bytes\) with\(Alloc\) -> Option<Text>' "$NUMERIC" \
+  && ok "ByteView::to_text(&self, buf) with(Alloc) -> Option<Text> (copies)" \
+  || no "ByteView::to_text signature changed/missing"
+grep -qE 'pub fn try_text\(' "$NUMERIC" \
+  && no "ByteView::try_text is back — a borrowed Text cannot keep its validation" \
+  || ok "the borrowing try_text is gone"
+# The bounds test must not be spelled like an identity test.
+grep -qE 'pub fn fits\(&self, buf: &Bytes\) -> bool' "$NUMERIC" \
+  && ok "fits(&self, buf) -> bool names a bounds test, not an identity check" \
+  || no "ByteView::fits missing — the bounds predicate must be named honestly"
 TEXT="std/src/text.con"
 [ -f "$TEXT" ] || { echo "error: $TEXT missing" >&2; exit 2; }
-grep -qE 'pub fn try_from_raw\(ptr: \*const u8, len: u64\) -> Option<Text>' "$TEXT" \
-  && ok "Text::try_from_raw(ptr, len) -> Option<Text> (validated)" \
-  || no "Text::try_from_raw changed/missing"
+# R-0483: Text OWNS its storage now, so the raw constructor copies and needs Alloc. The
+# old `try_from_raw` aliased the caller's region and was `Copy`, which is what let a
+# validated value outlive — and disagree with — the bytes it validated.
+grep -qE 'pub fn copy_from_raw\(ptr: \*const u8, len: u64\) with\(Alloc\) -> Option<Text>' "$TEXT" \
+  && ok "Text::copy_from_raw(ptr, len) with(Alloc) -> Option<Text> (validated, copying)" \
+  || no "Text::copy_from_raw changed/missing"
+grep -qE 'pub struct Copy Text' "$TEXT" \
+  && no "Text is Copy again — an owning validated string must be linear" \
+  || ok "Text is linear, not Copy (it owns its storage)"
 grep -q 'fn validate_utf8(' "$TEXT" \
   && ok "UTF-8 validator (validate_utf8) present" \
-  || no "validate_utf8 missing (try_from_raw would be unvalidated)"
+  || no "validate_utf8 missing (copy_from_raw would be unvalidated)"
 
 echo "=== 3. the guards fire: example programs self-verify and exit 0 ==="
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT

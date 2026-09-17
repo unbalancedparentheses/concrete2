@@ -712,10 +712,13 @@ mod main {
     import std.text.{Text};
     fn main() with(Std) -> u8 {
         let s: String = "héllo";
+        // R-0483: Text OWNS its bytes now, so it is linear and each one is consumed.
         let t: Text = Text::from_string(&s);
         let ok_len: bool = t.len() == s.len();
         let t2: Text = Text::from_string(&s);
         let ok_eq: bool = t.eq(&t2);
+        t.drop();
+        t2.drop();
         s.drop();
         if ok_len && ok_eq { return 0; }
         return 1;
