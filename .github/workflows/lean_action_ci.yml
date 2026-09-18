@@ -716,6 +716,9 @@ jobs:
       - name: "Effect opacity (R-0484 — an empty capability set is not a claim of purity)"
         run: bash scripts/tests/check_effect_opacity.sh
 
+      - name: "Diff-to-gate mapping (the selector still names the gates a known change breaks)"
+        run: bash scripts/tests/check_gates_for_diff.sh
+
       - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
         run: bash scripts/tests/check_cli_coherence.sh
 

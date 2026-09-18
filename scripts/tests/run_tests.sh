@@ -1870,6 +1870,18 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== diff-to-gate mapping ==="
+if bash "$ROOT_DIR/scripts/tests/check_gates_for_diff.sh" > /tmp/gates_map.$$ 2>&1; then
+    _gm_pass=$(grep -c "^  ok  " /tmp/gates_map.$$ || true)
+    echo "  ok  diff-to-gate mapping gate ($_gm_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  diff-to-gate mapping gate"
+    grep "^  FAIL" /tmp/gates_map.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/gates_map.$$
+
 echo "=== effect opacity (R-0484) ==="
 if bash "$ROOT_DIR/scripts/tests/check_effect_opacity.sh" > /tmp/effect_opacity.$$ 2>&1; then
     _eo_pass=$(grep -c "^  ok  " /tmp/effect_opacity.$$ || true)
