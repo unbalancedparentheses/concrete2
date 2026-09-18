@@ -364,6 +364,65 @@ def buildCallGraph (modules : List CModule) : CallGraph :=
   let qualNameMap := modules.foldl (fun acc m => acc ++ buildQualNameMap m) []
   modules.foldl (fun acc m => acc ++ buildCallGraphModule qualNameMap m) []
 
+/-! ### Effect opacity (R-0484)
+
+AN EMPTY CAPABILITY SET MEANS "NOTHING WAS DECLARED", NOT "NOTHING HAPPENS", and the two
+were equated. `examples/base64_cli`'s `print_bytes` takes a `&Writer`, calls
+`Writer::write`, performs real I/O, and was admitted to the provable subset ON THE GROUNDS
+OF PURITY — while `usage`, which only prints a string, was excluded for honestly declaring
+`Console`.
+
+The erasure is at the `trusted` boundary and travels on a function pointer.
+`console_write` and `console_err_write` both call `libc_write` and declare nothing, so
+their TYPE is capability-free, so they fit `Writer`'s `write_fn` field, so every call
+through the handle is capability-free. `println`, in the same module, declares `Console`
+for the same syscall; nothing checks the difference.
+
+This refuses to certify rather than resolving the target set, which is a whole-program
+analysis and a separate project. The argument is already made twice in this file for `no
+recursion` and `--report stack-depth`: a body containing an indirect call cannot be shown
+acyclic, so it is excluded rather than assumed acyclic. Effect-freedom was the third
+guarantee built on this call graph and the only one still assuming.
+
+IT AFFECTS ADMISSION ONLY, NEVER EXTRACTION. A first attempt folded this into
+`eligible`, which decides BOTH whether a function is admissible as effect-free AND
+whether it is extracted for subject facts — so refusing higher-order functions dropped
+them from the evidence surface entirely and `check_shadow_body_v2.sh` caught it, because
+its "a function used as a VALUE is an edge" assertion exists precisely so a higher-order
+program does not look dependency-free. Trading a false purity claim for a missing
+dependency edge relocates an R-0004 gap instead of closing one. Hence `admissible` below,
+kept separate from `eligible`. -/
+
+/-- Qualified names of functions whose OWN body makes an indirect call. -/
+private partial def indirectSeedModule (m : CModule) (pfx : String := "") : List String :=
+  let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
+  let here := m.functions.filterMap fun f =>
+    if hasIndirectCallStmts f.body then some (qualPrefix ++ "." ++ f.name) else none
+  here ++ m.submodules.foldl (fun acc sub => acc ++ indirectSeedModule sub qualPrefix) []
+
+/-- One round: a function is opaque if any direct callee is. -/
+private def effectOpaqueStep (graph : CallGraph) (cur : List String) : List String :=
+  graph.foldl (fun acc (fn, callees) =>
+    if acc.contains fn then acc
+    else if callees.any (fun c => acc.contains c) then fn :: acc
+    else acc) cur
+
+/-- Least fixpoint over the seed. Bounded by the node count: each round adds at least one
+    name or stops, so the graph size is sound fuel. -/
+private partial def effectOpaqueFix (graph : CallGraph) (fuel : Nat) (cur : List String) : List String :=
+  match fuel with
+  | 0 => cur
+  | fuel' + 1 =>
+    let nxt := effectOpaqueStep graph cur
+    if nxt.length == cur.length then cur else effectOpaqueFix graph fuel' nxt
+
+/-- Functions that can REACH an indirect call, transitively. Transitivity is the point:
+    `print_bytes` makes no indirect call itself and reaches one two hops down, so a
+    per-body predicate misses exactly the case this came from. -/
+def effectOpaqueSet (modules : List CModule) (graph : CallGraph) : List String :=
+  let seed := (modules.foldl (fun acc m => acc ++ indirectSeedModule m) []).eraseDups
+  effectOpaqueFix graph (graph.length + 1) seed
+
 -- Tarjan's SCC
 
 private structure TarjanState where
@@ -1356,7 +1415,19 @@ structure EligibilityEntry where
   profileReasons : List String
   exclusionKind  : Option ExclusionKind
   isTrusted      : Bool
+  /-- R-0484: this function can reach an indirect call, so its effects are not
+      determined by its declared capabilities. Reported and consumed by ADMISSION;
+      deliberately NOT folded into `eligible`, which also gates extraction. -/
+  effectOpaque   : Bool := false
   loc            : Option SourceLoc
+
+/-- Admissible as EFFECT-FREE, which is strictly stronger than extractable.
+    `eligible` decides whether a function is extracted for subject facts at all, so
+    folding opacity into it removes higher-order functions from the evidence surface —
+    measured, and caught by `check_shadow_body_v2.sh`. Obligation status derives from
+    this; the entry/excluded split and INV-8 keep using `eligible`. -/
+def EligibilityEntry.admissible (e : EligibilityEntry) : Bool :=
+  e.eligible && !e.effectOpaque
 
 -- ============================================================
 -- Proof registry types (moved from Report.lean)
@@ -2616,6 +2687,7 @@ private def assessEligibility
     (f : CFnDef) (qualName : String)
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
+    (opaqueSet : List String)
     (locMap : List (String × SourceLoc)) : EligibilityEntry :=
   let fnLoc := match locMap.find? fun (n, _) => n == qualName with
     | some (_, loc) => some loc
@@ -2658,6 +2730,7 @@ private def assessEligibility
     else if !passesSource then some .source
     else some .profile
   { qualName, eligible, sourceReasons, profileReasons, exclusionKind
+  , effectOpaque := opaqueSet.contains qualName
   , isTrusted := f.isTrusted, loc := fnLoc }
 
 /-- Walk a module tree collecting eligibility + extraction for each function.
@@ -2666,6 +2739,7 @@ private partial def extractModule
     (packageIdentity : Proof.PackageIdentity)
     (externNames : List String)
     (recMap : List (String × RecursionKind × List String))
+    (opaqueSet : List String)
     (locMap : List (String × SourceLoc))
     (registry : ProofRegistry)
     (m : CModule) (modulePath : String := "")
@@ -2694,7 +2768,7 @@ private partial def extractModule
     let evBody? := (m.evidenceBodies.find? fun p => p.1 == cid).map Prod.snd
     -- `none` when the facts are absent OR incomplete. Never a string, so an
     -- absent subject cannot be compared as though it were a computed one.
-    let elig := assessEligibility f qualName externNames recMap locMap
+    let elig := assessEligibility f qualName externNames recMap opaqueSet locMap
     let sa := resolveSpec qualName registry
     -- The spec IDENTITY, not the proof name: what the claim is about, rather than which Lean
     -- theorem happens to carry it. Re-pointing a link at a differently-named proof of the SAME
@@ -2762,7 +2836,7 @@ private partial def extractModule
   ) ([], [])
   -- Recurse into submodules
   let (subEntries, subExcluded) := m.submodules.foldl (fun (accE, accX) sub =>
-    let (e, x) := extractModule packageIdentity externNames recMap locMap registry sub qualPrefix
+    let (e, x) := extractModule packageIdentity externNames recMap opaqueSet locMap registry sub qualPrefix
     (accE ++ e, accX ++ x)) ([], [])
   (entries ++ subEntries, excluded ++ subExcluded)
 
@@ -2859,7 +2933,7 @@ private def generateObligations
       | some extractedPExpr, some (_, specPExpr) =>
         extractedPExpr != normalizePExpr specPExpr
       | _, _ => false  -- no extracted or no registered spec → no drift detectable here
-    let status := deriveObligationStatus e.eligibility.eligible
+    let status := deriveObligationStatus e.eligibility.admissible
         e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest
     let cat := if status == .ineligible
       then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
@@ -2870,6 +2944,12 @@ private def generateObligations
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+        -- R-0484: opacity refuses ADMISSION without touching `eligible`, so it is not in
+        -- either reason list. It still has to be NAMED here: a refusal that reports no
+        -- reason is the defect this task exists to remove, not a smaller version of it.
+        ++ (if e.eligibility.effectOpaque then
+              ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
+            else [])
     , ineligCat := cat
     , dependencies := []  -- filled in second pass
     , notCurrentDeps := []
@@ -2879,7 +2959,7 @@ private def generateObligations
   -- Excluded functions have no extracted PExpr to compare, so
   -- specDrifted is always false here.
   let exclObls := excluded.map fun e =>
-    let status := deriveObligationStatus e.eligibility.eligible
+    let status := deriveObligationStatus e.eligibility.admissible
         e.eligibility.isTrusted false false e.spec e.fingerprint
     let cat := if status == .ineligible
       then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
@@ -2890,6 +2970,12 @@ private def generateObligations
     , spec := e.spec
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
+        -- R-0484: opacity refuses ADMISSION without touching `eligible`, so it is not in
+        -- either reason list. It still has to be NAMED here: a refusal that reports no
+        -- reason is the defect this task exists to remove, not a smaller version of it.
+        ++ (if e.eligibility.effectOpaque then
+              ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
+            else [])
     , ineligCat := cat
     , dependencies := []
     , notCurrentDeps := []
@@ -3205,10 +3291,11 @@ def extractProofCore (vc : ValidatedCore) (packageIdentity : Proof.PackageIdenti
   let graph := buildCallGraph modules
   let sccs := tarjanSCC graph
   let recMap := classifyRecursion graph sccs
+  let opaqueSet := effectOpaqueSet modules graph
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   -- Extract entries and excluded (with spec attachment)
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
-    let (e, x) := extractModule packageIdentity externNames recMap locMap registry m
+    let (e, x) := extractModule packageIdentity externNames recMap opaqueSet locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
   -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph
@@ -3321,7 +3408,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         | some extractedPExpr, some (_, specPExpr) =>
           extractedPExpr != normalizePExpr specPExpr
         | _, _ => false
-      let expected0 := deriveObligationStatus e.eligibility.eligible
+      let expected0 := deriveObligationStatus e.eligibility.admissible
           e.eligibility.isTrusted e.extracted.isSome specDrifted e.spec e.fingerprint e.subjectDigest
       -- Dependency containment (R-0004 slice 3) is applied AFTER derivation, so
       -- re-deriving from this function's own facts alone cannot reproduce it.
@@ -3344,7 +3431,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
     | none =>
       match pc.findExcluded qn with
       | some x =>
-        let expected := deriveObligationStatus x.eligibility.eligible
+        let expected := deriveObligationStatus x.eligibility.admissible
             x.eligibility.isTrusted false false x.spec x.fingerprint
         if o.status != expected then
           some { invariant := "OBL-STATUS", function := qn

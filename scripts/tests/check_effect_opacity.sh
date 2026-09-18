@@ -12,27 +12,19 @@
 # are capability-free. `println`, same module, same syscall, declares `Console`. Nothing
 # checks the difference.
 #
-# THE REPAIR IS NOT YET IN PLACE, AND THIS GATE RECORDS WHY RATHER THAN ASSERTING A FIX.
+# THE REPAIR REFUSES ADMISSION WITHOUT REFUSING EXTRACTION, AND THAT SPLIT IS THE POINT.
 #
-# The obvious repair — refuse proof eligibility to any function that can REACH an
-# indirect call — was implemented and reverted. `assessEligibility` decides TWO things
-# with one bit: whether a function is admissible as effect-free, AND whether it is
-# extracted for subject facts at all. Measured: a function excluded for ANY reason
-# vanishes from `--report subject-facts` entirely (checked for a capability exclusion
-# too, so this is the existing coupling and not something the attempt introduced).
-#
-# So refusing higher-order functions removed them from the evidence surface, and
+# A first attempt folded opacity into `eligible`. That bit decides TWO things — whether a
+# function is admissible as effect-free, AND whether it is extracted for subject facts at
+# all — so refusing higher-order functions removed them from the evidence surface, and
 # `check_shadow_body_v2.sh` caught it: its "a function used as a VALUE is an edge"
-# assertion needs higher-order bodies to still produce dependency edges, precisely so a
-# higher-order program does not look dependency-free. Trading a false purity claim for
-# a missing dependency edge is not a repair; it moves an R-0004 evidence gap rather
-# than closing one.
+# assertion exists precisely so a higher-order program does not look dependency-free.
+# Trading a false purity claim for a missing dependency edge relocates an R-0004 gap
+# instead of closing one.
 #
-# The refusal belongs where effect-freedom is CLAIMED, not where extractability is
-# decided, and separating those is a real change to the R-0004 extraction path. Until
-# then this gate pins the current, defective behaviour so the defect stays measured and
-# cannot drift silently. Every check below that says "still" is a known gap: when the
-# repair lands, these flip and must be inverted in the same commit.
+# So `eligible` still gates extraction and a separate `admissible` gates proof admission.
+# Both halves are asserted below, because a repair that only did the first half would be
+# the original defect and a repair that only did the second would be the failed attempt.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
@@ -60,32 +52,46 @@ fi
 
 out="$(cd "$FIX" && $TO "$CC" src/main.con --report eligibility 2>&1)"
 
-echo "=== a genuinely effect-free function is eligible (control) ==="
-# Keeps the fixture honest: if this ever fails, the fixture stopped describing the
-# ordinary case and the gaps below would be measuring nothing.
-if printf '%s' "$out" | grep -qE 'eligible +`indirect_call_not_pure\.plain`'; then
-  ok "plain is eligible"
+echo "=== a genuinely effect-free function is still admitted (positive control) ==="
+# Without this the gate would pass on a compiler that refused everything, which is a
+# different bug with the same green.
+if printf '%s' "$out" | grep -qE "eligible +\`indirect_call_not_pure\.plain\`"; then
+  ok "plain is admitted"
 else
-  no "plain is not eligible — the fixture no longer models the ordinary case"
+  no "plain is no longer admitted — the rule is over-broad, not conservative"
 fi
 
-echo "=== KNOWN GAP: reaching an indirect call does not refuse certification ==="
-# `fire` calls through a fn pointer; `fire2` reaches one a hop further away. Both are
-# admitted to the provable subset on an empty capability set, which is the defect.
+echo "=== reaching an indirect call refuses ADMISSION, and names why ==="
+pout="$(cd "$FIX" && $TO "$CC" src/main.con --report proof-status 2>&1)"
 for fn in fire fire2; do
-  if printf '%s' "$out" | grep -qE "eligible +\`indirect_call_not_pure\.$fn\`"; then
-    ok "$fn is STILL eligible despite reaching an indirect call (expected; defect open)"
+  if printf '%s' "$pout" | grep -A1 -E "\`indirect_call_not_pure\.$fn\`" \
+     | grep -q "effects may enter through an indirect call"; then
+    ok "$fn is refused, and the refusal names its reason"
   else
-    no "$fn is no longer eligible: the repair landed — invert this check and update R-0484"
+    no "$fn is not refused for reaching an indirect call, or the refusal names nothing"
+    printf '%s\n' "$pout" | grep -E "\`indirect_call_not_pure\.$fn\`" | awk 'NR<=2' | sed 's/^/       /'
   fi
 done
 
-echo "=== KNOWN GAP: totals still count the opaque functions as provable ==="
-if printf '%s' "$out" | grep -q "4 functions — 3 eligible, 1 excluded"; then
-  ok '3 eligible, 1 excluded (only main, as entry point) — the defect, pinned'
+echo "=== TRANSITIVE: fire2 makes no indirect call itself ==="
+# It calls fire. The defect this came from reached the indirect call two hops down, so a
+# per-body predicate would have missed exactly the case that mattered.
+if printf '%s' "$pout" | grep -A1 -E "\`indirect_call_not_pure\.fire2\`" \
+   | grep -q "effects may enter through an indirect call"; then
+  ok "a caller two hops from the indirect call is also refused"
 else
-  no "totals moved; re-measure before changing this line"
-  printf '%s\n' "$out" | grep "Totals:" | sed 's/^/       /'
+  no "transitivity is not applied — only direct indirect calls are caught"
+fi
+
+echo "=== but EXTRACTION is preserved (the failed attempt broke this) ==="
+# Refusing admission must not remove the function from the evidence surface. If this
+# fails, higher-order programs look dependency-free and an R-0004 gap has been moved
+# rather than closed.
+facts="$(cd "$FIX" && $TO "$CC" src/main.con --report subject-facts 2>/dev/null | grep -c 'v1:user:indirect_call_not_pure.fire' || true)"
+if [ "${facts:-0}" -gt 0 ]; then
+  ok "a refused higher-order function still has subject facts ($facts)"
+else
+  no "refusing admission also dropped the function from extraction — this is the failed attempt"
 fi
 
 echo "=== KNOWN GAP: the original cross-package instance ==="
