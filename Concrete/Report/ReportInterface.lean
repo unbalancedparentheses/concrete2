@@ -23,9 +23,15 @@ namespace Report
 partial def countModuleFns (m : CModule) : Nat :=
   m.functions.length + m.submodules.foldl (fun acc sub => acc + countModuleFns sub) 0
 
-partial def countModulePure (m : CModule) : Nat :=
-  let local_ := (m.functions.filter fun f => f.capSet == .empty).length
-  local_ + m.submodules.foldl (fun acc sub => acc + countModulePure sub) 0
+/-- Functions that are genuinely effect-free. An empty capability set is necessary and
+    NOT sufficient: one that can reach an indirect call is not counted, because the total
+    is read as "how much of this program is pure" and that number should not include
+    functions whose effects the compiler cannot see. -/
+partial def countModulePure (opaqueSet : List String) (qualPfx : String) (m : CModule) : Nat :=
+  let qualPrefix := if qualPfx == "" then m.name else qualPfx ++ "." ++ m.name
+  let local_ := (m.functions.filter fun f =>
+    f.capSet == .empty && !opaqueSet.contains (qualPrefix ++ "." ++ f.name)).length
+  local_ + m.submodules.foldl (fun acc sub => acc + countModulePure opaqueSet qualPrefix sub) 0
 
 partial def countModuleExterns (m : CModule) : Nat :=
   m.externFns.length + m.submodules.foldl (fun acc sub => acc + countModuleExterns sub) 0
@@ -50,11 +56,29 @@ def capWhyTrace (lookup : CapLookup) (f : CFnDef) (indent : String) : List Strin
           s!"<- calls {", ".intercalate tagged}"
       some s!"{indent}    {padRight cap 10} {contribStr}"
 
-partial def capReportModule (lookup : CapLookup) (m : CModule) (indent : String) : String :=
+/-- How a function's authority reads in the summary.
+
+    R-0484: `(pure)` used to be printed for ANY empty capability set, which conflates
+    "nothing was declared" with "nothing happens". `base64_cli.print_bytes` takes a
+    `&Writer`, performs real I/O, and was reported `(pure)` — while `usage`, which only
+    prints a string, showed `Console` for declaring it honestly.
+
+    A function that can reach an indirect call has effects this compiler cannot see, so
+    it gets neither the capability list (it declared none) nor the purity claim (it has
+    not earned one). Proof ADMISSION already refuses these; the report saying `(pure)`
+    while admission refuses would leave the two disagreeing, which is worse for a reader
+    than being consistently wrong. -/
+def ppAuthority (capSet : CapSet) (isOpaque : Bool) : String :=
+  if isOpaque && capSet.isEmpty then "(effects unknown: reaches an indirect call)"
+  else ppCapSet capSet
+
+partial def capReportModule (opaqueSet : List String) (qualPfx : String)
+    (lookup : CapLookup) (m : CModule) (indent : String) : String :=
+  let qualPrefix := if qualPfx == "" then m.name else qualPfx ++ "." ++ m.name
   let header := s!"{indent}module {m.name}:"
   let fnLines := m.functions.foldl (fun acc f =>
     let pubStr := if f.isPublic then "pub " else "    "
-    let capsStr := ppCapSet f.capSet
+    let capsStr := ppAuthority f.capSet (opaqueSet.contains (qualPrefix ++ "." ++ f.name))
     let mainLine := s!"{indent}  {pubStr}{f.name} : {capsStr}"
     let traceLines := capWhyTrace lookup f indent
     acc ++ [mainLine] ++ traceLines) []
@@ -66,7 +90,7 @@ partial def capReportModule (lookup : CapLookup) (m : CModule) (indent : String)
   let externLines := externLines ++ (if trustedExterns.isEmpty then []
     else [s!"{indent}  trusted extern:"] ++ trustedExterns.map fun (n, _, _, _) =>
       s!"{indent}      {n} : (none)")
-  let subLines := m.submodules.map (capReportModule lookup · (indent ++ "  "))
+  let subLines := m.submodules.map (capReportModule opaqueSet qualPrefix lookup · (indent ++ "  "))
   let body := fnLines ++ externLines ++ subLines
   if body.isEmpty then header
   else s!"{header}\n{"\n".intercalate body}"
@@ -74,9 +98,11 @@ partial def capReportModule (lookup : CapLookup) (m : CModule) (indent : String)
 def capabilityReport (modules : List CModule) : String :=
   let header := "=== Capability Summary ==="
   let lookup := buildCapLookup modules
-  let body := modules.map (capReportModule lookup · "")
+  -- R-0484: purity is a claim, so it is computed rather than inferred from an empty set.
+  let opaqueSet := effectOpaqueSet modules (buildCallGraph modules)
+  let body := modules.map (capReportModule opaqueSet "" lookup · "")
   let totalFns := modules.foldl (fun acc m => acc + countModuleFns m) 0
-  let pureFns := modules.foldl (fun acc m => acc + countModulePure m) 0
+  let pureFns := modules.foldl (fun acc m => acc + countModulePure opaqueSet "" m) 0
   let externCount := modules.foldl (fun acc m => acc + countModuleExterns m) 0
   let summary := s!"\nTotals: {totalFns} functions ({pureFns} pure), {externCount} externs"
   s!"{header}\n\n{"\n\n".intercalate body}\n{summary}\n"

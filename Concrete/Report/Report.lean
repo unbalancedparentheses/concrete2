@@ -356,11 +356,15 @@ private structure FnEffects where
   isTrusted  : Bool
   isPublic   : Bool
   evidence   : String       -- "enforced", "reported", or "trusted-assumption"
+  -- R-0484: can reach an indirect call, so an empty capability set is "nothing
+  -- declared" rather than "nothing happens". Proof admission already refuses these;
+  -- printing `(pure)` here would leave report and admission disagreeing.
+  effectOpaque : Bool
   loc        : Option SourceLoc  -- structured (file, line), not pre-formatted
 
 private def fmtEffectsRow (e : FnEffects) : String :=
   let pub := if e.isPublic then "pub " else "    "
-  let caps := ppCapSet e.capSet
+  let caps := ppAuthority e.capSet e.effectOpaque
   let allocClass :=
     if e.allocates && e.defers then "alloc+defer"
     else if e.allocates && e.frees then "alloc+free"
@@ -374,6 +378,7 @@ private def fmtEffectsRow (e : FnEffects) : String :=
   s!"  {pub}{e.name}\n    caps: {caps}  alloc: {allocClass}  recursion: {e.recursion}  loops: {e.loops}  ffi: {ffi}  trusted: {trusted}  evidence: {e.evidence}{locSuffix}"
 
 private partial def effectsForModule
+    (opaqueSet : List String)
     (externNames : List String)
     (recUncertain : List String)
     (recMap : List (String × RecursionKind × List String))
@@ -383,6 +388,7 @@ private partial def effectsForModule
   let qualPrefix := if modulePath == "" then m.name else modulePath ++ "." ++ m.name
   let fns := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
+    let isEffectOpaque := opaqueSet.contains qualName
     let callees := collectCallsStmts f.body |>.eraseDups
     let allocs := callees.filter isAllocCall
     let frees := callees.filter isFreeCall
@@ -423,6 +429,7 @@ private partial def effectsForModule
     { name := f.name
       qualName := qualName
       capSet := f.capSet
+      effectOpaque := isEffectOpaque
       allocates := !allocs.isEmpty
       frees := !frees.isEmpty
       defers := !defs.isEmpty
@@ -434,7 +441,7 @@ private partial def effectsForModule
       evidence := evidenceLevel
       loc := lookupLoc locMap qualName }
   fns ++ m.submodules.foldl (fun acc sub =>
-    acc ++ effectsForModule externNames recUncertain recMap locMap pc sub qualPrefix) []
+    acc ++ effectsForModule opaqueSet externNames recUncertain recMap locMap pc sub qualPrefix) []
 
 def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : String :=
@@ -443,12 +450,14 @@ def effectsReport (modules : List CModule) (locMap : FnLocMap := [])
   let recMap := pc.recMap
   -- Transitively closed: reaching an extern through another function still crosses FFI.
   let (externNames, recUncertain) := profileClosures modules pc
+  -- R-0484: purity is a claim, computed, not inferred from an empty capability set.
+  let opaqueSet := effectOpaqueSet modules pc.callGraph
   -- Collect per-function effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
+    acc ++ effectsForModule opaqueSet externNames recUncertain recMap locMap pc m) []
   -- Format per-module
   let body := modules.map fun m =>
-    let modEffects := effectsForModule externNames recUncertain recMap locMap pc m
+    let modEffects := effectsForModule opaqueSet externNames recUncertain recMap locMap pc m
     let fnLines := modEffects.map fmtEffectsRow
     s!"module {m.name}:\n{"\n".intercalate fnLines}"
   -- Summary counts
@@ -4939,8 +4948,10 @@ def collectEffectsFacts (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : List Val :=
   let recMap := pc.recMap
   let (externNames, recUncertain) := profileClosures modules pc
+  -- R-0484: purity is a claim, computed, not inferred from an empty capability set.
+  let opaqueSet := effectOpaqueSet modules pc.callGraph
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
+    acc ++ effectsForModule opaqueSet externNames recUncertain recMap locMap pc m) []
   allEffects.map effectsToFact
 
 open Json in
@@ -5487,9 +5498,11 @@ def evidenceQuery (modules : List CModule) (locMap : FnLocMap)
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
   let (externNames, recUncertain) := profileClosures modules pc
+  -- R-0484: purity is a claim, computed, not inferred from an empty capability set.
+  let opaqueSet := effectOpaqueSet modules pc.callGraph
   -- Get effects for evidence level
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
+    acc ++ effectsForModule opaqueSet externNames recUncertain recMap locMap pc m) []
   let matchFn (e : FnEffects) := e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   let fnEffects := allEffects.find? matchFn
   -- Get violations
@@ -5536,12 +5549,14 @@ def auditQuery (modules : List CModule) (locMap : FnLocMap)
     (pc : Concrete.ProofCore) : String :=
   let recMap := pc.recMap
   let (externNames, recUncertain) := profileClosures modules pc
+  -- R-0484: purity is a claim, computed, not inferred from an empty capability set.
+  let opaqueSet := effectOpaqueSet modules pc.callGraph
   let capLookup := buildCapLookup modules
   let fnLookup := buildFnLookup modules
   let externLookup := buildExternLookup modules
   -- Effects
   let allEffects := modules.foldl (fun acc m =>
-    acc ++ effectsForModule externNames recUncertain recMap locMap pc m) []
+    acc ++ effectsForModule opaqueSet externNames recUncertain recMap locMap pc m) []
   let fnEffects := allEffects.find? fun e => e.name == fnName || e.qualName == fnName || e.qualName.endsWith ("." ++ fnName)
   match fnEffects with
   | none =>
