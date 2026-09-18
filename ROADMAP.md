@@ -10710,17 +10710,37 @@ first would be the original defect and only the second would be the failed attem
 refusal fires and names its reason, it is transitive across two hops, a genuinely
 effect-free function is still admitted, and extraction is preserved.
 
-**Still open.** The proof call graph contains only the user program's modules, so a call
-into `std` resolves to a name with no node and nothing propagates:
-`base64_cli.print_bytes` — the instance this task came from — is still admitted, and the
-gate asserts that so closing the gap fails loudly. **Reports reconciled 2026-09-18.** `--report caps` and `--report effects` printed
+**Reports reconciled 2026-09-18.** `--report caps` and `--report effects` printed
 `(pure)` for any empty capability set, so admission refused what the reports still called
-pure. Both now render `(effects unknown: reaches an indirect call)` instead, and the
-purity totals count a claim rather than empty capability sets. The estimated blast radius
-of ~42 assertion sites was wrong by a wide margin: only functions that actually reach an
-indirect call change, and almost every `(pure)` assertion in the corpus is about a
-genuinely pure function. `examples/packet`'s parsing core is unchanged, which is the
-control that the rule is conservative rather than over-broad.
+pure. Both now render `(effects unknown: reaches an indirect call)`, and the purity totals
+count a claim rather than empty capability sets. The estimated blast radius of ~42
+assertion sites was wrong by a wide margin: only functions that actually reach an indirect
+call change, and almost every `(pure)` assertion in the corpus is about a genuinely pure
+function. `examples/packet`'s parsing core is unchanged, which is the control that the
+rule refuses narrowly rather than broadly.
+
+**Still open, and measured more precisely 2026-09-18.** The analysis sees exactly ONE
+module for a std-using program: `--report caps` on `examples/base64_cli` lists `module
+base64_cli` and nothing else. `std`'s `Writer::write` and `write_raw` are therefore not
+missing from the call GRAPH — they are absent from the compilation unit entirely, so a
+call into `std` resolves to a name with no node and nothing propagates.
+`base64_cli.print_bytes`, the instance this task came from, is still admitted and still
+reported pure; `check_effect_opacity.sh` asserts that, so closing the gap fails loudly.
+
+That makes the fix larger than "put dependency modules in the call graph". Opacity is a
+fact ABOUT A DEPENDENCY, established where that dependency was compiled, and it has to
+reach the consumer the way other dependency facts do. Two shapes, and choosing between
+them is a product decision rather than an implementation detail:
+
+1. **Load dependency cores into the analysis.** Direct, but it makes the consumer
+   recompute a fact the dependency already established — the second-producer problem this
+   repository keeps paying for elsewhere.
+2. **Ship opacity as a per-definition dependency fact,** alongside the attestation
+   material that already crosses this boundary. One producer, and it composes with the
+   package-evidence work; but it widens the dependency fact surface, which is R-0440 and
+   R-0482 territory and inherits their prerequisites.
+
+Neither is attempted here.
 
 **THE MECHANISM, located 2026-09-16 — and it is not what the shape suggests.** A
 `Writer` dispatches through stored function pointers, so the obvious hypothesis is that
