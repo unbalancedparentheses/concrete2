@@ -88,6 +88,26 @@ def covers(token, changed_path):
     return changed_path.startswith(token.rstrip("/") + "/")
 
 
+# NOT AUTO-RUN, but still listed — the point is to say what a change touches, and
+# silently dropping something from the list would be the same lie as a short list read as
+# "nothing can break".
+#
+#   run_ci_gates_local.sh          executes most of the suite itself, so running it from a
+#                                  SELECTIVE runner defeats the selection, and it holds the
+#                                  repository lock that exclusive gates need — which makes
+#                                  those refuse and look like failures rather than like the
+#                                  correct fail-closed refusal they are.
+#   check_gate_mutation_coverage.sh  bare, this is a full campaign: hours, exclusive access,
+#                                  and it mutates a disposable copy of the tree. It takes
+#                                  FAMILY_ID/FAMILY_SPEC for a single-family run, which is
+#                                  a deliberate act, not something to trigger by editing a
+#                                  file it happens to name.
+NOT_AUTO_RUN = {
+    "run_ci_gates_local.sh": "runs most of the suite itself; run it directly",
+    "check_gate_mutation_coverage.sh": "full campaign, exclusive and hours; use FAMILY_ID for one family",
+}
+
+
 def select(changed, gate_paths=None):
     """-> {gate basename: [reasons]}"""
     if gate_paths is None:
@@ -118,7 +138,10 @@ def main():
     changed = [l.strip() for l in sys.stdin if l.strip()]
     for gate, reasons in sorted(select(changed).items()):
         # One reason is enough to act on; more would bury the gate name.
-        print(f"{gate}\t{sorted(set(reasons))[0]}")
+        why = sorted(set(reasons))[0]
+        if gate in NOT_AUTO_RUN:
+            why += f"  [not auto-run: {NOT_AUTO_RUN[gate]}]"
+        print(f"{gate}\t{why}")
 
 
 if __name__ == "__main__":

@@ -91,7 +91,13 @@ echo "Treat an empty or short list as 'no obvious target', never as 'nothing can
 echo
 echo "=== running $nsel gate(s) ==="
 pass=0; fail=0; failed=""
-while IFS=$'\t' read -r g _; do
+while IFS=$'\t' read -r g why; do
+  case "$why" in
+    *"[not auto-run:"*)
+      reason="${why##*\[not auto-run: }"; reason="${reason%]}"
+      printf '  %-42s skipped (%s)\n' "$g" "$reason"
+      continue ;;
+  esac
   printf '  %-42s ' "$g"
   if timeout 1800 bash "scripts/tests/$g" >/tmp/gfd_out.$$ 2>&1; then
     echo "ok"; pass=$((pass+1))

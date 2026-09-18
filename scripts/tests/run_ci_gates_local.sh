@@ -262,7 +262,12 @@ mapfile -t CMDS < <(grep -oE '([A-Z_][A-Z0-9_]*=[^ ;|&]+[[:space:]]+)*((bash|pyt
 # The pin describes the WHOLE workflow, so it applies only when the whole workflow was read. With
 # `--job` the text is deliberately narrowed to one job first, and demanding all 208 commands from that
 # subset made the documented flag unusable (fail-closed, but unusable).
-EXPECTED_GATE_COMMANDS=213
+# 213 -> 224: four gates added by R-0483/R-0484 and the diff-to-gate mapping
+# (check_view_lifetime, check_effect_opacity, check_gates_for_diff, and the
+# attestation reference-order gate). Updated here because the pin is what makes
+# "the whole workflow was read" checkable; leaving it stale turns a growth signal
+# into a permanent refusal.
+EXPECTED_GATE_COMMANDS=224
 if [ -n "$JOB" ]; then
   [ "${#CMDS[@]}" -ge 1 ] || { echo "error: --job '$JOB' yielded no gate commands." >&2
     ci_write_summary 0 " job_selected_nothing"; _gate_lock_release; exit 2; }
