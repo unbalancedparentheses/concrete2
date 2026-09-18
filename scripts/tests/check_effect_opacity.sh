@@ -61,27 +61,43 @@ else
   no "plain is no longer admitted — the rule is over-broad, not conservative"
 fi
 
-echo "=== reaching an indirect call refuses ADMISSION, and names why ==="
-pout="$(cd "$FIX" && $TO "$CC" src/main.con --report proof-status 2>&1)"
+echo "=== the REPORTS no longer claim purity they cannot establish ==="
+# This half IS live. Reports consult opacity directly, so they are honest even while
+# admission is inert.
+cout="$(cd "$FIX" && $TO "$CC" src/main.con --report caps 2>&1)"
+if printf '%s' "$cout" | grep -qE "plain +: \(pure\)"; then
+  ok "a genuinely effect-free function still reads (pure)"
+else
+  no "plain lost its (pure) rendering — the rule is over-broad, not conservative"
+fi
 for fn in fire fire2; do
-  if printf '%s' "$pout" | grep -A1 -E "\`indirect_call_not_pure\.$fn\`" \
-     | grep -q "effects may enter through an indirect call"; then
-    ok "$fn is refused, and the refusal names its reason"
+  if printf '%s' "$cout" | grep -qE "$fn +: \(effects unknown: reaches an indirect call\)"; then
+    ok "$fn reads as effects-unknown rather than pure"
   else
-    no "$fn is not refused for reaching an indirect call, or the refusal names nothing"
-    printf '%s\n' "$pout" | grep -E "\`indirect_call_not_pure\.$fn\`" | awk 'NR<=2' | sed 's/^/       /'
+    no "$fn still reads as pure in --report caps"
   fi
 done
-
-echo "=== TRANSITIVE: fire2 makes no indirect call itself ==="
-# It calls fire. The defect this came from reached the indirect call two hops down, so a
-# per-body predicate would have missed exactly the case that mattered.
-if printf '%s' "$pout" | grep -A1 -E "\`indirect_call_not_pure\.fire2\`" \
-   | grep -q "effects may enter through an indirect call"; then
-  ok "a caller two hops from the indirect call is also refused"
+if printf '%s' "$cout" | grep -q "1 pure"; then
+  ok "the purity total counts a claim (1), not empty capability sets (would be 4)"
 else
-  no "transitivity is not applied — only direct indirect calls are caught"
+  no "the purity total is not counting a claim"
+  printf '%s\n' "$cout" | grep "Totals:" | sed 's/^/       /'
 fi
+
+echo "=== KNOWN GAP: admission does not yet refuse them ==="
+# `EligibilityEntry.admissible` is deliberately inert. The rule works and was reverted
+# because its reach into the evidence machinery — drift coverage, replay targets — raises
+# a question about whether an inadmissible claim should still be REPLAYED, which is about
+# evidence semantics rather than effect-freedom. Asserted here so enabling it fails this
+# check and forces the answer to be written down. See R-0484.
+pout="$(cd "$FIX" && $TO "$CC" src/main.con --report proof-status 2>&1)"
+for fn in fire fire2; do
+  if printf '%s' "$pout" | grep -q "effects may enter through an indirect call"; then
+    no "$fn IS now refused — admission was enabled; re-pin this gate and answer the replay question"
+  else
+    ok "$fn is still admitted (expected; admission deliberately inert)"
+  fi
+done
 
 echo "=== but EXTRACTION is preserved (the failed attempt broke this) ==="
 # Refusing admission must not remove the function from the evidence surface. If this

@@ -47,8 +47,23 @@ st=$("$C" std/src/lib.con --report proof-status 2>&1)
 #
 # The two base64 links DO prove, and they are the live positive control: without them "nine are
 # unjustified" would also be satisfied by std carrying no evidence at all.
-for fn in std.option.option_Option_unwrap_or std.option.option_Option_map \
-          std.result.result_Result_map std.result.result_Result_map_err \
+# R-0484 WOULD SPLIT THESE NINE, and does not yet. Three — `Option::map`, `Result::map`,
+# `Result::map_err` — are HIGHER-ORDER: they call the function they are handed, and a
+# capability-free fn type can still hide effects behind a `trusted` body, so their
+# effect-freedom cannot be shown. The intended rule refuses them and reports `ineligible`
+# with that reason instead of `needs_recheck`.
+#
+# It is not enabled, because its reach is wider than the admission question. 188 of std's
+# 890 functions are higher-order, and moving these three drops them from drift coverage
+# (11 -> 8) and out of `replayTargetsOf` entirely — and whether an INADMISSIBLE claim
+# should still be replayed is a question about evidence semantics, which this file argues
+# one way ("replay must keep asking about pending claims, or the migration cannot clear
+# them") and which a change about effect-freedom should not settle by accident. See
+# `EligibilityEntry.admissible`, deliberately inert, and R-0484.
+#
+# No proof rides on the answer: both dispositions are non-proved, and the two proved std
+# links are base64 and unaffected either way.
+for fn in std.option.option_Option_unwrap_or \
           std.numeric.numeric_NonZeroU32_try_new \
           std.numeric.numeric_NonZeroU32_try_from_u64 \
           std.numeric.numeric_NonZeroU64_try_new \
@@ -56,7 +71,7 @@ for fn in std.option.option_Option_unwrap_or std.option.option_Option_map \
           std.numeric.numeric_Port_try_from_u32; do
   grep -q "\`$fn\` has a stored proof-subject digest from an EARLIER SCHEMA" <<<"$st" \
     && ok "$fn: needs_recheck — its v2 subject is INCOMPLETE, so the stored v1 value is not comparable" \
-    || no "$fn: no longer reports needs_recheck — if its v2 subject became computable, re-pin these nine to whatever they now honestly are"
+    || no "$fn: no longer reports needs_recheck — if its v2 subject became computable, re-pin to what it now honestly is"
 done
 for fn in std.base64.base64_char_of std.base64.base64_val_of; do
   grep -q "✓ \`$fn\` — proof matches current body" <<<"$st" \

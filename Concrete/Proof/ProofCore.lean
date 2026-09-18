@@ -1427,7 +1427,24 @@ structure EligibilityEntry where
     measured, and caught by `check_shadow_body_v2.sh`. Obligation status derives from
     this; the entry/excluded split and INV-8 keep using `eligible`. -/
 def EligibilityEntry.admissible (e : EligibilityEntry) : Bool :=
-  e.eligible && !e.effectOpaque
+  -- DELIBERATELY `eligible` FOR NOW, pending a decision recorded in R-0484.
+  --
+  -- `e.eligible && !e.effectOpaque` is the intended rule and it works: it refuses the
+  -- right functions, transitively, without disturbing extraction. It was reverted to
+  -- here because its reach into the EVIDENCE machinery is wider than the admission
+  -- question, and each consequence is a semantic call rather than a mechanical re-pin:
+  -- 188 of std's 890 functions are higher-order, so three `pureCoreFns` links move from
+  -- `needs_recheck` to `ineligible`, which drops them from drift coverage (11 -> 8) and
+  -- out of `replayTargetsOf` entirely. Whether an inadmissible claim should still be
+  -- REPLAYED — the gate argues replay must keep asking about pending claims "or the
+  -- migration cannot clear them" — is a question about evidence semantics, not about
+  -- effect-freedom, and answering it silently inside this change would settle it by
+  -- accident.
+  --
+  -- No proof is lost either way: std has two proved links, both base64, both unaffected.
+  -- The REPORTS do not go through here — they consult `effectOpaqueSet` directly — so
+  -- `--report caps`/`effects` stay honest while this stays inert.
+  e.eligible
 
 -- ============================================================
 -- Proof registry types (moved from Report.lean)
@@ -2945,9 +2962,17 @@ private def generateObligations
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
         -- R-0484: opacity refuses ADMISSION without touching `eligible`, so it is not in
-        -- either reason list. It still has to be NAMED here: a refusal that reports no
-        -- reason is the defect this task exists to remove, not a smaller version of it.
-        ++ (if e.eligibility.effectOpaque then
+        -- either reason list. It still has to be NAMED when it bites: a refusal that
+        -- reports no reason is the defect this task exists to remove, not a smaller
+        -- version of it.
+        --
+        -- Conditioned on it ACTUALLY changing the verdict, not merely on being true.
+        -- While `admissible` is inert this appends nothing, because listing opacity
+        -- beside an unrelated refusal — `main` is excluded for being the entry point —
+        -- presents a fact that contributed nothing as though it were a cause. The
+        -- condition turns itself on when admission is enabled.
+        ++ (if e.eligibility.effectOpaque && e.eligibility.eligible
+               && !e.eligibility.admissible then
               ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
             else [])
     , ineligCat := cat
@@ -2971,9 +2996,17 @@ private def generateObligations
     , expectedFp := match e.spec with | some a => a.expectedFp | none => ""
     , eligibilityReasons := e.eligibility.sourceReasons ++ e.eligibility.profileReasons
         -- R-0484: opacity refuses ADMISSION without touching `eligible`, so it is not in
-        -- either reason list. It still has to be NAMED here: a refusal that reports no
-        -- reason is the defect this task exists to remove, not a smaller version of it.
-        ++ (if e.eligibility.effectOpaque then
+        -- either reason list. It still has to be NAMED when it bites: a refusal that
+        -- reports no reason is the defect this task exists to remove, not a smaller
+        -- version of it.
+        --
+        -- Conditioned on it ACTUALLY changing the verdict, not merely on being true.
+        -- While `admissible` is inert this appends nothing, because listing opacity
+        -- beside an unrelated refusal — `main` is excluded for being the entry point —
+        -- presents a fact that contributed nothing as though it were a cause. The
+        -- condition turns itself on when admission is enabled.
+        ++ (if e.eligibility.effectOpaque && e.eligibility.eligible
+               && !e.eligibility.admissible then
               ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
             else [])
     , ineligCat := cat
