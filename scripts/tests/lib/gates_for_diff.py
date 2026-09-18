@@ -53,6 +53,13 @@ ALWAYS_IF = {
         ("check_classification_freshness.sh", "the classification table is derived from it"),
         ("check_shadow_body_v2.sh", "structural body digests and their coverage ratchet"),
         ("check_mutation_anchors.sh", "renames make mutation anchors INERT, and silently"),
+        # A compiler change can alter ANY program's behaviour or report text, and
+        # `run_tests.sh` names no compiler source because it compiles the whole corpus —
+        # the "broken by a change it never names" case this file warns about, made
+        # concrete. Its `--trust-gate` form is listed separately because it runs the
+        # self-consistency section the plain form does not, and that is what caught a
+        # DIAG-STATUS disagreement introduced by an R-0484 edit to Report.lean.
+        ("run_tests.sh", "a compiler change can alter any program's behaviour or output"),
     ],
     "proofs/": [
         ("check_attestation_manifest.sh", "proof links name generated attestation symbols"),
@@ -102,6 +109,16 @@ def covers(token, changed_path):
 #                                  FAMILY_ID/FAMILY_SPEC for a single-family run, which is
 #                                  a deliberate act, not something to trigger by editing a
 #                                  file it happens to name.
+# A SCRIPT IS NOT A GATE — an invocation is. CI runs `run_tests.sh` plain AND
+# `run_tests.sh --trust-gate`, which exercise different sections; the trust gate caught a
+# DIAG-STATUS inconsistency that the plain run does not check. Selecting the script while
+# suggesting only its bare form is a mapping that looks complete and is not, so the
+# flagged forms are named here and printed alongside.
+EXTRA_INVOCATIONS = {
+    "run_tests.sh": ["run_tests.sh --trust-gate"],
+    "run_fast_surface_gates.sh": ["run_fast_surface_gates.sh --mutate"],
+}
+
 NOT_AUTO_RUN = {
     "run_ci_gates_local.sh": "runs most of the suite itself; run it directly",
     "check_gate_mutation_coverage.sh": "full campaign, exclusive and hours; use FAMILY_ID for one family",
@@ -142,6 +159,8 @@ def main():
         if gate in NOT_AUTO_RUN:
             why += f"  [not auto-run: {NOT_AUTO_RUN[gate]}]"
         print(f"{gate}\t{why}")
+        for extra in EXTRA_INVOCATIONS.get(gate, []):
+            print(f"{extra}\tCI also runs this flagged form, which checks different sections")
 
 
 if __name__ == "__main__":

@@ -70,6 +70,23 @@ for g in check_attestation_manifest.sh check_classification_freshness.sh \
     || no "$g is not selected for a diff touching std/ and Concrete/"
 done
 
+echo "=== a compiler change selects the corpus runner, in both its CI forms ==="
+# This gap was real: an R-0484 edit to `Concrete/Report/Report.lean` broke the trust
+# gate's self-consistency section, and the mapping missed it because `run_tests.sh`
+# NAMES no compiler source — it compiles the whole corpus. A script is also not a gate:
+# CI runs the plain form and `--trust-gate`, and only the latter checks consistency.
+compiler_sel="$(printf 'Concrete/Report/Report.lean\n' | python3 "$SEL" 2>/dev/null | cut -f1)"
+if printf '%s\n' "$compiler_sel" | grep -qx "run_tests.sh"; then
+  ok "run_tests.sh is selected for a compiler change"
+else
+  no "a compiler change does not select the corpus runner"
+fi
+if printf '%s\n' "$compiler_sel" | grep -qx "run_tests.sh --trust-gate"; then
+  ok "its --trust-gate form is named too (different sections, different failures)"
+else
+  no "the flagged CI form is not surfaced; a script is being treated as one gate"
+fi
+
 echo "=== the answer is a selection, not the whole suite ==="
 # Without this every assertion above would also pass on `return every gate`.
 if [ "$nsel" -gt 0 ] && [ "$nsel" -lt $((TOTAL_GATES / 3)) ]; then

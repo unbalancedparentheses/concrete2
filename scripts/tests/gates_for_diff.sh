@@ -99,7 +99,8 @@ while IFS=$'\t' read -r g why; do
       continue ;;
   esac
   printf '  %-42s ' "$g"
-  if timeout 1800 bash "scripts/tests/$g" >/tmp/gfd_out.$$ 2>&1; then
+  # `$g` may carry flags (e.g. `run_tests.sh --trust-gate`), so it is not quoted as one word.
+  if timeout 1800 bash scripts/tests/$g >/tmp/gfd_out.$$ 2>&1; then
     echo "ok"; pass=$((pass+1))
   else
     echo "FAIL"; fail=$((fail+1)); failed="$failed $g"

@@ -3139,9 +3139,16 @@ private def generateDiagnostics
            , repairClass := repairClassOf .trusted
            , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .proved => none
-  -- Diagnostics from unsupported constructs (eligible but extraction blocked)
+  -- Diagnostics from unsupported constructs (eligible but extraction blocked).
+  -- R-0484: gated on ADMISSIBILITY, not just extraction. A function that is not
+  -- admissible has `ineligible` as its obligation status, and DIAG-STATUS requires the
+  -- diagnostic to agree with the status — so emitting "blocked" here would contradict
+  -- it, which is precisely what the self-consistency check caught on
+  -- `Scheduler.execute_task`. "Eligible but uses unsupported constructs" is also simply
+  -- untrue of a function that would be refused even if extraction had succeeded: the
+  -- unsupported construct is not what is stopping it.
   let unsupDiags := entries.filterMap fun e =>
-    if e.extracted.isNone && !e.unsupported.isEmpty then
+    if e.extracted.isNone && !e.unsupported.isEmpty && e.eligibility.admissible then
       some { kind := .unsupportedConstruct, severity := .error, function := e.qualName
            , message := s!"`{e.qualName}` is eligible but uses unsupported constructs."
            , hint := s!"Remove {", ".intercalate e.unsupported} to enable extraction."
