@@ -1,0 +1,21 @@
+mod uninferable {
+    // The case that remains genuinely unknowable, and must SAY SO. A generic callee's
+    // return type needs its type arguments substituted, which is `unifyTypes`' job; doing
+    // it inside a cheap syntactic peek would be a second producer of that answer. So the
+    // peek returns `.placeholder`, the caller contributes NO binding, and `resolveCaps`
+    // names the variable it could not infer.
+    //
+    // The error CODE is the assertion. E0242 means the capability leg refused. E0220
+    // would mean the old fallback is back: a fabricated `C := {}` passed the authority
+    // check and the program was rejected downstream by type equality, which has nothing
+    // to do with capabilities and would stop rejecting it the day fn-type comparison is
+    // relaxed to subsetting.
+    fn shout(x: i64) with(Console) -> i64 { return x * 2; }
+    fn apply<cap C>(f: fn(i64) with(C) -> i64, x: i64) with(C) -> i64 { return f(x); }
+    fn pick_generic<T>() -> fn(i64) with(Console) -> i64 { return shout; }
+
+    fn main() with(Console) -> Int {
+        let g: i64 = apply(pick_generic::<i64>(), 1);
+        return g as Int;
+    }
+}

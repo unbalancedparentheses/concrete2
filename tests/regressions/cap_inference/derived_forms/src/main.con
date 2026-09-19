@@ -1,0 +1,31 @@
+mod derived_forms {
+    // BUG 063: every one of these but the first was rejected with E0220, reporting a
+    // type mismatch against `fn(i64) with() -> i64` — a capability set the program never
+    // wrote and the compiler invented. DECISIONS.md recommends a struct of function
+    // pointers as THE answer for pluggable interfaces, so the struct-field form is the
+    // intended use rather than an exotic one.
+    fn shout(x: i64) with(Console) -> i64 { return x * 2; }
+    fn quiet(x: i64) -> i64 { return x + 1; }
+
+    fn apply<cap C>(f: fn(i64) with(C) -> i64, x: i64) with(C) -> i64 { return f(x); }
+
+    pub struct Copy Ops { op: fn(i64) with(Console) -> i64 }
+
+    fn pick() -> fn(i64) with(Console) -> i64 { return shout; }
+
+    fn main() with(Console) -> Int {
+        let ops: Ops = Ops { op: shout };
+        let fns: [fn(i64) with(Console) -> i64; 2] = [shout, shout];
+
+        let a: i64 = apply(shout, 1);      // bare name     — accepted before the fix too
+        let b: i64 = apply(ops.op, 1);     // struct field  — was E0220
+        let c: i64 = apply((ops.op), 1);   // parenthesised — was E0220
+        let d: i64 = apply(pick(), 1);     // call result   — was E0220
+        let e: i64 = apply(fns[0], 1);     // array element — was E0220
+        // A capability-FREE callback through the same combinator must still work: the
+        // old fallback answered `empty` for everything, so it happened to be right here.
+        // If only the capability-carrying forms were fixed, this is what would break.
+        let f: i64 = apply(quiet, 1);
+        return (a + b + c + d + e + f) as Int;   // 2*5 + 2 = 12
+    }
+}

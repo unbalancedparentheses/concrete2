@@ -161,3 +161,13 @@ tests/programs/adversarial_policy_empty/adversarial_policy_empty
 # behind, and it was once swept into a commit — which would have inverted the very
 # premise the gate is testing. Ignored so that cannot happen again.
 .receipt-worktree-noise/
+
+# Compiled fixtures under tests/regressions/. `concrete build` emits a binary named after
+# the project beside its sources; the gates build out of tree with `-o`, but a manual run
+# leaves one behind and it was once staged. The sources are matched explicitly below so a
+# new fixture is never silently ignored.
+tests/regressions/*/*/*
+!tests/regressions/*/*/
+!tests/regressions/*/*/Concrete.toml
+!tests/regressions/*/*/src/
+!tests/regressions/*/README.md

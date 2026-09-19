@@ -719,6 +719,9 @@ jobs:
       - name: "Diff-to-gate mapping (the selector still names the gates a known change breaks)"
         run: bash scripts/tests/check_gates_for_diff.sh
 
+      - name: "Cap-variable inference (bug 063 — an unknown argument type is not an empty capability set)"
+        run: bash scripts/tests/check_cap_inference.sh
+
       - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
         run: bash scripts/tests/check_cli_coherence.sh
 

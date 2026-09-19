@@ -641,19 +641,43 @@ partial def checkExpr (e : Expr) (hint : Option Ty := none) (mode : UseMode := .
               for cap in caps do
                 if sig.capParams.contains cap then
                   -- Get actual argument's cap set
-                  let argCapSet ← do
+                  -- BUG 063. `none` means "this argument's capability set is not known
+                  -- here", and it must stay distinguishable from `some .empty`, which
+                  -- means "this callback requires no authority". Recording the first as
+                  -- the second is absence of information stored as a positive fact, and
+                  -- it is not a conservative approximation of the missing analysis — it
+                  -- is the opposite one.
+                  --
+                  -- The consequence was not a wrong answer but a wrong ACCUSATION:
+                  -- `missingCaps` ran against the fabricated `C := {}` and found nothing
+                  -- missing, so the authority check passed, and the program was then
+                  -- rejected downstream by `expectTy` comparing `with()` against
+                  -- `with(Console)` — a type-equality check that has nothing to do with
+                  -- capabilities and happened to sit in the way. Relaxing fn-type cap
+                  -- comparison to subsetting, which is the natural direction for passing
+                  -- a low-authority callback where a high-authority one is expected,
+                  -- would have removed the only thing rejecting these programs and
+                  -- turned this into an authority hole.
+                  --
+                  -- Contributing nothing lets `resolveCaps` throw the variable it could
+                  -- not infer, which is `cannotInferCapVariable` naming the actual
+                  -- problem at the actual place.
+                  let argCapSet? ← do
                     let argTy ← peekExprType arg
                     match argTy with
-                    | .fn_ _ cs _ => pure cs
+                    | .fn_ _ cs _ => pure (some cs)
                     | _ =>
                       match arg with
                       | .ident _ varName =>
                         match ← lookupFn varName with
-                        | some argSig => pure argSig.capSet
-                        | none => pure CapSet.empty
-                      | _ => pure CapSet.empty
-                  let (argCaps, _) := argCapSet.normalize
-                  capBindings := capBindings ++ [(cap, argCaps)]
+                        | some argSig => pure (some argSig.capSet)
+                        | none => pure none
+                      | _ => pure none
+                  match argCapSet? with
+                  | some cs =>
+                    let (argCaps, _) := cs.normalize
+                    capBindings := capBindings ++ [(cap, argCaps)]
+                  | none => pure ()
             | _ => pure ()
           -- Resolve the cap-poly signature against the bindings (shared with the
           -- method-call path: Capabilities.resolveCaps). Error carries the cap

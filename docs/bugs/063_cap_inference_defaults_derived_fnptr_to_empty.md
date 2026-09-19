@@ -1,8 +1,11 @@
 # Bug 063: cap-variable inference reads "unknown" as "no capabilities", so a stored or derived fn pointer cannot reach a `cap C` parameter
 
-**Status:** Open
+**Status:** Fixed
 **Discovered:** 2026-07-27, while filing R-0005. Reproduced on four derived
 argument forms.
+**Fixed:** 2026-09-19
+**Regression test:** `scripts/tests/check_cap_inference.sh` (6/0), fixtures under
+`tests/regressions/cap_inference/`.
 
 ## Symptom
 
@@ -117,7 +120,34 @@ turns this into an authority hole. Fix it before that relaxation, not after.
 - The documented `for_each_with` / `with_owned` / `modify` family in
   CALLABLE_VALUES_AND_CAPABILITIES.md has the same shape.
 
-## Candidate fix
+## Fix as applied (2026-09-19)
+
+Both halves of the candidate fix below, in that order.
+
+**Distinguish "no binding" from "empty binding".** The consumer now contributes nothing
+when the argument's capability set is unknown, so `resolveCaps` throws the variable it
+could not infer. The misleading `E0220` became `E0242 cannot infer capability variable
+'C'`, naming the actual problem at the actual place.
+
+**Then widen what is known**, so the accurate diagnostic is rarely reached.
+`peekExprType` gained a field-access case (auto-dereferencing through borrows, because
+`ops.op` and `(&ops).op` name the same field), a call case, and an index case. All four
+derived forms in the table above now compile AND dispatch correctly — the fixture runs
+six calls through one `cap C` combinator and returns 12.
+
+Generic call returns deliberately still answer `.placeholder`: substituting a callee's
+type arguments is `unifyTypes`' job, and doing it inside a cheap syntactic peek would
+make this a second producer of that answer. That case is the one the gate uses to check
+the honest-refusal path.
+
+**The gate asserts the ERROR CODE, not merely that something fails.** `E0242` means the
+capability leg refused; `E0220` would mean the fallback is back and type equality is
+doing the work. Per the severity note above, a gate that only checked "does it fail"
+would pass either way — and would go on passing after fn-type comparison is relaxed to
+subsetting, which is exactly when this becomes an authority hole rather than a rejected
+valid program.
+
+## Candidate fix (as filed)
 
 Distinguish "no binding" from "empty binding". Contribute a binding only when
 the argument's capset is actually known; let `resolveCaps` report

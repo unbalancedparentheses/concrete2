@@ -1870,6 +1870,18 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== cap-variable inference (bug 063) ==="
+if bash "$ROOT_DIR/scripts/tests/check_cap_inference.sh" > /tmp/cap_inf.$$ 2>&1; then
+    _ci_pass=$(grep -c "^  ok  " /tmp/cap_inf.$$ || true)
+    echo "  ok  cap-inference gate ($_ci_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  cap-inference gate"
+    grep "^  FAIL" /tmp/cap_inf.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/cap_inf.$$
+
 echo "=== diff-to-gate mapping ==="
 if bash "$ROOT_DIR/scripts/tests/check_gates_for_diff.sh" > /tmp/gates_map.$$ 2>&1; then
     _gm_pass=$(grep -c "^  ok  " /tmp/gates_map.$$ || true)

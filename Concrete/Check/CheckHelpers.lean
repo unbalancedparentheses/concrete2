@@ -598,6 +598,33 @@ def peekExprType (e : Expr) : CheckM Ty := do
     | none => return .placeholder
   | .paren _ inner => peekExprType inner
   | .binOp _ _ lhs _ => peekExprType lhs
+  -- BUG 063. A struct field's type is KNOWN — it is written in the struct
+  -- declaration — so answering `.placeholder` for `ops.op` was not conservatism, it
+  -- was declining to look. The caller then invented `with()` for a fn-typed field and
+  -- blamed the program for not matching it, which is how a capability-carrying callback
+  -- became unpassable to a `cap C` combinator. DECISIONS.md recommends a struct of
+  -- function pointers as THE answer for pluggable interfaces, so this shape is the
+  -- intended use, not an exotic one.
+  --
+  -- Auto-derefs through a borrow because field access itself does; `(&ops).op` and
+  -- `ops.op` name the same field and must peek to the same type.
+  | .fieldAccess _ obj fieldName =>
+    let objTy ← peekExprType obj
+    let structName? : Option String :=
+      match objTy with
+      | .named n => some n
+      | .generic n _ => some n
+      | .ref (.named n) => some n
+      | .refMut (.named n) => some n
+      | .ref (.generic n _) => some n
+      | .refMut (.generic n _) => some n
+      | _ => none
+    match structName? with
+    | some sn =>
+      match ← lookupStructField sn fieldName with
+      | some ty => return ty
+      | none => return .placeholder
+    | none => return .placeholder
   -- Borrows must carry the reference wrapper so generic inference can unify
   -- `&T` against `&i64` (ROADMAP Phase 5 #6b). Without these, `peekExprType
   -- (&w)` fell through to `.placeholder` and `id(&w)` could not infer `T`,
@@ -607,6 +634,24 @@ def peekExprType (e : Expr) : CheckM Ty := do
   | .deref _ inner =>
     match ← peekExprType inner with
     | .ref t | .refMut t | .ptrMut t | .ptrConst t | .heap t => return t
+    | _ => return .placeholder
+  -- BUG 063, same reasoning as `fieldAccess`: the callee's return type is declared, so
+  -- `apply(pick(), 4)` has a knowable type. Generic returns are NOT answered here —
+  -- substituting the callee's type arguments is the caller's job and doing it in a
+  -- "cheap peek" would duplicate `unifyTypes`. `.placeholder` for those is honest
+  -- ignorance, which the caller now handles by contributing no binding.
+  | .call _ fnName typeArgs _ =>
+    if !typeArgs.isEmpty then return .placeholder
+    else
+      match ← lookupFn fnName with
+      | some sig => if sig.typeParams.isEmpty then return sig.retTy else return .placeholder
+      | none => return .placeholder
+  -- An array's element type is written in its own type, so `fns[0]` is knowable.
+  | .arrayIndex _ arr _ =>
+    match ← peekExprType arr with
+    | .array t _ => return t
+    | .ref (.array t _) => return t
+    | .refMut (.array t _) => return t
     | _ => return .placeholder
   | _ => return .placeholder
 
