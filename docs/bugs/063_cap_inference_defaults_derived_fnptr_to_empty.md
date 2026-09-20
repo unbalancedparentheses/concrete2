@@ -3,9 +3,23 @@
 **Status:** Fixed
 **Discovered:** 2026-07-27, while filing R-0005. Reproduced on four derived
 argument forms.
-**Fixed:** 2026-09-19
-**Regression test:** `scripts/tests/check_cap_inference.sh` (6/0), fixtures under
+**Fixed:** 2026-09-19 (function-call path), 2026-09-20 (method-call path).
+**Regression test:** `scripts/tests/check_cap_inference.sh` (10/0), fixtures under
 `tests/regressions/cap_inference/`.
+
+**TWO SITES, AND THE FIRST FIX TOOK ONLY ONE.** `Check.lean`'s function-call path
+and `CheckHelpers.lean`'s method-call path carried byte-identical copies of the
+defect. The 2026-09-19 fix closed the first; the method path was still converting
+an unrecognized argument type into `CapSet.empty` and still reporting E0220. It
+was found by the sweep that became
+[ABSENCE_IS_NOT_A_FACT.md](../project/ABSENCE_IS_NOT_A_FACT.md) — the shape
+recurs, so fixing one instance is not fixing the defect.
+
+The method path is the one that matters: the capability-polymorphic combinators
+that actually exist in `std` — `Set::fold`, `for_each`, `with_value` — are
+METHODS, so real callers reach it and not the other one. Both sites are now
+asserted, each with its own derived-forms fixture and its own generic-return
+E0242 control, so neither can regress alone.
 
 ## Symptom
 

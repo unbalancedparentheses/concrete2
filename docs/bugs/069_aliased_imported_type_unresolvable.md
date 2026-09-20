@@ -1,4 +1,10 @@
-# Bug 064 — an imported type behind an alias does not resolve as that type
+# Bug 069 — an imported type behind an alias does not resolve as that type
+
+> **Renumbered 064 -> 069 on 2026-09-20.** A second, unrelated bug was filed under
+> 064 and the bug ledger keys by number, so one of the pair was silently discarded:
+> the corpus is a bash associative array, where a repeated key overwrites rather than
+> collides, and this entry lost. It was absent from the README index as well. Found by
+> the status-agreement check added to `scripts/tests/audit_bug_corpus.sh`.
 
 **Status:** FIXED 2026-08-02
 **Found:** 2026-08-02, by running the falsifying fixture specified for the R-0004

@@ -1539,7 +1539,7 @@ system.
 | — | ~~**R-0464**~~ | **DONE 2026-08-03.** H24 closed: trap conditions are enumerated once in `IntArith` and tied to families by a totality proof. **No reproduced unsoundness remains in KNOWN_HOLES.** |
 | 3 | **R-0466** | the measurement block begins; measuring a surface that reports `proved` for trapping operations had to wait for 2–3 |
 | 4 | **R-0471** | the work R-0466 needs in order to have anything to move |
-| 5 | **R-0470** | bug 063 — capability inference manufactures an empty capability set |
+| — | ~~**R-0470**~~ | **DONE 2026-09-20.** Bug 063 closed at BOTH sites and gated at 10/0. The 2026-09-19 fix took only `Check.lean`'s function-call path; `CheckHelpers.lean`'s method path held a byte-identical copy, found by the sweep behind `ABSENCE_IS_NOT_A_FACT.md`, and it is the path real callers reach because std's cap-polymorphic combinators are METHODS. Both assert E0242 AND the absence of E0220, so the gate keeps working after fn-type comparison is relaxed to subsetting |
 | 6 | **R-0469** | bug 065 — stack unboundedness propagation |
 | — | ~~**R-0465**~~ | **DONE 2026-08-03.** Promoted ahead of R-0464 because R-0461 measured the cost of not having it. All five parts, incl. the release gate now reading badges off the one ledger — which also made `require-two-kernels` reject the H23 fixture |
 | — | ~~**R-0458**~~ | **DONE 2026-08-03.** The badge states both coordinates: `proved_by_two_kernels (lean, rocq) [1 foundation: CIC]`. `independenceOf` derives from the same function, so the CIC/HOL knowledge exists once |
@@ -8196,6 +8196,16 @@ them forward is the point of this task; it does not narrow R-0137.
 
 ### Task R-0470
 
+**Status (2026-09-20): DONE — both sites fixed and gated.**
+`check_cap_inference.sh` 10/0. The first fix (2026-09-19) closed only
+`Check.lean`'s function-call path; `CheckHelpers.lean`'s method-call path carried
+a byte-identical copy and was found by the sweep that became
+`docs/project/ABSENCE_IS_NOT_A_FACT.md`. The method path is the one real callers
+reach, because std's capability-polymorphic combinators (`Set::fold`,
+`for_each`, `with_value`) are METHODS. Fixtures exist for both — the four derived
+argument forms and a generic-return E0242 control, per path — which retires the
+"no fixture yet" note below.
+
 **Objective:** Fix bug 063 — capability-variable inference reads "unknown
 argument type" as "no capabilities", so a stored or derived function pointer
 cannot reach a `cap C` parameter.
@@ -8213,8 +8223,11 @@ check already passes on the fabricated empty capability set, and only `expectTy`
 stops the program. Authority visibility in the signature is a load-bearing pillar
 claim, so an inference path that silently manufactures an empty capset is worth
 closing while it is still merely a false rejection. See the repro table in
-[the bug](docs/bugs/063_cap_inference_defaults_derived_fnptr_to_empty.md); there
-is no fixture yet, and the four derived forms are the negative corpus.
+[the bug](docs/bugs/063_cap_inference_defaults_derived_fnptr_to_empty.md). The
+four derived forms were the negative corpus; they are now positive fixtures on
+both paths (`tests/regressions/cap_inference/`), asserting E0242 and the ABSENCE
+of E0220 — a gate that only checked "does it fail" would pass either way, and
+would keep passing after fn-type comparison is relaxed to subsetting.
 
 ### Task R-0469
 
