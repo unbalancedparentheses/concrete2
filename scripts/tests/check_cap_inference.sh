@@ -24,6 +24,13 @@
 # where a high-authority one is expected — and the only thing rejecting these programs
 # disappears, turning a rejected-valid-program into an authority hole.
 #
+# TWO SITES, and the second is the one that matters. The function-call path in
+# `Check.lean` and the method-call path in `CheckHelpers.lean` carried byte-identical
+# copies of this defect; the first fix took only one, and the absence-as-positive-fact
+# sweep found the other. The capability-polymorphic combinators that actually exist in
+# `std` — `Set::fold`, `for_each`, `with_value` — are METHODS, so real callers reach the
+# path that was missed. Both are asserted below so neither can regress alone.
+#
 # THE ERROR CODE IS THE ASSERTION, not merely that something failed. E0242 means the
 # capability leg refused. E0220 means the fallback is back and type equality is doing the
 # work. A gate that only checked "does it fail" would pass either way, and would go on
@@ -99,6 +106,36 @@ if printf '%s' "$uout" | grep -q "E0220"; then
   no "E0220 is present: an empty binding was fabricated and type equality is doing the work"
 else
   ok "no E0220 — nothing invented a capability set to compare against"
+fi
+
+echo "=== the METHOD path, which the first fix missed ==="
+dm="$FIX/derived_forms_method"
+mout="$(cd "$dm" && $TO "$CC" check . 2>&1)"
+if [ -z "$(printf '%s' "$mout" | grep -E 'error\[')" ]; then
+  ok "every derived form reaches a cap-polymorphic METHOD parameter"
+else
+  no "a derived form is still rejected on the method path"
+  printf '%s\n' "$mout" | grep -E 'error\[' | awk 'NR<=3' | sed 's/^/       /'
+fi
+if (cd "$dm" && $TO "$CC" build . -o "$TMP/derivedm" >/dev/null 2>&1); then
+  "$TMP/derivedm" >/dev/null 2>&1; rcm=$?
+  [ "$rcm" -eq 12 ] && ok "all six method calls dispatch correctly (exit 12)" \
+                    || no "method fixture produced $rcm, not 12"
+else
+  no "derived_forms_method does not build"
+fi
+um="$FIX/uninferable_method"
+umout="$(cd "$um" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$umout" | grep -q "E0242"; then
+  ok "the method path reports E0242 for what it cannot infer"
+else
+  no "the method path does not report E0242 — it may still fabricate an empty capset"
+  printf '%s\n' "$umout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+fi
+if printf '%s' "$umout" | grep -q "E0220"; then
+  no "E0220 on the method path: an empty binding was fabricated there"
+else
+  ok "no E0220 on the method path either"
 fi
 
 echo

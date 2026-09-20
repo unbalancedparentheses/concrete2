@@ -1,0 +1,32 @@
+mod derived_forms_method {
+    // BUG 063 HAS TWO SITES. The first fix covered the function-call path and missed
+    // this one, and this is the one that matters in practice: the capability-polymorphic
+    // combinators that exist in `std` — `Set::fold`, `for_each`, `with_value` — are
+    // METHODS, so real callers arrive here.
+    fn shout(x: i64) with(Console) -> i64 { return x * 2; }
+    fn quiet(x: i64) -> i64 { return x + 1; }
+
+    pub struct Copy Holder { n: i64 }
+    impl Holder {
+        pub fn apply<cap C>(&self, f: fn(i64) with(C) -> i64) with(C) -> i64 {
+            return f(self.n);
+        }
+    }
+
+    pub struct Copy Ops { op: fn(i64) with(Console) -> i64 }
+    fn pick() -> fn(i64) with(Console) -> i64 { return shout; }
+
+    fn main() with(Console) -> Int {
+        let h: Holder = Holder { n: 1 };
+        let ops: Ops = Ops { op: shout };
+        let fns: [fn(i64) with(Console) -> i64; 2] = [shout, shout];
+
+        let a: i64 = h.apply(shout);       // bare name
+        let b: i64 = h.apply(ops.op);      // struct field
+        let c: i64 = h.apply((ops.op));    // parenthesised
+        let d: i64 = h.apply(pick());      // call result
+        let e: i64 = h.apply(fns[0]);      // array element
+        let f: i64 = h.apply(quiet);       // capability-free callback still works
+        return (a + b + c + d + e + f) as Int;   // 2*5 + 2 = 12
+    }
+}

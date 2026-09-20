@@ -818,19 +818,37 @@ partial def inferMethodParamAndRetTys
       | .fn_ _ (.concrete caps) _ =>
         for cap in caps do
           if sig.capParams.contains cap then
-            let argCapSet ← do
+            -- BUG 063, METHOD PATH. Identical to the function-call path in
+            -- `Check.lean`, and missed by the first fix, which is why the sweep for
+            -- "absence recorded as a positive fact" found it: the shape recurs, so
+            -- fixing one instance is not fixing the defect.
+            --
+            -- It matters more here than the count suggests. The capability-polymorphic
+            -- combinators that actually exist in `std` — `Set::fold`, `for_each`,
+            -- `with_value` — are METHODS, so real callers reach this path and not the
+            -- other one.
+            --
+            -- `none` means "not known here" and must stay distinguishable from
+            -- `some .empty`, "requires no authority". Contributing nothing lets
+            -- `resolveCaps` name the variable it could not infer, instead of a
+            -- fabricated `C := {}` passing the authority check and leaving `expectTy`
+            -- to reject the program for an unrelated reason.
+            let argCapSet? ← do
               let argTy ← peekExprType arg
               match argTy with
-              | .fn_ _ cs _ => pure cs
+              | .fn_ _ cs _ => pure (some cs)
               | _ =>
                 match arg with
                 | .ident _ varName =>
                   match ← lookupFn varName with
-                  | some argSig => pure argSig.capSet
-                  | none => pure CapSet.empty
-                | _ => pure CapSet.empty
-            let (argCaps, _) := argCapSet.normalize
-            capBindings := capBindings ++ [(cap, argCaps)]
+                  | some argSig => pure (some argSig.capSet)
+                  | none => pure none
+                | _ => pure none
+            match argCapSet? with
+            | some cs =>
+              let (argCaps, _) := cs.normalize
+              capBindings := capBindings ++ [(cap, argCaps)]
+            | none => pure ()
       | _ => pure ()
   -- 3. Resolve the method's declared capset against the inferred bindings, and
   --    check the caller holds the result.

@@ -188,6 +188,23 @@ partial def buildFileSummary (m : Module) (definitionPath : String := "") : File
                      ++ pubConstants ++ pubAliases ++ pubNewtypes
                      ++ pubImplMethods ++ pubTraitImplMethods
   let externFnSigs := m.externFns.map fun ef =>
+    -- R-0484 ROOT SITE. A `trusted extern` is typed with an EMPTY capability set, which
+    -- is correct for what `with(...)` means — required ambient authority, and a trusted
+    -- author has taken responsibility for supplying it — and is also the single point
+    -- where operational effects stop being tracked. `libc_write` declares nothing, so
+    -- `console_write` wrapping it can declare nothing, so `Writer`'s `write_fn` field is
+    -- typed capability-free, so a helper calling `w.write(b)` reports `(pure)`.
+    --
+    -- DO NOT "fix" this by putting a capability here. Required authority and performed
+    -- effects are different facts: a function holding an authorized `Writer` legitimately
+    -- requires nothing and performs I/O, so tightening `requires` would break the
+    -- object-capability model (authority checked at acquisition, carried by the handle)
+    -- without making the effect visible.
+    --
+    -- The repair is a SEPARATE `performs` fact that an opaque extern must declare
+    -- conservatively, with missing information reading as Unknown rather than as none.
+    -- Recorded in docs/project/ABSENCE_IS_NOT_A_FACT.md; this line is the reason the
+    -- effect model is a language change and not a checker patch.
     let capSet := if ef.isTrusted then CapSet.empty else CapSet.concrete ["Unsafe"]
     let sig : FnSummary := {
       params := ef.params.map fun p => (p.name, p.ty)

@@ -1,0 +1,20 @@
+mod uninferable_method {
+    // The method path's honest-refusal case. E0242 means the capability leg refused;
+    // E0220 would mean this site still fabricates `C := {}` and type equality is doing
+    // the work — which is what it did until the absence-as-positive-fact sweep found it.
+    fn shout(x: i64) with(Console) -> i64 { return x * 2; }
+    fn pick_generic<T>() -> fn(i64) with(Console) -> i64 { return shout; }
+
+    pub struct Copy Holder { n: i64 }
+    impl Holder {
+        pub fn apply<cap C>(&self, f: fn(i64) with(C) -> i64) with(C) -> i64 {
+            return f(self.n);
+        }
+    }
+
+    fn main() -> Int {
+        let h: Holder = Holder { n: 1 };
+        let a: i64 = h.apply(pick_generic::<i64>());
+        return a as Int;
+    }
+}
