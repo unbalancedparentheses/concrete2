@@ -93,7 +93,7 @@ mod hash {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_fnv1a_empty_bytes() -> i32 {
+    fn test_fnv1a_empty_bytes() with(Alloc, Console, Unsafe) -> i32 {
         let b: Bytes = Bytes::new();
         let h: u64 = fnv1a_bytes(&b);
         // Empty input should return the offset basis
@@ -106,7 +106,7 @@ mod hash {
     }
 
     #[test]
-    fn test_fnv1a_single_byte() -> i32 {
+    fn test_fnv1a_single_byte() with(Alloc, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(0);
         let h: u64 = fnv1a_bytes(&b);
@@ -122,7 +122,7 @@ mod hash {
     }
 
     #[test]
-    fn test_fnv1a_deterministic() -> i32 {
+    fn test_fnv1a_deterministic() with(Alloc, Console, Unsafe) -> i32 {
         let mut b1: Bytes = Bytes::new();
         b1.push(72);  // 'H'
         b1.push(101); // 'e'
@@ -152,7 +152,7 @@ mod hash {
     }
 
     #[test]
-    fn test_fnv1a_string_basic() -> i32 {
+    fn test_fnv1a_string_basic() with(Alloc, Unsafe) -> i32 {
         let s: String = "hello";
         let h: u64 = fnv1a_string(&s);
         // Hash of non-empty string should not be the offset basis
@@ -165,7 +165,7 @@ mod hash {
     }
 
     #[test]
-    fn test_fnv1a_different_inputs() -> i32 {
+    fn test_fnv1a_different_inputs() with(Alloc, Unsafe) -> i32 {
         let mut b1: Bytes = Bytes::new();
         b1.push(1);
         b1.push(2);

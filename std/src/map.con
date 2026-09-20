@@ -24,7 +24,7 @@ mod map {
     }
 
     trusted impl<K, V> HashMap<K, V> {
-        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc) -> HashMap<K, V> {
+        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc, Unsafe) -> HashMap<K, V> {
             let cap: u64 = 16;
             let keys: *mut K = grow::<K>(0 as *mut K, cap);
             let values: *mut V = grow::<V>(0 as *mut V, cap);
@@ -614,7 +614,7 @@ mod map {
 
     // Composition: HashMap is destroyable iff K and V are.
     trusted impl<K: Destroy, V: Destroy> Destroy for HashMap<K, V> {
-        pub fn destroy(&self) with(Alloc) {
+        pub fn destroy(&self) with(Alloc, Unsafe) {
             let mut i: u64 = 0;
             while i < self.cap {
                 let flag_ptr: *mut u8 = self.flags + i;
@@ -637,7 +637,7 @@ mod map {
             *self.cell = *self.cell + 1;
         }
     }
-    trusted fn m_cell_new() with(Alloc) -> *mut u64 {
+    trusted fn m_cell_new() with(Alloc, Unsafe) -> *mut u64 {
         let p: *mut u64 = grow::<u64>(0 as *mut u64, 1);
         *p = 0;
         return p;

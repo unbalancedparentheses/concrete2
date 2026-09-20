@@ -91,7 +91,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_and_then() -> i32 {
+    fn test_option_and_then() with(Alloc, Console, Unsafe) -> i32 {
         let o: Option<i32> = Option::<i32>::Some { value: 42 };
         let m: Option<i32> = o.and_then::<i32>(tst_nonzero);
         let got: i32 = m.unwrap_or(0);
@@ -104,7 +104,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_map() -> i32 {
+    fn test_option_map() with(Alloc, Console, Unsafe) -> i32 {
         let o: Option<i32> = Option::<i32>::Some { value: 41 };
         let m: Option<i32> = o.map::<i32>(tst_inc);
         let got: i32 = m.unwrap_or(0);
@@ -117,7 +117,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_some() -> i32 {
+    fn test_option_some() with(Alloc, Console, Unsafe) -> i32 {
         let o: Option<i32> = Option::<i32>::Some { value: 42 };
         if !assert_true(o.is_some(), "should be some") { ignore_opt::<i32>(o); return 1; }
         if !assert_true(!(o.is_none()), "should not be none") { ignore_opt::<i32>(o); return 1; }
@@ -126,7 +126,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_none() -> i32 {
+    fn test_option_none() with(Alloc, Console, Unsafe) -> i32 {
         let o: Option<i32> = Option::<i32>::None;
         if !assert_true(o.is_none(), "should be none") { ignore_opt::<i32>(o); return 1; }
         if !assert_true(!(o.is_some()), "should not be some") { ignore_opt::<i32>(o); return 1; }
@@ -135,7 +135,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_match() -> i32 {
+    fn test_option_match() with(Alloc, Console, Unsafe) -> i32 {
         let o: Option<i32> = Option::<i32>::Some { value: 7 };
         match o {
             Option::Some { value } => {
@@ -159,7 +159,7 @@ mod option {
     fn lin_some(x: Lin) -> Option<Lin> { return Option::<Lin>::Some { value: x }; }
 
     #[test]
-    fn test_option_map_and_then_linear() -> i32 {
+    fn test_option_map_and_then_linear() with(Alloc, Console, Unsafe) -> i32 {
         // map and and_then now carry a non-Copy payload (moved off the Copy
         // bound in 0c): the checker enforces the payload flows exactly once
         // through f, so this compiling is the guarantee.
@@ -174,7 +174,7 @@ mod option {
     }
 
     #[test]
-    fn test_option_unwrap_or_else_linear() -> i32 {
+    fn test_option_unwrap_or_else_linear() with(Alloc, Console, Unsafe) -> i32 {
         // Some: the stored payload is returned; lin_fallback is never built.
         let o: Option<Lin> = Option::<Lin>::Some { value: Lin { v: 42 } };
         let got: Lin = o.unwrap_or_else(lin_fallback);

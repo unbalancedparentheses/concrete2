@@ -35,7 +35,7 @@ mod checksum {
     }
 
     #[test]
-    fn test_crc32_check_value() with(Alloc) -> i32 {
+    fn test_crc32_check_value() with(Alloc, Unsafe) -> i32 {
         // The standard check value: CRC32("123456789") == 0xCBF43926.
         let s: String = "123456789";
         let b: Bytes = Bytes::from_string(&s);
@@ -47,7 +47,7 @@ mod checksum {
     }
 
     #[test]
-    fn test_crc32_empty_and_slice() with(Alloc) -> i32 {
+    fn test_crc32_empty_and_slice() with(Alloc, Unsafe) -> i32 {
         // CRC32("") == 0; and a sub-range matches the same bytes standalone.
         let e: Bytes = Bytes::new();
         let c0: u64 = crc32_all(&e);

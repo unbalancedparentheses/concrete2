@@ -1,0 +1,39 @@
+// POSITIVE CONTROL for the sibling-submodule capability rule.
+//
+// The paired negatives (`launder`, `extern_unsafe`) show the two calls being
+// refused. This one shows them ACCEPTED once the caller declares the authority,
+// and running. Without it the gate would pass just as well if the rule refused
+// every cross-submodule call, which is the failure mode a refusal-only test
+// cannot see.
+mod declared_ok {
+    mod sink;
+    import sink.{shout, write as raw_write};
+
+    // Declares what it uses, so the call is permitted.
+    fn loud(s: &String) with(Console, Alloc) -> i64 {
+        shout(s);
+        return 0;
+    }
+
+    // `Unsafe` declared explicitly rather than borrowed from `trusted`.
+    fn direct(data: *const u8, len: u64) with(Unsafe) -> i64 {
+        return raw_write(1, data, len);
+    }
+
+    // `trusted` does NOT grant Unsafe for a CALL — the wrapper must still say so.
+    // (error_trusted_extern_needs_unsafe.con has held that rule since long before the
+    // sibling-submodule repair; std reaches libc through `trusted extern` instead.)
+    trusted fn wrapped(data: *const u8, len: u64) with(Unsafe) -> i64 {
+        return raw_write(1, data, len);
+    }
+
+    fn main() with(Console, Alloc, Unsafe) -> i64 {
+        let m: String = "declared";
+        let a: i64 = loud(&m);
+        let p: *const u8 = m.raw_ptr() as *const u8;
+        let b: i64 = direct(p, 0);
+        let c: i64 = wrapped(p, 0);
+        m.drop();
+        return a + b + c;
+    }
+}

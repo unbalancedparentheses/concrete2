@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# A CAPABILITY HEADER MUST BIND ACROSS A SIBLING SUBMODULE, NOT ONLY WITHIN ONE FILE.
+#
+# THE HOLE. CoreCheck built its function-signature table from ONE module's own
+# functions and externs. A call into a sibling submodule therefore found no entry, and
+# the lookup's `none` was read as "this call requires nothing" rather than "I do not know
+# what this requires". The consequence was not a bad diagnostic — it was that a
+# capability-free, non-`trusted` function could call a `with(Console)` sibling and PRINT.
+# The `launder` fixture is the program that did: it compiled clean and wrote to stdout.
+#
+# The same lookup miss also dropped `Unsafe` from an `extern` reached through a sibling
+# module (`extern_unsafe`), which is the leg that matters most — `Unsafe` is the one
+# capability the language promises `extern` costs. A call to the SAME extern from within
+# its own module was refused correctly the whole time, so the enforcement existed and only
+# the cross-module spelling escaped it.
+#
+# TWO SPELLINGS, ONE REQUIREMENT. `prefixModuleFnNames` renames submodule functions
+# (`sink::shout` becomes `sink_shout`) but deliberately leaves externs alone, since they
+# name real C symbols. The call site still emits the prefixed form. The signature table
+# records both, which is why `extern_unsafe` needs its own fixture rather than being
+# assumed to follow from `launder`: the first fix closed the function path and left the
+# extern path open, and only a separate program showed it.
+#
+# THE POSITIVE CONTROL IS NOT OPTIONAL. A rule that refuses every cross-submodule call
+# would pass both negatives. `declared_ok` calls the same sibling function and the same
+# extern with the authority declared, and must BUILD AND RUN.
+set -uo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+CC="$ROOT_DIR/.lake/build/bin/concrete"
+FIX="$ROOT_DIR/tests/regressions/cap_sibling_module"
+
+if command -v timeout >/dev/null 2>&1; then TO="timeout 300"; else TO=""
+  echo "  warn 'timeout' not found — running without a hang watchdog"; fi
+
+PASS=0; FAIL=0
+ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
+no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
+
+[ -x "$CC" ] || { echo "FATAL: compiler not built at $CC" >&2; exit 2; }
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+echo "=== a capability-free caller cannot reach a with(Console) SIBLING ==="
+lout="$(cd "$FIX/launder" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$lout" | grep -q "E0520"; then
+  ok "the laundering call is refused (E0520)"
+else
+  no "the laundering call is ACCEPTED — a capability-free function can print"
+fi
+# The message must name the callee and the caller's actual authority, or the author
+# cannot tell which of the two to change.
+if printf '%s' "$lout" | grep -q "function 'sink_shout' requires Console but caller has (none)"; then
+  ok "the diagnostic names the callee, the requirement and the caller's authority"
+else
+  no "the diagnostic does not identify the call precisely"
+  printf '%s\n' "$lout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+fi
+# It must not merely fail to BUILD for some unrelated reason.
+if (cd "$FIX/launder" && $TO "$CC" build . -o "$TMP/launder" >/dev/null 2>&1); then
+  no "the laundering program still builds"
+else
+  ok "the laundering program does not build"
+fi
+
+echo "=== and an extern reached through a sibling still costs Unsafe ==="
+eout="$(cd "$FIX/extern_unsafe" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$eout" | grep -q "function 'raw_write' requires Unsafe but caller has (none)"; then
+  ok "the sibling-module extern call is refused under its PREFIXED spelling"
+else
+  no "the extern's Unsafe requirement is lost across a submodule boundary"
+  printf '%s\n' "$eout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+fi
+
+echo "=== CONTROL: the same two calls are ACCEPTED when the authority is declared ==="
+dout="$(cd "$FIX/declared_ok" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$dout" | grep -qE 'error\['; then
+  no "the positive control is refused — the rule is refusing broadly, not narrowly"
+  printf '%s\n' "$dout" | grep -E 'error\[' | awk 'NR<=3' | sed 's/^/       /'
+else
+  ok "declaring Console+Alloc, and Unsafe, makes both calls legal"
+fi
+# Behaviour, not just acceptance: it must actually run and print through the sibling.
+if (cd "$FIX/declared_ok" && $TO "$CC" build . -o "$TMP/ok" >/dev/null 2>&1); then
+  run="$("$TMP/ok" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$run" = "declared" ]; then
+    ok "it runs and prints through the sibling (exit 0)"
+  else
+    no "positive control built but produced rc=$rc out='$run'"
+  fi
+else
+  no "the positive control does not build"
+fi
+
+echo "=== trusted still does NOT grant Unsafe for a CALL ==="
+# Closing the hole made it tempting to let `trusted` confer `Unsafe` on extern calls the
+# way it already does for raw-pointer ops. Two fixtures older than this repair say
+# otherwise, and the second is named for the rule. std reaches libc through
+# `trusted extern` declarations instead — the mechanism the language already had.
+for f in error_trusted_extern_needs_unsafe error_trusted_no_extern; do
+  if [ -f "$ROOT_DIR/tests/programs/$f.con" ]; then
+    ok "$f.con is still present to hold the rule"
+  else
+    no "$f.con is gone — the trusted/Unsafe decision lost its fixture"
+  fi
+done
+if grep -q "trusted extern fn" "$ROOT_DIR/std/src/libc.con"; then
+  ok "std reaches libc through trusted extern declarations, not a checker exemption"
+else
+  no "std/src/libc.con no longer declares its externs trusted — Unsafe will go viral"
+fi
+
+echo "=== a BODY-LESS declaration keeps the trusted modifier the author wrote ==="
+# The parser carried `isPublic` on the body-less branch and dropped `isTrusted`, so
+# `pub trusted fn sizeof<T>() -> u64;` reached `externFnRequiredCaps` as UNTRUSTED and was
+# charged `Unsafe`. Invisible until cross-module requirements bound at all: the `mem` probe
+# in check_std_compiled_coverage.sh compiles under the full `Std` set, which excludes Unsafe.
+# Both fixtures are CHECK-ONLY — `#[intrinsic]` resolves by the compiler's own name table,
+# so a renamed copy has no symbol to link. What is under test is what the checker charges.
+tout="$(cd "$FIX/bodyless_trusted" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$tout" | grep -qE 'error\['; then
+  no "a trusted body-less declaration is still charged a capability"
+  printf '%s\n' "$tout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+else
+  ok "a trusted body-less declaration costs nothing"
+fi
+# CONTROL: without `trusted` it must STILL cost Unsafe, or carrying the modifier through
+# made it meaningless rather than effective.
+uout="$(cd "$FIX/bodyless_untrusted" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$uout" | grep -q "function 'my_sizeof' requires Unsafe"; then
+  ok "the same shape WITHOUT trusted still costs Unsafe"
+else
+  no "an untrusted body-less declaration is free — the modifier now means nothing"
+fi
+# And the real instance: std.mem.sizeof must be reachable under Std, which excludes Unsafe.
+if grep -q "pub trusted fn sizeof" "$ROOT_DIR/std/src/mem.con"; then
+  ok "std.mem.sizeof is declared trusted (a size query is not raw-memory authority)"
+else
+  no "std.mem.sizeof lost its trusted marker — every Std-only program loses sizeof"
+fi
+
+echo "=== KNOWN HOLE: a cross-package METHOD call is still unchecked ==="
+# Pinned as a live reproducer so the day it closes, this says so instead of going quietly
+# green. See the fixture's own header for why it is the intersection case.
+hout="$(cd "$FIX/known_hole_cross_package_method" && $TO "$CC" check . 2>&1)"
+if printf '%s' "$hout" | grep -qE 'error\['; then
+  no "the cross-package method hole CLOSED — invert this check and update R-0484"
+  printf '%s\n' "$hout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+else
+  ok "still accepted (expected): String::clone/drop require Alloc,Unsafe and are not enforced across a package"
+fi
+
+echo "=== a union of capabilities covers a requirement that spans it ==="
+# `bodyAuthority` produces `declared ∪ Unsafe`, which is what first exposed that
+# `capsContain` asked whether EITHER side of a union covered the WHOLE requirement and
+# answered no. That also made it disagree with `missingCaps`, which always normalized, so
+# `decideCall` could report unsatisfied with nothing missing and render the self-refuting
+# "requires Alloc, Unsafe but caller has Alloc + Unsafe".
+if grep -A14 "def capsContain" "$ROOT_DIR/Concrete/Semantics/Capabilities.lean" |
+     grep -q "caller.normalize"; then
+  ok "capsContain normalizes the caller before testing membership"
+else
+  no "capsContain no longer normalizes — a union caller will under-approximate again"
+fi
+
+echo
+echo "CAP-SIBLING-MODULE: PASS=$PASS FAIL=$FAIL"
+[ "$FAIL" -eq 0 ]

@@ -2325,7 +2325,12 @@ partial def parseModuleBody (stopToken : TokenKind) : ParseM Module := do
             -- module of N functions — the frontend O(N²) the complexity guard's
             -- many-functions family exposed (it is PARSE, not resolve/check).
             | .inl fnDef => fns := { fnDef with isPublic := isPub, isTest := pendingIsTest, isTrusted, requires := pendingRequires, ensures := pendingEnsures, proofLink, overflowChecked := pendingOverflow } :: fns
-            | .inr extDef => externFns := { extDef with isPublic := isPub } :: externFns
+            -- `isTrusted` must come along. The body-less branch carried `isPublic` and
+            -- dropped it, so `pub trusted fn sizeof<T>() -> u64;` parsed as UNtrusted and
+            -- `externFnRequiredCaps` charged it `Unsafe` — a modifier the author wrote,
+            -- silently discarded, with the default read as a decision. (`trusted extern fn`
+            -- was unaffected: that is a different production.)
+            | .inr extDef => externFns := { extDef with isPublic := isPub, isTrusted } :: externFns
             pendingIsTest := false
             pendingOverflow := false
             pendingEnsures := []

@@ -503,7 +503,7 @@ mod numeric {
         /// a `Text` pointing into `buf`, so a later mutation left a "validated" value
         /// yielding bytes that were never validated. A `Text` now owns immutable
         /// storage, so the validation it performed stays true for as long as it exists.
-        pub fn to_text(&self, buf: &Bytes) with(Alloc) -> Option<Text> {
+        pub fn to_text(&self, buf: &Bytes) with(Alloc, Unsafe) -> Option<Text> {
             if !self.fits(buf) {
                 return Option::<Text>::None;
             }
@@ -698,7 +698,7 @@ mod numeric {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    trusted fn test_cursor_read_u8() with(Unsafe) -> i32 {
+    trusted fn test_cursor_read_u8() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 4);
         if !assert_eq::<u64>(cur.remaining(), 4, "remaining should be 4") { return 1; }
@@ -715,7 +715,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_read_u16_be() with(Unsafe) -> i32 {
+    trusted fn test_cursor_read_u16_be() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 4);
 
@@ -731,7 +731,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_read_u16_le() with(Unsafe) -> i32 {
+    trusted fn test_cursor_read_u16_le() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 4] = [0x34, 0x12, 0x00, 0x00];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 4);
 
@@ -746,7 +746,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_read_u32_be() with(Unsafe) -> i32 {
+    trusted fn test_cursor_read_u32_be() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 4);
 
@@ -762,7 +762,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_read_u32_le() with(Unsafe) -> i32 {
+    trusted fn test_cursor_read_u32_le() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 4] = [0x78, 0x56, 0x34, 0x12];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 4);
 
@@ -777,7 +777,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_bounds_check() with(Unsafe) -> i32 {
+    trusted fn test_cursor_bounds_check() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 2] = [0x12, 0x34];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 2);
 
@@ -795,7 +795,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_cursor_skip() with(Unsafe) -> i32 {
+    trusted fn test_cursor_skip() with(Unsafe, Alloc, Console) -> i32 {
         let buf: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
         let mut cur: RawCursor = RawCursor::from_raw(&buf as *const u8, 8);
 
@@ -819,7 +819,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_writer_roundtrip() with(Unsafe) -> i32 {
+    trusted fn test_writer_roundtrip() with(Unsafe, Alloc, Console) -> i32 {
         let mut buf: [u8; 16] = [0; 16];
         let mut w: ByteWriter = ByteWriter::from_raw(&mut buf as *mut u8, 16);
 
@@ -857,7 +857,7 @@ mod numeric {
     }
 
     #[test]
-    trusted fn test_mixed_endian_parse() with(Unsafe) -> i32 {
+    trusted fn test_mixed_endian_parse() with(Unsafe, Alloc, Console) -> i32 {
         // Simulate a mini protocol header:
         // bytes 0-1: BE u16 magic (0xCAFE)
         // bytes 2-5: LE u32 length (100)
@@ -904,7 +904,7 @@ mod numeric {
     // ============================================================
 
     #[test]
-    fn test_non_zero_u32_try_new_happy() -> i32 {
+    fn test_non_zero_u32_try_new_happy() with(Alloc, Console, Unsafe) -> i32 {
         match NonZeroU32::try_new(42) {
             Option::Some { value } => {
                 if !assert_eq::<u32>(value.0, 42, "NonZeroU32(42).0 should be 42") { return 1; }
@@ -931,7 +931,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_non_zero_u64_try_new_happy() -> i32 {
+    fn test_non_zero_u64_try_new_happy() with(Alloc, Console, Unsafe) -> i32 {
         match NonZeroU64::try_new(1000000000000) {
             Option::Some { value } => {
                 if !assert_eq::<u64>(value.0, 1000000000000, "round-trip") { return 1; }
@@ -950,7 +950,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_port_try_new_happy() -> i32 {
+    fn test_port_try_new_happy() with(Alloc, Console, Unsafe) -> i32 {
         match Port::try_new(8080) {
             Option::Some { value } => {
                 if !assert_eq::<u16>(value.0, 8080, "Port round-trip") { return 1; }
@@ -979,7 +979,7 @@ mod numeric {
     // ---- ByteView tests ----
 
     #[test]
-    fn test_byteview_new_and_access() with(Alloc) -> i32 {
+    fn test_byteview_new_and_access() with(Alloc, Console, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(10); b.push(20); b.push(30); b.push(40); b.push(50);
         let mut rc: i32 = 0;
@@ -1005,7 +1005,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_byteview_out_of_bounds_rejected() with(Alloc) -> i32 {
+    fn test_byteview_out_of_bounds_rejected() with(Alloc, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(1); b.push(2);
         let mut rc: i32 = 0;
@@ -1019,7 +1019,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_byteview_overflow_rejected() with(Alloc) -> i32 {
+    fn test_byteview_overflow_rejected() with(Alloc, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(1);
         let mut rc: i32 = 0;
@@ -1033,7 +1033,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_byteview_out_of_bounds_buffer_rejected() with(Alloc) -> i32 {
+    fn test_byteview_out_of_bounds_buffer_rejected() with(Alloc, Unsafe) -> i32 {
         // R-0483. This test used to be `test_byteview_wrong_buffer_rejected` and asserted
         // that a view refuses a "wrong" buffer. It never established that. The old check
         // compared `buf.len()` against a recorded length, so it rejected this case only
@@ -1086,7 +1086,7 @@ mod numeric {
     // wrong.
 
     #[test]
-    fn test_cursor_over_bytes_reads() with(Alloc) -> i32 {
+    fn test_cursor_over_bytes_reads() with(Alloc, Console, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(0xDE); b.push(0xAD); b.push(0xBE); b.push(0xEF);
         let mut cur: ByteCursor = ByteCursor::over(&b);
@@ -1114,7 +1114,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_cursor_refuses_after_buffer_shrinks() with(Alloc) -> i32 {
+    fn test_cursor_refuses_after_buffer_shrinks() with(Alloc, Console, Unsafe) -> i32 {
         // THE REGRESSION THIS REPAIR EXISTS FOR. The old cursor stored a pointer and a
         // length captured at construction, so it kept reading a buffer that had since
         // been cleared. The new one re-derives its bounds from the buffer it is GIVEN.
@@ -1137,7 +1137,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_cursor_survives_reallocating_push() with(Alloc) -> i32 {
+    fn test_cursor_survives_reallocating_push() with(Alloc, Console, Unsafe) -> i32 {
         // Growing past capacity reallocates. A pointer-bearing cursor went stale here
         // with the owner still alive and nothing consumed; a coordinate cursor does not.
         let mut b: Bytes = Bytes::with_capacity(2);
@@ -1159,7 +1159,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_view_is_coordinates_not_identity() with(Alloc) -> i32 {
+    fn test_view_is_coordinates_not_identity() with(Alloc, Console, Unsafe) -> i32 {
         // A view is a RANGE and applies to any buffer satisfying its bounds. That is now
         // the stated contract rather than a length brand pretending to check identity.
         let mut a: Bytes = Bytes::new();
@@ -1185,7 +1185,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_text_validation_survives_source_mutation() with(Alloc) -> i32 {
+    fn test_text_validation_survives_source_mutation() with(Alloc, Console, Unsafe) -> i32 {
         // The old `try_text` returned a view into `buf`; mutating the source left a
         // "validated" Text yielding unvalidated bytes. `to_text` copies, so the
         // validation holds for the value's whole life.
@@ -1217,7 +1217,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_byteview_to_text() with(Alloc) -> i32 {
+    fn test_byteview_to_text() with(Alloc, Console, Unsafe) -> i32 {
         // "caf" + é(0xC3 0xA9) + '!'  -> valid view [0,5), split view [0,4) invalid
         let mut b: Bytes = Bytes::new();
         b.push(99); b.push(97); b.push(102); b.push(195); b.push(169); b.push(33);
@@ -1250,7 +1250,7 @@ mod numeric {
     }
 
     #[test]
-    fn test_byteview_of_cursor() with(Alloc) -> i32 {
+    fn test_byteview_of_cursor() with(Alloc, Console, Unsafe) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(7); b.push(3); b.push(10); b.push(20); b.push(30);
         let mut cur: ByteCursor = ByteCursor::over(&b);

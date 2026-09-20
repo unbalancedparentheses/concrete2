@@ -98,7 +98,7 @@ mod fmt {
         return w.write_raw(&b as *const u8, 1);
     }
 
-    pub trusted fn format_int(value: i64) with(Alloc) -> String {
+    pub trusted fn format_int(value: i64) with(Alloc, Unsafe) -> String {
         if value == 0 {
             let s: String = "0";
             return s;
@@ -138,7 +138,7 @@ mod fmt {
         return buf;
     }
 
-    pub trusted fn format_uint(value: u64) with(Alloc) -> String {
+    pub trusted fn format_uint(value: u64) with(Alloc, Unsafe) -> String {
         if value == 0 {
             let s: String = "0";
             return s;
@@ -187,7 +187,7 @@ mod fmt {
     /// the dump-loop shape format_hex cannot serve). Wider values print all
     /// their digits (printf %0*x semantics, never truncated).
     /// Pulled by workloads 2+3 (fixed-width offsets and bytes).
-    pub fn push_hex(s: &mut String, value: u64, width: u64) {
+    pub fn push_hex(s: &mut String, value: u64, width: u64) with(Alloc, Unsafe) {
         // count digits (>= 1)
         let mut digits: u64 = 1;
         let mut probe: u64 = value;
@@ -211,7 +211,7 @@ mod fmt {
         }
     }
 
-    pub trusted fn format_hex(value: u64) with(Alloc) -> String {
+    pub trusted fn format_hex(value: u64) with(Alloc, Unsafe) -> String {
         if value == 0 {
             let s: String = "0x0";
             return s;
@@ -246,7 +246,7 @@ mod fmt {
         return buf;
     }
 
-    pub trusted fn format_bin(value: u64) with(Alloc) -> String {
+    pub trusted fn format_bin(value: u64) with(Alloc, Unsafe) -> String {
         if value == 0 {
             let s: String = "0b0";
             return s;
@@ -281,7 +281,7 @@ mod fmt {
         return buf;
     }
 
-    pub trusted fn format_oct(value: u64) with(Alloc) -> String {
+    pub trusted fn format_oct(value: u64) with(Alloc, Unsafe) -> String {
         if value == 0 {
             let s: String = "0o0";
             return s;
@@ -325,7 +325,7 @@ mod fmt {
         return s;
     }
 
-    pub fn pad_left(s: &String, width: u64, fill: char) with(Alloc) -> String {
+    pub fn pad_left(s: &String, width: u64, fill: char) with(Alloc, Unsafe) -> String {
         if s.len() >= width {
             // Copy the string as-is
             let result: String = String::new();
@@ -355,7 +355,7 @@ mod fmt {
         return result;
     }
 
-    pub fn pad_right(s: &String, width: u64, fill: char) with(Alloc) -> String {
+    pub fn pad_right(s: &String, width: u64, fill: char) with(Alloc, Unsafe) -> String {
         let result: String = String::new();
 
         let mut i: u64 = 0;
@@ -472,7 +472,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_int_positive() with(Alloc) -> i32 {
+    fn test_format_int_positive() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = format_int(12345);
         let expected: String = "12345";
         if !assert_eq::<u64>(s.len(), 5, "format_int(12345) should have len 5") {
@@ -495,7 +495,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_int_negative() with(Alloc) -> i32 {
+    fn test_format_int_negative() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = format_int(-42);
         let expected: String = "-42";
         if !assert_eq::<u64>(s.len(), 3, "format_int(-42) should have len 3") {
@@ -518,7 +518,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_int_zero() with(Alloc) -> i32 {
+    fn test_format_int_zero() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = format_int(0);
         let expected: String = "0";
         if !assert_eq::<u64>(s.len(), 1, "format_int(0) should have len 1") {
@@ -536,7 +536,7 @@ mod fmt {
         return 0;
     }
 
-    fn eq_and_drop(s: String, expected: String) -> i32 {
+    fn eq_and_drop(s: String, expected: String) with(Alloc, Unsafe) -> i32 {
         if s.len() != expected.len() {
             s.drop();
             expected.drop();
@@ -557,7 +557,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_push_hex() with(Alloc) -> i32 {
+    fn test_push_hex() with(Alloc, Unsafe) -> i32 {
         let mut b: String = String::new();
         push_hex(&mut b, 255, 2);      // "ff"
         push_hex(&mut b, 255, 4);      // "00ff"
@@ -569,7 +569,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_hex() with(Alloc) -> i32 {
+    fn test_format_hex() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = format_hex(255);
         let expected: String = "0xff";
         if !assert_eq::<u64>(s.len(), 4, "format_hex(255) should have len 4") {
@@ -592,7 +592,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_bin() with(Alloc) -> i32 {
+    fn test_format_bin() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = format_bin(10);
         let expected: String = "0b1010";
         if !assert_eq::<u64>(s.len(), 6, "format_bin(10) should have len 6") {
@@ -615,7 +615,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_format_bool() with(Alloc) -> i32 {
+    fn test_format_bool() with(Alloc, Console, Unsafe) -> i32 {
         let t: String = format_bool(true);
         let f: String = format_bool(false);
         if !assert_eq::<u64>(t.len(), 4, "format_bool(true) should have len 4") {
@@ -634,7 +634,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_pad_left() with(Alloc) -> i32 {
+    fn test_pad_left() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = "42";
         let padded: String = pad_left(&s, 5, '0');
         let expected: String = "00042";
@@ -661,7 +661,7 @@ mod fmt {
     }
 
     #[test]
-    fn test_pad_right() with(Alloc) -> i32 {
+    fn test_pad_right() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = "hi";
         let padded: String = pad_right(&s, 5, '.');
         let expected: String = "hi...";

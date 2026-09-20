@@ -82,8 +82,22 @@ for mod in "${!DOMAIN[@]}"; do
   [ -z "$leak" ] && ok "std.$mod hosted items all carry $want"     || no "std.$mod hosted items MISSING $want (Unsafe is not domain authority): $leak"
 done
 # io: TextFile + writer_from_file must carry File; Writer methods stay cap-free.
-ioleak=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 !~ /File/ {print $2" ("$6")"}' "$TMP/derived.tsv" | grep -vE "^fixed_(writer|reader)" | head -5)
-[ -z "$ioleak" ] && ok "std.io Unsafe items carry File where they touch files (fixed_writer/fixed_reader exempt: raw memory, not fs)"   || no "std.io items with Unsafe but no File: $ioleak"
+# EXEMPTIONS ARE NAMED, NOT PREDICATED. The rule's premise — "an io item carrying Unsafe
+# is touching the filesystem" — held while Unsafe appeared only on file paths. Since the
+# sibling-submodule capability repair (R-0484) it also arrives by INHERITANCE: `String::drop`
+# requires `Alloc, Unsafe` because `alloc::dealloc` does, so every io function that frees a
+# String now carries Unsafe without going near a file. Relaxing the predicate would retire
+# the rule; listing the items keeps it, and makes each addition a reviewed act.
+#   fixed_writer/fixed_reader — raw memory sinks, not fs
+#   println/eprintln/read_line — console sinks (fd 1/2); Unsafe is inherited from String
+#   read_all — authority is CARRIED by the Reader handle, which is the ocap model working
+#              as designed (R-0484 "carries" leg); Unsafe is inherited from Bytes
+IO_UNSAFE_NOT_FS="^(fixed_writer|fixed_reader|println|eprintln|read_line|read_all)\b"
+ioleak=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 !~ /File/ {print $2" ("$6")"}' "$TMP/derived.tsv" | grep -vE "$IO_UNSAFE_NOT_FS" | head -5)
+[ -z "$ioleak" ] && ok "std.io Unsafe items carry File where they touch files (6 named exemptions: raw memory, console, handle-carried)"   || no "std.io items with Unsafe but no File: $ioleak"
+# The exemption list must not quietly become the whole set.
+ioexempt=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 ~ /File/ {c++} END{print c+0}' "$TMP/derived.tsv")
+[ "$ioexempt" -ge 6 ] && ok "$ioexempt io items still carry File alongside Unsafe — the rule still binds something"   || no "only $ioexempt io items carry File+Unsafe; the rule has been exempted away"
 
 echo
 # 0a: parser self-test — every previously-misparsed shape (fn-pointer

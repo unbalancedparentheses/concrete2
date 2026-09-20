@@ -170,7 +170,7 @@ mod bitset {
             self.cap_words = new_words;
         }
 
-        pub fn drop(self) with(Alloc) {
+        pub fn drop(self) with(Alloc, Unsafe) {
             let BitSet { data, n_bits, cap_words } = self;
             if cap_words > 0 {
                 dealloc::<u64>(data);
@@ -211,7 +211,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_count() with(Alloc, Unsafe) -> i32 {
+    fn test_count() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(0);
         b.set(1);
@@ -234,7 +234,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_union() with(Alloc, Unsafe) -> i32 {
+    fn test_union() with(Alloc, Unsafe, Console) -> i32 {
         let mut a: BitSet = BitSet::new();
         a.set(0);
         a.set(2);
@@ -263,7 +263,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_intersect() with(Alloc, Unsafe) -> i32 {
+    fn test_intersect() with(Alloc, Unsafe, Console) -> i32 {
         let mut a: BitSet = BitSet::new();
         a.set(0);
         a.set(1);
@@ -319,7 +319,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_bitset_word_boundaries() with(Alloc, Unsafe) -> i32 {
+    fn test_bitset_word_boundaries() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         // Test bits at word boundaries: 63, 64, 127, 128
         b.set(63);
@@ -347,7 +347,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_bitset_large_stress() with(Alloc, Unsafe) -> i32 {
+    fn test_bitset_large_stress() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         // Set every 3rd bit up to 300
         let mut i: u64 = 0;
@@ -374,7 +374,7 @@ mod bitset {
 
     /// Regression: len() must return logical size, not physical capacity.
     #[test]
-    fn test_len_is_logical_size() with(Alloc, Unsafe) -> i32 {
+    fn test_len_is_logical_size() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(5);
         // len() should be 6 (highest bit + 1), not cap_words * 64
@@ -413,7 +413,7 @@ mod bitset {
 
     /// Regression: unset() must be a no-op for bits beyond logical size.
     #[test]
-    fn test_unset_beyond_logical_size() with(Alloc, Unsafe) -> i32 {
+    fn test_unset_beyond_logical_size() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(5);
         let len_before: u64 = b.len();
@@ -430,7 +430,7 @@ mod bitset {
 
     /// Regression: non-monotonic sets must not cause exponential allocation.
     #[test]
-    fn test_non_monotonic_sets() with(Alloc, Unsafe) -> i32 {
+    fn test_non_monotonic_sets() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         // Alternating high and low bits — previously triggered grow on every call
         b.set(100);
@@ -455,7 +455,7 @@ mod bitset {
 
     /// Contract: unset() does not shrink n_bits (high-water mark).
     #[test]
-    fn test_unset_preserves_len() with(Alloc, Unsafe) -> i32 {
+    fn test_unset_preserves_len() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(10);
         b.set(50);
@@ -479,7 +479,7 @@ mod bitset {
 
     /// Contract: intersect() does not shrink n_bits (high-water mark).
     #[test]
-    fn test_intersect_preserves_len() with(Alloc, Unsafe) -> i32 {
+    fn test_intersect_preserves_len() with(Alloc, Unsafe, Console) -> i32 {
         let mut a: BitSet = BitSet::new();
         a.set(0);
         a.set(100);
@@ -509,7 +509,7 @@ mod bitset {
     }
 
     #[test]
-    fn test_bitset_clear_reuse() with(Alloc, Unsafe) -> i32 {
+    fn test_bitset_clear_reuse() with(Alloc, Unsafe, Console) -> i32 {
         let mut b: BitSet = BitSet::new();
         b.set(10);
         b.set(20);

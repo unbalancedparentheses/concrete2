@@ -36,7 +36,7 @@ mod rand {
     }
 
     #[test]
-    fn test_seed_determinism() with(Unsafe, Random) -> i32 {
+    fn test_seed_determinism() with(Unsafe, Random, Alloc, Console) -> i32 {
         // Same seed should produce same sequence
         seed(42);
         let a1: i32 = random_int();

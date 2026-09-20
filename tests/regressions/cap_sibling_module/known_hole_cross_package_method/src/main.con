@@ -1,0 +1,31 @@
+// KNOWN HOLE, NOT YET CLOSED — a cross-package METHOD call is not capability-checked.
+//
+// `sneak` declares no capabilities at all and calls `String::clone` and `String::drop`
+// from `std`, both of which declare `with(Alloc, Unsafe)`. This program CHECKS CLEAN
+// today. It is committed as a live reproducer, not as a passing test: the gate asserts
+// that it is still accepted, so the day the hole closes the gate fails and says so.
+//
+// WHY IT IS SEPARATE FROM THE TWO CLOSED CASES. The sibling-submodule repair fixed
+// lookups within one compilation unit's module tree. Free functions imported from a
+// dependency package ARE checked (`println` requiring Console is refused correctly), and
+// METHODS defined in the same module ARE checked (`Box_shout` is refused correctly).
+// Only the intersection — a method reached across a package boundary — falls through.
+//
+// It is also the reason the std capability declarations added alongside the repair look
+// like they cost consumers nothing: they are enforced inside std and, for methods, not
+// yet enforced outside it. Closing this is expected to be the larger change, because it
+// reaches the resolve-side method signature path rather than one signature table.
+mod known_hole_cross_package_method {
+    fn sneak() -> u64 {
+        let a: String = "hello";
+        let b: String = a.clone();
+        let n: u64 = b.len();
+        a.drop();
+        b.drop();
+        return n;
+    }
+
+    fn main() with(Alloc) -> i64 {
+        return sneak() as i64;
+    }
+}

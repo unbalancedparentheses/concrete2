@@ -23,7 +23,7 @@ mod heap {
             return h;
         }
 
-        pub fn push(&mut self, value: T) with(Alloc) {
+        pub fn push(&mut self, value: T) with(Alloc, Unsafe) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -119,7 +119,7 @@ mod heap {
         }
 
 
-        fn grow(&mut self) with(Alloc) {
+        fn grow(&mut self) with(Alloc, Unsafe) {
             let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
             self.data = grow::<T>(self.data, new_cap);
             self.cap = new_cap;
@@ -159,7 +159,7 @@ mod heap {
             self.len = 0;
         }
 
-        pub fn drop(self) with(Alloc) {
+        pub fn drop(self) with(Alloc, Unsafe) {
             let mut i: u64 = 0;
             while i < self.len {
                 ((self.data + i) as &T).destroy();
@@ -174,7 +174,7 @@ mod heap {
 
     // Composition: BinaryHeap is destroyable iff T is.
     trusted impl<T: Destroy> Destroy for BinaryHeap<T> {
-        pub fn destroy(&self) with(Alloc) {
+        pub fn destroy(&self) with(Alloc, Unsafe) {
             let mut i: u64 = 0;
             while i < self.len {
                 ((self.data + i) as &T).destroy();
@@ -187,7 +187,7 @@ mod heap {
     }
 
     #[test]
-    fn test_max_heap_basic() with(Alloc) -> i32 {
+    fn test_max_heap_basic() with(Alloc, Console, Unsafe) -> i32 {
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         h.push(10);
         h.push(30);
@@ -238,7 +238,7 @@ mod heap {
     }
 
     #[test]
-    fn test_min_heap_basic() with(Alloc) -> i32 {
+    fn test_min_heap_basic() with(Alloc, Unsafe) -> i32 {
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(min_cmp);
         h.push(30);
         h.push(10);
@@ -264,7 +264,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_pop_empty() with(Alloc) -> i32 {
+    fn test_heap_pop_empty() with(Alloc, Unsafe) -> i32 {
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         let r: Option<i32> = h.pop();
         match r {
@@ -276,7 +276,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_stress() with(Alloc) -> i32 {
+    fn test_heap_stress() with(Alloc, Console, Unsafe) -> i32 {
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
 
         // Push 50 elements in scrambled order
@@ -304,7 +304,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_sorted_output() with(Alloc) -> i32 {
+    fn test_heap_sorted_output() with(Alloc, Console, Unsafe) -> i32 {
         // Verify max-heap: peek is max, and all 10 elements can be popped
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         h.push(5);
@@ -336,7 +336,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_push_pop_interleaved() with(Alloc) -> i32 {
+    fn test_heap_push_pop_interleaved() with(Alloc, Unsafe) -> i32 {
         // Interleave push and pop, verify heap property holds
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         h.push(10);
@@ -379,7 +379,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_peek_empty() with(Alloc) -> i32 {
+    fn test_heap_peek_empty() with(Alloc, Unsafe) -> i32 {
         let h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         let r: Option<i32> = h.peek();
         match r {
@@ -391,7 +391,7 @@ mod heap {
     }
 
     #[test]
-    fn test_heap_clear_reuse() with(Alloc) -> i32 {
+    fn test_heap_clear_reuse() with(Alloc, Unsafe) -> i32 {
         let mut h: BinaryHeap<i32> = BinaryHeap::<i32>::new(max_cmp);
         h.push(10);
         h.push(20);

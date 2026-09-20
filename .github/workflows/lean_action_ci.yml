@@ -722,6 +722,12 @@ jobs:
       - name: "Cap-variable inference (bug 063 — an unknown argument type is not an empty capability set)"
         run: bash scripts/tests/check_cap_inference.sh
 
+      - name: "Absence is not a fact (unknown must not default to empty/pure/safe)"
+        run: bash scripts/tests/check_absence_not_fact.sh
+
+      - name: "Capability headers bind across a sibling submodule (authority laundering)"
+        run: bash scripts/tests/check_cap_sibling_module.sh
+
       - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
         run: bash scripts/tests/check_cli_coherence.sh
 

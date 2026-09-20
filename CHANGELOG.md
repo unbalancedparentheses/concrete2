@@ -10,6 +10,84 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Capability Headers Now Bind Across a Sibling Submodule
+
+_Capability enforcement repair, landed 2026-09-20._
+
+A function declaring no capabilities, not marked `trusted`, could call a `with(Console)` function in
+a sibling submodule and print. The program compiled clean and ran. The same gap dropped `Unsafe`
+from an `extern` reached across a submodule — the one capability the language promises `extern`
+costs — while a call to that same extern from inside its own module had been refused correctly the
+whole time. Both programs are kept as fixtures under `tests/regressions/cap_sibling_module/`.
+
+CoreCheck built its function-signature table from one module's own functions, so a call into a
+sibling found no entry, and the lookup's `none` was read as *"this call requires nothing"* rather
+than *"I do not know what this requires"*. The `collectAllStructs`/`collectAllEnums` pair on the
+lines directly above already threaded types across the whole module tree; signatures were never
+given the same treatment. Submodule externs are now recorded under both spellings, because
+`prefixModuleFnNames` deliberately leaves extern names alone (they name real C symbols) while the
+call site still emits the prefixed form — the first fix closed the function path and left the extern
+path open, which only a separate program showed.
+
+**`capsContain` also under-approximated a union caller,** a separate pre-existing defect the repair
+exposed: it asked whether either side covered the whole requirement, so `Alloc ∪ Unsafe` did not
+cover `Alloc, Unsafe`. That disagreed with `missingCaps`, which has always normalized, letting
+`decideCall` report unsatisfied with nothing missing and render the self-refuting *"requires Alloc,
+Unsafe but caller has Alloc + Unsafe"*.
+
+**What was deliberately NOT changed.** Closing the hole made it tempting to let `trusted` confer
+`Unsafe` on extern calls, the way it already does for raw-pointer operations. Two fixtures older
+than this repair — `error_trusted_extern_needs_unsafe.con` and `error_trusted_no_extern.con`, the
+second named for the rule — say a `trusted` wrapper must still declare `with(Unsafe)` to call an
+extern. Uniformity was the wrong instinct, and a checker repair is not the place to retire a tested
+language decision. std reaches libc through `trusted extern fn` instead, which is the mechanism the
+language already had and `examples/elf_header` had been using all along; without it `String::eq`
+calls `memcmp`, and every string comparison in every user program would have had to declare
+`with(Unsafe)`.
+
+**The cost was honest.** 321 std signatures now declare what their bodies require (84 of them
+public), and 54 libc/alloc externs are explicitly `trusted extern`. Every declaration was added by
+iterating the checker to a fixpoint, so each function states the union of what its own call sites
+require and nothing more. Not one was a design problem: `println` really does deallocate a `String`,
+the `test.con` assertion helpers really do build them, and 131 of std's own test functions really do
+call those helpers. All 100 non-std packages check clean without modification.
+
+**A parser bug surfaced only because the requirement finally bound.** The body-less `fn` branch
+carried `isPublic` onto the declaration and dropped `isTrusted`, so `pub trusted fn sizeof<T>() ->
+u64;` reached `externFnRequiredCaps` as untrusted and was charged `Unsafe`. Nothing was computed
+wrong — the modifier was parsed and simply not recorded, and the consumer then read a structure
+default as an authorial decision. It was invisible while cross-module requirements did not bind;
+`check_std_compiled_coverage.sh` compiles one probe per std module under the full `Std` capability
+set, which by construction excludes `Unsafe`, and the `mem` probe stopped compiling. `sizeof` and
+`alignof` are now `pub trusted fn` — the compiler answers them at compile time from a type, so
+charging `Unsafe` for a size query was an artifact of how they are spelled, not a fact about what
+they do. Both fixtures for this are check-only: `#[intrinsic]` resolves by the compiler's own name
+table, so a renamed copy has no symbol to link.
+
+**The attestation identities moved, and were migrated rather than re-attested.** Changing std
+signatures changes package-scope identity, so 7 of 21 scopes produced new digests and 42 generated
+references were renamed. The old and new scopes were matched by the SET of `(module, function,
+body digest)` each contains — body digests are unchanged, since no function body changed — and every
+one of the 7 matched a single candidate, so nothing was paired by guesswork. Every reference was
+rewritten to match, in `Proof.lean`, `proofs/Examples/HmacSha256/Proofs.lean`, **and the
+mutation-anchor table** — the anchors embed attestation identities verbatim, so six mutation
+families had gone silently inert and `check_mutation_anchors.sh` is what said so.
+`crypto_verify` returns to 4 proved / 36 facts and `elf_header` to 5 proved, both 0 stale and
+0 closure-unjustified — the same baseline as before the repair. No proof was re-established, no
+claim was widened, and R-0208 is untouched.
+
+**A third hole in the same family is still open and is now a committed reproducer.** A cross-package
+*method* call is not capability-checked at all: a function declaring nothing can call `String::clone`
+and `String::drop`, which require `with(Alloc, Unsafe)`. Free functions from a dependency are checked
+correctly, and methods in the same module are checked correctly — only the intersection falls
+through. `tests/regressions/cap_sibling_module/known_hole_cross_package_method/` checks clean today
+and the gate asserts that it does, so the day it closes the gate fails and says so. It is also why
+the std declarations above cost consumers nothing yet.
+
+This corrects the *checker*, not the evidence semantics: it makes `with(...)` mean what it always
+claimed for required authority. The separation R-0484 is about — required versus carried versus
+performed authority — is untouched, and no proof or receipt depended on the gap.
+
 ### Postfix `?` Removed; Explicit Result Propagation Is Permanent
 
 _Language surface and trust-story reconciliation, landed 2026-09-13 at `4fcc6a79`, `303f7223`,

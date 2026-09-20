@@ -324,7 +324,7 @@ mod net {
 
     // Disabled: fork creates child processes that continue running tests
     // #[test]
-    fn test_tcp_write_all_read_all() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_tcp_write_all_read_all() with(Unsafe, Alloc, Network, Process, Console) -> i32 {
         // Integration test: write_all from client, read_all on server
         let addr: String = "127.0.0.1";
         let port: u16 = 39877;

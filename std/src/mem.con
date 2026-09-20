@@ -1,9 +1,19 @@
 mod mem {
+    // `trusted`, because a BODY-LESS declaration is typed as an extern, and
+    // `externFnRequiredCaps` charges an untrusted extern `Unsafe`. These two have no
+    // foreign symbol to vouch for — the compiler answers them at compile time from a
+    // type — so charging `Unsafe` for a size query would be an artifact of how they are
+    // spelled, not a fact about what they do.
+    //
+    // It surfaced only when the sibling-submodule signature repair (R-0484, 2026-09-20)
+    // made cross-module requirements bind at all: `check_std_compiled_coverage.sh`
+    // compiles one probe per std module with the full `Std` capability set, which by
+    // construction excludes `Unsafe`, and the `mem` probe stopped compiling.
     #[intrinsic = "sizeof"]
-    pub fn sizeof<T>() -> u64;
+    pub trusted fn sizeof<T>() -> u64;
 
     #[intrinsic = "alignof"]
-    pub fn alignof<T>() -> u64;
+    pub trusted fn alignof<T>() -> u64;
 
     #[test]
     fn test_size() with(Unsafe) -> i32 {

@@ -1,0 +1,26 @@
+// AUTHORITY LAUNDERING THROUGH A SIBLING SUBMODULE.
+//
+// `quiet` is not trusted and declares no capabilities. It calls `sink::shout`,
+// which requires `with(Console)`. The call must be refused (E0520): the whole
+// point of a capability header is that a caller cannot exceed its own authority.
+//
+// Before the fix this program COMPILED AND PRINTED. CoreCheck built its
+// signature table from one module's own functions, so a call to a sibling
+// submodule's function found no signature — and the `none` case was read as
+// "requires nothing" rather than "I do not know what this requires".
+mod launder {
+    mod sink;
+    import sink.{shout};
+
+    fn quiet(s: &String) -> i64 {
+        shout(s);
+        return 0;
+    }
+
+    fn main() -> i64 {
+        let m: String = "LAUNDERED CONSOLE OUTPUT";
+        let r: i64 = quiet(&m);
+        m.drop();
+        return r;
+    }
+}

@@ -1,0 +1,6 @@
+// A sibling submodule that honestly declares the authority it requires.
+mod sink {
+    import std.io.{println};
+
+    pub fn shout(s: &String) with(Console) { println(s); }
+}

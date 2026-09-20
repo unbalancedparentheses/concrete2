@@ -931,6 +931,14 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
   setEnv { env with
     vars := f.params
+    -- The DECLARED set, deliberately. `trusted` does not confer `Unsafe` on a
+    -- call: `error_trusted_extern_needs_unsafe.con` and `error_trusted_no_extern.con`
+    -- have required an explicit `with(Unsafe)` on a trusted wrapper's extern call
+    -- since long before the sibling-submodule repair, and the second is named for
+    -- exactly that rule. `trusted` lets a body manipulate raw memory it already
+    -- holds (Capabilities.capsAllowUnsafeOp); reaching OUT through an extern stays
+    -- a separate fact the header must state. Granting it here would have deleted a
+    -- tested language decision as a side effect of a checker fix.
     currentCapSet := f.capSet
     currentRetTy := f.retTy
     inLoop := false
@@ -946,8 +954,47 @@ private partial def collectAllStructs (m : CModule) : List CStructDef :=
 private partial def collectAllEnums (m : CModule) : List CEnumDef :=
   m.enums ++ m.submodules.foldl (fun acc s => acc ++ collectAllEnums s) []
 
+/-- Every function and extern signature in a module TREE, keyed by the flattened
+    name a caller actually emits (`mod sink { fn shout }` is called as
+    `sink_shout` from its parent).
+
+    WHY THIS EXISTS. The signature table was built from ONE module's own
+    functions, so a call into a sibling submodule found no entry — and the
+    capability check read that `none` as "requires nothing" instead of "I do not
+    know what this requires". A capability-free, non-`trusted` function could
+    therefore call a `with(Console)` sibling and print; the regression fixtures
+    in `tests/regressions/cap_sibling_module/` are the two programs that did.
+    The equivalent collection already existed for structs and enums directly
+    above — types were threaded across the tree and signatures were not. -/
+private partial def collectAllFnSigsAux (pfx : String) (m : CModule)
+    : List (String × CapSet × List (String × Ty) × Ty) :=
+  m.functions.map (fun f => (f.name, f.capSet, f.params, f.retTy))
+  ++ m.externFns.flatMap (fun (name, params, retTy, isTrusted) =>
+       let cap := Capabilities.externFnRequiredCaps isTrusted
+       -- Submodule FUNCTIONS arrive here already renamed by
+       -- `prefixModuleFnNames`, but externs are deliberately left alone there —
+       -- they name real C symbols. The call site still emits the prefixed
+       -- spelling (Elab registers a submodule extern as `sub_name`), so record
+       -- BOTH: under the bare name for a caller in its own module, and under the
+       -- prefixed name for a caller in a parent. Recording only one spelling is
+       -- how the `Unsafe` requirement on an extern went missing in the first
+       -- place (tests/regressions/cap_sibling_module/extern_unsafe).
+       if pfx.isEmpty then [(name, cap, params, retTy)]
+       else [(name, cap, params, retTy), (pfx ++ "_" ++ name, cap, params, retTy)])
+  ++ m.submodules.foldl (fun acc s =>
+       acc ++ collectAllFnSigsAux (if pfx.isEmpty then s.name else pfx ++ "_" ++ s.name) s) []
+
+private def collectAllFnSigs (m : CModule)
+    : List (String × CapSet × List (String × Ty) × Ty) :=
+  collectAllFnSigsAux "" m
+
 partial def ccCheckModule (m : CModule)
-    (allStructs : List CStructDef) (allEnums : List CEnumDef) : Diagnostics :=
+    (allStructs : List CStructDef) (allEnums : List CEnumDef)
+    -- REQUIRED, with no default. A default of `[]` would mean "no signatures
+    -- known", which this checker reads as "these calls require nothing" — the
+    -- exact defect being fixed, left as a footgun for the next caller. Omitting
+    -- it is a compile error instead.
+    (allFnSigs : List (String × CapSet × List (String × Ty) × Ty)) : Diagnostics :=
   let declErrors := ccCheckModuleDecls m allStructs allEnums
   let fnSigs := m.functions.map fun f =>
     (f.name, f.capSet, f.params, f.retTy)
@@ -956,7 +1003,10 @@ partial def ccCheckModule (m : CModule)
     let cap := Capabilities.externFnRequiredCaps isTrusted
     (name, cap, params, retTy)
   let initEnv : CoreCheckEnv := {
-    fnSigs := fnSigs ++ externSigs
+    -- Own signatures FIRST so a local definition wins a name it shares with
+    -- something elsewhere in the tree; the tree entries only ever add a
+    -- requirement where there was none, never replace a nearer one.
+    fnSigs := fnSigs ++ externSigs ++ allFnSigs
     structDefs := m.structs
     enumDefs := m.enums
     newtypes := m.newtypes
@@ -972,7 +1022,7 @@ partial def ccCheckModule (m : CModule)
     env'
   ) initEnv
   let subErrors := m.submodules.foldl (fun acc sub =>
-    acc ++ Diagnostics.stampFile ((ccCheckModule sub allStructs allEnums).map fun d =>
+    acc ++ Diagnostics.stampFile ((ccCheckModule sub allStructs allEnums allFnSigs).map fun d =>
       { d with message := s!"[{sub.name}] {d.message}" }) sub.sourceFile
   ) ([] : Diagnostics)
   declErrors ++ finalEnv.errors ++ subErrors
@@ -981,8 +1031,9 @@ partial def ccCheckModule (m : CModule)
 def coreCheckProgram (modules : List CModule) : Except Diagnostics Unit :=
   let allStructs := modules.foldl (fun acc m => acc ++ collectAllStructs m) []
   let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
+  let allFnSigs := modules.foldl (fun acc m => acc ++ collectAllFnSigs m) []
   let allErrors := modules.foldl (fun acc m =>
-    acc ++ (ccCheckModule m allStructs allEnums).map fun d => { d with message := s!"[{m.name}] {d.message}" }
+    acc ++ (ccCheckModule m allStructs allEnums allFnSigs).map fun d => { d with message := s!"[{m.name}] {d.message}" }
   ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok ()
   else .error allErrors

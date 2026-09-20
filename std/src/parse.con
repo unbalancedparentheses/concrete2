@@ -344,7 +344,7 @@ mod parse {
     import std.test.{assert_eq, assert_true, expect_none, expect_some};
 
     #[test]
-    fn test_parse_radix_overflow_is_none() with(Alloc) -> i32 {
+    fn test_parse_radix_overflow_is_none() with(Alloc, Unsafe) -> i32 {
         // H1 class-gate: overflowing inputs in EVERY radix return None —
         // no trap, no silent shl wraparound.
         let hex: String = "1FFFFFFFFFFFFFFFF";   // 17 hex digits > u64
@@ -372,7 +372,7 @@ mod parse {
     }
 
     #[test]
-    fn test_expected_failure_shape() -> i32 {
+    fn test_expected_failure_shape() with(Alloc, Unsafe) -> i32 {
         // The expected-failure helpers: asserting a FAILURE is first-class.
         let bad: String = "12x";
         let r: Option<i64> = parse_int(&bad);
@@ -386,7 +386,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_overflow_is_none() -> i32 {
+    fn test_parse_overflow_is_none() with(Alloc, Unsafe) -> i32 {
         // 21 digits: > u64::MAX — must be None, not silent wrap (audit 2026-07-14).
         let big: String = "999999999999999999999";
         let r: Option<u64> = parse_uint(&big);
@@ -405,7 +405,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_positive() -> i32 {
+    fn test_parse_int_positive() with(Alloc, Unsafe) -> i32 {
         let s: String = "12345";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -423,7 +423,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_negative() -> i32 {
+    fn test_parse_int_negative() with(Alloc, Unsafe) -> i32 {
         let s: String = "-42";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -441,7 +441,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_zero() -> i32 {
+    fn test_parse_int_zero() with(Alloc, Unsafe) -> i32 {
         let s: String = "0";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -459,7 +459,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_invalid() -> i32 {
+    fn test_parse_int_invalid() with(Alloc, Unsafe) -> i32 {
         let s: String = "abc";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -474,7 +474,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_empty() -> i32 {
+    fn test_parse_int_empty() with(Alloc, Unsafe) -> i32 {
         let s: String = String::new();
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -489,7 +489,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_uint() -> i32 {
+    fn test_parse_uint() with(Alloc, Unsafe) -> i32 {
         let s: String = "999";
         let result: Option<u64> = parse_uint(&s);
         s.drop();
@@ -507,7 +507,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_hex_with_prefix() -> i32 {
+    fn test_parse_hex_with_prefix() with(Alloc, Unsafe) -> i32 {
         let s: String = "0xff";
         let result: Option<u64> = parse_hex(&s);
         s.drop();
@@ -525,7 +525,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_hex_without_prefix() -> i32 {
+    fn test_parse_hex_without_prefix() with(Alloc, Unsafe) -> i32 {
         let s: String = "ff";
         let result: Option<u64> = parse_hex(&s);
         s.drop();
@@ -543,7 +543,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bin() -> i32 {
+    fn test_parse_bin() with(Alloc, Unsafe) -> i32 {
         let s: String = "0b1010";
         let result: Option<u64> = parse_bin(&s);
         s.drop();
@@ -561,7 +561,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_oct() -> i32 {
+    fn test_parse_oct() with(Alloc, Unsafe) -> i32 {
         let s: String = "0o17";
         let result: Option<u64> = parse_oct(&s);
         s.drop();
@@ -579,7 +579,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bool_true() -> i32 {
+    fn test_parse_bool_true() with(Alloc, Unsafe) -> i32 {
         let s: String = "true";
         let result: Option<bool> = parse_bool(&s);
         s.drop();
@@ -597,7 +597,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bool_false() -> i32 {
+    fn test_parse_bool_false() with(Alloc, Unsafe) -> i32 {
         let s: String = "false";
         let result: Option<bool> = parse_bool(&s);
         s.drop();
@@ -615,7 +615,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bool_invalid() -> i32 {
+    fn test_parse_bool_invalid() with(Alloc, Unsafe) -> i32 {
         let s: String = "yes";
         let result: Option<bool> = parse_bool(&s);
         s.drop();
@@ -630,7 +630,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_basic() -> i32 {
+    fn test_cursor_basic() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = "hello";
         let mut cur: Cursor = Cursor::new(&s);
         if cur.is_eof() {
@@ -663,7 +663,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_skip_whitespace() -> i32 {
+    fn test_cursor_skip_whitespace() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = "  hi";
         let mut cur: Cursor = Cursor::new(&s);
         cur.skip_whitespace();
@@ -689,7 +689,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_expect_char() -> i32 {
+    fn test_cursor_expect_char() with(Alloc, Console, Unsafe) -> i32 {
         let s: String = "ab";
         let mut cur: Cursor = Cursor::new(&s);
         if !(cur.expect_char('a')) {
@@ -712,7 +712,7 @@ mod parse {
     // --- Additional failure-path tests ---
 
     #[test]
-    fn test_parse_int_just_minus() -> i32 {
+    fn test_parse_int_just_minus() with(Alloc, Unsafe) -> i32 {
         let s: String = "-";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -723,7 +723,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_int_mixed_chars() -> i32 {
+    fn test_parse_int_mixed_chars() with(Alloc, Unsafe) -> i32 {
         let s: String = "12x4";
         let result: Option<i64> = parse_int(&s);
         s.drop();
@@ -734,7 +734,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_uint_negative() -> i32 {
+    fn test_parse_uint_negative() with(Alloc, Unsafe) -> i32 {
         // parse_uint should reject leading minus
         let s: String = "-5";
         let result: Option<u64> = parse_uint(&s);
@@ -746,7 +746,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_hex_invalid_chars() -> i32 {
+    fn test_parse_hex_invalid_chars() with(Alloc, Unsafe) -> i32 {
         let s: String = "0xGG";
         let result: Option<u64> = parse_hex(&s);
         s.drop();
@@ -757,7 +757,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_hex_empty_after_prefix() -> i32 {
+    fn test_parse_hex_empty_after_prefix() with(Alloc, Unsafe) -> i32 {
         let s: String = "0x";
         let result: Option<u64> = parse_hex(&s);
         s.drop();
@@ -768,7 +768,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_hex_uppercase() -> i32 {
+    fn test_parse_hex_uppercase() with(Alloc, Unsafe) -> i32 {
         let s: String = "0XAB";
         let result: Option<u64> = parse_hex(&s);
         s.drop();
@@ -784,7 +784,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bin_invalid() -> i32 {
+    fn test_parse_bin_invalid() with(Alloc, Unsafe) -> i32 {
         let s: String = "0b102";
         let result: Option<u64> = parse_bin(&s);
         s.drop();
@@ -795,7 +795,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_oct_invalid() -> i32 {
+    fn test_parse_oct_invalid() with(Alloc, Unsafe) -> i32 {
         let s: String = "0o89";
         let result: Option<u64> = parse_oct(&s);
         s.drop();
@@ -806,7 +806,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_oct_without_prefix() -> i32 {
+    fn test_parse_oct_without_prefix() with(Alloc, Unsafe) -> i32 {
         let s: String = "17";
         let result: Option<u64> = parse_oct(&s);
         s.drop();
@@ -822,7 +822,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bool_empty() -> i32 {
+    fn test_parse_bool_empty() with(Alloc, Unsafe) -> i32 {
         let s: String = String::new();
         let result: Option<bool> = parse_bool(&s);
         s.drop();
@@ -833,7 +833,7 @@ mod parse {
     }
 
     #[test]
-    fn test_parse_bool_case_sensitive() -> i32 {
+    fn test_parse_bool_case_sensitive() with(Alloc, Unsafe) -> i32 {
         // "True" should fail — only "true" accepted
         let s: String = "True";
         let result: Option<bool> = parse_bool(&s);
@@ -845,7 +845,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_eof() -> i32 {
+    fn test_cursor_eof() with(Alloc, Unsafe) -> i32 {
         let s: String = String::new();
         let mut cur: Cursor = Cursor::new(&s);
         if !(cur.is_eof()) {
@@ -880,7 +880,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_advance_all() -> i32 {
+    fn test_cursor_advance_all() with(Alloc, Unsafe) -> i32 {
         let s: String = "ab";
         let mut cur: Cursor = Cursor::new(&s);
         let c1: Option<char> = cur.advance();
@@ -927,7 +927,7 @@ mod parse {
     }
 
     #[test]
-    fn test_cursor_skip_whitespace_all() -> i32 {
+    fn test_cursor_skip_whitespace_all() with(Alloc, Unsafe) -> i32 {
         // All whitespace string
         let s: String = "   ";
         let mut cur: Cursor = Cursor::new(&s);

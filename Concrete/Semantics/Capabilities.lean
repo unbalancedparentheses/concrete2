@@ -41,11 +41,21 @@ def capsContain (caller callee : CapSet) : Bool :=
   match callee with
   | .empty => true
   | .concrete calleeCaps =>
-    match caller with
-    | .empty => calleeCaps.isEmpty
-    | .concrete callerCaps => calleeCaps.all fun c => callerCaps.contains c
-    | .var _ => true  -- capability variable assumed to satisfy
-    | .union a b => capsContain a callee || capsContain b callee
+    -- Normalize the CALLER before testing membership. A union must be flattened
+    -- first: `Alloc ∪ Unsafe` covers a callee requiring `Alloc, Unsafe`, but the
+    -- earlier per-branch form asked whether EITHER side covered the whole
+    -- requirement and answered no — an under-approximation of a set union.
+    --
+    -- That also made this disagree with `missingCaps`, which has always
+    -- normalized, so `decideCall` could report `satisfied := false` alongside
+    -- `missing := []` and render "requires Alloc, Unsafe but caller has
+    -- Alloc + Unsafe". One cap set, two readings, which is precisely what this
+    -- module exists to prevent.
+    let (callerCaps, callerVars) := caller.normalize
+    -- A capability VARIABLE in the caller is assumed to satisfy any requirement
+    -- (it is resolved at instantiation), matching the polymorphic-callback
+    -- contract — the same allowance the `.var` case made before.
+    !callerVars.isEmpty || calleeCaps.all fun c => callerCaps.contains c
   | .var _ => true  -- capability variable, can't check statically here
   | .union a b => capsContain caller a && capsContain caller b
 
@@ -71,6 +81,23 @@ def capSetHasUnsafe (cs : CapSet) : Bool :=
     CoreCheck's raw-pointer/unsafe-cast gates. -/
 def capsAllowUnsafeOp (inTrusted : Bool) (cs : CapSet) : Bool :=
   inTrusted || capsContain cs (.concrete [unsafeCapName])
+
+/-- WHAT `trusted` DOES NOT DO, recorded here because closing the
+    sibling-submodule signature hole made it tempting to change.
+
+    `trusted` grants `Unsafe` for a raw OPERATION on memory the body already
+    holds (`capsAllowUnsafeOp`, above). It does NOT grant `Unsafe` for a CALL —
+    an `extern` call inside a `trusted` wrapper still requires an explicit
+    `with(Unsafe)` on the header. That is a deliberate language decision with two
+    negative fixtures behind it, `error_trusted_extern_needs_unsafe.con` and
+    `error_trusted_no_extern.con`, the second named for the rule itself.
+
+    The distinction is coherent: manipulating memory you were handed is what the
+    trust boundary vouches for; reaching OUT through a foreign symbol is a
+    separate fact a reader of the header is entitled to see. Uniformity would
+    have been the wrong instinct — the two questions look alike and are not, and
+    a checker repair is not the place to settle a language question by accident. -/
+def trustedGrantsUnsafeOnCalls : Bool := false
 
 /-- The capability set an `extern fn` requires: none if it is `trusted`
     (the trust boundary is the author's responsibility), otherwise `Unsafe`.

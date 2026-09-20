@@ -10682,6 +10682,127 @@ one coherent meaning that checking, reports, proof eligibility and policy share.
 **Status (2026-09-18): reports REPAIRED; admission repair written, working, and
 deliberately INERT pending one decision.**
 
+**ENFORCEMENT HOLE FOUND AND CLOSED 2026-09-20 — the header was not binding at all
+across a sibling submodule.** Costing the trusted-consistency obligation named below
+started by asking what `trusted` actually suppresses. It suppresses only the `Unsafe`
+requirement on raw-pointer ops. The probe written to confirm that instead showed
+something worse, and it had nothing to do with `trusted`: **a function declaring no
+capabilities, not trusted, could call a `with(Console)` function in a sibling submodule
+and print.** The program compiled clean and ran. The same miss dropped `Unsafe` from an
+`extern` reached across a submodule — the one capability the language promises `extern`
+costs — while a call to that same extern from inside its own module was refused correctly
+the whole time.
+
+CoreCheck built its signature table from one module's own functions, so a sibling call
+found no entry and the lookup's `none` was read as "requires nothing" rather than "I do
+not know what this requires" — the `ABSENCE_IS_NOT_A_FACT.md` pattern, in the capability
+checker itself. The `collectAllStructs`/`collectAllEnums` pair on the lines directly above
+already threaded types across the whole module tree; signatures were never given the same
+treatment. Fixed by `collectAllFnSigs`, recording submodule externs under BOTH spellings
+(`prefixModuleFnNames` renames functions but deliberately leaves externs alone, since they
+name real C symbols, and the call site still emits the prefixed form — the first fix
+closed the function path and left the extern path open, which only a separate program
+showed).
+
+**`capsContain` also under-approximated a union caller**, a separate pre-existing defect the
+repair exposed. It asked whether EITHER side covered the WHOLE requirement, so
+`Alloc ∪ Unsafe` did not cover `Alloc, Unsafe`. It therefore disagreed with `missingCaps`,
+which has always normalized, and `decideCall` could report `satisfied := false` beside
+`missing := []` — rendering the self-refuting *"requires Alloc, Unsafe but caller has
+Alloc + Unsafe"*. One cap set, two readings, in the module whose stated purpose is that
+this cannot happen.
+
+**What was deliberately NOT changed, and this is the part worth remembering.** Closing the
+hole made it tempting to let `trusted` confer `Unsafe` on extern calls, the way it already
+does for raw-pointer ops. Two fixtures older than this repair say otherwise —
+`error_trusted_extern_needs_unsafe.con` and `error_trusted_no_extern.con`, the second named
+for the rule. Uniformity was the wrong instinct: the two questions look alike and are not,
+and a checker repair is not the place to retire a tested language decision. The correct
+mechanism already existed and std simply was not using it — `trusted extern fn`, which
+`externFnRequiredCaps` types as requiring nothing, and which `examples/elf_header` has used
+from the start. 54 libc/alloc externs are now explicitly `trusted extern`, which is also
+the honest form: the vouch was always being made, it was being made silently. Without it
+`String::eq` calls `memcmp`, and every string comparison in every user program would have
+had to declare `with(Unsafe)`.
+
+**The cost, measured across four waves.** 321 std signatures now declare what their bodies
+require, 84 of them public. Each wave was found by iterating the checker to a fixpoint, so
+every function states the union of what its own call sites require and nothing more. Not
+one was a design problem: `println` really does deallocate a `String`, the `test.con`
+assertion helpers really do build them, 131 of std's own test functions really do call
+those helpers. All 100 non-std packages check clean without modification.
+
+Each wave is a lesson about scope of measurement, not about the fix:
+
+1. A corpus sweep over package entry points said "zero cascade" and was *right about what
+   it measured*. std's own `#[test]` functions are only compiled in single-file report
+   mode, which that sweep never entered.
+2. `E0240` (the cap-polymorphic path in `Check.lean`) words its diagnostic differently from
+   `E0520` (`CoreCheck.lean`). A sweep grepping only the latter reported clean three times
+   with a `vec.con` site still open.
+3. Filenames and function names containing digits (`base64.con`, `sha256.con`,
+   `hex_encode_u32`) fell outside an `[a-z_]` character class and were silently skipped —
+   the fixpoint reported "0 updated" while 40 errors stood.
+4. Package-entry-point checking and single-file `--report` mode do not compile the same
+   set. Neither reached `check_std_compiled_coverage.sh`'s per-module probes, which is
+   where the parser bug above finally showed.
+
+**A PARSER bug surfaced only because the requirement finally bound**, and it is the
+sharpest instance of the absence rule yet: nothing was computed wrong. The body-less `fn`
+branch carried `isPublic` onto the declaration and dropped `isTrusted`, so
+`pub trusted fn sizeof<T>() -> u64;` reached `externFnRequiredCaps` as UNtrusted and was
+charged `Unsafe`. The modifier was parsed correctly and simply not recorded; the consumer
+then read the structure default `isTrusted := false` as an authorial decision. A default is
+only safe where the absence of a value and the value itself are the same fact, and "not
+trusted" is a claim. `check_std_compiled_coverage.sh` compiles one probe per std module
+under the full `Std` set — which by construction excludes `Unsafe` — and the `mem` probe
+stopped compiling. `sizeof`/`alignof` are now `pub trusted fn`: the compiler answers them
+at compile time from a type, so charging `Unsafe` for a size query was an artifact of the
+spelling, not a fact about the operation. Paired fixtures `bodyless_trusted` (costs
+nothing) and `bodyless_untrusted` (still costs `Unsafe`, so the modifier is effective
+rather than meaningless) are CHECK-ONLY — `#[intrinsic]` resolves by the compiler's own
+name table, so a renamed copy has no symbol to link.
+
+**The attestation identities moved and were MIGRATED, not re-attested.** std signature
+changes change package-scope identity: 7 of 21 scopes produced new digests, 42 generated
+references were renamed, and 38 references across `Proof.lean` and
+`proofs/Examples/HmacSha256/Proofs.lean` were rewritten. Old and new scopes were matched by
+the SET of `(module, function, body digest)` each contains — body digests are unchanged
+because no function body changed — and each of the 7 matched exactly one candidate, so
+nothing was paired by name similarity or by guesswork. Eight entries share a
+`(module, fn, body)` key across packages (`crypto_verify` and `crypto_verify_drifted` hold
+the same `check_nonce`), which is why the mapping is built per SCOPE from content sets
+rather than per NAME. `crypto_verify` returns to 4 proved / 36 facts and `elf_header` to
+5 proved, both 0 stale and 0 closure-unjustified — the R-0483 baseline, and
+`check_dependency_edges.sh` returns to 317/0 after briefly reading 32 proved / 3
+unjustified while the references were stale. No proof was re-established and no claim
+widened; R-0208 is untouched.
+
+The migration had to be run TWICE, which is the durable lesson: any later std source edit
+moves package-scope identity again, so the regeneration is not a step you do once at the
+start. The mutation-anchor table is the easiest part to forget, because it embeds
+attestation identities verbatim and a stale anchor fails open — six families were counted
+as covered while testing nothing until `check_mutation_anchors.sh` named them.
+
+**A THIRD HOLE IN THE SAME FAMILY IS OPEN, and is now a committed reproducer.** A
+cross-package METHOD call is not capability-checked at all: a function declaring nothing
+calls `String::clone` and `String::drop`, both `with(Alloc, Unsafe)`, and nothing refuses
+it. Free functions from a dependency ARE checked; methods in the same module ARE checked;
+only the intersection falls through.
+`tests/regressions/cap_sibling_module/known_hole_cross_package_method/` checks clean today
+and `check_cap_sibling_module.sh` asserts that it does, so the day it closes the gate fails
+and says so. It is also why the 84 public std declarations above cost consumers nothing
+yet, and closing it is expected to be the larger change — it reaches the resolve-side
+method signature path rather than one signature table.
+
+`check_cap_sibling_module.sh` (14/0) pins both closed negatives, a positive control that
+must BUILD AND RUN, the trusted/`Unsafe` decision and its fixtures, the body-less
+declaration pair, the union normalization, and the open hole.
+
+This is a correction to the *checker*, not to the evidence semantics: it makes `with(...)`
+mean what it always claimed for required authority. The three-way separation
+(requires / carries / performs) below is untouched, and no proof or receipt rides on it.
+
 `CFnDef.isProofEligible` required `f.capSet.isEmpty` and read it as "pure". It means
 "nothing was declared". The rule that fixes it — refuse any function that can REACH an
 indirect call, transitively, via a least fixpoint over the proof call graph — is

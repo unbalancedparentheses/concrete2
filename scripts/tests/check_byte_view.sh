@@ -84,9 +84,15 @@ echo "=== 2b. raw-bytes -> Text is an explicit, UTF-8-validated step ==="
 # R-0483: `try_text` returned a Text BORROWING `buf`, so mutating the source afterwards
 # left a "validated" value yielding bytes that were never validated. `to_text` copies
 # into storage the source cannot reach; it needs Alloc, and that cost is the guarantee.
-grep -qE 'pub fn to_text\(&self, buf: &Bytes\) with\(Alloc\) -> Option<Text>' "$NUMERIC" \
-  && ok "ByteView::to_text(&self, buf) with(Alloc) -> Option<Text> (copies)" \
-  || no "ByteView::to_text signature changed/missing"
+# The load-bearing facts are the SHAPE (takes the buffer, returns an owned Option<Text>)
+# and that it COSTS Alloc — that is the copy being paid for. The capability list is matched
+# with Alloc required and the rest open: pinning the exact set made this fail when the
+# sibling-submodule repair (R-0484) added the `Unsafe` that `std.alloc` has always required,
+# which is a stronger signature, not a weaker one. A gate that reds on a tightening teaches
+# people to edit the gate.
+grep -qE 'pub fn to_text\(&self, buf: &Bytes\) with\([^)]*\bAlloc\b[^)]*\) -> Option<Text>' "$NUMERIC" \
+  && ok "ByteView::to_text(&self, buf) with(... Alloc ...) -> Option<Text> (copies)" \
+  || no "ByteView::to_text signature changed/missing, or no longer costs Alloc"
 grep -qE 'pub fn try_text\(' "$NUMERIC" \
   && no "ByteView::try_text is back — a borrowed Text cannot keep its validation" \
   || ok "the borrowing try_text is gone"
@@ -99,9 +105,9 @@ TEXT="std/src/text.con"
 # R-0483: Text OWNS its storage now, so the raw constructor copies and needs Alloc. The
 # old `try_from_raw` aliased the caller's region and was `Copy`, which is what let a
 # validated value outlive — and disagree with — the bytes it validated.
-grep -qE 'pub fn copy_from_raw\(ptr: \*const u8, len: u64\) with\(Alloc\) -> Option<Text>' "$TEXT" \
-  && ok "Text::copy_from_raw(ptr, len) with(Alloc) -> Option<Text> (validated, copying)" \
-  || no "Text::copy_from_raw changed/missing"
+grep -qE 'pub fn copy_from_raw\(ptr: \*const u8, len: u64\) with\([^)]*\bAlloc\b[^)]*\) -> Option<Text>' "$TEXT" \
+  && ok "Text::copy_from_raw(ptr, len) with(... Alloc ...) -> Option<Text> (validated, copying)" \
+  || no "Text::copy_from_raw changed/missing, or no longer costs Alloc"
 grep -qE 'pub struct Copy Text' "$TEXT" \
   && no "Text is Copy again — an owning validated string must be linear" \
   || ok "Text is linear, not Copy (it owns its storage)"

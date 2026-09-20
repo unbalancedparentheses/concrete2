@@ -1870,6 +1870,30 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== capability headers bind across a sibling submodule ==="
+if bash "$ROOT_DIR/scripts/tests/check_cap_sibling_module.sh" > /tmp/capsib.$$ 2>&1; then
+    _cs_pass=$(grep -c "^  ok  " /tmp/capsib.$$ || true)
+    echo "  ok  cap-sibling-module gate ($_cs_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  cap-sibling-module gate"
+    grep "^  FAIL" /tmp/capsib.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/capsib.$$
+
+echo "=== absence is not a fact ==="
+if bash "$ROOT_DIR/scripts/tests/check_absence_not_fact.sh" > /tmp/absence.$$ 2>&1; then
+    _an_pass=$(grep -c "^  ok  " /tmp/absence.$$ || true)
+    echo "  ok  absence-not-fact gate ($_an_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  absence-not-fact gate"
+    grep "^  FAIL" /tmp/absence.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/absence.$$
+
 echo "=== cap-variable inference (bug 063) ==="
 if bash "$ROOT_DIR/scripts/tests/check_cap_inference.sh" > /tmp/cap_inf.$$ 2>&1; then
     _ci_pass=$(grep -c "^  ok  " /tmp/cap_inf.$$ || true)

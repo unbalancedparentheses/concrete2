@@ -100,6 +100,42 @@ produces source syntax (`with(File, Network)`) for `concrete fmt`, while
 human reports. These serve different audiences and read the same underlying
 `CapSet` — the *fact* is shared even though the surface text differs.
 
+## Where the judgment actually binds (2026-09-20)
+
+Two facts about SCOPE, recorded because both were wrong and one was invisible.
+
+`capsContain` **normalizes the caller before testing membership.** It previously
+asked whether either side of a union covered the whole requirement, so
+`Alloc ∪ Unsafe` did not cover a callee requiring `Alloc, Unsafe`. That made it
+disagree with `missingCaps`, which has always normalized, and `decideCall` could
+report `satisfied := false` beside `missing := []` — the self-refuting *"requires
+Alloc, Unsafe but caller has Alloc + Unsafe"*. One cap set, two readings, in the
+module this note exists to prevent that in.
+
+**CoreCheck's signature table spans the whole module tree, not one module.** It
+was built from a single module's own functions, so a call into a sibling
+submodule found no entry and the `none` was read as "requires nothing". A
+capability-free, non-`trusted` function could call a `with(Console)` sibling and
+print. Fixed by `collectAllFnSigs`, which records submodule externs under both
+the bare and prefixed spellings, since `prefixModuleFnNames` renames functions
+but deliberately leaves externs alone. Gated by
+`scripts/tests/check_cap_sibling_module.sh`.
+
+**Still unenforced:** a cross-package METHOD call. Free functions from a
+dependency are checked, same-module methods are checked; the intersection is not.
+`tests/regressions/cap_sibling_module/known_hole_cross_package_method/` is a live
+reproducer and the gate asserts it still checks clean, so the day it closes the
+gate fails rather than going quietly green.
+
+**`trusted` does NOT grant `Unsafe` for a CALL,** only for a raw operation on
+memory the body already holds (`capsAllowUnsafeOp`). An `extern` call inside a
+`trusted` wrapper still needs an explicit `with(Unsafe)`;
+`error_trusted_extern_needs_unsafe.con` and `error_trusted_no_extern.con` hold
+that. Vouching for a foreign symbol is `trusted extern fn`
+(`externFnRequiredCaps`), which is how `std/src/libc.con` declares its 50 libc
+symbols — without it `String::eq` calls `memcmp` and every string comparison in
+every program would have to declare `with(Unsafe)`.
+
 ## Enforcement
 
 `scripts/tests/check_capability_facts.sh` gates the identity-defining cases:
