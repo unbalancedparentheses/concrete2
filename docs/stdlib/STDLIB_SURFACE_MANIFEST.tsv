@@ -196,8 +196,8 @@ math	max	no	constructs	infallible	none	pure-core	gated	<T: Copy>(a: T, b: T) -> 
 math	min	no	constructs	infallible	none	pure-core	gated	<T: Copy>(a: T, b: T) -> T
 math	abs	no	constructs	infallible	none	pure-core	gated	(value: i64) -> i64
 math	clamp	no	constructs	infallible	none	pure-core	gated	<T: Copy>(value: T, lo: T, hi: T) -> T
-mem	sizeof	no	constructs	infallible	none	deterministic	gated	<T>() -> u64
-mem	alignof	no	constructs	infallible	none	deterministic	gated	<T>() -> u64
+mem	sizeof	no	constructs	infallible	none	trusted-boundary	gated	<T>() -> u64
+mem	alignof	no	constructs	infallible	none	trusted-boundary	gated	<T>() -> u64
 net	bind	yes	constructs	result	Alloc,Network,Unsafe	trusted-boundary	gated	(addr: &String, port: u16) with(Unsafe,Alloc,Network) -> Result<TcpListener, NetError>
 net	accept	no	borrows	result	Network,Unsafe	trusted-boundary	gated	(&self) with(Unsafe,Network) -> Result<TcpStream, NetError>
 net	close	no	consumes	infallible	Network,Unsafe	trusted-boundary	gated	(self) with(Unsafe,Network)
