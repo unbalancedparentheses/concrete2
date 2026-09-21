@@ -67,8 +67,19 @@ _set gates_proven 85/85
 # qualifying campaign must have discharged, and every call here omitted it — so the positive control
 # was refused with `qualified_without_a_pinned_population` and the suite could not have been green.
 POP=85
-# The declared GATE population, distinct from the family population: 85 families target 36 gates.
+# The declared GATE population, distinct from the family population, and READ FROM THE
+# DRIVER rather than assumed: the check below compares this to `gate_count_from_driver`.
+# It moved 36 -> 37 when bug 071's two mutation families introduced
+# `check_cross_package_caps.sh` as a target no earlier family named. POP above is the
+# FIXTURE population and is deliberately not the live family count.
 GATES=36
+# The LIVE driver's gate count, checked against the inventory further down. Kept separate
+# from GATES above for the same reason POP is separate from the live family count: GATES
+# is the population baked into this gate's synthetic candidate records, which are
+# self-consistent at 36, while the real inventory grows whenever a family targets a gate
+# no earlier family named. Collapsing the two made every fixture incoherent the moment
+# bug 071 added `check_cross_package_caps.sh` as a new target.
+DRIVER_GATES=37
 _fixture_refusals="$(decode_candidate "$GOOD")"
 if [ -n "$_fixture_refusals" ]; then
   echo "FIXTURE BUG: the positive control does not decode:$_fixture_refusals" >&2
@@ -287,9 +298,9 @@ _falsify baseline_gates_green 1/1 qualified_with_baseline_gate_population \
 _falsify baseline_gates_green 999/999 qualified_with_baseline_gate_population \
   "a self-agreeing ratio over an invented population is refused"
 # ...and the count is read from the driver, not restated here.
-[ "$(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")" = "$GATES" ] \
+[ "$(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")" = "$DRIVER_GATES" ] \
   && ok "the pinned gate population matches what the driver declares" \
-  || no "GATES=$GATES but the driver declares $(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")"
+  || no "DRIVER_GATES=$DRIVER_GATES but the driver declares $(gate_count_from_driver "$ROOT_DIR/scripts/tests/check_gate_mutation_coverage.sh")"
 _falsify gates_proven 0/85 qualified_with_gates_proven_disagreeing \
   "a campaign qualifying with 0 of 85 gates proven is refused"
 _falsify gates_proven 84/85 qualified_with_gates_proven_disagreeing \
