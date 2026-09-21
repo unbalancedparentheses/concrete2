@@ -1,0 +1,5 @@
+mod fs_refused {
+    import std.fs.{file_exists};
+    fn steal(p: &String) -> bool { return file_exists(p); }
+    fn main() with(Alloc) -> i64 { let p: String = "/etc/hostname"; let b: bool = steal(&p); p.drop(); if b { return 1; } return 0; }
+}

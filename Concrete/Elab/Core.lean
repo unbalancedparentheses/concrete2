@@ -226,6 +226,21 @@ structure CModule where
   traitImpls : List CTraitImpl := []
   /-- Maps local alias name → original linker symbol for aliased imports. -/
   linkerAliases : List (String × String) := []
+  /-- The capability requirement of every callable this module IMPORTS, keyed by
+      the local name a call site here actually spells.
+
+      WHY IT IS CARRIED RATHER THAN LOOKED UP. A dependency's Core is not in this
+      compilation unit — a std-using program elaborates exactly one module — so
+      CoreCheck cannot reach `std.env.get`'s signature at all, and read its own
+      "no entry for this name" as "this call requires nothing" (bug 071). The
+      fact exists in the dependency's `FileSummary`; only Elab sees both that and
+      the import list, so Elab is where the two are joined.
+
+      KEYED BY LOCAL NAME, DELIBERATELY. `get` is declared in ten std modules, so
+      a table keyed by bare name would attach one module's requirement to another
+      module's function. The local spelling — alias included — is the only key
+      that is unambiguous at the call site. -/
+  importedFnCaps : List (String × CapSet) := []
   /-- Newtype definitions from this module. Layout resolves these so that
       newtype names reaching SSA/codegen are transparently unwrapped. Elab
       erases newtypes inside struct/enum fields, but function bodies still

@@ -2314,6 +2314,37 @@ partial def elabModule (m : Module) (summary : FileSummary)
             else mangled
           some (localKey, CallableId.ofUser defModule declName sig.typeParams.length)
         else none
+  -- THE CAPABILITY REQUIREMENT OF EVERY IMPORTED CALLABLE, keyed by the local
+  -- spelling a call site here uses. Same import walk as `importedCallIds` and
+  -- `importedMethodCallIds` above, for the same reason: the dependency's Core is
+  -- not in this unit, so the requirement has to travel with the module or it is
+  -- simply not enforced (bug 071 — `std.env.get` is `with(Alloc, Env, Unsafe)`
+  -- and a caller declaring nothing could call it and read the environment).
+  --
+  -- Functions, externs and impl methods all, because the hole was never specific
+  -- to one of them: four of the six measured escapes were free functions.
+  let importedFnCaps : List (String × CapSet) := m.imports.flatMap fun imp =>
+    let summary? := match summary.submoduleSummaries.find? fun (n, _) => n == imp.moduleName with
+      | some (_, s) => some s
+      | none => summaryTable.lookup imp.moduleName
+    match summary? with
+    | none => []
+    | some s => imp.symbols.flatMap fun sym =>
+      let localName := sym.effectiveName
+      let fnCap := match s.functions.find? fun (n, _) => n == sym.name with
+        | some (_, sig) => [(localName, sig.capSet)]
+        | none => []
+      let extCap := match s.externFnSigs.find? fun (n, _) => n == sym.name with
+        | some (_, sig) => [(localName, sig.capSet)]
+        | none => []
+      -- Methods arrive mangled as `Type_method`; the call site spells them
+      -- `localType_method`, so the prefix is re-based onto the local name.
+      let prefixOrig := sym.name ++ "_"
+      let methCaps := s.implMethodSigs.filterMap fun (mangled, sig) =>
+        if mangled.startsWith prefixOrig then
+          some (localName ++ "_" ++ mangled.drop prefixOrig.length, sig.capSet)
+        else none
+      fnCap ++ extCap ++ methCaps
   -- `spec fn` declarations are resolvable targets in contracts. They were in none
   -- of the tables below, so every contract mentioning one (hmac_sha256's
   -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
@@ -2602,6 +2633,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         methodNames := tb.methods.map (·.name),
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
         builtinTraitId := traitBuiltinId, declSpan := some tb.span : CTraitImpl }
+    importedFnCaps := importedFnCaps
     linkerAliases :=
       -- Import aliases: imported bare name → prefixed definition (subName_fnName)
       -- When user writes `import math.{add}` and calls `add(...)`, the call emits `@add`

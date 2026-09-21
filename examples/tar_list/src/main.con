@@ -69,7 +69,7 @@ mod tar_list {
             && data.get_unchecked(off + 261) == 114;   // 'r'
     }
 
-    fn fail(msg: String) with(Console) -> u8 {
+    fn fail(msg: String) with(Console, Alloc) -> u8 {
         eprintln(&msg);
         msg.drop();
         return 1;

@@ -1,0 +1,30 @@
+// A genuinely capability-free dependency call must stay accepted, and a
+// capability-POLYMORPHIC imported callable must instantiate rather than be
+// refused or fabricated. Both matter because the repair adds a new source of
+// requirements: if it over-applies, these are what notice.
+mod capfree_ok {
+    import std.time.{Duration};
+    import std.vec.{Vec};
+
+    // Declares NOTHING. `Duration::from_millis` declares nothing either.
+    fn pure_dep() -> i64 { let d: Duration = Duration::from_millis(5); return 0; }
+
+    // A cap-polymorphic imported METHOD instantiated at the caller's authority:
+    // `Vec::for_each_ctx` is `cap C`, and the callback here allocates, so C := {Alloc}.
+    fn collect(v: &Vec<i64>, out: &mut Vec<i64>) with(Alloc) {
+        v.for_each_ctx(out, push_one);
+    }
+    fn push_one(ctx: &mut Vec<i64>, x: &i64) with(Alloc) { ctx.push(*x); }
+
+    fn main() with(Alloc) -> i64 {
+        let z: i64 = pure_dep();
+        let mut a: Vec<i64> = Vec::<i64>::new();
+        a.push(7);
+        let mut b: Vec<i64> = Vec::<i64>::new();
+        collect(&a, &mut b);
+        let n: u64 = b.len();
+        a.drop(); b.drop();
+        if n == 1 && z == 0 { return 0; }
+        return 1;
+    }
+}

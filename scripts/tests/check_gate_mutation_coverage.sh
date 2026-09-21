@@ -391,7 +391,7 @@ cd "$ROOT_DIR"
 # candidate's population describes the CORPUS rather than merely agreeing with itself, and it exits
 # inside its own branch long before the inventory is built — so a constant defined next to that
 # build is invisible to the role that audits it.
-EXPECTED_FAMILIES=91
+EXPECTED_FAMILIES=93
 
 # LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
 # supervisor recomputes it; they must use the SAME function or two implementations could each agree
@@ -1044,6 +1044,26 @@ add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check
 # until ANCHORS_ONLY existed. That coupling is a cost of scoping DefinitionIdentity by package
 # CONTENT, and it is one of the concrete arguments for the five-way identity separation: under
 # PackageScopeIdentity these names would not move when an unrelated source did.
+# ============================================================================
+# BUG 071 — a capability declared in a DEPENDENCY must bind on its caller.
+#
+# Both mutations restore a form of "I have no signature for this name, so it requires
+# nothing", which is the defect: a function declaring nothing called `std.env.get` and
+# the program printed `$HOME`. Each must be KILLED by check_cross_package_caps.sh.
+#
+# The first severs the transport — Elab stops putting the requirement on the module, so
+# CoreCheck has nothing to consult and falls through to the old `none` branch. The second
+# keeps the transport and empties the payload, which is the subtler shape: everything
+# still looks wired, and every imported call requires nothing. A gate that only checked
+# "is importedFnCaps mentioned" would survive the second.
+add "cross-package-caps-transport" "Concrete/Elab/Elab.lean" "check_cross_package_caps.sh" yes \
+  $'    importedFnCaps := importedFnCaps' \
+  $'    importedFnCaps := []'
+
+add "cross-package-caps-empty-not-unknown" "Concrete/Check/CoreCheck.lean" "check_cross_package_caps.sh" yes \
+  $'    match env.importedCaps.lookup name with\n    | some caps => return some (dropCrossPackageUnsafe caps)' \
+  $'    match env.importedCaps.lookup name with\n    | some _ => return some CapSet.empty'
+
 add "attestation-conversion-complete" "Concrete/Proof/Proof.lean" "check_attestation_manifest.sh" yes \
   $'    , AttestedPFnDef.of checkDataFn       GeneratedAttestations.elfFns_389bda24_check_data\n    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_389bda24_check_magic' \
   $'    , AttestedPFnDef.of checkMagicFn      GeneratedAttestations.elfFns_389bda24_check_magic'

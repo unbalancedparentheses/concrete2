@@ -10797,11 +10797,37 @@ start. The mutation-anchor table is the easiest part to forget, because it embed
 attestation identities verbatim and a stale anchor fails open — six families were counted
 as covered while testing nothing until `check_mutation_anchors.sh` named them.
 
-**A THIRD HOLE IN THE SAME FAMILY IS OPEN, and is now a committed reproducer.** A
-cross-package METHOD call is not capability-checked at all: a function declaring nothing
-calls `String::clone` and `String::drop`, both `with(Alloc, Unsafe)`, and nothing refuses
-it. Free functions from a dependency ARE checked; methods in the same module ARE checked;
-only the intersection falls through.
+**THE THIRD HOLE WAS BIGGER THAN "METHODS", AND IS NOW PARTIALLY CLOSED (bug 071).**
+Sizing it showed the boundary is the PACKAGE, not method dispatch: a function declaring
+NOTHING called `std.env.get` — `with(Env, Alloc, Unsafe)` — and the program printed
+`$HOME`. Filesystem, clock, network and process exit the same. `std.io.println` was the
+only refusal, and not for a good reason: it is an INTRINSIC with a hardcoded capability,
+so **the enforced set across a package boundary was exactly the hardcoded intrinsic
+table, and every capability a dependency actually declared was decorative to consumers.**
+
+Any claim in this document that a capability requirement stays visible at every call
+site was, until 2026-09-21, true only WITHIN a package and for those intrinsics.
+
+**Stage 1 landed:** `CModule.importedFnCaps` carries each imported callable's requirement
+keyed by the local call spelling (`get` is declared in ten std modules, so a bare-name
+table would cross-attach); Elab joins the import list to the dependency `FileSummary`;
+CoreCheck consults it on the same `decideCall` path as local and sibling calls. Sinks and
+`Alloc` now bind, for free functions and methods alike. Corpus cost: 12 declarations,
+every one honest — including a function that read a file without declaring `File`.
+`check_cross_package_caps.sh` 16/0, with two compiler mutations (sever the transport;
+empty the payload while leaving it wired).
+
+**Stage 1 is deliberately incomplete and bug 071 stays OPEN.** `Unsafe` does not yet bind
+across a package: enforcing it gave 91 diagnostics over 32 of 95 packages, **82 missing
+only `Unsafe`** with the caller already holding the full `Std` set — which is defined as
+every capability except `Unsafe`, so `Std` could not open a file or push to a `Vec`.
+That exception is not acceptable as permanent semantics (identical declarations would
+mean different things depending on the caller's package); it is pinned in the gate so
+removing it fails loudly. The end state: every declared capability binds uniformly, a
+safe public abstraction terminates `Unsafe` at a small explicit trusted leaf rather than
+re-exporting it, genuinely unsafe APIs keep it, and evidence still records the dependency
+on the trusted boundary. Remaining: classify the 82, apply the three treatments, remove
+the exception, re-run the corpus.
 `tests/regressions/cap_sibling_module/known_hole_cross_package_method/` checks clean today
 and `check_cap_sibling_module.sh` asserts that it does, so the day it closes the gate fails
 and says so. It is also why the 84 public std declarations above cost consumers nothing

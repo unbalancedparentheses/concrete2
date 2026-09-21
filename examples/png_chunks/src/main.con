@@ -29,7 +29,7 @@ mod png_chunks {
         s.drop();
     }
 
-    fn fail(msg: String) with(Console) -> u8 {
+    fn fail(msg: String) with(Console, Alloc) -> u8 {
         eprintln(&msg);
         msg.drop();
         return 1;

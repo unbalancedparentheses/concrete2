@@ -1,0 +1,147 @@
+# Bug 071 — a capability requirement declared in a dependency does not bind on its caller
+
+**Status:** Open — PARTIALLY REPAIRED 2026-09-21. The sink capabilities (Console,
+File, Network, Env, Time, Process, Random) and `Alloc` now bind across a package
+boundary, for free functions and methods alike. `Unsafe` does NOT yet; that exception is
+deliberate, documented at `CoreCheck.dropCrossPackageUnsafe`, and pinned by
+`check_cross_package_caps.sh` so removing it fails the gate. **This bug stays open until
+it is removed.**
+**Discovered:** 2026-09-20, while sizing the cross-package METHOD hole left open by
+the sibling-submodule repair (R-0484, `c3fabe25`). The method case turned out to be
+a subset: the boundary is the PACKAGE, and free functions cross it too.
+**Severity:** authority escape, reachable from ordinary user code against the
+shipping standard library. Not a rejected-valid-program; a wrongly-accepted one.
+
+## Symptom
+
+A function that declares no capabilities at all, and is not `trusted`, may call a
+dependency function that declares `with(...)`. It reads the environment:
+
+```con
+mod sinkprobe {
+    import std.env.{get};
+    import std.io.{println};
+
+    // Declares NOTHING. Not trusted. `std.env.get` is with(Alloc, Env, Unsafe).
+    fn steal_env(k: &String) -> String {
+        let r: Option<String> = get(k);
+        match r {
+            Option::Some { value } => { return value; },
+            Option::None {} => { let e: String = "(unset)"; return e; }
+        }
+    }
+
+    fn main() with(Console, Alloc) -> i64 {
+        let k: String = "HOME";
+        let v: String = steal_env(&k);
+        println(&v);
+        k.drop(); v.drop();
+        return 0;
+    }
+}
+```
+
+Checks clean, builds clean, and prints the value of `$HOME`.
+
+## Measured extent
+
+Each row is a capability-free, non-`trusted` caller invoking the named dependency
+function:
+
+| callee | kind | declares | verdict |
+|---|---|---|---|
+| `std.io.println` | free fn | `Console, Alloc` | refused (E0520) |
+| `std.env.get` | free fn | `Alloc, Env, Unsafe` | **accepted** |
+| `std.fs.file_exists` | free fn | `Alloc, File, Unsafe` | **accepted** |
+| `std.time.sleep` | free fn | `Time, Unsafe, Alloc` | **accepted** |
+| `std.time.unix_timestamp` | free fn | `Time, Unsafe` | **accepted** |
+| `String::clone` / `String::drop` | method | `Alloc, Unsafe` | **accepted** |
+
+## Why `println` is the outlier, and why that is the bad news
+
+`println` is not enforced because of its `std` declaration. It is enforced because
+it is an INTRINSIC carrying a hardcoded capability
+(`Concrete/Resolve/Intrinsic.lean:210` maps `.print | .println => some "Console"`),
+reached through `lookupBuiltinCap`'s fallback in `CoreCheck.lookupFnCaps`.
+
+So the enforced set across a package boundary is exactly the hardcoded intrinsic
+table. **Every capability a dependency actually declares is decorative to its
+consumers.** `with(File)`, `with(Env)`, `with(Time)`, `with(Network)`,
+`with(Process)` and `with(Random)` do not bind on an importing caller.
+
+That makes the checker's own E0520 hint false for every dependency:
+
+> capabilities are part of a function's contract: a caller may only invoke effects
+> it has itself declared, so effects stay visible at every call site
+
+## Mechanism
+
+The same shape as the sibling-submodule defect one boundary out, and the same
+entry in [ABSENCE_IS_NOT_A_FACT.md](../project/ABSENCE_IS_NOT_A_FACT.md).
+`ccCheckModule` builds `fnSigs` from the compilation unit's own module tree.
+A dependency package is not in that tree, so `lookupFnCaps` finds nothing and
+
+```lean
+| none => pure ()  -- builtin/extern: no recorded capability set
+```
+
+reads "I have no signature for this name" as "this call requires nothing".
+
+`FileSummary` already computes a `capSet` for every imported function
+(`Concrete/Resolve/FileSummary.lean`), so the fact exists and is simply not
+reaching the checker. This is a plumbing repair, not a new analysis.
+
+## Controls that rule out the easy misreadings
+
+- **Not a regression from the sibling-submodule fix.** `println` is still refused
+  after it, and the accepted calls above were accepted before it too.
+- **Not "the module is absent from the unit".** A program containing BOTH a
+  legitimate `with(Alloc, File, Unsafe)` caller of `fs::file_exists` and a
+  capability-free one still accepts the capability-free call.
+- **Not a method-dispatch quirk.** Four of the six accepted callees are free
+  functions.
+
+## Fix
+
+Merge dependency signatures into the checking environment the way
+`collectAllFnSigs` merged the local module tree, covering every imported callable —
+free functions, methods, aliases, generics and trusted declarations alike. Where a
+requirement cannot be resolved, the result must be *unknown/refuse*, never
+*requires nothing*.
+
+
+## Repair, stage 1 (2026-09-21) — deliberately incomplete
+
+`CModule.importedFnCaps` carries each imported callable's requirement, keyed by the local
+spelling the call site uses; Elab joins the import list to the dependency `FileSummary`;
+CoreCheck consults it on the same `decideCall` path as local and sibling calls. Six
+escapes now refuse, including the cross-package METHOD case (`TcpStream::connect`), and
+`check_cross_package_caps.sh` (16/0) carries the refusals, the accept-and-RUN control,
+the capability-free and capability-polymorphic controls, and two compiler mutations —
+severing the transport, and emptying the payload while leaving it wired.
+
+Corpus cost: **12 declarations, every one honest** — including a function that read a
+file without declaring `File`, and helpers that read argv without declaring `Env`.
+
+### Why `Unsafe` is held back, and what has to happen before it is not
+
+Enforcing it alongside the sinks produced **91 diagnostics across 32 of 95 packages, 82
+of them missing only `Unsafe`** while the caller already held the full `Std` set —
+which is DEFINED as every capability except `Unsafe`. So `Std` could not open a file,
+compare two strings, or push to a `Vec`, because every allocating path reaches
+`alloc::heap_new` (`with(Alloc, Unsafe)`).
+
+The agreed end state is not this exception — identical declarations must not mean
+different things depending on which package the caller is in. It is:
+
+- every declared capability, `Unsafe` included, binds uniformly across packages;
+- a safe public abstraction does NOT declare `Unsafe` merely because its implementation
+  uses raw operations — it terminates that requirement at a small explicit trusted leaf;
+- a genuinely unsafe public API (raw pointers, unchecked construction, unchecked memory
+  access) keeps `Unsafe`;
+- evidence still records the dependency on the trusted implementation boundary even
+  though callers do not require `Unsafe`.
+
+Remaining work: classify the 82 as safe-abstraction / genuinely-unsafe / accidental,
+apply the three treatments, remove the exception, and re-run the whole corpus requiring
+every declared capability to bind.

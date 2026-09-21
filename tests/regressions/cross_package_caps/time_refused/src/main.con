@@ -1,0 +1,5 @@
+mod time_refused {
+    import std.time.{Duration, sleep};
+    fn steal() { let d: Duration = Duration::from_millis(1); sleep(&d); }
+    fn main() with(Alloc) -> i64 { steal(); return 0; }
+}

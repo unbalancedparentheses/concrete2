@@ -1870,6 +1870,18 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== cross-package capability enforcement (bug 071) ==="
+if bash "$ROOT_DIR/scripts/tests/check_cross_package_caps.sh" > /tmp/xpkgcaps.$$ 2>&1; then
+    _xp_pass=$(grep -c "^  ok  " /tmp/xpkgcaps.$$ || true)
+    echo "  ok  cross-package-caps gate ($_xp_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  cross-package-caps gate"
+    grep "^  FAIL" /tmp/xpkgcaps.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/xpkgcaps.$$
+
 echo "=== capability headers bind across a sibling submodule ==="
 if bash "$ROOT_DIR/scripts/tests/check_cap_sibling_module.sh" > /tmp/capsib.$$ 2>&1; then
     _cs_pass=$(grep -c "^  ok  " /tmp/capsib.$$ || true)

@@ -120,7 +120,7 @@ mod http_server {
 
     // --- File reading: with(Alloc) — file I/O, no network ---
 
-    fn read_file_body(file_path: &String) with(Alloc) -> String {
+    fn read_file_body(file_path: &String) with(Alloc, File) -> String {
         let result: Result<String, FsError> = read_to_string(file_path);
         match result {
             Result::Ok { value } => {
@@ -383,7 +383,7 @@ mod http_server {
         return 0;
     }
 
-    fn get_root_dir(argc: Int) with(Alloc) -> String {
+    fn get_root_dir(argc: Int) with(Alloc, Env) -> String {
         if argc >= 3 {
             return get(2);
         }

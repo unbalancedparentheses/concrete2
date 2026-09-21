@@ -113,7 +113,7 @@ mod cgrep {
 
     // --- Main ---
 
-    fn is_flag(idx: Int) with(Alloc) -> bool {
+    fn is_flag(idx: Int) with(Alloc, Env) -> bool {
         let a: String = get(idx);
         let len: Int = string_length(&a);
         let mut result: bool = false;
@@ -126,7 +126,7 @@ mod cgrep {
         return result;
     }
 
-    fn has_flag(idx: Int, flag_char: Int) with(Alloc) -> bool {
+    fn has_flag(idx: Int, flag_char: Int) with(Alloc, Env) -> bool {
         let a: String = get(idx);
         let mut result: bool = false;
         let len: Int = string_length(&a);

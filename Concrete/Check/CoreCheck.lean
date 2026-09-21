@@ -38,6 +38,10 @@ structure CoreCheckEnv where
   currentRetTy : Ty
   inLoop : Bool
   inTrusted : Bool
+  /-- Capability requirements of IMPORTED callables, keyed by the local spelling
+      (CModule.importedFnCaps). Consulted after the module's own signatures, so a
+      local definition still wins a name it shares with an import. -/
+  importedCaps : List (String × CapSet) := []
   -- Source span of the function currently being checked, so core-check diagnostics
   -- point at source instead of being location-less (ROADMAP Phase 4 #13).
   currentFnSpan : Option Span := none
@@ -271,11 +275,46 @@ private def lookupBuiltinCap (name : String) : Option CapSet :=
     | none => none
   | none => none
 
+/-- `Unsafe` is DELIBERATELY NOT YET ENFORCED across a package boundary, and this is
+    the one line that does it. Everything else about an imported requirement binds.
+
+    WHY IT IS SEPARATE FROM THE REST OF BUG 071. Enforcing the sink capabilities
+    (Console, File, Network, Env, Time, Process, Random) closes real authority escapes:
+    a caller declaring nothing could read the environment and the program printed
+    `$HOME`. Enforcing `Unsafe` alongside them does something different — measured on
+    the corpus, 91 diagnostics across 32 of 95 packages, of which **82 were missing only
+    `Unsafe` while the caller already held the full `Std` set**. `stdCaps` is DEFINED as
+    every capability except `Unsafe`, so that reading makes `Std` unable to open a file,
+    compare two strings, or push to a `Vec`. Every allocating std API reaches
+    `alloc::heap_new`, which is `with(Alloc, Unsafe)`, so the requirement arrives
+    everywhere at once.
+
+    That is a question about how an explicit trust boundary composes with enforcement —
+    whether `Unsafe` may be discharged at an audited wrapper — and it deserves to be
+    decided on its own rather than as a side effect of closing the escapes. Deferred
+    deliberately; `check_cross_package_caps.sh` PINS this exclusion, so enabling it
+    fails the gate and forces the decision to be written down in the same commit.
+
+    Note what is NOT weakened: `Unsafe` on a raw OPERATION is untouched
+    (`capsAllowUnsafeOp`, E0521), and an `Unsafe` requirement from a LOCAL or
+    sibling-submodule callee still binds. Only the cross-package leg is held back. -/
+private def dropCrossPackageUnsafe (cs : CapSet) : CapSet :=
+  let (concrete, vars) := cs.normalize
+  let kept := concrete.filter (· != unsafeCapName)
+  let base := if kept.isEmpty then CapSet.empty else CapSet.concrete kept
+  vars.foldl (fun acc v => .union acc (.var v)) base
+
 private def lookupFnCaps (name : String) : StateM CoreCheckEnv (Option CapSet) := do
   let env ← getEnv
   match env.fnSigs.find? fun (n, _, _, _) => n == name with
   | some (_, caps, _, _) => return some caps
   | none =>
+    -- Then IMPORTS. A dependency's Core is not in this compilation unit, so
+    -- without this the next branch returns `none` for every cross-package call
+    -- and the caller reads that as "requires nothing" (bug 071).
+    match env.importedCaps.lookup name with
+    | some caps => return some (dropCrossPackageUnsafe caps)
+    | none =>
     -- Fall back to intrinsic capability lookup
     match lookupBuiltinCap name with
     | some caps => return some caps
@@ -1015,6 +1054,7 @@ partial def ccCheckModule (m : CModule)
     currentRetTy := .unit
     inLoop := false
     inTrusted := false
+    importedCaps := m.importedFnCaps
     errors := []
   }
   let finalEnv := m.functions.foldl (fun env f =>

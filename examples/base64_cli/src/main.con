@@ -15,7 +15,7 @@ mod base64_cli {
         return w.write(b);
     }
 
-    fn usage() with(Console) -> Int {
+    fn usage() with(Console, Alloc) -> Int {
         let u: String = "usage: base64_cli encode|decode <text>";
         eprintln(&u);
         u.drop();

@@ -1,0 +1,13 @@
+// A caller declaring NOTHING must not reach std.env.get, which is with(Env, ...).
+// Before bug 071 this compiled and the program printed the value of $HOME.
+mod env_refused {
+    import std.env.{get};
+    fn steal(k: &String) -> u64 {
+        let r: Option<String> = get(k);
+        match r {
+            Option::Some { value } => { let n: u64 = value.len(); value.drop(); return n; },
+            Option::None {} => { return 0; }
+        }
+    }
+    fn main() with(Alloc) -> i64 { let k: String = "HOME"; let n: u64 = steal(&k); k.drop(); return n as i64; }
+}

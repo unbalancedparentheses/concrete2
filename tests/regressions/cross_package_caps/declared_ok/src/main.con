@@ -1,0 +1,40 @@
+// POSITIVE CONTROL + RUNTIME CONTROL. The same calls the refusal fixtures make,
+// with the authority declared, must COMPILE AND RUN. Without this the gate would
+// pass on a compiler that refused every cross-package call — a different bug with
+// the same green.
+mod declared_ok {
+    import std.env.{get};
+    import std.fs.{file_exists};
+    import std.time.{Duration, sleep};
+    import std.io.{println};
+
+    fn read_env(k: &String) with(Alloc, Env) -> u64 {
+        let r: Option<String> = get(k);
+        match r {
+            Option::Some { value } => { let n: u64 = value.len(); value.drop(); return n; },
+            Option::None {} => { return 0; }
+        }
+    }
+
+    fn probe_fs(p: &String) with(Alloc, File) -> bool { return file_exists(p); }
+
+    fn nap() with(Alloc, Time) { let d: Duration = Duration::from_millis(1); sleep(&d); }
+
+    // A genuinely capability-free dependency call must still be accepted: this
+    // declares NOTHING and calls std.time's pure constructor.
+    fn pure_dep() -> i64 { let d: Duration = Duration::from_millis(5); let e: Duration = Duration::from_secs(0); return 0; }
+
+    fn main() with(Alloc, Env, File, Time, Console) -> i64 {
+        let k: String = "PATH";
+        let n: u64 = read_env(&k);
+        let p: String = "/";
+        let e: bool = probe_fs(&p);
+        nap();
+        let z: i64 = pure_dep();
+        let s: String = "cross-package authority declared";
+        println(&s);
+        k.drop(); p.drop(); s.drop();
+        if e && n > 0 && z == 0 { return 0; }
+        return 1;
+    }
+}

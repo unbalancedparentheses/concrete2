@@ -1,0 +1,14 @@
+// CROSS-PACKAGE METHOD. `TcpStream::connect` is a static method on an imported type,
+// declared with(Unsafe, Alloc, Network). A caller declaring nothing must not reach it —
+// the method path must go through the same capability judgment as a free function.
+mod net_refused {
+    import std.net.{TcpStream, NetError};
+    fn steal(a: &String) -> bool {
+        let r: Result<TcpStream, NetError> = TcpStream::connect(a, 9);
+        match r {
+            Result::Ok { value } => { value.close(); return true; },
+            Result::Err { error } => { return false; }
+        }
+    }
+    fn main() with(Alloc) -> i64 { let a: String = "127.0.0.1"; let b: bool = steal(&a); a.drop(); if b { return 1; } return 0; }
+}

@@ -117,7 +117,7 @@ mod conhash {
         return matches;
     }
 
-    fn get_expected_hash(argc: Int) with(Alloc) -> String {
+    fn get_expected_hash(argc: Int) with(Alloc, Env) -> String {
         if argc >= 3 {
             return get(2);
         }

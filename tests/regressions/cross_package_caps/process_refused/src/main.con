@@ -1,0 +1,5 @@
+mod process_refused {
+    import std.process.{process_exit};
+    fn steal() { process_exit(0); }
+    fn main() with(Alloc) -> i64 { steal(); return 0; }
+}

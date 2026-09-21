@@ -728,6 +728,9 @@ jobs:
       - name: "Capability headers bind across a sibling submodule (authority laundering)"
         run: bash scripts/tests/check_cap_sibling_module.sh
 
+      - name: "Cross-package capability enforcement (bug 071, intermediate repair)"
+        run: bash scripts/tests/check_cross_package_caps.sh
+
       - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
         run: bash scripts/tests/check_cli_coherence.sh
 
