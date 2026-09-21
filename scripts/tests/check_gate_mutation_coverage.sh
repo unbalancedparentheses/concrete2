@@ -1056,9 +1056,14 @@ add "manifest-key-includes-package" "scripts/gen/attestation_manifest.sh" "check
 # keeps the transport and empties the payload, which is the subtler shape: everything
 # still looks wired, and every imported call requires nothing. A gate that only checked
 # "is importedFnCaps mentioned" would survive the second.
-add "cross-package-caps-transport" "Concrete/Elab/Elab.lean" "check_cross_package_caps.sh" yes \
-  $'    importedFnCaps := importedFnCaps' \
-  $'    importedFnCaps := []'
+# Anchored at the CONSUMPTION point, not the production point. Emptying Elab's side
+# (`importedFnCaps := importedFnCaps` -> `:= []`) leaves the `let` binding unused, which
+# Lean rejects outright — the mutant does not build, and a mutant that does not build
+# proves nothing about the gate. Severing it here builds cleanly and is the same defect:
+# the module carries the requirements and the checker ignores them.
+add "cross-package-caps-transport" "Concrete/Check/CoreCheck.lean" "check_cross_package_caps.sh" yes \
+  $'    importedCaps := m.importedFnCaps' \
+  $'    importedCaps := []'
 
 add "cross-package-caps-empty-not-unknown" "Concrete/Check/CoreCheck.lean" "check_cross_package_caps.sh" yes \
   $'    match env.importedCaps.lookup name with\n    | some caps => return some (dropCrossPackageUnsafe caps)' \
