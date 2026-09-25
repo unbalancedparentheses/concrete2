@@ -20,7 +20,7 @@ mod string {
             return value;
         }
 
-        pub fn from_raw_unchecked(ptr: *mut u8, len: u64, cap: u64) -> String {
+        pub fn from_raw_unchecked(ptr: *mut u8, len: u64, cap: u64) with(Unsafe) -> String {
             let value: String = String {
                 ptr: ptr,
                 len: len,

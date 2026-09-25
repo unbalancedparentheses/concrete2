@@ -1,6 +1,6 @@
 alloc	heap_new	yes	constructs	infallible	Alloc	trusted-boundary	gated	<T>() with(Alloc) -> *mut T
-alloc	grow	yes	constructs	infallible	Alloc	trusted-boundary	gated	<T>(old_ptr: *mut T, size: u64) with(Alloc) -> *mut T
-alloc	dealloc	yes	constructs	infallible	Alloc	trusted-boundary	gated	<T>(ptr: *mut T) with(Alloc)
+alloc	grow	yes	constructs	infallible	Alloc,Unsafe	trusted-boundary	gated	<T>(old_ptr: *mut T, size: u64) with(Alloc,Unsafe) -> *mut T
+alloc	dealloc	yes	constructs	infallible	Alloc,Unsafe	trusted-boundary	gated	<T>(ptr: *mut T) with(Alloc,Unsafe)
 args	count	no	constructs	infallible	none	deterministic	gated	() -> Int
 args	get	yes	constructs	infallible	Alloc,Env	trusted-boundary	gated	(idx: Int) with(Env,Alloc) -> String
 ascii	is_digit	no	constructs	infallible	none	pure-core	gated	(ch: char) -> bool
@@ -138,7 +138,7 @@ io	write	no	borrows	infallible	File	trusted-boundary	gated	(&self, data: &String
 io	read_byte	no	borrows	infallible	File	trusted-boundary	gated	(&self) with(File) -> i32
 io	flush	no	borrows	infallible	File	trusted-boundary	gated	(&self) with(File)
 io	close	no	consumes	infallible	File	trusted-boundary	gated	(self) with(File)
-io	write_raw	no	borrows	result	none	trusted-boundary	gated	(&self, data: *const u8, len: u64) -> Result<u64, IoError>
+io	write_raw	no	borrows	result	Unsafe	trusted-boundary	gated	(&self, data: *const u8, len: u64) with(Unsafe) -> Result<u64, IoError>
 io	write	no	borrows	result	none	trusted-boundary	gated	(&self, data: &Bytes) -> Result<u64, IoError>
 io	write_str	no	borrows	result	none	trusted-boundary	gated	(&self, data: &String) -> Result<u64, IoError>
 io	flush	no	borrows	result	none	trusted-boundary	gated	(&self) -> Result<u64, IoError>
@@ -147,7 +147,7 @@ io	writer_from_file	no	constructs	infallible	File	trusted-boundary	gated	(f: Tex
 io	console_writer	no	constructs	infallible	Console	trusted-boundary	gated	() with(Console) -> Writer
 io	console_error_writer	no	constructs	infallible	Console	trusted-boundary	gated	() with(Console) -> Writer
 io	fixed_writer	no	constructs	infallible	Unsafe	trusted-boundary	gated	(state: *mut FixedSinkState) with(Unsafe) -> Writer
-io	read	no	borrows	result	none	trusted-boundary	gated	(&self, buf: *mut u8, len: u64) -> Result<u64, IoError>
+io	read	no	borrows	result	Unsafe	trusted-boundary	gated	(&self, buf: *mut u8, len: u64) with(Unsafe) -> Result<u64, IoError>
 io	close	no	consumes	result	none	trusted-boundary	gated	(self) -> Result<u64, IoError>
 io	reader_from_file	no	constructs	infallible	File	trusted-boundary	gated	(f: TextFile) with(File) -> Reader
 io	read_all	yes	constructs	infallible	Alloc	trusted-boundary	gated	(r: &Reader) with(Alloc) -> Bytes
@@ -251,7 +251,7 @@ numeric	fits	no	borrows	infallible	none	pure-core	gated	(&self, buf: &Bytes) -> 
 numeric	cursor	no	borrows	option	none	pure-core	gated	(&self, buf: &Bytes) -> Option<ByteCursor>
 numeric	byte	no	borrows	option	none	pure-core	gated	(&self, buf: &Bytes, i: u64) -> Option<u8>
 numeric	to_text	yes	borrows	option	Alloc	hosted-effect	gated	(&self, buf: &Bytes) with(Alloc) -> Option<Text>
-numeric	from_raw	no	constructs	infallible	none	trusted-boundary	gated	(data: *mut u8, len: u64) -> ByteWriter
+numeric	from_raw	no	constructs	infallible	Unsafe	trusted-boundary	gated	(data: *mut u8, len: u64) with(Unsafe) -> ByteWriter
 numeric	pos	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 numeric	remaining	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 numeric	write_u8	no	mut	result	none	trusted-boundary	gated	(&mut self, val: u8) -> Result<u64, CursorError>
@@ -337,7 +337,7 @@ process	new	no	constructs	infallible	none	trusted-boundary	gated	(pid: i32) -> C
 process	pid	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> i32
 process	wait	no	consumes	result	Process	trusted-boundary	gated	(self) with(Process) -> Result<ExitStatus, ProcessError>
 process	spawn	yes	constructs	result	Alloc,Process,Unsafe	hosted-effect	gated	(cmd: &String, args: *const *const u8) with(Unsafe,Process,Alloc) -> Result<Child, ProcessError>
-ptr	offset	no	constructs	infallible	none	trusted-boundary	gated	<T>(ptr: *mut T, offset: u64) -> *mut T
+ptr	offset	no	constructs	infallible	Unsafe	trusted-boundary	gated	<T>(ptr: *mut T, offset: u64) with(Unsafe) -> *mut T
 rand	seed	no	constructs	infallible	Random	hosted-effect	gated	(s: u32) with(Random)
 rand	random_int	no	constructs	infallible	Random	hosted-effect	gated	() with(Random) -> i32
 rand	random_range	no	constructs	infallible	Random	hosted-effect	gated	(lo: i32, hi: i32) with(Random) -> i32
@@ -377,7 +377,7 @@ slice	set	no	mut	infallible	none	trusted-boundary	gated	(&mut self, at: u64, val
 slice	get_unchecked	no	borrows	infallible	none	trusted-boundary	gated	(&self, at: u64) -> T
 slice	get	no	borrows	option	none	trusted-boundary	gated	(&self, at: u64) -> Option<T>
 string	new	no	constructs	infallible	none	trusted-boundary	gated	() -> String
-string	from_raw_unchecked	no	constructs	infallible	none	trusted-boundary	gated	(ptr: *mut u8, len: u64, cap: u64) -> String
+string	from_raw_unchecked	no	constructs	infallible	Unsafe	trusted-boundary	gated	(ptr: *mut u8, len: u64, cap: u64) with(Unsafe) -> String
 string	len	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 string	cap	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 string	raw_ptr	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> *mut u8
@@ -414,7 +414,7 @@ test	expect_ok	no	constructs	infallible	none	deterministic	gated	<T: Copy, E: Co
 test	expect_err	no	constructs	infallible	none	deterministic	gated	<T: Copy, E: Copy>(r: &Result<T, E>) -> bool
 test	expect_some	no	constructs	infallible	none	deterministic	gated	<T: Copy>(o: &Option<T>) -> bool
 test	expect_none	no	constructs	infallible	none	deterministic	gated	<T: Copy>(o: &Option<T>) -> bool
-test	sink_matches	no	constructs	infallible	none	trusted-boundary	gated	(buf: *const u8, len: u64, expected: &String) -> bool
+test	sink_matches	no	constructs	infallible	Unsafe	trusted-boundary	gated	(buf: *const u8, len: u64, expected: &String) with(Unsafe) -> bool
 test	expect_sink	yes	constructs	infallible	Alloc,Console,Unsafe	hosted-effect	gated	(buf: *const u8, len: u64, expected: &String, message: String) with(Console,Alloc,Unsafe) -> bool
 test	str_eq	no	constructs	infallible	none	deterministic	gated	(a: &String, b: &String) -> bool
 test	assert_str_eq	yes	constructs	infallible	Alloc,Console	hosted-effect	gated	(a: &String, b: &String, message: String) with(Console,Alloc) -> bool
@@ -427,7 +427,7 @@ text	byte	no	borrows	option	none	trusted-boundary	gated	(&self, at: u64) -> Opti
 text	eq	no	borrows	infallible	none	trusted-boundary	gated	(&self, other: &Text) -> bool
 text	drop	yes	consumes	infallible	Alloc	trusted-boundary	gated	(self) with(Alloc)
 text	destroy	yes	borrows	infallible	Alloc	trusted-boundary	gated	(&self) with(Alloc)
-text	validate_utf8	no	constructs	infallible	none	trusted-boundary	gated	(ptr: *const u8, len: u64) -> bool
+text	validate_utf8	no	constructs	infallible	Unsafe	trusted-boundary	gated	(ptr: *const u8, len: u64) with(Unsafe) -> bool
 time	from_secs	no	constructs	infallible	none	deterministic	gated	(s: i64) -> Duration
 time	from_millis	no	constructs	infallible	none	deterministic	gated	(ms: i64) -> Duration
 time	from_nanos	no	constructs	infallible	none	deterministic	gated	(ns: i64) -> Duration
@@ -439,7 +439,7 @@ vec	new	no	constructs	infallible	none	trusted-boundary	gated	() -> Vec<T>
 vec	push	yes	mut	infallible	Alloc	trusted-boundary	gated	(&mut self, value: T) with(Alloc)
 vec	pop	no	mut	option	none	trusted-boundary	gated	(&mut self) -> Option<T>
 vec	swap_remove	no	mut	option	none	trusted-boundary	gated	(&mut self, at: u64) -> Option<T>
-vec	get_mut	no	mut	infallible	none	trusted-boundary	gated	(&mut self, at: u64) -> *mut T
+vec	get_mut	no	mut	infallible	Unsafe	trusted-boundary	gated	(&mut self, at: u64) with(Unsafe) -> *mut T
 vec	set_unchecked	no	mut	infallible	none	trusted-boundary	gated	(&mut self, at: u64, value: T)
 vec	len	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> u64
 vec	raw_ptr	no	borrows	infallible	none	trusted-boundary	gated	(&self) -> *mut T

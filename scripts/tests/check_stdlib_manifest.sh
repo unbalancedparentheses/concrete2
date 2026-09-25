@@ -92,7 +92,11 @@ done
 #   println/eprintln/read_line — console sinks (fd 1/2); Unsafe is inherited from String
 #   read_all — authority is CARRIED by the Reader handle, which is the ocap model working
 #              as designed (R-0484 "carries" leg); Unsafe is inherited from Bytes
-IO_UNSAFE_NOT_FS="^(fixed_writer|fixed_reader|println|eprintln|read_line|read_all)\b"
+#   write_raw/read — Writer/Reader methods taking a CALLER-SUPPLIED raw pointer. Their
+#                    `Unsafe` is a memory obligation (the caller guarantees the buffer),
+#                    not filesystem authority — which is the distinction this rule exists
+#                    to draw. Authority for these is CARRIED by the handle (R-0484).
+IO_UNSAFE_NOT_FS="^(fixed_writer|fixed_reader|println|eprintln|read_line|read_all|write_raw|read)\b"
 ioleak=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 !~ /File/ {print $2" ("$6")"}' "$TMP/derived.tsv" | grep -vE "$IO_UNSAFE_NOT_FS" | head -5)
 [ -z "$ioleak" ] && ok "std.io Unsafe items carry File where they touch files (6 named exemptions: raw memory, console, handle-carried)"   || no "std.io items with Unsafe but no File: $ioleak"
 # The guard above used to be "at least 6 io items carry File+Unsafe, so the rule still
@@ -111,9 +115,15 @@ ioleak=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 !~ /File/ {print $2" ("$6")"
 # than counting: it fails both if one regains `Unsafe` by inheritance and if one of these
 # two silently loses it.
 iou=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ {print $2}' "$TMP/derived.tsv" | sort | tr '\n' ' ')
-[ "$iou" = "fixed_reader fixed_writer " ] \
-  && ok "exactly the two raw-memory sinks declare Unsafe in io (both take *mut state)" \
-  || no "io's Unsafe set moved: [$iou] (expected fixed_reader fixed_writer)"
+# FOUR now, and each earns it the same way: a raw pointer the CALLER supplies.
+# `fixed_reader`/`fixed_writer` take `*mut` state; `write_raw`/`read` take the buffer they
+# will read or fill. Everything else in io — `println`, `read_all`, `TextFile::open` — is a
+# safe interface over a trusted implementation and declares none. Naming them is stronger
+# than counting: it fails both if one regains `Unsafe` by inheritance and if one of these
+# silently loses it.
+[ "$iou" = "fixed_reader fixed_writer read write_raw " ] \
+  && ok "exactly the four pointer-taking io APIs declare Unsafe (caller supplies the buffer)" \
+  || no "io's Unsafe set moved: [$iou] (expected fixed_reader fixed_writer read write_raw)"
 
 echo
 # 0a: parser self-test — every previously-misparsed shape (fn-pointer

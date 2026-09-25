@@ -211,3 +211,40 @@ firing at 120.
 
 The `known_hole_cross_package_method` fixture keeps its name and is now a REJECTION test
 with a paired positive control (`prelude_method_ok`, which must build and run).
+
+
+## Follow-on (2026-09-25): the inverse defect, repaired
+
+Reviewing the surviving obligations one by one turned up the mirror-image problem —
+APIs that SHOULD declare an obligation and did not — and it was pre-existing, not
+caused by the migration. Ten now declare `Unsafe`:
+
+- **nine consume a caller-supplied pointer** they will dereference: `alloc::grow`,
+  `alloc::dealloc`, `io::write_raw`, `io::read`, `ByteWriter::from_raw`,
+  `ptr::offset`, `String::from_raw_unchecked`, `test::sink_matches`,
+  `text::validate_utf8`;
+- **`Vec::get_mut`**, which a consume-vs-return heuristic misses: it RETURNS a
+  pointer, but computes `self.ptr + at` with no bounds check, so the obligation is on
+  the INDEX. That one is the argument for reading each API rather than classifying by
+  shape.
+
+Six correctly need nothing — `heap_new` and the `raw_ptr`/`keys_ptr` accessors return
+a base pointer, and the obligation arises at USE, which E0521 gates independently.
+
+**Declaring these cost nothing, and that is the trusted-discharge rule earning its
+keep.** `alloc::dealloc` carrying `Unsafe` used to cascade through the entire library;
+std's trusted containers now vouch that they satisfy its precondition, so the
+obligation stops at the audited boundary. Corpus unchanged at 40 pre-existing
+failures, parse-control firing at 121.
+
+`String::from_raw_unchecked`'s new `Unsafe` is also only EFFECTIVE because the
+prelude-receiver path was closed first — before that, a declaration on a `String`
+method bound nothing.
+
+Three gates asserted "capability-free" where they meant "operationally
+capability-free" (`check_io_writer.sh` for Writer methods and `Reader::read`,
+`check_std_test.sh` for expectation helpers). Before the two-axis work there was no
+reason to distinguish. Each now rejects operational authority BY NAME and requires the
+pointer-taking members to declare exactly `Unsafe` — stricter than the `none` they
+replaced, and following the precedent `check_io_writer.sh` already set for
+`fixed_writer requires Unsafe (caller-owned raw region)`.

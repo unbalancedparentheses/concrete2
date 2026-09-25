@@ -91,7 +91,7 @@ mod io {
 
     trusted impl Writer {
         /// Write `len` bytes from `data`. Returns bytes written.
-        pub fn write_raw(&self, data: *const u8, len: u64) -> Result<u64, IoError> {
+        pub fn write_raw(&self, data: *const u8, len: u64) with(Unsafe) -> Result<u64, IoError> {
             let f: fn(*mut u8, *const u8, u64) -> Result<u64, IoError> = self.write_fn;
             return f(self.ctx, data, len);
         }
@@ -223,7 +223,7 @@ mod io {
 
     trusted impl Reader {
         /// Read up to `len` bytes into caller-owned `buf`. Ok(0) = EOF.
-        pub fn read(&self, buf: *mut u8, len: u64) -> Result<u64, IoError> {
+        pub fn read(&self, buf: *mut u8, len: u64) with(Unsafe) -> Result<u64, IoError> {
             let f: fn(*mut u8, *mut u8, u64) -> Result<u64, IoError> = self.read_fn;
             return f(self.ctx, buf, len);
         }

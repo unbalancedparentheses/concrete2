@@ -69,7 +69,12 @@ mod vec {
         // impl below (Copy cell). `get_mut` (below) is the raw unsafe-mutable form.
 
         /// Unchecked mutable access — returns a raw pointer (deref requires Unsafe).
-        pub fn get_mut(&mut self, at: u64) -> *mut T {
+        // `self.ptr + at` with NO bounds check: the caller must guarantee `at < len`.
+        // That is an unchecked precondition the language cannot establish, so it is a
+        // caller obligation even though the signature only RETURNS a pointer — the
+        // consume-vs-return heuristic misses this one, which is why each API is read
+        // rather than classified by shape.
+        pub fn get_mut(&mut self, at: u64) with(Unsafe) -> *mut T {
             return self.ptr + at;
         }
 

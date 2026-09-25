@@ -556,7 +556,7 @@ mod numeric {
     trusted impl ByteWriter {
         /// Create a writer over a raw mutable pointer and length.
         /// Caller must ensure the pointer is valid for `len` bytes.
-        pub fn from_raw(data: *mut u8, len: u64) -> ByteWriter {
+        pub fn from_raw(data: *mut u8, len: u64) with(Unsafe) -> ByteWriter {
             return ByteWriter { ptr: data, len: len, pos: 0 };
         }
 
