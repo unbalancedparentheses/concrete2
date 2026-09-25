@@ -56,9 +56,17 @@ never erases `File`/`Console`/`Network`/`Alloc`.
 | corpus regressions vs baseline | — | **0** |
 | cross-package `Unsafe` exception | required | **removed** |
 
-The 21 survivors are exactly the obligation-bearing APIs: every one takes or
-returns a raw pointer, or is a `RawCursor` unchecked read. No `Vec`, `String`,
-`Bytes`, `map`, `set`, `fmt`, `hex` or `base64` entry point remains.
+The 21 survivors are the obligation-bearing APIs: each takes or returns a raw
+pointer, or is a `RawCursor` read. No `Vec`, `String`, `Bytes`, `map`, `set`,
+`fmt`, `hex` or `base64` entry point remains.
+
+**Correction, on review.** The `RawCursor` reads were described here and in the
+landing commit as "unchecked reads". They are not — `read_u8` and its siblings
+bounds-check against `self.len` before touching memory. The obligation is real but
+different: the caller supplied the pointer through `from_raw(data, len)` and must
+guarantee it remains valid for the cursor's lifetime, which is the R-0483 lifetime
+concern, not a bounds concern. Keeping `Unsafe` on them is right; the reason
+originally given for it was wrong.
 
 **`alloc::heap_new`/`grow`/`dealloc` dropped `Unsafe` and kept `Alloc`.** The
 obligation is real but already enforced by the *argument type*: they take and
@@ -131,7 +139,18 @@ separate compilation lands, not before.
 - `docs/language/CAPABILITY_FACTS.md` lists a cross-package METHOD hole as
   unenforced; that text predates this work and should be re-read against the
   current gates.
-- The 21 surviving obligations have not been individually reviewed against the
-  question "must the caller supply an invariant the language cannot establish?"
-  They were selected by a rule (raw pointer in signature, `RawCursor` unchecked
-  read, `alloc`), and a rule is a hypothesis about each member.
+
+- **The inverse defect: 15 public std APIs traffic raw pointers and declare no
+  obligation.** Reviewing the 21 survivors individually turned up the mirror-image
+  problem, and it is PRE-EXISTING — all 15 already lacked `Unsafe` before this work,
+  so the migration removed nothing that was there. The worst is
+  `String::from_raw_unchecked(ptr, len, cap) -> String`, which takes ownership of a
+  raw allocation: the caller must guarantee allocator provenance and accurate
+  `len`/`cap`, or `String::drop` frees garbage. The name states the obligation; the
+  signature does not. Also `Bytes`/`String`/`Vec::raw_ptr`, `OrderedMap::keys_ptr`,
+  `ptr::offset`, `Vec::get_mut`, `io::write_raw`, `io::read`, `text::validate_utf8`,
+  `test::sink_matches`, `ByteWriter::from_raw`.
+
+  Bug 071 was *declared obligations do not bind*; this is *obligations that should be
+  declared are not*. Making the first honest is what makes the second visible —
+  `Unsafe` was previously so widespread that a missing one could not be seen.
