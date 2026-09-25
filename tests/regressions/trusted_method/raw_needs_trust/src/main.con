@@ -1,0 +1,7 @@
+// CONTROL: per-method trust is what LICENSES the raw operation. Without it the same
+// body is refused (E0521), so `trusted` is doing real work rather than decorating.
+mod raw_needs_trust {
+    pub struct Copy Box { v: i64 }
+    impl Box { pub fn peek(&self) -> i64 { let p: *const i64 = &self.v as *const i64; return *p; } }
+    fn main() -> i64 { let b: Box = Box { v: 0 }; return b.peek(); }
+}

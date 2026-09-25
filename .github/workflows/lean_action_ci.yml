@@ -731,6 +731,9 @@ jobs:
       - name: "Cross-package capability enforcement (bug 071, intermediate repair)"
         run: bash scripts/tests/check_cross_package_caps.sh
 
+      - name: "Per-method trusted, and the two safety axes it keeps apart"
+        run: bash scripts/tests/check_trusted_method.sh
+
       - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
         run: bash scripts/tests/check_cli_coherence.sh
 

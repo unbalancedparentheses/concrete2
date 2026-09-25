@@ -1870,6 +1870,18 @@ if section_active gatesmoke; then
 # R-0483 view lifetime: the replacement API's positive/negative controls plus the
 # historical reproductions. Cheap (a handful of small builds) and it guards a
 # memory-safety property, so it belongs in the fast loop rather than CI alone.
+echo "=== per-method trusted (two safety axes) ==="
+if bash "$ROOT_DIR/scripts/tests/check_trusted_method.sh" > /tmp/tmeth.$$ 2>&1; then
+    _tm_pass=$(grep -c "^  ok  " /tmp/tmeth.$$ || true)
+    echo "  ok  trusted-method gate ($_tm_pass checks)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  trusted-method gate"
+    grep "^  FAIL" /tmp/tmeth.$$ | awk "NR<=5"
+    FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/tmeth.$$
+
 echo "=== cross-package capability enforcement (bug 071) ==="
 if bash "$ROOT_DIR/scripts/tests/check_cross_package_caps.sh" > /tmp/xpkgcaps.$$ 2>&1; then
     _xp_pass=$(grep -c "^  ok  " /tmp/xpkgcaps.$$ || true)
@@ -2049,11 +2061,18 @@ flush_jobs
 if section_active report; then
 echo "=== Report output tests ==="
 
-# --report unsafe should show trusted boundaries
+# --report unsafe should show trusted boundaries.
+# The heading reads "trusted methods in impl X", not "trusted impl X". Since per-method
+# `trusted` exists (2026-09-25), `trustedImplOrigin` is set from the FUNCTION's flag, so a
+# method may be audited inside a block that is NOT — and the old wording asserted
+# something about the block that need not be true. This fixture happens to use a whole
+# `trusted impl`, where the old text was accurate; the new text is accurate in both cases
+# and cannot overclaim. The impl-level fact is still available in the source and in
+# `--report trust-edges`.
 check_report_multi "$TESTDIR/trusted_report_check.con" unsafe \
     "trusted_report_check.con --report unsafe shows trusted boundaries" \
     "trusted_report_check.con --report unsafe missing trusted boundaries" \
-    "trusted impl Buffer" "trusted fn raw_read"
+    "trusted methods in impl Buffer" "trusted fn raw_read"
 
 # --report unsafe should show trusted extern fn declarations separately from regular extern fn
 check_report_multi "$TESTDIR/trusted_extern_basic.con" unsafe \

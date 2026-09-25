@@ -1718,6 +1718,12 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
     while tk != .rbrace && tk != .eof do
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
+      -- PER-METHOD `trusted`. The two axes are independent: this marks the
+      -- IMPLEMENTATION audited, and says nothing about what the caller owes.
+      -- `pub trusted fn read_unchecked(..) with(Unsafe)` is meaningful and means
+      -- both — audited body, and the caller still owes an unchecked invariant.
+      let isTrustedM := tk == .trusted_
+      if isTrustedM then advance; tk ← peek
       let (f, selfKind) ← parseMethodDef
       let selfTy := if typeParams.isEmpty then tyFromName typeName
                      else Ty.generic typeName (typeParams.map Ty.typeVar)
@@ -1726,7 +1732,8 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
         | some .ref => [{ name := "self", ty := .ref selfTy }]
         | some .refMut => [{ name := "self", ty := .refMut selfTy }]
         | none => []
-      let f := { f with params := selfParam ++ f.params, isPublic := isPub }
+      let f := { f with params := selfParam ++ f.params, isPublic := isPub,
+                        isTrusted := f.isTrusted || isTrustedM }
       methods := methods ++ [f]
       tk ← peek
     expect .rbrace
@@ -1759,6 +1766,12 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
         else none
       let isPub := tk == .pub_
       if isPub then advance; tk ← peek
+      -- PER-METHOD `trusted` — see the trait-impl loop above for why the axes stay
+      -- independent. Whole-impl `trusted impl` still applies to every method; Elab
+      -- ORs the two, so marking one method does not widen the block's trust and
+      -- marking the block does not need every method to repeat it.
+      let isTrustedM := tk == .trusted_
+      if isTrustedM then advance; tk ← peek
       let (f0, selfKind) ← parseMethodDef
       let f := { f0 with proofLink := mProofLink }
       -- Inject self parameter based on selfKind
@@ -1769,7 +1782,8 @@ partial def parseImplBlock : ParseM (ImplBlock ⊕ ImplTraitBlock) := do
         | some .ref => [{ name := "self", ty := .ref selfTy }]
         | some .refMut => [{ name := "self", ty := .refMut selfTy }]
         | none => []
-      let f := { f with params := selfParam ++ f.params, isPublic := isPub }
+      let f := { f with params := selfParam ++ f.params, isPublic := isPub,
+                        isTrusted := f.isTrusted || isTrustedM }
       methods := methods ++ [f]
       tk ← peek
     expect .rbrace

@@ -359,7 +359,11 @@ partial def unsafeReportModule (externNames : List String)
             acc ++ [s!"{indent}      fn {shortName}:"] ++
               ops.map fun op => s!"{indent}        wraps: {op}"
           ) []
-          lines ++ [s!"{indent}    trusted impl {implName}:"] ++ methodLines
+          -- "trusted METHODS IN impl X", not "trusted impl X". Since per-method
+          -- `trusted` exists, a method may be audited inside an impl block that is
+          -- not, and `trustedImplOrigin` is set from the FUNCTION's flag — so the
+          -- old label asserted something about the block that need not be true.
+          lines ++ [s!"{indent}    trusted methods in impl {implName}:"] ++ methodLines
         ) lines
         lines
     let lines := lines ++ subReports

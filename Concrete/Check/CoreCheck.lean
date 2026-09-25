@@ -4,6 +4,7 @@ import Concrete.Report.Diagnostic
 import Concrete.Resolve.Shared
 import Concrete.Check.Layout
 import Concrete.Resolve.Intrinsic
+import Concrete.Semantics.TrustEdges
 
 namespace Concrete
 
@@ -42,6 +43,18 @@ structure CoreCheckEnv where
       (CModule.importedFnCaps). Consulted after the module's own signatures, so a
       local definition still wins a name it shares with an import. -/
   importedCaps : List (String × CapSet) := []
+  /-- Names of callables that are `trusted`, and of `extern` declarations, so a call
+      site can emit the right trust edge. Tree-wide, like `fnSigs`. -/
+  trustedNames : List String := []
+  externNames : List String := []
+  /-- The function and module currently being checked, and the edges collected so far.
+      Edges are a BYPRODUCT OF CHECKING, emitted at the very sites that gate raw
+      operations, so a report over them cannot disagree with the gate about where
+      rawness is. A separate walk would be a second producer. -/
+  currentFnName' : String := ""
+  currentModName : String := ""
+  trustEdges : List TrustEdge := []
+  trustAttrs : List TrustFnAttr := []
   -- Source span of the function currently being checked, so core-check diagnostics
   -- point at source instead of being location-less (ROADMAP Phase 4 #13).
   currentFnSpan : Option Span := none
@@ -267,6 +280,15 @@ private def lookupVar (name : String) : StateM CoreCheckEnv (Option Ty) := do
   let env ← getEnv
   return env.vars.lookup name
 
+/-- Record one trust edge for the function being checked. Called at the SAME sites that
+    gate raw operations and at the call site, so the record and the gate are one walk. -/
+private def addTrustEdge (k : TrustEdgeKind) (target : String) : StateM CoreCheckEnv Unit := do
+  let env ← getEnv
+  if env.currentFnName'.isEmpty then pure () else
+    setEnv { env with trustEdges :=
+      { fn := env.currentFnName', modName := env.currentModName, kind := k, target := target }
+        :: env.trustEdges }
+
 /-- Look up the capability required by a builtin via IntrinsicId. -/
 private def lookupBuiltinCap (name : String) : Option CapSet :=
   match resolveIntrinsic name with
@@ -375,6 +397,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       if isPtrArith then
         -- Pointer arithmetic requires trusted or Unsafe
         let env ← getEnv
+        addTrustEdge .containsRawOp "ptr_arith"
         if !Capabilities.capsAllowUnsafeOp env.inTrusted env.currentCapSet then
           addCCError (.missingCapability "ptr_arith" "Unsafe" "")
       else
@@ -445,6 +468,12 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       ccCheckExpr arg
 
   | .call (.direct fn) _typeArgs args _ty =>
+    -- TRUST EDGES, emitted on the same visit as the capability decision below. A callee
+    -- that is both (an `extern` declared `trusted`) yields both facts, because they are
+    -- different questions: one is "audited", the other is "leaves the language".
+    let envE ← getEnv
+    if envE.trustedNames.contains fn then addTrustEdge .callsTrusted fn
+    if envE.externNames.contains fn then addTrustEdge .callsFFI fn
     -- Check capability discipline
     match ← lookupFnCaps fn with
     | some calleeCaps =>
@@ -539,6 +568,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     match inner.ty with
     | .ref _ | .refMut _ => pure ()
     | .ptrMut _ | .ptrConst _ =>
+      addTrustEdge .containsRawOp "*raw_ptr"
       if !Capabilities.capsAllowUnsafeOp env.inTrusted env.currentCapSet then
         addCCError (.missingCapability "*raw_ptr" "Unsafe" "")
     | .heap _ =>
@@ -643,6 +673,7 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
     let involvesPointer := isPtr innerTy || isPtr targetTy
     if involvesPointer && !isRefToPtr then
       let env ← getEnv
+      addTrustEdge .containsRawOp "unsafe_cast"
       if !Capabilities.capsAllowUnsafeOp env.inTrusted env.currentCapSet then
         addCCError (.missingCapability "unsafe_cast" "Unsafe" "")
   | .fnRef _ _ => pure ()
@@ -747,6 +778,7 @@ partial def ccCheckStmt (stmt : CStmt) : StateM CoreCheckEnv Unit := do
     match target.ty with
     | .refMut _ => pure ()
     | .ptrMut _ =>
+      addTrustEdge .containsRawOp "*raw_ptr="
       if !Capabilities.capsAllowUnsafeOp env.inTrusted env.currentCapSet then
         addCCError (.missingCapability "*raw_ptr=" "Unsafe" "")
     | _ => addCCError (.cannotAssignThroughNonMutRef (toString (repr target.ty)))
@@ -969,6 +1001,7 @@ def ccCheckModuleDecls (m : CModule)
 def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
   let env ← getEnv
   setEnv { env with
+    currentFnName' := f.name
     vars := f.params
     -- The DECLARED set, deliberately. `trusted` does not confer `Unsafe` on a
     -- call: `error_trusted_extern_needs_unsafe.con` and `error_trusted_no_extern.con`
@@ -984,6 +1017,14 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
     inTrusted := f.isTrusted
     currentFnSpan := f.declSpan
   }
+  -- The CALLER-OBLIGATION axis, kept distinct from provenance: `with(Unsafe)` says the
+  -- caller must uphold an invariant the language cannot establish. It is NOT a claim
+  -- that this body is raw, and rawness is NOT a reason to declare it.
+  let envA ← getEnv
+  setEnv { envA with trustAttrs :=
+    { fn := f.name, modName := envA.currentModName,
+      isTrusted := f.isTrusted, isPublic := f.isPublic } :: envA.trustAttrs }
+  if Capabilities.capSetHasUnsafe f.capSet then addTrustEdge .assumesUnsafe "Unsafe"
   for s in f.body do
     ccCheckStmt s
 
@@ -1023,6 +1064,19 @@ private partial def collectAllFnSigsAux (pfx : String) (m : CModule)
   ++ m.submodules.foldl (fun acc s =>
        acc ++ collectAllFnSigsAux (if pfx.isEmpty then s.name else pfx ++ "_" ++ s.name) s) []
 
+/-- Tree-wide names of `trusted` functions and of `extern` declarations. Collected like
+    `collectAllFnSigs`, and for the same reason: a sibling submodule's declaration is not
+    in this module's tables, and "I have no record of it" must not read as "it is neither
+    trusted nor FFI". -/
+private partial def collectTrustNames (m : CModule) : List String × List String :=
+  let here := (m.functions.filterMap (fun f => if f.isTrusted then some f.name else none),
+               m.externFns.map (fun (n, _, _, _) => n))
+  -- An extern declared `trusted` is BOTH: audited, and a departure from the language.
+  let hereT := here.1 ++ (m.externFns.filterMap (fun (n, _, _, isT) => if isT then some n else none))
+  m.submodules.foldl (fun (accT, accE) sub =>
+    let (subT, subE) := collectTrustNames sub
+    (accT ++ subT, accE ++ subE)) (hereT, here.2)
+
 private def collectAllFnSigs (m : CModule)
     : List (String × CapSet × List (String × Ty) × Ty) :=
   collectAllFnSigsAux "" m
@@ -1033,8 +1087,10 @@ partial def ccCheckModule (m : CModule)
     -- known", which this checker reads as "these calls require nothing" — the
     -- exact defect being fixed, left as a footgun for the next caller. Omitting
     -- it is a compile error instead.
-    (allFnSigs : List (String × CapSet × List (String × Ty) × Ty)) : Diagnostics :=
+    (allFnSigs : List (String × CapSet × List (String × Ty) × Ty))
+    : Diagnostics × List TrustEdge × List TrustFnAttr :=
   let declErrors := ccCheckModuleDecls m allStructs allEnums
+  let trustNames := collectTrustNames m
   let fnSigs := m.functions.map fun f =>
     (f.name, f.capSet, f.params, f.retTy)
   -- Extern functions: trusted ones need no cap, others require Unsafe
@@ -1055,17 +1111,23 @@ partial def ccCheckModule (m : CModule)
     inLoop := false
     inTrusted := false
     importedCaps := m.importedFnCaps
+    trustedNames := trustNames.1
+    externNames := trustNames.2
+    currentModName := m.name
     errors := []
   }
   let finalEnv := m.functions.foldl (fun env f =>
     let ((), env') := (ccCheckFn f).run env
     env'
   ) initEnv
-  let subErrors := m.submodules.foldl (fun acc sub =>
-    acc ++ Diagnostics.stampFile ((ccCheckModule sub allStructs allEnums allFnSigs).map fun d =>
-      { d with message := s!"[{sub.name}] {d.message}" }) sub.sourceFile
-  ) ([] : Diagnostics)
-  declErrors ++ finalEnv.errors ++ subErrors
+  let (subErrors, subEdges, subAttrs) := m.submodules.foldl (fun (accD, accE, accA) sub =>
+    let (subD, subE, subA) := ccCheckModule sub allStructs allEnums allFnSigs
+    (accD ++ Diagnostics.stampFile (subD.map fun d =>
+       { d with message := s!"[{sub.name}] {d.message}" }) sub.sourceFile,
+     accE ++ subE, accA ++ subA)
+  ) (([] : Diagnostics), ([] : List TrustEdge), ([] : List TrustFnAttr))
+  (declErrors ++ finalEnv.errors ++ subErrors,
+   finalEnv.trustEdges ++ subEdges, finalEnv.trustAttrs ++ subAttrs)
 
 /-- Validate all Core modules. Returns the first error or Ok. -/
 def coreCheckProgram (modules : List CModule) : Except Diagnostics Unit :=
@@ -1073,9 +1135,20 @@ def coreCheckProgram (modules : List CModule) : Except Diagnostics Unit :=
   let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
   let allFnSigs := modules.foldl (fun acc m => acc ++ collectAllFnSigs m) []
   let allErrors := modules.foldl (fun acc m =>
-    acc ++ (ccCheckModule m allStructs allEnums allFnSigs).map fun d => { d with message := s!"[{m.name}] {d.message}" }
+    acc ++ (ccCheckModule m allStructs allEnums allFnSigs).1.map fun d => { d with message := s!"[{m.name}] {d.message}" }
   ) ([] : Diagnostics)
   if allErrors.isEmpty then .ok ()
   else .error allErrors
+
+/-- The trust edges established by checking these modules. Runs the SAME walk as
+    `coreCheckProgram` — the edges are emitted at the very sites that gate raw operations
+    — so a report over them cannot disagree with the checker about where rawness is. -/
+def coreTrustEdges (modules : List CModule) : List TrustEdge × List TrustFnAttr :=
+  let allStructs := modules.foldl (fun acc m => acc ++ collectAllStructs m) []
+  let allEnums := modules.foldl (fun acc m => acc ++ collectAllEnums m) []
+  let allFnSigs := modules.foldl (fun acc m => acc ++ collectAllFnSigs m) []
+  let results := modules.map (fun m => ccCheckModule m allStructs allEnums allFnSigs)
+  (TrustEdge.canonical (results.foldl (fun acc r => acc ++ r.2.1) []),
+   results.foldl (fun acc r => acc ++ r.2.2) [])
 
 end Concrete

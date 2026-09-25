@@ -1,0 +1,8 @@
+// A trusted method that DECLARES an obligation still imposes it: trust is about the
+// implementation, never about what the caller owes.
+mod obligation_binds {
+    pub struct Copy Box { v: i64 }
+    impl Box { pub trusted fn read_unchecked(&self, n: i64) with(Unsafe) -> i64 { return self.v + n; } }
+    fn sneak(b: &Box) -> i64 { return b.read_unchecked(1); }
+    fn main() with(Unsafe) -> i64 { let b: Box = Box { v: 0 }; return sneak(&b); }
+}

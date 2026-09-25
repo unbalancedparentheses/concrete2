@@ -1,0 +1,35 @@
+// PER-METHOD `trusted`: the two axes are independent.
+//
+// Before this existed, `trusted` was only a whole-impl modifier, so "safe to call,
+// audited implementation" — the `Vec::push` shape — was NOT EXPRESSIBLE for a method.
+// Marking the block trusted would have vouched for every method in it, which is the
+// opposite of a small explicit boundary.
+mod axes_ok {
+    import std.io.{println};
+    pub struct Copy Box { v: i64 }
+
+    impl Box {
+        // AXIS 1 ONLY — audited body, nothing owed by the caller. The raw operation
+        // needs no `with(Unsafe)` because the implementation is trusted.
+        pub trusted fn peek(&self) -> i64 {
+            let p: *const i64 = &self.v as *const i64;
+            return *p;
+        }
+        // BOTH AXES — audited body AND the caller still owes an unchecked invariant.
+        pub trusted fn read_unchecked(&self, n: i64) with(Unsafe) -> i64 { return self.v + n; }
+        // Operational authority is NEVER erased by trust.
+        pub trusted fn shout(&self, s: &String) with(Console, Alloc) -> i64 { println(s); return self.v; }
+    }
+
+    // Declares nothing, and may still call the safe-interface trusted method.
+    fn safe_caller(b: &Box) -> i64 { return b.peek(); }
+
+    fn main() with(Console, Alloc, Unsafe) -> i64 {
+        let b: Box = Box { v: 7 };
+        let s: String = "trusted method ran";
+        let r: i64 = safe_caller(&b) + b.read_unchecked(0) + b.shout(&s);
+        s.drop();
+        if r == 21 { return 0; }
+        return 1;
+    }
+}

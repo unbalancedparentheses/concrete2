@@ -2666,6 +2666,9 @@ def compileAndReport (inputPath : String) (reportType : String)
     if reportType == "unsafe" then
       IO.println (Report.unsafeReport validCore.coreModules pc)
       return 0
+    if reportType == "trust-edges" then
+      IO.println (Report.trustEdgeReport validCore.coreModules)
+      return 0
     if reportType == "layout" then
       IO.println (Report.layoutReport validCore.coreModules)
       return 0

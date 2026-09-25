@@ -136,6 +136,45 @@ that. Vouching for a foreign symbol is `trusted extern fn`
 symbols — without it `String::eq` calls `memcmp` and every string comparison in
 every program would have to declare `with(Unsafe)`.
 
+## Per-method `trusted`, and the two safety axes (2026-09-25)
+
+`trusted` was only a whole-impl modifier, so the commonest shape in a systems
+standard library — **safe to call, audited implementation** — was not expressible
+for a method. Licensing a method's raw work meant marking the whole `impl`
+trusted, vouching for every method in it. Measured: **67 of 154** public `std`
+signatures declaring `Unsafe` perform raw operations in their own body, so this
+was most of the library, not a corner.
+
+Two INDEPENDENT axes, neither implying the other:
+
+| declaration | implementation | caller |
+|---|---|---|
+| `pub fn f()` | checked | owes nothing |
+| `pub trusted fn f()` | audited | owes nothing |
+| `pub fn f() with(Unsafe)` | checked under the assumption | owes an invariant |
+| `pub trusted fn f() with(Unsafe)` | audited | owes an invariant |
+
+- `trusted` — the IMPLEMENTATION is audited; it licenses raw operations in the body.
+- `with(Unsafe)` — the CALLER owes an invariant the language cannot establish.
+
+**Trust never erases operational authority.** A `trusted` method declaring
+`with(Console)` is still refused to a caller holding none. Trust is about memory
+discipline, not permission to reach a sink.
+
+**Trust licenses a raw operation; it does not hide it.** `--report trust-edges`
+records `calls-trusted`, `calls-ffi`, `contains-raw-op` and `assumes-unsafe` as
+direct edges from checked Core, emitted at the same sites that gate the
+operations, so a report over them cannot disagree with the checker. Paths and
+closure are derived by consumers, never stored — a stored closure is a second
+producer of what the call graph already determines. Today 292 public `std`
+functions reach a raw root while 154 declare `Unsafe`: the declarations are
+already an incomplete provenance system, off by 138, which is the drift the edges
+exist to stop.
+
+Gated by `scripts/tests/check_trusted_method.sh`. The migration experiment that
+motivated this — and the measurements behind it — is in
+[TWO_AXIS_SAFETY.md](TWO_AXIS_SAFETY.md).
+
 ## Enforcement
 
 `scripts/tests/check_capability_facts.sh` gates the identity-defining cases:

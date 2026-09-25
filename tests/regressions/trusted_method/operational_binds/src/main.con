@@ -1,0 +1,12 @@
+// `trusted` must NEVER erase File/Console/Network/Alloc. A trusted method declaring
+// Console is still refused to a caller that holds none.
+mod operational_binds {
+    import std.io.{println};
+    pub struct Copy Box { v: i64 }
+    impl Box { pub trusted fn shout(&self, s: &String) with(Console, Alloc) -> i64 { println(s); return self.v; } }
+    fn sneak(b: &Box, s: &String) -> i64 { return b.shout(s); }
+    fn main() with(Console, Alloc) -> i64 {
+        let b: Box = Box { v: 0 }; let s: String = "x";
+        let r: i64 = sneak(&b, &s); s.drop(); return r;
+    }
+}
