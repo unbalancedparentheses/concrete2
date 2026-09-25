@@ -76,6 +76,16 @@ structure TrustFnAttr where
   modName : String
   isTrusted : Bool
   isPublic : Bool
+  /-- Does this function's capability set AUTHORIZE a raw operation? This is the
+      `capsContain` question, which a capability VARIABLE satisfies — deliberately
+      different from the `assumesUnsafe` edge, which records LITERAL membership.
+
+      Using literal membership to decide justification produced false provenance:
+      `OrderedSet::for_each<cap C>(..) with(C)` authorizes its raw ops through the
+      variable, yet reported four "unjustified" raw operations that the checker had
+      authorized all along. A provenance report inventing an unjustified operation is
+      the same defect class as inventing a capability. -/
+  capsAuthorizeUnsafe : Bool := false
   deriving Repr, BEq
 
 /-- Stable ordering key, so a report over these is byte-reproducible. -/

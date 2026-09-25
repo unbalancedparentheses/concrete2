@@ -25,12 +25,18 @@ def trustEdgeReport (modules : List CModule) : String :=
   let (edges, attrs) := coreTrustEdges modules
   let isTrusted := fun (m : String) (f : String) =>
     (attrs.find? (fun a => a.modName == m && a.fn == f)).map (·.isTrusted) |>.getD false
+  -- AUTHORITY, not literal membership: a `cap C` function satisfies the raw-operation
+  -- gate through its variable. Asking the literal question here invented four
+  -- unjustified raw operations in `ordered_set` that the checker had authorized.
+  let capsOk := fun (m : String) (f : String) =>
+    (attrs.find? (fun a => a.modName == m && a.fn == f)).map (·.capsAuthorizeUnsafe) |>.getD false
   let rawOps := edges.filter (fun e => e.kind == .containsRawOp)
   let obliged := edges.filter (fun e => e.kind == .assumesUnsafe)
   let hasObligation := fun (m : String) (f : String) =>
     obliged.any (fun e => e.modName == m && e.fn == f)
   -- Neither inside a trusted implementation nor backed by a declared caller obligation.
-  let unjustified := rawOps.filter (fun e => !(isTrusted e.modName e.fn) && !(hasObligation e.modName e.fn))
+  let unjustified := rawOps.filter (fun e =>
+    !(isTrusted e.modName e.fn) && !(hasObligation e.modName e.fn) && !(capsOk e.modName e.fn))
   let header := "# module\tfunction\tedge\ttarget\n"
   let body := edges.foldl (fun acc e =>
     acc ++ s!"{e.modName}\t{e.fn}\t{e.kind.tag}\t{e.target}\n") ""

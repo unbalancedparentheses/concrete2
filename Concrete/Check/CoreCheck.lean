@@ -1023,7 +1023,9 @@ def ccCheckFn (f : CFnDef) : StateM CoreCheckEnv Unit := do
   let envA ← getEnv
   setEnv { envA with trustAttrs :=
     { fn := f.name, modName := envA.currentModName,
-      isTrusted := f.isTrusted, isPublic := f.isPublic } :: envA.trustAttrs }
+      isTrusted := f.isTrusted, isPublic := f.isPublic,
+      capsAuthorizeUnsafe :=
+        Capabilities.capsContain f.capSet (.concrete [unsafeCapName]) } :: envA.trustAttrs }
   if Capabilities.capSetHasUnsafe f.capSet then addTrustEdge .assumesUnsafe "Unsafe"
   for s in f.body do
     ccCheckStmt s

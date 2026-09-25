@@ -94,10 +94,28 @@ It does: the control reports 114 unexpected rather than 114 passes.
 `concrete check`'s exit code is **not** a compile signal — it returns 1 when a
 function is proof-eligible with no registered proof. `build` is.
 
+## Cross-package provenance (2026-09-25)
+
+`--report trust-edges` now works in PROJECT mode, where the dependency is checked
+(its diagnostics arrive prefixed `[std] [string]`) rather than single-file mode,
+which elaborates one module and produced an empty edge set for a std-using
+program — the same one-module blind spot behind R-0484's cross-package opacity.
+
+A consumer of `std` now sees **31 modules, 455 raw operations, 7 FFI calls, 132
+trusted calls and 191 declared obligations**, and `unjustified-raw-op=0`.
+
+That zero is itself a correction. The first run reported four unjustified raw
+operations in `ordered_set`, which was the REPORT's error, not std's:
+`OrderedSet::for_each<cap C>(..) with(C)` authorizes its raw operations through
+the capability VARIABLE, and the check was asking the literal-membership question
+(`capSetHasUnsafe`) instead of the authority question (`capsContain`). That is the
+distinction `CAPABILITY_FACTS.md` draws, and a provenance report inventing an
+unjustified operation is the same defect class as inventing a capability.
+
 ## Not landed
 
-The `std` migration stays in the worktree. Removing `Unsafe` from a safe wrapper
-deletes the only current signal that it depends on trusted code, and
-`--report trust-edges` does not yet cross a package boundary — the same gap as
-R-0484's cross-package opacity. Until per-function trust edges travel in package
-summaries, the migration would erase information from consumers.
+The `std` migration stays in the worktree. Cross-package edges are a report today;
+before the migration lands they should travel as per-function facts in package
+SUMMARIES, so a consumer does not have to recompile its dependency to learn them —
+the second-producer problem this repository keeps paying for. Removing `Unsafe`
+from a safe wrapper is safe only once that signal is durable.

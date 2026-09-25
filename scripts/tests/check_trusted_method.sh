@@ -107,6 +107,35 @@ else
   no "the raw operation inside a trusted method vanished from the edges"
 fi
 
+echo "=== trust edges cross a PACKAGE boundary ==="
+# Single-file mode elaborates one module, so a std-using program produced an EMPTY edge
+# set — the same one-module blind spot behind R-0484's cross-package opacity. Project
+# mode checks the dependency (its diagnostics arrive prefixed `[std] [string]`), so the
+# edges exist there. This is what has to work before `Unsafe` can be removed from a safe
+# wrapper: otherwise the removal deletes the only signal a consumer has.
+xp="$(cd "$ROOT_DIR/examples/base64_cli" && $TO "$CC" check . --report trust-edges 2>&1)"
+mods="$(printf '%s' "$xp" | grep -v '^#' | cut -f1 | sort -u | grep -cE '^[a-z_]+$')"
+if [ "${mods:-0}" -ge 20 ]; then
+  ok "a consumer sees its dependency's edges ($mods modules)"
+else
+  no "cross-package trust edges are missing — only $mods modules visible"
+fi
+if printf '%s' "$xp" | grep -q "^alloc	alloc_dealloc	calls-ffi"; then
+  ok "and they name the actual FFI leaf (alloc_dealloc -> free)"
+else
+  no "the dependency's FFI leaves are not visible to a consumer"
+fi
+# JUSTIFICATION USES AUTHORITY, NOT LITERAL MEMBERSHIP. A `cap C` function satisfies the
+# raw-operation gate through its variable; asking `capSetHasUnsafe` instead invented four
+# unjustified raw operations in `ordered_set` that the checker had authorized all along.
+# A provenance report inventing an unjustified operation is the defect class this whole
+# area exists to prevent, so the count is pinned at zero.
+if printf '%s' "$xp" | grep -q "unjustified-raw-op=0"; then
+  ok "no unjustified raw operations across the dependency (cap variables counted as authority)"
+else
+  no "unjustified raw operations reported: $(printf '%s' "$xp" | grep -oE 'unjustified-raw-op=[0-9]+')"
+fi
+
 echo "=== the report does not overclaim about the IMPL ==="
 # `trustedImplOrigin` is set from the FUNCTION's flag, so with per-method trust a method
 # can be audited inside a block that is not. Labelling that "trusted impl X" asserts

@@ -3568,6 +3568,14 @@ def main (args : List String) : IO UInt32 := do
         -- [policy], location map, registry, ProofCore, and diagnostics all come from
         -- loadProject. Registry diagnostics are rendered FROM the ledger (Phase 4 #4).
         for w in policyWarnings do IO.eprintln w
+        -- PROJECT-MODE trust edges. Single-file mode elaborates one module, so the
+        -- dependency's functions are absent and the report looked empty for a
+        -- std-using program — the same one-module blind spot behind R-0484's
+        -- cross-package opacity. In project mode the dependency IS checked (its
+        -- diagnostics arrive prefixed `[std] [string]`), so its edges exist here.
+        if args.contains "--report" && args.contains "trust-edges" then
+          IO.println (Report.trustEdgeReport validCore.coreModules)
+          return 0
         if !(← enforceProvenRuntimeViolations parsed.modules allSrcMap) then
           return 1
         for d in ledger.diagnostics do
