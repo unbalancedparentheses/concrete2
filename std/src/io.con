@@ -27,7 +27,7 @@ mod io {
     }
 
     trusted impl TextFile {
-        pub fn create(path: &String) with(File, Unsafe, Alloc) -> Result<TextFile, IoError> {
+        pub trusted fn create(path: &String) with(File, Alloc) -> Result<TextFile, IoError> {
             let mode: String = "w";
             let h: *const u8 = fopen_cstr_io(path, &mode);
             mode.drop();
@@ -38,7 +38,7 @@ mod io {
             return Result::<TextFile, IoError>::Ok { value: handle };
         }
 
-        pub fn open(path: &String, mode: &String) with(File, Unsafe, Alloc) -> Result<TextFile, IoError> {
+        pub trusted fn open(path: &String, mode: &String) with(File, Alloc) -> Result<TextFile, IoError> {
             let h: *const u8 = fopen_cstr_io(path, mode);
             if h == (0 as *const u8) {
                 return Result::<TextFile, IoError>::Err { error: IoError::OpenFailed };
@@ -47,11 +47,11 @@ mod io {
             return Result::<TextFile, IoError>::Ok { value: handle };
         }
 
-        pub fn write(&self, data: &String) with(File, Unsafe) {
+        pub trusted fn write(&self, data: &String) with(File) {
             fwrite(data.raw_ptr() as *const u8, 1, data.len(), self.ptr);
         }
 
-        pub fn read_byte(&self) with(File, Unsafe) -> i32 {
+        pub trusted fn read_byte(&self) with(File) -> i32 {
             let buf: u8 = 0;
             let n: u64 = fread(&buf as *mut u8, 1, 1, self.ptr);
             if n == 0 {
@@ -60,11 +60,11 @@ mod io {
             return buf as i32;
         }
 
-        pub fn flush(&self) with(File, Unsafe) {
+        pub fn flush(&self) with(File) {
             fflush(self.ptr);
         }
 
-        pub fn close(self) with(File, Unsafe) {
+        pub fn close(self) with(File) {
             let TextFile { ptr } = self;
             fclose(ptr);
         }
@@ -260,7 +260,7 @@ mod io {
     /// the chunk-buffer loop. Read errors end the drain (partial data is
     /// returned — the caller sees a short/invalid payload, the recoverable
     /// shape for parsers); EOF is Ok(0) per the Reader contract.
-    pub trusted fn read_all(r: &Reader) with(Alloc, Unsafe) -> Bytes {
+    pub trusted fn read_all(r: &Reader) with(Alloc) -> Bytes {
         let mut out: Bytes = Bytes::with_capacity(4096);
         // Chunk staging buffer as Bytes (heap) with POINTER reads — an
         // indexed stack array here would add an unproven bounds obligation
@@ -320,7 +320,7 @@ mod io {
     }
 
     /// Write a string to stdout followed by a newline.
-    pub trusted fn println(value: &String) with(Console, Alloc, Unsafe) {
+    pub trusted fn println(value: &String) with(Console, Alloc) {
         if value.len() > 0 {
             libc_write(1, value.raw_ptr() as *const u8, value.len());
         }
@@ -337,7 +337,7 @@ mod io {
     }
 
     /// Write a string to stderr followed by a newline.
-    pub trusted fn eprintln(value: &String) with(Console, Alloc, Unsafe) {
+    pub trusted fn eprintln(value: &String) with(Console, Alloc) {
         if value.len() > 0 {
             libc_write(2, value.raw_ptr() as *const u8, value.len());
         }
@@ -346,7 +346,7 @@ mod io {
         nl.drop();
     }
 
-    pub trusted fn read_line() with(Console, Alloc, Unsafe) -> String {
+    pub trusted fn read_line() with(Console, Alloc) -> String {
         let buf: String = String::new();
         while true {
             let ch: u8 = 0;
@@ -363,7 +363,7 @@ mod io {
     }
 
     #[test]
-    fn test_read_all_drains() with(Alloc, Unsafe) -> i32 {
+    trusted fn test_read_all_drains() with(Alloc) -> i32 {
         let data: [u8; 5] = [10, 20, 30, 40, 50];
         let mut st: FixedSrcState = FixedSrcState { buf: &data as *const u8, len: 5, pos: 0 };
         let r: Reader = fixed_reader(&mut st as *mut FixedSrcState);
@@ -377,7 +377,7 @@ mod io {
     }
 
     #[test]
-    fn test_writer_fixed_sink() with(File, Unsafe, Alloc) -> i32 {
+    trusted fn test_writer_fixed_sink() with(File, Alloc) -> i32 {
         // region: 8 bytes owned via Bytes; the sink writes into it raw.
         let region: Bytes = Bytes::with_capacity(8);
         let raw: BytesRaw = region.raw_view();
@@ -401,7 +401,7 @@ mod io {
     }
 
     #[test]
-    fn test_reader_fixed_source() with(Unsafe, Alloc) -> i32 {
+    trusted fn test_reader_fixed_source() with(Alloc) -> i32 {
         // source region: "hi!" (3 bytes) owned via Bytes
         let mut src: Bytes = Bytes::with_capacity(3);
         src.push(104); src.push(105); src.push(33);
@@ -430,7 +430,7 @@ mod io {
     }
 
     #[test]
-    fn test_io_open_nonexistent() with(File, Unsafe, Alloc) -> i32 {
+    fn test_io_open_nonexistent() with(File, Alloc) -> i32 {
         let path: String = "/nonexistent/path/no_such_file.txt";
         let mode: String = "r";
         let result: Result<TextFile, IoError> = TextFile::open(&path, &mode);
@@ -448,7 +448,7 @@ mod io {
     }
 
     #[test]
-    fn test_io_create_bad_path() with(File, Unsafe, Alloc) -> i32 {
+    fn test_io_create_bad_path() with(File, Alloc) -> i32 {
         let path: String = "/nonexistent/dir/file.txt";
         let result: Result<TextFile, IoError> = TextFile::create(&path);
         path.drop();

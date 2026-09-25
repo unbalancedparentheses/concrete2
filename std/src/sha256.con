@@ -234,7 +234,7 @@ mod sha256 {
 
     /// Compute SHA-256 hash of a string.
     /// Returns a Vec<u32> of 8 words (the 256-bit hash).
-    pub trusted fn hash_string(s: &String) with(Alloc, Unsafe) -> Vec<u32> {
+    pub trusted fn hash_string(s: &String) with(Alloc) -> Vec<u32> {
         return hash_raw(s.raw_ptr(), s.len());
     }
 
@@ -242,7 +242,7 @@ mod sha256 {
     import std.test.{assert_true};
 
     #[test]
-    fn test_sha256_empty() with(Alloc, Unsafe) -> i32 {
+    fn test_sha256_empty() with(Alloc) -> i32 {
         // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
         let input: String = "";
         let hash: Vec<u32> = hash_string(&input);
@@ -258,7 +258,7 @@ mod sha256 {
     }
 
     #[test]
-    fn test_sha256_abc() with(Alloc, Unsafe) -> i32 {
+    fn test_sha256_abc() with(Alloc) -> i32 {
         // SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
         let input: String = "abc";
         let hash: Vec<u32> = hash_string(&input);

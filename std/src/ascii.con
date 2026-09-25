@@ -49,7 +49,7 @@ mod ascii {
     import std.test.{assert_true, assert_false, assert_eq};
 
     #[test]
-    fn test_is_digit() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_is_digit() with(Alloc, Console) -> i32 {
         if !assert_true(is_digit('0'), "0 is digit") { return 1; }
         if !assert_true(is_digit('9'), "9 is digit") { return 1; }
         if !assert_false(is_digit('a'), "a is not digit") { return 1; }
@@ -58,7 +58,7 @@ mod ascii {
     }
 
     #[test]
-    fn test_is_alpha() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_is_alpha() with(Alloc, Console) -> i32 {
         if !assert_true(is_alpha('a'), "a is alpha") { return 1; }
         if !assert_true(is_alpha('Z'), "Z is alpha") { return 1; }
         if !assert_false(is_alpha('0'), "0 is not alpha") { return 1; }
@@ -67,7 +67,7 @@ mod ascii {
     }
 
     #[test]
-    fn test_is_alnum() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_is_alnum() with(Alloc, Console) -> i32 {
         if !assert_true(is_alnum('a'), "a is alnum") { return 1; }
         if !assert_true(is_alnum('5'), "5 is alnum") { return 1; }
         if !assert_false(is_alnum(' '), "space is not alnum") { return 1; }
@@ -75,7 +75,7 @@ mod ascii {
     }
 
     #[test]
-    fn test_is_whitespace() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_is_whitespace() with(Alloc, Console) -> i32 {
         if !assert_true(is_whitespace(' '), "space is ws") { return 1; }
         if !assert_true(is_whitespace('\t'), "tab is ws") { return 1; }
         if !assert_true(is_whitespace('\n'), "newline is ws") { return 1; }

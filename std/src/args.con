@@ -17,7 +17,7 @@ mod args {
     /// OR the argument is not valid UTF-8 (argv is OS bytes — the Bytes/Text
     /// boundary demands validation before it becomes a String; a raw-bytes
     /// accessor can come later if a workload needs non-UTF-8 argv).
-    pub trusted fn get(idx: Int) with(Env, Alloc, Unsafe) -> String {
+    pub trusted fn get(idx: Int) with(Env, Alloc) -> String {
         let i: i32 = idx as i32;
         let raw: *const u8 = __concrete_get_argv(i);
         if raw == (0 as *const u8) {

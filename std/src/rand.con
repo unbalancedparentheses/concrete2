@@ -1,15 +1,15 @@
 mod rand {
     import std.libc.{rand as libc_rand, srand as libc_srand};
 
-    pub fn seed(s: u32) with(Unsafe, Random) {
+    pub fn seed(s: u32) with(Random) {
         libc_srand(s);
     }
 
-    pub fn random_int() with(Unsafe, Random) -> i32 {
+    pub fn random_int() with(Random) -> i32 {
         return libc_rand();
     }
 
-    pub fn random_range(lo: i32, hi: i32) with(Unsafe, Random) -> i32 {
+    pub fn random_range(lo: i32, hi: i32) with(Random) -> i32 {
         let range: i32 = hi - lo;
         // hi == lo: the range is a single value — return it (was div-by-zero).
         if range == 0 {
@@ -28,7 +28,7 @@ mod rand {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_random_range_single_value() with(Unsafe, Random) -> i32 {
+    fn test_random_range_single_value() with(Random) -> i32 {
         // hi == lo was division-by-zero (audit 2026-07-14); now returns lo.
         let v: i32 = random_range(5, 5);
         if v != 5 { return 1; }
@@ -36,7 +36,7 @@ mod rand {
     }
 
     #[test]
-    fn test_seed_determinism() with(Unsafe, Random, Alloc, Console) -> i32 {
+    fn test_seed_determinism() with(Random, Alloc, Console) -> i32 {
         // Same seed should produce same sequence
         seed(42);
         let a1: i32 = random_int();
@@ -56,7 +56,7 @@ mod rand {
     }
 
     #[test]
-    fn test_random_range_bounds() with(Unsafe, Random) -> i32 {
+    fn test_random_range_bounds() with(Random) -> i32 {
         seed(123);
         let mut i: i32 = 0;
         while i < 100 {

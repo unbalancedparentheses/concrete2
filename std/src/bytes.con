@@ -27,7 +27,7 @@ mod bytes {
             return b;
         }
 
-        pub fn with_capacity(cap: u64) with(Alloc, Unsafe) -> Bytes {
+        pub trusted fn with_capacity(cap: u64) with(Alloc) -> Bytes {
             let b: Bytes = Bytes {
                 ptr: grow::<u8>(0 as *mut u8, cap),
                 len: 0,
@@ -42,7 +42,7 @@ mod bytes {
         /// Pulled by workload 1 (base64_cli): text→bytes programs were
         /// hand-writing this loop. The reverse crossing stays checked
         /// (`to_string` -> Option) per UNICODE_POLICY.
-        pub fn from_string(s: &String) with(Alloc, Unsafe) -> Bytes {
+        pub fn from_string(s: &String) with(Alloc) -> Bytes {
             let mut b: Bytes = Bytes::with_capacity(s.len());
             let mut i: u64 = 0;
             while i < s.len() {
@@ -53,7 +53,7 @@ mod bytes {
             return b;
         }
 
-        pub fn push(&mut self, byte: u8) with(Alloc, Unsafe) {
+        pub trusted fn push(&mut self, byte: u8) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -124,7 +124,7 @@ mod bytes {
         /// impl is already a trusted boundary that crosses to raw pointers; adding one
         /// more crossing here is cheaper than exporting the obligation to every caller
         /// of a safe API.
-        pub fn range_to_text(&self, off: u64, len: u64) with(Alloc, Unsafe) -> Option<Text> {
+        pub trusted fn range_to_text(&self, off: u64, len: u64) with(Alloc) -> Option<Text> {
             if off > self.len {
                 return Option::<Text>::None;
             }
@@ -139,7 +139,7 @@ mod bytes {
             self.len = 0;
         }
 
-        fn grow(&mut self) with(Alloc, Unsafe) {
+        fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
             self.ptr = grow::<u8>(self.ptr, new_cap);
             self.cap = new_cap;
@@ -191,7 +191,7 @@ mod bytes {
         // `Examples.PureCore.Proofs.bytes_slice_guard_correct` (against
         // `Concrete.Proof.bytesSliceExpr`); every copy-step load bounded by
         // `slice_copy_step_in_bounds`. Copy CONTENT not modeled (recorded).
-        pub fn slice(&self, start: u64, end: u64) with(Alloc, Unsafe) -> Option<Bytes> {
+        pub fn slice(&self, start: u64, end: u64) with(Alloc) -> Option<Bytes> {
             if start > end || end > self.len {
                 return Option::<Bytes>::None;
             }
@@ -204,7 +204,7 @@ mod bytes {
             return Option::<Bytes>::Some { value: out };
         }
 
-        pub fn append_bytes(&mut self, other: &Bytes) with(Alloc, Unsafe) {
+        pub fn append_bytes(&mut self, other: &Bytes) with(Alloc) {
             let mut i: u64 = 0;
             while i < other.len {
                 self.push(other.get_unchecked(i));
@@ -217,7 +217,7 @@ mod bytes {
         /// None and the buffer is deallocated (recoverable, bucket 1). The
         /// unvalidated crossing is `to_string_unchecked` below, which NAMES
         /// the caller's obligation.
-        pub fn to_string(self) with(Alloc, Unsafe) -> Option<String> {
+        pub trusted fn to_string(self) with(Alloc) -> Option<String> {
             let Bytes { ptr, len, cap } = self;
             if !validate_utf8(ptr as *const u8, len) {
                 dealloc::<u8>(ptr);
@@ -321,7 +321,7 @@ mod bytes {
             return BytesRaw { ptr: ptr, len: len, cap: cap };
         }
 
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub fn drop(self) with(Alloc) {
             let Bytes { ptr, len, cap } = self;
             dealloc::<u8>(ptr);
         }
@@ -332,13 +332,13 @@ mod bytes {
     // H18 drop-glue: trait-form destructor for collection elements (see
     // string.con note).
     trusted impl Destroy for Bytes {
-        pub fn destroy(&self) with(Alloc, Unsafe) {
+        pub fn destroy(&self) with(Alloc) {
             dealloc::<u8>(self.ptr);
         }
     }
 
     #[test]
-    fn test_bytes_index_of_and_slice() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_index_of_and_slice() with(Alloc) -> i32 {
         let mut b: Bytes = Bytes::with_capacity(6);
         b.push(10); b.push(61); b.push(20); b.push(61); b.push(30); b.push(0);
         // first hit, from-offset resume, absent byte, from past end
@@ -385,7 +385,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_endian() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_endian() with(Alloc) -> i32 {
         let mut b: Bytes = Bytes::with_capacity(4);
         b.push(0x12); b.push(0x34); b.push(0x56); b.push(0x78);
         let ok: bool = b.be16(0) == 0x1234 && b.le16(0) == 0x3412
@@ -396,7 +396,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_view_and_cmp() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_view_and_cmp() with(Alloc) -> i32 {
         let mut a: Bytes = Bytes::with_capacity(4);
         a.push(1); a.push(2); a.push(3); a.push(4);
         // in-range view
@@ -416,7 +416,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_utf8_boundary() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_utf8_boundary() with(Alloc) -> i32 {
         // invalid UTF-8 must NOT become String except through the checked path
         let mut bad: Bytes = Bytes::with_capacity(2);
         bad.push(0xFF); bad.push(0xFE);
@@ -438,7 +438,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_from_string() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_from_string() with(Alloc) -> i32 {
         // text→bytes is the unchecked-safe direction; round-trip through the
         // CHECKED reverse crossing must reproduce the original text.
         let s: String = "hi✓";
@@ -458,7 +458,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_push_get() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_bytes_push_get() with(Alloc, Console) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(10);
         b.push(20);
@@ -486,7 +486,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_growth() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_bytes_growth() with(Alloc, Console) -> i32 {
         let mut b: Bytes = Bytes::with_capacity(2);
 
         if !assert_eq::<u64>(b.cap(), 2, "initial cap should be 2") {
@@ -508,7 +508,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_append() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_bytes_append() with(Alloc, Console) -> i32 {
         let mut a: Bytes = Bytes::new();
         a.push(1);
         a.push(2);
@@ -541,7 +541,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_get_in_bounds() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_get_in_bounds() with(Alloc) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(42);
         let result: Option<u8> = b.get(0);
@@ -562,7 +562,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_bytes_get_out_of_bounds() with(Alloc, Unsafe) -> i32 {
+    fn test_bytes_get_out_of_bounds() with(Alloc) -> i32 {
         let b: Bytes = Bytes::new();
         let result: Option<u8> = b.get(0);
         match result {
@@ -578,7 +578,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_set_in_bounds() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_set_in_bounds() with(Alloc, Console) -> i32 {
         let mut b: Bytes = Bytes::new();
         b.push(0);
         let ok: bool = b.set(0, 42);
@@ -595,7 +595,7 @@ mod bytes {
     }
 
     #[test]
-    fn test_set_out_of_bounds() with(Alloc, Unsafe) -> i32 {
+    fn test_set_out_of_bounds() with(Alloc) -> i32 {
         let mut b: Bytes = Bytes::new();
         let ok: bool = b.set(0, 42);
         if ok {

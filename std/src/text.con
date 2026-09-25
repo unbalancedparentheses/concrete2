@@ -13,7 +13,7 @@ mod text {
     pub newtype AsciiText = String;
 
     trusted impl AsciiText {
-        pub fn try_new(s: String) with(Alloc, Unsafe) -> Option<AsciiText> {
+        pub trusted fn try_new(s: String) with(Alloc) -> Option<AsciiText> {
             let n: u64 = s.len();
             let mut i: u64 = 0;
             while i < n {
@@ -76,7 +76,7 @@ mod text {
 
         /// Copy a `String`'s bytes into owned storage. A `String` is already valid
         /// UTF-8, so this cannot fail; it copies because sharing is what was unsound.
-        pub fn from_string(s: &String) with(Alloc, Unsafe) -> Text {
+        pub trusted fn from_string(s: &String) with(Alloc) -> Text {
             let len: u64 = s.len();
             let dst: *mut u8 = grow::<u8>(0 as *mut u8, len);
             let src: *const u8 = s.raw_ptr() as *const u8;
@@ -121,14 +121,14 @@ mod text {
         }
 
         /// Release the storage. `Text` is linear; this is the consume.
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub fn drop(self) with(Alloc) {
             let Text { ptr, len, cap } = self;
             dealloc::<u8>(ptr);
         }
     }
 
     trusted impl Destroy for Text {
-        pub fn destroy(&self) with(Alloc, Unsafe) {
+        pub fn destroy(&self) with(Alloc) {
             dealloc::<u8>(self.ptr);
         }
     }
@@ -214,7 +214,7 @@ mod text {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_text_from_string() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_text_from_string() with(Alloc, Console) -> i32 {
         let s: String = "hello";
         let t: Text = Text::from_string(&s);
         if !assert_eq::<u64>(t.len(), 5, "text len should be 5") { t.drop(); s.drop(); return 1; }
@@ -225,7 +225,7 @@ mod text {
     }
 
     #[test]
-    fn test_text_byte_checked() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_text_byte_checked() with(Alloc, Console) -> i32 {
         let s: String = "abc";
         let t: Text = Text::from_string(&s);
         let mut rc: i32 = 0;
@@ -248,7 +248,7 @@ mod text {
     }
 
     #[test]
-    fn test_text_eq() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_text_eq() with(Alloc, Console) -> i32 {
         let s1: String = "hello";
         let s2: String = "hello";
         let s3: String = "world";
@@ -268,7 +268,7 @@ mod text {
     }
 
     #[test]
-    fn test_ascii_text_try_new_happy() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_ascii_text_try_new_happy() with(Alloc, Console) -> i32 {
         let s: String = "hello";
         match AsciiText::try_new(s) {
             Option::Some { value } => {
@@ -286,7 +286,7 @@ mod text {
     }
 
     #[test]
-    fn test_ascii_text_try_new_empty_ok() with(Alloc, Unsafe) -> i32 {
+    fn test_ascii_text_try_new_empty_ok() with(Alloc) -> i32 {
         let s: String = String::new();
         match AsciiText::try_new(s) {
             Option::Some { value } => { value.0.drop(); return 0; }
@@ -295,7 +295,7 @@ mod text {
     }
 
     #[test]
-    fn test_ascii_text_try_new_rejects_non_ascii() with(Alloc, Unsafe) -> i32 {
+    fn test_ascii_text_try_new_rejects_non_ascii() with(Alloc) -> i32 {
         let mut s: String = String::new();
         s.push_char(72);
         s.push_char(200);
@@ -307,7 +307,7 @@ mod text {
     }
 
     #[test]
-    fn test_text_empty() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_text_empty() with(Alloc, Console) -> i32 {
         let s: String = String::new();
         let t: Text = Text::from_string(&s);
         let mut rc: i32 = 0;
@@ -321,7 +321,7 @@ mod text {
     // ---- UTF-8 validation (try_from_raw / validate_utf8) ----
 
     #[test]
-    trusted fn test_copy_from_raw_valid_utf8() with(Unsafe, Alloc, Console) -> i32 {
+    trusted fn test_copy_from_raw_valid_utf8() with(Alloc, Console) -> i32 {
         // "café" = 63 61 66 C3 A9 (the é is the 2-byte U+00E9)
         let buf: [u8; 5] = [0x63, 0x61, 0x66, 0xC3, 0xA9];
         match Text::copy_from_raw(&buf as *const u8, 5) {
@@ -336,7 +336,7 @@ mod text {
     }
 
     #[test]
-    trusted fn test_copy_from_raw_split_codepoint_rejected() with(Unsafe, Alloc) -> i32 {
+    trusted fn test_copy_from_raw_split_codepoint_rejected() with(Alloc) -> i32 {
         // 0xC3 lead byte with no continuation -> invalid
         let buf: [u8; 4] = [0x63, 0x61, 0x66, 0xC3];
         match Text::copy_from_raw(&buf as *const u8, 4) {
@@ -346,7 +346,7 @@ mod text {
     }
 
     #[test]
-    trusted fn test_copy_from_raw_surrogate_rejected() with(Unsafe, Alloc) -> i32 {
+    trusted fn test_copy_from_raw_surrogate_rejected() with(Alloc) -> i32 {
         // ED A0 80 = U+D800 (a surrogate) -> invalid in UTF-8
         let buf: [u8; 3] = [0xED, 0xA0, 0x80];
         match Text::copy_from_raw(&buf as *const u8, 3) {
@@ -356,7 +356,7 @@ mod text {
     }
 
     #[test]
-    trusted fn test_copy_from_raw_overlong_rejected() with(Unsafe, Alloc) -> i32 {
+    trusted fn test_copy_from_raw_overlong_rejected() with(Alloc) -> i32 {
         // C0 80 = overlong encoding of NUL; C0 is never a valid lead byte
         let buf: [u8; 2] = [0xC0, 0x80];
         match Text::copy_from_raw(&buf as *const u8, 2) {
@@ -366,7 +366,7 @@ mod text {
     }
 
     #[test]
-    trusted fn test_copy_from_raw_4byte_valid() with(Unsafe, Alloc, Console) -> i32 {
+    trusted fn test_copy_from_raw_4byte_valid() with(Alloc, Console) -> i32 {
         // F0 9F 98 80 = U+1F600 GRINNING FACE -> valid
         let buf: [u8; 4] = [0xF0, 0x9F, 0x98, 0x80];
         match Text::copy_from_raw(&buf as *const u8, 4) {
@@ -381,7 +381,7 @@ mod text {
     }
 
     #[test]
-    trusted fn test_copy_from_raw_4byte_too_large_rejected() with(Unsafe, Alloc) -> i32 {
+    trusted fn test_copy_from_raw_4byte_too_large_rejected() with(Alloc) -> i32 {
         // F5 .. would encode beyond U+10FFFF; F5 is not a valid lead byte
         let buf: [u8; 4] = [0xF5, 0x80, 0x80, 0x80];
         match Text::copy_from_raw(&buf as *const u8, 4) {

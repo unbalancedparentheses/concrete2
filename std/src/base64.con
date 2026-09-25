@@ -37,7 +37,7 @@ mod base64 {
     }
 
     /// Encode bytes as standard base64 with `=` padding. Infallible.
-    pub fn encode(input: &Bytes) with(Alloc, Unsafe) -> Bytes {
+    pub fn encode(input: &Bytes) with(Alloc) -> Bytes {
         let raw: BytesRaw = input.raw_view();
         let mut out: Bytes = Bytes::with_capacity(((raw.len + 2) / 3) * 4);
         let mut i: u64 = 0;
@@ -59,7 +59,7 @@ mod base64 {
 
     /// Decode standard base64 (`=`-padded, length % 4 == 0). Invalid input
     /// (wrong length, invalid character, misplaced padding) -> None.
-    pub fn decode(input: &Bytes) with(Alloc, Unsafe) -> Option<Bytes> {
+    pub fn decode(input: &Bytes) with(Alloc) -> Option<Bytes> {
         let raw: BytesRaw = input.raw_view();
         if raw.len % 4 != 0 {
             return Option::<Bytes>::None;
@@ -100,7 +100,7 @@ mod base64 {
     }
 
     #[test]
-    fn test_base64_rfc4648_vectors() with(Alloc, Unsafe) -> i32 {
+    fn test_base64_rfc4648_vectors() with(Alloc) -> i32 {
         // RFC 4648 section 10 test vectors, each round-tripped through decode.
         let mut rc: i32 = 0;
         rc = rc + vec_case("", "");
@@ -114,7 +114,7 @@ mod base64 {
         return 0;
     }
 
-    fn vec_case(input: String, expect: String) with(Alloc, Unsafe) -> i32 {
+    fn vec_case(input: String, expect: String) with(Alloc) -> i32 {
         let mut rc: i32 = 0;
         let inb: Bytes = Bytes::from_string(&input);
         let expb: Bytes = Bytes::from_string(&expect);
@@ -134,7 +134,7 @@ mod base64 {
     }
 
     #[test]
-    fn test_base64_rejects_invalid() with(Alloc, Unsafe) -> i32 {
+    fn test_base64_rejects_invalid() with(Alloc) -> i32 {
         let mut rc: i32 = 0;
         rc = rc + reject_case("abc");       // wrong length
         rc = rc + reject_case("ab!c");      // invalid character
@@ -146,7 +146,7 @@ mod base64 {
         return 0;
     }
 
-    fn reject_case(input: String) with(Alloc, Unsafe) -> i32 {
+    fn reject_case(input: String) with(Alloc) -> i32 {
         let b: Bytes = Bytes::from_string(&input);
         input.drop();
         let r: Option<Bytes> = decode(&b);

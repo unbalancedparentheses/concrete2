@@ -21,7 +21,7 @@ mod deque {
             return d;
         }
 
-        pub fn push_back(&mut self, value: T) with(Alloc, Unsafe) {
+        pub trusted fn push_back(&mut self, value: T) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -31,7 +31,7 @@ mod deque {
             self.len = self.len + 1;
         }
 
-        pub fn push_front(&mut self, value: T) with(Alloc, Unsafe) {
+        pub trusted fn push_front(&mut self, value: T) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -76,7 +76,7 @@ mod deque {
         }
 
 
-        fn grow(&mut self) with(Alloc, Unsafe) {
+        trusted fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
             let new_ptr: *mut T = grow::<T>(0 as *mut T, new_cap);
 
@@ -133,7 +133,7 @@ mod deque {
             self.head = 0;
         }
 
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub fn drop(self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.len {
                 let idx: u64 = (self.head + i) & (self.cap - 1);
@@ -149,7 +149,7 @@ mod deque {
 
     // Composition: Deque is destroyable iff T is.
     trusted impl<T: Destroy> Destroy for Deque<T> {
-        pub fn destroy(&self) with(Alloc, Unsafe) {
+        pub fn destroy(&self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.len {
                 let idx: u64 = (self.head + i) & (self.cap - 1);
@@ -163,7 +163,7 @@ mod deque {
     }
 
     #[test]
-    fn test_push_back_pop_front() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_push_back_pop_front() with(Alloc, Console) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_back(10);
         d.push_back(20);
@@ -212,7 +212,7 @@ mod deque {
     }
 
     #[test]
-    fn test_push_front_pop_back() with(Alloc, Unsafe) -> i32 {
+    fn test_push_front_pop_back() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_front(10);
         d.push_front(20);
@@ -246,7 +246,7 @@ mod deque {
     }
 
     #[test]
-    fn test_deque_pop_empty() with(Alloc, Unsafe) -> i32 {
+    fn test_deque_pop_empty() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         let r: Option<i32> = d.pop_front();
         match r {
@@ -263,7 +263,7 @@ mod deque {
     }
 
     #[test]
-    fn test_get() with(Alloc, Unsafe) -> i32 {
+    fn test_get() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_back(100);
         d.push_back(200);
@@ -292,7 +292,7 @@ mod deque {
     }
 
     #[test]
-    fn test_growth_wrapping() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_growth_wrapping() with(Alloc, Console) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
 
         // Push 20 elements, forcing multiple grows
@@ -328,7 +328,7 @@ mod deque {
     }
 
     #[test]
-    fn test_mixed_push_pop() with(Alloc, Unsafe) -> i32 {
+    fn test_mixed_push_pop() with(Alloc) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
 
         // Interleave push_front and push_back
@@ -355,7 +355,7 @@ mod deque {
     }
 
     #[test]
-    fn test_deque_wrap_stress() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_deque_wrap_stress() with(Alloc, Console) -> i32 {
         // Force head to wrap around by popping from front then pushing again
         let mut d: Deque<i32> = Deque::<i32>::new();
 
@@ -397,7 +397,7 @@ mod deque {
     }
 
     #[test]
-    fn test_deque_clear_reuse() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_deque_clear_reuse() with(Alloc, Console) -> i32 {
         let mut d: Deque<i32> = Deque::<i32>::new();
         d.push_back(1);
         d.push_back(2);

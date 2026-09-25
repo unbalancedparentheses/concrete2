@@ -1,0 +1,12 @@
+mod std_program_ok {
+    import std.io.{println};
+    import std.vec.{Vec};
+    fn main() with(Std) -> i64 {
+        let mut v: Vec<i64> = Vec::<i64>::new();
+        v.push(7);
+        let s: String = "Std program, no Unsafe";
+        println(&s);
+        let n: u64 = v.len(); v.drop(); s.drop();
+        if n == 1 { return 0; } return 1;
+    }
+}

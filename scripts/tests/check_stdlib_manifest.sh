@@ -95,9 +95,25 @@ done
 IO_UNSAFE_NOT_FS="^(fixed_writer|fixed_reader|println|eprintln|read_line|read_all)\b"
 ioleak=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 !~ /File/ {print $2" ("$6")"}' "$TMP/derived.tsv" | grep -vE "$IO_UNSAFE_NOT_FS" | head -5)
 [ -z "$ioleak" ] && ok "std.io Unsafe items carry File where they touch files (6 named exemptions: raw memory, console, handle-carried)"   || no "std.io items with Unsafe but no File: $ioleak"
-# The exemption list must not quietly become the whole set.
-ioexempt=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ && $6 ~ /File/ {c++} END{print c+0}' "$TMP/derived.tsv")
-[ "$ioexempt" -ge 6 ] && ok "$ioexempt io items still carry File alongside Unsafe — the rule still binds something"   || no "only $ioexempt io items carry File+Unsafe; the rule has been exempted away"
+# The guard above used to be "at least 6 io items carry File+Unsafe, so the rule still
+# binds something". The two-axis migration (bug 071 stage 2) retired its premise: NO io
+# item declares `Unsafe` any more, because a safe wrapper marked `trusted` no longer
+# re-exports a requirement its callers never owed. The rule is now vacuously true, so
+# asserting it "still binds" would fail forever on a correct library.
+#
+# Assert the STRONGER post-migration fact instead — io's surface is free of `Unsafe`
+# entirely — and keep the original rule above as the tripwire for a regression that
+# reintroduces one without `File`.
+# After the migration exactly TWO io items declare `Unsafe`, and both earn it the same
+# way: their signature takes a `*mut` state pointer, so the CALLER supplies unchecked
+# authority. Everything else in io — `println`, `read_all`, `TextFile::open` — is a safe
+# interface over a trusted implementation and declares none. Naming the pair is stronger
+# than counting: it fails both if one regains `Unsafe` by inheritance and if one of these
+# two silently loses it.
+iou=$(awk -F'	' '$1=="io" && $6 ~ /Unsafe/ {print $2}' "$TMP/derived.tsv" | sort | tr '\n' ' ')
+[ "$iou" = "fixed_reader fixed_writer " ] \
+  && ok "exactly the two raw-memory sinks declare Unsafe in io (both take *mut state)" \
+  || no "io's Unsafe set moved: [$iou] (expected fixed_reader fixed_writer)"
 
 echo
 # 0a: parser self-test — every previously-misparsed shape (fn-pointer

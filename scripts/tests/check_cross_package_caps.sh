@@ -19,7 +19,13 @@
 # a bare-name table would attach one module's requirement to another's function).
 # CoreCheck consults it on the same `decideCall` path as local and sibling calls.
 #
-# ==> THIS REPAIR IS DELIBERATELY INCOMPLETE, AND THE LAST SECTION PINS THE GAP. <==
+# COMPLETED 2026-09-25. `Unsafe` binds across a package like every other capability. It
+# was held back for one release because enforcing it alongside the sinks produced 91
+# diagnostics over 32 of 95 packages — 82 missing ONLY `Unsafe`, with the caller already
+# holding the full `Std` set, which is DEFINED as every capability except `Unsafe`. The
+# fix was not an exemption but the std migration: public `Unsafe` declarations 154 -> 21,
+# because a safe wrapper marked `trusted` no longer re-exports a requirement its callers
+# never owed. The last section asserts the uniform state and the `Std` control.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
@@ -124,30 +130,48 @@ else
   no "lookup order changed — an import may now shadow a local definition"
 fi
 
-echo "=== KNOWN GAP, DELIBERATE: Unsafe is not yet enforced across a package ==="
-# Enforcing it alongside the sinks produced 91 diagnostics across 32 of 95 packages, 82 of
-# them missing ONLY Unsafe with the caller already holding the full `Std` set — which
-# excludes Unsafe by definition, so `Std` could not open a file or push to a Vec. Every
-# allocating std API reaches alloc::heap_new (with(Alloc, Unsafe)).
-#
-# The agreed end state is NOT this exception: every declared capability, Unsafe included,
-# binds uniformly across packages, and a safe public abstraction terminates the
-# requirement at a small explicit trusted leaf instead of re-exporting it. Until the 82
-# are classified (safe abstraction / genuinely unsafe / accidental), the exception stands
-# HERE AND IS PINNED, so removing it fails this gate and forces the classification into
-# the same commit. Bug 071 stays OPEN for exactly this reason.
-if grep -q "dropCrossPackageUnsafe" "$ROOT_DIR/Concrete/Check/CoreCheck.lean"; then
-  ok "the cross-package Unsafe exception is present and named (bug 071 remains open)"
+echo "=== Unsafe binds across a package, like every other capability ==="
+# REMOVED 2026-09-25. `Unsafe` now binds across a package like every other capability.
+# What made that affordable was not an exemption but the std migration: public `Unsafe`
+# declarations 154 -> 21, because a safe wrapper marked `trusted` no longer re-exports a
+# requirement its callers never owed. The 82 diagnostics went with them.
+if grep -q "dropCrossPackageUnsafe caps) *$" "$ROOT_DIR/Concrete/Check/CoreCheck.lean"; then
+  no "the cross-package Unsafe exception is BACK — every capability must bind uniformly"
 else
-  no "the exception is gone — if that is intended, classify the 82 and update bug 071 and this gate together"
+  ok "no cross-package Unsafe exception: every declared capability binds uniformly"
+fi
+# The load-bearing consequence, asserted on a real dependency API rather than a fixture:
+# an unchecked read must refuse a caller that declares nothing.
+if [ -d "$FIX/rawcursor_refused" ]; then
+  rout="$(cd "$FIX/rawcursor_refused" && $TO "$CC" check . 2>&1)"
+  if printf '%s' "$rout" | grep -q "requires Unsafe but caller has (none)"; then
+    ok "Unsafe: RawCursor::read_u8 is refused across a package"
+  else
+    no "a cross-package Unsafe obligation does not bind"
+  fi
+else
+  no "the rawcursor_refused fixture is missing"
+fi
+# CONTROL, and the whole point: ordinary `Std` code is untouched. `Std` is DEFINED as
+# every capability except `Unsafe`, so if this failed the enforcement would have made the
+# standard capability set unable to use the standard library.
+if [ -d "$FIX/std_program_ok" ]; then
+  if (cd "$FIX/std_program_ok" && $TO "$CC" build . -o "$TMP/stdok" >/dev/null 2>&1) \
+     && [ "$("$TMP/stdok" 2>&1)" = "Std program, no Unsafe" ]; then
+    ok "a with(Std) program using Vec::push and println builds and RUNS"
+  else
+    no "ordinary Std code broke — enforcement is not narrow"
+  fi
+else
+  no "the std_program_ok fixture is missing"
 fi
 # It must be the ONLY thing held back: a local or sibling Unsafe requirement still binds.
 if [ -d "$ROOT_DIR/tests/regressions/cap_sibling_module/extern_unsafe" ]; then
   sout="$(cd "$ROOT_DIR/tests/regressions/cap_sibling_module/extern_unsafe" && $TO "$CC" check . 2>&1)"
   if printf '%s' "$sout" | grep -q "requires Unsafe"; then
-    ok "a SIBLING-module Unsafe requirement still binds — only the cross-package leg is held back"
+    ok "a SIBLING-module Unsafe requirement binds too — local, sibling and dependency agree"
   else
-    no "Unsafe stopped binding within a package too; the exception is too broad"
+    no "Unsafe stopped binding within a package"
   fi
 else
   no "the sibling-module extern fixture is missing, so the exception's scope is unchecked"

@@ -1,0 +1,8 @@
+mod rawcursor_refused {
+    import std.numeric.{RawCursor};
+    // Declares nothing. RawCursor::read_u8 is an unchecked read: with(Unsafe).
+    fn sneak(c: &mut RawCursor) -> u64 {
+        match c.read_u8() { Result::Ok { value } => { return value as u64; }, Result::Err { error } => { return 0; } }
+    }
+    fn main() with(Alloc, Unsafe) -> i64 { return 0; }
+}

@@ -335,7 +335,7 @@ private def lookupFnCaps (name : String) : StateM CoreCheckEnv (Option CapSet) :
     -- without this the next branch returns `none` for every cross-package call
     -- and the caller reads that as "requires nothing" (bug 071).
     match env.importedCaps.lookup name with
-    | some caps => return some (dropCrossPackageUnsafe caps)
+    | some caps => return some caps
     | none =>
     -- Fall back to intrinsic capability lookup
     match lookupBuiltinCap name with
@@ -481,6 +481,16 @@ partial def ccCheckExpr (e : CExpr) : StateM CoreCheckEnv Unit := do
       -- Same direct-call decision as Check (Capabilities.decideCall): CoreCheck
       -- renders the whole-set E0520 from the record's satisfaction, Check renders
       -- the per-cap E0240 from the record's `missing` — one decision, two views.
+      -- An AUDITED body discharges a callee's `Unsafe` OBLIGATION: vouching that it
+      -- satisfies the callee's precondition is what `trusted` means. Scoped three ways
+      -- so it stays a discharge and never an erasure:
+      --   * only `Unsafe` — File/Console/Network/Alloc untouched, so trust never
+      --     confers authority to reach a sink;
+      --   * only a non-EXTERN callee — an `extern` still demands it
+      --     (error_trusted_extern_needs_unsafe.con); the audited leaf is `trusted extern fn`;
+      --   * only the CALL — the raw-operation gate (E0521) is untouched.
+      let calleeCaps := if env.inTrusted && !env.externNames.contains fn
+                        then dropCrossPackageUnsafe calleeCaps else calleeCaps
       let capD := Capabilities.decideCall env.currentCapSet calleeCaps
       if !capD.satisfied then
         addCCError (.insufficientCapabilities fn (capSetToString capD.required) (capSetToString capD.callerHas))

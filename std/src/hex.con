@@ -11,7 +11,7 @@ mod hex {
 
     /// Encode a byte buffer as a lowercase hex string.
     /// Each byte becomes two hex characters.
-    pub fn encode_bytes(data: &Vec<u8>) with(Alloc, Unsafe) -> String {
+    pub fn encode_bytes(data: &Vec<u8>) with(Alloc) -> String {
         let mut out: String = String::new();
         let mut i: u64 = 0;
         while i < data.len() {
@@ -24,7 +24,7 @@ mod hex {
     }
 
     /// Encode a u32 value as 8 lowercase hex characters (big-endian).
-    pub fn encode_u32(val: u32, out: &mut String) with(Alloc, Unsafe) {
+    pub fn encode_u32(val: u32, out: &mut String) with(Alloc) {
         let mut shift: i32 = 28;
         while shift >= 0 {
             let nibble: u8 = ((val >> (shift as u32)) & 0xF) as u8;
@@ -35,7 +35,7 @@ mod hex {
 
     /// Encode a Vec<u32> (e.g. SHA-256 hash words) as a hex string.
     /// Each u32 is encoded big-endian as 8 hex characters.
-    pub fn encode_u32_vec(words: &Vec<u32>) with(Alloc, Unsafe) -> String {
+    pub fn encode_u32_vec(words: &Vec<u32>) with(Alloc) -> String {
         let mut out: String = String::new();
         let mut i: u64 = 0;
         while i < words.len() {
@@ -60,7 +60,7 @@ mod hex {
     /// Returns an empty vector on invalid input (odd length or bad chars).
     /// Decode a hex string. Odd length or a non-hex character is a DOMAIN
     /// failure -> None (was: ambiguous empty Vec — audit 2026-07-14).
-    pub fn decode(s: &String) with(Alloc, Unsafe) -> Option<Vec<u8>> {
+    pub fn decode(s: &String) with(Alloc) -> Option<Vec<u8>> {
         let result: Vec<u8> = Vec::<u8>::new();
         if s.len() % 2 != 0 {
             result.drop();
@@ -83,7 +83,7 @@ mod hex {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_encode_u32_vec() with(Alloc, Unsafe) -> i32 {
+    fn test_encode_u32_vec() with(Alloc) -> i32 {
         let mut words: Vec<u32> = Vec::<u32>::new();
         words.push(0xdeadbeef);
         words.push(0x01020304);
@@ -98,7 +98,7 @@ mod hex {
     }
 
     #[test]
-    fn test_encode_u32() with(Alloc, Unsafe) -> i32 {
+    fn test_encode_u32() with(Alloc) -> i32 {
         let mut out: String = String::new();
         encode_u32(0xff, &mut out);
         let expected: String = "000000ff";
@@ -110,7 +110,7 @@ mod hex {
     }
 
     #[test]
-    fn test_decode_valid() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_decode_valid() with(Alloc, Console) -> i32 {
         let input: String = "48656c6c6f";
         let maybe: Option<Vec<u8>> = decode(&input);
         let ok: bool = maybe.is_some();
@@ -138,7 +138,7 @@ mod hex {
     }
 
     #[test]
-    fn test_decode_odd_length() with(Alloc, Unsafe) -> i32 {
+    fn test_decode_odd_length() with(Alloc) -> i32 {
         let input: String = "abc";
         let maybe: Option<Vec<u8>> = decode(&input);
         let bad: bool = maybe.is_none();
@@ -148,7 +148,7 @@ mod hex {
         return 0;
     }
 
-    fn ignore_optvec(o: Option<Vec<u8>>) with(Alloc, Unsafe) {
+    fn ignore_optvec(o: Option<Vec<u8>>) with(Alloc) {
         match o {
             Option::Some { value } => { value.drop(); },
             Option::None => { },

@@ -12,7 +12,7 @@ mod net {
     // Linux sockaddr_in has sin_family (2 bytes) at offset 0
 
     // Detect macOS at runtime via uname().sysname[0] == 'D' (Darwin)
-    trusted fn is_darwin() with(Unsafe, Alloc) -> bool {
+    trusted fn is_darwin() with(Alloc) -> bool {
         // utsname is at least 390 bytes on Linux (5*65+...), 5*256=1280 on macOS
         // Allocate 1280 to be safe on both
         let buf: *mut u8 = grow::<u8>(0 as *mut u8, 1280);
@@ -27,12 +27,12 @@ mod net {
         return result;
     }
 
-    trusted fn sol_socket() with(Unsafe, Alloc) -> i32 {
+    trusted fn sol_socket() with(Alloc) -> i32 {
         if is_darwin() { return 65535; }
         return 1;
     }
 
-    trusted fn so_reuseaddr() with(Unsafe, Alloc) -> i32 {
+    trusted fn so_reuseaddr() with(Alloc) -> i32 {
         if is_darwin() { return 4; }
         return 2;
     }
@@ -84,7 +84,7 @@ mod net {
     }
 
     trusted impl TcpListener {
-        pub fn bind(addr: &String, port: u16) with(Unsafe, Alloc, Network) -> Result<TcpListener, NetError> {
+        pub trusted fn bind(addr: &String, port: u16) with(Alloc, Network) -> Result<TcpListener, NetError> {
             let fd: i32 = socket(2, 1, 0);
             if fd < 0 {
                 return Result::<TcpListener, NetError>::Err { error: NetError::SocketFailed };
@@ -138,7 +138,7 @@ mod net {
             return Result::<TcpListener, NetError>::Ok { value: listener };
         }
 
-        pub fn accept(&self) with(Unsafe, Network) -> Result<TcpStream, NetError> {
+        pub trusted fn accept(&self) with(Network) -> Result<TcpStream, NetError> {
             let client_fd: i32 = accept(self.fd, 0 as *mut u8, 0 as *mut u32);
             if client_fd < 0 {
                 return Result::<TcpStream, NetError>::Err { error: NetError::AcceptFailed };
@@ -147,7 +147,7 @@ mod net {
             return Result::<TcpStream, NetError>::Ok { value: stream };
         }
 
-        pub fn close(self) with(Unsafe, Network) {
+        pub fn close(self) with(Network) {
             let TcpListener { fd } = self;
             close(fd);
         }
@@ -158,7 +158,7 @@ mod net {
     }
 
     trusted impl TcpStream {
-        pub fn connect(addr: &String, port: u16) with(Unsafe, Alloc, Network) -> Result<TcpStream, NetError> {
+        pub trusted fn connect(addr: &String, port: u16) with(Alloc, Network) -> Result<TcpStream, NetError> {
             let fd: i32 = socket(2, 1, 0);
             if fd < 0 {
                 return Result::<TcpStream, NetError>::Err { error: NetError::SocketFailed };
@@ -215,7 +215,7 @@ mod net {
             return true;
         }
 
-        pub fn read_all(&self, buf: &mut Bytes) with(Unsafe, Alloc, Network) -> i64 {
+        pub trusted fn read_all(&self, buf: &mut Bytes) with(Alloc, Network) -> i64 {
             let mut total: i64 = 0;
             let tmp: [u8; 4096] = [0; 4096];
             let mut reading: bool = true;
@@ -236,7 +236,7 @@ mod net {
             return total;
         }
 
-        pub fn close(self) with(Unsafe, Network) {
+        pub fn close(self) with(Network) {
             let TcpStream { fd } = self;
             close(fd);
         }
@@ -246,7 +246,7 @@ mod net {
 
     // Disabled: fork creates child processes that continue running tests
     // #[test]
-    fn test_tcp_roundtrip() with(Unsafe, Alloc, Network, Process) -> i32 {
+    trusted fn test_tcp_roundtrip() with(Alloc, Network, Process) -> i32 {
         // Integration test: bind, fork, child connects+writes, parent accepts+reads
         let addr: String = "127.0.0.1";
         let port: u16 = 39876;
@@ -324,7 +324,7 @@ mod net {
 
     // Disabled: fork creates child processes that continue running tests
     // #[test]
-    fn test_tcp_write_all_read_all() with(Unsafe, Alloc, Network, Process, Console) -> i32 {
+    trusted fn test_tcp_write_all_read_all() with(Alloc, Network, Process, Console) -> i32 {
         // Integration test: write_all from client, read_all on server
         let addr: String = "127.0.0.1";
         let port: u16 = 39877;
@@ -399,7 +399,7 @@ mod net {
     }
 
     #[test]
-    fn test_connect_refused() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_connect_refused() with(Alloc, Network, Process) -> i32 {
         // Connect to localhost port 1 — should fail with ConnectFailed
         let addr: String = "127.0.0.1";
         let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
@@ -416,7 +416,7 @@ mod net {
     }
 
     #[test]
-    fn test_connect_bad_address() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_connect_bad_address() with(Alloc, Network, Process) -> i32 {
         let addr: String = "999.999.999.999";
         let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
         addr.drop();
@@ -432,7 +432,7 @@ mod net {
     }
 
     #[test]
-    fn test_bind_bad_address() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_bind_bad_address() with(Alloc, Network, Process) -> i32 {
         let addr: String = "999.999.999.999";
         let result: Result<TcpListener, NetError> = TcpListener::bind(&addr, 9999);
         addr.drop();
@@ -448,7 +448,7 @@ mod net {
     }
 
     #[test]
-    fn test_connect_bad_address_ipv6() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_connect_bad_address_ipv6() with(Alloc, Network, Process) -> i32 {
         // IPv6 address should fail with AddressFailed since we use AF_INET
         let addr: String = "::1";
         let result: Result<TcpStream, NetError> = TcpStream::connect(&addr, 1);
@@ -465,7 +465,7 @@ mod net {
     }
 
     #[test]
-    fn test_bind_empty_address() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_bind_empty_address() with(Alloc, Network, Process) -> i32 {
         // Binding to an empty string should fail with AddressFailed
         let addr: String = "";
         let result: Result<TcpListener, NetError> = TcpListener::bind(&addr, 8080);
@@ -482,7 +482,7 @@ mod net {
     }
 
     #[test]
-    fn test_write_to_refused_connection() with(Unsafe, Alloc, Network, Process) -> i32 {
+    trusted fn test_write_to_refused_connection() with(Alloc, Network, Process) -> i32 {
         // Create a socket manually and try to send to it without connecting
         // socket(AF_INET=2, SOCK_STREAM=1, 0)
         let fd: i32 = socket(2, 1, 0);
@@ -503,7 +503,7 @@ mod net {
     }
 
     #[test]
-    fn test_read_from_unconnected_socket() with(Unsafe, Alloc, Network, Process) -> i32 {
+    trusted fn test_read_from_unconnected_socket() with(Alloc, Network, Process) -> i32 {
         // recv on an unconnected stream socket should return -1
         let fd: i32 = socket(2, 1, 0);
         if fd < 0 { return 1; }
@@ -520,7 +520,7 @@ mod net {
     }
 
     #[test]
-    fn test_bind_duplicate_port() with(Unsafe, Alloc, Network, Process) -> i32 {
+    fn test_bind_duplicate_port() with(Alloc, Network, Process) -> i32 {
         // Bind to an ephemeral port, then try to bind again on the same port
         // First bind to port 0 to get an OS-assigned port
         // We use a fixed high port instead so we can try to double-bind

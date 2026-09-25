@@ -85,7 +85,7 @@ mod slice {
     import std.test.{assert_eq, assert_true};
 
     #[test]
-    fn test_slice_len() with(Alloc, Unsafe, Console) -> i32 {
+    trusted fn test_slice_len() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);
@@ -98,7 +98,7 @@ mod slice {
     }
 
     #[test]
-    fn test_slice_get_unchecked() with(Alloc, Unsafe, Console) -> i32 {
+    trusted fn test_slice_get_unchecked() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);
@@ -113,7 +113,7 @@ mod slice {
     }
 
     #[test]
-    fn test_slice_empty() with(Alloc, Unsafe, Console) -> i32 {
+    trusted fn test_slice_empty() with(Alloc, Console) -> i32 {
         let s: Slice<i32> = Slice::<i32> { ptr: 0 as *const i32, len: 0 };
         if !assert_true(s.is_empty(), "empty slice should be empty") { return 1; }
         if !assert_eq::<u64>(s.len(), 0, "empty slice len should be 0") { return 1; }
@@ -121,7 +121,7 @@ mod slice {
     }
 
     #[test]
-    fn test_mutslice_set_get() with(Alloc, Unsafe, Console) -> i32 {
+    fn test_mutslice_set_get() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(0);
         v.push(0);
@@ -139,7 +139,7 @@ mod slice {
     }
 
     #[test]
-    fn test_slice_get_checked() with(Alloc, Unsafe, Console) -> i32 {
+    trusted fn test_slice_get_checked() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);
@@ -179,7 +179,7 @@ mod slice {
     }
 
     #[test]
-    fn test_mutslice_get_checked() with(Alloc, Unsafe, Console) -> i32 {
+    fn test_mutslice_get_checked() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(42);
         v.push(43);
@@ -206,7 +206,7 @@ mod slice {
     }
 
     #[test]
-    fn test_mutslice_set_checked() with(Alloc, Unsafe, Console) -> i32 {
+    fn test_mutslice_set_checked() with(Alloc, Console) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(0);
         v.push(0);

@@ -107,7 +107,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_and_then() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_and_then() with(Alloc, Console) -> i32 {
         let r: Result<i32, i32> = Result::<i32, i32>::Ok { value: 84 };
         let h: Result<i32, i32> = r.and_then::<i32>(tst_half);
         let got: i32 = h.unwrap_or(0);
@@ -124,7 +124,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_map() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_map() with(Alloc, Console) -> i32 {
         let r: Result<i32, i32> = Result::<i32, i32>::Ok { value: 21 };
         let d: Result<i32, i32> = r.map::<i32>(tst_double);
         let got: i32 = d.unwrap_or(0);
@@ -137,7 +137,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_map_err() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_map_err() with(Alloc, Console) -> i32 {
         let e: Result<i32, i32> = Result::<i32, i32>::Err { error: 7 };
         let e2: Result<i32, i32> = e.map_err::<i32>(tst_neg);
         let got: i32 = match e2 { Result::Ok { value } => value, Result::Err { error } => error, };
@@ -151,7 +151,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_ok() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_ok() with(Alloc, Console) -> i32 {
         let r: Result<i32, i32> = Result::<i32, i32>::Ok { value: 42 };
         if !assert_true(r.is_ok(), "should be ok") { ignore_res::<i32, i32>(r); return 1; }
         if !assert_true(!(r.is_err()), "should not be err") { ignore_res::<i32, i32>(r); return 1; }
@@ -160,7 +160,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_err() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_err() with(Alloc, Console) -> i32 {
         let r: Result<i32, i32> = Result::<i32, i32>::Err { error: 99 };
         if !assert_true(r.is_err(), "should be err") { ignore_res::<i32, i32>(r); return 1; }
         if !assert_true(!(r.is_ok()), "should not be ok") { ignore_res::<i32, i32>(r); return 1; }
@@ -169,7 +169,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_match() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_match() with(Alloc, Console) -> i32 {
         let r: Result<i32, i32> = Result::<i32, i32>::Ok { value: 5 };
         match r {
             Result::Ok { value } => {
@@ -194,7 +194,7 @@ mod result {
     fn rlin_ok(x: RLin) -> Result<RLin, i32> { return Result::<RLin, i32>::Ok { value: x }; }
 
     #[test]
-    fn test_result_map_and_then_linear() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_map_and_then_linear() with(Alloc, Console) -> i32 {
         // map and and_then now carry a non-Copy Ok payload (moved off the Copy
         // bound in 0c). The checker enforces exactly-once flow through f.
         let r: Result<RLin, i32> = Result::<RLin, i32>::Ok { value: RLin { v: 41 } };
@@ -208,7 +208,7 @@ mod result {
     }
 
     #[test]
-    fn test_result_unwrap_or_else_linear() with(Alloc, Console, Unsafe) -> i32 {
+    fn test_result_unwrap_or_else_linear() with(Alloc, Console) -> i32 {
         // Err: the non-Copy error flows into `f` and is consumed there.
         let e: Result<i32, RLin> = Result::<i32, RLin>::Err { error: RLin { v: 5 } };
         let got: i32 = e.unwrap_or_else(rlin_to_code);

@@ -39,7 +39,7 @@ mod cli {
             return self.hits.get_unchecked(f);
         }
 
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub fn drop(self) with(Alloc) {
             let CliFlags { vals, hits } = self;
             vals.drop();
             hits.drop();
@@ -72,7 +72,7 @@ mod cli {
             };
         }
 
-        fn declare(&mut self, name: String, kind: u64, default: u64) with(Alloc, Unsafe) -> u64 {
+        fn declare(&mut self, name: String, kind: u64, default: u64) with(Alloc) -> u64 {
             let f: u64 = self.offs.len();
             self.offs.push(self.names.len());
             self.lens.push(name.len());
@@ -88,13 +88,13 @@ mod cli {
         }
 
         /// Declare a presence flag (e.g. "-v"). Returns its index.
-        pub fn flag_bool(&mut self, name: String) with(Alloc, Unsafe) -> u64 {
+        pub fn flag_bool(&mut self, name: String) with(Alloc) -> u64 {
             return self.declare(name, 0, 0);
         }
 
         /// Declare a value flag (e.g. "-n 16"), space-separated value,
         /// parsed as decimal u64. Returns its index.
-        pub fn flag_u64(&mut self, name: String, default: u64) with(Alloc, Unsafe) -> u64 {
+        pub fn flag_u64(&mut self, name: String, default: u64) with(Alloc) -> u64 {
             return self.declare(name, 1, default);
         }
 
@@ -124,7 +124,7 @@ mod cli {
             return Option::<u64>::None;
         }
 
-        fn destroy(self) with(Alloc, Unsafe) {
+        fn destroy(self) with(Alloc) {
             let Cli { names, offs, lens, kinds, defaults } = self;
             names.drop();
             offs.drop();
@@ -139,7 +139,7 @@ mod cli {
         /// count must land in [min_pos, max_pos]. On success the result owns
         /// the positional Strings, in command-line order. A repeated value
         /// flag: last occurrence wins.
-        pub fn parse(self, min_pos: u64, max_pos: u64) with(Alloc, Env, Unsafe) -> CliResult {
+        pub fn parse(self, min_pos: u64, max_pos: u64) with(Alloc, Env) -> CliResult {
             let nflags: u64 = self.offs.len();
             let mut vals: Vec<u64> = Vec::<u64>::new();
             let mut hits: Vec<bool> = Vec::<bool>::new();
@@ -219,7 +219,7 @@ mod cli {
     // ---- process arguments) ----
 
     #[test]
-    fn test_declare_and_find() with(Alloc, Unsafe) -> i32 {
+    fn test_declare_and_find() with(Alloc) -> i32 {
         let mut c: Cli = Cli::new();
         let fs: u64 = c.flag_u64("-s", 7);
         let fv: u64 = c.flag_bool("-v");
@@ -252,7 +252,7 @@ mod cli {
     }
 
     #[test]
-    fn test_flags_getters() with(Alloc, Unsafe) -> i32 {
+    fn test_flags_getters() with(Alloc) -> i32 {
         let mut vals: Vec<u64> = Vec::<u64>::new();
         let mut hits: Vec<bool> = Vec::<bool>::new();
         vals.push(16);

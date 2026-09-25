@@ -24,7 +24,7 @@ mod map {
     }
 
     trusted impl<K, V> HashMap<K, V> {
-        pub fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc, Unsafe) -> HashMap<K, V> {
+        pub trusted fn new(hash_fn: fn(&K) -> u64, eq_fn: fn(&K, &K) -> bool) with(Alloc) -> HashMap<K, V> {
             let cap: u64 = 16;
             let keys: *mut K = grow::<K>(0 as *mut K, cap);
             let values: *mut V = grow::<V>(0 as *mut V, cap);
@@ -194,7 +194,7 @@ mod map {
         /// when the pressure is tombstones. Either way every tombstone is gone
         /// afterwards, which is what keeps an empty slot available and stops a
         /// missing-key probe from wrapping (bug 048).
-        fn rehash(&mut self, new_cap: u64) with(Alloc, Unsafe) {
+        trusted fn rehash(&mut self, new_cap: u64) with(Alloc) {
             let old_cap: u64 = self.cap;
             let old_keys: *mut K = self.keys;
             let old_values: *mut V = self.values;
@@ -464,7 +464,7 @@ mod map {
                 },
             }
         }
-        pub fn insert(&mut self, key: K, value: V) with(Alloc, Unsafe) -> Option<V> {
+        pub trusted fn insert(&mut self, key: K, value: V) with(Alloc) -> Option<V> {
             // Load policy counts OCCUPIED slots (live + tombstones), not just
             // live ones. Counting only `len` let tombstones accumulate forever
             // at low `len`, so the table could reach zero empty slots without
@@ -579,7 +579,7 @@ mod map {
     // no live values), then frees the three buffers. Non-destroyable K or V
     // makes clear/drop uncallable — drain with remove() and close explicitly.
     trusted impl<K: Destroy, V: Destroy> HashMap<K, V> {
-        pub fn clear(&mut self) with(Alloc, Unsafe) {
+        pub trusted fn clear(&mut self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.cap {
                 let flag_ptr: *mut u8 = self.flags + i;
@@ -595,7 +595,7 @@ mod map {
             self.tombstones = 0;
         }
 
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub trusted fn drop(self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.cap {
                 let flag_ptr: *mut u8 = self.flags + i;
@@ -614,7 +614,7 @@ mod map {
 
     // Composition: HashMap is destroyable iff K and V are.
     trusted impl<K: Destroy, V: Destroy> Destroy for HashMap<K, V> {
-        pub fn destroy(&self) with(Alloc, Unsafe) {
+        pub trusted fn destroy(&self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.cap {
                 let flag_ptr: *mut u8 = self.flags + i;
@@ -722,7 +722,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_with_value() with(Alloc, Unsafe) -> i32 {
+    fn test_map_with_value() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(7, 35));
         let c: WvCtx = WvCtx { add: 5, calls: 0 };
@@ -749,7 +749,7 @@ mod map {
     fn fe_acc(c: &mut FeAcc, k: &i32, v: &i32) { c.sum = c.sum + (*k as i64) + (*v as i64); }
 
     #[test]
-    fn test_map_for_each_with_and_ctx() with(Alloc, Unsafe) -> i32 {
+    fn test_map_for_each_with_and_ctx() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         ignore_opt::<i32>(m.insert(2, 20));
@@ -763,7 +763,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_with_value_mut() with(Alloc, Unsafe) -> i32 {
+    fn test_map_with_value_mut() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(7, 35));
         let mut c: WvmCtx = WvmCtx { delta: 5, calls: 0 };
@@ -784,7 +784,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_modify_and_missing() with(Alloc, Unsafe) -> i32 {
+    fn test_map_modify_and_missing() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         let mut c: WvmCtx = WvmCtx { delta: 0, calls: 0 };
@@ -804,7 +804,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_with_value_missing() with(Alloc, Unsafe) -> i32 {
+    fn test_map_with_value_missing() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         let c: WvCtx = WvCtx { add: 0, calls: 0 };
@@ -820,7 +820,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_insert_len() with(Alloc, Unsafe) -> i32 {
+    fn test_map_insert_len() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         ignore_opt::<i32>(m.insert(2, 20));
@@ -831,7 +831,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_contains() with(Alloc, Unsafe) -> i32 {
+    fn test_map_contains() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(42, 100));
         let k1: i32 = 42;
@@ -843,7 +843,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_overwrite() with(Alloc, Unsafe) -> i32 {
+    fn test_map_overwrite() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 100));
         ignore_opt::<i32>(m.insert(1, 200));
@@ -853,7 +853,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_remove() with(Alloc, Unsafe) -> i32 {
+    fn test_map_remove() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 100));
         ignore_opt::<i32>(m.insert(2, 200));
@@ -868,7 +868,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_remove_nonexistent() with(Alloc, Unsafe) -> i32 {
+    fn test_map_remove_nonexistent() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 100));
         let k: i32 = 99;
@@ -883,7 +883,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_get() with(Alloc, Unsafe) -> i32 {
+    fn test_map_get() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(5, 500));
         ignore_opt::<i32>(m.insert(10, 1000));
@@ -907,7 +907,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_clear() with(Alloc, Unsafe) -> i32 {
+    fn test_map_clear() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         ignore_opt::<i32>(m.insert(2, 20));
@@ -924,7 +924,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_insert_reinsert_after_remove() with(Alloc, Unsafe) -> i32 {
+    fn test_map_insert_reinsert_after_remove() with(Alloc) -> i32 {
         // Remove a key, then re-insert with different value — tombstone reuse
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 100));
@@ -946,7 +946,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_for_each() with(Alloc, Unsafe) -> i32 {
+    fn test_map_for_each() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         ignore_opt::<i32>(m.insert(2, 20));
@@ -974,7 +974,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_growth() with(Alloc, Unsafe) -> i32 {
+    fn test_map_growth() with(Alloc) -> i32 {
         // Insert enough to force rehash (initial cap=16, grows at 75% = 12)
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         let mut i: i32 = 0;
@@ -1007,7 +1007,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_update() with(Alloc, Unsafe) -> i32 {
+    fn test_map_update() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(7, 70));
         let k: i32 = 7;
@@ -1024,7 +1024,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_update_missing() with(Alloc, Unsafe) -> i32 {
+    fn test_map_update_missing() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         let k: i32 = 99;
@@ -1035,7 +1035,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_insert_returns_displaced() with(Alloc, Unsafe) -> i32 {
+    fn test_map_insert_returns_displaced() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         // First insert: no prior value
         let r1: Option<i32> = m.insert(1, 100);
@@ -1065,7 +1065,7 @@ mod map {
     }
 
     #[test]
-    fn test_map_fold() with(Alloc, Unsafe) -> i32 {
+    fn test_map_fold() with(Alloc) -> i32 {
         let mut m: HashMap<i32, i32> = HashMap::<i32, i32>::new(hash_i32, eq_i32);
         ignore_opt::<i32>(m.insert(1, 10));
         ignore_opt::<i32>(m.insert(2, 20));

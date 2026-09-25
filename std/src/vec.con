@@ -21,7 +21,7 @@ mod vec {
             return vec;
         }
 
-        pub fn push(&mut self, value: T) with(Alloc, Unsafe) {
+        pub trusted fn push(&mut self, value: T) with(Alloc) {
             if self.len >= self.cap {
                 self.grow();
             }
@@ -100,7 +100,7 @@ mod vec {
             return self.len == 0;
         }
 
-        fn grow(&mut self) with(Alloc, Unsafe) {
+        fn grow(&mut self) with(Alloc) {
             let new_cap: u64 = max::<u64>(self.cap, 4) * 2;
             self.ptr = grow::<T>(self.ptr, new_cap);
             self.cap = new_cap;
@@ -232,7 +232,7 @@ mod vec {
             self.len = 0;
         }
 
-        pub fn drop(self) with(Alloc, Unsafe) {
+        pub fn drop(self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.len {
                 let target_ptr: *mut T = self.ptr + i;
@@ -250,7 +250,7 @@ mod vec {
     // drop(); borrows &self (trusted) because the trait destructor is
     // invoked through the container's glue, which owns the consumption.
     trusted impl<T: Destroy> Destroy for Vec<T> {
-        pub fn destroy(&self) with(Alloc, Unsafe) {
+        pub fn destroy(&self) with(Alloc) {
             let mut i: u64 = 0;
             while i < self.len {
                 let target_ptr: *mut T = self.ptr + i;
@@ -367,10 +367,10 @@ mod vec {
     fn vdbl(x: &i32) -> i32 { return *x * 2; }
     // Effectful, capability-polymorphic callback (requires Alloc): collects
     // elements into a caller-owned sink Vec via for_each_ctx.
-    fn vcollect(out: &mut Vec<i32>, x: &i32) with(Alloc, Unsafe) { out.push(*x); }
+    fn vcollect(out: &mut Vec<i32>, x: &i32) with(Alloc) { out.push(*x); }
 
     #[test]
-    fn test_vec_fold_cap() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_fold_cap() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(1); v.push(2); v.push(3);
         let s: i64 = v.fold(0, vsum);   // pure callback -> C = {}
@@ -380,7 +380,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_for_each_ctx() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_for_each_ctx() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(1); v.push(2); v.push(3);
         let mut out: Vec<i32> = Vec::<i32>::new();
@@ -396,7 +396,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_map() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_map() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(1); v.push(2); v.push(3);
         let mut m: Vec<i32> = v.map(vdbl);
@@ -409,7 +409,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_get_in_bounds() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_get_in_bounds() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);
@@ -444,7 +444,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_get_out_of_bounds() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_get_out_of_bounds() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         let r: Option<i32> = v.get(5);
@@ -461,7 +461,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_get_empty() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_get_empty() with(Alloc) -> i32 {
         let v: Vec<i32> = Vec::<i32>::new();
         let r: Option<i32> = v.get(0);
         match r {
@@ -477,7 +477,7 @@ mod vec {
     }
 
     #[test]
-    fn test_pop_some() with(Alloc, Unsafe) -> i32 {
+    fn test_pop_some() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(42);
         let r: Option<i32> = v.pop();
@@ -498,7 +498,7 @@ mod vec {
     }
 
     #[test]
-    fn test_swap_remove() with(Alloc, Unsafe) -> i32 {
+    fn test_swap_remove() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10); v.push(20); v.push(30);
         let r: Option<i32> = v.swap_remove(0);
@@ -543,7 +543,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_with_at_mut() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_with_at_mut() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(5);
         let mut a: VAcc = VAcc { total: 0 };
@@ -567,7 +567,7 @@ mod vec {
     }
 
     #[test]
-    fn test_pop_none() with(Alloc, Unsafe) -> i32 {
+    fn test_pop_none() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         let r: Option<i32> = v.pop();
         match r {
@@ -583,7 +583,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_set() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_set() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);
@@ -607,7 +607,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_clear_reuse() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_clear_reuse() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(1);
         v.push(2);
@@ -631,7 +631,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_push_growth() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_push_growth() with(Alloc) -> i32 {
         // Push enough elements to force multiple growth cycles
         let mut v: Vec<i32> = Vec::<i32>::new();
         let mut i: i32 = 0;
@@ -656,7 +656,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_pop_until_empty() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_pop_until_empty() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(1);
         v.push(2);
@@ -693,7 +693,7 @@ mod vec {
     }
 
     #[test]
-    fn test_vec_fold() with(Alloc, Unsafe) -> i32 {
+    fn test_vec_fold() with(Alloc) -> i32 {
         let mut v: Vec<i32> = Vec::<i32>::new();
         v.push(10);
         v.push(20);

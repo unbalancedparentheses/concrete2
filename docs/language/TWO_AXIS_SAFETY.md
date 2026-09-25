@@ -112,10 +112,26 @@ the capability VARIABLE, and the check was asking the literal-membership questio
 distinction `CAPABILITY_FACTS.md` draws, and a provenance report inventing an
 unjustified operation is the same defect class as inventing a capability.
 
-## Not landed
+## Landed 2026-09-25
 
-The `std` migration stays in the worktree. Cross-package edges are a report today;
-before the migration lands they should travel as per-function facts in package
-SUMMARIES, so a consumer does not have to recompile its dependency to learn them —
-the second-producer problem this repository keeps paying for. Removing `Unsafe`
-from a safe wrapper is safe only once that signal is durable.
+The migration is in `std`, the cross-package `Unsafe` exception is deleted, and
+bug 071 is closed. Re-verified from scratch against the landing tip rather than
+trusting the worktree: baseline sweep identical (66 success / 12 expected refusal /
+40 pre-existing), injected parse error surfacing as 118 unexpected.
+
+**The second-producer concern I raised earlier was premature.** `loadDependency`
+reads a dependency's SOURCE and concatenates its modules into the same build —
+there is no summary cache and no compiled-dependency artifact, so the checker
+computes the edges once per build and the report reads them. That already is
+single-producer. Package summaries become the right home for these facts when
+separate compilation lands, not before.
+
+## Still open
+
+- `docs/language/CAPABILITY_FACTS.md` lists a cross-package METHOD hole as
+  unenforced; that text predates this work and should be re-read against the
+  current gates.
+- The 21 surviving obligations have not been individually reviewed against the
+  question "must the caller supply an invariant the language cannot establish?"
+  They were selected by a rule (raw pointer in signature, `RawCursor` unchecked
+  read, `alloc`), and a rule is a hypothesis about each member.

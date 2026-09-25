@@ -1,11 +1,8 @@
 # Bug 071 — a capability requirement declared in a dependency does not bind on its caller
 
-**Status:** Open — PARTIALLY REPAIRED 2026-09-21. The sink capabilities (Console,
-File, Network, Env, Time, Process, Random) and `Alloc` now bind across a package
-boundary, for free functions and methods alike. `Unsafe` does NOT yet; that exception is
-deliberate, documented at `CoreCheck.dropCrossPackageUnsafe`, and pinned by
-`check_cross_package_caps.sh` so removing it fails the gate. **This bug stays open until
-it is removed.**
+**Status:** Fixed — stage 1 2026-09-21 (sinks + `Alloc`), stage 2 2026-09-25
+(`Unsafe`, uniformly). Every capability a dependency declares now binds on its caller,
+for free functions and methods alike. Gated by `check_cross_package_caps.sh` (18/0).
 **Discovered:** 2026-09-20, while sizing the cross-package METHOD hole left open by
 the sibling-submodule repair (R-0484, `c3fabe25`). The method case turned out to be
 a subset: the boundary is the PACKAGE, and free functions cross it too.
@@ -145,3 +142,37 @@ different things depending on which package the caller is in. It is:
 Remaining work: classify the 82 as safe-abstraction / genuinely-unsafe / accidental,
 apply the three treatments, remove the exception, and re-run the whole corpus requiring
 every declared capability to bind.
+
+
+## Stage 2 (2026-09-25) — `Unsafe` binds too, and the exception is gone
+
+The exception was never the fix; it bought one release while the real question was
+measured. Enforcing `Unsafe` alongside the sinks had produced 91 diagnostics over 32 of
+95 packages — **82 missing only `Unsafe`**, with the caller already holding the full
+`Std` set, which is DEFINED as every capability except `Unsafe`. That is not authority
+being enforced, it is one artifact reproduced everywhere.
+
+What removed it was the std migration, not an exemption: **public `Unsafe` declarations
+154 → 21**. A safe wrapper marked `trusted` no longer re-exports a requirement its
+callers never owed, so the 82 diagnostics went with them.
+
+Three things made that expressible, each measured rather than assumed:
+
+- **per-method `trusted`** — `trusted` was a whole-impl modifier, so *safe interface,
+  audited implementation* (`Vec::push`) could not be said of a method at all. 67 of the
+  154 public declarations do raw work in their own body, so this was most of the library;
+- **`alloc::heap_new`/`grow`/`dealloc` dropped `Unsafe`, kept `Alloc`** — the obligation
+  is enforced by the argument type, since they traffic `*mut T` and E0521 gates every
+  dereference independently;
+- **a `trusted` body discharges an `Unsafe` OBLIGATION at a call** — vouching that it
+  satisfies a callee's precondition is what audited means. Scoped to `Unsafe` only,
+  non-`extern` callees only, call sites only; both `error_trusted_*` fixtures still
+  refuse, and E0521 is untouched.
+
+Verified against a baseline sweep on the same tip: success/expected-refusal/unexpected
+identical to pre-migration, with an injected parse error required to surface as
+*unexpected* (it reports 118, not 118 passes). A `with(Std)` program using `Vec::push`
+and `println` builds and runs with no `Unsafe` anywhere; `RawCursor::read_u8` is refused
+to a caller declaring nothing. Both are pinned.
+
+Full record: [TWO_AXIS_SAFETY.md](../language/TWO_AXIS_SAFETY.md).

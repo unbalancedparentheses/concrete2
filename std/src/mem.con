@@ -16,7 +16,7 @@ mod mem {
     pub trusted fn alignof<T>() -> u64;
 
     #[test]
-    fn test_size() with(Unsafe) -> i32 {
+    fn test_size() -> i32 {
         if sizeof::<i8>() != 1 { return 1; }
         if sizeof::<i16>() != 2 { return 1; }
         if sizeof::<i32>() != 4 { return 1; }
@@ -31,7 +31,7 @@ mod mem {
     }
 
     #[test]
-    fn test_align() with(Unsafe) -> i32 {
+    fn test_align() -> i32 {
         if alignof::<i8>() != 1 { return 1; }
         if alignof::<i16>() != 2 { return 1; }
         if alignof::<i32>() != 4 { return 1; }
