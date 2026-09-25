@@ -19,7 +19,7 @@ mod hexdump {
     // workload's FRICTION #1 pulled it (second ask), then switched over as
     // proof-of-pull.
 
-    fn w_str(w: &Writer, s: String) {
+    fn w_str(w: &Writer, s: String) with(Alloc) {
         let r: Result<u64, IoError> = w.write_str(&s);
         discard(r.is_ok());
         s.drop();

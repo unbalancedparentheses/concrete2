@@ -136,9 +136,11 @@ separate compilation lands, not before.
 
 ## Still open
 
-- `docs/language/CAPABILITY_FACTS.md` lists a cross-package METHOD hole as
-  unenforced; that text predates this work and should be re-read against the
-  current gates.
+- ~~`CAPABILITY_FACTS.md` lists a cross-package METHOD hole as unenforced~~ —
+  re-read and reconciled 2026-09-25. It was right and the summaries were wrong: a
+  PRELUDE receiver method (`String::drop`) did not bind, while imported and
+  associated forms did. Closed as bug 071 stage 3; all four call forms are now
+  enumerated there rather than summarised as "methods".
 
 - **The inverse defect: 15 public std APIs traffic raw pointers and declare no
   obligation.** Reviewing the 21 survivors individually turned up the mirror-image

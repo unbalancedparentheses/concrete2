@@ -23,7 +23,7 @@ mod png_chunks {
             && b.get_unchecked(6) == 26  && b.get_unchecked(7) == 10;
     }
 
-    fn w_str(w: &Writer, s: String) {
+    fn w_str(w: &Writer, s: String) with(Alloc) {
         let r: Result<u64, IoError> = w.write_str(&s);
         discard(r.is_ok());
         s.drop();

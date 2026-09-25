@@ -121,11 +121,23 @@ the bare and prefixed spellings, since `prefixModuleFnNames` renames functions
 but deliberately leaves externs alone. Gated by
 `scripts/tests/check_cap_sibling_module.sh`.
 
-**Still unenforced:** a cross-package METHOD call. Free functions from a
-dependency are checked, same-module methods are checked; the intersection is not.
-`tests/regressions/cap_sibling_module/known_hole_cross_package_method/` is a live
-reproducer and the gate asserts it still checks clean, so the day it closes the
-gate fails rather than going quietly green.
+**Cross-package calls bind, and the CALL FORMS are enumerated deliberately** — a
+headline that did not name them is how the last one stayed open for two rounds:
+
+| form | example | gated by |
+|---|---|---|
+| imported free function | `std.env.get` | `check_cross_package_caps.sh` |
+| explicitly imported receiver method | `RawCursor::read_u8` | `check_cross_package_caps.sh` |
+| associated call | `TcpStream::connect` | `check_cross_package_caps.sh` |
+| **prelude receiver method** | `String::drop` | `check_cap_sibling_module.sh` |
+
+The prelude form was the last escape. `CModule.importedFnCaps` was built by walking
+`m.imports`, and `String` needs no import statement, so its methods never entered
+the table — `String::drop` is `with(Alloc)` and a function declaring nothing could
+call it. Two gates were green at once, one of them explicitly asserting that
+acceptance as a KNOWN HOLE, which is why CI could not tell the difference. Closed
+by collecting dependency `implMethodSigs` recursively through `submoduleSummaries`
+and keying them by the mangled `<Type>_<method>` spelling the call site emits.
 
 **`trusted` does NOT grant `Unsafe` for a CALL,** only for a raw operation on
 memory the body already holds (`capsAllowUnsafeOp`). An `extern` call inside a

@@ -2345,6 +2345,37 @@ partial def elabModule (m : Module) (summary : FileSummary)
           some (localName ++ "_" ++ mangled.drop prefixOrig.length, sig.capSet)
         else none
       fnCap ++ extCap ++ methCaps
+  -- PRELUDE / IMPLICITLY-AVAILABLE TYPES. The walk above is driven by `m.imports`, so a
+  -- method on a type that needs NO import statement — `String`, and anything else the
+  -- prelude supplies — never entered the table. `String::drop` declares `with(Alloc)`
+  -- and a function declaring nothing could still call it: the program built and ran.
+  -- That was bug 071's last open path, and it survived two rounds of gating because the
+  -- newer gate only exercised IMPORTED methods (`RawCursor::read_u8`) and ASSOCIATED
+  -- calls (`TcpStream::connect`), both of which do have an import to walk.
+  --
+  -- Keyed by the MANGLED spelling the call site emits, `<module>_<Type>_<method>`, which
+  -- is what `--report trust-edges` shows for these calls (`string_String_drop`). That is
+  -- specific enough not to collide the way a bare method name would: `drop` alone is
+  -- declared on a dozen std types.
+  -- RECURSING INTO SUBMODULES is the whole trick. `summaryTable` is keyed at the PACKAGE
+  -- level, so the `std` entry carries no `implMethodSigs` of its own — `String`'s methods
+  -- live in the `string` SUBMODULE summary, and the mangled call spelling uses that
+  -- submodule's name (`string_String_drop`), not the package's.
+  -- Keyed by the MANGLED name alone — `String_drop`, not `string_String_drop`. The call
+  -- site emits `<Type>_<method>` with no module component, which is the same spelling
+  -- `importedMethodCallIds` above builds from `sym.effectiveName`; verified by giving the
+  -- reproducer an explicit `import std.string.{String}`, at which point the diagnostic
+  -- reads `function 'String_drop' requires Alloc`.
+  --
+  -- Recursion into `submoduleSummaries` is still needed: `summaryTable` is keyed at the
+  -- PACKAGE level, so the `std` entry has no `implMethodSigs` of its own — `String`'s
+  -- live in the `string` submodule summary.
+  let rec collectMethodCaps : FileSummary → List (String × CapSet) :=
+    fun s =>
+      s.implMethodSigs.map (fun (mangled, sig) => (mangled, sig.capSet))
+      ++ s.submoduleSummaries.flatMap (fun (_, sub) => collectMethodCaps sub)
+  let preludeMethodCaps : List (String × CapSet) :=
+    summaryTable.flatMap fun (_, s) => collectMethodCaps s
   -- `spec fn` declarations are resolvable targets in contracts. They were in none
   -- of the tables below, so every contract mentioning one (hmac_sha256's
   -- `result == ch_spec(x, y, z)`, for instance) resolved to nothing and made the
@@ -2633,7 +2664,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
         methodNames := tb.methods.map (·.name),
         methodRetTys := tb.methods.map fun f => (f.name, f.retTy),
         builtinTraitId := traitBuiltinId, declSpan := some tb.span : CTraitImpl }
-    importedFnCaps := importedFnCaps
+    importedFnCaps := importedFnCaps ++ preludeMethodCaps
     linkerAliases :=
       -- Import aliases: imported bare name → prefixed definition (subName_fnName)
       -- When user writes `import math.{add}` and calls `add(...)`, the call emits `@add`

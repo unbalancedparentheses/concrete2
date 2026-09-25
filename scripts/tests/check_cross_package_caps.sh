@@ -42,6 +42,16 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 [ -x "$CC" ] || { echo "FATAL: compiler not built at $CC" >&2; exit 2; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
+# A HEADLINE CLAIM MUST ENUMERATE THE CALL FORMS IT COVERS. "Free functions and methods
+# alike" was true of imported free functions, of an explicitly imported receiver
+# (`RawCursor::read_u8`) and of an associated call (`TcpStream::connect`) — and FALSE of a
+# prelude receiver (`String::drop`), because the table was built by walking `m.imports`
+# and `String` has no import statement. Two gates were green while asserting incompatible
+# headlines. The four forms are now named, and the prelude form is covered by
+# `check_cap_sibling_module.sh`'s inverted fixture.
+#
+# COVERED HERE: imported free function · imported receiver method · associated call.
+# COVERED THERE: prelude receiver method.
 echo "=== a caller declaring nothing cannot reach a dependency's sinks ==="
 # Each row is a DIFFERENT capability, because the mechanism is per-capability set and a
 # single sink would not show that the whole set travels.

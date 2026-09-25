@@ -1,8 +1,14 @@
 # Bug 071 — a capability requirement declared in a dependency does not bind on its caller
 
-**Status:** Fixed — stage 1 2026-09-21 (sinks + `Alloc`), stage 2 2026-09-25
-(`Unsafe`, uniformly). Every capability a dependency declares now binds on its caller,
-for free functions and methods alike. Gated by `check_cross_package_caps.sh` (18/0).
+**Status:** Fixed — stage 1 2026-09-21 (sinks + `Alloc`), stage 2 2026-09-25 (`Unsafe`
+uniformly), stage 3 2026-09-25 (prelude receiver methods).
+
+**ENUMERATED, because a headline that does not name its call forms is how this stayed
+open.** All four bind: imported free function · explicitly imported receiver method
+(`RawCursor::read_u8`) · associated call (`TcpStream::connect`) · **prelude receiver
+method** (`String::drop`). Gated by `check_cross_package_caps.sh` (18/0) for the first
+three and `check_cap_sibling_module.sh` (17/0) for the fourth.
+
 **Discovered:** 2026-09-20, while sizing the cross-package METHOD hole left open by
 the sibling-submodule repair (R-0484, `c3fabe25`). The method case turned out to be
 a subset: the boundary is the PACKAGE, and free functions cross it too.
@@ -176,3 +182,32 @@ and `println` builds and runs with no `Unsafe` anywhere; `RawCursor::read_u8` is
 to a caller declaring nothing. Both are pinned.
 
 Full record: [TWO_AXIS_SAFETY.md](../language/TWO_AXIS_SAFETY.md).
+
+
+## Stage 3 (2026-09-25) — the prelude receiver, and why two green gates hid it
+
+`String::clone` and `String::drop` declare `with(Alloc)`, and a function declaring
+nothing could call them: the program built and exited 0. It was committed as a live
+reproducer and `check_cap_sibling_module.sh` asserted that acceptance as a KNOWN HOLE —
+a PASSING check confirming the hole was open — while `check_cross_package_caps.sh`
+passed with the headline "free functions and methods alike". Two green gates, two
+incompatible claims, and CI could not distinguish them.
+
+`CModule.importedFnCaps` was built by walking `m.imports`. `RawCursor::read_u8` is
+explicitly imported and `TcpStream::connect` is an associated call — both have an import
+to walk, so both bound, and a gate built on them looked like it proved the general case.
+`String` needs no import statement, so its methods never entered the table.
+
+Two details had to be read off the compiler rather than guessed: the call emits
+`String_drop`, **not** `string_String_drop` — no module component — and `summaryTable` is
+keyed at the PACKAGE level, so `String`'s methods live in the `string` SUBMODULE summary
+and must be collected recursively. The first wrong key produced a clean build and a still-
+open hole; giving the reproducer an explicit `import std.string.{String}` and reading the
+name off the resulting diagnostic settled it.
+
+Corpus cost: 5 declarations, each a function that consumes a `String` and therefore
+allocates. Baseline sweep unchanged at 40 pre-existing failures, parse-error control
+firing at 120.
+
+The `known_hole_cross_package_method` fixture keeps its name and is now a REJECTION test
+with a paired positive control (`prelude_method_ok`, which must build and run).

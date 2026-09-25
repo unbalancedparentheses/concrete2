@@ -9,7 +9,7 @@ mod cli_tool {
     import std.io.{Writer, console_writer, eprintln, IoError};
     import std.fmt.{write_uint};
 
-    fn w_str(w: &Writer, s: String) {
+    fn w_str(w: &Writer, s: String) with(Alloc) {
         let r: Result<u64, IoError> = w.write_str(&s);
         discard(r.is_ok());
         s.drop();

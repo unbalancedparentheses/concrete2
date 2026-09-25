@@ -248,7 +248,7 @@ mod kvstore {
         }
     }
 
-    fn build_set_line(acc: String, k: &String, v: &String) -> String {
+    fn build_set_line(acc: String, k: &String, v: &String) with(Alloc) -> String {
         let mut out: String = acc;
         out.append(&"SET ");
         out.append(k);
@@ -317,7 +317,7 @@ mod kvstore {
         }
     }
 
-    fn build_list_line(acc: String, k: &String, v: &String) -> String {
+    fn build_list_line(acc: String, k: &String, v: &String) with(Alloc) -> String {
         let mut out: String = acc;
         out.append(k);
         out.append(&" = ");

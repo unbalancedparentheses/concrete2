@@ -1,0 +1,17 @@
+// POSITIVE CONTROL for the prelude-receiver method path. The same calls the negative
+// fixture makes, with `Alloc` declared, must COMPILE AND RUN. Without this the gate
+// would pass just as well on a compiler that refused every prelude method call.
+mod prelude_method_ok {
+    fn honest() with(Alloc) -> u64 {
+        let a: String = "hello";
+        let b: String = a.clone();
+        let n: u64 = b.len();
+        a.drop();
+        b.drop();
+        return n;
+    }
+    fn main() with(Alloc) -> i64 {
+        if honest() == 5 { return 0; }
+        return 1;
+    }
+}

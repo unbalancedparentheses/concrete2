@@ -138,15 +138,42 @@ else
   no "std.mem.sizeof lost its trusted marker — every Std-only program loses sizeof"
 fi
 
-echo "=== KNOWN HOLE: a cross-package METHOD call is still unchecked ==="
-# Pinned as a live reproducer so the day it closes, this says so instead of going quietly
-# green. See the fixture's own header for why it is the intersection case.
+echo "=== a PRELUDE-receiver method binds too (the last bug-071 escape) ==="
+# INVERTED 2026-09-25. This check used to assert the hole was OPEN, and it passed while
+# `check_cross_package_caps.sh` passed with the headline "free functions and methods
+# alike" — two green gates asserting incompatible things. The newer gate only exercised
+# an ASSOCIATED call (`TcpStream::connect`) and an EXPLICITLY IMPORTED receiver
+# (`RawCursor::read_u8`); both have an import to walk, and `CModule.importedFnCaps` was
+# built from `m.imports`. `String` needs no import, so its methods never entered the
+# table and `String::drop` — `with(Alloc)` — was callable from a function declaring
+# nothing. The program built and ran.
+#
+# THE LESSON, and it is why this block now enumerates: a headline claim must name the
+# CALL FORMS it covers. "Methods bind" was true of two forms and false of a third.
 hout="$(cd "$FIX/known_hole_cross_package_method" && $TO "$CC" check . 2>&1)"
-if printf '%s' "$hout" | grep -qE 'error\['; then
-  no "the cross-package method hole CLOSED — invert this check and update R-0484"
-  printf '%s\n' "$hout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+if printf '%s' "$hout" | grep -q "function 'String_drop' requires Alloc but caller has (none)"; then
+  ok "prelude receiver: String::drop is refused to a caller declaring nothing"
 else
-  ok "still accepted (expected): String::clone/drop require Alloc,Unsafe and are not enforced across a package"
+  no "the prelude-method escape is back — String::drop does not bind"
+  printf '%s\n' "$hout" | grep -E 'error\[' | awk 'NR<=2' | sed 's/^/       /'
+fi
+if printf '%s' "$hout" | grep -q "function 'String_clone' requires Alloc"; then
+  ok "and String::clone too — the whole declared set travels, not one method"
+else
+  no "only part of the prelude method surface binds"
+fi
+# It must be REFUSED, not merely fail to build for an unrelated reason.
+if (cd "$FIX/known_hole_cross_package_method" && $TO "$CC" build . -o "$TMP/hole" >/dev/null 2>&1); then
+  no "the prelude-method escape still builds"
+else
+  ok "the escape does not build"
+fi
+# POSITIVE CONTROL: the same calls with Alloc declared must build AND RUN, or the rule
+# is refusing every prelude method rather than the undeclared ones.
+if (cd "$FIX/prelude_method_ok" && $TO "$CC" build . -o "$TMP/pok" >/dev/null 2>&1) && "$TMP/pok" >/dev/null 2>&1; then
+  ok "CONTROL: the same calls with Alloc declared build and run (exit 0)"
+else
+  no "the positive control fails — prelude methods are refused even when declared"
 fi
 
 echo "=== a union of capabilities covers a requirement that spans it ==="
