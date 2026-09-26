@@ -17,7 +17,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:64
 
-  `parse_validate.validate_msg_type` is eligible for proof but has no registered proof.
+  `parse_validate.validate_msg_type`
+  obligation: extractable
+  registered proof: none
 
  64 |     fn validate_msg_type(t: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -29,7 +31,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:71
 
-  `parse_validate.validate_payload_len` is eligible for proof but has no registered proof.
+  `parse_validate.validate_payload_len`
+  obligation: extractable
+  registered proof: none
 
  71 |     fn validate_payload_len(plen: i32, max_len: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -41,7 +45,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:78
 
-  `parse_validate.validate_total_len` is eligible for proof but has no registered proof.
+  `parse_validate.validate_total_len`
+  obligation: extractable
+  registered proof: none
 
  78 |     fn validate_total_len(actual: i32, needed: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -53,7 +59,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:83
 
-  `parse_validate.compute_checksum` is eligible for proof but has no registered proof.
+  `parse_validate.compute_checksum`
+  obligation: extractable
+  registered proof: none
 
  83 |     fn compute_checksum(data: [i32; 8], count: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -65,7 +73,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:91
 
-  `parse_validate.validate_checksum` is eligible for proof but has no registered proof.
+  `parse_validate.validate_checksum`
+  obligation: extractable
+  registered proof: none
 
  91 |     fn validate_checksum(expected: i32, computed: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -122,7 +132,9 @@
 
 -- no proof ----------------------------------------------- examples/parse_validate/src/main.con:179
 
-  `parse_validate.error_code` is eligible for proof but has no registered proof.
+  `parse_validate.error_code`
+  obligation: extractable
+  registered proof: none
 
  179 |     fn error_code(e: ParseError) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -31,7 +31,7 @@ cd "$ROOT_DIR"
 CC="$ROOT_DIR/.lake/build/bin/concrete"
 FIX="$ROOT_DIR/tests/regressions/effect_opacity/indirect_call_not_pure"
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIPPED=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
@@ -84,22 +84,55 @@ else
   printf '%s\n' "$cout" | grep "Totals:" | sed 's/^/       /'
 fi
 
-echo "=== KNOWN GAP: admission does not yet refuse them ==="
-# `EligibilityEntry.admissible` is deliberately inert. The rule works and was reverted
-# because its reach into the evidence machinery — drift coverage, replay targets — raises
-# a question about whether an inadmissible claim should still be REPLAYED, which is about
-# evidence semantics rather than effect-freedom. Asserted here so enabling it fails this
-# check and forces the answer to be written down. See R-0484.
+# ADMISSION IS LIVE (2026-09-26). The rule was inert for one release because enabling it
+# appeared to drop three `pureCoreFns` links out of replay and drift coverage (11 -> 8).
+# That was a COUPLING, not a consequence of the rule: obligation status was derived from
+# `admissible` through a parameter merely NAMED `eligible`. Status is now derived from
+# EXTRACTABLE, and admission is carried as its own fact, so the four questions stay apart:
+#
+#   extractable  the eligibility/extraction rules permit an obligation
+#   admissible   extractable AND every semantic admission gate passes
+#   replayable   extractable AND a claim/evidence link exists
+#   proved       replay passed AND admissible AND correspondence/dependency rules pass
+#
+# An admission failure must never erase an artifact from MAINTENANCE — otherwise an
+# effect-classification change silently removes claims from replay and drift detection,
+# which is the opposite of honest degradation.
+echo "=== admission REFUSES an effect-opaque function, and names why ==="
 pout="$(cd "$FIX" && $TO "$CC" src/main.con --report proof-status 2>&1)"
 for fn in fire fire2; do
-  if printf '%s' "$pout" | grep -q "effects may enter through an indirect call"; then
-    no "$fn IS now refused — admission was enabled; re-pin this gate and answer the replay question"
+  if printf '%s' "$pout" | grep -q "admission: REFUSED"; then
+    ok "$fn: admission refused"
   else
-    ok "$fn is still admitted (expected; admission deliberately inert)"
+    no "$fn: admission is not refusing — the opacity rule is inert again"
   fi
 done
+if printf '%s' "$pout" | grep -q "admission: REFUSED — effects may enter through an indirect call"; then
+  ok "the refusal NAMES its reason (a refusal reporting no reason is this task's defect)"
+else
+  no "admission refuses without naming the reason"
+fi
 
-echo "=== but EXTRACTION is preserved (the failed attempt broke this) ==="
+echo "=== transitive opacity refuses too, not just the direct caller ==="
+# `fire2` reaches the indirect call through `fire`. A rule that only caught the direct
+# site would leave every wrapper admitted.
+if printf '%s' "$pout" | grep -q "admission: REFUSED"; then
+  n=$(printf '%s' "$pout" | grep -c "admission: REFUSED")
+  [ "${n:-0}" -ge 2 ] && ok "at least two functions refused — opacity propagates ($n)" \
+                      || no "only $n refusal: opacity is not transitive"
+else
+  no "no refusals at all"
+fi
+
+echo "=== CONTROL: genuinely effect-free code is STILL ADMITTED ==="
+# Without this the gate passes on a compiler that refuses everything.
+if printf '%s' "$pout" | grep -A3 "plain" | grep -q "admission: REFUSED"; then
+  no "plain is refused — the rule is over-broad, not conservative"
+else
+  ok "plain keeps admission (the rule refuses narrowly)"
+fi
+
+echo "=== EXTRACTION survives refusal (the failed attempt broke this) ==="
 # Refusing admission must not remove the function from the evidence surface. If this
 # fails, higher-order programs look dependency-free and an R-0004 gap has been moved
 # rather than closed.
@@ -108,6 +141,81 @@ if [ "${facts:-0}" -gt 0 ]; then
   ok "a refused higher-order function still has subject facts ($facts)"
 else
   no "refusing admission also dropped the function from extraction — this is the failed attempt"
+fi
+
+echo "=== REPLAY and DRIFT are untouched by admission ==="
+# The objection that kept this rule inert. `check_purecore_proofs.sh` argues replay must
+# keep asking about pending claims "or the migration cannot clear them" — it now passes
+# WITH admission live, because the objection was to the coupling, not to the rule.
+pc="$($TO bash "$ROOT_DIR/scripts/tests/check_purecore_proofs.sh" 2>&1 || true)"
+# A REFUSAL TO RUN IS NOT A VERDICT. `check_purecore_proofs.sh` declines when another gate
+# holds the shared .lake lock, and its refusal text contains neither the drift line nor a
+# PASS/FAIL summary — so reading its absence as failure reports "admission is erasing
+# claims from maintenance" on the strength of a gate that never executed. That is the same
+# confusion between "I do not know" and "I know it is absent" that this whole area exists
+# to prevent, reproduced in the gate checking it. Observed 2026-09-26.
+if printf '%s' "$pc" | grep -q "GATE-PRECONDITION-FAILED\|REPOSITORY BUSY"; then
+  echo "  SKIP check_purecore_proofs declined to run (repository busy) — no verdict available"
+  echo "       Re-run this gate alone. Two checks were NOT performed, not passed."
+  SKIPPED=$((SKIPPED+2))
+elif ! printf '%s' "$pc" | grep -q "PURECORE-PROOFS: PASS=[0-9]* FAIL=[0-9]*"; then
+  no "check_purecore_proofs produced no summary line at all — its verdict cannot be read"
+  printf '%s\n' "$pc" | tail -3 | sed 's/^/       /'
+else
+  if printf '%s' "$pc" | grep -q "drift coverage: all 11 std links are drift-checked"; then
+    ok "drift coverage stays at 11 with admission live"
+  else
+    no "drift coverage moved — admission is erasing claims from maintenance"
+    printf '%s\n' "$pc" | grep -i drift | awk 'NR<=2' | sed 's/^/       /'
+  fi
+  if printf '%s' "$pc" | grep -q "PURECORE-PROOFS: PASS=[0-9]* FAIL=0"; then
+    ok "registered inadmissible claims remain replay targets (purecore 0 failures)"
+  else
+    no "purecore proofs fail with admission live — replay is keyed on admission again"
+  fi
+fi
+
+echo "=== admission is rendered on EVERY state, not just one (STRUCTURAL) ==="
+# THESE TWO ARE SOURCE CHECKS, NOT BEHAVIOURAL, and the reason is worth stating rather
+# than leaving for a reader to discover: there is no proved-AND-inadmissible function to
+# observe today. std has two proved links, both in base64, and both are admissible. So the
+# state that matters most — `proved` beside a refusal — cannot be produced by running the
+# compiler on anything that exists, and a check that only ran it would assert nothing
+# about that state while appearing to cover it.
+#
+# What is checkable is the STRUCTURE that makes the state impossible to miss: the line is
+# appended once at the dispatch rather than inside each arm. Appending per-arm was the
+# first implementation and it silently skipped exactly `proved` — the one state where an
+# unreported refusal reads as a program-level guarantee rather than a pending item.
+#
+# Upgrade path, when a fixture with a registered proof over an effect-opaque function
+# exists: assert on its rendered output and delete these two.
+if grep -q "renderProofStatusBody e sourceMap ++ admissionLine e" "$ROOT_DIR/Concrete/Report/Report.lean"; then
+  ok "admissionLine is appended once at the dispatch, so no state can be skipped"
+else
+  no "admission rendering is per-state again — \`proved\` will be skipped"
+fi
+# And the text it appends must disclaim admitted-proof coverage, or rendering it on
+# `proved` would still leave the artifact reading as an unqualified program proof.
+if grep -A16 "def admissionLine" "$ROOT_DIR/Concrete/Report/Report.lean" | grep -q "does not count as admitted proof"; then
+  ok "the appended text denies admitted-proof coverage to an inadmissible artifact"
+else
+  no "the admission line no longer disclaims admitted proof coverage"
+fi
+
+echo "=== the wording does not contradict itself ==="
+# `eligible` now means "an obligation can be extracted"; a reader takes "eligible for
+# proof" to mean admissible, which is exactly what this work separated.
+if printf '%s' "$pout" | grep -q "is eligible for proof but has no registered proof"; then
+  no "the report still says 'eligible for proof' beside 'admission: REFUSED'"
+else
+  ok "renders 'obligation: extractable' / 'registered proof: none', not 'eligible for proof'"
+fi
+# And the consequence sentence must match whether an artifact exists.
+if printf '%s' "$pout" | grep -q "no registered artifact to replay"; then
+  ok "with no artifact it says so, rather than claiming one 'stays replayable'"
+else
+  no "the consequence sentence asserts an artifact that may not exist"
 fi
 
 echo "=== KNOWN GAP: the original cross-package instance ==="
@@ -127,5 +235,9 @@ else
 fi
 
 echo
-echo "EFFECT-OPACITY: PASS=$PASS FAIL=$FAIL"
+if [ "$SKIPPED" -gt 0 ]; then
+  echo "EFFECT-OPACITY: PASS=$PASS FAIL=$FAIL SKIPPED=$SKIPPED (INCOMPLETE — a delegated gate declined)"
+else
+  echo "EFFECT-OPACITY: PASS=$PASS FAIL=$FAIL"
+fi
 [ "$FAIL" -eq 0 ]

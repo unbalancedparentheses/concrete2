@@ -294,7 +294,19 @@ CON
     && no "admission is not transitive any more — caller of a recursive fn is admitted" \
     || ok "admission REJECTS the caller (transitive)"
   PS="$("$BIN_LC" "$TD_LC/twoprops.con" --report proof-status 2>/dev/null)"
-  printf '%s' "$PS" | grep -q "caller\` is eligible for proof" \
+  # RE-AIMED 2026-09-26, and the rename is in this check's own interest. The phrase used to
+  # be "`caller` is eligible for proof", which is precisely the vocabulary this section
+  # exists to keep apart: a reader takes "eligible for proof" to mean the claim would be
+  # ADMITTED, while internally it meant only that an obligation can be EXTRACTED. It now
+  # renders `obligation: extractable`, which names the per-body question and borrows
+  # nothing from admission.
+  #
+  # The PROPERTY is unchanged and was verified directly before this grep was touched:
+  # `caller` still produces an extractable obligation and `--check predictable` still
+  # rejects it. Asserted on the qualName AND the state together, so a report that stopped
+  # naming the function, or named it in some other state, fails here rather than matching
+  # a bare phrase found anywhere in the output.
+  printf '%s' "$PS" | grep -A2 'twoprops.caller`' | grep -q "obligation: extractable" \
     && ok "eligibility ACCEPTS the same function (per-body, and must stay so)" \
     || no "caller lost proof eligibility — a provable obligation is being refused"
   # The anti-conflation lock: the proof surface must not claim the admission property.

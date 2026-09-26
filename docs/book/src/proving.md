@@ -78,10 +78,12 @@ concrete examples/proof_pressure/src/main.con --report proof-status
   `main.format_result` cannot be proved: fails the proof-eligibility gates (has capabilities: Console).
 
 -- no proof ------ main.con:90
-  `main.clamp_value` is eligible for proof but has no registered proof.
+  `main.clamp_value`
+  obligation: extractable
+  registered proof: none
 
 -- blocked ------- main.con:109
-  `main.classify_range` is eligible but uses unsupported constructs — extraction failed.
+  obligation: NOT extractable — `main.classify_range` uses unsupported constructs.
 
 -- not eligible -- main.con:123
   `main.main` cannot be proved: fails the proof-eligibility gates (has capabilities: Console, is entry point).
@@ -96,10 +98,25 @@ The canonical states are:
 | **proved** | Has a proof link and matching stored body fingerprint; run `check-proofs` for the current kernel verdict (R-0004 will bind it into a receipt) |
 | **unbound** | Has a proof link but no stored proof subject; never treated as proved |
 | **stale** | Has a proof, but the function body changed since the proof was written |
-| **no proof** (missing) | Eligible and extractable, but nobody wrote a proof yet |
-| **blocked** | Eligible, but uses a construct the extraction pipeline does not support |
+| **no proof** (missing) | An obligation can be extracted, but nobody wrote a proof yet |
+| **blocked** | An obligation would be extractable, but a construct the extraction pipeline does not support stopped it |
 | **not eligible** (ineligible) | Fails an eligibility gate — has capabilities, is trusted, or is an entry point |
 | **trusted** | Marked trusted; proof checking is bypassed |
+
+Every state also reports an **admission** verdict when admission is refused. Admission and
+these states answer different questions, and an entry can be in a green-looking state while
+admission is refused:
+
+| question | holds when |
+|---|---|
+| extractable | the extraction rules permit an obligation — this is what the states above describe |
+| admissible | extractable **and** every semantic admission gate passes |
+| replayable | extractable **and** a registered artifact exists |
+| proved | replay passed **and** admissible |
+
+A refusal never withdraws the obligation or the artifact: a registered proof stays replayable
+and drift-monitored, it simply does not count toward admitted proof coverage. See
+[High integrity](high_integrity.md).
 
 `clamp_value` shows **no proof** — it is ready to prove.
 
@@ -292,7 +309,7 @@ The function has capabilities (I/O). Remove them to make it eligible — or acce
 
 ```
 -- blocked --- main.con:109
-  `main.classify_range` is eligible but uses unsupported constructs — extraction failed.
+  obligation: NOT extractable — `main.classify_range` uses unsupported constructs.
   unsupported: field access
 ```
 

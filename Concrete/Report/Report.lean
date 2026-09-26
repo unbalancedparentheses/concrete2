@@ -978,6 +978,15 @@ structure ProofStatusEntry where
   currentFp     : String       -- current body fingerprint
   expectedFp    : String       -- registered fingerprint (empty if no proof)
   eligibilityReasons  : List String  -- reasons the function is not eligible for proof
+  /-- ADMISSION, reported separately from `state`. `state` is extraction-driven, so a
+      claim whose admission is refused stays visible, replayable and drift-monitored;
+      it simply stops counting toward admitted proof coverage. A report may therefore
+      say the theorem replays AND that it is not admitted, which is not a contradiction:
+      the artifact is logically valid while it cannot justify the program-level claim.
+      Rendering this is not optional — an unreported refusal is worse than an inert
+      rule, because the verdict changes with nothing saying why. -/
+  admissible    : Bool := true
+  admissionReasons : List String := []
   unsupported   : List String  -- unsupported constructs (empty unless blocked)
   specName      : String       -- spec name (from registry or derived)
   proofName     : String       -- proof/theorem name (from registry or derived)
@@ -1054,6 +1063,8 @@ private partial def collectProofStatus
       | none => if pSrc == "hardcoded" then "hardcoded" else ""
     { qualName, bareName := f.name, state, currentFp := fp, expectedFp
     , eligibilityReasons := gates, unsupported := unsup, specName := sName, proofName := pName
+    , admissible := match obl with | some o => o.admissible | none => true
+    , admissionReasons := match obl with | some o => o.admissionReasons | none => []
     , proofSource := pSrc, origin, coverage
     , specDriftCovered := (Concrete.Proof.specFor qualName).isSome
     , notCurrentDeps := match obl with | some o => o.notCurrentDeps | none => []
@@ -1076,7 +1087,7 @@ private def trustedBoundaryLine (e : ProofStatusEntry) : String :=
   else s!"\n\n  ASSUMES trusted boundaries (not proved): {", ".intercalate e.trustedDeps}"
 
 /-- Render a single proof status entry with Elm-clear formatting. -/
-private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
+private def renderProofStatusBody (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
   let locStr := fmtLoc e.loc
   let fileStr := match e.loc with | some (f, _) => f | none => ""
   let source := sourceMap.lookup fileStr
@@ -1157,16 +1168,46 @@ private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap
     let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
     s!"-- dependency closure unjustified {String.ofList (List.replicate 26 '-')} {locStr}\n\n  `{e.qualName}` cannot contribute proved evidence: its dependency closure has no validated per-edge justification.{snippet}\n\n  unjustified:\n{edgeLines}\n\n  This function's own subject is FRESH and its dependencies ARE current. What is\n  missing is the justification: every edge must be witnessed by exactly one entry\n  naming that exact implementation — package, module, declaration and body — in a\n  table the linked theorem names.{coverageTag}{originLine}\n\n  hint: Attest the table's entries, or repair a proof link naming a table that describes a different program's function."
   | .notProved =>
-    s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}` is eligible for proof but has no registered proof.{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
+    s!"-- no proof {String.ofList (List.replicate 47 '-')} {locStr}\n\n  `{e.qualName}`\n  obligation: extractable\n  registered proof: none{snippet}\n\n  current fingerprint:\n    {e.currentFp}\n\n  hint: Add a Lean proof for this function in Concrete/Proof.lean with the fingerprint above."
   | .blocked =>
     let unsupStr := if e.unsupported.isEmpty then "unsupported constructs"
         else ", ".intercalate e.unsupported
-    s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is eligible but uses unsupported constructs — extraction failed.{snippet}\n\n  unsupported: {unsupStr}\n\n  hint: Remove {unsupStr} to enable proof extraction."
+    s!"-- blocked {String.ofList (List.replicate 48 '-')} {locStr}\n\n  obligation: NOT extractable — `{e.qualName}` uses unsupported constructs.{snippet}\n\n  unsupported: {unsupStr}\n\n  hint: Remove {unsupStr} to enable proof extraction."
   | .notEligible =>
     let gateStr := ", ".intercalate e.eligibilityReasons
     s!"-- not eligible {String.ofList (List.replicate 43 '-')} {locStr}\n\n  `{e.qualName}` cannot be proved: fails the proof-eligibility gates ({gateStr}).{snippet}\n\n  reasons: {gateStr}\n\n  hint: Address these constraints to make this function eligible for proof."
   | .trusted =>
     s!"-- trusted {String.ofList (List.replicate 48 '-')} {locStr}\n\n  `{e.qualName}` is marked trusted — proof is bypassed (trusted assumption).{snippet}"
+
+/-- The admission line for a report block, or "" when admitted.
+
+    Rendered for EVERY state, because admission is orthogonal to `state`: a claim can
+    replay cleanly and still be refused admission, and that pair is the whole point of
+    the separation. Printing it only under `not eligible` would hide exactly the case it
+    exists to express. -/
+private def admissionLine (e : ProofStatusEntry) : String :=
+  if e.admissible then ""
+  else
+    let why := if e.admissionReasons.isEmpty then "no reason recorded"
+               else ", ".intercalate e.admissionReasons
+    -- The consequence differs by whether an artifact EXISTS. Telling a reader that "the
+    -- artifact stays replayable" when none was ever registered asserts something that is
+    -- not there, which is the defect class this area exists to prevent.
+    let consequence :=
+      if e.proofSource == "none" && e.proofName.isEmpty then
+        "no registered artifact to replay; future evidence cannot count until admission succeeds"
+      else
+        "artifact remains replayable and drift-monitored but does not count as admitted proof"
+    s!"\n\n  admission: REFUSED — {why}\n  ({consequence})"
+
+/-- One rendered block: the state-specific body, plus the admission fact.
+
+    APPENDED ONCE HERE rather than inside each arm of `renderProofStatusBody`. Appending
+    per-arm was the first attempt and it silently skipped `proved` — the one state where
+    an unreported refusal does real damage, because that block reads as a program-level
+    guarantee. -/
+private def renderProofStatusEntry (e : ProofStatusEntry) (sourceMap : SourceMap) : String :=
+  renderProofStatusBody e sourceMap ++ admissionLine e
 
 /-- The raw per-function proof-link freshness entries (Phase 3 #11): the same
     records `proofStatusReport` renders, exposed so the ObligationCore ledger can

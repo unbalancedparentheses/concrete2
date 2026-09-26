@@ -1391,7 +1391,7 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 reports repaired; admission repair inert pending one decision:** `--report caps`/`effects` no longer claim purity they cannot establish and the totals count a claim. The admission rule is implemented and correct but switched off at one line: enabling it refuses 188 of std's 890 functions (every higher-order one, while `trusted` can hide effects behind a capability-free fn type), which moves three `pureCoreFns` links out of drift coverage and out of `replayTargetsOf` — and whether an inadmissible claim should still be REPLAYED is an evidence-semantics question this change should not settle by accident. No proof rides on it either way. `check_effect_opacity.sh` 9/0 pins both halves so enabling it fails loudly |
+| 0 | **R-0483 REPAIRED AND GATED; R-0484 reporting/eligibility defect measured** | **R-0483 done 2026-09-16:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated — its parsing core is now genuinely `(pure)` and its predictable profile is unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified, so no authoritative evidence transition was introduced and R-0208 is untouched. Gated by `check_view_lifetime.sh` 13/0 in both the fast suite and CI; stdlib 313/0, suite 1713/0. Owner-bound parsed results remain future work. **R-0484 reports repaired; admission repair LIVE 2026-09-26:** `--report caps`/`effects` no longer claim purity they cannot establish. The admission rule refuses a function whose effects may enter through an indirect call, transitively, and names the reason. It had been inert for a release because enabling it moved three `pureCoreFns` links out of drift coverage (11 → 8) and out of `replayTargetsOf` — which turned out to be a COUPLING, not a cost of the rule: obligation status was derived from the admission predicate through a parameter merely *named* `eligible`. Status now derives from *extractable* with admission carried beside it, so the four questions (extractable / admissible / replayable / proved) stay apart and an admission failure cannot erase an artifact from maintenance. Drift coverage is 11 with the rule on; `check_purecore_proofs.sh` 38/0; `check_effect_opacity.sh` 18/0 plus two mutations. Report wording fixed to `obligation: extractable` / `admission: REFUSED — <reason>`, which previously read "is eligible for proof" directly above the refusal. **Still open:** the conservative repair makes `print_bytes` *opaque*, not *reporting that it performs output* — the `requires`/`carries`/`performs` split, whose `carries` leg is blocked on `Writer<E>` being inexpressible (`capParams` exists on functions, not `StructDef`) |
 | 1 | **Post-R-0004 mutation qualification checkpoint** | **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
 | 2 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 3 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
@@ -10692,8 +10692,50 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-09-18): reports REPAIRED; admission repair written, working, and
-deliberately INERT pending one decision.**
+**Status (2026-09-26): reports REPAIRED; admission repair LIVE. Remaining work is the
+`requires`/`carries`/`performs` model, not the admission rule.**
+
+**THE DECISION THAT UNBLOCKED IT (2026-09-26).** The admission rule sat inert for a
+release because enabling it moved three `pureCoreFns` links out of drift coverage
+(11 → 8) and out of `replayTargetsOf`, and `check_purecore_proofs.sh` argues replay must
+keep asking about pending claims "or the migration cannot clear them". That read as the
+rule being too expensive. It was a **coupling**: obligation status was derived from the
+admission predicate through a parameter merely *named* `eligible`, so refusing admission
+also withdrew the obligation, and withdrawing the obligation removed the function from
+maintenance. One predicate was answering four separate questions — *extractable*,
+*admissible*, *replayable*, *proved* — which are now carried apart (see
+`EFFECT_PROOF_BOUNDARIES.md` §4.1).
+
+With status derived from *extractable* and admission carried beside it, the rule is on:
+drift coverage is **11**, registered claims remain replay targets, extraction is
+untouched (a refused function still produces subject facts, so higher-order programs do
+not become dependency-free by being refused), and `check_purecore_proofs.sh` is 38/0.
+
+**The rule that came out of it, and it generalises past this task:** an admission failure
+must not erase an artifact from maintenance. Otherwise reclassifying an effect silently
+removes claims from replay and drift detection while every report still reads green.
+
+The report wording was the same defect in prose — *"is eligible for proof"* rendered
+directly above `admission: REFUSED`, where `eligible` had come to mean "extractable"
+internally but reads as "admissible". Now `obligation: extractable` / `registered proof:
+none` / `admission: REFUSED — <reason>`, with the consequence sentence conditioned on
+whether an artifact actually exists. `check_effect_opacity.sh` 18/0, two mutations
+pinning both directions of the recoupling.
+
+**WHAT IS STILL OPEN, and it is the substantive half.** This is the conservative repair:
+`print_bytes` becomes *opaque* rather than *reporting that it performs output*. "Not
+known pure" is a refusal to claim, not a fact about behaviour. The full model needs the
+three-way split — **requires** (ambient authority the caller supplies) / **carries**
+(authority travelling inside values) / **performs** (operational effects) — and the
+`carries` leg is blocked on a language gap: `Writer` dispatches through a bare
+`fn(*mut u8, *const u8, u64) -> Result<u64, IoError>` pointer, and `capParams` exists only
+on functions (`AST.lean:355`), not on `StructDef`. So `Writer<E>` is not expressible and
+call-graph inference cannot resolve where a handle's authority came from. Note this is a
+different axis from the `Writer<cap C>` proposal rejected earlier: that one parameterised
+*required* authority, this one parameterises *performed* effects. Inference-first, with
+declarations as checked assertions rather than the primary input; `performs(no File, no
+Network)` is harder than `performs(Output)`, because proving absence needs a completeness
+the `unknown` state denies.
 
 **ENFORCEMENT HOLE FOUND AND CLOSED 2026-09-20 — the header was not binding at all
 across a sibling submodule.** Costing the trusted-consistency obligation named below
@@ -16594,3 +16636,59 @@ the consumer list checkable rather than conventional.
 Gate: a new trapping constructor added to the inventory must appear in
 generated fuzz cases without editing the generator, and every declared consumer
 must be shown to read the generated artifact rather than a local copy.
+
+---
+
+### Task R-0487
+
+**Objective:** Report what a function *performs*, not merely that it cannot be shown
+pure. Split the single `with(...)` clause into three facts and make inference, checking,
+reports and proof admission share them.
+
+**Status (2026-09-26): opened by the R-0484 admission repair, which deliberately stopped
+short of this.** Effect opacity now refuses admission to `print_bytes` — correct, and a
+refusal to claim rather than a claim. "Not known pure" is not a behavioural fact: it
+says the compiler cannot see, not that output happens. A program that must answer *does
+this write to the network?* gets `unknown` where it needs `no`.
+
+**The three facts.**
+
+| fact | means | today |
+|---|---|---|
+| **requires** | ambient authority the caller must supply | this is what `with(...)` already is |
+| **carries** | authority travelling inside a value, checked at acquisition | unrepresented |
+| **performs** | operational effects the body actually causes | unrepresented |
+
+The object-capability model is why `carries` must exist separately: `Writer` is authority
+checked once at acquisition and then carried by the handle, so a function taking a
+`Writer` requires nothing ambient and still performs output. Conflating that with
+`requires` would force every `Writer` consumer to declare `Console`, which is precisely
+the ambient-authority model the language rejected.
+
+**The blocking language gap, and it is structural rather than polish.** `Writer`
+dispatches through a bare function pointer —
+`write_fn: fn(*mut u8, *const u8, u64) -> Result<u64, IoError>` — and `capParams` exists
+only on functions (`AST.lean:355`), not on `StructDef` (`AST.lean:289`/`305`/`320`). So
+`Writer<E>` cannot be written, and call-graph inference cannot resolve where a handle's
+authority came from: every handle-mediated call is a hole. This is **not** the
+`Writer<cap C>` proposal rejected earlier — that one parameterised *required* authority
+and would have spread capability variables through ordinary data types; this
+parameterises *performed* effects, which is the axis that was missing.
+
+**Inference first.** Declarations should be checked assertions, not the primary input:
+the library is already written, and a model that demands 890 annotations before it
+reports anything will not be adopted or kept current. Inference also degrades honestly —
+it can answer `unknown` for a hole, where a declaration silently asserts.
+
+**The asymmetry to respect.** `performs(Output)` is a reachability question and inference
+can answer it. `performs(no File, no Network)` is an absence, and absence needs
+completeness the `unknown` state denies — so negative claims must be gated on the call
+graph having no holes, and must say so when it does. See
+`docs/project/ABSENCE_IS_NOT_A_FACT.md`.
+
+**Exit:** `print_bytes` reports that it performs output rather than becoming opaque; a
+handle-consuming function requires nothing ambient while still reporting its effects;
+a negative `performs` claim is refused wherever the call graph has an unresolved edge,
+with the edge named. Gate: a fixture where authority enters only through a handle must
+produce a positive effect report, and the same fixture with the handle's origin hidden
+must produce `unknown` rather than `none`.

@@ -391,7 +391,7 @@ cd "$ROOT_DIR"
 # candidate's population describes the CORPUS rather than merely agreeing with itself, and it exits
 # inside its own branch long before the inventory is built — so a constant defined next to that
 # build is invisible to the role that audits it.
-EXPECTED_FAMILIES=93
+EXPECTED_FAMILIES=95
 
 # LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
 # supervisor recomputes it; they must use the SAME function or two implementations could each agree
@@ -1214,6 +1214,29 @@ add "root-leaf-only-trusted-exclusions" "Concrete/Proof/ProofCore.lean" "check_d
 # harness called both INVALID, correctly, since a mutation that cannot compile tests nothing.
 # `.take 0` keeps every binding live and every type inferable while making the invariant report
 # nothing, which is precisely the behaviour a silent regression would have.
+# ---------------------------------------------------------------------------
+# ADMISSION MUST NOT RE-COUPLE TO MAINTENANCE (R-0484, 2026-09-26). Two mutations, one per
+# direction of the recoupling that kept the effect-opacity rule inert for a release.
+
+# 1. REPLAY TARGETS CHOSEN BY ADMISSION. This is the original defect exactly: obligation
+# status derived from a predicate merely NAMED `eligible` that was really `admissible`, so
+# refusing admission also withdrew the obligation and silently removed the function from
+# replay and drift coverage. An effect reclassification must never delete evidence from
+# maintenance. Killed by `check_effect_opacity.sh` (drift coverage falls 11 -> 8) and by
+# `check_purecore_proofs.sh`, whose pending claims stop being asked about.
+add "admission-does-not-select-replay-targets" "Concrete/Proof/ProofCore.lean" "check_effect_opacity.sh" yes \
+  $'    let status := deriveObligationStatus e.eligibility.eligible\n        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest' \
+  $'    let status := deriveObligationStatus e.eligibility.admissible\n        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest'
+
+# 2. ADMISSION NOT RENDERED ON `proved`. The first implementation appended the admission
+# line inside each status arm and skipped exactly one — `proved` — which is the single
+# state where an unreported refusal reads as a program-level guarantee rather than a
+# pending item. Restricting the wrapper to the non-proved states reproduces it. Killed by
+# `check_effect_opacity.sh`'s dispatch-site assertion.
+add "admission-rendered-on-proved-too" "Concrete/Report/Report.lean" "check_effect_opacity.sh" yes \
+  $'  renderProofStatusBody e sourceMap ++ admissionLine e' \
+  $'  renderProofStatusBody e sourceMap ++ (match e.state with | ProofState.proved => "" | _ => admissionLine e)'
+
 add "proved-roots-invariant-reported" "Concrete/Proof/ProofCore.lean" "check_dependency_edges.sh" yes \
   $'  oblKnown ++ oblStatus ++ provedRoots ++ provedExtracted ++ provedFp ++ staleFp' \
   $'  oblKnown ++ oblStatus ++ (provedRoots.take 0) ++ provedExtracted ++ provedFp ++ staleFp'

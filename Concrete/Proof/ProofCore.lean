@@ -1427,24 +1427,27 @@ structure EligibilityEntry where
     measured, and caught by `check_shadow_body_v2.sh`. Obligation status derives from
     this; the entry/excluded split and INV-8 keep using `eligible`. -/
 def EligibilityEntry.admissible (e : EligibilityEntry) : Bool :=
-  -- DELIBERATELY `eligible` FOR NOW, pending a decision recorded in R-0484.
+  -- LIVE since 2026-09-26. It was inert for one release, and the reason it could be
+  -- enabled is worth recording, because the objection looked like a consequence of the
+  -- rule and was not.
   --
-  -- `e.eligible && !e.effectOpaque` is the intended rule and it works: it refuses the
-  -- right functions, transitively, without disturbing extraction. It was reverted to
-  -- here because its reach into the EVIDENCE machinery is wider than the admission
-  -- question, and each consequence is a semantic call rather than a mechanical re-pin:
-  -- 188 of std's 890 functions are higher-order, so three `pureCoreFns` links move from
-  -- `needs_recheck` to `ineligible`, which drops them from drift coverage (11 -> 8) and
-  -- out of `replayTargetsOf` entirely. Whether an inadmissible claim should still be
-  -- REPLAYED — the gate argues replay must keep asking about pending claims "or the
-  -- migration cannot clear them" — is a question about evidence semantics, not about
-  -- effect-freedom, and answering it silently inside this change would settle it by
-  -- accident.
+  -- The observation: enabling this moved three `pureCoreFns` links from `needs_recheck`
+  -- to `ineligible`, dropping them out of drift coverage (11 -> 8) and out of
+  -- `replayTargetsOf`. `check_purecore_proofs.sh` argues replay must keep asking about
+  -- pending claims "or the migration cannot clear them", so that looked like a reason to
+  -- hold the rule back.
   --
-  -- No proof is lost either way: std has two proved links, both base64, both unaffected.
-  -- The REPORTS do not go through here — they consult `effectOpaqueSet` directly — so
-  -- `--report caps`/`effects` stay honest while this stays inert.
-  e.eligible
+  -- The actual cause was a COUPLING. Obligation status was derived from this predicate
+  -- through a parameter merely NAMED `eligible`, so refusing admission also withdrew the
+  -- obligation. Status now derives from EXTRACTABLE and admission is carried beside it
+  -- (see `Obligation.admissible`), which keeps the four questions apart and leaves
+  -- maintenance — replay, drift, staleness — untouched by an admission verdict. Drift
+  -- coverage is 11 with the rule live.
+  --
+  -- An admission failure must never erase an artifact from MAINTENANCE: otherwise
+  -- reclassifying an effect silently removes claims from replay and drift detection,
+  -- which is the opposite of degrading honestly.
+  e.eligible && !e.effectOpaque
 
 -- ============================================================
 -- Proof registry types (moved from Report.lean)
@@ -1720,6 +1723,27 @@ structure Obligation where
   -- `--report proof-status` printed opposite claims about the same function.
   eligibilityReasons : List String
   ineligCat    : Option IneligibleCategory  -- typed ineligibility classification
+  /-- ADMISSION, kept separate from `status` because they answer different questions and
+      one must not erase the other:
+
+        extractable  the eligibility/extraction rules permit an obligation
+        admissible   extractable AND every semantic admission gate passes
+        replayable   extractable AND a claim/evidence link exists
+        proved       replay passed AND admissible AND correspondence/dependency rules pass
+
+      `status` is EXTRACTION-driven, so an admission failure leaves the claim visible,
+      replayable and under drift monitoring — it simply stops counting toward admitted
+      proof coverage. Deriving `status` from admission instead (as it did) meant an
+      effect-classification change silently removed claims from replay and drift, which
+      is the opposite of honest degradation: the artifact would vanish from maintenance
+      at exactly the moment it needed to be tracked toward repair.
+
+      A report may therefore say `replay: passed` and `admission: refused` at once. That
+      is not a contradiction — the theorem artifact remains logically valid while it
+      cannot currently justify the program-level claim. -/
+  admissible   : Bool := true
+  /-- Why admission was refused, when it was. Empty means admitted. -/
+  admissionReasons : List String := []
   dependencies : List String      -- qualified names of proved callees
   /-- Reachable dependencies that are not current (stale / unbound / missing /
       blocked / ineligible). Named for what it holds: it was `staleDeps` while
@@ -2950,7 +2974,9 @@ private def generateObligations
       | some extractedPExpr, some (_, specPExpr) =>
         extractedPExpr != normalizePExpr specPExpr
       | _, _ => false  -- no extracted or no registered spec → no drift detectable here
-    let status := deriveObligationStatus e.eligibility.admissible
+    -- EXTRACTABLE drives status; admission is carried separately below. See
+    -- `Obligation.admissible` for why the two must not be collapsed.
+    let status := deriveObligationStatus e.eligibility.eligible
         e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest
     let cat := if status == .ineligible
       then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
@@ -2967,15 +2993,20 @@ private def generateObligations
         -- version of it.
         --
         -- Conditioned on it ACTUALLY changing the verdict, not merely on being true.
-        -- While `admissible` is inert this appends nothing, because listing opacity
-        -- beside an unrelated refusal — `main` is excluded for being the entry point —
-        -- presents a fact that contributed nothing as though it were a cause. The
-        -- condition turns itself on when admission is enabled.
+        -- Listing opacity beside an unrelated refusal — `main` is excluded for being the
+        -- entry point — presents a fact that contributed nothing as though it were a
+        -- cause, so a reason is recorded only where it is the reason.
         ++ (if e.eligibility.effectOpaque && e.eligibility.eligible
                && !e.eligibility.admissible then
               ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
             else [])
     , ineligCat := cat
+    , admissible := e.eligibility.admissible
+    , admissionReasons :=
+        if e.eligibility.effectOpaque && e.eligibility.eligible
+           && !e.eligibility.admissible then
+          ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
+        else []
     , dependencies := []  -- filled in second pass
     , notCurrentDeps := []
     , trustedDeps := []
@@ -2984,7 +3015,7 @@ private def generateObligations
   -- Excluded functions have no extracted PExpr to compare, so
   -- specDrifted is always false here.
   let exclObls := excluded.map fun e =>
-    let status := deriveObligationStatus e.eligibility.admissible
+    let status := deriveObligationStatus e.eligibility.eligible
         e.eligibility.isTrusted false false e.spec e.fingerprint
     let cat := if status == .ineligible
       then some (classifyIneligible e.eligibility.sourceReasons e.eligibility.profileReasons)
@@ -3001,10 +3032,9 @@ private def generateObligations
         -- version of it.
         --
         -- Conditioned on it ACTUALLY changing the verdict, not merely on being true.
-        -- While `admissible` is inert this appends nothing, because listing opacity
-        -- beside an unrelated refusal — `main` is excluded for being the entry point —
-        -- presents a fact that contributed nothing as though it were a cause. The
-        -- condition turns itself on when admission is enabled.
+        -- Listing opacity beside an unrelated refusal — `main` is excluded for being the
+        -- entry point — presents a fact that contributed nothing as though it were a
+        -- cause, so a reason is recorded only where it is the reason.
         ++ (if e.eligibility.effectOpaque && e.eligibility.eligible
                && !e.eligibility.admissible then
               ["effects may enter through an indirect call (authority supplied by a handle is not visible in the header)"]
@@ -3150,7 +3180,13 @@ private def generateDiagnostics
            -- function does not stop this function's own obligations from being provable. Two
            -- notions, one phrase, and `--check predictable` and this report disagreed out loud:
            -- `caller` was reported as PASSING the profile here while the gate rejected it.
-           , message := s!"`{qn}` is eligible for proof but has no registered proof."
+           -- NOR "is eligible for proof", for a second and separate reason. `eligible`
+           -- means only that an obligation can be EXTRACTED; a reader takes "eligible for
+           -- proof" to mean the claim would be ADMITTED, which is the distinction R-0484
+           -- separated. This diagnostic is a second producer of the fact `--report
+           -- proof-status` renders, so it must speak that report's vocabulary or the two
+           -- disagree in the same way `--check predictable` once did.
+           , message := s!"`{qn}` has an extractable obligation and no registered proof."
            , hint := "Add a Lean proof for this function with the current fingerprint."
            , details := [], failureClass := failureClassOf .missingProof
            , repairClass := repairClassOf .missingProof
@@ -3172,18 +3208,29 @@ private def generateDiagnostics
            , repairClass := repairClassOf .trusted
            , fingerprint := fp, expectedFp := "", loc := o.loc }
     | .proved => none
-  -- Diagnostics from unsupported constructs (eligible but extraction blocked).
-  -- R-0484: gated on ADMISSIBILITY, not just extraction. A function that is not
-  -- admissible has `ineligible` as its obligation status, and DIAG-STATUS requires the
-  -- diagnostic to agree with the status — so emitting "blocked" here would contradict
-  -- it, which is precisely what the self-consistency check caught on
-  -- `Scheduler.execute_task`. "Eligible but uses unsupported constructs" is also simply
-  -- untrue of a function that would be refused even if extraction had succeeded: the
-  -- unsupported construct is not what is stopping it.
+  -- Diagnostics from unsupported constructs (extractable, but extraction blocked).
+  --
+  -- GATED ON EXTRACTABLE, NOT ADMISSIBLE. This read `e.eligibility.admissible` while
+  -- obligation status was ALSO derived from admission: a non-admissible function had
+  -- status `ineligible`, and DIAG-STATUS requires the diagnostic to agree with the
+  -- status, so emitting "blocked" would have contradicted it — which the self-consistency
+  -- check caught on `Scheduler.execute_task`.
+  --
+  -- That premise died when status moved to EXTRACTABLE (2026-09-26). A function that is
+  -- extractable, effect-opaque and blocked by an unsupported construct now has a status
+  -- that is NOT `ineligible`, so the agreement argument no longer licenses suppression —
+  -- and suppressing it means an author with a real unsupported construct is told nothing
+  -- at all. Losing the diagnostic is a worse failure than the wording it was avoiding.
+  --
+  -- The wording objection was right and is answered directly instead: "eligible but uses
+  -- unsupported constructs" did imply the construct was the only thing in the way, which
+  -- is false when the function would be refused admission anyway. The message now claims
+  -- only what it knows — extraction is blocked — and the admission verdict is carried
+  -- beside it rather than folded into it.
   let unsupDiags := entries.filterMap fun e =>
-    if e.extracted.isNone && !e.unsupported.isEmpty && e.eligibility.admissible then
+    if e.extracted.isNone && !e.unsupported.isEmpty && e.eligibility.eligible then
       some { kind := .unsupportedConstruct, severity := .error, function := e.qualName
-           , message := s!"`{e.qualName}` is eligible but uses unsupported constructs."
+           , message := s!"`{e.qualName}` has an extractable obligation, but extraction failed on unsupported constructs."
            , hint := s!"Remove {", ".intercalate e.unsupported} to enable extraction."
            , details := e.unsupported, failureClass := failureClassOf .unsupportedConstruct
            , repairClass := repairClassOf .unsupportedConstruct
@@ -3448,7 +3495,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
         | some extractedPExpr, some (_, specPExpr) =>
           extractedPExpr != normalizePExpr specPExpr
         | _, _ => false
-      let expected0 := deriveObligationStatus e.eligibility.admissible
+      let expected0 := deriveObligationStatus e.eligibility.eligible
           e.eligibility.isTrusted e.extracted.isSome specDrifted e.spec e.fingerprint e.subjectDigest
       -- Dependency containment (R-0004 slice 3) is applied AFTER derivation, so
       -- re-deriving from this function's own facts alone cannot reproduce it.
@@ -3471,7 +3518,7 @@ def ProofCore.selfCheck (pc : ProofCore) : List ConsistencyViolation :=
     | none =>
       match pc.findExcluded qn with
       | some x =>
-        let expected := deriveObligationStatus x.eligibility.admissible
+        let expected := deriveObligationStatus x.eligibility.eligible
             x.eligibility.isTrusted false false x.spec x.fingerprint
         if o.status != expected then
           some { invariant := "OBL-STATUS", function := qn

@@ -172,6 +172,39 @@ not form a universal ordering: a narrow ProofCore theorem and a broad native
 oracle test establish different claims at different scopes. See
 `EVIDENCE_CLASSES.md`, `CLAIM_TAXONOMY.md`, and R-0440.
 
+### 4.1 Four questions that must not collapse into one (R-0484, 2026-09-26)
+
+A single predicate named `eligible` used to answer all four of these, which is
+how an effect reclassification came to delete claims from maintenance.
+
+| question | holds when |
+|---|---|
+| **extractable** | the eligibility and extraction rules permit an obligation |
+| **admissible** | extractable **and** every semantic admission gate passes |
+| **replayable** | extractable **and** a claim/evidence link exists |
+| **proved** | replay passed **and** admissible **and** correspondence/dependency rules pass |
+
+`admissible` is the only one that depends on the semantic gates, and it is the
+only one a verdict like effect-opacity may move. The others describe the
+*obligation* and the *artifact*, which exist independently of whether the claim
+would currently be admitted.
+
+**An admission failure must not erase an artifact from maintenance.** Refusing
+admission does not withdraw the obligation, drop the function from replay
+targets, or exempt a registered artifact from drift detection — otherwise
+reclassifying an effect silently reduces coverage while every report still reads
+green. Concretely: enabling the effect-opacity rule moved three `pureCoreFns`
+links out of drift coverage (11 → 8) purely because obligation status was derived
+through the admission predicate. Deriving status from **extractable** and
+carrying admission as its own fact keeps coverage at 11 with the rule live.
+
+The consequence is that `proved` is *not* implied by a passing replay. A
+proved-but-inadmissible artifact is real evidence about the function's body and a
+legitimate replay target, and it is still not a program-level guarantee; every
+rendered state reports its admission verdict so that the two are never read as
+one. Gated by `check_effect_opacity.sh`, with mutations covering both directions
+of the recoupling.
+
 ---
 
 ## 5. Boundary Interactions

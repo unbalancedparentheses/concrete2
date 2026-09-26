@@ -144,7 +144,12 @@ assert_contains "rt negative unproven"   "unproven" "$COMPILER" "$RT" --report c
 
 echo "=== stale_missing_partial (honest non-green states) ==="
 SMP="$PP/stale_missing_partial/src/main.con"
-assert_contains "missing state"  "no registered proof" "$COMPILER" "$SMP" --report proof-status
+# RE-AIMED 2026-09-26: the report renders `registered proof: none` rather than the prose
+# "no registered proof". Both halves are asserted — `obligation: extractable` says the
+# obligation exists, `registered proof: none` says nothing is attached to it — because a
+# report that stopped stating either one would still have matched the old single phrase.
+assert_contains "missing state (obligation)" "obligation: extractable" "$COMPILER" "$SMP" --report proof-status
+assert_contains "missing state (no artifact)" "registered proof: none" "$COMPILER" "$SMP" --report proof-status
 assert_contains "stale state"    "the body changed"    "$COMPILER" "$SMP" --report proof-status
 assert_contains "partial state"  "proved [one_direction]" "$COMPILER" "$SMP" --report proof-status
 

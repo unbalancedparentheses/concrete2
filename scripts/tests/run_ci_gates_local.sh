@@ -267,7 +267,13 @@ mapfile -t CMDS < <(grep -oE '([A-Z_][A-Z0-9_]*=[^ ;|&]+[[:space:]]+)*((bash|pyt
 # attestation reference-order gate). Updated here because the pin is what makes
 # "the whole workflow was read" checkable; leaving it stale turns a growth signal
 # into a permanent refusal.
-EXPECTED_GATE_COMMANDS=224
+# 224 -> 229: the bug-071 capability gates — check_cross_package_caps,
+# check_cap_sibling_module, check_trusted_method, check_cap_inference,
+# check_absence_not_fact. The pin went stale for four commits because this runner is
+# not itself a CI gate, so nothing noticed; GitHub ran the five new gates the whole
+# time. Worth stating plainly: a pin that only a local tool enforces detects drift
+# whenever someone runs it, not when the drift happens.
+EXPECTED_GATE_COMMANDS=229
 if [ -n "$JOB" ]; then
   [ "${#CMDS[@]}" -ge 1 ] || { echo "error: --job '$JOB' yielded no gate commands." >&2
     ci_write_summary 0 " job_selected_nothing"; _gate_lock_release; exit 2; }

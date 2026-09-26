@@ -2,7 +2,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:57
 
-  `fixed_capacity.ok_result` is eligible for proof but has no registered proof.
+  `fixed_capacity.ok_result`
+  obligation: extractable
+  registered proof: none
 
  57 |     fn ok_result(msg_type: i32, seq: i32, plen: i32) -> ValidateResult {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -14,7 +16,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:61
 
-  `fixed_capacity.err_result` is eligible for proof but has no registered proof.
+  `fixed_capacity.err_result`
+  obligation: extractable
+  registered proof: none
 
  61 |     fn err_result(code: i32) -> ValidateResult {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -26,7 +30,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:70
 
-  `fixed_capacity.validate_version` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_version`
+  obligation: extractable
+  registered proof: none
 
  70 |     fn validate_version(v: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -38,7 +44,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:75
 
-  `fixed_capacity.validate_msg_type` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_msg_type`
+  obligation: extractable
+  registered proof: none
 
  75 |     fn validate_msg_type(t: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -50,7 +58,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:82
 
-  `fixed_capacity.validate_payload_len` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_payload_len`
+  obligation: extractable
+  registered proof: none
 
  82 |     fn validate_payload_len(plen: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -62,7 +72,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:89
 
-  `fixed_capacity.validate_total_len` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_total_len`
+  obligation: extractable
+  registered proof: none
 
  89 |     fn validate_total_len(total_len: i32, header_size: i32, payload_len: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -74,7 +86,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:94
 
-  `fixed_capacity.validate_tag` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_tag`
+  obligation: extractable
+  registered proof: none
 
  94 |     fn validate_tag(computed: i32, expected: i32) -> i32 {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -86,7 +100,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:103
 
-  `fixed_capacity.read_u8` is eligible for proof but has no registered proof.
+  `fixed_capacity.read_u8`
+  obligation: extractable
+  registered proof: none
 
  103 |     fn read_u8(buf: MsgBuf, offset: i32) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -98,7 +114,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:107
 
-  `fixed_capacity.read_u16_be` is eligible for proof but has no registered proof.
+  `fixed_capacity.read_u16_be`
+  obligation: extractable
+  registered proof: none
 
  107 |     fn read_u16_be(buf: MsgBuf, offset: i32) -> i32 {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -170,7 +188,9 @@
 
 -- no proof ----------------------------------------------- examples/fixed_capacity/src/main.con:171
 
-  `fixed_capacity.validate_message` is eligible for proof but has no registered proof.
+  `fixed_capacity.validate_message`
+  obligation: extractable
+  registered proof: none
 
  171 |     fn validate_message(buf: MsgBuf, ring: RingBuf) -> ValidateResult {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

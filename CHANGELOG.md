@@ -10,6 +10,54 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Proof Admission Separated From Proof Maintenance
+
+_Evidence-semantics repair, landed 2026-09-26 (R-0484)._
+
+The compiler refuses proof admission to a function whose effects may enter through an indirect
+call — a higher-order function receiving a handle carries authority that its header does not
+show. The rule was written, shown to work, and then left **inert for a release**, because
+enabling it appeared to drop three `pureCoreFns` links out of drift coverage (11 → 8) and out of
+replay entirely. That looked like the rule being too expensive.
+
+It was not the rule. It was a **coupling**: obligation status was derived from the admission
+predicate through a parameter merely named `eligible`, so refusing admission also withdrew the
+obligation, and withdrawing the obligation removed the function from maintenance. One predicate
+was answering four different questions:
+
+| question | holds when |
+|---|---|
+| extractable | the extraction rules permit an obligation |
+| admissible  | extractable **and** every semantic admission gate passes |
+| replayable  | extractable **and** a claim/evidence link exists |
+| proved      | replay passed **and** admissible **and** correspondence/dependency rules pass |
+
+Status now derives from *extractable* and admission is carried beside it. The rule is live, drift
+coverage stays at **11**, registered claims remain replay targets, and extraction is untouched —
+a refused function still produces subject facts, so higher-order programs do not become
+dependency-free by being refused.
+
+**An admission failure must not erase an artifact from maintenance.** Otherwise reclassifying an
+effect silently removes claims from replay and drift detection while every report still reads
+green. Both directions of the recoupling are pinned by mutations.
+
+The report wording was a contradiction of the same kind: it said a function *"is eligible for
+proof"* directly above `admission: REFUSED`. Internally `eligible` had come to mean "an obligation
+can be extracted", but a reader takes "eligible for proof" to mean admissible — exactly the two
+facts this work separated. It now renders `obligation: extractable` / `registered proof: none` /
+`admission: REFUSED — <reason>`, and the consequence sentence depends on whether an artifact
+exists rather than asserting one that may not.
+
+Gated by `scripts/tests/check_effect_opacity.sh` (18 checks), which asserts the refusal, its
+transitivity, its narrowness (effect-free code stays admitted), and that every rendered state —
+including `proved` — reports its admission verdict.
+
+**Still open, and worth stating:** this is the conservative repair, not the full model. Becoming
+*opaque* is not the same as reporting what a function does. `print_bytes` must ultimately declare
+that it **performs** output, rather than merely failing to be known pure. That needs the
+`requires` / `carries` / `performs` split, and the `carries` leg needs effect-polymorphic handle
+types (`Writer<E>`), which the language cannot express today.
+
 ### Capability Headers Now Bind Across a Sibling Submodule
 
 _Capability enforcement repair, landed 2026-09-20._
