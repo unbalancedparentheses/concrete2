@@ -11,6 +11,8 @@ state or queue.
 > the first section below — the only ordering in this file.
 > **Start here for releases:** [Release map](#release-map) — bounded deliverables,
 > candidate acceptance and compatibility; not another execution queue.
+> **Start here for usability improvements:** [Delivery improvements and owners](#delivery-improvements-and-owners)
+> — bounded compiler, library and tooling improvements assigned to existing tasks.
 > **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
 > and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
 > the dimensions along which proof support grows, and the limits that must remain visible.
@@ -127,6 +129,61 @@ Patch releases repair an already published scope without waiting for the next
 feature release. They have their own candidate commit and validation record;
 compatibility breaks or changed evidence identities require an explicit migration
 or invalidation notice. Stabilization must not silently expand the claimed subset.
+
+### Delivery improvements and owners
+
+**Planned refinement (2026-10-06), informed by Elm's official news archive.**
+Make existing guarantees easier to use, explain and maintain before expanding the
+language surface. This table groups acceptance work by user outcome; it is not a
+second queue and does not change task IDs, current priorities or prerequisite gates.
+Finish the current authority/ownership boundaries; strengthen internal invariants
+and diagnostics as their owners are reached; measure feedback cost before optimizing;
+use the bounded external component to evaluate library and tooling improvements.
+
+| improvement | existing owners | bounded acceptance / release placement |
+|---|---|---|
+| Invalid evidence states cannot be mistaken for success | R-0484, R-0440, R-0482; R-0447 for guarded artifact writes | Keep uncomputed, incomplete and complete coverage distinct; bind facts to typed identities and subject/revision; test missing rows and forged completion. R-0484 closes its current false-clean risks; broader migrations retain their queue prerequisites. |
+| Diagnostics guide an intended repair | R-0137, R-0466, R-0471 | A catalog covers syntax, authority, ownership and evidence failures, with source spans, causal paths and valid remedies. Preview uses its bounded teaching cases; alpha retains separate human and model repair measurements. |
+| Library examples explain authority, allocation, failure and cleanup | R-0488, R-0485 | Review signatures and runnable success/failure/cleanup examples before expanding APIs; use existing workloads. R-0488 remains unscheduled until existing safety priorities are reviewed. |
+| Frequent feedback is measured and improved | R-0150, R-0137; Phase 8.5 for validated reuse | Record first-diagnostic, no-op, leaf-edit, dependency-edit and proof-revalidation timings. R-0333 records candidate baselines; persistent query/caching work remains behind its external-validation GO. |
+| One component is useful inside an existing application | R-0486, R-0334, R-0353 | A non-author builds a bounded C-facing component, exercises errors/ownership, changes it and replays its admitted evidence. This is the alpha workload, not a fourth flagship or a whole-system rewrite. |
+| Dependency upgrades explain changes in guarantees | R-0182, R-0183, R-0340, R-0338 | Alpha delivers authority/assumption/evidence diffs; beta extends package coverage. Separate source and ABI compatibility from authority and evidence validity; missing analysis never means unchanged. |
+| Failures can be reproduced elsewhere | R-0009, R-0152, R-0155; R-0030 for injected runtime faults | Export compiler/evidence failure bundles and verify reproduction before minimization. Runtime replay is limited to controlled inputs/backends and is not a preview prerequisite. |
+
+R-0333 selects these bounded increments in candidate records, preserving the release
+map's deferred remainders. Small compatible infrastructure improvements and repair
+releases can ship independently of larger features; changed schemas/semantics carry
+explicit migration and revalidation guidance. None of these additions is a shipped claim.
+
+Sources and transfer limits: [stronger internal types and guarded writes](https://elm-lang.org/news/another-step-towards-elm-v1),
+[repair-oriented diagnostics](https://elm-lang.org/news/compilers-as-assistants),
+[novice syntax failures](https://elm-lang.org/news/the-syntax-cliff),
+[documentation-led API design](https://elm-lang.org/news/working-with-files),
+[feedback latency](https://elm-lang.org/news/faster-builds),
+[component adoption](https://elm-lang.org/news/how-to-use-elm-at-work),
+[API upgrade diffs](https://elm-lang.org/news/0.14), and
+[portable failures](https://elm-lang.org/news/the-perfect-bug-report).
+Adopt the engineering lessons, not Elm's runtime assumptions: empty `with()` does
+not establish purity, determinism or replay safety; wrapper erasure does not establish
+C ABI layout; managed scheduling, general hot swapping and FRP are not added here.
+Prefer simplifying names, types and library patterns to adding syntax; removal of an
+existing feature requires workload evidence and the normal compatibility process.
+
+**Comparative follow-through (2026-10-06):** selected primary-source research on
+Austral, Zig and SPARK sharpens existing acceptance criteria, not language semantics.
+R-0011/R-0484 distinguish linear values from unique resources; R-0334/R-0335 teach
+ownership with executable rule examples; R-0488/R-0031 exercise reserved capacity and
+allocation failure; R-0166/R-0191 distinguish candidate from reproduced counterexamples;
+R-0210 binds assumption reviews to evidence and subjects; R-0425 checks grammar/parser
+agreement; R-0144 excludes interrupted work from successful reuse. No new task or
+queue position is created. Sources: Austral's
+[capability limits](https://borretti.me/article/how-capabilities-work-austral) and
+[checker walkthrough](https://borretti.me/article/how-australs-linear-type-checker-works),
+Zig's [allocator API changes](https://ziglang.org/download/0.14.0/release-notes.html#Embracing-Unmanaged-Style-Containers)
+and [parser differential testing](https://ziglang.org/download/0.17.0/release-notes.html),
+and SPARK's [counterexample validation](https://www.adacore.com/blog/improving-spark-counter-examples-with-fuzzing-and-code-analysis)
+and [assumption management](https://docs.adacore.com/spark2014-docs/html/ug/en/source/how_to_use_gnatprove_in_a_team.html#managing-assumptions).
+Historical checker designs and research prototypes are examples, not imported guarantees.
 
 ## How To Read This Roadmap
 
@@ -6962,6 +7019,14 @@ is not completion; it is future archaeology with better folder names.
 
 **Identity separation, model attestations, exported interfaces, and proof-aware package linking.**
 
+**Internal type precision (2026-10-06):** as each identity boundary migrates,
+separate package/module/declaration identity from display spelling and emitted link
+symbols. Reuse canonical owners rather than introduce another name registry. Audit
+raw strings and optional-field combinations at that boundary; add only wrappers or
+variants that prevent a demonstrated substitution. Retain a wrong-domain rejection
+and a valid alias/rename control. Opaque construction routes validation through one
+owner; it does not by itself prove that owner's validator correct.
+
 **Scheduling:** R-0004's prerequisite is satisfied. Production work starts after the post-closure
 91-family qualification checkpoint and R-0208's toolchain/revocation fire drill. This task is
 deliberately separate so R-0004 remains finite rather than becoming the entire future verification
@@ -8217,15 +8282,12 @@ actually writes it — a language model — by gating two numbers in CI: can a m
 author correct Concrete from the documentation alone, and can it repair a
 rejected program from the diagnostic alone.
 
-The premise, stated because it reorders other tasks: Concrete's code is written
-by models, so the ergonomic cost the external-validation trial was designed to
-price is largely not charged. A model does not resent `defer x.drop()` or
-`with(Console)` — keystrokes are the cheapest thing it spends, and linearity plus
-capability headers are close to free on the consumer side. What a model cannot do
-is guess. So explicitness is not one virtue among several here; it is the whole
-adoption surface, and every rule that lives only in a maintainer's head, and
-every rejection that does not name its own repair, is a defect rather than
-friction.
+Model authoring is an important measured consumer, not a reason to dismiss human
+review or assume explicitness is cost-free. Models can guess incorrectly and humans
+can misunderstand the same rule for different reasons. Measure annotation, cleanup,
+repair and review effort rather than infer it from who writes the code. Rules must
+be available outside maintainers' heads and diagnostics must explain valid repairs;
+R-0137's human trials remain a separate acceptance requirement.
 
 Two measurements, both regression-tracked so a change can be shown to move them:
 
@@ -8253,8 +8315,8 @@ Why this sits here, ahead of the prover-neutral arc: it is the cheap empirical
 check on the language surface, in the same relation to R-0137 that R-0462 has to
 R-0460 — an afternoon-scale continuous measurement standing in for an argument
 that would otherwise be settled by assertion. It also front-runs R-0137's three
-human sessions without replacing them (a diagnostic that defeats a model defeats
-a newcomer), and unlike recruiting, it runs per commit. R-0137 owns the
+human sessions without replacing them; model and human failure rates are not
+interchangeable, and unlike recruiting, this harness runs per commit. R-0137 owns the
 diagnostics bar itself and the measured 12-of-15 empty-hint baseline; this task
 owns the harness and the two numbers.
 
@@ -8545,6 +8607,17 @@ evidence; if it is not ready, R-0006 proceeds rather than waiting for it.
     as crash), signal/tool/compiler/runtime crash classes, timeout, changed
     failure class, empty candidate, and reducer self-failure.
 
+**Portable failure first (2026-10-06):** use the existing driver/debug-bundle
+artifacts to export the input closure, invocation, target/runtime profile, compiler
+and dependency identities, diagnostics and observed failure class. R-0155 owns the
+proof-specific envelope; R-0152 minimizes evidence failures. Before reducing,
+reproduce the original failure from the bundle in an isolated clean consumer with
+bounded resources. Record missing dependencies and redactions that prevent replay;
+do not silently fill them from the maintainer's environment or claim reproduction.
+Gate a reproducible failure, healthy control, incompatible tool/schema, missing input
+and stage/class drift. Capture only declared relevant environment inputs, with secrets
+excluded or explicitly redacted. This is portable reproduction, not general time travel.
+
 ### Task R-0010
 
 **Objective:** Make the bug-corpus truth gate honest Replace the current skip-based audit summary with an explicit per-bug state:
@@ -8713,6 +8786,18 @@ Land the cross-cutting migration in a worktree and merge once green.
 
 **Objective:** Make evidence multidimensional instead of a ladder, and record
 compiler trust per claim.
+
+**Coverage construction (2026-10-06):** R-0484's shared assumption summary supplies
+its existing reachability/coverage facts; this task generalizes their typed envelope
+without creating a second analysis. Distinguish not-computed, incomplete (with reasons)
+and complete-for-a-named-scope states. An empty gap/fact list alone cannot mint complete
+coverage: the producer must reconcile the expected subject/dependency inventory for
+that scope and bind it to the revision. Missing rows, unresolved targets and unsupported
+dependency coverage refuse or remain incomplete. A genuinely empty, fully analysed
+scope is a positive control. Keep coverage separate from proof eligibility and
+foreign honesty, even when coverage is complete; consumers cannot construct a stronger
+state by populating defaults or rendering a label. Gate row deletion and forged
+completion through report, policy and admission consumers as each migrates.
 
 **Decision status:** ratified 2026-07-25; implementation pending. A ladder may
 remain as a policy preference among claims with the same subject and semantic
@@ -8906,6 +8991,19 @@ section of the Phase 17 language reference.
 
 **Objective:** Freeze repository ownership and layout before broad stdlib,
 test, proof, and documentation growth multiplies the current ambiguity.
+
+**Guarded artifact writes (2026-10-06):** the shared build/artifact driver owns a
+scoped project-lock guard, minted only after runtime acquisition and unusable after
+release. Use typed guards where supported and bracketed runtime ownership checks for
+shell/host APIs without static lifetime enforcement; do not claim static revocation
+there. APIs that mutate shared artifacts require that guard; identity refresh,
+snapshot capture and publication helpers enter through the same owner. Bind it to
+the actual resource scope, accounting for worktree-local artifacts versus shared Git
+state; use Git's directory discovery rather than assuming `.git` is a directory.
+Gate contention, interruption/release, wrong-scope and post-release use, plus valid
+worktree and isolated-sandbox controls. Typed guards constrain cooperative callers;
+they do not replace OS locks, atomic writes or checks against external processes.
+Land this as a bounded tooling repair, not as a prerequisite repository-wide move.
 
 This is an ownership contract and no-new-debt migration, not a repository-wide
 rename commit. The compiler is comparatively small; the pressure is in the
@@ -9470,6 +9568,15 @@ non-goals here.
 ### Task R-0011
 
 **Objective:** Finish construction rights with private-by-default enum variants Struct-field privacy and direct-newtype construction are historical milestones, recorded in the changelog and `docs/language/CONSTRUCTION_RIGHTS.md`. Finish the same one-keyword model for the still-open construction paths: `pub` remains the only visibility word; exporting a type never implicitly exports its variants or raw representation.
+
+**Resource provenance controls (2026-10-06):** linear use of a wrapper is distinct
+from unique ownership of its underlying foreign resource. Reuse R-0484's construction
+inventory to record resource identity/lifetime, constructors/raw conversions, allowed
+aliases and consuming operations. Test attempted duplicate owners of one raw resource,
+valid transfer and close/reuse where supported; allowed aliases retain their declared
+classification. A private field is not evidence that an internal constructor is honest.
+R-0484's second step owns future descriptor replacement/duplication semantics; do not
+add those APIs or runtime revocation merely to populate this audit.
 
 
 - `pub enum T` exports the type name. A variant is externally constructible and
@@ -10174,6 +10281,14 @@ Do not duplicate compiler-command cleanup here.
   refines the tier-J+ "deterministic simulation backend" earmark in
   `docs/language/EXECUTION_MODEL.md`. Gate: `scripts/tests/check_effect_simulation.sh`
   replays a fixed fault schedule and asserts each effect-boundary property.
+
+Retain/export the injected input and response schedule with the implementation and
+backend identities so a failure can be replayed in a clean consumer. Replay uses only
+the controlled backend and suppresses live external writes; reject a missing response
+instead of falling back to the network or filesystem. The same schedule reproduces
+the same observation within the stated deterministic scope. Empty `with()` is not
+evidence of that scope, and foreign code, arbitrary processes and databases cannot
+be rewound by this facility. General hot swapping remains out of scope.
 
 ### Task R-0031
 
@@ -11375,6 +11490,16 @@ error conversion, implicit drop and unwinding remain excluded.
 **Objective:** Use one bounded parser/state-machine component to validate compositional
 contracts, audit diffs and the external-consumer workflow end to end.
 
+**Component adoption bar (2026-10-06):** provide a small host application using the
+existing C ABI path, a checked install/build/link transcript, and explicit ownership,
+buffer lifetime, error and cleanup rules on both sides. A non-author replaces one
+bounded component, exercises valid/malformed input and failure paths, inspects the
+authority/assumption report and can revert the integration without a project rewrite.
+Then perform the change-and-repair scenario below. R-0334 owns the teaching transcript;
+R-0353 owns independent evidence replay. Record intervention and time to useful result,
+not just whether the compiler author can run the example. This remains an increment
+of the existing flagship and alpha bar, not a new platform or kernel project.
+
 **Status (2026-09-15): planned; workload selection begins with R-0483, proof graduation
 depends on the existing identity/task, typed-contract and two-state queue milestones.**
 Reuse the parser in the secure update-bundle verifier or protocol-state-machine
@@ -11416,6 +11541,27 @@ heap, relational, resource-proof and backend claims remain explicit.
 
 **Objective:** After R-0484, audit parameter-mutation guarantees, then pressure-test
 the library model before adding more language machinery.
+
+**API review method (2026-10-06):** begin each bounded library change with a compact
+signature view and runnable examples for success, failure and cleanup. Write the
+user explanation before expanding the API; unexplained exceptions or repetitive
+boilerplate trigger a review of names, signatures and helpers first. Cover file I/O,
+fixed/growable buffers, owning/borrowing handles, stored callbacks and spawn/wait.
+Examples must let a reader locate allocation, authority, ownership transfer and
+error handling without reading private implementations. Preserve explicit semantics;
+require repeated workload evidence before proposing new syntax or hidden management.
+R-0485 owns cleanup/error review, R-0334 the teaching path, and R-0055 the runnable
+public-API documentation inventory. Reuse that inventory to gate the examples and
+retain before/after human review observations; documentation clarity is not a grep test.
+
+With R-0031/R-0030, compare fixed storage, growable storage and reserve-then-insert
+within a bounded capacity. Check whether the promised reserved operation performs no
+further allocation, including callbacks; exceeding capacity follows a documented error
+or growth path. Preserve allocator identity for allocator-specific APIs without forcing
+allocator arguments into every tier-one API. Exercise cleanup after recoverable failure;
+language-defined terminal allocation failures are subprocess cases, not invented Result
+returns. No-allocation observations remain tests unless independently established by
+the applicable analysis/proof.
 
 **Status (2026-09-30): planned; depends on R-0484, not yet scheduled in the execution queue.**
 Preserve R-0483 and the existing safety priorities; schedule this checkpoint explicitly
@@ -12292,21 +12438,13 @@ lifecycle/owner record.
  the large proof-automation investment, so external evidence can redirect
  that investment rather than merely evaluate it afterward.
 
- **Amended 2026-07-31: the authoring consumer is a language model, and the
- primary trial is R-0466's, not this one.** Concrete's code is written by
- models, so the ergonomic cost this trial was designed to price is largely not
- charged: a model does not mind `defer x.drop()` or `with(Console)`, because
- keystrokes are the cheapest thing it spends. Explicitness is what it cannot
- substitute for — it cannot fall back on guessing, so any rule not stated in the
- source, and any rejection that does not name its own repair, is a defect rather
- than friction. That reorders this task's own contents: the diagnostics bar below
- stops being an adoption prerequisite and becomes the primary correctness
- surface, because a diagnostic is the model's only feedback channel.
-
- This does **not** retire the three human sessions or the alpha bar's one
- completed non-author workflow; a diagnostic that defeats a model defeats a
- newcomer too, so R-0466 front-runs the human trial rather than replacing it,
- and it is cheap enough to run per commit where recruiting is not.
+ **Trial clarification (2026-10-06):** R-0466's model authoring/repair harness
+ front-runs these human sessions but does not replace them. Neither model success
+ nor model failure predicts a newcomer's result automatically. Explicit ownership
+ and authority remain deliberate; their annotation, review and repair costs must
+ be measured for both consumers. The diagnostics bar is both a feedback-correctness
+ requirement and an adoption prerequisite; the three human sessions and the alpha
+ bar's completed non-author workflow remain required.
 
  This task owns the minimum diagnostics bar rather than depending on an
  unowned notion of “usable.” For the first-session high-friction cases—an
@@ -12319,6 +12457,22 @@ lifecycle/owner record.
  that explains the obligation. Gate the checked message structure and spans,
  not one brittle prose sentence. This is the bounded adoption prerequisite;
  general IDE quick-fixes remain later tooling work.
+
+ **Diagnostic catalog (2026-10-06):** collect real confusing examples, including
+ first-week syntax/import/delimiter mistakes and ownership, capability and evidence
+ failures. Retain original source spellings and spans; show only the relevant type
+ difference, with enough context to explain expected versus actual. Suppress errors
+ caused solely by one failed root without suppressing independent errors. Authority
+ diagnostics show the exact missing set and a source-located caller/helper/handle
+ path, including dependencies; cycle displays use a validated real cycle, not the
+ arbitrary member order of an SCC. Ownership diagnostics identify origin, conflicting
+ use and the remaining consume/return/cleanup obligation. Proof diagnostics distinguish
+ missing/stale evidence, unsupported scope and a reproduced failing claim from a
+ solver that did not decide. Reuse R-0166's later proof detail where applicable.
+ Suggest only applicable repairs; a broader `with(...)` or `Unsafe` is never an
+ automatic way to turn the sample green. Preserve the intended behavior in repair
+ controls. Gate structured causes/spans/paths and valid edits; R-0466 and the human
+ trials measure comprehension, abandonment and repair effort, not exact prose.
 
  **Measured 2026-07-31, so the bar has a starting number rather than a
  judgement.** Over `tests/invalid_programs/`, 12 of 15 rejected programs emit an
@@ -12579,6 +12733,11 @@ after a gate or theorem demonstrates completeness for that query family.
 
 **Objective:** Add an opaque compiler-versioned local content-addressed store under `.build/concrete-cache/` (or an equivalent project-local path).
 
+Interrupted, cancelled, timeout and unknown attempts cannot be reused as successful
+validation. Retaining their operational diagnostics is separate from reusing an earned
+result. Gate interruption after partial output and retry: no published manifest or
+later consumer may promote that partial output to a completed check.
+
 Separate the memo/action table from the content store:
 `QueryKey + canonical input/dependency fingerprint -> ResultManifest +
 output digest`, then `output digest -> canonical artifact bytes`. Keys include
@@ -12761,6 +12920,27 @@ too expensive.
 before investing in automation, so the external-validation gate's “was the
 proof discipline worth the cost?” question has data instead of anecdotes.
 
+**Feedback latency (2026-10-06):** on the bounded R-0486 component and an existing
+larger project, record time to first actionable diagnostic, clean/no-op checks,
+one-function edits, dependency-interface edits, proof revalidation and full candidate
+certification separately. Retain cold/warm conditions, machine/toolchain/revision,
+sample count, median/tail latency and check membership; establish budgets only after
+the baseline. R-0137 supplies edit traces and Phase 8.5 owns correctness-gated reuse
+after its existing GO. Profile hot scans/allocation before changing data structures.
+R-0333 includes comparable measurements or explicit unavailable scope in candidate
+records; a whole-program speed claim cannot be based only on one fast kernel.
+Before R-0486 is available, preview records its tutorial and an existing workload
+baseline; proof/alpha-only dimensions are explicitly unavailable. Measurement does
+not make the preview depend on the verified-component alpha.
+
+Expose a fast development verdict separately from full release certification.
+R-0447's shared gate orchestration may reuse a result only for the same required
+inputs, command/check implementation, tools and environment under a validated reuse
+rule; different revisions require demonstrated input equivalence. Record omitted
+checks and never count a timeout/skip as a pass. This does not waive candidate gates
+or pull a second cache ahead of Phase 8.5. Improving latency must preserve diagnostics,
+facts, admission and native behavior under the existing equivalence controls.
+
 **First shared consumer (2026-10-04): R-0486.** Begin measurements with its first
 bounded component, before proof scaffolding or automation is expanded. Retain source
 annotation size, manually authored proof/bridge work, time to actionable feedback,
@@ -12819,8 +12999,17 @@ with the example.
  `proofcore.lean`, `replay.lean`, `context.json`, and `README.md`. Wire
  `scripts/tests/check_prove_minimize.sh` with one loop VC, one failed
  postcondition, one stale proof, and one SMT counterexample. The minimized
- artifact must reproduce the same status and stable id without unrelated
- functions.
+ artifact must reproduce the same failure class/status without unrelated functions
+ and retain the original obligation's stable identity as provenance. If reduction
+ changes the subject, compute a distinct reduced-subject identity rather than reuse
+ the original as that subject's identity.
+
+Reuse R-0009's portable failure capture and the R-0155 envelope; first replay the
+unreduced bundle in a clean consumer. Preserve original subject/obligation provenance
+separately from any reduced subject identity; reducing a program never manufactures
+fresh evidence for the original. Compare failure class and scope, refuse unsupported
+reduction and retain missing-input/version diagnostics. R-0431 later owns external
+intake/privacy operations, not a second capture format.
 ### Task R-0153
 
 **Objective:** Define and document stable theorem naming conventions in tool output:
@@ -12913,6 +13102,10 @@ with the example.
  feel like debugging a minimized program, not reading a wall of theorem-state
  text. The fixture is evidence of failure only; it must never upgrade a claim
  to proof.
+
+An SMT model starts as a candidate witness. Distinguish it from reproduced failure,
+unsupported replay and solver timeout/unknown; use R-0191's validation before naming
+it a confirmed source-program bug. A failed proof alone does not supply such a witness.
 ### Task R-0167
 
 **Objective:** Add **LLM-guided proof synthesis, kernel-verified** as a first-class proof-authoring workflow, not as prose-only AI help. Command shape:
@@ -13209,6 +13402,16 @@ completeness boundary rather than deriving reachability again.
 
 **Objective:** Add `concrete diff old new`: authority/proof/trust/runtime-obligation diff.
 
+**Upgrade review acceptance (2026-10-06):** render a compact per-subject change list
+with source/API compatibility, ABI compatibility when known, declared authority,
+assumptions and evidence freshness as separate dimensions. Reuse R-0340's interface
+facts rather than creating another API checker. Show that unchanged parameter/result
+types can accompany added Network in the capability signature, and that an unchanged
+full signature can accompany a new foreign assumption or stale proof evidence.
+Do not infer behavioral compatibility from matching signatures. R-0338/R-0333 own
+schema/version and release consequences; unsupported dimensions say unknown. Alpha
+requires the existing three-family increment, not every later ABI/package feature.
+
 This is also the first **proof/capability diff for code review** surface.
 
 **First increment (2026-10-04):** serve R-0486 with exactly three change families:
@@ -13391,6 +13594,13 @@ an LLM-generated proof bundle replays using only checked artifacts.
  failure/minimized obligation witness. The
  gate must fail if a future refactor turns the same counterexample into
  `proved_*` without changing the checked fixture expectation.
+
+Before labelling a solver candidate a reproduced source failure, validate it against
+source preconditions, machine arithmetic, admitted semantic scope and the relevant
+implementation identity. Gate a valid reproducer, a precondition-violating candidate,
+an encoding/model mismatch and unsupported replay. Keep candidate, reproduced failure
+and inconclusive outcomes distinct in the shared artifact schema; no witness found
+never implies proof. Preserve both original provenance and minimized regression.
 ### Task R-0192
 
 **Objective:** Add **observed contract inference from tests** as an explicit non-proof on-ramp to specs.
@@ -13534,6 +13744,14 @@ declarations; an accepted narrowing needs an independently checked retained-envi
 ### Task R-0210
 
 **Objective:** Add assumption lifecycle checks: every assumption has an owner, scope, rationale, review date, affected claims, and a diff gate when it widens.
+
+Record the review method (manual audit, test, ABI check, external analysis or independent
+proof), evidence reference and exact reviewed subject/version. Distinguish unreviewed,
+reviewed and stale-review states from the assumption's evidence class; a review or
+passing test does not promote an assumption to proof. Changed subjects invalidate
+reviews according to their declared scope. Reuse R-0484's summary/provenance and
+R-0211's inventory; an empty emitted list with incomplete coverage is not a completed
+trust audit. Gate a missing review, relevant subject change and unaffected-scope control.
 
 ### Task R-0211
 
@@ -15852,6 +16070,11 @@ and deferred remainders; do not create a second queue or require completion of a
 phases. Record separate source/std/evidence compatibility and patch-release rules.
 The systems preview does not satisfy or replace the verification alpha bar.
 
+Include the bounded [delivery improvements](#delivery-improvements-and-owners)
+assigned to that scope: runnable teaching/repair cases and feedback measurements for
+preview, component integration and the three-family guarantee diff for alpha. Keep
+later runtime replay, broad ABI diffs and query-engine work behind their owners.
+
 
 ### Task R-0334
 
@@ -15860,6 +16083,13 @@ The systems preview does not satisfy or replace the verification alpha bar.
 ### Task R-0335
 
 **Objective:** Publish a versioned authoritative language reference before any public release claim. The tutorial/book is not the reference. The current normative material is scattered across grammar, value-flow, execution, invariants, and evidence docs; release users need one versioned document whose sections define the language surface, not merely explain it.
+
+With R-0334, present a compact ownership transition/rule table for borrowing,
+consuming, handoff, branch joins, loops and early failure. Link paired valid/invalid
+existing fixtures and distinguish language-value rules from audited FFI resource
+invariants. Reuse the existing semantics; this does not import Austral's borrow rules.
+R-0425 checks the reference grammar against independent syntax cases and formatter
+round trips. Update the rule examples whenever a normative rule changes.
 
 
  Deliverable: `docs/LANGUAGE_REFERENCE_V0.md` (or generated equivalent)
@@ -15878,6 +16108,15 @@ The systems preview does not satisfy or replace the verification alpha bar.
 **Objective:** Publish a versioned language conformance suite derived from the
 normative language reference, runnable by every backend and any future
 independent implementation.
+
+**Grammar and formatter agreement (2026-10-06):** pair R-0335's normative grammar
+with a bounded grammar-derived parser oracle, independent of the production parser.
+Generate accepted/rejected syntax cases and investigate disagreement against the
+reference, not by voting between parsers. Begin with capability parameters, extern
+effect declarations and nested function types. Parse-format-parse preserves semantic
+structure, including capabilities, with only documented trivia differences; formatter
+idempotence alone is insufficient. Retain minimized disagreements as regressions.
+This is a conformance oracle, not a second production frontend or a backend proof.
 
 Do not make the current compiler's output the expected answer. For each
 reference rule classify fixtures as required behavior, required rejection,
