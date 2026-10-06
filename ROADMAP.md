@@ -32,9 +32,9 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **R-0484: explicit external authority through handles, foreign calls and dependencies** | Core repair merged at `a7c9cf1c`; follow-up branches are not yet a validated main checkpoint. Finish F1/F9 integration, R10 assumption qualification and coverage, separate proof-admission consolidation, and the docs/examples/authority audit. Current commit and validation status live in [R-0484](#task-r-0484); semantics live in [HANDLE_CAPABILITIES.md](docs/language/HANDLE_CAPABILITIES.md). | Header authority is enforced across handles/trusted code/externs/packages; reports qualify assumptions and gaps; proof admission uses shared summary facts with its own eligibility rules; all R-0484 completion controls pass on the final integrated commit. Full mutation-campaign qualification remains row 2, not an R-0484 closure requirement. |
-| 1 | **R-0483: sound, usable zero-copy parsing — core repair done 2026-09-16, owner-bound results open** | **Done:** pointer-free `ByteCursor` taking the buffer on every access; `ByteView`'s length brand removed and the coordinate contract stated; `Text` owns immutable storage; raw access moved to `RawCursor` behind `with(Unsafe)`. `examples/packet` migrated with its predictable profile unchanged at 1 failed / 13 passed. The attestation migration was resolved by regeneration on full scoped rows (21/21 packages paired, 42 renames, 38 references rewritten); `crypto_verify` 4 proved and `elf_header` 5 proved, both 0 stale and 0 closure-unjustified. Gated by `check_view_lifetime.sh` 13/0 in the fast suite and CI; stdlib 313/0, suite 1713/0. **Remaining:** `ByteView::of_cursor` yields coordinates meaningful only against the buffer the cursor was reading, which the contract permits but a call site does not show. | owner-bound parsed results, where pairing a view with the wrong buffer is unrepresentable rather than merely out-of-contract, with a fixture showing the substitution refused; then the entry moves to the changelog |
-| 2 | **Post-R-0004 mutation qualification checkpoint** | **Local runs unblocked 2026-09-29:** from `51fa2058` (2026-08-31) until `8fcf352d` the driver refused its own snapshot on macOS (a self-location check was correct only by accident on Linux), so no campaign could run on a Mac in that window; the census below predates it. CI's Linux runs were unaffected. **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families now make the live inventory 91. Next: exercise the pure reconciliation matrix; close both `freshFactsFor` survivors with a live trusted-boundary receipt plus reject-all control; regenerate retained evidence for and repair/reclassify all six invalids; instrument timings; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 91 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
+| 0 | **R-0484: explicit external authority** — close the integrated handle/FFI/reporting repair; status and remaining work in [R-0484](#task-r-0484). | Validate the integrated commit, shared-summary proof admission, named assumptions and coverage, and final docs/examples/authority audit. Full campaign qualification belongs to row 2. |
+| 1 | **R-0483: owner-bound zero-copy parsing** — core repair is recorded in [R-0483](#task-r-0483). | Refuse pairing parsed views with the wrong owner; retain valid zero-copy and ownership-transfer controls. |
+| 2 | **Post-R-0004 mutation qualification** — [checkpoint and retained diagnosis](#post-r-0004-mutation-qualification--active-r-0482-has-not-started). | Establish a runnable full campaign, repair outstanding experiments/gates, and qualify the complete current manifest on one pushed revision with causal attribution and no missing, invalid or surviving families. |
 | 3 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
 | 4 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
 | 5 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |
@@ -71,6 +71,23 @@ renaming of the existing verification alpha. It may expose experimental proof
 features only with their actual evidence classes, assumptions and coverage.
 The preview cannot advertise alpha graduation. Each later scope inherits the
 applicable earlier acceptance checks, rerun on its own candidate.
+
+### Research acceptance within releases
+
+These refine existing owners; they do not introduce another release or reorder work.
+Preview requires executable authority/ownership boundary examples, formatter semantic
+round trips, honest report consumers and a stated runtime profile. Alpha adds a useful
+specification, reachable success controls and the bounded frame/change-and-repair
+scenario under R-0486/R-0212/R-0213. Beta adds transitive package trust policy under
+R-0373. Stable-subset migration must distinguish source, ABI and evidence compatibility
+and preserve behavior under R-0351; no tool silently grants authority to make code build.
+
+A research idea graduates only with a concrete workload, an attempt using existing
+mechanisms, a bounded semantic proposal, acceptance and adversarial controls, and an
+owner for implementation, trusted-base cost and maintenance. Capture checking informs
+ownership tests; it does not replace explicit authority declarations. Effect handlers,
+concurrency, richer heap proofs and additional backends retain their existing research
+and workload gates. This research creates no commitment to add their syntax.
 
 ### Next-release blockers
 
@@ -132,7 +149,7 @@ or invalidation notice. Stabilization must not silently expand the claimed subse
 
 ### Delivery improvements and owners
 
-**Planned refinement (2026-10-06), informed by Elm's official news archive.**
+**Planned refinement (2026-10-06), informed by the comparative language research.**
 Make existing guarantees easier to use, explain and maintain before expanding the
 language surface. This table groups acceptance work by user outcome; it is not a
 second queue and does not change task IDs, current priorities or prerequisite gates.
@@ -149,6 +166,28 @@ use the bounded external component to evaluate library and tooling improvements.
 | One component is useful inside an existing application | R-0486, R-0334, R-0353 | A non-author builds a bounded C-facing component, exercises errors/ownership, changes it and replays its admitted evidence. This is the alpha workload, not a fourth flagship or a whole-system rewrite. |
 | Dependency upgrades explain changes in guarantees | R-0182, R-0183, R-0340, R-0338 | Alpha delivers authority/assumption/evidence diffs; beta extends package coverage. Separate source and ABI compatibility from authority and evidence validity; missing analysis never means unchanged. |
 | Failures can be reproduced elsewhere | R-0009, R-0152, R-0155; R-0030 for injected runtime faults | Export compiler/evidence failure bundles and verify reproduction before minimization. Runtime replay is limited to controlled inputs/backends and is not a preview prerequisite. |
+
+**Further research translated into acceptance criteria:**
+[Scala scoped capabilities](https://docs.scala-lang.org/scala3/reference/experimental/capture-checking/scoped-capabilities.html),
+[Effekt captures](https://effekt-lang.org/tour/captures) and
+[Koka's effect model](https://koka-lang.github.io/koka/doc/book.html) inform the
+R-0011/R-0483/R-0484 callback and ownership matrix; Concrete keeps its own explicit
+header semantics. [Pony trust boundaries](https://tutorial.ponylang.io/object-capabilities/trust-boundary)
+inform R-0373. [Roc platforms](https://www.roc-lang.org/docs/main/langref/platforms/)
+inform explicit runtime profiles, not a new runtime architecture.
+[Vale's linear protocols](https://verdagon.dev/blog/higher-raii-uses-linear-types)
+and [Swift safe interop](https://www.swift.org/documentation/cxx-interop/safe-interop/)
+inform R-0488 and owner-bound FFI tests without promising crash-safe cleanup.
+[Futhark compiler testing](https://futhark-lang.org/blog/2024-06-10-how-we-test-the-futhark-compiler.html)
+informs R-0095/R-0030;
+[Dafny proof dependencies](https://dafny.org/blog/2023/10/27/proof-dependencies/) and
+[proof brittleness](https://dafny.org/blog/2023/12/01/avoiding-verification-brittleness/)
+inform R-0212/R-0213/R-0150. [Pulse's bounded state reasoning](https://fstar-lang.org/tutorial/book/pulse/pulse_ch1.html)
+informs the existing frame milestone, without importing a new proof engine.
+[Rust's incremental-compilation incident](https://blog.rust-lang.org/2021/05/10/Rust-1.52.1/)
+informs R-0144's reuse controls, and [Go migration tooling](https://go.dev/blog/gofix)
+informs R-0351. These are design inputs; their guarantees do not transfer to Concrete
+without Concrete's own specification and validation.
 
 R-0333 selects these bounded increments in candidate records, preserving the release
 map's deferred remainders. Small compatible infrastructure improvements and repair
@@ -603,10 +642,12 @@ record is `mutation-campaign-summary.898d9a7b`, with the 173-line trace retained
 This is a trustworthy **diagnosis**, not qualification. The two survivors are
 `freshfacts-requires-proved-status` and `freshfacts-carries-trusted-boundaries`; the receipt-
 consumption gate has no live trusted-boundary receipt and cannot yet distinguish the intended fresh-
-fact refusal from a material mismatch. The invalid experiments are `trap-quotient-condition`,
+fact refusal from a material mismatch. The invalid experiments **in that historical run** were `trap-quotient-condition`,
 `attestation-precondition`, `kernel-foundation`, `reference-division`, `divergence-detection`, and
-`transform-has-effect`. They establish nothing until retained logs support an attributable route or
-the mutation is rewritten/reclassified honestly.
+`transform-has-effect`. That census is not the current disposition inventory: later named build-check attribution
+qualified five of those families. `divergence-detection` remains unresolved; the two
+`freshFactsFor` survivors and separate mutation 52 remain recorded gaps. Each new
+qualification claim still needs retained results on its own candidate.
 
 The historical artifact says `completed=0` even though all 81 units reported, because its schema
 made zero failed families a condition of completion. It also names `head_changed`—the control
@@ -633,12 +674,21 @@ snapshots. Then benchmark isolated workers (starting at 1, 2 and 4), with separa
 process state and serial/parallel disposition agreement. A fast affected-family mode may be
 non-qualifying; the authoritative mode retains full red-green-red confirmation.
 
+**Runnable campaign prerequisite.** The dispatched campaign exceeded the six-hour job
+limit. Provide validated sharding or a suitably provisioned runner before requiring a
+full result. Shards bind the same source/toolchain/manifest and pristine baseline;
+reconciliation rejects missing, duplicate, mismatched or stale family results. Preserve
+causal confirmation and distinguish named proof-check build kills from arbitrary build
+failures. A timeout or infrastructure failure never becomes a kill. Record the current
+manifest rather than freezing an old family count. R-0447 owns reusable tooling; this
+checkpoint owns qualification and its retained evidence.
+
 The checkpoint exits only when one clean pushed HEAD reports all of the following separately:
 
 - `completed=1`: the driver reached reconciliation and every selected family reported;
-- discovered = selected = executed = reported = killed = 91;
+- discovered = selected = executed = reported = killed = the complete candidate manifest size;
 - `invalid=0`, `survived=0`, `could_not_apply=0`, and `integrity_ok=1`;
-- `qualified=1`: all 91 families were killed by their intended attributable gate/build outcome;
+- `qualified=1`: every manifest family was killed by its intended attributable gate/build outcome;
 - the artifact and human summary agree, and the repository is clean afterward.
 
 Only then does implementation run R-0208's required toolchain/revocation drill and move to R-0482's
@@ -1334,6 +1384,8 @@ are used instead — and it must not enter canonical bytes until measured.
 
 **Found while landing the R-0484 checkpoint (2026-10-03).** Four separate items, not one
 batch: each changes a different trust boundary, so each lands and is verified on its own.
+Active tooling ownership now lives in R-0447; campaign qualification and current
+acceptance live in the post-R-0004 checkpoint. This section retains the diagnosis.
 
 1. **Mutation scoring: split invalid from infrastructure failure.** Verified first: both
    harnesses already refuse to count a mutant that does not build as a semantic kill. The
@@ -1360,8 +1412,9 @@ batch: each changes a different trust boundary, so each lands and is verified on
    `divergence-detection` (under the mutant `run_tests.sh` never reaches the end it
    reaches on pristine source — find out whether that is a hang the suite should report
    or a mutant that breaks the harness). The campaign job also exceeds
-   GitHub's 6-hour limit on a dispatched run, so the full campaign has no CI home today;
-   it runs only on the mirror's schedule, which is pinned to an old commit.
+   GitHub's 6-hour limit on that dispatched run. Runner availability and the current
+   manifest must be established by the active qualification checkpoint above; a mirror
+   schedule or an old run is not evidence for the current candidate.
 
    **Incomplete qualification, recorded at the R-0484 checkpoint merge (2026-10-04).** The
    checkpoint merges under an approved exception: the full campaign is not a merge blocker
@@ -8992,6 +9045,22 @@ section of the Phase 17 language reference.
 **Objective:** Freeze repository ownership and layout before broad stdlib,
 test, proof, and documentation growth multiplies the current ambiguity.
 
+**Active tooling acceptance (moved out of historical ownership).** Own the open
+worktree-support, gate-inventory, identity-refresh and CI-dispatch repairs described in
+the R-0484 landing history. Each is separately reviewable: resolve Git common versus
+checkout state and test locks across worktrees; compare actual gate commands by content
+in branch CI; produce a reviewable identity migration that refuses ambiguous matches;
+and dispatch/watch CI pinned to a commit with cancellation and failure distinct from
+success. Never regenerate evidence merely to conceal a failed check.
+
+Semantic gates must read versioned structured facts instead of scraping display prose.
+Retain a positive control and an intentional semantic violation for every migrated gate;
+assert the intended subject/diagnostic, so parse failures, crashes or empty inventories
+cannot satisfy rejection. Bug 075's candidate repair is a starting point, not completion
+of this audit. An expected build rejection qualifies only through its named check;
+anchor matching alone does not qualify a mutant. Keep the foreign-symbol classification
+inventory authoritative in one machine-readable place with generated documentation.
+
 **Guarded artifact writes (2026-10-06):** the shared build/artifact driver owns a
 scoped project-lock guard, minted only after runtime acquisition and unusable after
 release. Use typed guards where supported and bracketed runtime ownership checks for
@@ -9348,7 +9417,17 @@ Land these slices in order:
    Make `site/content/reference/` a generated projection of the canonical docs
    (or links to them) so a site build cannot depend on a second hand-edited
    copy. Research records carry active/archived status and a roadmap/decision
-   owner. Do not physically regroup the 126 docs before R-0438's generated
+   owner. Preserve the language/blog investigations in durable research notes indexed
+   from the existing research inventory: source URL and access/version context, the
+   observed claim, Concrete's interpretation, and an adopted/deferred/rejected decision
+   with its reason, owner and acceptance criterion or future trigger. Cover the newer
+   Scala, Effekt, Koka, Pony, Roc, Vale, Futhark, Dafny, F*/Pulse, Swift and Go
+   investigations, and append newer findings to existing Elm/Austral/Zig/SPARK/Rust
+   records where available. A linked blog is not implementation evidence; distinguish
+   proposed lessons from verified Concrete behavior. Check that each adopted lesson
+   reaches a task owner and each deliberate deferral stays visible. This is preservation
+   of the research already used, not a requirement to survey every post or add a new
+   roadmap queue. Do not physically regroup the 126 docs before R-0438's generated
    claim/index view exists; organize discovery by semantic ownership first.
 5. **Hot-file authority split.** Extract the stable diagnostic-code catalog
    from `Report.lean` into one canonical diagnostic data/module owner that the
@@ -9569,6 +9648,14 @@ non-goals here.
 
 **Objective:** Finish construction rights with private-by-default enum variants Struct-field privacy and direct-newtype construction are historical milestones, recorded in the changelog and `docs/language/CONSTRUCTION_RIGHTS.md`. Finish the same one-keyword model for the still-open construction paths: `pub` remains the only visibility word; exporting a type never implicitly exports its variants or raw representation.
 
+**Boundary matrix shared with R-0483/R-0484/R-0488.** Test direct calls,
+generic helpers, stored callable/handle fields and package boundaries. For supported
+returned-borrow/callable forms, reject an escaping borrow or invalidated owner and accept
+an owned transfer. A linear wrapper does not establish unique ownership of the raw
+resource. Lifetime validity and permission to perform an effect are separate judgments;
+passing either check cannot discharge the other. Unsupported closure forms stay with
+their existing feature owner, not an incidental R-0484 language expansion.
+
 **Resource provenance controls (2026-10-06):** linear use of a wrapper is distinct
 from unique ownership of its underlying foreign resource. Reuse R-0484's construction
 inventory to record resource identity/lifetime, constructors/raw conversions, allowed
@@ -9635,6 +9722,13 @@ variant or omit one enforcement path.
 ### Task R-0013
 
 **Objective:** Close confirmed boundary correctness holes
+
+**Shared failure matrix (validation owned by R-0030).** For each repaired
+resource API record acquisition failure, partial progress, operation failure and cleanup
+failure: returned error, resource ownership afterward, permitted retry, and any uncertain
+outcome. Closing attempted is not closing succeeded. Do not retry an ambiguous close
+merely because a handle is linear. Keep F7/F8 here; R-0485's cleanup design consumes the
+same matrix rather than defining a competing error or ownership policy.
 
 1. Validate UTF-8 in `std.fs.read_to_string`, just as `env::get`, argv, and
    `Bytes::to_string` do. Prefer `Result<String, ReadTextError>` with distinct
@@ -10260,6 +10354,14 @@ Do not duplicate compiler-command cleanup here.
 
 **Objective:** Deterministic capability-fault simulation (pull-gated; the *dynamic* complement to H3). H3's manifest gate proves an IO error *can* be surfaced (static shape); this proves it *is* surfaced under real failure (dynamic).
 
+**Pull condition met:** R-0013's F7/F8 repairs are concrete consumers of
+fault injection. This makes the bounded seam ready to pull with those repairs, without
+moving it ahead of the execution queue. Cover their shared failure/ownership matrix,
+including partial writes and cleanup failures. Retain a deterministic seed, controlled
+input/schedule and minimized reproducer for generated operation sequences; shrinking
+must preserve the preconditions needed to reproduce the failure. Replaying uncontrolled
+external I/O is not claimed.
+
   Because every effect flows through an explicit capability/handle value — e.g.
   `Writer`'s `write_fn: fn(...) -> Result<u64, IoError>` — faults are injected by
   swapping the backend at the seam, with no whole-world simulator; the capability
@@ -10427,6 +10529,15 @@ evidence classes for each helper.
 
 **Objective:** Build time and duration helpers in `std.time`: monotonic versus wall-clock distinction, timestamp formatting/parsing if admitted, timeout helpers, and explicit hosted authority for reading the clock.
 
+**Deterministic timeout acceptance (workload-gated).** When an existing
+workload needs timeouts, reuse R-0030's injectable backend to advance simulated
+monotonic time without real sleeps. Cover just-before/at/after deadline behavior and,
+where supported, cancellation and clock failure, with explicit ordering for ties.
+The harness must establish that controlled work has completed or has no runnable work
+before asserting a result; elapsed wall time is not evidence of completion. State the
+controlled scope and refuse unsupported live-clock or scheduling interactions. This
+requires no new concurrency runtime; broader scheduler simulation remains deferred.
+
 ### Task R-0039
 
 **Objective:** Build formatting and parsing helpers in `std.fmt` and `std.parse`:
@@ -10519,6 +10630,17 @@ keeping two nominal owners.
 ### Task R-0052
 
 **Objective:** Build handle-relative filesystem APIs in `std.fs` as the preferred file/path shape: directory/file handles carry authority; operations are relative to handles for `open`, `create`, `read`, `write`, `metadata`, `remove`, `rename`, and `list`. Ambient absolute-path helpers must be hosted-only convenience wrappers with explicit authority. Temp-file, symlink, path-normalization, and TOCTOU behavior must appear in `docs/stdlib/STDLIB_GUIDE.md` and `scripts/tests/check_stdlib_fs.sh`.
+
+**Confinement acceptance.** Distinguish handle-relative resolution from a
+promise that access stays within a directory root. Before offering the latter, state
+its platform-specific semantics and retain rejecting cases for `..`, absolute-path
+escape and escaping symlinks, plus controlled concurrent rename/symlink-replacement
+cases. Keep valid nested access as a positive control. Resolve through mechanisms
+that enforce the stated boundary during the operation; a lexical path check or
+check-then-open sequence is insufficient. Unsupported targets must refuse the confined
+operation or explicitly offer a weaker API, never silently weaken its guarantee.
+This refines filesystem APIs; it does not add path-specific capability syntax or claim
+confinement of arbitrary foreign code.
 
 ### Task R-0053
 
@@ -10718,8 +10840,14 @@ the library and is not a fourth public flagship.
 **Objective:** Make safe zero-copy parsing preserve owner lifetime through every
 stdlib wrapper, not only through syntactic `&T` references.
 
-**Status (2026-09-16): REPAIRED AND GATED.** The three properties are fixed by
-structure rather than by checks, the attestation migration is done and validated, and
+**Owner-bound acceptance extension.** Retain wrong-buffer substitution,
+owner invalidation and borrowed-result escape controls alongside successful zero-copy
+inspection and owned transfer, including a package boundary. FFI-returned views must
+state which owner keeps them valid; a matching length or address-shaped value is not
+an ownership witness. Reuse R-0011's boundary matrix and existing borrow representation.
+
+**Core repair recorded (2026-09-16); owner-bound results remain open.**
+The three repairs below are structural, the attestation migration is done and validated, and
 `check_view_lifetime.sh` (13/0) runs in both the fast local suite and CI.
 
 | property | before | after |
@@ -10738,8 +10866,10 @@ stored pointer and no brand nothing in them crosses a trust boundary.
 **The migrated parser is `examples/packet`,** and it is the clearest evidence. Its
 header claimed `compute_checksum`, `decode_header` and `extract_payload` were PURE while
 they took `*const u8` and read through `ByteCursor::from_raw`; the claim was a comment,
-not a checked fact. All three now report `(pure)` truthfully, the example contains no
-`trusted` function at all, and its **predictable** profile still reports exactly one
+not a checked fact. The historical report printed `(pure)` for their empty authority
+sets; that label does not establish semantic purity and is superseded by R-0484's
+authority terminology. The example contained no `trusted` function, and its recorded
+**predictable** profile reported exactly one
 failing function (`main`, for blocking I/O) — 1 failed / 13 passed, unchanged. Keeping
 that property forced `extract_payload` to write into a caller-supplied buffer rather
 than return an owned one: returning `Bytes` would have needed `Alloc` and cost the
@@ -10936,20 +11066,27 @@ heap proofs or emitted-binary correctness.
 **Objective:** Give capability headers, resource handles and operational effects
 one coherent meaning that checking, reports, proof eligibility and policy share.
 
-**Status (2026-10-05): core checkpoint on main; follow-up integration pending.**
-The first implementation merged at `a7c9cf1c`: encoding A, capability parameters on
-structs, mandatory extern effect declarations (E0116/E0117), the `trusted` reversal,
-and `Writer<C>`/`Reader<C>`. Main is at roadmap cleanup `8960c97d` at this inventory.
-The checkpoint's approved full-campaign timeout exception does not certify the campaign
-or waive a later release's requirements; qualification retains its separate queue owner.
+**Callback composition acceptance.** Apply R-0011's authority/lifetime matrix
+to supported callable and handle forms. A helper invoking callbacks with different
+capabilities must declare their combined requirements; inferred type arguments cannot
+erase either. Exercise direct, generic, stored and imported paths, with valid empty-set
+and concrete-capability controls. R-0487 explains these requirements without replacing
+explicit headers or conflating a capture's lifetime with its external authority.
 
-| increment | recorded state; not a claim of integrated completion |
-|---|---|
-| F1/F9 construction and fork repair | Pushed as `r0484-finish` at `a084d91e`: only `spawn` constructs `Child`; public `process_fork`/`ForkResult` removed. Branch health passed; [full CI run 37354702330](https://github.com/unbalancedparentheses/concrete2/actions/runs/37354702330) is still running at this inventory. Supported spawn runtime assumptions remain explicit. |
-| Shared assumption summaries | `b14aaba3`, followed by bug 074 and canonical manifestless package identity in `873476d7`; carried on the qualification branch, not yet on main. |
-| Conclusion qualification | `f3510e04` supplies shared qualification and explicit unloaded-call gaps. This is an intermediate R10 increment, not complete assumption coverage. |
-| Authority terminology and JSON API v2 | Committed as `50bfc385`: purity claims removed from these authority reports; schema and consumers migrate without an `is_pure` alias. Integration and final validation remain pending. |
-| Combined tree | Local `r0484-integrated` at merge `37496123` combines F1/F9 and qualification. Additional corrections are uncommitted; that SHA is not the final validation candidate. Record the final committed SHA, identity and CI run after those corrections land. |
+**Status snapshot (2026-10-06): core checkpoint merged; integrated follow-up unvalidated.**
+The first implementation merged at `a7c9cf1c`: encoding A, capability parameters on
+structs, mandatory extern effect declarations, the `trusted` reversal and
+`Writer<C>`/`Reader<C>`. The roadmap checkpoint is `3b3600db`.
+The integrated candidate `35435628` includes F1/F9, package-scoped summaries, bug 074,
+report qualification, authority terminology/JSON API v2, and bug 075's non-vacuous
+policy/assumption parsing repair. [Full CI run 37422199701](https://github.com/unbalancedparentheses/concrete2/actions/runs/37422199701)
+is still in progress when checked for this update; it is not certification.
+Local `r0484-integrated` has subsequently advanced to `8187a2f7`; that successor cannot
+inherit the earlier candidate's results. Record validation against the exact revision
+that is actually proposed for integration. Earlier branch-only and failed-candidate
+runs remain history, not evidence for this candidate.
+The approved checkpoint campaign-timeout exception does not certify the campaign
+or waive release requirements; full qualification retains its separate queue owner.
 
 A branch gate or F1/F9-only CI result cannot stand in for combined-tree validation.
 On the final integrated commit run the selected gates, both suite forms, identity
@@ -11473,6 +11610,12 @@ schema or claiming unrestricted least-authority enforcement.
 **Objective:** Improve review clarity without changing explicit error propagation
 or implicit-drop policy.
 
+**Failure semantics prerequisite.** Use R-0013/R-0030's matrix to specify
+whether failure consumes or returns each resource, which error wins when cleanup also
+fails, and what remains uncertain. Demonstrate explicit cleanup/transfer and failure
+paths before adding sugar. No automatic cleanup rule promises successful flushing,
+transaction commit or crash durability.
+
 **Status (2026-09-15): planned; apply during R-0483's parser migration.** Keep
 `match`/`return`, explicit error conversion and explicit cleanup. Align deferred-call
 argument coercions and diagnostics with ordinary calls; specify failure/divergence
@@ -11489,6 +11632,14 @@ error conversion, implicit drop and unwinding remain excluded.
 
 **Objective:** Use one bounded parser/state-machine component to validate compositional
 contracts, audit diffs and the external-consumer workflow end to end.
+
+**Adequacy and integration acceptance.** Reuse the secure-update verifier's
+bounded parser/state machine for R-0212/R-0213 controls: rejecting every valid input may
+satisfy a safety theorem but must fail the useful specification. A wrong-result mutant
+must be rejected, and a non-author must exercise a reachable success case and repair a
+real change. Include borrowed/owned C-boundary and error-cleanup cases in the same
+component. If file replacement is needed, distinguish successful replacement from
+crash durability; it is not a fourth public project.
 
 **Component adoption bar (2026-10-06):** provide a small host application using the
 existing C ABI path, a checked install/build/link transcript, and explicit ownership,
@@ -11541,6 +11692,14 @@ heap, relational, resource-proof and backend claims remain explicit.
 
 **Objective:** After R-0484, audit parameter-mutation guarantees, then pressure-test
 the library model before adding more language machinery.
+
+**Workload acceptance extension.** Reuse the boundary matrix in R-0011:
+inspect borrowed bytes/results without accidental consumption, transfer owned results
+explicitly, and exercise generic callbacks without hidden authority or allocation.
+Compare fixed, reserved-capacity and growable-buffer paths, including exhaustion.
+Where an existing workload needs commit/cancel/transfer, model that linear protocol with
+explicit success, failure and uncertain outcomes. Do not add another flagship or syntax
+solely to demonstrate the protocol; R-0013 owns error behavior and R-0485 cleanup design.
 
 **API review method (2026-10-06):** begin each bounded library change with a compact
 signature view and runnable examples for success, failure and cleanup. Write the
@@ -11905,6 +12064,15 @@ enum-union-layout, nested-place, callable-value, fuzz, workload, wrong-code, and
 exit-model corpora. Add mutation checks proving the differential suite notices
 at least one injected fault in lowering, LLVM emission, QBE emission,
 interpreter semantics, layout, and builtin behavior.
+
+**Independent semantic and optimization controls.** Cover integer/trap
+boundaries, casts, indirect calls and cleanup with independently stated expected
+observations as well as cross-backend comparisons. For an optimization test, assert
+that the intended transformation occurred as well as preserving behavior; a disabled
+optimizer must not pass solely by doing nothing. Validate preservation of authority,
+identity and assumption metadata across lowering without creating a rival source-level
+capability judgment. Add supported aggregate/callback/borrowed-result FFI cases to the
+existing conformance corpus, not a separate unchecked ABI claim.
 
 ### Task R-0096
 
@@ -12733,6 +12901,13 @@ after a gate or theorem demonstrates completeness for that query family.
 
 **Objective:** Add an opaque compiler-versioned local content-addressed store under `.build/concrete-cache/` (or an equivalent project-local path).
 
+**Semantic compatibility controls.** Reuse R-0482/R-0353 identities and
+conformance rules for identical source under incompatible target layout, arithmetic,
+runtime profile, compiler/checker or relevant dependency settings. Such evidence must
+not be reused: a cache may miss and recompute, while an artifact-only consumer must
+refuse incompatible material. Test changed-then-restored edit sequences too; successful
+decoding or a matching source digest alone does not establish semantic compatibility.
+
 Interrupted, cancelled, timeout and unknown attempts cannot be reused as successful
 validation. Retaining their operational diagnostics is separate from reusing an earned
 result. Gate interruption after partial output and retry: no published manifest or
@@ -12920,6 +13095,14 @@ too expensive.
 before investing in automation, so the external-validation gate's “was the
 proof discipline worth the cost?” question has data instead of anecdotes.
 
+**Feedback and proof stability measurements.** Separate lock/queue waiting,
+compiler work, prover execution and certificate checking. Measure representative edit
+sequences, not only repeated identical builds; R-0144's reuse validation still applies.
+For bounded proof fixtures, compare semantics-preserving renames/declaration reorderings
+where legal, plus recorded solver seeds/configuration and per-obligation time/resource
+use. A fragile proof is an engineering finding, not a different evidence class. Include
+one generated-code workload only where it exposes measured scale problems.
+
 **Feedback latency (2026-10-06):** on the bounded R-0486 component and an existing
 larger project, record time to first actionable diagnostic, clean/no-op checks,
 one-function edits, dependency-interface edits, proof revalidation and full candidate
@@ -13093,6 +13276,13 @@ intake/privacy operations, not a second capture format.
 ### Task R-0166
 
 **Objective:** Improve failed-proof diagnostics after `--json`, failed artifacts, and `--minimize` exist: classify common failures into actionable categories such as missing callee theorem, stale source link, missing table entry, failed arithmetic bridge, insufficient frame fact, and spec/extraction mismatch. Add `concrete prove <file> <fn> --why <obligation_id>` (or an equivalent `--show-obligation --why` form) to explain why the obligation exists, which source span generated it, which facts are in scope, what evidence classes are allowed, and why automation did not close it.
+
+**Feedback state acceptance.** Render queued, running, stale, checked,
+failed, unknown and not-analysed work from the existing authoritative ledger. These
+are UI/workflow distinctions, not new canonical proof-status values or a second store.
+Keep a reproduced counterexample distinct from missing proof or a solver timeout.
+Tie updates to the current subject/revision so a late result cannot turn an edited
+obligation green; use R-0150's stability fixtures to evaluate the experience.
 
  Diagnostics should point to the already-generated artifact or next action
  instead of introducing another parallel proof surface. Where a failed proof,
@@ -13769,9 +13959,22 @@ the smaller boundary.
 
 **Objective:** Add spec-adequacy gates: release policy can require reviewed spec provenance for selected claims, forbid unreviewed specs in graduated flagships, and show when a theorem is `proved_by_lean` against a `spec_trusted` or unreviewed spec.
 
+**Functional adequacy controls.** For the R-0486 component, retain valid
+inputs and expected results, an always-rejecting implementation, and a wrong-result
+mutation. A safety proof alone must not graduate either broken implementation. Record
+who reviewed the specification and its intended behavior separately from who checked
+the theorem. These controls test the chosen specification; they do not prove that every
+possible omission in a specification has been detected.
+
 ### Task R-0213
 
-**Objective:** Add vacuity gates to proof status: `proved` summaries must be downgraded or blocked when the proof depends on an unsatisfiable precondition, contradictory assumptions, unreachable code path, or invariant `false`.
+**Objective:** Add vacuity gates to claim admission: preserve the theorem's checked evidence, but block an unqualified useful-correctness claim when its proof depends on an established unsatisfiable precondition, contradictory assumptions, unreachable required success path, or invariant `false`.
+
+**Bounded vacuity analysis.** Retain contradictory-precondition, unreachable
+success-path and false-invariant fixtures with valid reachable controls. Preserve the
+underlying theorem's evidence while refusing an unqualified useful-correctness claim
+when vacuity is established. Where satisfiability/reachability is unknown, report that
+limitation explicitly; absence of a detected contradiction is not a non-vacuity proof.
 
 ### Task R-0214
 
@@ -15714,6 +15917,16 @@ pointer is an ordinary `&mut` now" shortcut.
 
 **Objective:** Add allocator-strategy examples: global allocator, arena/bump allocator, fixed-buffer allocator, debug allocator, and test allocator. Every example must show allocation authority, allocator identity, cleanup path, and failure behavior. Do not add ambient allocation.
 
+**Retention controls before allocator adoption.** Run repeated
+allocate/use/release cycles for each admitted strategy and record live allocations,
+allocator-retained capacity and process memory separately where measurable. Include
+explicit arena reset/destruction boundaries; individual releases need not return an
+arena's storage. Establish a workload-specific steady-state bound after warmup and
+inject a missed release/reset to show the check can fail. Retained capacity is not
+necessarily a leak, and falling live allocation counts do not prove memory returns to
+the OS. R-0416 owns comparable measurements; R-0031's workload gate still controls
+whether an arena or allocator API is introduced.
+
 ### Task R-0318
 
 **Objective:** Add VM/interpreter-style pressure test as the validation workload:
@@ -16269,6 +16482,13 @@ flagships.
 ### Task R-0351
 
 **Objective:** Add migration/adoption playbook: what C/Rust/Zig code moves first, how to wrap libraries honestly, what stays outside Concrete.
+
+**Behavior-preserving migration acceptance.** Emit bounded, reviewable
+changes and test supported old/new versions. Preserve evaluation order, consumption,
+error timing and cleanup; transformations with unresolved semantics require human
+review. Never insert `Unsafe`, widen capabilities or weaken contracts automatically to
+make a migration pass. State source/API, ABI and evidence-schema changes separately,
+including when regeneration and independent rechecking are required.
 
 ### Task R-0352
 
@@ -16887,6 +17107,18 @@ before accepting a dependency update.
 ### Task R-0373
 
 **Objective:** Add dependency trust policy: trust widening across boundaries, review and inheritance.
+
+**Bounded policy increment.** Use R-0484's package-scoped summaries to
+identify packages allowed to introduce foreign declarations or trusted implementations,
+including transitive dependencies. Approval binds the relevant package identity and
+reviewed trust scope; an upgrade widening that scope requires review. Test an approved
+boundary, an unapproved transitive boundary, widening, and incomplete dependency
+coverage. Incomplete analysis cannot yield “no unapproved trust”.
+
+Compose with R-0210/R-0211 review records, R-0372/R-0374 inheritance and R-0440 policy;
+create no second assumption scanner. This is beta package-policy acceptance after its
+prerequisites, with only the bounded component's trust inventory needed for alpha.
+It is a build/release policy, not a sandbox for arbitrary native or foreign code.
 
 ### Task R-0374
 
