@@ -48,6 +48,14 @@ the next transition; completed milestones move to the changelog rather than accu
 | 13 | **External-user workflow and productization** | a non-author receives evidence, replays it, upgrades a dependency, and sees exact machine/human diffs; graduate exactly three deep public flagships—HMAC-SHA256, a secure update-bundle verifier that absorbs bounded parsing and file-integrity work, and a small protocol state machine—plus IDE/CI lenses and recurring ergonomics audits. Compiler regressions, hostile inputs and benchmarks remain fixtures, adversarial cases and workloads rather than additional public flagships |
 | 14 | **R-0440/package evidence and typed policy** | compose partial dependency evidence, revocation/advisories, trust and release requirements without turning receipt validity into policy acceptance |
 
+**Immediate tooling pull (R-0447): shorten the validation cycle supporting row 0.**
+Start with per-gate timing, one deduplicated candidate plan and balanced CI shards,
+measured on a representative compiler change. This bounded enabling repair is authorized
+now; it does not wait for the repository-layout reorganization or reorder R-0484,
+R-0483 and campaign qualification. Work in isolation from active validation runs;
+never edit their source snapshots or relax their acceptance requirements. R-0447 below
+owns the implementation and before/after acceptance; R-0150 owns shared measurements.
+
 `ProofCache` remains performance-pulled. A second proof-producing kernel remains research-gated and
 is not part of this strict queue. Why3 remains comparative prior art, never a backend.
 
@@ -9045,6 +9053,57 @@ section of the Phase 17 language reference.
 **Objective:** Freeze repository ownership and layout before broad stdlib,
 test, proof, and documentation growth multiplies the current ambiguity.
 
+**Urgent validation-throughput increment (2026-10-06).** Deliver faster feedback
+without reducing required coverage. The integrated runner already parallelizes ordinary
+suites/gates; its closure mode requires serial execution. Increasing worker counts or
+removing locks is not the implementation plan. Preserve that closure requirement until
+an isolated replacement passes equivalence and interference controls.
+
+Use three explicit levels backed by one authoritative gate inventory:
+
+| level | purpose | acceptance boundary |
+|---|---|---|
+| Edit feedback | Run the changed regression and cheap relevant checks first; aim for seconds. | Advisory selection, never certification of the full candidate. |
+| Candidate validation | Run the required affected suites/gates once with bounded parallelism; aim for minutes where measurements permit. | Retain selection reasons and conservative fallback for unknown dependencies; report missing coverage explicitly. |
+| Release qualification | Run the complete required platform/check matrix and isolated mutation shards. | Exact candidate, complete manifest reconciliation and existing qualification rules; no timeout or skipped check counts as success. |
+
+The latency aims are investigation targets, not measured speedups or a 1,000× promise.
+Implement in reviewable increments:
+
+1. **Measure and deduplicate first.** Local validation, pre-push and CI consume one
+   generated plan derived from the existing gate inventory and selectors. Key an
+   invocation by command, arguments, environment/profile and platform; distinct suite
+   forms are not duplicates. Record build, execution, lock/queue wait and retry time,
+   plus the slowest checks and completed/remaining work. Run cheap inventory, schema,
+   fixture and mutation-build preconditions before their expensive dependent checks.
+2. **Validate immutable candidates.** Pin source, compiler/toolchain, fixtures and
+   configuration. Editing the developer checkout must not affect the run. Each mutant
+   or source-writing gate gets isolated source/build/output state. Reuse a pristine
+   compiler build only where its identity and inputs match; never share a mutable
+   build directory across mutations.
+3. **Schedule independent work.** Balance long CI jobs using measured durations;
+   give each shard isolated outputs and a complete assigned manifest. Continue unrelated
+   checks after a failure and aggregate actionable failures; block dependent checks
+   when their prerequisites fail. Bound CPU and memory across local worktrees through
+   one machine-wide worker budget to avoid nested all-core runs and timeout retries.
+   Campaign sharding retains the post-R-0004 checkpoint's causal confirmation rules.
+4. **Reuse results only after validation.** First reuse within the same immutable
+   candidate. A pre-push consumer may accept a complete matching validation record only
+   after checking candidate/input/toolchain/configuration identities and the exact
+   required invocation set. Missing, stale, partial or incompatible records cause a
+   rerun or refusal. Cross-revision reuse stays behind validated dependency accounting;
+   this is not permission to infer success from unchanged filenames or an old green run.
+
+**First deliverable and exit:** retain a before/after on a representative compiler
+change using the same required invocation manifest and comparable hardware. Report
+wall time, time to first actionable failure, duplicate executions, wait/retry time and
+resource use. Compare per-invocation results, and retain controls for missing/duplicate
+shards, wrong candidate or configuration, interruption, shared-state interference and
+an independent failure alongside a blocked dependent check. Accept the new runner only
+when those controls pass and the measured improvement has no unexplained coverage or
+verdict delta. Required checks remain in force while the replacement is developed;
+use existing result records rather than inventing another proof/evidence authority.
+
 **Active tooling acceptance (moved out of historical ownership).** Own the open
 worktree-support, gate-inventory, identity-refresh and CI-dispatch repairs described in
 the R-0484 landing history. Each is separately reviewable: resolve Git common versus
@@ -9060,6 +9119,10 @@ cannot satisfy rejection. Bug 075's candidate repair is a starting point, not co
 of this audit. An expected build rejection qualifies only through its named check;
 anchor matching alone does not qualify a mutant. Keep the foreign-symbol classification
 inventory authoritative in one machine-readable place with generated documentation.
+For each important guarantee graduated by a release, its existing task owner retains
+both a valid acceptance example and a deliberately broken counterpart, with the
+expected failure reason asserted. R-0333's candidate record links those controls and
+their results on the candidate; a nonzero exit alone is not rejection evidence.
 
 **Guarded artifact writes (2026-10-06):** the shared build/artifact driver owns a
 scoped project-lock guard, minted only after runtime acquisition and unusable after
@@ -9425,7 +9488,11 @@ Land these slices in order:
    investigations, and append newer findings to existing Elm/Austral/Zig/SPARK/Rust
    records where available. A linked blog is not implementation evidence; distinguish
    proposed lessons from verified Concrete behavior. Check that each adopted lesson
-   reaches a task owner and each deliberate deferral stays visible. This is preservation
+   reaches a task owner and each deliberate deferral stays visible. Completion requires
+   reconciling the findings used in this roadmap against that inventory: none may lack
+   a disposition and reason; adopted findings name an owner and acceptance criterion,
+   and deferred findings name a trigger for reconsideration. Unwritten notes remain
+   outstanding work, not a completed research record. This is preservation
    of the research already used, not a requirement to survey every post or add a new
    roadmap queue. Do not physically regroup the 126 docs before R-0438's generated
    claim/index view exists; organize discovery by semantic ownership first.
@@ -11640,6 +11707,15 @@ must be rejected, and a non-author must exercise a reachable success case and re
 real change. Include borrowed/owned C-boundary and error-cleanup cases in the same
 component. If file replacement is needed, distinguish successful replacement from
 crash durability; it is not a fourth public project.
+
+**External workflow completion:** retain one non-author's clean install → build →
+change → diagnose → repair transcript for this component, with toolchain/candidate
+identity, documentation used, failed attempts and any author assistance recorded.
+Classify observed friction as a repaired defect or an explicitly owned follow-up;
+rerun the affected step after a repair. Record whether the participant completed the
+workflow independently; a successful author demonstration cannot substitute for it.
+R-0334 owns onboarding repairs, R-0150 owns measurements, and R-0333 consumes this
+record for the applicable release increment without adding another flagship.
 
 **Component adoption bar (2026-10-06):** provide a small host application using the
 existing C ABI path, a checked install/build/link transcript, and explicit ownership,
