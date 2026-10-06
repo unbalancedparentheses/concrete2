@@ -9859,6 +9859,10 @@ then choose an explicit split such as fallible `read_to_end` versus a named
 partial-read result rather than retroactively calling the existing contract a
 bug.
 
+R-0031's partial collection construction and failed replacement cases also consume this
+matrix: record both old and incoming ownership, partial initialization and cleanup failure.
+R-0030 owns deterministic failure-path validation; this adds no competing cleanup policy.
+
 ### Task R-0014
 
 **Objective:** Put Unsafe behind domain-capability wrappers and close trusted dereference duplication Split hosted modules into ordinary public wrappers and private trusted/raw adapters:
@@ -10459,6 +10463,13 @@ the same observation within the stated deterministic scope. Empty `with()` is no
 evidence of that scope, and foreign code, arbitrary processes and databases cannot
 be rewound by this facility. General hot swapping remains out of scope.
 
+**Collection consumer.** Reuse this seam for R-0031's partial initialization and failed
+replacement controls, injecting each recoverable acquisition/operation failure and
+observing resource consumption/transfer and cleanup outcomes. Include an early-return
+case, ordinary success controls and a deliberately omitted cleanup/duplicated transfer
+control that the gate catches. Keep fatal allocator failure distinct from recoverable
+resource acquisition; no change to the language's OOM policy is implied.
+
 ### Task R-0031
 
 **Objective:** Build the remaining collection APIs across `std.vec`, `std.map`, `std.set`, `std.ordered_map`, `std.ordered_set`, `std.deque`, `std.heap`, `std.bitset`, and `std.slice`: fixed arrays/slices, `Vec<T>`, maps, sets, buffers, parser cursors, and capacity-aware helpers. Add the ordinary APIs C/Rust users expect: `contains`, `remove`, `iter` for maps and sets;
@@ -10562,6 +10573,19 @@ tracking to the hash collections.
   item should move ahead of allocator-heavy collection stabilization if the
   validation project needs arenas, test allocators, reload-safe allocation,
   or freestanding pools.
+
+**Partial construction and replacement acceptance.** With R-0030's deterministic
+failure seam, construct a collection of owned resources and fail at each recoverable
+acquisition/initialization step, including an early return after partial progress. Account
+for every initialized element and any separately owned incoming replacement: each must
+be consumed exactly once or transferred to an identified owner, never leaked, duplicated
+or silently overwritten. Failed replacement must state whether the old element remains
+owned by the collection and who owns the incoming value. Exercise successful construction,
+replacement and transfer as controls, and report cleanup failures under R-0013's shared
+matrix. Cleanup and callback capabilities remain explicit. Preserve the existing fatal
+OOM/trap policy: these cases require neither recoverable OOM nor implicit destruction,
+and do not pull forward a new indexed-swap API.
+
 ### Task R-0032
 
 **Objective:** Build internal-iteration and builder APIs in proposed `std.iter` and `std.builder` after the collection shape is known. This is NOT Rust's external-iterator / adapter-tower model: `research/stdlib/iterators.md` resolved the v1 design as per-container internal traversal (`for_each`, `fold`, context-threaded callbacks, and optional early-exit via an explicit `Continue | Break` tag), with no iterator trait, no lazy adapter chain, and no cursor/lifetime model. Add known-length reporting and reverse traversal (`rev_fold`/`rev_for_each` — today every backwards walk is a manual index-decrement loop; extend `docs/project/ITERATION_PROTOCOL.md` when these land),
@@ -10757,6 +10781,18 @@ confinement of arbitrary foreign code.
  small wrapping variant named at the call site, not an implicit trait
  conversion. State the pattern once so error-heavy code does not each invent
  its own.
+
+**End-to-end error-context acceptance.** Add a runnable filesystem-to-parser-to-application
+example retaining a structured recovery kind, the failing operation, relevant context
+(such as a path) and the underlying cause where applicable across explicit conversions.
+Test structured recovery separately from human-readable formatting and distinguish the
+primary operation failure from a subsequent cleanup failure using R-0013's matrix.
+Include formatting into caller-provided storage without `Alloc`, with exact-capacity and
+insufficient-capacity controls and a documented truncation/error result. Owning or copying
+context and formatting into growable storage must expose any required allocation and
+lifetime obligations. No implicit conversion, hidden allocation, exception mechanism or
+unbounded error-chain requirement is introduced.
+
 ### Task R-0058
 
 **Objective:** Define the canonical **consume / destroy / handoff** conventions for linear code. The guide must distinguish explicit cleanup (`destroy(x)` or the type's consuming `.drop()`/Destroy verb), ownership transfer by by-value call, ownership transfer by return, destructuring into owned fields, `defer` as explicit scheduled cleanup, and the forbidden cases (bare non-`Copy` statement, `_` over non-`Copy`, `let _`, non-`Copy` sub-place projection by value). This is documentation plus examples and diagnostics, not automatic `Drop`: no hidden cleanup and no hidden control flow. Include a short **Copy and Linear Values** guide: when to mark a type
@@ -12962,6 +12998,20 @@ declared inputs; it cannot detect an omitted semantic dependency. Missing a
 reuse opportunity is acceptable; stale reuse is not. Narrow an envelope only
 after a gate or theorem demonstrates completeness for that query family.
 
+**Edit-cost acceptance matrix.** Measure cold builds and warm comment/span-only,
+private-body, public-signature, capability and contract edits on the same representative
+project. Record executed queries/stages and invalidation reasons alongside latency.
+Comment edits must refresh source locations without unnecessary semantic recomputation;
+body-only edits must preserve unrelated caller type-check results when the complete
+semantic dependency envelope permits it. Inline/comptime dependencies and body-dependent
+proofs, assumption summaries and reports must still invalidate. Capability, signature
+and contract edits invalidate their affected consumers. Compare every edited incremental
+result with a clean build, including diagnostics, generated behavior, assumptions and
+proof freshness; test changed-then-restored edits too. Reuse R-0482's identity boundaries
+and R-0386's editor sequence. Profile coarse parallel stages before expanding query
+granularity; a faster stale result fails acceptance. This refines the existing Phase 8.5
+workload/GO gate, not a prerequisite for closing R-0484.
+
 ### Task R-0143
 
 **Objective:** Define deterministic internal codecs before persisting an artifact family.
@@ -14261,6 +14311,20 @@ bounds, explicit backend timing assumptions.
 ### Task R-0227
 
 **Objective:** Define source-level memory-safety claims precisely: what linearity, borrows, cleanup, trusted code, raw pointers, and FFI do and do not guarantee.
+
+**Executable guarantee matrix.** Publish representative counterexamples for subobject
+bounds violations within an allocation, use after arena reset, wrong-allocator deallocation,
+invalid raw pointers and foreign-code violations. For each, name the supported profile,
+responsible checker/runtime boundary, relevant assumption and evidence class: compile-time
+rejection, runtime check, audited assumption or behavior excluded from the guarantee.
+Link each currently supported claim to an executable negative case and a valid control;
+unsupported arena/allocator APIs remain explicitly deferred, not described as protected.
+Assumed or excluded cases test honest reporting rather than execute undefined behavior as
+if a crash established safety. Reuse R-0031's arena rules, R-0315's allocator diagnostics
+and R-0228's Unsafe-island reporting. Keep docs and gate verdicts aligned; an allocation
+bounds check alone must not be advertised as a subobject-bounds guarantee, and a passing
+test must not be relabeled a proof. This refines the existing safety documentation work
+without changing queue order or requiring new memory-management features.
 
 ### Task R-0228
 
@@ -17352,6 +17416,16 @@ proof language exclusively through batch reports, but release is not blocked on 
  dependency-certificate changes. Assert the bounded Phase 8.5 query execution
  set as well as CLI/LSP fact equality; an editor-only database, stale hover,
  or batch whole-project rebuild for a private leaf edit fails the gate.
+
+**Unfinished-program acceptance.** In a scripted editor session, leave one function
+syntactically incomplete or ill-typed while requesting navigation, type information and
+capability information for unrelated valid functions. Those requests must remain useful
+and bounded in latency; dependent facts must become explicitly partial/unavailable rather
+than retain stale certainty. Repair the function and require parity with fresh CLI facts.
+Record request latency and recomputed units using R-0142's edit matrix. Specify this
+observable behavior before choosing finer query machinery; retain one semantic engine,
+and never admit tolerant editor results as complete proof or release evidence.
+
 ### Task R-0387
 
 **Objective:** Add hover/type info for capability status, proof status, predictable status, assumptions, obligations, and trusted boundaries.
