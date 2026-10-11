@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Post-R-0004 Mutation Campaign Qualified
+
+On 2026-10-11 the full 95-family gate-mutation campaign qualified on the published `670ec85a`
+(run 38104755470): every family's mutation was killed by its intended gate or by a declared build
+failure, with 0 invalid, 0 survived and 0 could-not-apply, every clean-tree baseline green, and
+`completed=1`, `integrity_ok=1`, `qualified=1`.
+
+What it took: the single 6-hour campaign job became 24 hash-assigned shards with a fail-closed
+aggregator; report-path SHA-256 moved to a fast implementation with byte-identical digests (its
+build-time guards are equivalence tests on fixed inputs, not a proof); campaign gates stopped
+inheriting the driver's snapshot environment, which had made the supervisor gate red on every clean
+tree; `divergence-detection` got its own gate, which found and fixed bug 078; and the two
+`freshFactsFor` survivors from the 81-family census were closed in `check_receipt_consumption.sh` by
+a status-only stale claim and a live trusted-boundary receipt. The first complete sharded run
+(`1f2fe0f1`, 93 killed, 2 survived) is what exposed that last gap.
+
 ### R-0483 CLOSED: Owner-Bound Views For Zero-Copy Parsing
 
 _Library repair, closed 2026-10-09 at `4f005715` (main CI 37917463687)._
@@ -48,7 +64,7 @@ still compute the older opacity analysis beside the summary.
 
 **Not qualified:** the full mutation campaign was cancelled at GitHub's 6-hour job limit on
 both dispatched closure-candidate runs. That is recorded as incomplete qualification, not a
-pass, and remains ROADMAP queue row 0.
+pass. The campaign qualified later, on `670ec85a` (see the milestone above).
 
 ### Proof Admission Separated From Proof Maintenance
 

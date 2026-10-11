@@ -30,19 +30,18 @@ the next transition; completed milestones move to the changelog rather than accu
 
 | order | work | exit before advancing |
 |---|---|---|
-| 0 | **Post-R-0004 mutation qualification checkpoint** | **R-0484 closed without campaign qualification (2026-10-08):** on both dispatched closure-candidate runs the Nightly job's "Gate mutation coverage" step was cancelled at GitHub's 6-hour limit ([37464836373](https://github.com/unbalancedparentheses/concrete2/actions/runs/37464836373) on `8187a2f7`, [37707710553](https://github.com/unbalancedparentheses/concrete2/actions/runs/37707710553) on `245cd51c`), so no complete campaign exists for the closed revision. That is incomplete qualification, never a pass; the checkpoint exception does not transfer to a release. **Local runs unblocked 2026-09-29:** from `51fa2058` (2026-08-31) until `8fcf352d` the driver refused its own snapshot on macOS (a self-location check was correct only by accident on Linux), so no campaign could run on a Mac in that window; the census below predates it. CI's Linux runs were unaffected. **Diagnostic census shipped:** 81/81 reported at `898d9a7b`: 73 causal kills, 6 invalid experiments, 2 survivors, 0 could-not-apply; artifact/log preserved. **Schema split shipped:** `98dee5e3` separates completion, dispositions, integrity and qualification. Six production-wiring families made the inventory 91, and it is **95** as of `4f005715` (`EXPECTED_FAMILIES=95`). **Known before the next run (2026-10-10):** `check_campaign_supervisor.sh` was red on the clean tree in both dispatched CI campaigns, which makes the 7 families naming it INVALID, while it passes 169/0 locally even inside a campaign-style workspace; its runner-specific baseline log must be retained and read. `divergence-detection` was INVALID because its mutant aborts `run_tests.sh` partway, and the suite's own exit-97 notice had been disabled by a second EXIT trap; both are repaired on branches (bug 078 found alongside). A single campaign job cannot finish in 6 hours, so the run is being sharded with a fail-closed aggregate. **First complete sharded campaign (2026-10-11):** [38097946883](https://github.com/unbalancedparentheses/concrete2/actions/runs/38097946883) on `1f2fe0f1`, 24 shards, every clean-tree baseline green (the supervisor included, so the red-on-clean failure is fixed rather than masked): `completed=1`, `integrity_ok=0`, `qualified=0`, 93 killed, 0 invalid, 2 survived, 0 could-not-apply. The survivors are exactly the two `freshFactsFor` families; a locally re-run aggregator reproduced the CI verdict byte for byte. `964073e7` closes both in `check_receipt_consumption.sh` with a fingerprint-only stale claim refused by status and a live trusted-boundary receipt that must read current (which a reject-all consumer fails); both KILLED in single-family probes. Per-family timings: 14.4 runner-hours, of which `check_dependency_edges.sh` is 8.3h across 21 families. Next: exercise the pure reconciliation matrix; validate paired source/build snapshots and isolated-worker acceleration against mismatch/corruption/crash/order attacks; then obtain one clean pushed-HEAD run with 95 discovered = selected = executed = reported = killed, zero invalid/survived/could-not-apply, `completed=1`, `integrity_ok=1`, `qualified=1` |
-| 1 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
-| 2 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
-| 3 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |
-| 4 | **Compiler provenance and canonical `VerificationTask`** | separate source-build provenance from executable identity; establish one production task constructor binding the exact subject, proposition, contract state, rule set, dependency material and environment |
-| 5 | **R-0353 independent consumer and schema conformance** | publish experimental task/receipt encodings plus hostile conformance fixtures; independently parse, account and replay without importing the compiler/report implementation |
-| 6 | **Receipt v1 freeze** | freeze only after producer and independent consumer agree on canonical fixtures and Slice 8's permanent attacks cover the finalized schema; incompatible changes require a version bump |
-| 7 | **R-0473/R-0474 typed contracts and exact contract identity** | replace conservative implementation-bound contract witnessing with typed contracts, imported hypotheses, exact `ContractIdentity`, and contract-preserving/body-changing controls |
-| 8 | **Two-state mutation contracts** | add a narrow record/array state model, `old`, `modifies`/frames, then ghost locals and parameters; unsupported heap/reborrow shapes refuse explicitly |
-| 9 | **Ninth-table conversion** | use the narrow mutable-state model to extract and replay the three currently fail-closed `proofFnsExt` links; until then they remain unable to provide authority |
-| 10 | **Totality and specification library** | add checked `#[decreases]`/total functions, then canonical `int`, list, map, set and bitvector theories before richer or relational logic |
-| 11 | **External-user workflow and productization** | a non-author receives evidence, replays it, upgrades a dependency, and sees exact machine/human diffs; graduate exactly three deep public flagships—HMAC-SHA256, a secure update-bundle verifier that absorbs bounded parsing and file-integrity work, and a small protocol state machine—plus IDE/CI lenses and recurring ergonomics audits. Compiler regressions, hostile inputs and benchmarks remain fixtures, adversarial cases and workloads rather than additional public flagships |
-| 12 | **R-0440/package evidence and typed policy** | compose partial dependency evidence, revocation/advisories, trust and release requirements without turning receipt validity into policy acceptance |
+| 0 | **R-0208 Lean #14576 upgrade/revocation fire drill** | explain every proof/evidence delta and prove old checker-bound evidence cannot recover through metadata; no new authoritative evidence transition crosses this blocker |
+| 1 | **R-0482 identity freeze and ratification** | freeze canonical full rows, not `sort -u` population counts; ratify `PackageScopeIdentity`, `PackageArtifactIdentity`, `ResolutionContextIdentity`, `DefinitionIdentity`, and claim dependency-root ownership, including manifestless scope and legitimate many-to-one rows |
+| 2 | **R-0482 atomic identity migration** | emit a typed old-to-new row map with totality, definition-level collision/refusal accounting, and bootstrap support; migrate attestations, receipts, generated symbols and consumers atomically; prove unused dependency/content changes do not move scope while reachable dependency changes move roots |
+| 3 | **Compiler provenance and canonical `VerificationTask`** | separate source-build provenance from executable identity; establish one production task constructor binding the exact subject, proposition, contract state, rule set, dependency material and environment |
+| 4 | **R-0353 independent consumer and schema conformance** | publish experimental task/receipt encodings plus hostile conformance fixtures; independently parse, account and replay without importing the compiler/report implementation |
+| 5 | **Receipt v1 freeze** | freeze only after producer and independent consumer agree on canonical fixtures and Slice 8's permanent attacks cover the finalized schema; incompatible changes require a version bump |
+| 6 | **R-0473/R-0474 typed contracts and exact contract identity** | replace conservative implementation-bound contract witnessing with typed contracts, imported hypotheses, exact `ContractIdentity`, and contract-preserving/body-changing controls |
+| 7 | **Two-state mutation contracts** | add a narrow record/array state model, `old`, `modifies`/frames, then ghost locals and parameters; unsupported heap/reborrow shapes refuse explicitly |
+| 8 | **Ninth-table conversion** | use the narrow mutable-state model to extract and replay the three currently fail-closed `proofFnsExt` links; until then they remain unable to provide authority |
+| 9 | **Totality and specification library** | add checked `#[decreases]`/total functions, then canonical `int`, list, map, set and bitvector theories before richer or relational logic |
+| 10 | **External-user workflow and productization** | a non-author receives evidence, replays it, upgrades a dependency, and sees exact machine/human diffs; graduate exactly three deep public flagships—HMAC-SHA256, a secure update-bundle verifier that absorbs bounded parsing and file-integrity work, and a small protocol state machine—plus IDE/CI lenses and recurring ergonomics audits. Compiler regressions, hostile inputs and benchmarks remain fixtures, adversarial cases and workloads rather than additional public flagships |
+| 11 | **R-0440/package evidence and typed policy** | compose partial dependency evidence, revocation/advisories, trust and release requirements without turning receipt validity into policy acceptance |
 
 R-0484 (closed 2026-10-08 at `245cd51c`) and R-0483 (closed 2026-10-09 at `4f005715`) moved to
 [CHANGELOG.md](CHANGELOG.md); their accepted limits stay recorded in their task sections.
@@ -79,7 +78,8 @@ packaging ahead of current queue work or mark any in-flight branch as complete.
 
 - [x] R-0484 meets its closure criteria (closed 2026-10-08 at `245cd51c`, main CI 37771982899);
   its accepted limits are listed in its task section and its mutation campaign is
-  incompletely qualified (queue row 0).
+  incompletely qualified at that revision; the campaign later qualified on `670ec85a`
+  (2026-10-11, run 38104755470).
 - [x] R-0483 rejects mismatched owners for parsed results with retained controls (closed
   2026-10-09 at `4f005715`; `check_view_lifetime.sh` 28/0 in main CI 37917463687).
 - [ ] R-0333 names the exact preview subset, supported target/OS/toolchain matrix,
@@ -524,7 +524,16 @@ has not started.
 
 ## Current Execution State (2026-08-31)
 
-### Post-R-0004 mutation qualification — active; R-0482 has not started
+### Post-R-0004 mutation qualification — QUALIFIED 2026-10-11 at `670ec85a`
+
+**Qualified:** dispatched run
+[38104755470](https://github.com/unbalancedparentheses/concrete2/actions/runs/38104755470) on the
+published `670ec85a`, 24 shards with a fail-closed aggregate: 95 discovered = selected = executed =
+reported = killed, 0 invalid, 0 survived, 0 could-not-apply, every clean-tree baseline green,
+`completed=1`, `integrity_ok=1`, `qualified=1`. The aggregator re-run locally over the downloaded
+shard artifacts reproduced the CI verdict exactly. Slowest shard 92m; 14.1 runner-hours, 8.3 of them
+in the 21 families gated by `check_dependency_edges.sh`. The history below is kept as the record of
+how the campaign got there; R-0208 is now queue row 0.
 
 R-0004 remains **closed** by the protected 205/205 serial run recorded below and in
 [CHANGELOG.md](CHANGELOG.md). The current work is a stronger post-closure question: can every
@@ -10876,7 +10885,7 @@ assumption, incomplete coverage, unsupported) is in
 the Nightly job's mutation-coverage step was cancelled at GitHub's 6-hour limit on both
 dispatched runs (37464836373 on `8187a2f7`, 37707710553 on `245cd51c`). R-0484 closed
 under the checkpoint exception, which does not certify the campaign or carry over to a
-release; qualification is queue row 0. F7/F8 stay with R-0013, F9's runtime contract
+release; the campaign qualified on `670ec85a` (2026-10-11, run 38104755470). F7/F8 stay with R-0013, F9's runtime contract
 with spawn's stated assumptions, typed descriptors with the second step.
 
 The record below is the pre-closure inventory, kept for its commit trail.
