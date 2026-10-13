@@ -14,6 +14,8 @@ state or queue.
 > **Start here for direction:** [Capability unlocks](#capability-unlocks--the-stable-product-map)
 > and [North star](#north-star-compositional-fail-visible-verification) — the product boundary,
 > the dimensions along which proof support grows, and the limits that must remain visible.
+> **Start here for future tooling and targets:** [Delivery and target direction](#delivery-and-target-direction)
+> — workload-led investments and bounded experiments, subject to the current execution queue.
 > **Remaining design scope:** [Language baseline and bounded verification milestone](#language-baseline-and-bounded-verification-milestone)
 > — the settled systems-language shape, remaining semantic decisions, and the first
 > compositional subset to validate on a real workload.
@@ -129,6 +131,47 @@ Patch releases repair an already published scope without waiting for the next
 feature release. They have their own candidate commit and validation record;
 compatibility breaks or changed evidence identities require an explicit migration
 or invalidation notice. Stabilization must not silently expand the claimed subset.
+
+## Delivery and target direction
+
+**Direction recorded 2026-10-13; planned, not shipped.** The first delivery target is an
+external developer successfully changing and rechecking a useful native component. R-0486
+owns that session: prefer the bounded parser/state-machine component of the secure
+update-bundle verifier, retaining the existing protocol flagship alternative when its
+admitted fragment is smaller. The current queue owns the identity, task, independent-consumer
+and contract prerequisites; this direction neither inserts a second queue nor requires the
+complete update verifier or all its cryptographic claims before the bounded session is useful.
+
+Use that session to pull the smallest sufficient tooling increments. R-0150 measures time to
+actionable feedback and repair effort; Phase 8.5 owns dependency-correct incremental reuse;
+R-0385/R-0386 expose the same session facts through the editor. Measure build, analysis,
+proof/replay and gate costs separately, exercise cold and warm runs, and preserve clean-build
+equivalence. During development use affected gates and selected mutation probes; candidate
+acceptance still requires its full checks and exact-commit qualification. Parallel execution
+must preserve the relevant isolation and accounting contracts, including serial closure where
+required. Optimization targets come from measurements of this workload.
+
+Native target/runtime contracts underpin deployment expansion. QBE remains the next backend
+experiment, with independent instruction selection and differential oracles; WebAssembly
+remains the provisional complementary backend after the existing QBE and BackendIR entrance
+criteria. Freestanding support is a target profile whose own workload and runtime prerequisites
+must pass. Each investment below stays with its existing owner, except the newly recorded GPU
+research task; their phase prerequisites determine admission to the current queue.
+
+| Investment | Owner | First useful deliverable |
+|---|---|---|
+| Native portability and component interop | R-0279, R-0283, R-0285/R-0286 | a small LLVM target/ABI/runtime matrix and an exported component callable from an existing host, with layout, ownership, capabilities, failure behavior and evidence boundaries explicit |
+| QBE | Phase 7.5, R-0092/R-0094, R-0099 | a declared integer/control-flow/call/aggregate subset compared through interpreter, LLVM and QBE with independent expectations; measure compile cost, determinism and maintenance before expansion |
+| Freestanding | R-0322–R-0332 | one named ARM microcontroller board or emulator running a fixed-capacity parser or protocol state machine, with explicit startup, storage, failure handling and remaining hardware assumptions |
+| Wasm32/WASI | R-0100, R-0305–R-0315 | a supported component embedded as a sandboxed plugin through explicit imports, retaining target-specific evidence and unsupported-feature diagnostics |
+| GPU compute | R-0489 | a bounded typed-tile and asynchronous-ownership prototype with one named workload/target, executable validation, benchmark conditions and separately scoped safety/numerical/backend claims |
+
+Cranelift remains R-0100's alternative when fast native/JIT compilation is the forcing need.
+eBPF, C emission through a compiler such as CompCert, DSP/NPU targets and FPGA synthesis are
+comparison candidates: promotion requires a named workload, admitted execution/memory model,
+interop contract and evidence boundary that justify their cost. They are not new implementation
+commitments. Keep C ABI integration, resource budgets and later structured concurrency with
+their current owners; backend breadth does not substitute for the external-user milestone.
 
 ## How To Read This Roadmap
 
@@ -11487,6 +11530,15 @@ and required author assistance. The scenario does not reorder qualification, ide
 contract or independent-consumer prerequisites, or require a registry, new backend or
 general heap model.
 
+**First external-user deliverable (2026-10-13):** a non-author follows the documented
+install/build path from a clean consumer, changes the admitted component or a dependency,
+understands the affected authority/assumption/contract-evidence diff, repairs the relevant
+obligations and replays the supported claims with R-0353's independent consumer. Retain the
+before/change/repair artifacts and failed attempts. Compiler-author assistance is measured
+and remains a usability limitation. Use the session's feedback and repair costs to select
+subsequent language, tooling and target increments; success on this bounded component does
+not imply complete verification of the enclosing update-bundle verifier.
+
 **Exit:** a consumer relies on a public contract without inspecting private bodies;
 calls establish preconditions and use exported postconditions without inlining;
 frame/`old` semantics cover the admitted mutation fragment. A contract-preserving
@@ -15258,6 +15310,14 @@ replayable; and every boundary after that slice remains explicitly trusted.
 
 **Objective:** Document target/toolchain model: triple, data layout, linker, runtime/startup, libc expectation, clang/llc boundary, sanitizer/coverage hooks.
 
+**First portability increment (2026-10-13):** parameterize pointer width, endianness,
+alignment, ABI, runtime imports and failure behavior through target facts rather than
+the compiler host. Validate a small named LLVM native matrix with executable positive
+cases, target-dependent layout/ABI controls and unavailable-feature refusals. R-0283 and
+R-0285/R-0286 own the C caller/export controls. Each build retains its target/toolchain
+and supported evidence scope; moving the source to another target does not itself
+establish correctness of that target's code generation or runtime.
+
 ### Task R-0280
 
 **Objective:** Define optimization policy: allowed optimizations, evidence preservation, debug/release behavior, report/codegen validation. Follow the QBE-style "small auditable backend contract first" principle: prefer a stable, inspectable subset with explicit assumptions over early attempts to match LLVM-level optimization coverage.
@@ -15963,6 +16023,13 @@ non-returning target handler. Neither profile promises cleanup.
 ### Task R-0329
 
 **Objective:** Add one freestanding example: bounded parser, small checksum/hash kernel, or fixed-capacity state machine with no allocation and no hosted I/O.
+
+**First target (2026-10-13):** select one ARM microcontroller board or named emulator
+before implementation; reuse a bounded parser/protocol component already exercised on
+the host where its admitted semantics fit. Retain host and device observations against
+the same behavioral reference, target-specific startup/storage/failure fixtures, and
+R-0330's assumption bundle. Device behavior is measured or explicitly assumed according
+to its evidence class; a source-level theorem does not certify the hardware.
 
 ### Task R-0330
 
@@ -17019,6 +17086,13 @@ Proof-aware refactoring, dependency dashboards, migration/deprecation UI, hosted
 other breadth stay in Phase 19 after the core path proves useful. First users should not meet a
 proof language exclusively through batch reports, but release is not blocked on a complete IDE.
 
+**Feedback acceptance (2026-10-13):** reuse R-0486's change-and-repair edits and R-0150's
+observed baseline to choose the first session/LSP increments. Measure cold and warm
+latency to an actionable diagnostic or evidence diff, and separate query, build and
+proof/replay costs. R-0386's edit-invalidation and CLI/LSP equivalence controls remain
+required; cancellation, stale results and partial coverage cannot buy a faster friendly
+verdict. Improve the measured bottleneck before broadening editor features.
+
 ### Task R-0384
 
 **Objective:** Add artifact viewer integration for proof/evidence facts.
@@ -17292,9 +17366,67 @@ must not silently reinterpret or overwrite their source scope.
  an acyclicity/stratification story, shows replayable derived-fact output,
  and rejects a cyclic or stale derived fact. Until then, this remains a
  future rule-layer reference, not unfinished incremental-compiler work.
+### Task R-0489
+
+**Objective:** Research a bounded GPU compute profile with typed tiles, explicit scheduling
+and evidence tied to the optimized kernel artifact.
+
+**Status (2026-10-13): research / bounded prototype, outside the current execution queue.**
+Select one forcing workload and one hardware/runtime target before implementation. Candidate
+pressure cases are batched SHA-256 for exact integer behavior, reduction for collective and
+floating-point policy, or matrix multiplication with a fused epilogue for tiled performance.
+Select the smallest case that tests the proposed model; the other cases are expansion probes,
+not simultaneous public flagships. Compare CUDA/NVPTX or Tile IR for NVIDIA compute and
+WGSL/WebGPU for portable execution according to that workload. Record support gaps and
+toolchain cost before choosing the first backend; broad GPU support is not promised.
+
+The design prototype must account for:
+
+- typed shapes, strides, layouts, memory spaces and read/write views, with disjoint mutable
+  output partitions across parallel invocations;
+- readable computation and tunable tile/layout/pipeline choices, with explicit legality and
+  semantic obligations for supported transformations;
+- linear access rights for in-flight host launches, device copies and compute operations,
+  preventing premature reuse of buffers or pipeline stages;
+- participation requirements for supported warp/workgroup collectives and barriers, with
+  safety, race freedom and liveness claims distinguished;
+- numerical contracts naming dtype, accumulation, rounding/fusion/reassociation policy,
+  exceptional values and any supported error bound; exact arithmetic, approximate relations
+  and tested tolerances are distinct evidence;
+- reuse of Concrete's semantic/task/evidence owners, preserving these facts until target
+  lowering and keeping cache/autotuning records separate from authoritative evidence.
+
+The evidence prototype binds the source computation, admitted schedule/specialization,
+generated artifact, target, numeric policy and toolchain. It names source-to-kernel relations
+that are checked and every later compiler/driver/hardware boundary still trusted. Existing
+source proofs cannot silently become proofs of the parallel artifact. Use R-0417–R-0419's
+performance discipline: comparable reference implementations and arithmetic policy, verified
+outputs before timing, raw samples and conditions, compilation/transfer/launch/steady-state
+costs separated, and measured versus estimated resource usage labeled. Supporting these
+records in the prototype does not graduate a production receipt schema or backend.
+
+Prior art to compare includes [Triton/Gluon](https://triton-lang.org/main/gluon/index.html),
+[cuTile](https://docs.nvidia.com/cuda/cutile-python/),
+[CuTe DSL](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/overview.html),
+[Helion](https://helionlang.com/index.html), [CUDA Rust](https://github.com/NVIDIA/cuda-rust),
+[Prism](https://doi.org/10.1145/3808290),
+[Kuiper](https://tyler-utah.github.io/files/kuiper.pdf) and
+[Lean-based CUDA equivalence checking](https://www.logosresearch.ai/blog/verified-gpu-kernels/).
+Ownership safety, typed collective resources and verified tuning already have precedents;
+evaluate whether Concrete's systems-language workflow, diagnostics and exact artifact/evidence
+accounting add useful value, rather than claiming those ideas are new.
+
+**Exit / promotion decision:** retain a design record, one executable workload and reference,
+its admitted fragment, benchmark and development-cost results, and hostile controls for wrong
+indices/strides, overlapping output, invalid collective participation where admitted, early
+buffer reuse and changed numeric/target/artifact bindings. Unsupported constructs refuse with
+actionable diagnostics; unresolved checks remain explicit. Promote only if the selected
+workload shows useful performance and manageable implementation/proof burden while preserving
+the named claims. Otherwise record the failed criterion and stop or narrow the experiment.
+
 ### Task R-0415
 
-**Objective:** Add the Phase 20 validation artifact: one pressure-test sketch, expected report, and decision record for every research-gated extension (concurrency, atomics/memory model, typestate, arena allocation, WCET, binary-format DSLs, hardware capability mapping, Miri-style interpreter, sized evaluator, persistent rewrite state, row effects, generational dynamic fallback, compiler self-verification, and Datalog-style relational facts). No research item graduates unless its forcing example, report shape, evidence class, and rejection or pull-forward criteria are recorded.
+**Objective:** Add the Phase 20 validation artifact: one pressure-test sketch, expected report, and decision record for every research-gated extension (concurrency, atomics/memory model, typestate, arena allocation, WCET, binary-format DSLs, hardware capability mapping, Miri-style interpreter, sized evaluator, persistent rewrite state, row effects, generational dynamic fallback, compiler self-verification, Datalog-style relational facts, and R-0489's GPU compute profile). No research item graduates unless its forcing example, report shape, evidence class, and rejection or pull-forward criteria are recorded.
 
 ### Task R-0446
 
