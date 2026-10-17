@@ -2483,6 +2483,18 @@ apply(){ mut_anchor apply "$1" "$2" "$3"; }
 # A workspace that will not restore invalidates the rest of the campaign, so this is fatal, not a
 # warning.
 WORK_DIRTY=0
+# RESTORING THE SOURCE DOES NOT RESTORE WHAT WAS BUILT FROM IT. Every `_timed_build` that runs while a
+# mutation is applied leaves the compiler binary and the oleans built FROM THAT MUTATION, and
+# `restore_work` puts back only the file. A following BUILD=yes family rebuilds (the restored file's
+# hash moved), but a BUILD=no family runs its gate on whatever is there: measured on the ab01f856
+# campaign, the D1 family's final red leg rebuilt the mutated tree, the source was restored, and the
+# next family (`migration-map-totality`, BUILD=no) copied that executable — its restored control then
+# failed D1 and the family scored INVALID for a mutation it never applied.
+#
+# So this records whether the workspace's build artifacts are from a mutated source, and a family that
+# will not rebuild for itself first rebuilds the restored tree. Fail-closed: if that rebuild fails the
+# workspace is not trustworthy and the campaign stops, exactly as for a failed source restore.
+ARTIFACTS_FROM_MUTATION=0
 restore_work(){ # file
   if ! git -C "$WORK" checkout -- "$1" 2>"$TMP/rerr"; then
     echo "  FATAL: could not restore $1 in the workspace ($(tr '\n' ' ' < "$TMP/rerr"))" >&2
@@ -2694,7 +2706,7 @@ EVIDENCE_DIR="$ROOT_DIR/.mutation-evidence/$RUN_ID"
 # clean.log is deliberately NOT here: it is written by the BASELINE loop, not by any family, and
 # including it is what let the last baseline gate's transcript be copied into every family record.
 # The baseline keeps its own per-gate transcripts under _baseline/.
-EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log aerr aerr2"
+EV_LOGS="build.log gate.log confirm_clean.log confirm_red.log confirm_build.log confirm_build2.log reclean_build.log aerr aerr2"
 
 # ONE PRODUCER, because the baseline is implemented TWICE — once for the campaign sweep and once for
 # single-family selection — and adding retention to only one of them is exactly the drift this
@@ -2823,6 +2835,20 @@ run_one(){
     publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 1 "INVALID — gate not green on the unmutated workspace"
     return
   fi
+  # A FAMILY THAT WILL NOT REBUILD MUST NOT INHERIT A MUTATED BUILD (see ARTIFACTS_FROM_MUTATION). The
+  # source is pristine here — every earlier family restored its file — so this build is the clean one.
+  if [ "$ARTIFACTS_FROM_MUTATION" = "1" ] && [ "$needs" != yes ]; then
+    if _timed_build "$TMP/reclean_build.log"; then
+      ARTIFACTS_FROM_MUTATION=0
+    else
+      echo "  FATAL: the restored workspace did not rebuild, so its artifacts are still the previous" >&2
+      echo "         family's mutation. Every later verdict would describe that compiler. Aborting." >&2
+      FAIL=$((FAIL+1)); INVALID=$((INVALID+1))
+      publish_evidence "$nm" "$i" "$file" "${GATE[$i]}" 0 1 "INVALID — the restored workspace did not rebuild after the previous family's mutated build"
+      WORK_DIRTY=1
+      return
+    fi
+  fi
   if ! apply "$WORK/$file" "$TMP/old" "$TMP/new" 2>"$TMP/aerr"; then
     echo "  FAIL $nm: could not apply mutation ($(cat "$TMP/aerr"))"
     FAIL=$((FAIL+1)); COULD_NOT_APPLY=$((COULD_NOT_APPLY+1))
@@ -2832,6 +2858,8 @@ run_one(){
   fi
   local killed=0 note="" invalid=0
   if [ "$needs" = yes ]; then
+    # Set BEFORE the build: a failed build may still have written artifacts for modules it reached.
+    ARTIFACTS_FROM_MUTATION=1
     if ! _timed_build "$TMP/build.log"; then
       # A build failure is NOT automatically a kill. Distinguish two very different things:
       #
@@ -3006,7 +3034,7 @@ through its declared check: $_want)"
           invalid=1; note="(INVALID — could not restore $file to confirm the kill)"; _confirm_ok=0
         fi
         if [ "$_confirm_ok" = "1" ] && [ "$needs" = yes ]; then
-          _timed_build "$TMP/confirm_build.log" || _confirm_ok=0
+          if _timed_build "$TMP/confirm_build.log"; then ARTIFACTS_FROM_MUTATION=0; else _confirm_ok=0; fi
         fi
         if [ "$_confirm_ok" = "1" ]; then
           _clean_rc=0
@@ -3024,6 +3052,7 @@ failure under mutation is not attributable to the mutation)"
           fi
         fi
         if [ "$_confirm_ok" = "1" ] && [ "$needs" = yes ]; then
+          ARTIFACTS_FROM_MUTATION=1
           # NOT `|| true`. Ignoring this rebuild meant the second red leg could be produced by a
           # FAILED BUILD rather than by the gate — and the leg below then accepted any nonzero exit
           # without the exit-97, precondition, or end-shape checks the FIRST red leg gets. The
