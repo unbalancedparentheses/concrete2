@@ -213,26 +213,43 @@ private partial def buildQualNameMap (m : CModule) (pfx : String := "")
     acc ++ buildQualNameMap sub qualPrefix) []
 
 private partial def buildCallGraphModule (qualNameMap : List (String × String))
-    (m : CModule) (pfx : String := "") : CallGraph :=
+    (aliases : List (String × String)) (m : CModule) (pfx : String := "") : CallGraph :=
   let qualPrefix := if pfx == "" then m.name else pfx ++ "." ++ m.name
   -- Resolve a bare callee name to its qualified name.
   -- Prefer same-module match (qualPrefix.bare) over first global match.
+  --
+  -- A CROSS-PACKAGE CALL IS SPELLED BY THE CALLER, NOT THE DEFINITION. `v.len()` on a std
+  -- `BoundView` reaches Core as `BoundView_len`; std defines `numeric_BoundView_len`. The bridge is
+  -- the program's `linkerAliases` — the table codegen links the call by — so the graph reads it
+  -- rather than guessing. Codegen takes the FIRST alias in emission order; the graph takes an alias
+  -- only when the spelling has exactly one target and that symbol is defined exactly once. Anything
+  -- else stays bare and the closure refuses, rather than agreeing with codegen by luck.
   let resolveCallee (bare : String) : String :=
     let sameModule := qualPrefix ++ "." ++ bare
     if qualNameMap.any fun (_, q) => q == sameModule then sameModule
     else match qualNameMap.find? fun (b, _) => b == bare with
     | some (_, qual) => qual
-    | none => bare  -- intrinsic, extern, or unknown
+    | none =>
+      match (aliases.filterMap fun (a, sym) => if a == bare then some sym else none).eraseDups with
+      | [sym] =>
+        match qualNameMap.filter fun (b, _) => b == sym with
+        | [(_, qual)] => qual
+        | _ => bare
+      | _ => bare  -- intrinsic, extern, unknown, or ambiguous
   let fnEntries := m.functions.map fun f =>
     let qualName := qualPrefix ++ "." ++ f.name
     let callees := collectCallsStmts f.body |>.eraseDups |>.map resolveCallee
     (qualName, callees)
   fnEntries ++ m.submodules.foldl (fun acc sub =>
-    acc ++ buildCallGraphModule qualNameMap sub qualPrefix) []
+    acc ++ buildCallGraphModule qualNameMap aliases sub qualPrefix) []
+
+private partial def allLinkerAliases (m : CModule) : List (String × String) :=
+  m.linkerAliases ++ m.submodules.foldl (fun acc sub => acc ++ allLinkerAliases sub) []
 
 def buildCallGraph (modules : List CModule) : CallGraph :=
   let qualNameMap := modules.foldl (fun acc m => acc ++ buildQualNameMap m) []
-  modules.foldl (fun acc m => acc ++ buildCallGraphModule qualNameMap m) []
+  let aliases := modules.foldl (fun acc m => acc ++ allLinkerAliases m) []
+  modules.foldl (fun acc m => acc ++ buildCallGraphModule qualNameMap aliases m) []
 
 /-! ### Effect opacity (R-0484)
 
@@ -2037,6 +2054,11 @@ structure ProofCore where
   obligations : List Obligation := []
   /-- Proof diagnostics generated from the proof pipeline. -/
   diagnostics : List ProofDiagnostic := []
+  /-- The WHOLE program's populations when this ProofCore is a scoped VIEW (`scopeToUser`), `none`
+      when it is the whole program already. R-0482 P1: a claim's dependency closure may reach std or
+      a dependency package, so the closure, its correspondence and the theorem typing its edges read
+      the program (`closureView`), while every listing reads only the scoped populations above. -/
+  program : Option (List ProofCoreEntry × List ProofCoreExcluded × List Obligation) := none
 
 -- ============================================================
 -- Registry validation
@@ -2236,6 +2258,14 @@ def theoremNameOf (pc : ProofCore) (qualName : String) : String :=
   (pc.obligations.find? (fun o => o.functionId.qualName == qualName))
     |>.bind (·.spec) |>.map (·.proofName) |>.getD ""
 
+/-- The populations a dependency closure may reach: the whole program, even through a scoped view.
+    Reporting scope decides what is LISTED; it must never decide what a closure CONTAINS — a closure
+    computed over the reported scope alone is a confident answer over less than the claim rests on. -/
+def ProofCore.closureView (pc : ProofCore) : ProofCore :=
+  match pc.program with
+  | some (es, xs, os) => { pc with entries := es, excluded := xs, obligations := os, program := none }
+  | none => pc
+
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
 
     R-0004 slice 6, step 4 — SHADOW. Produced here rather than in Report so both consumers read
@@ -2257,6 +2287,7 @@ def theoremNameOf (pc : ProofCore) (qualName : String) : String :=
     callee whose identity cannot be resolved is DROPPED from the edge list and the node is marked
     by its absence — it cannot be silently treated as an edge to nothing. -/
 def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode :=
+  let pc := pc.closureView
   -- BOTH POPULATIONS. A callee excluded from the proof entries — a trusted helper, most often —
   -- still has a semantic identity, and resolving only against `entries` reported it as
   -- `«unresolved»`. Entries are consulted FIRST so an eligible function can never be shadowed by
@@ -2365,6 +2396,7 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
     SHADOW. Nothing consumes this. -/
 def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
     : Except Proof.DefinitionIdentityRefusal Proof.CorrespondenceInput := do
+  let pc := pc.closureView
   let nodes := dependencyNodesOf pc graph
   -- THE SUBJECT IS KEYED BY ITS SCOPED IDENTITY, and a subject without one cannot be corresponded
   -- at all. `Except` rather than a fabricated key: the whole point of the migration is that no
@@ -3844,11 +3876,13 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
   let isUser (qn : String) : Bool :=
     let topModule := match qn.splitOn "." with | m :: _ => m | [] => qn
     !depNames.contains topModule
+  let whole := pc.closureView
   { pc with
     entries     := pc.entries.filter     fun e => isUser e.qualName
     excluded    := pc.excluded.filter    fun e => isUser e.qualName
     obligations := pc.obligations.filter fun o => isUser o.functionId.qualName
     diagnostics := pc.diagnostics.filter fun d => isUser d.function
+    program     := some (whole.entries, whole.excluded, whole.obligations)
   }
 
 /-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
@@ -3857,6 +3891,7 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
     but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
     dependency. Reported beside the correspondence line rather than folded into it. -/
 def tableResolutionRefusalsOf (pc : ProofCore) (graph : CallGraph) (id : CallableId) : List String :=
+  let pc := pc.closureView
   -- A SUBJECT WITHOUT A SCOPED IDENTITY HAS NO CORRESPONDENCE OPERATION AT ALL, so it has no table
   -- refusals either — reporting an empty list here says "none encountered", and the reason the
   -- subject could not be corresponded is reported by the correspondence line itself.
