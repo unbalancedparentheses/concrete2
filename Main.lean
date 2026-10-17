@@ -1642,7 +1642,7 @@ def compileAndReport (inputPath : String) (reportType : String)
     -- scoped. A second extraction over the user modules alone could not see past the package edge.
     -- Standalone has no dependency context and keeps its own extraction.
     let pc ← match programPc? with
-      | some p => pure p
+      | some p => pure (p.relocate simpleLocMap)
       | none => match extractProofCore? fullValidCore packageIdentity (mkAssumptions ()) simpleLocMap registry with
         | .ok pc => pure pc
         | .error w => IO.eprintln s!"error: {w.explain}"; return 1

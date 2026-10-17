@@ -2058,7 +2058,8 @@ structure ProofCore where
       when it is the whole program already. R-0482 P1: a claim's dependency closure may reach std or
       a dependency package, so the closure, its correspondence and the theorem typing its edges read
       the program (`closureView`), while every listing reads only the scoped populations above. -/
-  program : Option (List ProofCoreEntry × List ProofCoreExcluded × List Obligation) := none
+  program : Option (List ProofCoreEntry × List ProofCoreExcluded × List Obligation × CallGraph ×
+                    List (String × RecursionKind × List String)) := none
 
 -- ============================================================
 -- Registry validation
@@ -2263,7 +2264,8 @@ def theoremNameOf (pc : ProofCore) (qualName : String) : String :=
     computed over the reported scope alone is a confident answer over less than the claim rests on. -/
 def ProofCore.closureView (pc : ProofCore) : ProofCore :=
   match pc.program with
-  | some (es, xs, os) => { pc with entries := es, excluded := xs, obligations := os, program := none }
+  | some (es, xs, os, g, r) =>
+    { pc with entries := es, excluded := xs, obligations := os, callGraph := g, recMap := r, program := none }
   | none => pc
 
 /-- Dependency nodes over SEMANTIC IDENTITIES, built from ProofCore's own entries.
@@ -2287,6 +2289,8 @@ def ProofCore.closureView (pc : ProofCore) : ProofCore :=
     callee whose identity cannot be resolved is DROPPED from the edge list and the node is marked
     by its absence — it cannot be silently treated as an edge to nothing. -/
 def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode :=
+  -- A scoped view's `callGraph` is the reported scope's; the closure needs the program's.
+  let graph := if pc.program.isSome then pc.closureView.callGraph else graph
   let pc := pc.closureView
   -- BOTH POPULATIONS. A callee excluded from the proof entries — a trusted helper, most often —
   -- still has a semantic identity, and resolving only against `entries` reported it as
@@ -2396,6 +2400,7 @@ def dependencyNodesOf (pc : ProofCore) (graph : CallGraph) : List Proof.DepNode 
     SHADOW. Nothing consumes this. -/
 def correspondenceInputOf (pc : ProofCore) (graph : CallGraph) (id : CallableId)
     : Except Proof.DefinitionIdentityRefusal Proof.CorrespondenceInput := do
+  let graph := if pc.program.isSome then pc.closureView.callGraph else graph
   let pc := pc.closureView
   let nodes := dependencyNodesOf pc graph
   -- THE SUBJECT IS KEYED BY ITS SCOPED IDENTITY, and a subject without one cannot be corresponded
@@ -3877,13 +3882,40 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
     let topModule := match qn.splitOn "." with | m :: _ => m | [] => qn
     !depNames.contains topModule
   let whole := pc.closureView
+  -- The reported scope's MODULES — what a user-only ProofCore's graph held: every function of a user
+  -- module, including those with no entry. "Not a dependency's top module" kept 58 program
+  -- definitions (parse_validate: 10 functions became 68); "has a user entry" dropped functions that
+  -- have none (constant_time_tag: 4 became 2).
+  let topOf := fun (qn : String) => match qn.splitOn "." with | m :: _ => m | [] => qn
+  let mineTops := ((pc.entries.map (·.qualName) ++ pc.excluded.map (·.qualName)).filter isUser).map topOf |>.eraseDups
+  let mine := fun (qn : String) => mineTops.contains (topOf qn)
   { pc with
     entries     := pc.entries.filter     fun e => isUser e.qualName
     excluded    := pc.excluded.filter    fun e => isUser e.qualName
     obligations := pc.obligations.filter fun o => isUser o.functionId.qualName
     diagnostics := pc.diagnostics.filter fun d => isUser d.function
-    program     := some (whole.entries, whole.excluded, whole.obligations)
+    -- The call graph and recursion map are LISTINGS too (the recursion report reads them): scoped
+    -- here, kept whole in `program` for the closures. Measured: an unscoped graph put 950 program
+    -- functions, and std's `HashMap_insert` recursion, into a 10-function program's recursion report.
+    callGraph   := pc.callGraph.filter fun (n, _) => mine n
+    recMap      := pc.recMap.filter fun (n, _, _) => mine n
+    program     := some (whole.entries, whole.excluded, whole.obligations, whole.callGraph, whole.recMap)
   }
+
+/-- Re-read every location from `locMap`, keyed by qualified name; an absent key keeps its location.
+
+    A view of the LOADER's ProofCore carries the loader's locations, keyed by the resolved entry
+    path; a report renders the path the user typed. Same file, two spellings — so the report path
+    re-localizes what it lists, and nothing the closures read depends on it. -/
+def ProofCore.relocate (pc : ProofCore) (locMap : List (String × SourceLoc)) : ProofCore :=
+  let at_ := fun (qn : String) (old : Option SourceLoc) => ((locMap.find? (·.1 == qn)).map (·.2)).orElse fun _ => old
+  { pc with
+    entries     := pc.entries.map fun e =>
+      { e with loc := at_ e.qualName e.loc, eligibility := { e.eligibility with loc := at_ e.qualName e.eligibility.loc } }
+    excluded    := pc.excluded.map fun x =>
+      { x with loc := at_ x.qualName x.loc, eligibility := { x.eligibility with loc := at_ x.qualName x.eligibility.loc } }
+    obligations := pc.obligations.map fun o => { o with loc := at_ o.functionId.qualName o.loc }
+    diagnostics := pc.diagnostics.map fun d => { d with loc := at_ d.function d.loc } }
 
 /-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
 
@@ -3891,6 +3923,7 @@ def ProofCore.scopeToUser (pc : ProofCore) (depNames : List String) : ProofCore 
     but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
     dependency. Reported beside the correspondence line rather than folded into it. -/
 def tableResolutionRefusalsOf (pc : ProofCore) (graph : CallGraph) (id : CallableId) : List String :=
+  let graph := if pc.program.isSome then pc.closureView.callGraph else graph
   let pc := pc.closureView
   -- A SUBJECT WITHOUT A SCOPED IDENTITY HAS NO CORRESPONDENCE OPERATION AT ALL, so it has no table
   -- refusals either — reporting an empty list here says "none encountered", and the reason the
