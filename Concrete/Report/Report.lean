@@ -1163,7 +1163,11 @@ private def renderProofStatusBody (e : ProofStatusEntry) (sourceMap : SourceMap)
     -- a different body. "The body changed" would be false — it may never have matched — so say what
     -- was found instead of showing two identical fingerprints under a claim of change.
     if e.specBinding.startsWith "NOT bound" then
-      s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  `{e.qualName}`: the linked theorem is about a different body.{snippet}\n\n  spec: {e.specBinding}{originLine}\n\n  hint: Link the theorem whose specification is this body, or restore the body the theorem is about."
+      -- BOTH findings when both hold: a body can also have changed since it was pinned, and that diff
+      -- is the first thing a reader repairing it needs.
+      let fpLines := if e.expectedFp.isEmpty || e.expectedFp == e.currentFp then ""
+        else s!"\n\n  expected fingerprint:\n    {e.expectedFp}\n\n  current fingerprint:\n    {e.currentFp}"
+      s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  `{e.qualName}`: the linked theorem is about a different body.{snippet}\n\n  spec: {e.specBinding}{fpLines}{originLine}\n\n  hint: Link the theorem whose specification is this body, or restore the body the theorem is about."
     else
     s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  Function `{e.qualName}` has a registered proof, but the body changed.{snippet}\n\n  expected fingerprint:\n    {e.expectedFp}\n\n  current fingerprint:\n    {e.currentFp}{originLine}\n\n  hint: Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
   | .unbound =>
