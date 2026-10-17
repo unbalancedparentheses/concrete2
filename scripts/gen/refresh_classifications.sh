@@ -31,9 +31,10 @@ LIVE="$TMP/live.txt"
 TABLE_SRC="Concrete/Proof/ClassificationTable.lean"
 TABLE_NEXT="$TMP/ClassificationTable.lean"
 
-# std's own proof links are claims too (bug 079): without them their spec bindings could not be
-# established and every std claim would refuse.
-grep -rhoE '#\[(proof_by|ensures_proof)\(([A-Za-z0-9_.]+)\)\]' examples/ std/src/ \
+# std's own proof links, and the test programs', are claims too (bug 079): a link whose theorem is
+# not generated here has no specification values, so it could never bind — the adversarial drift
+# fixture under tests/ would refuse as unbound instead of demonstrating drift.
+grep -rhoE '#\[(proof_by|ensures_proof)\(([A-Za-z0-9_.]+)\)\]' examples/ std/src/ tests/ \
   | sed -E 's/.*\(([^)]*)\)\]/\1/' | LC_ALL=C sort -u > "$NAMES"
 
 # Work on a temporary generator first. If Lean refuses, neither checked-in file moves.
