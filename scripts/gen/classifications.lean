@@ -63,8 +63,38 @@ def sourceLinkedThms : List Name :=
     `Examples.ProofPatterns.Proofs.inc_correct,
     `Examples.ProofPatterns.Proofs.put_writes_index_1_frames_rest,
     `Examples.ProofPatterns.Proofs.scale_by_two_correct,
-    `Examples.ProofPatterns.Proofs.sum4_totals_concrete
+    `Examples.ProofPatterns.Proofs.sum4_totals_concrete,
+    `Examples.PureCore.Proofs.base64_char_of_correct,
+    `Examples.PureCore.Proofs.base64_val_of_correct,
+    `Examples.PureCore.Proofs.nonzero_u32_try_from_u64_correct,
+    `Examples.PureCore.Proofs.numeric_try_new_correct,
+    `Examples.PureCore.Proofs.option_map_correct,
+    `Examples.PureCore.Proofs.option_unwrap_or_correct,
+    `Examples.PureCore.Proofs.port_try_from_u32_correct,
+    `Examples.PureCore.Proofs.result_map_correct,
+    `Examples.PureCore.Proofs.result_map_err_correct
   ]
+
+
+/-- Every CLOSED term of type `PExpr` whose head is a specification constant, in `e`.
+
+    The spec a theorem is about is the TERM its statement evaluates, not the constant's name:
+    `numericTryFromExpr 65535` and `numericTryFromExpr 4294967295` share a head and are different
+    specifications. Bug 079: a claim was bound to a theorem by the spec NAME it declared, and nothing
+    compared that spec's value with the body the claim is about. -/
+partial def closedSpecTerms (e : Lean.Expr) : MetaM (List Lean.Expr) := do
+  let specTy := mkConst ``Concrete.Proof.PExpr
+  if !e.hasLooseBVars && !e.hasFVar && !e.hasMVar then
+    if let some c := e.getAppFn.constName? then
+      if (← try isDefEq (← inferType e) specTy catch _ => pure false) then
+        if (← try isSpecValued (← getConstInfo c) catch _ => pure false) then
+          return [e]
+  match e with
+  | .app f a => return (← closedSpecTerms f) ++ (← closedSpecTerms a)
+  | .lam _ t b _ | .forallE _ t b _ => return (← closedSpecTerms t) ++ (← closedSpecTerms b)
+  | .letE _ t v b _ => return (← closedSpecTerms t) ++ (← closedSpecTerms v) ++ (← closedSpecTerms b)
+  | .mdata _ x | .proj _ _ x => closedSpecTerms x
+  | _ => return []
 
 #eval show MetaM Unit from do
   let hardcoded := (Proof.provedFunctions.map (fun t => t.2.2)).map (·.toName)
@@ -171,3 +201,43 @@ def sourceLinkedThms : List Name :=
   IO.println (String.intercalate ",\n" elits)
   IO.println "-- EXTERNAL-SCOPED"
   IO.println (String.intercalate ",\n" slits)
+  -- SPEC BINDINGS (bug 079). For every linked theorem, the VALUE of each specification its
+  -- statement evaluates, as the canonical body digest the compiler computes over an extracted body,
+  -- plus the parameters that specification declares. The compiler binds a claim only when its
+  -- extracted body has this digest and its parameters are these, so a claim cannot borrow a theorem
+  -- about a different body by naming that theorem's spec.
+  --
+  -- PARAMETERS come from the `PFnDef` whose body IS the specification: a specification is a function
+  -- body, and its declaration is what orders and names its inputs. None, or two that disagree, emits
+  -- `none` — the compiler then refuses to bind, rather than guessing which inputs the theorem meant.
+  IO.println "-- SPEC-BINDINGS"
+  let env ← getEnv
+  let fnTy := mkConst ``Concrete.Proof.PFnDef
+  let mut paramsByBody : Std.HashMap String (List (List String)) := {}
+  for (c, ci) in env.constants.map₁.toList do
+    if c.isInternal then continue
+    match c.getRoot with
+    | `Concrete | `Examples => pure ()
+    | _ => continue
+    if !(← try isDefEq ci.type fnTy catch _ => pure false) then continue
+    match (← try pure (some (← unsafe evalConst PFnDef c)) catch _ => pure none) with
+    | some d =>
+      let k := sourceBodyDigestV1Of d.body
+      paramsByBody := paramsByBody.insert k ((paramsByBody.getD k []) ++ [d.params]).eraseDups
+    | none => pure ()
+  let mut blits : List String := []
+  for n in names do
+    let some ci := env.find? n | continue
+    let terms ← closedSpecTerms ci.type
+    let mut seen : List (String × String) := []
+    for t in terms do
+      let some head := t.getAppFn.constName? | continue
+      let v ← unsafe evalExpr PExpr (mkConst ``Concrete.Proof.PExpr) t
+      let d := sourceBodyDigestV1Of v
+      if seen.contains (toString head, d) then continue
+      seen := seen ++ [(toString head, d)]
+      let ps := match paramsByBody.getD d [] with
+        | [one] => "(some [" ++ String.intercalate ", " (one.map (fun p => s!"\"{p}\"")) ++ "])"
+        | _ => "none"
+      blits := blits ++ [s!"  (\"{n}\", \"{head}\", \"{d}\", {ps})"]
+  IO.println (String.intercalate ",\n" blits)
