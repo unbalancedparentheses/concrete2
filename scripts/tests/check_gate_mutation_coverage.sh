@@ -1427,8 +1427,8 @@ add "root-leaf-only-trusted-exclusions" "Concrete/Proof/ProofCore.lean" "check_d
 # maintenance. Killed by `check_effect_opacity.sh` (drift coverage falls 11 -> 8) and by
 # `check_purecore_proofs.sh`, whose pending claims stop being asked about.
 add "admission-does-not-select-replay-targets" "Concrete/Proof/ProofCore.lean" "check_effect_opacity.sh" yes \
-  $'    let status := deriveObligationStatus e.eligibility.eligible\n        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest' \
-  $'    let status := deriveObligationStatus e.eligibility.admissible\n        e.eligibility.isTrusted extracted specDrifted e.spec e.fingerprint e.subjectDigest'
+  $'    let status := deriveObligationStatus e.eligibility.eligible\n        e.eligibility.isTrusted extracted e.binding? e.spec e.fingerprint e.subjectDigest' \
+  $'    let status := deriveObligationStatus e.eligibility.admissible\n        e.eligibility.isTrusted extracted e.binding? e.spec e.fingerprint e.subjectDigest'
 
 # 2. ADMISSION NOT RENDERED ON `proved`. The first implementation appended the admission
 # line inside each status arm and skipped exactly one — `proved` — which is the single
