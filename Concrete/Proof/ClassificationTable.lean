@@ -272,6 +272,8 @@ def specBindingTable : List (String × String × String × Option (List String))
   ("Examples.ElfHeader.Proofs.check_data_correct", "Concrete.Proof.checkDataExpr", "f5ed9c79607fbc0d64ef723c703aa299", (some ["encoding"])),
   ("Examples.ElfHeader.Proofs.check_version_correct", "Concrete.Proof.checkVersionExpr", "f42ef4400948bbdb10ccb19733cd0993", (some ["ver"])),
   ("Examples.ElfHeader.Proofs.validate_header_correct", "Concrete.Proof.validateHeaderExpr", "adbcf58c39059203cf4296adbceab87a", (some ["b0", "b1", "b2", "b3", "cls", "encoding", "ver"])),
+  ("Concrete.Proof.drift_test_theorem", "Concrete.Proof.driftTestSpec", "86cdf45d9a8d0fad50c6b369632bcdeb", none),
+  ("Concrete.Proof.drift_test_theorem", "Concrete.Proof.PExpr.lit", "86cdf45d9a8d0fad50c6b369632bcdeb", none),
   ("Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct", "Concrete.Proof.ctCompareExpr", "d0019cee08c5091696df3f7bee5ece3c", (some ["a", "b"])),
   ("Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct", "Concrete.Proof.ctCompareExpr", "d0019cee08c5091696df3f7bee5ece3c", (some ["a", "b"])),
   ("Examples.CryptoVerify.Proofs.verify_message_composed_correct", "Concrete.Proof.verifyMessageExpr", "405b50465d34ee67641bacb19e43f057", (some ["key", "message", "nonce", "expected_tag", "max_nonce"])),

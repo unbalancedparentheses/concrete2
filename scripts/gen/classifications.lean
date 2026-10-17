@@ -22,6 +22,12 @@ open Lean Meta Concrete Concrete.Proof
 /-- Source-linked proof names, spliced by the refresh script. -/
 def sourceLinkedThms : List Name :=
   [ `Concrete.Proof.compute_checksum_correct,
+    `Concrete.Proof.drift_test_theorem,
+    `Concrete.Proof.left_add_correct,
+    `Concrete.Proof.pure_add_correct,
+    `Concrete.Proof.pure_mul_correct,
+    `Concrete.Proof.pure_sub_correct,
+    `Concrete.Proof.right_add_correct,
     `Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct,
     `Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct,
     `Examples.CryptoVerify.Proofs.check_nonce_correct,
@@ -72,7 +78,9 @@ def sourceLinkedThms : List Name :=
     `Examples.PureCore.Proofs.option_unwrap_or_correct,
     `Examples.PureCore.Proofs.port_try_from_u32_correct,
     `Examples.PureCore.Proofs.result_map_correct,
-    `Examples.PureCore.Proofs.result_map_err_correct
+    `Examples.PureCore.Proofs.result_map_err_correct,
+    `Nonexistent.Module.totally_fake_theorem,
+    `PureAdd.add_comm
   ]
 
 
