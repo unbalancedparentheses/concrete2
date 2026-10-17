@@ -478,7 +478,7 @@ cd "$ROOT_DIR"
 # candidate's population describes the CORPUS rather than merely agreeing with itself, and it exits
 # inside its own branch long before the inventory is built — so a constant defined next to that
 # build is invisible to the role that audits it.
-EXPECTED_FAMILIES=127
+EXPECTED_FAMILIES=130
 
 # LOADED FOR BOTH ROLES, BEFORE THE DISPATCH. The child computes the evidence root and the
 # supervisor recomputes it; they must use the SAME function or two implementations could each agree
@@ -1142,6 +1142,26 @@ add "receipt-context-vs-root" "Concrete/Proof/Receipt.lean" "check_identity_sepa
 add "migration-map-totality" "scripts/tools/identity_migration_map.sh" "check_identity_separation.sh" no \
   $'            emit(kind, "refused", describe(o), "no-counterpart"); refused += 1; continue' \
   $'            emit(kind, "mapped", describe(o), "no-counterpart"); continue'
+
+# BUG 079. THE BODY IS COMPARED. The binding keeps only the specification values whose digest is the
+# extracted body's; the mutation keeps them all, so a theorem about a different body would match on
+# the specification NAME alone — the defect. Killed by the reason, not the verdict: always_seven still
+# refuses (its parameters differ), but no longer as "a different body".
+add "subject-binding-compares-body" "Concrete/Proof/ProofCore.lean" "check_subject_binding.sh" yes \
+  $'  let same := cand.filter (·.2.2.1 == d)' \
+  $'  let same := cand'
+
+# BUG 079. THE PARAMETERS ARE COMPARED. The specification's body under other parameters is a
+# different function; the mutation accepts any parameters.
+add "subject-binding-compares-params" "Concrete/Proof/ProofCore.lean" "check_subject_binding.sh" yes \
+  $'    if ps == e.params then return' \
+  $'    if true then return'
+
+# BUG 079. THE BINDING GOVERNS PROVED. An unbound claim must not read `proved`; the mutation drops the
+# status, so a claim never shown to be about its body is proved by fingerprint alone again.
+add "subject-binding-governs-proved" "Concrete/Proof/ProofCore.lean" "check_subject_binding.sh" yes \
+  $'    else if specUnbound then .specUnbound' \
+  $'    else if specUnbound && false then .specUnbound'
 
 # EXTERNAL RE-CHECK. THE SWAP MUST SWAP. The hostile control hands one theorem another's proof; the
 # mutation hands it its own, so the doctored stream is the accepted one and both checkers accept it.
