@@ -373,6 +373,16 @@ structure PFnDef where
   body : PExpr
   deriving Repr, BEq
 
+/-- A specification's PARAMETERS, declared beside its body (bug 079).
+
+    A specification is a function body over named inputs. When no `PFnDef` carries the body — a
+    leaf spec that no function table needs — this is where its inputs are named and ordered, so the
+    subject binding can compare them with the claimed function's parameters. It carries no identity:
+    it is not an implementation and attests nothing. -/
+structure SpecDecl where
+  params : List String
+  body   : PExpr
+
 /-- An entry that HAS identity. The receipt path takes this type, so a legacy
     entry cannot reach it — the boundary is the type, not a runtime check. -/
 structure IdentifiedPFnDef where
@@ -3380,5 +3390,22 @@ theorem eval_while_count (fns : FnTable)
           cond assigns cont hc' ha']
     rw [show N - (m + 1) + 1 = N - m by omega]
     exact ih (by omega)
+
+/-! ## Specification parameters (bug 079)
+
+The subject binding compares a claimed function's parameters with its specification's. These
+specifications have no `PFnDef`, so their inputs are declared here, by name and in order. Methods
+take `self` first, as the elaborated function does. -/
+def optionMapSpec : SpecDecl := { params := ["self", "f"], body := optionMapExpr }
+def optionUnwrapOrSpec : SpecDecl := { params := ["self", "default"], body := optionUnwrapOrExpr }
+def resultMapSpec : SpecDecl := { params := ["self", "f"], body := resultMapExpr }
+def resultMapErrSpec : SpecDecl := { params := ["self", "f"], body := resultMapErrExpr }
+def numericTryNewSpec : SpecDecl := { params := ["value"], body := numericTryNewExpr }
+def nonZeroU32TryFromU64Spec : SpecDecl := { params := ["value"], body := numericTryFromExpr 4294967295 }
+def portTryFromU32Spec : SpecDecl := { params := ["value"], body := numericTryFromExpr 65535 }
+def base64CharOfSpec : SpecDecl := { params := ["v"], body := base64CharOfExpr }
+def base64ValOfSpec : SpecDecl := { params := ["c"], body := base64ValOfExpr }
+def sha256CompressSpec : SpecDecl := { params := ["state", "block"], body := sha256_compressExpr }
+def hmacSha256Spec : SpecDecl := { params := ["k", "k_len", "m", "m_len"], body := hmac_sha256Expr }
 
 end Concrete.Proof

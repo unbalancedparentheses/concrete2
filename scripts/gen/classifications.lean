@@ -207,23 +207,29 @@ partial def closedSpecTerms (e : Lean.Expr) : MetaM (List Lean.Expr) := do
   -- extracted body has this digest and its parameters are these, so a claim cannot borrow a theorem
   -- about a different body by naming that theorem's spec.
   --
-  -- PARAMETERS come from the `PFnDef` whose body IS the specification: a specification is a function
+  -- PARAMETERS come from the `PFnDef` or `SpecDecl` whose body IS the specification: a specification is a function
   -- body, and its declaration is what orders and names its inputs. None, or two that disagree, emits
   -- `none` — the compiler then refuses to bind, rather than guessing which inputs the theorem meant.
   IO.println "-- SPEC-BINDINGS"
   let env ← getEnv
   let fnTy := mkConst ``Concrete.Proof.PFnDef
+  let declTy := mkConst ``Concrete.Proof.SpecDecl
   let mut paramsByBody : Std.HashMap String (List (List String)) := {}
   for (c, ci) in env.constants.map₁.toList do
     if c.isInternal then continue
     match c.getRoot with
     | `Concrete | `Examples => pure ()
     | _ => continue
-    if !(← try isDefEq ci.type fnTy catch _ => pure false) then continue
-    match (← try pure (some (← unsafe evalConst PFnDef c)) catch _ => pure none) with
-    | some d =>
-      let k := sourceBodyDigestV1Of d.body
-      paramsByBody := paramsByBody.insert k ((paramsByBody.getD k []) ++ [d.params]).eraseDups
+    let decl? : Option (List String × PExpr) ←
+      if (← try isDefEq ci.type fnTy catch _ => pure false) then
+        pure ((← try pure (some (← unsafe evalConst PFnDef c)) catch _ => pure none).map (fun d => (d.params, d.body)))
+      else if (← try isDefEq ci.type declTy catch _ => pure false) then
+        pure ((← try pure (some (← unsafe evalConst SpecDecl c)) catch _ => pure none).map (fun d => (d.params, d.body)))
+      else pure none
+    match decl? with
+    | some (ps, body) =>
+      let k := sourceBodyDigestV1Of body
+      paramsByBody := paramsByBody.insert k ((paramsByBody.getD k []) ++ [ps]).eraseDups
     | none => pure ()
   let mut blits : List String := []
   for n in names do

@@ -1159,6 +1159,12 @@ private def renderProofStatusBody (e : ProofStatusEntry) (sourceMap : SourceMap)
     s!"-- proved{coverageTag} {String.ofList (List.replicate 48 '-')} {locStr}\n\n  ✓ `{e.qualName}` — proof matches current body.{snippet}\n\n  coverage: {if e.coverage.isEmpty then "unclassified" else e.coverage}{trustLine}{specLine}{originLine}"
   | .stale =>
     let originLine := if e.origin.isEmpty then "" else s!"\n\n  origin: {e.origin}"
+    -- STALE BY THE BINDING, not by a body edit (bug 079): the specification the theorem evaluates is
+    -- a different body. "The body changed" would be false — it may never have matched — so say what
+    -- was found instead of showing two identical fingerprints under a claim of change.
+    if e.specBinding.startsWith "NOT bound" then
+      s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  `{e.qualName}`: the linked theorem is about a different body.{snippet}\n\n  spec: {e.specBinding}{originLine}\n\n  hint: Link the theorem whose specification is this body, or restore the body the theorem is about."
+    else
     s!"-- proof stale {String.ofList (List.replicate 44 '-')} {locStr}\n\n  Function `{e.qualName}` has a registered proof, but the body changed.{snippet}\n\n  expected fingerprint:\n    {e.expectedFp}\n\n  current fingerprint:\n    {e.currentFp}{originLine}\n\n  hint: Update the Lean proof in Concrete/Proof.lean, or restore the proved implementation."
   | .unbound =>
     -- Carry the drift line here too. `unbound` supersedes the status a drifted
