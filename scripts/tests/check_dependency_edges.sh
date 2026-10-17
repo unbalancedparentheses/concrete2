@@ -1298,10 +1298,13 @@ for f in $(grep -rlE '#\[(proof_by|ensures_proof)\(' examples --include='*.con' 
   CORPUS_PROVED=$((CORPUS_PROVED + $(cc "$f" proof-status | grep -cE "^-- proved" || true)))
   CORPUS_UNJUST=$((CORPUS_UNJUST + $(cc "$f" proof-status | grep -cE "^-- dependency closure unjustified" || true)))
 done
-if [ "$CORPUS_PROVED" = "35" ] && [ "$CORPUS_UNJUST" = "0" ]; then
-  ok "corpus-wide: 35 proved, 0 unjustified closures (the fixture corpus is clean under the authority pass)"
+# 35 -> 32 on 2026-10-17 (bug 079): `loop_invariant.count_up`, `fabricated_proof`'s `cn.f` and
+# `repair`'s `needs_proof` are `spec not bound to body` — their theorems are not shown to be about their
+# bodies. Same three as check_coverage_baseline.sh.
+if [ "$CORPUS_PROVED" = "32" ] && [ "$CORPUS_UNJUST" = "0" ]; then
+  ok "corpus-wide: 32 proved, 0 unjustified closures (the fixture corpus is clean under the authority pass)"
 else
-  no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 35/0) — say which subject changed and why"
+  no "corpus-wide verdicts moved to $CORPUS_PROVED proved / $CORPUS_UNJUST unjustified (was 32/0) — say which subject changed and why"
 fi
 # ...and the live case must stay live, or the pass has no corpus exercise at all.
 DH_UNJUST="$(cc tests/programs/proof_decode_header.con proof-status | grep -cE "^-- dependency closure unjustified" || true)"

@@ -88,7 +88,13 @@ private def classificationTable : List (String × String × String × List (Stri
   ("Examples.PureCore.Proofs.option_unwrap_or_correct", "body", "3b97c066ea1ef2987fe67b6f6ae679fd", [("Concrete.Proof.pureCoreFns", "d4bd64481f74f57d14fb1b5f0166eb5b")], false, ["Concrete.Proof.optionUnwrapOrExpr"]),
   ("Examples.PureCore.Proofs.port_try_from_u32_correct", "body", "7d6096caf37e0d0fe8974357c75200b7", [("Concrete.Proof.pureCoreFns", "d4bd64481f74f57d14fb1b5f0166eb5b")], false, ["Concrete.Proof.numericTryFromExpr"]),
   ("Examples.PureCore.Proofs.result_map_correct", "body", "b2dedc1df2fe28222493b5900e08320a", [("Concrete.Proof.pureCoreFns", "d4bd64481f74f57d14fb1b5f0166eb5b")], false, ["Concrete.Proof.resultMapExpr"]),
-  ("Examples.PureCore.Proofs.result_map_err_correct", "body", "b1e290fe9228c9d9ba3ba7bd44c7f1ed", [("Concrete.Proof.pureCoreFns", "d4bd64481f74f57d14fb1b5f0166eb5b")], false, ["Concrete.Proof.resultMapErrExpr"])
+  ("Examples.PureCore.Proofs.result_map_err_correct", "body", "b1e290fe9228c9d9ba3ba7bd44c7f1ed", [("Concrete.Proof.pureCoreFns", "d4bd64481f74f57d14fb1b5f0166eb5b")], false, ["Concrete.Proof.resultMapErrExpr"]),
+  ("Examples.TestFixtures.Proofs.left_add_correct", "body", "162672097b97f8bd8cc491412f24d11d", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["left_add_spec"]),
+  ("Examples.TestFixtures.Proofs.pure_add_correct", "body", "3956e7fb38cfc5ea1565cb7a89753764", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["add_commutativity"]),
+  ("Examples.TestFixtures.Proofs.pure_mul_correct", "body", "d7ea490b15433f91eed8e92e25783c54", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["mul_associativity"]),
+  ("Examples.TestFixtures.Proofs.pure_sub_correct", "body", "fd8fc003043fa7a5a8dbd72151ba5caf", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["sub_identity"]),
+  ("Examples.TestFixtures.Proofs.right_add_correct", "body", "dd9322963e35c34e18fa667394116aef", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["right_add_spec"]),
+  ("PureAdd.add_comm", "body", "1f64d1eca5de8c866eb02e9a15db0aa2", [("Concrete.Proof.FnTable.empty", "e5b492f72a85a8b2a13230ba87272d9c")], false, ["PureAdd.spec_add"])
 -- END GENERATED CLASSIFICATION ROWS
 ]
 
@@ -313,7 +319,13 @@ def specBindingTable : List (String × String × String × Option (List String))
   ("Examples.PureCore.Proofs.option_unwrap_or_correct", "Concrete.Proof.optionUnwrapOrExpr", "b4cf4c6d197b7f70ba94b8aaedbcd8d7", (some ["self", "default"])),
   ("Examples.PureCore.Proofs.port_try_from_u32_correct", "Concrete.Proof.numericTryFromExpr", "3b12d35877b660c41f1cebb2c3474348", (some ["value"])),
   ("Examples.PureCore.Proofs.result_map_correct", "Concrete.Proof.resultMapExpr", "8c357434d3270140b185b7e0c8dcae75", (some ["self", "f"])),
-  ("Examples.PureCore.Proofs.result_map_err_correct", "Concrete.Proof.resultMapErrExpr", "d98dc4d959a4af111ffdb97e0b61c3ad", (some ["self", "f"]))
+  ("Examples.PureCore.Proofs.result_map_err_correct", "Concrete.Proof.resultMapErrExpr", "d98dc4d959a4af111ffdb97e0b61c3ad", (some ["self", "f"])),
+  ("Examples.TestFixtures.Proofs.left_add_correct", "left_add_spec", "1de00ea0e2dc3aeb5d1e04dd02390fba", (some ["a", "b"])),
+  ("Examples.TestFixtures.Proofs.pure_add_correct", "add_commutativity", "1de00ea0e2dc3aeb5d1e04dd02390fba", (some ["a", "b"])),
+  ("Examples.TestFixtures.Proofs.pure_mul_correct", "mul_associativity", "1732dea29f91dcd1550197c34018de59", (some ["a", "b"])),
+  ("Examples.TestFixtures.Proofs.pure_sub_correct", "sub_identity", "b78f1fe80a3ad10957d1e5f906a62710", (some ["a", "b"])),
+  ("Examples.TestFixtures.Proofs.right_add_correct", "right_add_spec", "1de00ea0e2dc3aeb5d1e04dd02390fba", (some ["a", "b"])),
+  ("PureAdd.add_comm", "PureAdd.spec_add", "1de00ea0e2dc3aeb5d1e04dd02390fba", (some ["a", "b"]))
 -- END GENERATED SPEC BINDINGS
 ]
 

@@ -23,11 +23,6 @@ open Lean Meta Concrete Concrete.Proof
 def sourceLinkedThms : List Name :=
   [ `Concrete.Proof.compute_checksum_correct,
     `Concrete.Proof.drift_test_theorem,
-    `Concrete.Proof.left_add_correct,
-    `Concrete.Proof.pure_add_correct,
-    `Concrete.Proof.pure_mul_correct,
-    `Concrete.Proof.pure_sub_correct,
-    `Concrete.Proof.right_add_correct,
     `Examples.ConstantTimeTag.Proofs.ct_compare_different_tag_correct,
     `Examples.ConstantTimeTag.Proofs.ct_compare_same_tag_correct,
     `Examples.CryptoVerify.Proofs.check_nonce_correct,
@@ -79,6 +74,11 @@ def sourceLinkedThms : List Name :=
     `Examples.PureCore.Proofs.port_try_from_u32_correct,
     `Examples.PureCore.Proofs.result_map_correct,
     `Examples.PureCore.Proofs.result_map_err_correct,
+    `Examples.TestFixtures.Proofs.left_add_correct,
+    `Examples.TestFixtures.Proofs.pure_add_correct,
+    `Examples.TestFixtures.Proofs.pure_mul_correct,
+    `Examples.TestFixtures.Proofs.pure_sub_correct,
+    `Examples.TestFixtures.Proofs.right_add_correct,
     `Nonexistent.Module.totally_fake_theorem,
     `PureAdd.add_comm
   ]
