@@ -54,10 +54,20 @@ pin(){
   local d
   d="$("$C" "$1" --report subject-facts 2>/dev/null | awk -v n="$2" '
     /^[^ ]/ {k = split($1, h, "."); cur = h[k]}
-    cur == n && /subjectFreshness:/ {match($0, /v2:[0-9a-f]+/); print substr($0, RSTART, RLENGTH); exit}')"
+    cur == n && /subjectFreshness:/ {
+      # The CURRENT digest: "current v2:…" when one is stored, "would be v2:…" when none is, the sole
+      # value when it already matches. Taking the first v2 on the line took the STORED one, so a leg
+      # that claimed to re-pin left the fingerprint stale and could not isolate the binding.
+      if (match($0, /(current|would be) v2:[0-9a-f]+/)) { v = substr($0, RSTART, RLENGTH); sub(/^[a-z ]+ /, "", v) }
+      else if (match($0, /v2:[0-9a-f]+/)) v = substr($0, RSTART, RLENGTH)
+      print v; exit}')"
   [ -n "$d" ] || return 1
   perl -0pi -e "s/(#\[proof_fingerprint\(\")[^\"]*(\"\)\]\s*\n\s*(?:pub )?fn $2\()/\${1}$d\${2}/" "$1"
 }
+# fresh <file> <decl> — the stored digest matches the current subject, so a refusal is not freshness.
+fresh(){ "$C" "$1" --report subject-facts 2>/dev/null | awk -v n="$2" '
+    /^[^ ]/ {k = split($1, h, "."); cur = h[k]}
+    cur == n && /subjectFreshness:/ {print; exit}' | grep -q "WOULD-MATCH"; }
 mkpkg(){ mkdir -p "$W/examples/$1/src"; printf '[package]\nname = "%s"\n' "$1" > "$W/examples/$1/Concrete.toml"; cat > "$W/examples/$1/src/main.con"; }
 
 echo "=== P: a claim whose body IS its theorem's specification still mints ==="
@@ -138,6 +148,8 @@ if ! grep -q "checkClassExpr" "$CV"; then
   no "C: the attribute edit did not apply — the anchor moved"
 else
   pin "$CV" check_nonce || no "C: could not re-pin check_nonce"
+  fresh "$CV" check_nonce && ok "C: re-pinned — the fingerprint is fresh, so only the binding can refuse" \
+    || no "C: the re-pin did not make the fingerprint fresh, so the leg cannot isolate the binding"
   B="$(block "$(status "$CV")" main.check_nonce)"
   grep -q "^-- proof stale" <<<"$B" \
     && grep -q "checkClassExpr' that theorem 'Examples.ElfHeader.Proofs.check_class_correct' evaluates is a different body" <<<"$B" \
@@ -157,6 +169,8 @@ if [ "$(grep -c 'proof_by(Examples.ElfHeader.Proofs.check_data_correct)' "$EH")"
   no "M: the attribute edit did not apply — the anchor moved"
 else
   pin "$EH" check_class || no "M: could not re-pin check_class"
+  fresh "$EH" check_class && ok "M: re-pinned — the fingerprint is fresh, so only the binding can refuse" \
+    || no "M: the re-pin did not make the fingerprint fresh, so the leg cannot isolate the binding"
   B="$(block "$(status "$EH")" main.check_class)"
   grep -q "^-- proof stale" <<<"$B" \
     && grep -q "checkDataExpr' that theorem 'Examples.ElfHeader.Proofs.check_data_correct' evaluates is a different body" <<<"$B" \
