@@ -513,7 +513,9 @@ sed 's/if nonce > 0 {/if nonce \/ 1 > 0 {/' "$XD/src/lib.con" > "$XU/src/lib.con
 printf '[package]\nname = "p1x_app_div"\n\n[dependencies]\np1x_nlib = { path = "%s" }\n' "$XU" > "$XB/Concrete.toml"
 cp "$XF" "$XB/src/main.con"
 XBS="$(CONCRETE_STD="$W/std" "$WBIN" "$XB/src/main.con" --report proof-status 2>/dev/null)"
-case "$(awk -v q='`main.verify_message`' '/^-- /{if (hit) exit; st=$0} index($0, q){hit=1} END{if (hit) print st}' <<<"$XBS")" in
+XVM='`main.verify_message`'
+XBST="$(awk -v q="$XVM" '/^-- /{if (hit) exit; st=$0} index($0, q){hit=1} END{if (hit) print st}' <<<"$XBS")"
+case "$XBST" in
   "-- dependency not current"*) ok "X5: unsupported body — against a dependency whose check_nonce the model cannot extract, verify_message is not proved" ;;
   *) no "X5: verify_message over an unsupported dependency body is not refused" ;;
 esac

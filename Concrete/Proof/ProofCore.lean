@@ -230,6 +230,11 @@ private partial def buildCallGraphModule (qualNameMap : List (String × String))
     else match qualNameMap.find? fun (b, _) => b == bare with
     | some (_, qual) => qual
     | none =>
+      -- A COMPILER INTRINSIC IS NOT A CROSS-PACKAGE CALL. std declares `sizeof` as a bodiless
+      -- `#[intrinsic]` binding, so the alias pool can map the spelling onto that declaration and give
+      -- a genuine `sizeof::<i32>()` an edge into std. The compiler resolves intrinsics itself; the
+      -- intrinsic table is the one answer for these names, and aliases never override it.
+      if (resolveIntrinsic bare).isSome then bare else
       match (aliases.filterMap fun (a, sym) => if a == bare then some sym else none).eraseDups with
       | [sym] =>
         match qualNameMap.filter fun (b, _) => b == sym with
@@ -3527,8 +3532,17 @@ def extractProofCore (vc : ValidatedCore) (identity : Proof.ResolvedIdentity)
   let admission : String → List AdmissionRefusal := admissionRefusalsOf assumptions admissionIdx
   let externNames := modules.foldl (fun acc m => acc ++ collectExternNames m) []
   -- Extract entries and excluded (with spec attachment)
+  -- THE FFI PROFILE READS THE CALLER'S OWN PACKAGE'S EXTERNS. `crossesFfi` matches callee NAMES, so
+  -- over a whole program a user call sharing a name with any std extern read as FFI: a genuine
+  -- `sizeof::<i32>()` matched std's bodiless `#[intrinsic] sizeof` declaration
+  -- (check_descriptor_coverage). A function's externs are those declared by modules of its own
+  -- package (`scopeOf`), which is exactly what a ProofCore over the user's modules alone saw; what a
+  -- function reaches in a dependency is admission's question, answered by the assumption summary.
+  let scopeKey := fun (m : CModule) => (identity.scopeOf m.name).digest
+  let externsOf := fun (m : CModule) =>
+    (modules.filter (scopeKey · == scopeKey m)).foldl (fun acc o => acc ++ collectExternNames o) []
   let (entries, excluded) := modules.foldl (fun (accE, accX) m =>
-    let (e, x) := extractModule identity externNames recMap admission locMap registry m
+    let (e, x) := extractModule identity (externsOf m) recMap admission locMap registry m
     (accE ++ e, accX ++ x)) ([], [])
   -- Generate proof obligations and diagnostics
   let obligations := generateObligations entries excluded graph
