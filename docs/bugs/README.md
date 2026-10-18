@@ -91,12 +91,12 @@ Those belong in:
 - [085_loop_step_reads_pre_iteration_env.md](085_loop_step_reads_pre_iteration_env.md) — FIXED: a `while_step` loop body's model built every `Cont` field from the pre-iteration env and ended a fall-through `if` early, so `x = x + 1; x = x + 1;` stepped by 1 and `seq(7)` was 21 vs 28; assignments now bind sequentially and branches continue with the rest of the body; pinned by `check_model_diff.sh` leg S
 - [086_discarded_statement_modeled_as_value.md](086_discarded_statement_modeled_as_value.md) — FIXED: a discarded `id(x);` was modeled as its block's value (`g(5)` 5 vs 7) and a `return` inside a `let` initializer as a value (11 vs 1); only `isValue` trailing expressions are values and non-tail expressions must not escape; pinned by `check_model_diff.sh` leg T
 - [101_branch_local_let_captures_continuation.md](101_branch_local_let_captures_continuation.md) — FIXED: a branch-local `let` was nested over the code after its branch (and a loop body's own `let` written back through `Cont`), so `scoped(1)` was 10 in the model vs 1; a block's locals may not be named by its continuation; pinned by `check_model_diff.sh` leg S
+- [052_array_element_destroy_noop.md](052_array_element_destroy_noop.md) — FIXED 2026-10-18: `Vec<[T; N]>.drop()` skipped element destruction via a synthesized no-op `T_destroy`; Mono now synthesizes per-element glue from the argument type, Check no longer accepts every unmatched type as destroyable (E0241), and an unresolved or destructor-less type is refused (E0814) instead of no-oped
 
 ## Open Numbered Bugs
 
 - [027_emitssa_quadratic_rendering.md](027_emitssa_quadratic_rendering.md) — EmitSSA renders SSA→LLVM text in O(n²) (perf; large functions slow to codegen)
 - [049_reduce_crash_predicate_vacuous.md](049_reduce_crash_predicate_vacuous.md) — `concrete reduce --predicate crash` reduces anything to an empty program (reducer audit 2026-07-18)
-- [052_array_element_destroy_noop.md](052_array_element_destroy_noop.md) — Vec<[T; N]>.drop() skips element destruction via synthesized no-op T_destroy (middle-end audit 2026-07-18)
 - [054_struct_mono_name_collision.md](054_struct_mono_name_collision.md) — user types shadow generated specializations (middle-end audit 2026-07-18)
 - [055_sibling_import_alias_unusable.md](055_sibling_import_alias_unusable.md) — project sibling `import a.{x as y}` emits undefined callee (middle-end audit 2026-07-18)
 - [058_proof_by_without_fingerprint_never_stales.md](058_proof_by_without_fingerprint_never_stales.md) — contained: a missing stored fingerprint is now `unbound`, never `proved`; the full subject digest remains R-0004 work (2026-07-25)
