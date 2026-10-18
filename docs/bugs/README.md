@@ -127,12 +127,12 @@ there or adds one.
 - [092_reference_stored_in_aggregate.md](092_reference_stored_in_aggregate.md) — FIXED: a reference stored in a struct field, enum payload or array did not freeze its source, so `let w = W { t: &s }; s.drop(); let W { t } = w;` read freed memory. References are never stored in an aggregate (E0239)
 - [093_shadowing_local_escapes_scope_check.md](093_shadowing_local_escapes_scope_check.md) — FIXED: a block local or match binder that shadowed an outer name was skipped by the never-consumed check (E0208), so it leaked; checker bindings now carry an identity and scope/merge checks match by it, not by name
 - [094_binding_state_updates_keyed_by_name.md](094_binding_state_updates_keyed_by_name.md) — FIXED: per-binding state updates (consume, use, reassign, `defer`, borrow freeze) marked every entry sharing the name, so a binder shadowing a live linear binding consumed it too and the outer value leaked; state updates now match by binding identity (arm binders may shadow; the outer binding is still owed after the match) and a destructure binder refuses to shadow a live non-Copy binding (E0292)
+- [052_array_element_destroy_noop.md](052_array_element_destroy_noop.md) — FIXED 2026-10-18: `Vec<[T; N]>.drop()` skipped element destruction via a synthesized no-op `T_destroy`; Mono now synthesizes per-element glue from the argument type, Check no longer accepts every unmatched type as destroyable (E0241), and an unresolved or destructor-less type is refused (E0814) instead of no-oped
 
 ## Open Numbered Bugs
 
 - [027_emitssa_quadratic_rendering.md](027_emitssa_quadratic_rendering.md) — EmitSSA renders SSA→LLVM text in O(n²) (perf; large functions slow to codegen)
 - [049_reduce_crash_predicate_vacuous.md](049_reduce_crash_predicate_vacuous.md) — `concrete reduce --predicate crash` reduces anything to an empty program (reducer audit 2026-07-18)
-- [052_array_element_destroy_noop.md](052_array_element_destroy_noop.md) — Vec<[T; N]>.drop() skips element destruction via synthesized no-op T_destroy (middle-end audit 2026-07-18)
 - [054_struct_mono_name_collision.md](054_struct_mono_name_collision.md) — user types shadow generated specializations (middle-end audit 2026-07-18)
 - [055_sibling_import_alias_unusable.md](055_sibling_import_alias_unusable.md) — project sibling `import a.{x as y}` emits undefined callee (middle-end audit 2026-07-18)
 - [058_proof_by_without_fingerprint_never_stales.md](058_proof_by_without_fingerprint_never_stales.md) — contained: a missing stored fingerprint is now `unbound`, never `proved`; the full subject digest remains R-0004 work (2026-07-25)
