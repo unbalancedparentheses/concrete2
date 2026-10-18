@@ -93,6 +93,15 @@ the assurance experiment; implementation language alone supplies no correctness
 guarantee. Fresh-consumer checks join R-0285; deeper backend research does not
 reorder the queue or delay its first executable dependency slice.
 
+**Isolated consumer experiment, 2026-10-18:** the owner requested an executable
+integration test before the full backend port is complete. The
+[restricted consumer](research/compiler/lean-backend-integration.md) adds
+`--emit-qbe` and a Nix-based native driver in a separate worktree. It uses the
+general-purpose [Lean Compiler Backend](https://github.com/unbalancedparentheses/lean-compiler-backend)
+and admits explicit wrapping integer/control-flow code while rejecting remaining
+checked arithmetic, calls and memory operations. This provides early execution
+feedback; R-0297/Phase 7.5 and the existing soundness/interop queue remain open.
+
 R-0484 (closed 2026-10-08 at `245cd51c`), R-0483 (closed 2026-10-09 at `4f005715`) and R-0208
 (closed 2026-10-13 at `2b570c5a`) moved to [CHANGELOG.md](CHANGELOG.md); their accepted limits stay recorded in their task sections.
 

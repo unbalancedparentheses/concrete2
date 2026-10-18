@@ -77,7 +77,12 @@
           # second-kernel drivers (Rocq, Isabelle) are an opt-in spike and Isabelle
           # is a multi-GB closure, so they live in a separate shell — no contributor
           # pays for them unless they run `--report multi-kernel`.
-          default = pkgs.mkShell { packages = base; };
+          default = pkgs.mkShell {
+            packages = base;
+            # The integration's C wrapper needs Nix's SDK-aware C compiler;
+            # Lean's archive also ships a private clang without general headers.
+            CONCRETE_LCB_CC = "${pkgs.clang}/bin/clang";
+          };
 
           # `nix develop .#provers` — adds the independent second kernels.
           provers = pkgs.mkShell {

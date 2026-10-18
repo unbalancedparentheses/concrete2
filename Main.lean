@@ -2,6 +2,7 @@ import Concrete
 import Concrete.Proof.ObligationCore
 import Concrete.Report.CompilerLedger
 import Concrete.Backend.Backend
+import Concrete.Backend.EmitQBE
 import Concrete.Resolve.Project
 
 open Concrete
@@ -76,6 +77,7 @@ def helpText : String := String.intercalate "\n" [
   "",
   "INTERNALS / COMPAT:",
   "  <file> --emit-core | --emit-ssa | --emit-llvm | --interp",
+  "  <file> --emit-qbe       experimental integer/control-flow backend adapter",
   "  diff, snapshot, audit, check, validate-bundle, --version",
   "",
   "Run `concrete` with no arguments for the full flag matrix.",
@@ -350,6 +352,26 @@ def compileSSA (inputPath : String) (outputPath : String) (emitLLVM : Bool) : IO
     IO.FS.removeFile ⟨llPath⟩
     IO.println s!"Compiled {inputPath} -> {outputPath}"
     return 0
+
+/-- Experimental checked-SSA → standard QBE IL consumer, kept separate from LLVM. -/
+def emitQBEProgram (inputPath : String) : IO UInt32 := do
+  let source ← readFile inputPath
+  match ← Pipeline.runFrontend inputPath source resolveAllModules with
+  | .error ds =>
+    IO.eprintln (renderDiagnostics ds (sourceMap := [(inputPath, source)]))
+    return 1
+  | .ok (parsed, _, core, sourceMap) =>
+    if !(← enforceProvenRuntimeViolations parsed.modules sourceMap) then return 1
+    match Pipeline.monomorphize core >>= Pipeline.lower with
+    | .error ds =>
+      IO.eprintln (renderDiagnostics ds (sourceMap := sourceMap))
+      return 1
+    | .ok ssa =>
+      match EmitQBE.emit ssa.ssaModules with
+      | .error message =>
+        IO.eprintln s!"error[experimental-qbe]: {message}"
+        return 1
+      | .ok text => IO.print text; return 0
 
 /-- Interpret a program via the source-level interpreter (no codegen). -/
 def interpProgram (inputPath : String) : IO UInt32 := do
@@ -4083,6 +4105,8 @@ def main (args : List String) : IO UInt32 := do
     compileTest inputPath (moduleFilter := some moduleName)
   | [inputPath, "--emit-llvm"] =>
     compileSSA inputPath "" true
+  | [inputPath, "--emit-qbe"] =>
+    emitQBEProgram inputPath
   | [inputPath, "--interp"] =>
     interpProgram inputPath
   | [inputPath, "--emit-core"] =>

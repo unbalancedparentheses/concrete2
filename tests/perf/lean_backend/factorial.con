@@ -1,0 +1,11 @@
+// Benchmark domain: n in 0..20. Every result fits in signed 64 bits.
+// Explicit wrapping arithmetic also gives defined behavior outside that range.
+fn factorial(n: Int) -> Int {
+    let mut result: Int = 1;
+    let mut i: Int = 2;
+    while i <= n {
+        result = wrapping_mul(result, i);
+        i = wrapping_add(i, 1);
+    }
+    return result;
+}

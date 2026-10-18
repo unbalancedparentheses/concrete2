@@ -100,7 +100,8 @@ echo "push-both: $PRIMARY (gated) then $MIRROR (fast-forward)"
 # Push the RECORDED SHA, not `HEAD`. `HEAD` is a moving ref: everything below —
 # the primary verification, the CI wait, the parity check — is about $LOCAL, so
 # pushing HEAD means publishing something other than what was checked.
-if ! git push "$PRIMARY" "$LOCAL:$BRANCH"; then
+# A commit SHA has no source ref namespace for Git to infer on a new branch.
+if ! git push "$PRIMARY" "$LOCAL:refs/heads/$BRANCH"; then
   echo "push-both: PRIMARY push failed — mirror deliberately NOT touched." >&2
   exit 1
 fi
@@ -247,7 +248,7 @@ if [ "$pnow" != "$LOCAL" ]; then
   echo "push-both: NOT updated — publishing ${pnow:0:8} is that commit's own job." >&2
   exit 1
 fi
-if ! CONCRETE_SKIP_GATES=1 git push "$MIRROR" "$LOCAL:$BRANCH"; then
+if ! CONCRETE_SKIP_GATES=1 git push "$MIRROR" "$LOCAL:refs/heads/$BRANCH"; then
   echo "push-both: mirror push failed; $PRIMARY is correct and ahead." >&2
   exit 1
 fi
