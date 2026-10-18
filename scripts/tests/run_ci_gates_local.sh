@@ -134,7 +134,8 @@ _norm_cmd() { local c="$1"; printf '%s' "${c/bash .\//bash }"; }
 # 245 -> 246: check_identity_rows.sh (R-0482 frozen identity rows), pinned in the same commit.
 # 248 -> 249: check_subject_binding.sh (bug 079 subject binding), pinned in the same commit.
 # 249 -> 250: check_model_diff.sh (bug 080 model vs runtime), pinned in the same commit.
-EXPECTED_GATE_COMMANDS=250
+# 250 -> 251: check_stack_budget.sh (bug 065 stack budget fails closed), pinned at integration.
+EXPECTED_GATE_COMMANDS=251
 
 # RESOLVE THE SELECTION — sets CMDS (raw inventory), SELECTED (normalized, unique, execution order),
 # FIRST_N (how many leading SELECTED entries are the sequential first stage) and OUTSIDE (selected

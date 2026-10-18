@@ -49,6 +49,17 @@ boundary inputs of every scalar extracted function, and `check_model_diff.sh` re
 across the corpus (140 functions, 5666 inputs). Restoring the old model makes it report
 `narrow(300): model=300 runtime=44`.
 
+### Stack Budgets Fail Closed (bug 065, 2026-10-18)
+
+`--report stack-depth`'s `Max stack bound:` maximised over the bounded functions only, so a
+program with recursion still printed a number (`20 bytes (leaf)` while `main` recursed), and the
+`[policy] max_stack_bytes` gate, the `[allocation] stack_max_bytes` gate and the release bundle's
+`evidence.max_stack_bytes` each scraped it: a budget passed an unbounded stack. The line now reads
+`unbounded` whenever any listed function is, and all three consumers parse it through
+`scripts/tests/lib/stack_bound.sh`, which refuses it (the bundle publishes `"unbounded"`). Two
+invalid-JSON paths in the bundle manifest were fixed on the way. Gated by
+`check_stack_budget.sh` with a recursive budgeted fixture and a bounded positive control.
+
 ### Claims Root Across Package Edges (R-0482 P1, manifestful projects)
 
 A claim whose body calls into std or a dependency package used to refuse its root as `unscopedEdge`:

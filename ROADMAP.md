@@ -2968,7 +2968,7 @@ was measured against the corpus before landing, and the measured number is given
 | Indirect calls refused by the profile | a body calling through a fn pointer cannot be certified acyclic | 1 test golden |
 | FFI admission is transitive | reaching an extern through another function crosses FFI | 3 examples (`http`, `integrity`, `verify`), all true positives |
 | Recursion admission is transitive | a caller of a recursive function is not predictable | **14 functions in 10 examples**, all true positives; 4 goldens |
-| Stack-depth unboundedness propagates | no byte-exact bound where recursion cannot be ruled out | `Max stack bound` is now `0 bytes (none)` on affected programs |
+| Stack-depth unboundedness propagates | no byte-exact bound where recursion cannot be ruled out | `Max stack bound` is now `unbounded` on affected programs (bug 065; it read `0 bytes (none)` until 2026-10-18) |
 | Bounds/shift sizing is per-scope | shadowed arrays and variables are sized from the binding in effect | 4 goldens; **two certified-false claims removed** |
 | Proof-surface wording | "passes the predictable profile" → "is eligible for proof" | 1 test golden, 4 book transcripts |
 
@@ -8568,6 +8568,14 @@ cross-check needs both reports; a negative budgeted project with recursion that
 bundle consumers tolerate a non-numeric `evidence.max_stack_bytes` — the fallback
 is `"?"` today, so prefer an explicit `"unbounded"`. A mutation restoring the
 `!isRecursive c` filter must fail the gate.
+
+The summary and its consumers are fixed (bug 065, 2026-10-18): `Max stack bound:` reads
+`unbounded` whenever any listed function has no bound, the policy gate, the assumptions gate and
+the release bundle read it through `scripts/tests/lib/stack_bound.sh` (an unbounded stack refuses
+every budget; the bundle publishes `"unbounded"`), and `check_stack_budget.sh` gates that with a
+recursive budgeted fixture and a bounded positive control. What remains of this task is the
+class-level reachability assertion cross-checked against `--report recursion`, and a gate for
+`--report recursion` itself.
 
 ### Task R-0450
 
