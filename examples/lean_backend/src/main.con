@@ -1,0 +1,9 @@
+fn main() -> Int {
+    let a: Int = 7;
+    let b: Int = 5;
+    if a > b {
+        return wrapping_add(wrapping_mul(a, b), 7);
+    } else {
+        return wrapping_sub(a, b);
+    }
+}

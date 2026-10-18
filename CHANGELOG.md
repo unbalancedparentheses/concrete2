@@ -10,6 +10,22 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### Experimental Lean Backend Consumer (2026-10-18)
+
+Added an isolated, [restricted QBE consumer](research/compiler/lean-backend-integration.md)
+for the separate general-purpose Lean Compiler Backend. `--emit-qbe` uses the
+normal frontend and verified SSA pipeline; a Nix-based driver assembles and links
+its output. Seven native examples match the LLVM path, and six controls reject
+unsupported checked arithmetic, narrow types and calls. The backend is still a
+partial QBE port, and this experiment supplies no source-to-binary proof or
+production-backend completion claim.
+
+A reproducible factorial benchmark compares LLVM, QBE 1.3 and the Lean backend
+from one Concrete source, with runtime-varying inputs and independently checked
+results. The initial backend is slower on this workload; both local measurement
+sets and the substantial host-load uncertainty are retained in the integration
+note, without claiming general compiler or application performance.
+
 ### Sparkle Analysis And Emitted-Code Validation Plan (2026-10-18)
 
 Added a [source-based analysis](research/compiler/sparkle-emitted-code-validation.md)
