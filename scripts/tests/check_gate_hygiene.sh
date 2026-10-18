@@ -222,7 +222,7 @@ echo "=== publication names a recorded SHA, never a moving ref ==="
 # mirror ended up AHEAD of the primary, the one thing that script exists to
 # prevent. Everything it checks is about the recorded SHA, so everything it
 # pushes must be too.
-if grep -nE 'git push .*"(HEAD)?:?\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh" | grep -q 'HEAD:'; then
+if grep -nE 'git push .*"HEAD:(refs/heads/)?\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh"; then
   no "push-both pushes HEAD — a ref that can move between the CI check and the push"
 else
   ok "push-both pushes only the recorded SHA, not HEAD"
@@ -279,10 +279,10 @@ if grep -q 'pnow=' "$ROOT_DIR/scripts/push-both.sh" \
 else
   no "push-both mirrors without re-checking that the primary still holds the validated SHA"
 fi
-npush="$(grep -c 'git push .*"\$LOCAL:\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh" || true)"
+npush="$(grep -c 'git push .*"\$LOCAL:refs/heads/\$BRANCH"' "$ROOT_DIR/scripts/push-both.sh" || true)"
 [ "$npush" = "2" ] \
-  && ok "both the primary and mirror push name the recorded SHA" \
-  || no "expected 2 pushes naming \$LOCAL, found $npush"
+  && ok "both the primary and mirror push name the recorded SHA and full branch ref" \
+  || no "expected 2 pushes naming \$LOCAL and refs/heads/\$BRANCH, found $npush"
 
 echo ""
 echo "=== no conflict markers are committed ==="
