@@ -2989,6 +2989,7 @@ partial def elabModule (m : Module) (summary : FileSummary)
       (CallableId.ofUser thisProofPath (finalDeclName f implTy) f.typeParams.length,
        evidenceBody)
     structs := cStructs ++ cImportedStructs
+    ownTypeNames := m.structs.map (·.name) ++ m.enums.map (·.name)
     enums := allEnums.map fun ed =>
       { name := ed.name, typeParams := ed.typeParams,
         variants := ed.variants.map fun v =>
