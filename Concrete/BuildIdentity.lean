@@ -25,8 +25,6 @@ namespace Concrete
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
 ||||||| parent of d8c7870e (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 90cd6db8 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
->>>>>>> 492014c2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
 =======
 ||||||| parent of 46595780 (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
 ||||||| parent of e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
@@ -186,6 +184,11 @@ def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 >>>>>>> aa197595 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
 =======
 >>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+||||||| parent of 942507d7 (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+=======
+>>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+=======
+>>>>>>> 942507d7 (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
 ||||||| parent of e1a51c88 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
 def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 =======
@@ -368,6 +371,14 @@ def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 =======
 ||||||| parent of f1e62480 (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 =======
+||||||| parent of 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
+=======
+def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
+>>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+=======
+>>>>>>> 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
 ||||||| parent of 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 =======
@@ -428,8 +439,19 @@ def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
 =======
 def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
 >>>>>>> a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
->>>>>>> a2f7223e (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
 >>>>>>> 42e5a5f1 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+||||||| parent of 942507d7 (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+>>>>>>> a2f7223e (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+=======
+||||||| parent of 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+=======
+||||||| parent of 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
+=======
+def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
+>>>>>>> 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+>>>>>>> 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+>>>>>>> 942507d7 (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
 
 /-- How many source files the identity above was computed over.
 
