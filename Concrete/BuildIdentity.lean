@@ -23,14 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
-=======
-||||||| parent of 87c4131e (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
-||||||| parent of e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
-def buildIdentity : String := "dedd8cefb7a556960714c9693144a00a"
-=======
-def buildIdentity : String := "c970505bec99e70152d01cbddbeae8d2"
->>>>>>> e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
 =======
 >>>>>>> 87c4131e (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
 ||||||| parent of d105bc7c (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
@@ -115,12 +107,27 @@ def buildIdentity : String := "55c97717f6baa62339941c71e0da7d16"
 >>>>>>> 4b14e540 (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
 ||||||| parent of 837fea6f (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
 =======
+||||||| parent of 2e5c8235 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
+||||||| parent of 4b14e540 (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
+def buildIdentity : String := "2ab1e7072fa0849880c8d551f0d61715"
+=======
+def buildIdentity : String := "55c97717f6baa62339941c71e0da7d16"
+>>>>>>> 4b14e540 (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
+=======
+>>>>>>> 2e5c8235 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
 ||||||| parent of 0b897854 (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
 def buildIdentity : String := "55c97717f6baa62339941c71e0da7d16"
 =======
 def buildIdentity : String := "7374f99d16c68754afa551e470841aca"
 >>>>>>> 0b897854 (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
->>>>>>> 837fea6f (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
+||||||| parent of 2e5c8235 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
+=======
+||||||| parent of 50299870 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
+def buildIdentity : String := "7374f99d16c68754afa551e470841aca"
+=======
+def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
+>>>>>>> 50299870 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
+>>>>>>> 2e5c8235 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
 
 /-- How many source files the identity above was computed over.
 

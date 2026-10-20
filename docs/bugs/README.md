@@ -168,6 +168,7 @@ there or adds one.
 - [118_interp_nested_module_import.md](118_interp_nested_module_import.md) — OPEN: the interpreter cannot call a function imported from a nested module (examples-health, 2026-10-20)
 - [119_interp_generic_trait_method.md](119_interp_generic_trait_method.md) — OPEN: the interpreter cannot call a trait method on a type parameter (examples-health, 2026-10-20)
 - [120_interp_field_borrow_through_ref.md](120_interp_field_borrow_through_ref.md) — OPEN: the interpreter cannot borrow a field through a reference parameter (examples-health, 2026-10-20)
+- [105_reference_valued_if_miscompiles.md](105_reference_valued_if_miscompiles.md) — an `if`/`match` yielding a reference miscompiles (binary segfaults, --interp correct); contained at the checker (E0238, bug 091 normalized place rule), lowering defect open (2026-10-20)
 
 (045/046 numbers used by the parallel session's fixes — match-binder alpha-rename and keys/values Copy-bounding — before these entries were filed; the keys/values double-free finding from the same audit is tracked there, fixed.)
 
