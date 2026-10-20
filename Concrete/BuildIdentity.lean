@@ -25,9 +25,6 @@ namespace Concrete
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
 ||||||| parent of d8c7870e (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 9ede08ae (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
-=======
->>>>>>> b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 =======
 >>>>>>> 9ede08ae (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
 ||||||| parent of e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
@@ -141,6 +138,17 @@ def buildIdentity : String := "6a84c4f099a6d9cae06cad445e9c465b"
 =======
 def buildIdentity : String := "9941464b15dfa750c2ceae8ac82fcaa9"
 >>>>>>> ab41e479 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
+||||||| parent of b20ab015 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+||||||| parent of 3692f038 (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+=======
+||||||| parent of 9b927620 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
+||||||| parent of ab41e479 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
+def buildIdentity : String := "6a84c4f099a6d9cae06cad445e9c465b"
+=======
+def buildIdentity : String := "9941464b15dfa750c2ceae8ac82fcaa9"
+>>>>>>> ab41e479 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
+=======
+>>>>>>> b20ab015 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
 =======
 >>>>>>> 9b927620 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
 ||||||| parent of cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
@@ -333,8 +341,19 @@ def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 =======
 def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
 >>>>>>> 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
->>>>>>> f1e62480 (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 >>>>>>> 4e265730 (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
+||||||| parent of b20ab015 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+>>>>>>> f1e62480 (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
+=======
+||||||| parent of fe03c831 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+=======
+||||||| parent of 81b0c6c3 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
+=======
+def buildIdentity : String := "84a1e4376f94f4c7328d5eea3204fb5d"
+>>>>>>> 81b0c6c3 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+>>>>>>> fe03c831 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+>>>>>>> b20ab015 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
 
 /-- How many source files the identity above was computed over.
 
