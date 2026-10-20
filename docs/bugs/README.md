@@ -166,6 +166,7 @@ there or adds one.
 - [119_interp_generic_trait_method.md](119_interp_generic_trait_method.md) — OPEN: the interpreter cannot call a trait method on a type parameter (examples-health, 2026-10-20)
 - [120_interp_field_borrow_through_ref.md](120_interp_field_borrow_through_ref.md) — OPEN: the interpreter cannot borrow a field through a reference parameter (examples-health, 2026-10-20)
 - [105_reference_valued_if_miscompiles.md](105_reference_valued_if_miscompiles.md) — an `if`/`match` yielding a reference miscompiles (binary segfaults, --interp correct); contained at the checker (E0238, bug 091 normalized place rule), lowering defect open (2026-10-20)
+- [106_model_diff_report_hangs.md](106_model_diff_report_hangs.md) — `--report model-diff` ran for hours on thesis_demo (unbudgeted interpreter loop at len = i64::MAX) and `check_model_diff.sh` swallowed it with `|| true` (87/87). FIXED 2026-10-20: loop budget with an explicit `exhausted` outcome, gate fails on timeout / nonzero exit; residual (recursion not budgeted) open under R-0460
 
 (045/046 numbers used by the parallel session's fixes — match-binder alpha-rename and keys/values Copy-bounding — before these entries were filed; the keys/values double-free finding from the same audit is tracked there, fixed.)
 
