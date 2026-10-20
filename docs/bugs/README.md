@@ -111,6 +111,7 @@ Those belong in:
 - [069_aliased_imported_type_unresolvable.md](069_aliased_imported_type_unresolvable.md) — an aliased imported struct/enum was registered under its definition-site spelling, so the importer's local alias did not resolve (FIXED 2026-08-02; **renumbered from 064**, which a second, unrelated bug already held)
 - [070_builtin_enum_list_built_twice.md](070_builtin_enum_list_built_twice.md) — `builtinEnumList` built twice and `hasUserResult` computed from different inputs, so Elab and Check held different beliefs about a user `Result` (FIXED 2026-08-02; **renumbered from 065**, which a second, unrelated bug already held)
 - [071_cross_package_capability_requirements_unenforced.md](071_cross_package_capability_requirements_unenforced.md) — a capability declared in a dependency did not bind on its caller: a function declaring nothing read `$HOME` through `std.env.get`. Only hardcoded intrinsics were enforced across a package boundary (OPEN, partially repaired 2026-09-21)
+- [105_reference_valued_if_miscompiles.md](105_reference_valued_if_miscompiles.md) — an `if`/`match` yielding a reference miscompiles (binary segfaults, --interp correct); contained at the checker (E0238, bug 091 normalized place rule), lowering defect open (2026-10-20)
 
 (045/046 numbers used by the parallel session's fixes — match-binder alpha-rename and keys/values Copy-bounding — before these entries were filed; the keys/values double-free finding from the same audit is tracked there, fixed.)
 
