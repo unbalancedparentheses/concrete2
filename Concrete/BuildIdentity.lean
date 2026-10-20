@@ -23,6 +23,7 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 <<<<<<< HEAD
+<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
 ||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
@@ -54,6 +55,11 @@ def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
 =======
 def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
 >>>>>>> 9812b805 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+||||||| parent of a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
+=======
+def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
+>>>>>>> a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
 
 /-- How many source files the identity above was computed over.
 
