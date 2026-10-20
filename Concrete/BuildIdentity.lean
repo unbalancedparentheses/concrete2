@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
-def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
-=======
-def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
->>>>>>> 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
 ||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
 =======
@@ -48,6 +43,11 @@ def buildIdentity : String := "84a1e4376f94f4c7328d5eea3204fb5d"
 =======
 def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
 >>>>>>> 0244652e (fix: bug 091 normalized place rule — Codex static review pass 4: references stored in aggregates)
+||||||| parent of df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
+def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
+=======
+def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
+>>>>>>> df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
 
 /-- How many source files the identity above was computed over.
 
