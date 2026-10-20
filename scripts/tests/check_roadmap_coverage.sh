@@ -719,11 +719,11 @@ PY
     "old='| V1b (row 3, R-0511 with R-0517) | 0a, 0b, 2a, 2g, 2h, 2i, 2j | 0c, 1a, 2b, 2c, 2d, 2e, 2f, 2k, 2l |'; assert s.count(old)==1; s=s.replace(old,'| V1b (row 5, R-0511 with R-0517) | 0b, 2i | 0a, 0c, 1a, 2a, 2b, 2c, 2d, 2e, 2f, 2g, 2h, 2j, 2k, 2l |')" \
     "deliverable V1b is labelled row 5, but queue row 3 schedules it"
   neg implemented_bug_already_fixed \
-    "old='| 088 (batch 4) |'; assert s.count(old)==1; s=s.replace(old,'| 080, 088 (batch 4) |')" \
+    "old='| 096, 097, 098 |'; assert s.count(old)==1; s=s.replace(old,'| 080, 096, 097, 098 |')" \
     "bug 080 is listed as not yet accepted but the bug ledger records it fixed"
   neg implemented_bug_no_branch \
-    "old='| \`bug088-literal-range\` |'; assert s.count(old)==1; s=s.replace(old,'| none |')" \
-    "implemented-bug row \"088 (batch 4)\" names no branch"
+    "old='| \`bug096-type-identity\` |'; assert s.count(old)==1; s=s.replace(old,'| none |')" \
+    "implemented-bug row \"096, 097, 098\" names no branch"
   neg implemented_bug_no_step \
     "import re; s,n=re.subn(r'^\| 099, 100 \|[^\n]*$', '| 099, 100 | \`bug099-generic-destroy\` |  |', s, flags=re.M); assert n==1" \
     "implemented-bug row \"099, 100\" has no remaining acceptance step"
@@ -761,9 +761,9 @@ PY
   if python3 - "$TMPD/open_entry.md" <<'PY'
 import sys
 p = sys.argv[1]; s = open(p, encoding='utf-8').read()
-old = '| 088 (batch 4) |'
+old = '| 096, 097, 098 |'
 assert s.count(old) == 1
-s = s.replace(old, '| 077, 088 (batch 4) |')
+s = s.replace(old, '| 077, 096, 097, 098 |')
 open(p, 'w', encoding='utf-8').write(s)
 PY
   then

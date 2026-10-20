@@ -62,8 +62,6 @@ row lacks a branch or a remaining step. Stages (b) and (c) are the
 |---|---|---|
 | 052, 065, 082, 087, 091 (batch 2) | `land2-fix` | Codex round 3, then stage (b) and stage (c) on the integrated candidate |
 | 081, 083, 089 (batch 3) | `land3`, integrating `bug081-callee-key`, `bug083-hardcoded-proved` and `bug089-ensures-proof` | finish the integration on `land3`, then Codex review and stages (b) and (c) |
-| 088 (batch 4) | `bug088-literal-range` | integration into a landing batch, Codex review, stages (b) and (c) |
-| 090, 092, 093, 094 (batch 4) | `bug090-checker-ownership` | finish 094 (090, 092 and 093 are implemented), then Codex review and stages (b) and (c) |
 | 096, 097, 098 | `bug096-type-identity` | partial; finish after batch 2 lands, then Codex review and stages (b) and (c) |
 | 099, 100 | `bug099-generic-destroy` | partial; finish after batch 2 lands, then Codex review and stages (b) and (c) |
 
