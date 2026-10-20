@@ -26,8 +26,6 @@ def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
 ||||||| parent of d8c7870e (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
 =======
->>>>>>> 88ed8312 (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
-=======
 >>>>>>> b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 ||||||| parent of 9ede08ae (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
 =======
@@ -115,6 +113,11 @@ def buildIdentity : String := "6a84c4f099a6d9cae06cad445e9c465b"
 >>>>>>> c961bf60 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
 =======
 >>>>>>> 3692f038 (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+||||||| parent of ed9a3083 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+=======
+>>>>>>> 3692f038 (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+=======
+>>>>>>> ed9a3083 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 ||||||| parent of ab41e479 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
 def buildIdentity : String := "6a84c4f099a6d9cae06cad445e9c465b"
 =======
@@ -259,6 +262,14 @@ def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
 =======
 ||||||| parent of 3acf4767 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
 =======
+||||||| parent of 86c34685 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+||||||| parent of f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
+def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
+=======
+def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
+>>>>>>> f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
+=======
+>>>>>>> 86c34685 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 ||||||| parent of 69254623 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
 def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
 =======
@@ -286,8 +297,19 @@ def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
 =======
 def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
 >>>>>>> 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
->>>>>>> 7869d3ad (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
 >>>>>>> a2ba598c (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
+||||||| parent of ed9a3083 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+>>>>>>> 7869d3ad (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
+=======
+||||||| parent of 86c34685 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+=======
+||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
+=======
+def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
+>>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+>>>>>>> 86c34685 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+>>>>>>> ed9a3083 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 
 /-- How many source files the identity above was computed over.
 
