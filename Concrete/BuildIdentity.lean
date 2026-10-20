@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 69254623 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
-def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
-=======
-def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
->>>>>>> 69254623 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
 ||||||| parent of e8a386f4 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
 def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
 =======
@@ -43,6 +38,11 @@ def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
 =======
 def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 >>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+||||||| parent of 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
+def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
+=======
+def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
+>>>>>>> 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 
 /-- How many source files the identity above was computed over.
 
