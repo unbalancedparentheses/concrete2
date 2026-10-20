@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 0244652e (fix: bug 091 normalized place rule — Codex static review pass 4: references stored in aggregates)
-def buildIdentity : String := "84a1e4376f94f4c7328d5eea3204fb5d"
-=======
-def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
->>>>>>> 0244652e (fix: bug 091 normalized place rule — Codex static review pass 4: references stored in aggregates)
 ||||||| parent of df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
 def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
 =======
@@ -58,6 +53,11 @@ def buildIdentity : String := "ee1731fce4a864963c0814819f1afcfa"
 =======
 def buildIdentity : String := "a170ebe10ae272f60d43171f3ad960be"
 >>>>>>> 86212091 (fix: bug 091 normalized place rule — Codex static review pass 10: generic bodies at reference instantiations)
+||||||| parent of 0e440d31 (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
+def buildIdentity : String := "a170ebe10ae272f60d43171f3ad960be"
+=======
+def buildIdentity : String := "bf51e0eea217c4cbd32b32e18ae4ebbd"
+>>>>>>> 0e440d31 (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
 
 /-- How many source files the identity above was computed over.
 
