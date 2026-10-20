@@ -23,14 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 492014c2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
-=======
-||||||| parent of b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
-||||||| parent of 60b36a02 (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
-def buildIdentity : String := "d1addc41cade4a9efad3828b8a716848"
-=======
-def buildIdentity : String := "dedd8cefb7a556960714c9693144a00a"
->>>>>>> 60b36a02 (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 =======
 >>>>>>> b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 ||||||| parent of e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
@@ -85,12 +77,27 @@ def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 >>>>>>> cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
 ||||||| parent of 9b927620 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
 =======
+||||||| parent of b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+||||||| parent of cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+def buildIdentity : String := "9941464b15dfa750c2ceae8ac82fcaa9"
+=======
+def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
+>>>>>>> cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+=======
+>>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
 ||||||| parent of e1a51c88 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
 def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 =======
 def buildIdentity : String := "4d6fcd563eb743b0c85d641a8c6b05a0"
 >>>>>>> e1a51c88 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
->>>>>>> 9b927620 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
+||||||| parent of b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+=======
+||||||| parent of a13aeb8a (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+def buildIdentity : String := "4d6fcd563eb743b0c85d641a8c6b05a0"
+=======
+def buildIdentity : String := "2ab1e7072fa0849880c8d551f0d61715"
+>>>>>>> a13aeb8a (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+>>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
 
 /-- How many source files the identity above was computed over.
 
