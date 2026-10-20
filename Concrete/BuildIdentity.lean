@@ -23,6 +23,7 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
+>>>>>>> 932afdfa (fix: bug 091 Codex round 3 review — one place rule for explicit and implicit borrows)
 
 /-- How many source files the identity above was computed over.
 
