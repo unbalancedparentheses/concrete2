@@ -23,8 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
-=======
->>>>>>> d65447f9 (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
 ||||||| parent of d105bc7c (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 def buildIdentity : String := "c970505bec99e70152d01cbddbeae8d2"
 =======
@@ -822,6 +820,11 @@ def buildIdentity : String := "cbda038ea329c0e3036a4298b94040c9"
 =======
 def buildIdentity : String := "2daffd19d8fc5c39f7874f66c34f28d6"
 >>>>>>> 9d9d6c1e (fix: bug 091 integration review — no reference is written through a reference; fn(&mut T) is a nested occurrence)
+||||||| parent of de092cd5 (fix: bug 091 integration review — Mono re-asks the reference-instantiation question at every specialization)
+def buildIdentity : String := "2daffd19d8fc5c39f7874f66c34f28d6"
+=======
+def buildIdentity : String := "5556bd2229e9b1a8107fb1a290fcf0dc"
+>>>>>>> de092cd5 (fix: bug 091 integration review — Mono re-asks the reference-instantiation question at every specialization)
 
 /-- How many source files the identity above was computed over.
 
