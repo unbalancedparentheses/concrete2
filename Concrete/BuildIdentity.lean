@@ -22,6 +22,7 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
+<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
 ||||||| parent of e8a386f4 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
 def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
@@ -43,6 +44,11 @@ def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 =======
 def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
 >>>>>>> 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
+||||||| parent of 81b0c6c3 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
+def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
+=======
+def buildIdentity : String := "84a1e4376f94f4c7328d5eea3204fb5d"
+>>>>>>> 81b0c6c3 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
 
 /-- How many source files the identity above was computed over.
 
