@@ -22,6 +22,7 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
+<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
 ||||||| parent of f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
 def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
@@ -33,6 +34,11 @@ def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
 =======
 def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
 >>>>>>> 69254623 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
+||||||| parent of e8a386f4 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
+def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
+=======
+def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
+>>>>>>> e8a386f4 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
 
 /-- How many source files the identity above was computed over.
 
