@@ -23,16 +23,16 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 4b14e540 (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
-def buildIdentity : String := "2ab1e7072fa0849880c8d551f0d61715"
-=======
-def buildIdentity : String := "55c97717f6baa62339941c71e0da7d16"
->>>>>>> 4b14e540 (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
 ||||||| parent of 0b897854 (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
 def buildIdentity : String := "55c97717f6baa62339941c71e0da7d16"
 =======
 def buildIdentity : String := "7374f99d16c68754afa551e470841aca"
 >>>>>>> 0b897854 (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
+||||||| parent of 50299870 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
+def buildIdentity : String := "7374f99d16c68754afa551e470841aca"
+=======
+def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
+>>>>>>> 50299870 (fix: bug 105 contained — Check refuses a reference-valued if/match (E0238))
 
 /-- How many source files the identity above was computed over.
 
