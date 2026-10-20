@@ -25,7 +25,6 @@ namespace Concrete
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
 ||||||| parent of d8c7870e (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
->>>>>>> eef1b0a1 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
 ||||||| parent of 90cd6db8 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 >>>>>>> 492014c2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
 =======
@@ -174,6 +173,17 @@ def buildIdentity : String := "9941464b15dfa750c2ceae8ac82fcaa9"
 =======
 def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 >>>>>>> cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+||||||| parent of aa197595 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+||||||| parent of 9b927620 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
+=======
+||||||| parent of b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
+||||||| parent of cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+def buildIdentity : String := "9941464b15dfa750c2ceae8ac82fcaa9"
+=======
+def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
+>>>>>>> cf45b39e (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
+=======
+>>>>>>> aa197595 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
 =======
 >>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
 ||||||| parent of e1a51c88 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
@@ -396,8 +406,19 @@ def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
 =======
 def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
 >>>>>>> df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
->>>>>>> 121fa78b (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
 >>>>>>> 2f77b752 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
+||||||| parent of aa197595 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+>>>>>>> 121fa78b (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
+=======
+||||||| parent of 9de324af (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+=======
+||||||| parent of 9812b805 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
+=======
+def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
+>>>>>>> 9812b805 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+>>>>>>> 9de324af (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+>>>>>>> aa197595 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
 
 /-- How many source files the identity above was computed over.
 
