@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of a13aeb8a (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
-def buildIdentity : String := "4d6fcd563eb743b0c85d641a8c6b05a0"
-=======
-def buildIdentity : String := "2ab1e7072fa0849880c8d551f0d61715"
->>>>>>> a13aeb8a (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
 ||||||| parent of 82324ebb (fix: bug 091 Codex round 3 review — a nested reborrow may be used while its parent is held)
 =======
 ||||||| parent of 837fea6f (fix: bug 091 round 3 — one normalized place rule for borrows, receivers, arguments and overlap)
@@ -251,6 +246,44 @@ def buildIdentity : String := "a170ebe10ae272f60d43171f3ad960be"
 def buildIdentity : String := "bf51e0eea217c4cbd32b32e18ae4ebbd"
 >>>>>>> 0e440d31 (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
 >>>>>>> c1493c5b (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
+||||||| parent of fca9dcf4 (integrate batch 2 onto main: provenance updates by binding identity, bugs 104/107 fixed with rejection fixtures, ledger and candidate table)
+||||||| parent of df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
+def buildIdentity : String := "ba1d3d478c8838a74e6d38ab01dc42b3"
+=======
+def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
+>>>>>>> df237863 (fix: bug 091 normalized place rule — Codex static review pass 5: the rule's type knowledge fails closed)
+||||||| parent of 9812b805 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+def buildIdentity : String := "b1972706dc889a1c81282919e2285e81"
+=======
+def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
+>>>>>>> 9812b805 (fix: bug 091 normalized place rule — Codex static review pass 6: aliases resolved, nested-reference binders)
+||||||| parent of a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
+=======
+def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
+>>>>>>> a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+||||||| parent of 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
+=======
+def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
+>>>>>>> 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+||||||| parent of e7435d55 (fix: bug 091 normalized place rule — Codex static review pass 9: stored references refused from the checked type)
+def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
+=======
+def buildIdentity : String := "ee1731fce4a864963c0814819f1afcfa"
+>>>>>>> e7435d55 (fix: bug 091 normalized place rule — Codex static review pass 9: stored references refused from the checked type)
+||||||| parent of 86212091 (fix: bug 091 normalized place rule — Codex static review pass 10: generic bodies at reference instantiations)
+def buildIdentity : String := "ee1731fce4a864963c0814819f1afcfa"
+=======
+def buildIdentity : String := "a170ebe10ae272f60d43171f3ad960be"
+>>>>>>> 86212091 (fix: bug 091 normalized place rule — Codex static review pass 10: generic bodies at reference instantiations)
+||||||| parent of 0e440d31 (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
+def buildIdentity : String := "a170ebe10ae272f60d43171f3ad960be"
+=======
+def buildIdentity : String := "bf51e0eea217c4cbd32b32e18ae4ebbd"
+>>>>>>> 0e440d31 (fix: bug 091 normalized place rule — Codex static review pass 11: instantiation restrictions resolve aliases)
+=======
+>>>>>>> fca9dcf4 (integrate batch 2 onto main: provenance updates by binding identity, bugs 104/107 fixed with rejection fixtures, ledger and candidate table)
 
 /-- How many source files the identity above was computed over.
 
