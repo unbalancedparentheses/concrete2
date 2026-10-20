@@ -23,6 +23,7 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 <<<<<<< HEAD
+<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
 ||||||| parent of f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
 def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
@@ -39,6 +40,11 @@ def buildIdentity : String := "2e0f72c3d6051855c78fed906488751d"
 =======
 def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
 >>>>>>> e8a386f4 (fix: bug 091 normalized place rule — Codex review pass 2: reads/writes, scoped borrows, shadowing, intrinsics)
+||||||| parent of 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
+def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
+=======
+def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
+>>>>>>> 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
 
 /-- How many source files the identity above was computed over.
 
