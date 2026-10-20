@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
-def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
-=======
-def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
->>>>>>> 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 ||||||| parent of 81b0c6c3 (fix: bug 091 normalized place rule — Codex static review pass 3: every binding introduction)
 def buildIdentity : String := "1f41a5e32458234de8cd9c14aee9e6e7"
 =======
@@ -58,6 +53,11 @@ def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
 =======
 def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
 >>>>>>> 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+||||||| parent of e7435d55 (fix: bug 091 normalized place rule — Codex static review pass 9: stored references refused from the checked type)
+def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
+=======
+def buildIdentity : String := "ee1731fce4a864963c0814819f1afcfa"
+>>>>>>> e7435d55 (fix: bug 091 normalized place rule — Codex static review pass 9: stored references refused from the checked type)
 
 /-- How many source files the identity above was computed over.
 
