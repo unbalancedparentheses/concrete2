@@ -22,19 +22,17 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
-<<<<<<< HEAD
-<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of de110046 (fix: bug 091 Codex round 3 review — one place rule for explicit and implicit borrows)
-def buildIdentity : String := "2191e45042f2de34824c0084897f1896"
-=======
-def buildIdentity : String := "d1addc41cade4a9efad3828b8a716848"
->>>>>>> de110046 (fix: bug 091 Codex round 3 review — one place rule for explicit and implicit borrows)
 ||||||| parent of 60b36a02 (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
 def buildIdentity : String := "d1addc41cade4a9efad3828b8a716848"
 =======
 def buildIdentity : String := "dedd8cefb7a556960714c9693144a00a"
 >>>>>>> 60b36a02 (fix: bug 091 Codex round 3 review — by-value derefs, paren arguments, root provenance)
+||||||| parent of e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
+def buildIdentity : String := "dedd8cefb7a556960714c9693144a00a"
+=======
+def buildIdentity : String := "c970505bec99e70152d01cbddbeae8d2"
+>>>>>>> e06d05e2 (fix: bug 091 Codex round 3 review — deref through borrows, match *r, traced provenance)
 
 /-- How many source files the identity above was computed over.
 
