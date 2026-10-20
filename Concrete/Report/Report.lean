@@ -6270,7 +6270,7 @@ def diagnosticCodesReport : String :=
     entry "E0233" "check" "error" "cannot mutably borrow immutable variable",
     entry "E0234" "check" "error" "reference escapes borrow block",
     entry "E0235" "check" "error" "cannot mutably borrow: already immutably borrowed",
-    entry "E0237" "check" "error" "`&mut self` method called through a shared reference",
+    entry "E0237" "check" "error" "mutable borrow (explicit or `&mut self` receiver) through a shared reference",
     -- Check: capability (E0240–E0242)
     entry "E0240" "check" "error" "missing capability",
     entry "E0241" "check" "error" "trait bound not satisfied",
