@@ -334,8 +334,6 @@ open_bug_reproducers() {
 116|bug116_vec_push_first_field_through_ref/repro.con|compile-fails|use of undefined value '@vec_push'
 117|bug117_interp_module_const/repro.con|interp-fails|undefined variable 'K'
 118|bug118_interp_nested_module_import/repro.con|interp-fails|undefined function 'f'
-119|bug119_interp_generic_trait_method/repro.con|interp-fails|undefined function 'U_v'
-120|bug120_interp_field_borrow_through_ref/repro.con|interp-fails|ref step .field on non-struct
 TABLE
 }
 if [ -z "$ONLY" ]; then

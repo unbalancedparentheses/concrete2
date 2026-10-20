@@ -139,6 +139,8 @@ there or adds one.
 - [104_assigned_reference_outlives_block_local.md](104_assigned_reference_outlives_block_local.md) — FIXED (bug 091 normalized place rule): `leaked = &h` from an inner block recorded no borrow, so `h` was freed or left scope while the outer reference was read (use after free); provenance is now recorded on assignment and re-pointing a reference binding at different storage is refused (E0238). Fixtures `error_104_assigned_ref_{heap,stack}_block.con`
 - [107_shadowed_binding_reference_reads_new_slot.md](107_shadowed_binding_reference_reads_new_slot.md) — FIXED (bug 091 normalized place rule): `let x = 1; let r = &x; let x = 2; *r` was 1 interpreted and 2 compiled; shadowing a binding a live reference borrows is refused (E0238), and a shadowing `let` gets a fresh Core name (bug 087 `bindLocal`). Fixtures `error_107_shadow_{under_live_ref,in_block_under_live_ref}.con`
 - [106_model_diff_report_hangs.md](106_model_diff_report_hangs.md) — `--report model-diff` ran for hours on thesis_demo (unbudgeted interpreter loop at len = i64::MAX) and `check_model_diff.sh` swallowed it with `|| true` (87/87). FIXED 2026-10-20: loop budget with an explicit `exhausted` outcome, gate fails on timeout / nonzero exit; residual (recursion not budgeted) open under R-0460
+- [119_interp_generic_trait_method.md](119_interp_generic_trait_method.md) — FIXED (batch 2): the interpreter could not call a trait method on a type parameter (`undefined function 'U_v'`); `T$m` now dispatches through the trait-impl table on the runtime receiver. Interp-vs-native leg on the reproducer
+- [120_interp_field_borrow_through_ref.md](120_interp_field_borrow_through_ref.md) — FIXED (batch 2): the interpreter could not borrow a field through a reference parameter (`ref step .field on non-struct`); a projection base of reference type forwards the reference's path. Interp-vs-native leg on the reproducer
 
 ## Open Numbered Bugs
 
@@ -167,8 +169,6 @@ there or adds one.
 - [116_vec_push_first_field_through_ref.md](116_vec_push_first_field_through_ref.md) — OPEN: `vec_push` on the first field of a struct reached through a `&mut` parameter calls an undefined `@vec_push` (examples-health, 2026-10-20)
 - [117_interp_module_const.md](117_interp_module_const.md) — OPEN: the interpreter does not resolve module-level constants (examples-health, 2026-10-20)
 - [118_interp_nested_module_import.md](118_interp_nested_module_import.md) — OPEN: the interpreter cannot call a function imported from a nested module (examples-health, 2026-10-20)
-- [119_interp_generic_trait_method.md](119_interp_generic_trait_method.md) — OPEN: the interpreter cannot call a trait method on a type parameter (examples-health, 2026-10-20)
-- [120_interp_field_borrow_through_ref.md](120_interp_field_borrow_through_ref.md) — OPEN: the interpreter cannot borrow a field through a reference parameter (examples-health, 2026-10-20)
 - [105_reference_valued_if_miscompiles.md](105_reference_valued_if_miscompiles.md) — an `if`/`match` yielding a reference miscompiles (binary segfaults, --interp correct); contained at the checker (E0238, bug 091 normalized place rule), lowering defect open (2026-10-20)
 
 (045/046 numbers used by the parallel session's fixes — match-binder alpha-rename and keys/values Copy-bounding — before these entries were filed; the keys/values double-free finding from the same audit is tracked there, fixed.)
