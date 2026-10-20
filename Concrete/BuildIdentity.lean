@@ -22,14 +22,7 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
-<<<<<<< HEAD
-<<<<<<< HEAD
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-||||||| parent of f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
-def buildIdentity : String := "38a09dc71192eb2951b6d2d4cbadc57b"
-=======
-def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
->>>>>>> f950969f (fix: bug 106 — model-diff runs under a loop budget; its gate fails on hangs and crashes)
 ||||||| parent of 69254623 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
 def buildIdentity : String := "90d0f6b73fe5a4bb54088c51c857f23b"
 =======
@@ -45,6 +38,11 @@ def buildIdentity : String := "4f5c7d08f266f675a58507c89c213091"
 =======
 def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
 >>>>>>> 91003b79 (fix: bug 091 normalized place rule — Codex review pass 3: bare assignment, match-through-ref binders, heap field loads)
+||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
+=======
+def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
+>>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 
 /-- How many source files the identity above was computed over.
 
