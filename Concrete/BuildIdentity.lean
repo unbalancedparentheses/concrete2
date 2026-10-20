@@ -23,8 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "60bb29dc8b6e66c9427b2ad0064f2626"
-=======
->>>>>>> b3e4942f (fix: bug 091 Codex round 3 review — branch borrows are alternatives, &self under a live reborrow)
 ||||||| parent of e1a51c88 (fix: bug 091 Codex round 3 review — nested/conditional reborrow args, borrowed heap interiors)
 def buildIdentity : String := "8afc64a24596743432018e98e8505fcb"
 =======
@@ -167,6 +165,14 @@ def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 >>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
 ||||||| parent of f1e62480 (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 =======
+||||||| parent of 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+||||||| parent of 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+def buildIdentity : String := "13374fa6583c03971aa3cf243991d8ad"
+=======
+def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
+>>>>>>> 08b91316 (fix: bug 091 normalized place rule — Codex static review: no parentheses in Check, exact provenance paths)
+=======
+>>>>>>> 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
 ||||||| parent of 8e846e7c (fix: bug 091 normalized place rule — Codex static review pass 2: reads normalize, pre-bind provenance, nested casts)
 def buildIdentity : String := "aa8388a9d733729da0b763e072e0755b"
 =======
@@ -207,7 +213,14 @@ def buildIdentity : String := "59ca5de370fb64cc7476a17ebfe86d25"
 =======
 def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
 >>>>>>> a099d1c3 (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
->>>>>>> a2f7223e (fix: bug 091 normalized place rule — Codex static review pass 7: casts resolve aliases)
+||||||| parent of 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+=======
+||||||| parent of 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+def buildIdentity : String := "520d8e8d226cccfd593d7dd580195a44"
+=======
+def buildIdentity : String := "6bc4174f11a46097503bb3516fda188a"
+>>>>>>> 4ea4437a (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
+>>>>>>> 793afd2c (fix: bug 091 normalized place rule — Codex static review pass 8: no call yields a reference)
 
 /-- How many source files the identity above was computed over.
 
