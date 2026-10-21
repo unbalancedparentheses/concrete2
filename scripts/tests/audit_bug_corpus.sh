@@ -91,6 +91,10 @@ declare -A BUG_TEST_MAP=(
   # Bug 121: enum LLVM types disagreed with tySize/tyAlign, so an enum field moved the
   # fields after it on aggregate copies (conlog SIGSEGV). Class leg: check_enum_union_layout.sh leg 5.
   [121]="regress_bug121_enum_field_layout.con"
+  # Bug 113: R-0484 R3 skipped nested submodules (E0116 and E0117 now hold there too).
+  [113]="error_113_submodule_extern_undeclared.con error_113_submodule_extern_effectful_pure.con"
+  # Bug 112: an #[intrinsic] declaration was refused as an undeclared foreign binding (E0116).
+  [112]="regress_112_user_intrinsic.con"
 )
 
 # Bugs that don't need a .con regression test (with reason).
@@ -150,8 +154,6 @@ declare -A SKIP_BUGS=(
   [101]="FIXED 2026-10-19 -- a branch- or body-local let was nested over the code after its scope in the proof model (scoped(1): model 10, runtime 1); branches composing with a continuation refuse when their locals reach it. Regression vehicle: tests/regressions/bug085_loop_step/repro.con scoped/reloop + check_model_diff.sh leg S"
   [102]="OPEN -- &mut x as *mut *mut T on a pointer-typed local passes x's value, not its address (silent wrong code; the interpreter refuses the cast). Found by the RocksDB slice 1 groundwork. Regression vehicle lands with the fix under queue exit 0b: the docs/bugs/102 program as a permanent fixture, plus interpreter support for the cast so differential gates cover it"
   [103]="OPEN -- Mono drop glue synthesizes an empty definition for any unresolved callee ending in _destroy, so an extern fn foo_destroy never reaches the C library (silent leak). Found by the RocksDB slice 1 groundwork. Regression vehicle lands with the fix under queue exit 0b: the docs/bugs/103 program checked by --emit-llvm (extern stays a declare) and a linked C stub counting the call; check_rocksdb_slice1.sh also fails on it"
-  [112]="OPEN -- the declaration std.mem uses for sizeof is rejected (E0116 at 0:0) outside std; reproducer tests/regressions/bug112_user_intrinsic_e0116/repro.con, found by the examples-health pass 2026-10-20; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg)"
-  [113]="OPEN -- R-0484 R3 (every foreign binding declares its effects) is not enforced in nested submodules; reproducer tests/regressions/bug113_submodule_extern_effects_unchecked/repro.con, found by the examples-health pass 2026-10-20; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg)"
   [114]="OPEN -- an intrinsic declared in a nested submodule and called by path lowers to a C call; reproducer tests/regressions/bug114_submodule_intrinsic_links_c_symbol/repro.con, found by the examples-health pass 2026-10-20; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg)"
   [115]="OPEN -- the builtin vec_get returns a non-Copy element by value, duplicating a linear value; reproducer tests/regressions/bug115_vec_get_duplicates_linear/repro.con, found by the examples-health pass 2026-10-20; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg)"
   [117]="OPEN -- the interpreter does not resolve module-level constants; reproducer tests/regressions/bug117_interp_module_const/repro.con, found by the examples-health pass 2026-10-20; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg)"
