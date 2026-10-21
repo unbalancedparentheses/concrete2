@@ -23,11 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
-||||||| parent of d105bc7c (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
-def buildIdentity : String := "c970505bec99e70152d01cbddbeae8d2"
-=======
-def buildIdentity : String := "6a84c4f099a6d9cae06cad445e9c465b"
->>>>>>> d105bc7c (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 >>>>>>> 90cd6db8 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 ||||||| parent of a2bb78a4 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
 >>>>>>> b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
@@ -825,6 +820,11 @@ def buildIdentity : String := "2daffd19d8fc5c39f7874f66c34f28d6"
 =======
 def buildIdentity : String := "5556bd2229e9b1a8107fb1a290fcf0dc"
 >>>>>>> de092cd5 (fix: bug 091 integration review — Mono re-asks the reference-instantiation question at every specialization)
+||||||| parent of 149b1767 (regenerate Concrete/BuildIdentity.lean for the bug 123 fix)
+def buildIdentity : String := "5556bd2229e9b1a8107fb1a290fcf0dc"
+=======
+def buildIdentity : String := "493ce2e5c31398647f70141075e3ed8b"
+>>>>>>> 149b1767 (regenerate Concrete/BuildIdentity.lean for the bug 123 fix)
 
 /-- How many source files the identity above was computed over.
 
