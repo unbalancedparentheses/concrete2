@@ -23,7 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
->>>>>>> 90cd6db8 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 ||||||| parent of a2bb78a4 (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
 >>>>>>> b2298367 (fix: bug 091 Codex round 3 review — exclusive references, reassignment provenance)
 =======
@@ -825,6 +824,11 @@ def buildIdentity : String := "5556bd2229e9b1a8107fb1a290fcf0dc"
 =======
 def buildIdentity : String := "493ce2e5c31398647f70141075e3ed8b"
 >>>>>>> 149b1767 (regenerate Concrete/BuildIdentity.lean for the bug 123 fix)
+||||||| parent of 6183a05d (fix: a local shadows a module constant in Elab (bug 087 x 123 review))
+def buildIdentity : String := "493ce2e5c31398647f70141075e3ed8b"
+=======
+def buildIdentity : String := "5b6797bbdc614a6b68d26d692600da2e"
+>>>>>>> 6183a05d (fix: a local shadows a module constant in Elab (bug 087 x 123 review))
 
 /-- How many source files the identity above was computed over.
 
