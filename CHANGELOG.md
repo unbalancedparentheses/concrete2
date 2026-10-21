@@ -10,6 +10,15 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### A Foreign `*_destroy` Function Reaches C (bug 103 recorded fixed, 2026-10-21)
+
+Bug 103 (an `extern fn` ending in `_destroy` replaced by an empty synthesized body, a silent leak of
+every C resource it releases) was filed from the RocksDB groundwork's older base; main had already
+removed the name-suffix synthesis on 2026-10-18 (`0c507fb9`, typed destructor dispatch: the reserved
+`$destroy` callee and the argument's type decide the destructor, glue is named `$destroy$<type>`).
+Verified and recorded: the RocksDB slice-1 gate passes 33/33 (G3 closed), and a new fixture links
+`regress_103_extern_destroy.con` with a C stub that counts the destroy calls.
+
 ### Every Foreign Binding Declares Its Effects At Any Module Depth (2026-10-21)
 
 R-0484 R3 (every `extern fn` declares its effects, E0116; a known effectful C symbol is not
