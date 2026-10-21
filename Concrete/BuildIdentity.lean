@@ -23,8 +23,6 @@ namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
 def buildIdentity : String := "5d5d808f2f47938102ab6f40a3f487b8"
-=======
->>>>>>> 250e3641 (fix: bug 091 normalized place rule — Codex review: casts, reference arguments, ancestry, fail-closed heap base)
 ||||||| parent of 87c4131e (fix: bug 091 Codex round 3 review — no re-pointed references, argument borrows through parens and *)
 =======
 ||||||| parent of 3692f038 (fix: bug 091 Codex round 3 review — newtype payload through &, one place for (*r).p and r.p)
@@ -830,6 +828,11 @@ def buildIdentity : String := "d35c5d6abd184f71254db0e3647c0264"
 =======
 def buildIdentity : String := "f78a1e70d939b91e52afce6cc7420882"
 >>>>>>> ea90eb7e (fix: bug 123 review pass 3 — Check resolves locals before constants; colliding constant names refused)
+||||||| parent of 296cad6e (fix: bug 123 review pass 4 — no borrow form in a constant's initializer)
+def buildIdentity : String := "f78a1e70d939b91e52afce6cc7420882"
+=======
+def buildIdentity : String := "6be2996ba461d2e46f1025fe102d9fd9"
+>>>>>>> 296cad6e (fix: bug 123 review pass 4 — no borrow form in a constant's initializer)
 
 /-- How many source files the identity above was computed over.
 
