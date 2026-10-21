@@ -384,13 +384,10 @@ open_bug_reproducers() {
 113|bug113_submodule_extern_effects_unchecked/repro.con|compiles|
 114|bug114_submodule_intrinsic_links_c_symbol/repro.con|compile-fails|Undefined symbols || undefined reference
 115|bug115_vec_get_duplicates_linear/repro.con|compiles|
-117|bug117_interp_module_const/repro.con|interp-fails|undefined variable 'K'
-118|bug118_interp_nested_module_import/repro.con|interp-fails|undefined function 'f'
 122|bug122_builtin_enum_canonical_layout/repro.con|runs-exit|2
 124|bug124_duplicate_parameter_names/repro.con|compile-fails|redefinition of argument
 126|bug126_field_write_through_mut_heap_ref/repro.con|signals|
 126|bug126_field_write_through_mut_heap_ref/repro_read.con|wrong-exit|10
-128|bug128_interp_int_to_float_identity/repro.con|interp-prints|3
 129|bug129_user_fn_captures_libc_symbol/repro.con|signals|
 134|bug134_aggregate_eq_invalid_ir/repro.con|compile-fails|but expected 'i64'
 134|bug134_aggregate_eq_invalid_ir/repro_struct.con|compile-fails|but expected 'i64'
