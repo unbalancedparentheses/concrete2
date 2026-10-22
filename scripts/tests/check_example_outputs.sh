@@ -271,7 +271,11 @@ while IFS= read -r line; do
     yes)
       cp "$exp" "$TMP/int_$n.want"
       [ -n "$ret" ] && echo "$ret" >> "$TMP/int_$n.want"
-      if [ "$irc" -ne "$iexit_want" ]; then
+      # An interpreter refusal or trap (an `interp:` diagnostic) is never agreement, even when
+      # its status happens to equal the program's expected exit status.
+      if grep -q '^interp: ' "$TMP/int_$n.err"; then
+        no "$label: the interpreter failed: $(grep '^interp: ' "$TMP/int_$n.err" | awk 'NR==1')"
+      elif [ "$irc" -ne "$iexit_want" ]; then
         no "$label: interpreter exited $irc, expected $iexit_want"
         cat "$TMP/int_$n.err" "$TMP/int_$n.out" | awk 'NR<=3'
       elif ! cmp -s "$TMP/int_$n.want" "$TMP/int_$n.out"; then

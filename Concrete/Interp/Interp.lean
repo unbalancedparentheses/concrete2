@@ -175,6 +175,14 @@ instance : Inhabited HostFile := ⟨.missing⟩
     interpreter never changes the host's files. -/
 @[implemented_by hostReadFileImpl] opaque hostReadFile (path : String) : HostFile
 
+@[noinline] unsafe def hostIsDirImpl (path : String) : Bool :=
+  match unsafeIO (System.FilePath.isDir ⟨path⟩) with
+  | .ok b => b
+  | .error _ => false
+
+/-- Is `path` an existing directory on the host? -/
+@[implemented_by hostIsDirImpl] opaque hostIsDir (path : String) : Bool
+
 @[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
   match unsafeIO (IO.getEnv name) with
   | .ok v => v
@@ -254,6 +262,8 @@ structure IState where
       through stdio, which buffers stdout when it is not a terminal; `write(1, ..)` (what std's
       printing uses) does not. Output reaches `out` in the order the binary's would. -/
   stdio : ByteArray := .empty
+  /-- stdout is a terminal, so the C library line-buffers it: each newline flushes. -/
+  lineBuffered : Bool := false
   /-- What the program wrote to standard error (`write(2, ..)`), kept apart from stdout. -/
   err : ByteArray := .empty
   /-- The heap: every block ever allocated, by index (freed blocks stay, marked dead, so a use
@@ -262,7 +272,7 @@ structure IState where
   /-- Standard input not yet consumed (`read(0, ..)`). -/
   stdin : ByteArray := .empty
   stdinPos : Nat := 0
-  /-- Files this run wrote (closed), by path; they shadow the host's. -/
+  /-- Files this run wrote (closed or flushed), by path; they shadow the host's. -/
   files : List (String × ByteArray) := []
   /-- Open `FILE *` handles, keyed by the heap block that stands for the `FILE *` pointer. -/
   handles : List (Nat × FileHandle) := []
@@ -321,7 +331,14 @@ def stdioMinBuffer : Nat := 512
 
 /-- Output through stdio (`printf`, `putchar`, `puts`): buffered. -/
 def emitBytes (b : ByteArray) : IM Unit :=
-  modify fun st => { st with stdio := st.stdio ++ b }
+  modify fun st =>
+    let buf := st.stdio ++ b
+    if st.lineBuffered then
+      -- Line buffering: everything up to the last newline has been written out.
+      match (List.range buf.size).reverse.find? (fun i => buf[i]! == 10) with
+      | some i => { st with out := st.out ++ buf.extract 0 (i + 1), stdio := buf.extract (i + 1) buf.size }
+      | none => { st with stdio := buf }
+    else { st with stdio := buf }
 
 /-- Flush the stdio buffer (`exit`, a return from `main`, `fflush`). -/
 def flushStdio : IM Unit :=
@@ -399,16 +416,13 @@ def pointeeOf : Ty → Option Ty
 
 /-- Can a value stored at type `stored` be read back at type `read`? The same type; integers of
     one size (the bits are the same, the reading type's range decides the value); pointers of any
-    pointee (an address is an address); aggregates with the same name. -/
+    pointee). An aggregate is read back only at its own instantiation (`Box<u8>` is not a
+    `Box<i8>`); any other read goes through the layout, field by field (Codex review). -/
 def readCompatible (cx : Ctx) (stored read : Ty) : Bool :=
   stored == read
   || (isByteInt stored && isByteInt read
       && (sizeOfTy cx stored).toOption == (sizeOfTy cx read).toOption)
   || (isPtrLike stored && isPtrLike read)
-  || (match stored, read with
-      | .named a, .named b | .generic a _ _, .generic b _ _
-      | .named a, .generic b _ _ | .generic a _ _, .named b => a == b
-      | _, _ => false)
 
 /-- An integer value re-read at another integer type of the same size keeps its bits. -/
 def retypeAt (v : IVal) (t : Ty) : IVal :=
@@ -1514,16 +1528,29 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let some mode := String.fromUTF8? modeB | fail "interp: fopen mode is not UTF-8"
     let mode := mode.replace "b" ""
     let st ← get
+    -- Another handle still writing this file holds bytes the C library may or may not have
+    -- written out yet (it buffers): what a second open sees is not modelled.
+    if st.handles.any (fun (_, h) => h.path == path && h.writable && st.files.lookup path != some h.data) then
+      fail s!"interp: fopen of '{path}' while another handle has unflushed writes to it is not modelled"
+    -- A file opened for writing must be creatable: its directory exists and the path is not a
+    -- directory. (Permissions are not consulted: an unwritable directory is assumed writable.)
+    let parent := match path.splitOn "/" |>.dropLast with
+      | [] => "."
+      | [""] => "/"
+      | ps => "/".intercalate ps
+    let creatable := (st.files.lookup path).isSome || (!hostIsDir path && hostIsDir parent)
     let existing : Option ByteArray ← match st.files.lookup path with
       | some b => pure (some b)
       | none => match hostReadFile path with
         | .bytes b => pure (some b)
         | .missing => pure none
-        | .directory => fail s!"interp: fopen of the directory '{path}' is not modelled"
+        -- Opening a directory for reading succeeds in C and fails at the first read; not
+        -- modelled. For writing it fails (EISDIR), which `creatable` gives.
+        | .directory => if mode == "r" then fail s!"interp: fopen of the directory '{path}' for reading is not modelled" else pure none
     let handle? : Option FileHandle := match mode with
       | "r" => existing.map fun b => { path, data := b, writable := false }
-      | "w" => some { path, data := .empty, writable := true }
-      | "a" => some { path, data := existing.getD .empty, pos := (existing.getD .empty).size, writable := true, append := true }
+      | "w" => if creatable then some { path, data := .empty, writable := true } else none
+      | "a" => if creatable then some { path, data := existing.getD .empty, pos := (existing.getD .empty).size, writable := true, append := true } else none
       | _ => none
     if !(["r", "w", "a"].contains mode) then
       fail s!"interp: fopen mode '{mode}' is not modelled"
@@ -1547,7 +1574,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       setHandle blk { h with pos := h.pos + k }
       return (env, .int (if size == 0 then 0 else k / size) .uint)
     else
-      if !h.writable then return (env, .int 0 .uint)
+      if !h.writable || n == 0 then return (env, .int 0 .uint)
       let bytes ← ptrReadBytes cx env buf n name
       let pos := if h.append then h.data.size else h.pos
       let before := h.data.extract 0 (min pos h.data.size)
@@ -1575,7 +1602,13 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
   | "fflush", [f] => do
     match ← pure f with
     | .int 0 _ => do flushStdio; return (env, .int 0 .i32)
-    | _ => let _ ← fileBlock f; return (env, .int 0 .i32)
+    | _ => do
+      -- Flushing a written file makes its contents what a later open sees.
+      let blk ← fileBlock f
+      if let some h := (← get).handles.lookup blk then
+        if h.writable then
+          modify fun st => { st with files := (h.path, h.data) :: st.files.filter (·.1 != h.path) }
+      return (env, .int 0 .i32)
   | "fclose", [f] => do
     let blk ← fileBlock f
     let some h := (← get).handles.lookup blk | fail "interp: fclose of a closed or unknown FILE (undefined behaviour in the binary)"
@@ -1830,6 +1863,17 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         | .int 0 _ => if k == 0 then return (env, .val lv) else fail "interp: arithmetic on a null pointer (undefined behaviour in the binary)"
         | _ => fail "interp: pointer arithmetic on a value that is not a pointer"
       | _, _, _, _ =>
+      -- Integer arithmetic on a symbolic address: whether `a + k` overflows depends on the real
+      -- address, which the model does not have. Within the allocation (up to one past its end)
+      -- it cannot; anywhere else it is refused (Codex review).
+      match op, lv, rv with
+      | .add, .addr blk o _, .int k _ | .add, .int k _, .addr blk o _ | .sub, .addr blk o _, .int k _ => do
+        let b := ((← get).heap[blk]?).map (·.size) |>.getD 0
+        let o' := if op == .sub then o - k else o + k
+        if o' < 0 || o' > b then
+          fail "interp: integer arithmetic on an address that leaves its allocation; whether it overflows depends on the real address, which the interpreter does not have"
+        return (env, .val (← liftE (evalBinOp op lv rv)))
+      | _, _, _ =>
       let result ← liftE <| evalBinOp op lv rv
       return (env, .val result)
 
@@ -2268,7 +2312,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       else fail "interp: casting a non-zero integer to a pointer is not modelled (the interpreter has no addresses)"
     | .array .., _ => fail s!"interp: casting an array value to '{tyToStr tgt}' is not modelled"
     | _, _ =>
-    let result ← liftE <| evalCast v targetTy (some inner.ty)
+    let result ← liftE <| evalCast v tgt (some (normTy cx inner.ty))
     return (env, .val result)
 
   | .ifExpr cond thenStmts elseStmts _ => do
@@ -2839,8 +2883,9 @@ structure RunResult where
   outcome : Outcome
 
 /-- Run one computation from an empty environment, with `stdin` as standard input. -/
-def runIM {α : Type} (m : IM α) (stdin : ByteArray := .empty) : Except IErr α × IState :=
-  (m.run).run { stdin }
+def runIM {α : Type} (m : IM α) (stdin : ByteArray := .empty) (lineBuffered : Bool := false) :
+    Except IErr α × IState :=
+  (m.run).run { stdin, lineBuffered }
 
 /-- Evaluate one Core expression (a report harness's sampled call) to its value. -/
 def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
@@ -2853,12 +2898,12 @@ def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
 /-- Interpret a program from its validated Core modules: run `main` with `args` (after
     `argv[0]`) and `stdin`. -/
 def interpret (modules : List CModule) (args : List String := []) (stdin : ByteArray := .empty)
-    (argv0 : String := "a.out") : RunResult :=
+    (argv0 : String := "a.out") (stdoutIsTty : Bool := false) : RunResult :=
   let cx := { mkCtx modules with args, argv0 }
   match cx.defs.find? (fun (f, _) => f.name == "main") with
   | none => { out := .empty, err := .empty, outcome := .failed "interp: no 'main' function found" }
   | some (mainFn, mainScope) =>
-    let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin
+    let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin stdoutIsTty
     -- What reached stdout: `exit` and a return from `main` flush stdio. A trap aborts, and
     -- whether `abort` flushes stdio is the C library's choice: Darwin's does, glibc's (since
     -- 2.27) does not, so a trapping run's buffered output appears on macOS only. Past

@@ -412,7 +412,9 @@ def interpProgram (inputPath : String) (args : List String := []) : IO UInt32 :=
   let some validCore ← interpFrontend inputPath | return 1
   let stdinH ← IO.getStdin
   let stdin ← if (← stdinH.isTty) then pure ByteArray.empty else stdinH.readBinToEnd
-  let run := Interp.interpret validCore.coreModules args stdin
+  -- stdout's buffering follows the C library's rule: line-buffered on a terminal, else full.
+  let stdoutIsTty ← (← IO.getStdout).isTty
+  let run := Interp.interpret validCore.coreModules args stdin (stdoutIsTty := stdoutIsTty)
   -- Program output first, whatever happened next: a program that prints and then traps
   -- printed that output, natively and here (D13).
   let out ← IO.getStdout
