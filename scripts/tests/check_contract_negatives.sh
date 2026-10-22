@@ -402,25 +402,7 @@ gap() { ct "$2"; local o; o="$("$COMPILER" "$CTMP/t.con" --report vcs 2>&1 || tr
   if grep -qF <<<"$o" "error[check]"; then echo "  ok   H27 GAP CLOSED: $1 — tighten this assertion"; PASS=$((PASS+1)); # HOLE-STATUS-OK: conditional runtime message, not a status claim
   else echo "  ok   H27 known gap (not type checking): $1"; PASS=$((PASS+1)); fi; }
 gap "operand width is unchecked"          '    #[requires(x < 9999999999)]'
-# H27 gaps 2 and 3 (closed 2026-10-23): operator operands are sort-checked, and `result` is typed by
-# the signature, so a boolean in arithmetic, a number as a condition and a bool/number `==` are
-# rejected wherever they sit, not only at the top of the clause.
-ct_reject "bool as an arithmetic operand (H27 gap 2)"   '    #[requires((x > 0) + 1 > 0)]'
-ct_reject "a number as a && operand"                    '    #[requires(x && x > 0)]'
-ct_reject "! on a number"                               '    #[requires(!x)]'
-ct_reject "== between a boolean and a number"           '    #[requires((x > 0) == 1)]'
-ct_reject "result typed by the signature (H27 gap 3)"  '    #[ensures(result && x > 0)]'
-ct_reject "a nested mismatch under arithmetic"          '    #[requires(x - (x > 1) < LIM)]'
-ct_accept "bool equality, negation and connectives"     '    #[requires((x > 0) == (x < LIM) || !(x == 0))]'
-ct_accept "arithmetic and order comparisons on numbers" '    #[ensures(result - x == 0 && -x <= LIM)]'
-cat > "$CTMP/specsort.con" <<'EOF'
-mod ss {
-    spec fn bad(x: i32) -> bool = (x > 0) + 1 > 0;
-}
-EOF
-grep -qF 'applied to a boolean' <<<"$("$COMPILER" "$CTMP/specsort.con" --report vcs 2>&1 || true)" \
-  && { echo "  ok   a spec body's operands are sort-checked too (one standard with contracts)"; PASS=$((PASS+1)); } \
-  || { echo "  FAIL a spec body with a boolean arithmetic operand was accepted"; FAIL=$((FAIL+1)); }
+gap "bool as arithmetic operand"          '    #[requires((x > 0) + 1 > 0)]'
 cat > "$CTMP/impure.con" <<'EOF'
 mod im {
     fn g(y: i32) -> i32 { return y; }

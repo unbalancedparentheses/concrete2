@@ -10,17 +10,6 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### Contract Operands Are Sort-Checked (H27 gaps 2 and 3, 2026-10-23)
-
-A contract clause was checked only for its top-level sort, so `#[requires((x > 0) + 1 > 0)]` was
-admitted as a comparison and reached the obligations with a boolean added to an integer. Every
-operator in a `requires`, `ensures`, loop invariant, variant or `spec fn` body now has its operands
-checked: conditions for `&&`, `||` and `!`, numbers for arithmetic and order comparisons, one sort
-for `==` and `!=`. `result` takes the signature's type, which closes gap 3. Operands the
-module-level pass cannot type are not judged. Gap 1 (literal width against the operand type) is
-left open as a language decision with three options recorded in KNOWN_HOLES H27; gap 4 (precise
-loop-binder scope) stays open. Pinned by `check_contract_negatives.sh`.
-
 ### A Foreign Function Value Calls C With The C ABI (bug 166, 2026-10-23)
 
 An `extern fn` taken as a value and called through it now passes a small `#[repr(C)]` struct

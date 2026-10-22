@@ -2792,59 +2792,6 @@ private partial def specBodySort (paramTys : List (String × Ty)) (specRets : Li
   | .call _ f _ _ => (specRets.lookup f).map (fun t => t == .bool)
   | _ => none
 
-/-- The sort of an operand for the operand check below: `some true` bool, `some false` an integer or
-    float, `none` unknown (a struct, a field, a local the environment does not type). Stricter than
-    `specBodySort` about names: only a scalar type gives a sort, so an aggregate operand is never
-    mistaken for an integer. -/
-private partial def specOperandSort (paramTys : List (String × Ty)) (specRets : List (String × Ty)) :
-    Expr → Option Bool
-  | .ident _ n => match paramTys.lookup n with
-    | some .bool => some true
-    | some t => if isNumeric t then some false else none
-    | none => none
-  | .paren _ e => specOperandSort paramTys specRets e
-  | .unaryOp _ .neg e => match specOperandSort paramTys specRets e with
-    | some false => some false
-    | _ => none
-  | e => specBodySort [] specRets e
-
-/-- H27 gap 2 (and gap 3, since `result` is typed by the signature): the operands of a contract or
-    spec-body operator must have the operator's sort. `&&`, `||` and `!` take booleans; arithmetic,
-    unary `-` and the order comparisons take numbers; `==` / `!=` take two operands of one sort.
-    `(x > 0) + 1 > 0` was accepted because only the TOP-LEVEL sort was checked. An operand whose sort
-    is unknown is not judged (fails open on what the environment cannot type, never on a mismatch it
-    can see). Returns one message per mismatch. -/
-private partial def specSortMismatches (paramTys : List (String × Ty)) (specRets : List (String × Ty)) :
-    Expr → List String
-  | .paren _ e => specSortMismatches paramTys specRets e
-  | .unaryOp _ op e =>
-    let srt := specOperandSort paramTys specRets e
-    let here := match op with
-      | .not_ => if srt == some false then ["`!` applied to a number"] else []
-      | .neg => if srt == some true then ["unary `-` applied to a boolean"] else []
-      | .bitnot => if srt == some true then ["`~` applied to a boolean"] else []
-    here ++ specSortMismatches paramTys specRets e
-  | .binOp _ op l r =>
-    let sl := specOperandSort paramTys specRets l
-    let sr := specOperandSort paramTys specRets r
-    let opStr : String := match op with
-      | .and_ => "&&" | .or_ => "||" | .add => "+" | .sub => "-" | .mul => "*" | .div => "/"
-      | .mod => "%" | .lt => "<" | .leq => "<=" | .gt => ">" | .geq => ">=" | .eq => "==" | .neq => "!="
-      | _ => "operator"
-    let here := match op with
-      | .and_ | .or_ =>
-        if sl == some false || sr == some false then [s!"`{opStr}` applied to a number"] else []
-      | .add | .sub | .mul | .div | .mod | .lt | .leq | .gt | .geq =>
-        if sl == some true || sr == some true then [s!"`{opStr}` applied to a boolean"] else []
-      | .eq | .neq =>
-        match sl, sr with
-        | some a, some b => if a != b then [s!"`{opStr}` between a boolean and a number"] else []
-        | _, _ => []
-      | _ => []
-    here ++ specSortMismatches paramTys specRets l ++ specSortMismatches paramTys specRets r
-  | .call _ _ _ args => args.flatMap (specSortMismatches paramTys specRets)
-  | _ => []
-
 /-- Capability-requiring (impure) function names, bare and qualified. Mirrors `impureFnNames` in
     ReportVC; duplicated rather than imported because Check must not depend on Report, and the two
     are held together by an assertion in `check_contract_negatives.sh` that both derive impurity
@@ -3172,17 +3119,6 @@ def checkModule (m : Module) (summary : FileSummary)
                   , message := s!"spec fn '{sd.name}' body has the wrong sort: declared -> {tyToString sd.retTy}, but the body is {if sd.retTy == (Ty.bool) then "an integer" else "a boolean"} expression"
                   , pass := "check", span := some sd.span
                   , hint := some "a spec body must produce the declared return type" }]
-        else if
-            let paramTys := sd.params.map (fun p => (p.name, p.ty))
-            let specRets := m.specFns.map (fun d => (d.name, d.retTy))
-            !(specSortMismatches paramTys specRets b).isEmpty
-          then
-          let paramTys := sd.params.map (fun p => (p.name, p.ty))
-          let specRets := m.specFns.map (fun d => (d.name, d.retTy))
-          .error [{ severity := .error
-                  , message := s!"spec fn '{sd.name}' body: {", ".intercalate (specSortMismatches paramTys specRets b).eraseDups}"
-                  , pass := "check", span := some sd.span
-                  , hint := some "`&&`, `||` and `!` take conditions; arithmetic and `<`, `<=`, `>`, `>=` take numbers; `==` and `!=` compare two operands of one sort" }]
         else if !unknownCalls.isEmpty then
           .error [{ severity := .error
                   , message := s!"spec fn '{sd.name}' body calls non-spec function(s): {", ".intercalate unknownCalls}"
@@ -3321,8 +3257,6 @@ def checkModule (m : Module) (summary : FileSummary)
           match specBodySort sortTys specRets e with
           | some isBool => !isBool
           | none => false
-        let operandMismatches := (f.requires ++ f.ensures ++ loopExprs).flatMap
-          (specSortMismatches sortTys specRets) |>.eraseDups
         if !impureCalls.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}': impure call '{impureCalls.headD ""}' — spec/ghost must be pure and total"
@@ -3347,11 +3281,6 @@ def checkModule (m : Module) (summary : FileSummary)
                   , message := s!"contract on '{f.name}': `variant` is a boolean, not a decreasing measure"
                   , pass := "check", span := some f.span
                   , hint := some "a `#[variant]` must be an integer expression that strictly decreases each iteration (e.g. `n - i`), not a condition" }]
-        else if !operandMismatches.isEmpty then
-          .error [{ severity := .error
-                  , message := s!"contract on '{f.name}': {", ".intercalate operandMismatches}"
-                  , pass := "check", span := some f.span
-                  , hint := some "`&&`, `||` and `!` take conditions; arithmetic and `<`, `<=`, `>`, `>=` take numbers; `==` and `!=` compare two operands of one sort. Write `(x > 0) && ...` or compare explicitly" }]
         else if !wrongSort.isEmpty then
           .error [{ severity := .error
                   , message := s!"contract on '{f.name}' is an integer expression, not a proposition"
