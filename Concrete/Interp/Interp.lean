@@ -1791,6 +1791,8 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     if i < 0 || i > all.length then
       fail s!"interp: argv[{i}] is out of range (argc is {all.length}; undefined behaviour in the binary)"
     else if i == all.length then return (env, .int 0 (.ptrConst .u8))
+    -- argv[0] is however the binary was invoked, which the interpreter does not know.
+    else if i == 0 then fail "interp: argv[0] (the name the program was invoked by) is not modelled"
     else
       match (← get).hostPtrs.lookup s!"argv:{i}" with
       | some blk => return (env, .ptr blk 0)
@@ -2583,6 +2585,12 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     -- An array value cast to a pointer is the address of its storage (bug 110): element 0.
     if (match inner.ty, tgt with
         | .array _ _, .ptrMut _ | .array _ _, .ptrConst _ => true | _, _ => false) then
+      -- Only at the element type: another pointee would reinterpret the elements' bytes.
+      match normTy cx inner.ty, pointeeOf tgt with
+      | .array et _, some pt =>
+        if et != pt then
+          fail s!"interp: casting a '{tyToStr (normTy cx inner.ty)}' to a pointer to '{tyToStr pt}' reinterprets its elements, which is not modelled"
+      | _, _ => pure ()
       let (env, p) ← evalBorrowTarget cx env inner true
       return (env, .val (.ref { p with steps := p.steps ++ [.index 0] }))
     -- An integer becomes a pointer only as null.
