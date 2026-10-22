@@ -2254,7 +2254,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         let (_, len, cap) ← stringFields (← lookupPath cx env p)
         -- `add i64` then an unsigned compare, as the runtime does; the realloc that follows
         -- fails for an impossible size and the runtime's OOM check aborts.
-        let needed := ((len : Int) + extra) % 2 ^ 64
+        let needed : Int := ((len : Int) + extra) % (2 : Int) ^ 64
         if needed > cap then
           match allocVerdict needed with
           | .null => fail "interp: string_reserve: the allocation fails and the runtime aborts (out of memory)"
