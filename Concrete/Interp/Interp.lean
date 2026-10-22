@@ -228,19 +228,15 @@ instance : Inhabited HostFile := ⟨.missing⟩
     that does not exist yet, its directory's). Hard links are not detected. -/
 @[implemented_by hostCanonicalImpl] opaque hostCanonical (path : String) : String
 
-@[noinline] unsafe def hostGetEnvImpl (name : String) : Option ByteArray :=
-  -- The value's raw bytes (a Lean `String` would replace invalid UTF-8): `printenv` prints the
-  -- value and a newline, or exits 1 when the variable is unset.
-  match unsafeIO (do
-      let child ← IO.Process.spawn { cmd := "printenv", args := #[name], stdout := .piped, stderr := .null, stdin := .null }
-      let out ← child.stdout.readBinToEnd
-      let rc ← child.wait
-      pure (rc, out)) with
-  | .ok (0, out) => some (if out.size > 0 && out[out.size - 1]! == 10 then out.extract 0 (out.size - 1) else out)
-  | _ => none
+@[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
+  match unsafeIO (IO.getEnv name) with
+  | .ok v => v
+  | .error _ => none
 
-/-- The process environment (`getenv`): the variable's bytes. -/
-@[implemented_by hostGetEnvImpl] opaque hostGetEnv (name : String) : Option ByteArray
+/-- The process environment, through the C library's own `getenv` (so the lookup rules are the
+    binary's). The value arrives as a Lean `String`: invalid UTF-8 is replaced by U+FFFD, so a
+    value containing U+FFFD cannot be told from one that had other bytes, and is refused. -/
+@[implemented_by hostGetEnvImpl] opaque hostGetEnv (name : String) : Option String
 
 /-- An open `FILE *`: its file's contents (read up front, as nothing else touches the file
     during the run), the position, and whether it was opened for writing. -/
@@ -1674,7 +1670,9 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
         match (← get).hostPtrs.lookup ("env:" ++ key) with
         | some blk => return (env, .ptr blk 0)
         | none =>
-        let bytes := v
+        if v.any (· == '\uFFFD') then
+          fail s!"interp: the environment variable '{key}' is not UTF-8 (or holds U+FFFD); its raw bytes are not modelled"
+        let bytes := v.toUTF8
         let blk ← allocBlock (bytes.size + 1) s!"getenv({key})" (freeable := false)
         writeBytes cx blk 0 (bytes.push 0)
         modify fun st => { st with hostPtrs := ("env:" ++ key, blk) :: st.hostPtrs }
@@ -1830,7 +1828,11 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       match (← get).hostPtrs.lookup s!"argv:{i}" with
       | some blk => return (env, .ptr blk 0)
       | none =>
-      let bytes := (all[i.toNat]!).toUTF8
+      let arg := all[i.toNat]!
+      -- The driver receives arguments as Lean strings, which replace invalid UTF-8.
+      if arg.any (· == '\uFFFD') then
+        fail s!"interp: argv[{i}] is not UTF-8 (or holds U+FFFD); its raw bytes are not modelled"
+      let bytes := arg.toUTF8
       let blk ← allocBlock (bytes.size + 1) s!"argv[{i}]" (freeable := false)
       writeBytes cx blk 0 (bytes.push 0)
       modify fun st => { st with hostPtrs := (s!"argv:{i}", blk) :: st.hostPtrs }
