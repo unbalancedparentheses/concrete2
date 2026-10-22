@@ -250,6 +250,10 @@ instance : Inhabited IErr := ⟨.fail "interp: internal error"⟩
     the driver prints what was printed before the trap, exactly as the binary does. -/
 structure IState where
   out : ByteArray := .empty
+  /-- The C library's stdout buffer. The runtime's print builtins, `puts` and `putchar` write
+      through stdio, which buffers stdout when it is not a terminal; `write(1, ..)` (what std's
+      printing uses) does not. Output reaches `out` in the order the binary's would. -/
+  stdio : ByteArray := .empty
   /-- What the program wrote to standard error (`write(2, ..)`), kept apart from stdout. -/
   err : ByteArray := .empty
   /-- The heap: every block ever allocated, by index (freed blocks stay, marked dead, so a use
@@ -310,9 +314,27 @@ def liftE {α : Type} : Except String α → IM α
   | .ok v => pure v
   | .error msg => throw (.fail msg)
 
-/-- Append bytes to the interpreter's stdout. -/
+/-- The smallest stdout buffer a supported C library uses for a pipe or file. Up to this many
+    buffered bytes are certainly still in the buffer; past it, when the library flushed depends
+    on its buffer size, which the interpreter does not model. -/
+def stdioMinBuffer : Nat := 512
+
+/-- Output through stdio (`printf`, `putchar`, `puts`): buffered. -/
 def emitBytes (b : ByteArray) : IM Unit :=
-  modify fun st => { st with out := st.out ++ b }
+  modify fun st => { st with stdio := st.stdio ++ b }
+
+/-- Flush the stdio buffer (`exit`, a return from `main`, `fflush`). -/
+def flushStdio : IM Unit :=
+  modify fun st => { st with out := st.out ++ st.stdio, stdio := .empty }
+
+/-- Output straight to the descriptor (`write(1, ..)`): it overtakes whatever stdio still
+    buffers, as in the binary. When the buffer may already have been partly flushed (it holds
+    more than `stdioMinBuffer` bytes), the interleaving depends on the C library and is refused. -/
+def emitDirect (b : ByteArray) : IM Unit := do
+  let st ← get
+  if st.stdio.size > stdioMinBuffer then
+    throw (.fail s!"interp: output written with write(1, ..) after {st.stdio.size} bytes of buffered stdio output (print_*, puts, putchar): the order depends on the C library's buffer size, which is not modelled")
+  set { st with out := st.out ++ b }
 
 /-- Append text (UTF-8) to the interpreter's stdout. -/
 def emitOut (s : String) : IM Unit := emitBytes s.toUTF8
@@ -1458,7 +1480,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let fd ← int fd "the descriptor"
     let n := (← int n "the length").toNat
     let bytes ← ptrReadBytes cx env buf n name
-    if fd == 1 then emitBytes bytes
+    if fd == 1 then emitDirect bytes
     else if fd == 2 then emitErr bytes
     else fail s!"interp: write to descriptor {fd} is not modelled (only stdout and stderr)"
     return (env, .int n .int)
@@ -1552,7 +1574,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     return (env, .int 0 .i32)
   | "fflush", [f] => do
     match ← pure f with
-    | .int 0 _ => return (env, .int 0 .i32)
+    | .int 0 _ => do flushStdio; return (env, .int 0 .i32)
     | _ => let _ ← fileBlock f; return (env, .int 0 .i32)
   | "fclose", [f] => do
     let blk ← fileBlock f
@@ -2837,6 +2859,12 @@ def interpret (modules : List CModule) (args : List String := []) (stdin : ByteA
   | none => { out := .empty, err := .empty, outcome := .failed "interp: no 'main' function found" }
   | some (mainFn, mainScope) =>
     let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin
+    -- What reached stdout: `exit` and a return from `main` flush stdio. A trap aborts, and
+    -- whether `abort` flushes stdio is the C library's choice: Darwin's does, glibc's (since
+    -- 2.27) does not, so a trapping run's buffered output appears on macOS only. Past
+    -- `stdioMinBuffer` bytes glibc has flushed some of it, an amount the model cannot know.
+    let flushed := st.out ++ st.stdio
+    let unflushedTrap := if System.Platform.isOSX then flushed else st.out
     -- `some n`: `main` returned a value (printed on its own line, matching the
     -- compiled binary). `none`: a Unit `main` fell off the end — the compiled
     -- binary prints NO value line, so neither does the interpreter.
@@ -2848,7 +2876,10 @@ def interpret (modules : List CModule) (args : List String := []) (stdin : ByteA
       | .ok (_, .ret _) => .returned none
       | .ok (_, .val _) => .returned none
       | .ok _ => .failed "interp: main did not return normally"
-    { out := st.out, err := st.err, outcome }
+    let out := match outcome with
+      | .failed _ => unflushedTrap
+      | _ => flushed
+    { out, err := st.err, outcome }
 
 -- ============================================================
 -- Display

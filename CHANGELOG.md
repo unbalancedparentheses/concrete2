@@ -72,8 +72,10 @@ can be called (bug 118). A call spelling now resolves per calling module the way
 resolves it, and any ambiguity is refused instead of being settled by list order. Floats are
 modelled in IEEE `f64`/`f32` (bug 128). An integer-to-float cast rounds to nearest-even, a
 float-to-integer cast is the checked conversion, and `%` is C `fmod`. `return` from a call argument
-or a struct-literal field now leaves the function, as it does natively (D4). Output printed before
-a trap is kept, so a trapping run's stdout can be compared too (D13). The first float programs
+or a struct-literal field now leaves the function, as it does natively (D4). A trapping run's
+stdout can now be compared (D13): the interpreter models the C library's stdout buffer, which
+`abort` flushes on Darwin and glibc does not, and orders `write(1, ..)` output ahead of
+still-buffered `print_*` output as the binary does. The first float programs
 exposed bug 150, silent wrong code in the binary: SSA cleanup folded `x != x` to false and
 `x == x` to true for a float `x`, because its float guard read the comparison's `bool` result type
 instead of the operand type. That fold is fixed. New differential legs in
