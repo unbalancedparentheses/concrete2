@@ -97,9 +97,9 @@ stdin. `check_example_outputs.sh` runs the interpreter with each case's argument
 own scratch copy of the example. Interpreter/native agreement on the example manifest went from 89
 of 149 cases to 144. The remaining five are refused for a stated reason: four read the clock, and
 one reads a union through an inactive field. Two more native defects surfaced. Bug 152 (fixed):
-`string_trim("")` returned a one-byte string holding the byte past its source. Bug 151 (open,
-pinned): `a.b_f` and `a_b.f` flatten to one name, and the binary's `a_b::f()` runs the other
-function. The interpreter refuses that call.
+`string_trim("")` returned a one-byte string holding the byte past its source. Bug 151: `a.b_f` and `a_b.f`
+flattened to one name, and the binary's `a_b::f()` ran the other function. The interpreter refused
+that call, and main's E0299 containment for bugs 097/098 now refuses the program too.
 
 ### Std Consuming APIs Say Who Owns The Resource After A Failure (2026-10-21)
 

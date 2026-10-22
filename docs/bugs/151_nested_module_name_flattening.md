@@ -1,6 +1,6 @@
 # Bug 151 — two nested modules' functions flatten to one name, and the binary calls the wrong one
 
-**Status:** OPEN
+**Status:** FIXED (contained) — refused at elaboration (E0299, the containment main landed for bugs 097/098 while this record was in review); a spelling of that class
 **Found:** 2026-10-21, by the Codex review of the interpreter-coverage pass (the interpreter's
 call resolution merged the two definitions; checking the binary showed it picks the wrong one).
 **Severity:** silent wrong code in safe code: a qualified call runs a different function.
@@ -21,7 +21,7 @@ mod root {
 }
 ```
 
-On `725d85ab` the binary exits **1**; expected **3** (`a_b::f` returns 3). `--interp` refuses
+On `725d85ab` (before the E0299 containment reached this branch) the binary exited **1**; expected **3** (`a_b::f` returns 3). `--interp` refuses
 the call ("call 'a_b_f' by name reaches 2 definitions ... refuses to pick one").
 
 ## Cause
@@ -42,8 +42,9 @@ prefixing produces names that can collide, and every later stage joins by that s
 R-0492 (S5 `DefId`). Until then the fail-closed containment is to refuse two definitions with one
 flattened name in a module tree (as E0602 refuses two constants of one name, bug 132).
 
-## Containment while open
+## Containment
 
-`scripts/tests/check_example_outputs.sh` (leg "open-bug reproducers", mode `runs-exit:1`) requires
-the binary to still exit the recorded wrong 1; when that changes the leg fails until this document,
-the corpus entry and the leg are updated together. The interpreter refuses the program.
+Main now refuses the program at elaboration: "(E0299) function 'a_b_f' is the Core name of several
+definitions, a nested module's among them ... Core cannot tell them apart (bugs 097, 098)". The
+reproducer is kept as that refusal's witness: `tests/programs/error_151_nested_name_flattening.con`
+(`run_err` E0299 in `run_tests.sh`). The structural fix stays R-0492.

@@ -411,19 +411,28 @@ def interpFrontend (inputPath : String) : IO (Option ValidatedCore) := do
 def interpProgram (inputPath : String) (args : List String := []) : IO UInt32 := do
   let some validCore ← interpFrontend inputPath | return 1
   let stdinH ← IO.getStdin
-  let stdin ← if (← stdinH.isTty) then pure ByteArray.empty else stdinH.readBinToEnd
+  let stdinIsTty ← stdinH.isTty
+  let stdin ← if stdinIsTty then pure ByteArray.empty else stdinH.readBinToEnd
   -- stdout's buffering follows the C library's rule: line-buffered on a terminal, else full.
   let stdoutIsTty ← (← IO.getStdout).isTty
   let run := Interp.interpret validCore.coreModules args stdin (stdoutIsTty := stdoutIsTty)
-  -- Program output first, whatever happened next: a program that prints and then traps
-  -- printed that output, natively and here (D13).
+    (stdinIsTty := stdinIsTty)
+  -- The program's output first, in the order it reached each descriptor, whatever happened
+  -- next: a program that prints and then traps printed that output, natively and here (D13).
   let out ← IO.getStdout
-  out.write run.out
-  out.flush
   let err ← IO.getStderr
-  err.write run.err
+  let mut errEndsLine := true
+  for (fd, bytes) in run.events do
+    if fd == 1 then
+      out.write bytes; out.flush
+    else
+      err.write bytes; err.flush
+      if bytes.size > 0 then errEndsLine := bytes[bytes.size - 1]! == 10
   match run.outcome with
   | .failed msg =>
+    -- On a line of its own, so a gate can tell the interpreter's diagnostic from the program's
+    -- own stderr.
+    if !errEndsLine then IO.eprintln ""
     IO.eprintln msg
     return 1
   | .exited status =>

@@ -183,6 +183,16 @@ instance : Inhabited HostFile := ⟨.missing⟩
 /-- Is `path` an existing directory on the host? -/
 @[implemented_by hostIsDirImpl] opaque hostIsDir (path : String) : Bool
 
+@[noinline] unsafe def hostWritableImpl (path : String) : Bool :=
+  -- `test -w` asks access(2) for write permission: it reports a read-only file system, an
+  -- unwritable file or directory, without creating or changing anything.
+  match unsafeIO (IO.Process.output { cmd := "/bin/sh", args := #["-c", "test -w \"$1\"", "sh", path] }) with
+  | .ok o => o.exitCode == 0
+  | .error _ => false
+
+/-- May the program write `path` (an existing file, or a directory to create a file in)? -/
+@[implemented_by hostWritableImpl] opaque hostWritable (path : String) : Bool
+
 @[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
   match unsafeIO (IO.getEnv name) with
   | .ok v => v
@@ -257,15 +267,17 @@ instance : Inhabited IErr := ⟨.fail "interp: internal error"⟩
     its output and then aborts (D13). Kept in the monad's state, it survives a failure, so
     the driver prints what was printed before the trap, exactly as the binary does. -/
 structure IState where
-  out : ByteArray := .empty
+  /-- Everything written to stdout (descriptor 1) and stderr (2), in the order it reached the
+      descriptors: a merged destination (`2>&1`) sees the interleaving the binary produces. -/
+  events : Array (Nat × ByteArray) := #[]
   /-- The C library's stdout buffer. The runtime's print builtins, `puts` and `putchar` write
       through stdio, which buffers stdout when it is not a terminal; `write(1, ..)` (what std's
       printing uses) does not. Output reaches `out` in the order the binary's would. -/
   stdio : ByteArray := .empty
   /-- stdout is a terminal, so the C library line-buffers it: each newline flushes. -/
   lineBuffered : Bool := false
-  /-- What the program wrote to standard error (`write(2, ..)`), kept apart from stdout. -/
-  err : ByteArray := .empty
+  /-- Standard input is a terminal: reading it is not modelled (it is not read up front). -/
+  stdinTty : Bool := false
   /-- The heap: every block ever allocated, by index (freed blocks stay, marked dead, so a use
       after free is detected rather than reaching a recycled block). -/
   heap : Array Block := #[]
@@ -336,13 +348,14 @@ def emitBytes (b : ByteArray) : IM Unit :=
     if st.lineBuffered then
       -- Line buffering: everything up to the last newline has been written out.
       match (List.range buf.size).reverse.find? (fun i => buf[i]! == 10) with
-      | some i => { st with out := st.out ++ buf.extract 0 (i + 1), stdio := buf.extract (i + 1) buf.size }
+      | some i => { st with events := st.events.push (1, buf.extract 0 (i + 1)), stdio := buf.extract (i + 1) buf.size }
       | none => { st with stdio := buf }
     else { st with stdio := buf }
 
 /-- Flush the stdio buffer (`exit`, a return from `main`, `fflush`). -/
 def flushStdio : IM Unit :=
-  modify fun st => { st with out := st.out ++ st.stdio, stdio := .empty }
+  modify fun st =>
+    if st.stdio.isEmpty then st else { st with events := st.events.push (1, st.stdio), stdio := .empty }
 
 /-- Output straight to the descriptor (`write(1, ..)`): it overtakes whatever stdio still
     buffers, as in the binary. When the buffer may already have been partly flushed (it holds
@@ -351,14 +364,14 @@ def emitDirect (b : ByteArray) : IM Unit := do
   let st ← get
   if st.stdio.size > stdioMinBuffer then
     throw (.fail s!"interp: output written with write(1, ..) after {st.stdio.size} bytes of buffered stdio output (print_*, puts, putchar): the order depends on the C library's buffer size, which is not modelled")
-  set { st with out := st.out ++ b }
+  set { st with events := st.events.push (1, b) }
 
 /-- Append text (UTF-8) to the interpreter's stdout. -/
 def emitOut (s : String) : IM Unit := emitBytes s.toUTF8
 
 /-- Append bytes to the interpreter's stderr. -/
 def emitErr (b : ByteArray) : IM Unit :=
-  modify fun st => { st with err := st.err ++ b }
+  modify fun st => { st with events := st.events.push (2, b) }
 
 -- ------------------------------------------------------------
 -- Types and layout
@@ -1501,6 +1514,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
   | "read", [fd, buf, n] => do
     let fd ← int fd "the descriptor"
     if fd != 0 then fail s!"interp: read from descriptor {fd} is not modelled (only stdin)"
+    if (← get).stdinTty then fail "interp: reading standard input from a terminal is not modelled; redirect it from a file"
     let n := (← int n "the length").toNat
     let st ← get
     let avail := st.stdin.size - st.stdinPos
@@ -1530,15 +1544,22 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let st ← get
     -- Another handle still writing this file holds bytes the C library may or may not have
     -- written out yet (it buffers): what a second open sees is not modelled.
-    if st.handles.any (fun (_, h) => h.path == path && h.writable && st.files.lookup path != some h.data) then
-      fail s!"interp: fopen of '{path}' while another handle has unflushed writes to it is not modelled"
-    -- A file opened for writing must be creatable: its directory exists and the path is not a
-    -- directory. (Permissions are not consulted: an unwritable directory is assumed writable.)
+    -- Two handles on one file, one of them writing: what each sees depends on when the C
+    -- library fills and flushes their buffers, which is not modelled (Codex review).
+    if st.handles.any (fun (_, h) => h.path == path && (h.writable || mode != "r")) then
+      fail s!"interp: fopen of '{path}' while another handle has it open, one of them for writing, is not modelled"
+    -- A file opened for writing must be creatable: its directory exists, the path is not a
+    -- directory, and the host grants write permission (to the file, or to the directory when the
+    -- file does not exist yet); a file this run already wrote is writable.
     let parent := match path.splitOn "/" |>.dropLast with
       | [] => "."
       | [""] => "/"
       | ps => "/".intercalate ps
-    let creatable := (st.files.lookup path).isSome || (!hostIsDir path && hostIsDir parent)
+    let creatable := (st.files.lookup path).isSome ||
+      (!hostIsDir path && hostIsDir parent &&
+        (match hostReadFile path with
+         | .bytes _ => hostWritable path
+         | _ => hostWritable parent))
     let existing : Option ByteArray ← match st.files.lookup path with
       | some b => pure (some b)
       | none => match hostReadFile path with
@@ -1586,7 +1607,10 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let blk ← fileBlock f
     let some h := (← get).handles.lookup blk | fail "interp: fseek on a closed or unknown FILE"
     let off ← int o "the offset"
-    let base : Int := match ← int w "the origin" with
+    let origin ← int w "the origin"
+    -- SEEK_SET, SEEK_CUR, SEEK_END; any other origin is EINVAL (-1).
+    if origin < 0 || origin > 2 then return (env, .int (-1) .i32)
+    let base : Int := match origin with
       | 0 => 0 | 1 => h.pos | _ => h.data.size
     let np := base + off
     if np < 0 then return (env, .int (-1) .i32)
@@ -2876,16 +2900,14 @@ inductive Outcome where
 
 /-- The outcome of running a program: everything it printed, and how it ended. -/
 structure RunResult where
-  /-- Bytes printed to stdout before the program ended, INCLUDING when it then trapped (D13). -/
-  out : ByteArray
-  /-- Bytes written to stderr. -/
-  err : ByteArray
+  /-- What reached stdout and stderr, in order (descriptor, bytes), INCLUDING before a trap (D13). -/
+  events : Array (Nat × ByteArray)
   outcome : Outcome
 
 /-- Run one computation from an empty environment, with `stdin` as standard input. -/
-def runIM {α : Type} (m : IM α) (stdin : ByteArray := .empty) (lineBuffered : Bool := false) :
-    Except IErr α × IState :=
-  (m.run).run { stdin, lineBuffered }
+def runIM {α : Type} (m : IM α) (stdin : ByteArray := .empty) (lineBuffered : Bool := false)
+    (stdinTty : Bool := false) : Except IErr α × IState :=
+  (m.run).run { stdin, lineBuffered, stdinTty }
 
 /-- Evaluate one Core expression (a report harness's sampled call) to its value. -/
 def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
@@ -2898,18 +2920,17 @@ def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
 /-- Interpret a program from its validated Core modules: run `main` with `args` (after
     `argv[0]`) and `stdin`. -/
 def interpret (modules : List CModule) (args : List String := []) (stdin : ByteArray := .empty)
-    (argv0 : String := "a.out") (stdoutIsTty : Bool := false) : RunResult :=
+    (argv0 : String := "a.out") (stdoutIsTty : Bool := false) (stdinIsTty : Bool := false) : RunResult :=
   let cx := { mkCtx modules with args, argv0 }
   match cx.defs.find? (fun (f, _) => f.name == "main") with
-  | none => { out := .empty, err := .empty, outcome := .failed "interp: no 'main' function found" }
+  | none => { events := #[], outcome := .failed "interp: no 'main' function found" }
   | some (mainFn, mainScope) =>
-    let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin stdoutIsTty
+    let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin stdoutIsTty stdinIsTty
     -- What reached stdout: `exit` and a return from `main` flush stdio. A trap aborts, and
     -- whether `abort` flushes stdio is the C library's choice: Darwin's does, glibc's (since
     -- 2.27) does not, so a trapping run's buffered output appears on macOS only. Past
     -- `stdioMinBuffer` bytes glibc has flushed some of it, an amount the model cannot know.
-    let flushed := st.out ++ st.stdio
-    let unflushedTrap := if System.Platform.isOSX then flushed else st.out
+    let flushed := if st.stdio.isEmpty then st.events else st.events.push (1, st.stdio)
     -- `some n`: `main` returned a value (printed on its own line, matching the
     -- compiled binary). `none`: a Unit `main` fell off the end — the compiled
     -- binary prints NO value line, so neither does the interpreter.
@@ -2921,10 +2942,16 @@ def interpret (modules : List CModule) (args : List String := []) (stdin : ByteA
       | .ok (_, .ret _) => .returned none
       | .ok (_, .val _) => .returned none
       | .ok _ => .failed "interp: main did not return normally"
-    let out := match outcome with
-      | .failed _ => unflushedTrap
-      | _ => flushed
-    { out, err := st.err, outcome }
+    match r with
+    | .error (.fail msg) =>
+      -- A trap: on Darwin `abort` flushes stdio; glibc's does not, and with more than
+      -- `stdioMinBuffer` bytes buffered it may already have written part of them, an amount
+      -- that depends on its buffer size: then the run's stdout is not known, and is refused.
+      if System.Platform.isOSX then { events := flushed, outcome }
+      else if st.stdio.size > stdioMinBuffer then
+        { events := st.events, outcome := .failed s!"interp: the program stopped ({msg}) with {st.stdio.size} bytes of stdio output buffered; how much the C library had already written out depends on its buffer size, which is not modelled" }
+      else { events := st.events, outcome }
+    | _ => { events := flushed, outcome }
 
 -- ============================================================
 -- Display

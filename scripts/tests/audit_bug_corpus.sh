@@ -95,11 +95,12 @@ declare -A BUG_TEST_MAP=(
   [150]="regress_150_float_self_compare.con"
   # Bug 152: string_trim("") returned one byte past the empty source.
   [152]="regress_152_string_trim_empty.con"
+  # Bug 151 (contained by E0299): a.b_f and a_b.f flattened to one Core name.
+  [151]="error_151_nested_name_flattening.con"
 )
 
 # Bugs that don't need a .con regression test (with reason).
 declare -A SKIP_BUGS=(
-  [151]="OPEN -- a.b_f and a_b.f flatten to one Core name a_b_f and the binary calls the wrong one (silent wrong code); reproducer tests/regressions/bug151_nested_module_name_flattening/repro.con, found by the Codex review of the interpreter-coverage pass 2026-10-21; reproduction pinned by check_example_outputs.sh (open-bug reproducers leg, runs-exit:1); the interpreter refuses the call as ambiguous"
   [106]="FIXED 2026-10-20 -- model-diff report hang + swallowed gate failures. Regression vehicle is check_model_diff.sh (watchdog/exit legs and the thesis_demo exhausted-row leg), not a tests/programs fixture"
   [105]="OPEN -- reference-valued if/match miscompiles; contained at the checker (E0238). Regression vehicle: tests/programs/error_105_ref_valued_if_{arg,field}.con assert the containment; no positive agreement fixture until the lowering is fixed (would segfault)"
   [006]="string literal collision -- fixed in EmitSSA, covered by cross-module tests"

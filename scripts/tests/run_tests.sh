@@ -7672,6 +7672,8 @@ run_ok "$TESTDIR/regress_133_deref_field_borrow.con" 42
 run_ok "$TESTDIR/regress_150_float_self_compare.con" 1
 # Bug 152: string_trim("") is the empty string (it was one byte, read past the source).
 run_ok "$TESTDIR/regress_152_string_trim_empty.con" 0
+# Bug 151 (contained): two nested modules' functions with one flattened name are refused (E0299).
+run_err "$TESTDIR/error_151_nested_name_flattening.con" "(E0299)"
 # Bug 088: an unhinted literal is a range-checked `Int` (2^64-1 was accepted:
 # interp 2^64-1, binary -1), and constant casts fold with the interpreter's
 # wrap (the folder compared an unnormalized constant: `u64max as i64 < 0`).
