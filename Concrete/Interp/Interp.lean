@@ -486,6 +486,7 @@ def readCompatible (cx : Ctx) (stored read : Ty) : Bool :=
 def retypeAt (v : IVal) (t : Ty) : IVal :=
   match v with
   | .int n _ => .int (IntArith.wrapToType t n) t
+  | .addr b o _ => if IntArith.isIntTy t then .addr b o t else v
   | other => other
 
 /-- The little-endian bytes of an integer `n` stored in `size` bytes. -/
@@ -2088,6 +2089,22 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       -- Integer arithmetic on a symbolic address: whether `a + k` overflows depends on the real
       -- address, which the model does not have. Within the allocation (up to one past its end)
       -- it cannot; anywhere else it is refused (Codex review).
+      -- Addresses of different allocations, one of them freed: the allocator may have reused the
+      -- freed one's address, so how they compare is not known.
+      let liveOf (b : Nat) : IM Bool := do pure (((← get).heap[b]?).map (·.live) |>.getD false)
+      let blocks : Option (Nat × Nat) := match lv, rv with
+        | .addr a _ _, .addr b _ _ | .ptr a _, .ptr b _ => some (a, b)
+        | _, _ => none
+      if let some (a, b) := blocks then
+        if a != b && (op == .eq || op == .neq || op == .lt || op == .gt || op == .leq || op == .geq || op == .sub)
+            && (!(← liveOf a) || !(← liveOf b)) then
+          fail "interp: comparing addresses of different allocations after one was freed is not modelled (the allocator may reuse it)"
+      -- A pointer moved outside its allocation may have wrapped around the address space (the
+      -- backend's GEP is not `inbounds`): how it compares is not known.
+      if let (.ptr a o, .ptr b q) := (lv, rv) then
+        let sizeOf (blk : Nat) : IM Int := do pure ((((← get).heap[blk]?).map (·.size)).getD 0 : Nat)
+        if o < 0 || o > (← sizeOf a) || q < 0 || q > (← sizeOf b) then
+          fail "interp: comparing a pointer outside its allocation is not modelled"
       match op, lv, rv with
       | .add, .addr blk o _, .int k _ | .add, .int k _, .addr blk o _ | .sub, .addr blk o _, .int k _ => do
         let b := ((← get).heap[blk]?).map (·.size) |>.getD 0
@@ -2509,7 +2526,13 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       | .ref pt | .refMut pt =>
         if off < 0 then fail "interp: a reference before the start of an allocation"
         else return (env, .val (.ref { base := "", frame := 0, steps := [], isMut := true, heap := some (blk, off.toNat, pt) }))
-      | .int | .uint => return (env, .val (.addr blk off tgt))
+      | .int | .uint => do
+        -- Only an address inside its allocation (or one past it) has a numeric behaviour the
+        -- model can follow; a pointer moved outside may have wrapped around the address space.
+        let size := ((← get).heap[blk]?).map (·.size) |>.getD 0
+        if off < 0 || off > size then
+          fail "interp: the numeric address of a pointer outside its allocation is not modelled"
+        return (env, .val (.addr blk off tgt))
       | _ => fail s!"interp: casting a pointer to '{tyToStr tgt}' is not modelled (the interpreter has no addresses)"
     -- A heap-rooted reference cast to a raw pointer is the pointer itself.
     | .ref { heap := some (blk, off, _), steps := [], .. } =>
@@ -3138,6 +3161,7 @@ def interpret (modules : List CModule) (args : List String := []) (stdin : ByteA
       | .error (.exit c) => .exited c
       | .error (.escape _ _) => .failed "interp: control flow escaped every enclosing statement"
       | .ok (_, .ret (.int n _)) => .returned (some n)
+      | .ok (_, .ret (.addr ..)) => .failed "interp: main returned a numeric address, whose value is not modelled"
       | .ok (_, .ret _) => .returned none
       | .ok (_, .val _) => .returned none
       | .ok _ => .failed "interp: main did not return normally"
