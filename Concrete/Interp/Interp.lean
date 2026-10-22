@@ -1606,7 +1606,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     emitBytes (ByteArray.mk #[c.toUInt8])
     return (env, .int c .i32)
   | "write", [fd, buf, n] => do
-    let fd ← int fd "the descriptor"
+    let fd := IntArith.wrapToType .i32 (← int fd "the descriptor")
     let nI := (← int n "the length") % 2 ^ 64
     -- A count past SSIZE_MAX (Darwin: INT_MAX) is EINVAL.
     if nI > (if System.Platform.isOSX then 2 ^ 31 - 1 else 2 ^ 63 - 1) then return (env, .int (-1) .int)
@@ -1617,7 +1617,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     else fail s!"interp: write to descriptor {fd} is not modelled (only stdout and stderr)"
     return (env, .int n .int)
   | "read", [fd, buf, n] => do
-    let fd ← int fd "the descriptor"
+    let fd := IntArith.wrapToType .i32 (← int fd "the descriptor")
     if fd != 0 then fail s!"interp: read from descriptor {fd} is not modelled (only stdin)"
     if (← get).stdinTty then fail "interp: reading standard input from a terminal is not modelled; redirect it from a file"
     let nI := (← int n "the length") % 2 ^ 64
@@ -1745,8 +1745,8 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
   | "fseek", [f, o, w] => do
     let blk ← fileBlock f
     let some h := (← get).handles.lookup blk | fail "interp: fseek on a closed or unknown FILE"
-    let off ← int o "the offset"
-    let origin ← int w "the origin"
+    let off := IntArith.wrapToType .int (← int o "the offset")
+    let origin := IntArith.wrapToType .i32 (← int w "the origin")
     -- SEEK_SET, SEEK_CUR, SEEK_END; any other origin is EINVAL (-1).
     if origin < 0 || origin > 2 then return (env, .int (-1) .i32)
     let base : Int := match origin with
@@ -1783,10 +1783,10 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     freeBlock blk 0
     return (env, .int 0 .i32)
   | "abort", [] => fail "interp: abort() called (the binary aborts)"
-  | "exit", [code] => throw (.exit (← int code "the status"))
+  | "exit", [code] => throw (.exit (IntArith.wrapToType .i32 (← int code "the status")))
   | "__concrete_get_argc", [] => return (env, .int (cx.args.length + 1) .i32)
   | "__concrete_get_argv", [i] => do
-    let i ← int i "the index"
+    let i := IntArith.wrapToType .i32 (← int i "the index")
     let all := cx.argv0 :: cx.args
     if i < 0 || i > all.length then
       fail s!"interp: argv[{i}] is out of range (argc is {all.length}; undefined behaviour in the binary)"
