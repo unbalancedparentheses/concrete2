@@ -73,7 +73,7 @@ address being distinct from the C symbol's is unobservable.
 
 Regression fixture: `tests/programs/regress_166_foreign_fn_value_abi.con` with its C side
 `regress_166_foreign_fn_value_abi.c`: an 8-byte struct argument, a 16-byte struct argument (two
-registers), an 8-byte struct result and a second binding of `take_two` taking two 8-byte structs, each called through a fn value and directly; linked and
+registers) and an 8-byte struct result, each called through a fn value and directly; linked and
 run it exits 42 (`run_tests.sh`, the C-linked legs). Before the fix the two disagree and it exits
 1. The original reproducer's IR now passes `ptr @_C.main.ffi$take_pair` (the run_tests.sh leg
 that pinned the Concrete-ABI call is replaced by one that requires the adapter).

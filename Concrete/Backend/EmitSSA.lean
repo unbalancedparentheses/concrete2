@@ -1490,10 +1490,7 @@ private def mapSValsInTerm (r : SVal → SVal) : STerm → STerm
     the state with the adapters' link symbols registered. -/
 private def foreignValueAdapters (s : EmitSSAState) (moduleName : String) (fns : List SFnDef) :
     EmitSSAState × List SFnDef × List SFnDef :=
-  -- (C symbol, fn type, adapter name): one adapter per C symbol AND Concrete signature, since
-  -- two externs bound to one `#[link_name]` can flatten alike from different Concrete
-  -- signatures (Codex review).
-  let (s, outFns, adapters, _) := fns.foldl (fun (s, outFns, adapters, keys) f =>
+  fns.foldl (fun (s, outFns, adapters) f =>
     let sf := { s with currentForeign := f.foreignCalls }
     let isForeign (n : String) : Bool :=
       ((match f.foreignCalls.lookup n with
@@ -1522,18 +1519,21 @@ private def foreignValueAdapters (s : EmitSSAState) (moduleName : String) (fns :
       vals.foldl (fun acc v => match v with
         | .fnRef n t =>
           if isForeign n && needsAdapter t && !(acc.any (·.1 == n)) then
-            acc ++ [(n, (directSymbol sf n).1, t)]
+            acc ++ [(n, "ffi$" ++ (directSymbol sf n).1, t)]
           else acc
         | _ => acc) acc) []
-    if wanted.isEmpty then (s, outFns ++ [f], adapters, keys) else
-    let (s, adapters, keys, renames) := wanted.foldl (fun (s, adapters, keys, renames) (n, csym, t) =>
-      match keys.find? (fun (c, kt, _) => c == csym && kt == t) with
-      | some (_, _, a) => (s, adapters, keys, renames ++ [(n, a)])
-      | none =>
+    if wanted.isEmpty then (s, outFns ++ [f], adapters) else
+    let rw : SVal → SVal := fun v => match v with
+      | .fnRef n t => match wanted.find? (·.1 == n) with
+        | some (_, a, _) => .fnRef a t
+        | none => v
+      | _ => v
+    let f' := { f with blocks := f.blocks.map fun b =>
+      { b with insts := b.insts.map (mapSValsInInst rw), term := mapSValsInTerm rw b.term } }
+    let (s, adapters) := wanted.foldl (fun (s, adapters) (n, a, t) =>
+      if adapters.any (·.name == a) then (s, adapters) else
       match t with
       | .fn_ ps _ ret =>
-        let k := (keys.filter (·.1 == csym)).length
-        let a := "ffi$" ++ csym ++ (if k == 0 then "" else s!"${k}")
         let params := ps.zipIdx.map fun (pt, i) => (s!"ffi.a{i}", pt)
         let args := params.map fun (pn, pt) => SVal.reg pn pt
         let isVoid := ret == .unit || ret == .never
@@ -1545,18 +1545,9 @@ private def foreignValueAdapters (s : EmitSSAState) (moduleName : String) (fns :
           { name := a, params, retTy := ret, blocks := [body]
             modulePath := if f.modulePath.isEmpty then moduleName else f.modulePath
             foreignCalls := f.foreignCalls.filter (·.1 == n) }
-        ({ s with fnSymbols := s.fnSymbols.insert a (defSymbol s ad) }, adapters ++ [ad],
-         keys ++ [(csym, t, a)], renames ++ [(n, a)])
-      | _ => (s, adapters, keys, renames)) (s, adapters, keys, [])
-    let rw : SVal → SVal := fun v => match v with
-      | .fnRef n t => match renames.lookup n with
-        | some a => .fnRef a t
-        | none => v
-      | _ => v
-    let f' := { f with blocks := f.blocks.map fun b =>
-      { b with insts := b.insts.map (mapSValsInInst rw), term := mapSValsInTerm rw b.term } }
-    (s, outFns ++ [f'], adapters, keys)) (s, [], [], ([] : List (String × Ty × String)))
-  (s, outFns, adapters)
+        ({ s with fnSymbols := s.fnSymbols.insert a (defSymbol s ad) }, adapters ++ [ad])
+      | _ => (s, adapters)) (s, adapters)
+    (s, outFns ++ [f'], adapters)) (s, [], [])
 
 def emitSModule (s : EmitSSAState) (m : SModule) (testMode : Bool := false) : EmitSSAState :=
   let s := { s with structDefs := s.structDefs ++ m.structs, enumDefs := s.enumDefs ++ m.enums,
