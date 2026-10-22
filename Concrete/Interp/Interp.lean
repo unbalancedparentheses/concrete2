@@ -2469,6 +2469,21 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       match resolveExtern cx fnName with
       | some ext => do
         let (env', v) ← evalExtern cx env ext argVals
+        -- The result as the program's declaration types it (a C `int` read as `u8` keeps its
+        -- low byte, as the compiled call does); a result the declared type cannot hold is
+        -- refused.
+        let declared := normTy cx e.ty
+        let v ← match v, declared with
+          | .int n _, t =>
+            if IntArith.isIntTy t || t == .char then pure (.int (IntArith.wrapToType t n) t)
+            else if isPtrLike t && n == 0 then pure (.int 0 t)
+            else fail s!"interp: foreign function '{ext}' declared to return '{tyToStr t}' is not modelled"
+          | .float f _, .float64 => pure (.float f .float64)
+          | .float _ _, t => fail s!"interp: foreign function '{ext}' declared to return '{tyToStr t}' is not modelled"
+          | .ptr .., t =>
+            if isPtrLike t then pure v
+            else fail s!"interp: foreign function '{ext}' declared to return '{tyToStr t}' is not modelled"
+          | other, _ => pure other
         return (env', .val v)
       | none =>
       match fnName, argVals with
@@ -2549,8 +2564,19 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     | _ => fail "interp: array index on non-array value"
 
   | .cast inner targetTy => do
-    let (env, v) ← evalExprVal cx env inner
     let tgt := normTy cx targetTy
+    -- An array value cast to a pointer is the address of its storage (bug 110): element 0.
+    if (match inner.ty, tgt with
+        | .array _ _, .ptrMut _ | .array _ _, .ptrConst _ => true | _, _ => false) then
+      -- Only at the element type: another pointee would reinterpret the elements' bytes.
+      match normTy cx inner.ty, pointeeOf tgt with
+      | .array et _, some pt =>
+        if et != pt then
+          fail s!"interp: casting a '{tyToStr (normTy cx inner.ty)}' to a pointer to '{tyToStr pt}' reinterprets its elements, which is not modelled"
+      | _, _ => pure ()
+      let (env, p) ← evalBorrowTarget cx env inner true
+      return (env, .val (.ref { p with steps := p.steps ++ [.index 0] }))
+    let (env, v) ← evalExprVal cx env inner
     match v with
     -- A heap pointer stays a pointer at any pointer type (typed memory decides what a read
     -- through it may see); as a reference it names the heap cell. As an integer it is a
@@ -2582,17 +2608,6 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       | .int | .uint => return (env, .val (.addr blk off tgt))
       | _ => fail s!"interp: casting a pointer's address to '{tyToStr tgt}' is not modelled"
     | _ =>
-    -- An array value cast to a pointer is the address of its storage (bug 110): element 0.
-    if (match inner.ty, tgt with
-        | .array _ _, .ptrMut _ | .array _ _, .ptrConst _ => true | _, _ => false) then
-      -- Only at the element type: another pointee would reinterpret the elements' bytes.
-      match normTy cx inner.ty, pointeeOf tgt with
-      | .array et _, some pt =>
-        if et != pt then
-          fail s!"interp: casting a '{tyToStr (normTy cx inner.ty)}' to a pointer to '{tyToStr pt}' reinterprets its elements, which is not modelled"
-      | _, _ => pure ()
-      let (env, p) ← evalBorrowTarget cx env inner true
-      return (env, .val (.ref { p with steps := p.steps ++ [.index 0] }))
     -- An integer becomes a pointer only as null.
     match v, tgt with
     | .int n _, .ptrMut _ | .int n _, .ptrConst _ =>
