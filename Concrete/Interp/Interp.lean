@@ -2473,6 +2473,24 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         -- low byte, as the compiled call does); a result the declared type cannot hold is
         -- refused.
         let declared := normTy cx e.ty
+        -- The C result's width: a declaration wider than it would read register bits C leaves
+        -- unspecified (zero on arm64, unspecified on x86-64), so it is refused.
+        let cWidth : Option Nat := match ext with
+          | "memcmp" | "puts" | "putchar" | "abs" | "fseek" | "ferror" | "fflush" | "fclose"
+          | "__concrete_get_argc" => some 4
+          | "strlen" | "fread" | "fwrite" | "write" | "read" | "ftell" | "labs" => some 8
+          | _ => none
+        if let (.int _ _, some w) := (v, cWidth) then
+          if (IntArith.isIntTy declared || declared == .char) && (sizeOfTy cx declared).toOption.getD 0 > w then
+            fail s!"interp: foreign function '{ext}' returns a {w * 8}-bit C value declared here as the wider '{tyToStr declared}'; the extra bits are not modelled"
+        -- A pointer handed back from an argument (`memset`, `memcpy`) that names a stack value
+        -- keeps that value's type; reading it as another pointee would reinterpret it.
+        if let .ref _ := v then
+          match pointeeOf declared, (args.head?.map (·.ty)).bind (fun t => pointeeOf (normTy cx t)) with
+          | some dp, some ap =>
+            if dp != ap then
+              fail s!"interp: foreign function '{ext}' returns a pointer to '{tyToStr ap}' declared as a pointer to '{tyToStr dp}', which is not modelled"
+          | _, _ => fail s!"interp: foreign function '{ext}' returns a pointer whose declared type is not modelled"
         let v ← match v, declared with
           | .int n _, t =>
             if IntArith.isIntTy t || t == .char then pure (.int (IntArith.wrapToType t n) t)
