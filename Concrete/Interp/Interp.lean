@@ -909,8 +909,8 @@ def resolveCall (cx : Ctx) (name : String) : Except String (Option (CFnDef × Op
   let exact (n : String) : List ((CFnDef × Nat) × Nat) := indexed.filter (·.1.1.name == n)
   let pick (what : String) (cands : List ((CFnDef × Nat) × Nat)) :
       Except String (Option (CFnDef × Option Nat)) :=
-    let distinct := cands.foldl (fun acc c =>
-      if acc.any (fun a => a.2 == c.2) then acc else acc ++ [c]) []
+    let distinct := (cands.foldl (fun acc c =>
+      if acc.any (fun a => a.2 == c.2) then acc else c :: acc) []).reverse
     match distinct with
     | [] => .ok none
     | [((d, i), _)] => .ok (some (d, some i))
@@ -3208,7 +3208,7 @@ def mkCtx (modules : List CModule) (loopFuel : Nat := defaultLoopFuel) : Ctx :=
   -- builtin `String` struct (Lower's `syntheticStringDef`, which also comes first).
   let stringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
   let firstByName {α : Type} (name : α → String) (xs : List α) : List α :=
-    xs.foldl (fun acc x => if acc.any (name · == name x) then acc else acc ++ [x]) []
+    (xs.foldl (fun acc x => if acc.any (name · == name x) then acc else x :: acc) []).reverse
   let structs := firstByName (·.name) (stringDef :: collectStructs modules)
   let enums := collectEnums modules
   { fns := fns0 ++ implMethodFns modules fns0, enums,
