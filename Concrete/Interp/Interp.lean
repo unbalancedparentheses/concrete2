@@ -1385,6 +1385,15 @@ def heapRefAddr (cx : Ctx) (p : RefPath) : Option (Nat × Nat) := do
     | _, _ => none
   return (blk, o)
 
+/-- Does the value occupy no bytes: unit, a struct whose every field is zero-sized, an array
+    whose every element is (an empty array included)? Integers, bools, floats, pointers and
+    enums (their tag) always occupy bytes. -/
+partial def zeroSized : IVal → Bool
+  | .unit => true
+  | .struct_ _ fields => fields.all (zeroSized ·.2)
+  | .array elems _ _ => elems.all zeroSized
+  | _ => false
+
 /-- If `v` is a ref, follow it; otherwise return `v` unchanged.
     Used for auto-deref on field-access / array-index receivers. -/
 def autoDeref (cx : Ctx) (env : Env) (v : IVal) : IM IVal :=
@@ -2048,11 +2057,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
                   else fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
                 | _, _ => fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
             -- Zero-sized values may share an address with whatever follows them.
-            else if (← [a, b].anyM fun p => do
-                match ← lookupPath cx env p with
-                | .unit | .struct_ _ [] => pure true
-                | .array elems _ _ => pure elems.isEmpty
-                | _ => pure false) then
+            else if (← [a, b].anyM fun p => do pure (zeroSized (← lookupPath cx env p))) then
               fail "interp: comparing a pointer to a zero-sized value with a pointer into other storage is not modelled (it depends on the stack layout)"
             else if (← onePast a) || (← onePast b) then
               fail "interp: comparing a one-past-the-end pointer with a pointer into other storage is not modelled (it depends on the stack layout)"
