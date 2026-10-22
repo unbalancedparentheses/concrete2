@@ -121,21 +121,47 @@ The 263 + 3 unmeasured files are the reason a second sweep is worth running once
 files parse and check.
 
 **Explicitly numbered, because the denominator drifted once** — a status note said "five gaps
-remain" above a list of six. The count is 6 total, 2 closed, **4 open**:
+remain" above a list of six. The count is 6 total, 4 closed, **2 open**:
 
 | # | gap | status |
 |---|---|---|
-| 1 | operand type compatibility | OPEN — `#[requires(x < 9999999999)]` on an `i32` is accepted |
-| 2 | bool as an arithmetic operand | OPEN — `#[requires((x > 0) + 1 > 0)]` is accepted |
-| 3 | `result`'s type | OPEN — its scope is enforced (`ensures`-only), its type is not |
+| 1 | operand type compatibility | OPEN, a language-design choice — `#[requires(x < 9999999999)]` on an `i32` is accepted; see "Gap 1 needs a decision" below |
+| 2 | bool as an arithmetic operand | CLOSED 2026-10-23 — operator operands are sort-checked (`specSortMismatches`) |
+| 3 | `result`'s type | CLOSED 2026-10-23 — `result` is typed by the signature in the operand check |
 | 4 | precise loop-binder scope | OPEN — see below |
 | 5 | a `#[variant]` being a well-founded measure | CLOSED 2026-08-07 |
 | 6 | effectful calls in a contract | CLOSED 2026-08-07 — see the boundary caveat below |
 
-Gaps 1-4 share one root cause: each needs the per-function environment. Widths and operand
+Gaps 1-4 shared one root cause: each needs the per-function environment. Widths and operand
 domains need the types of locals, `result`'s type needs the signature at the annotation site, and
 scope needs the bindings live at the loop. Gaps 5 and 6 closed cheaply precisely because they
 needed none of it.
+
+**Gaps 2 and 3 closed 2026-10-23.** Only the TOP-LEVEL sort of a clause was checked, so
+`(x > 0) + 1 > 0` passed as a comparison. `specSortMismatches` (Check.lean) now checks every
+operator's operands: `&&`, `||` and `!` take booleans; arithmetic, unary `-` and `<`, `<=`, `>`,
+`>=` take numbers; `==` and `!=` take one sort. `result` is typed by the signature (gap 3), and a
+`spec fn` body is held to the same check. An operand the module-level pass cannot type (a local, a
+field, a constant, a call of an executable function) is not judged, so the check fails open only
+on what it cannot see, never on a mismatch it can. Pinned by eight rows of
+`check_contract_negatives.sh` (six rejections, two acceptance controls) and a spec-body row.
+
+**Gap 1 needs a decision, not a fix.** Whether `x < 9999999999` on an `i32` is ill-typed depends
+on what a contract's integers ARE, and that is a language choice the contract docs do not make:
+
+* (a) machine integers at the operand's width: the literal is out of range, E0227 as in code. A
+  contract then cannot state the usual overflow precondition `x + y <= 2147483647` without
+  widening casts, and `x + y` in a contract is itself a value that can wrap.
+* (b) mathematical integers: every contract integer is unbounded, the clause is well typed and
+  true for every `i32`, and contract arithmetic never wraps. This matches how the obligations are
+  discharged (SMT integers) but makes `result == x + 1` in an `ensures` mean something different
+  from the same expression in the body when the body wraps or traps.
+* (c) machine integers with a literal-range check only: refuse out-of-range literals and leave
+  arithmetic as (a) or (b); smallest change, and it decides nothing about wrapping.
+
+Witnesses: `#[requires(x < 9999999999)] fn f(x: i32)` (accepted today), and
+`#[requires(x + y <= 2147483647)] fn add(x: i32, y: i32) -> i32` (accepted; meaningful only under
+(b)). Left for the language-tightening decision document (`wip/lang-tightening-doc`).
 
 **Gap 6 closed CAPABILITY-REQUIRING calls, which is narrower than purity or totality.** The
 distinction matters because the diagnostic reuses the report's older wording, "spec/ghost must be
