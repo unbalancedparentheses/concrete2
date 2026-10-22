@@ -1530,8 +1530,10 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     | _ => fail s!"interp: {name}: {what} is not an integer"
   let float (v : IVal) : IM Float := do
     match v with
-    | .float f _ => pure f
-    | _ => fail s!"interp: {name}: argument is not a float"
+    -- The libm functions take `double`; an argument declared at another type is passed in a
+    -- different representation, which is not modelled.
+    | .float f .float64 => pure f
+    | _ => fail s!"interp: {name}: an argument that is not an f64 (the C function takes a double) is not modelled"
   match name, args with
   | "malloc", [n] => do
     let size := (← int n "the size") % 2 ^ 64
