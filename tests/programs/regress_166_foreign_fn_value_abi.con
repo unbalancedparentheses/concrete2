@@ -15,6 +15,10 @@ struct Copy Two { a: Int, b: Int }
 trusted extern fn take_pair(p: Pair) with() -> Int;
 trusted extern fn take_two(t: Two) with() -> Int;
 trusted extern fn make_pair(v: Int) with() -> Pair;
+// The same C function under a second Concrete signature that flattens alike: (i64, i64).
+// Its adapter must be its own, not take_two's (Codex review).
+#[link_name = "take_two"]
+trusted extern fn take_halves(a: Pair, b: Pair) with() -> Int;
 
 fn apply(f: fn(Pair) -> Int, p: Pair) -> Int {
     return f(p);
@@ -22,6 +26,10 @@ fn apply(f: fn(Pair) -> Int, p: Pair) -> Int {
 
 fn apply_two(f: fn(Two) -> Int, t: Two) -> Int {
     return f(t);
+}
+
+fn apply_halves(f: fn(Pair, Pair) -> Int, a: Pair, b: Pair) -> Int {
+    return f(a, b);
 }
 
 fn build(f: fn(Int) -> Pair, v: Int) -> Int {
@@ -32,8 +40,10 @@ fn build(f: fn(Int) -> Pair, v: Int) -> Int {
 fn main() -> Int {
     let via_value: Int = apply(take_pair, Pair { v: 7 })
         + apply_two(take_two, Two { a: 3, b: 4 })
-        + build(make_pair, 7);
-    let direct: Int = take_pair(Pair { v: 7 }) + take_two(Two { a: 3, b: 4 }) + make_pair(7).v;
+        + build(make_pair, 7)
+        + apply_halves(take_halves, Pair { v: 1 }, Pair { v: -1 });
+    let direct: Int = take_pair(Pair { v: 7 }) + take_two(Two { a: 3, b: 4 }) + make_pair(7).v
+        + take_halves(Pair { v: 1 }, Pair { v: -1 });
     if via_value != direct { return 1; }
     return via_value * 2;
 }
