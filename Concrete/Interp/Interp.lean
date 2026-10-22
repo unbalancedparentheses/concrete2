@@ -193,6 +193,32 @@ instance : Inhabited HostFile := ⟨.missing⟩
 /-- May the program write `path` (an existing file, or a directory to create a file in)? -/
 @[implemented_by hostWritableImpl] opaque hostWritable (path : String) : Bool
 
+@[noinline] unsafe def hostSpecialImpl (path : String) : Bool :=
+  match unsafeIO (IO.Process.output { cmd := "/bin/sh", args := #["-c", "test -e \"$1\" && ! test -f \"$1\" && ! test -d \"$1\"", "sh", path] }) with
+  | .ok o => o.exitCode == 0
+  | .error _ => false
+
+/-- Is `path` an existing file that is neither regular nor a directory (a device, a FIFO, a
+    socket)? Such files are not modelled: their contents are not stored bytes. -/
+@[implemented_by hostSpecialImpl] opaque hostSpecial (path : String) : Bool
+
+@[noinline] unsafe def hostCanonicalImpl (path : String) : String :=
+  match unsafeIO (IO.FS.realPath ⟨path⟩) with
+  | .ok p => p.toString
+  | .error _ =>
+    let parts := path.splitOn "/"
+    let parent := match parts.dropLast with
+      | [] => "."
+      | [""] => "/"
+      | ps => "/".intercalate ps
+    match unsafeIO (IO.FS.realPath ⟨parent⟩) with
+    | .ok p => p.toString ++ "/" ++ (parts.getLast?.getD path)
+    | .error _ => path
+
+/-- The file a path names, as one spelling: symbolic links and `.`/`..` resolved (for a file
+    that does not exist yet, its directory's). Hard links are not detected. -/
+@[implemented_by hostCanonicalImpl] opaque hostCanonical (path : String) : String
+
 @[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
   match unsafeIO (IO.getEnv name) with
   | .ok v => v
@@ -209,6 +235,8 @@ structure FileHandle where
   pos : Nat := 0
   writable : Bool
   append : Bool := false
+  /-- The stream's error indicator (`ferror`): set by a write to a read-only stream. -/
+  err : Bool := false
 
 -- ============================================================
 -- Heap memory
@@ -370,8 +398,13 @@ def emitDirect (b : ByteArray) : IM Unit := do
 def emitOut (s : String) : IM Unit := emitBytes s.toUTF8
 
 /-- Append bytes to the interpreter's stderr. -/
-def emitErr (b : ByteArray) : IM Unit :=
-  modify fun st => { st with events := st.events.push (2, b) }
+def emitErr (b : ByteArray) : IM Unit := do
+  let st ← get
+  -- Like `emitDirect`: when stdout and stderr share a destination, the order of this write and
+  -- still-buffered stdout output depends on the C library's buffer size past the minimum.
+  if st.stdio.size > stdioMinBuffer then
+    throw (.fail s!"interp: output written to stderr after {st.stdio.size} bytes of buffered stdio output: the order depends on the C library's buffer size, which is not modelled")
+  set { st with events := st.events.push (2, b) }
 
 -- ------------------------------------------------------------
 -- Types and layout
@@ -1541,6 +1574,11 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let some path := String.fromUTF8? pathB | fail "interp: fopen of a path that is not UTF-8 is not modelled"
     let some mode := String.fromUTF8? modeB | fail "interp: fopen mode is not UTF-8"
     let mode := mode.replace "b" ""
+    if hostSpecial path then
+      fail s!"interp: fopen of '{path}', which is not a regular file (a device, FIFO or socket), is not modelled"
+    -- One spelling per file (`x` and `./x` are one file to the binary).
+    let rawPath := path
+    let path := hostCanonical path
     let st ← get
     -- Another handle still writing this file holds bytes the C library may or may not have
     -- written out yet (it buffers): what a second open sees is not modelled.
@@ -1551,18 +1589,18 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     -- A file opened for writing must be creatable: its directory exists, the path is not a
     -- directory, and the host grants write permission (to the file, or to the directory when the
     -- file does not exist yet); a file this run already wrote is writable.
-    let parent := match path.splitOn "/" |>.dropLast with
+    let parent := match rawPath.splitOn "/" |>.dropLast with
       | [] => "."
       | [""] => "/"
       | ps => "/".intercalate ps
     let creatable := (st.files.lookup path).isSome ||
-      (!hostIsDir path && hostIsDir parent &&
-        (match hostReadFile path with
-         | .bytes _ => hostWritable path
+      (!hostIsDir rawPath && hostIsDir parent &&
+        (match hostReadFile rawPath with
+         | .bytes _ => hostWritable rawPath
          | _ => hostWritable parent))
     let existing : Option ByteArray ← match st.files.lookup path with
       | some b => pure (some b)
-      | none => match hostReadFile path with
+      | none => match hostReadFile rawPath with
         | .bytes b => pure (some b)
         | .missing => pure none
         -- Opening a directory for reading succeeds in C and fails at the first read; not
@@ -1595,7 +1633,11 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       setHandle blk { h with pos := h.pos + k }
       return (env, .int (if size == 0 then 0 else k / size) .uint)
     else
-      if !h.writable || n == 0 then return (env, .int 0 .uint)
+      if !h.writable then
+        -- Writing a read-only stream fails and sets its error indicator.
+        setHandle blk { h with err := true }
+        return (env, .int 0 .uint)
+      if n == 0 then return (env, .int 0 .uint)
       let bytes ← ptrReadBytes cx env buf n name
       let pos := if h.append then h.data.size else h.pos
       let before := h.data.extract 0 (min pos h.data.size)
@@ -1621,8 +1663,9 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let some h := (← get).handles.lookup blk | fail "interp: ftell on a closed or unknown FILE"
     return (env, .int h.pos .int)
   | "ferror", [f] => do
-    let _ ← fileBlock f
-    return (env, .int 0 .i32)
+    let blk ← fileBlock f
+    let some h := (← get).handles.lookup blk | fail "interp: ferror on a closed or unknown FILE"
+    return (env, .int (if h.err then 1 else 0) .i32)
   | "fflush", [f] => do
     match ← pure f with
     | .int 0 _ => do flushStdio; return (env, .int 0 .i32)
