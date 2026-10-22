@@ -17,7 +17,7 @@ the way C declares it. The C calling convention was decided only at a direct cal
 flattens such a struct into integer registers; a function type carries no convention, so a call
 through a value passed the struct's address, and C read that address as the field. Emission now
 replaces each foreign function value whose signature has a `#[repr(C)]` aggregate with an
-adapter `ffi$<k>-<C symbol>`, a Concrete-ABI function whose body is the direct call, so the
+adapter `ffi$<C symbol>`, a Concrete-ABI function whose body is the direct call, so the
 convention is still decided at that one place. Other foreign function values have one ABI and
 are unchanged. Pinned by `regress_166_foreign_fn_value_abi.con` and its C side (rc 42, 1 before).
 

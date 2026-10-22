@@ -100,20 +100,21 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 15** (4 silent, 5 loud, 6 filed before the discovery record) of 138 bug records.
+**Open bugs: 17** (6 silent, 5 loud, 6 filed before the discovery record) of 138 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
-| 1. Declaration identity by spelled name, not a resolved `DefId` | 5 | 1 | 054, 077, 114, 118, 122 |
+| 1. Declaration identity by spelled name, not a resolved `DefId` | 6 | 2 | 054, 077, 114, 118, 122, 165 |
 | 2. Binder identity by name, not a `LocalId` | 1 | 0 | 124 |
 | 7. Semantics implemented several times (interpreter, proof model, folder, backend disagree) | 5 | 3 | 117, 128, 134, 136, 137 |
 | 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
 | 12. One fact kept in two places | 1 | 0 | 064 |
+| 14. Trusted `std` and FFI code with no checked contract | 1 | 1 | 166 |
 | no class yet | 1 | 0 | 027 |
 
 | open bugs by Phase 1 exit | open | silent | bugs |
 |---|---|---|---|
-| exit 0b | 4 | 4 | 122, 128, 136, 137 |
+| exit 0b | 6 | 6 | 122, 128, 136, 137, 165, 166 |
 | exit 2c | 5 | 0 | 114, 117, 118, 124, 134 |
 | no exit names it | 6 | 0 | 027, 049, 054, 058, 064, 077 |
 

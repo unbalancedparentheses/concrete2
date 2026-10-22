@@ -7536,7 +7536,7 @@ b166_ll="$TMPDIR/bug166_foreign_fn_value_abi.ll"
 if filter_match "tests/regressions/bug166_foreign_fn_value_abi/repro.con"; then
     if $COMPILER "tests/regressions/bug166_foreign_fn_value_abi/repro.con" --emit-llvm > "$b166_ll" 2>/dev/null \
        && grep -qE '^declare i64 @take_pair\(i64\)' "$b166_ll" \
-       && grep -qE 'call i64 @_C\.main\.apply\(ptr @_C\.main\.ffi\$0-take_pair, ' "$b166_ll" \
+       && grep -qE 'call i64 @_C\.main\.apply\(ptr @_C\.main\.ffi\$take_pair, ' "$b166_ll" \
        && grep -qE 'call i64 @take_pair\(i64 ' "$b166_ll"; then
         echo "  ok  bug 166 reproducer: the foreign fn value is the adapter, which calls take_pair with the C ABI"
         PASS=$((PASS + 1))

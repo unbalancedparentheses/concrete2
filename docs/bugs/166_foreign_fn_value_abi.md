@@ -57,30 +57,25 @@ The first of the two structural options: an adapter. The C calling convention st
 one place, the direct call of a foreign callee. When a function body refers to a foreign function
 as a VALUE (`SVal.fnRef`, as a call argument, a stored field, a phi operand or a returned value)
 and that function's type has a `#[repr(C)]` aggregate among its parameters or as its result,
-`EmitSSA.foreignValueAdapters` replaces the reference with `ffi$<k>-<C symbol>`, a Concrete-ABI
-function of the same type (`_C.<module>.ffi$0-take_pair`) whose body is the direct call. The
+`EmitSSA.foreignValueAdapters` replaces the reference with `ffi$<C symbol>`, a Concrete-ABI
+function of the same type (`_C.<module>.ffi$take_pair`) whose body is the direct call. The
 flattening is then the direct call's own. The foreign predicate is the one `isExternCall` uses
 (the resolver's `foreignCalls` binding or an extern spelling, and not a Concrete definition), so
 the two cannot disagree about which references are foreign. A signature with no `#[repr(C)]`
 aggregate has the same LLVM signature in both conventions and keeps referring to the C symbol, so
 the IR of every existing foreign function value (`console_write` and the rest) is unchanged. The
-`$` keeps the adapter's name out of every source spelling. There is one adapter per C symbol
-AND Concrete signature (`ffi$0-take_two`, `ffi$1-take_two`): two externs bound to one
-`#[link_name]` can flatten to one C signature from different Concrete ones, and `-`, which no
-C symbol contains, keeps the index and the symbol apart (Codex review). No language rule changed: the program
+`$` keeps the adapter's name out of every source spelling. No language rule changed: the program
 means what it did, and a foreign function value now does what the direct call does.
 
 The adapter is an emission artifact: it does not appear in Core, `--emit-ssa` or any report, and
-its address differs from the C symbol's. That is observable only by comparing function values,
-which bug 140's comparison rule (on `wip/train1`, E0229) refuses; until it lands, a comparison of
-a foreign function value with another taking of the same function still compares equal (both are
-the module's one adapter), and one with the C symbol obtained through a raw pointer does not.
+pointer comparison of function values is already refused (E0229, bug 140), so the adapter's
+address being distinct from the C symbol's is unobservable.
 
 Regression fixture: `tests/programs/regress_166_foreign_fn_value_abi.con` with its C side
 `regress_166_foreign_fn_value_abi.c`: an 8-byte struct argument, a 16-byte struct argument (two
 registers), an 8-byte struct result and a second binding of `take_two` taking two 8-byte structs, each called through a fn value and directly; linked and
 run it exits 42 (`run_tests.sh`, the C-linked legs). Before the fix the two disagree and it exits
-1. The original reproducer's IR now passes `ptr @_C.main.ffi$0-take_pair` (the run_tests.sh leg
+1. The original reproducer's IR now passes `ptr @_C.main.ffi$take_pair` (the run_tests.sh leg
 that pinned the Concrete-ABI call is replaced by one that requires the adapter).
 
 Not covered, recorded: aggregates over 16 bytes are flattened to a pointer by
