@@ -1802,8 +1802,9 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       return (env, .ptr blk 0)
   -- C `abs`/`labs`: |x|; `abs(INT_MIN)` is undefined behaviour in C, refused.
   | "abs", [x] | "labs", [x] => do
-    let v ← int x "the argument"
     let ty : Ty := if name == "abs" then .i32 else .int
+    -- The argument as the C parameter (`int`, `long`) receives it.
+    let v := IntArith.wrapToType ty (← int x "the argument")
     if v == (if name == "abs" then -(2 ^ 31 : Int) else -(2 ^ 63 : Int)) then
       fail s!"interp: {name} of the most negative value is undefined behaviour in C"
     return (env, .int v.natAbs ty)
@@ -2091,7 +2092,13 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
             let es ← liftE (sizeOfTy cx pt)
             return (env, .val (.ptr blk (off + k * es)))
           | _, some (.index i) =>
-            if (i : Int) + k < 0 then fail "interp: pointer arithmetic before the start of an array"
+            -- Within the array or one past its end; anywhere else the address may wrap (the
+            -- backend's GEP is not `inbounds`), which the model cannot follow.
+            let len ← match ← lookupPath cx env { p with steps := p.steps.dropLast } with
+              | .array elems _ _ => pure elems.size
+              | _ => fail "interp: pointer arithmetic on a pointer into a value that is not an array"
+            if (i : Int) + k < 0 || (i : Int) + k > len then
+              fail "interp: pointer arithmetic outside the array is not modelled"
             else return (env, .val (.ref { p with steps := p.steps.dropLast ++ [.index (i + k).toNat] }))
           | _, _ => fail "interp: arithmetic on a pointer to a single value is not modelled"
         | .int 0 _ => if k == 0 then return (env, .val lv) else fail "interp: arithmetic on a null pointer (undefined behaviour in the binary)"
