@@ -228,13 +228,19 @@ instance : Inhabited HostFile := ⟨.missing⟩
     that does not exist yet, its directory's). Hard links are not detected. -/
 @[implemented_by hostCanonicalImpl] opaque hostCanonical (path : String) : String
 
-@[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
-  match unsafeIO (IO.getEnv name) with
-  | .ok v => v
-  | .error _ => none
+@[noinline] unsafe def hostGetEnvImpl (name : String) : Option ByteArray :=
+  -- The value's raw bytes (a Lean `String` would replace invalid UTF-8): `printenv` prints the
+  -- value and a newline, or exits 1 when the variable is unset.
+  match unsafeIO (do
+      let child ← IO.Process.spawn { cmd := "printenv", args := #[name], stdout := .piped, stderr := .null, stdin := .null }
+      let out ← child.stdout.readBinToEnd
+      let rc ← child.wait
+      pure (rc, out)) with
+  | .ok (0, out) => some (if out.size > 0 && out[out.size - 1]! == 10 then out.extract 0 (out.size - 1) else out)
+  | _ => none
 
-/-- The process environment (`getenv`). -/
-@[implemented_by hostGetEnvImpl] opaque hostGetEnv (name : String) : Option String
+/-- The process environment (`getenv`): the variable's bytes. -/
+@[implemented_by hostGetEnvImpl] opaque hostGetEnv (name : String) : Option ByteArray
 
 /-- An open `FILE *`: its file's contents (read up front, as nothing else touches the file
     during the run), the position, and whether it was opened for writing. -/
@@ -1660,7 +1666,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
   | "getenv", [n] => do
     let keyB ← ptrCString cx env n name
     match String.fromUTF8? keyB with
-    | none => return (env, .int 0 (.ptrConst .u8))
+    | none => fail "interp: getenv of a name that is not UTF-8 is not modelled"
     | some key =>
       match hostGetEnv key with
       | none => return (env, .int 0 (.ptrConst .u8))
@@ -1668,7 +1674,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
         match (← get).hostPtrs.lookup ("env:" ++ key) with
         | some blk => return (env, .ptr blk 0)
         | none =>
-        let bytes := v.toUTF8
+        let bytes := v
         let blk ← allocBlock (bytes.size + 1) s!"getenv({key})" (freeable := false)
         writeBytes cx blk 0 (bytes.push 0)
         modify fun st => { st with hostPtrs := ("env:" ++ key, blk) :: st.hostPtrs }
