@@ -198,6 +198,15 @@ instance : Inhabited HostFile := ⟨.missing⟩
   | .ok o => o.exitCode == 0
   | .error _ => false
 
+@[noinline] unsafe def hostMultiLinkedImpl (path : String) : Bool :=
+  match unsafeIO (IO.Process.output { cmd := "/bin/sh", args := #["-c", "find \"$1\" -prune -links +1 | grep -q .", "sh", path] }) with
+  | .ok o => o.exitCode == 0
+  | .error _ => true
+
+/-- Does the existing file `path` have more than one hard link? Writing it would change files
+    the interpreter cannot see under their other names, so such writes are refused. -/
+@[implemented_by hostMultiLinkedImpl] opaque hostMultiLinked (path : String) : Bool
+
 /-- Is `path` an existing file that is neither regular nor a directory (a device, a FIFO, a
     socket)? Such files are not modelled: their contents are not stored bytes. -/
 @[implemented_by hostSpecialImpl] opaque hostSpecial (path : String) : Bool
@@ -314,6 +323,9 @@ structure IState where
   stdinPos : Nat := 0
   /-- Files this run wrote (closed or flushed), by path; they shadow the host's. -/
   files : List (String × ByteArray) := []
+  /-- The blocks standing for `getenv` results and `argv` strings, by key: the C library hands
+      back the same pointer each time, so the model does too. -/
+  hostPtrs : List (String × Nat) := []
   /-- Open `FILE *` handles, keyed by the heap block that stands for the `FILE *` pointer. -/
   handles : List (Nat × FileHandle) := []
 
@@ -1564,9 +1576,13 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       match hostGetEnv key with
       | none => return (env, .int 0 (.ptrConst .u8))
       | some v =>
+        match (← get).hostPtrs.lookup ("env:" ++ key) with
+        | some blk => return (env, .ptr blk 0)
+        | none =>
         let bytes := v.toUTF8
         let blk ← allocBlock (bytes.size + 1) s!"getenv({key})"
         writeBytes cx blk 0 (bytes.push 0)
+        modify fun st => { st with hostPtrs := ("env:" ++ key, blk) :: st.hostPtrs }
         return (env, .ptr blk 0)
   | "fopen", [pv, mv] => do
     let pathB ← ptrCString cx env pv name
@@ -1579,6 +1595,13 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     -- One spelling per file (`x` and `./x` are one file to the binary).
     let rawPath := path
     let path := hostCanonical path
+    if mode != "r" && (hostReadFile rawPath matches .bytes _) && hostMultiLinked rawPath then
+      fail s!"interp: writing '{rawPath}', a file with several hard links, is not modelled"
+    -- A name longer than NAME_MAX (255 bytes) or a path longer than PATH_MAX fails with
+    -- ENAMETOOLONG, in every mode.
+    let pathMax := if System.Platform.isOSX then 1024 else 4096
+    if (rawPath.splitOn "/").any (·.utf8ByteSize > 255) || rawPath.utf8ByteSize ≥ pathMax then
+      return (env, .int 0 (.ptrConst .u8))
     let st ← get
     -- Another handle still writing this file holds bytes the C library may or may not have
     -- written out yet (it buffers): what a second open sees is not modelled.
@@ -1633,11 +1656,11 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       setHandle blk { h with pos := h.pos + k }
       return (env, .int (if size == 0 then 0 else k / size) .uint)
     else
+      if n == 0 then return (env, .int 0 .uint)
       if !h.writable then
         -- Writing a read-only stream fails and sets its error indicator.
         setHandle blk { h with err := true }
         return (env, .int 0 .uint)
-      if n == 0 then return (env, .int 0 .uint)
       let bytes ← ptrReadBytes cx env buf n name
       let pos := if h.append then h.data.size else h.pos
       let before := h.data.extract 0 (min pos h.data.size)
@@ -1694,9 +1717,13 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       fail s!"interp: argv[{i}] is out of range (argc is {all.length}; undefined behaviour in the binary)"
     else if i == all.length then return (env, .int 0 (.ptrConst .u8))
     else
+      match (← get).hostPtrs.lookup s!"argv:{i}" with
+      | some blk => return (env, .ptr blk 0)
+      | none =>
       let bytes := (all[i.toNat]!).toUTF8
       let blk ← allocBlock (bytes.size + 1) s!"argv[{i}]"
       writeBytes cx blk 0 (bytes.push 0)
+      modify fun st => { st with hostPtrs := (s!"argv:{i}", blk) :: st.hostPtrs }
       return (env, .ptr blk 0)
   -- C `abs`/`labs`: |x|; `abs(INT_MIN)` is undefined behaviour in C, refused.
   | "abs", [x] | "labs", [x] => do
