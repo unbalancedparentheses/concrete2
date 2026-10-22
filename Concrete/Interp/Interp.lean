@@ -1467,6 +1467,15 @@ def ptrCString (cx : Ctx) (env : Env) (p : IVal) (what : String) : IM ByteArray 
   | .int 0 _ => fail s!"interp: {what}: a null pointer (the binary crashes)"
   | _ => fail s!"interp: {what}: argument is not a pointer"
 
+/-- Whether an allocation of `size` bytes is modelled: up to 4 GiB it is assumed to succeed;
+    past PTRDIFF_MAX every supported C library returns NULL; in between, success depends on the
+    machine's memory and the library, which the interpreter cannot know. -/
+inductive AllocVerdict where
+  | ok | null | unknown
+
+def allocVerdict (size : Int) : AllocVerdict :=
+  if size > 2 ^ 63 - 1 then .null else if size > 2 ^ 32 then .unknown else .ok
+
 /-- The C library's foreign functions the interpreter models, each exactly (C semantics on the
     platform it runs on, which is the platform the binary runs on). Every other foreign function
     is refused, never guessed: the model cannot know what foreign code does. -/
@@ -1489,16 +1498,28 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     | _ => fail s!"interp: {name}: argument is not a float"
   match name, args with
   | "malloc", [n] => do
-    let size ← int n "the size"
-    if size < 0 then fail "interp: malloc of a negative size"
-    return (env, .ptr (← allocBlock size.toNat s!"malloc({size})") 0)
+    let size := (← int n "the size") % 2 ^ 64
+    match allocVerdict size with
+    | .null => return (env, .int 0 (.ptrMut .u8))
+    | .unknown => fail s!"interp: whether malloc({size}) succeeds depends on the machine, which is not modelled"
+    | .ok => return (env, .ptr (← allocBlock size.toNat s!"malloc({size})") 0)
   | "calloc", [n, sz] => do
-    let size := (← int n "the count") * (← int sz "the size")
+    -- calloc checks the product for overflow and returns NULL.
+    let size := ((← int n "the count") % 2 ^ 64) * ((← int sz "the size") % 2 ^ 64)
+    match allocVerdict size with
+    | .null => return (env, .int 0 (.ptrMut .u8))
+    | .unknown => fail s!"interp: whether calloc of {size} bytes succeeds depends on the machine, which is not modelled"
+    | .ok => pure ()
     let blk ← allocBlock size.toNat s!"calloc({size})"
     writeBytes cx blk 0 (ByteArray.mk (Array.replicate size.toNat 0))
     return (env, .ptr blk 0)
   | "realloc", [p, n] => do
-    let size := (← int n "the size").toNat
+    let sizeI := (← int n "the size") % 2 ^ 64
+    match allocVerdict sizeI with
+    | .null => return (env, .int 0 (.ptrMut .u8))
+    | .unknown => fail s!"interp: whether realloc to {sizeI} bytes succeeds depends on the machine, which is not modelled"
+    | .ok => pure ()
+    let size := sizeI.toNat
     match ← pure p with
     | .int 0 _ => return (env, .ptr (← allocBlock size s!"realloc(NULL, {size})") 0)
     | .ptr ob oo =>
@@ -1589,7 +1610,12 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let modeB ← ptrCString cx env mv name
     let some path := String.fromUTF8? pathB | fail "interp: fopen of a path that is not UTF-8 is not modelled"
     let some mode := String.fromUTF8? modeB | fail "interp: fopen mode is not UTF-8"
-    let mode := mode.replace "b" ""
+    -- The modes the model covers; a mode not starting with r, w or a is invalid (EINVAL, NULL);
+    -- anything else ("r+", "rb+", "re", "rx"...) is library-specific or update mode, refused.
+    if !(["r", "w", "a"].any fun c => mode.startsWith c) then return (env, .int 0 (.ptrConst .u8))
+    if !(["r", "rb", "w", "wb", "a", "ab"].contains mode) then
+      fail s!"interp: fopen mode '{mode}' is not modelled"
+    let mode := mode.take 1 |>.toString
     -- The empty name names no file (ENOENT), in every mode.
     if path.isEmpty then return (env, .int 0 (.ptrConst .u8))
     if hostSpecial path then
@@ -1943,6 +1969,21 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     | _, _ =>
       let (env, rv) ← evalExprVal cx env rhs
       -- Pointer arithmetic counts elements of the pointee type, as the backend's GEP does.
+      -- Two references are the same place when they name the same binding (by its position in
+      -- the environment, not the environment's length when each was formed) or the same heap
+      -- cell, and the same steps (Codex review).
+      let refId (p : RefPath) : Option (Sum (Nat × Nat) Nat) :=
+        match p.heap with
+        | some (b, o, _) => some (.inl (b, o))
+        | none =>
+          let view := env.drop (env.length - min p.frame env.length)
+          (view.findIdx? (·.1 == p.base)).map fun k => .inr (view.length - 1 - k)
+      match op, lv, rv with
+      | .eq, .ref a, .ref b | .neq, .ref a, .ref b =>
+        let same := refId a == refId b && (refId a).isSome && a.steps.length == b.steps.length
+          && (a.steps.zip b.steps).all (fun (x, y) => refStepEq x y)
+        return (env, .val (.bool (if op == .eq then same else !same)))
+      | _, _, _ =>
       match op, pointeeOf (normTy cx lhs.ty), lv, rv with
       | .add, some pt, _, .int k _ | .sub, some pt, _, .int k _ =>
         let k := if op == .sub then -k else k
@@ -2149,7 +2190,8 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         let len : Int := bytes.size
         let start ← intOf st "string_substr"
         let a := max 0 (min start len)
-        let e := max (max 0 (min (start + (← intOf ln "string_substr")) len)) a
+        -- `start + len` is the runtime's plain `add i64`, which wraps.
+        let e := max (max 0 (min (IntArith.wrapToType .int (start + (← intOf ln "string_substr"))) len)) a
         retStr (bytes.extract a.toNat e.toNat) (e - a).toNat
       | "string_trim", [s] => do
         let bytes := (← strOf s).data.toList
