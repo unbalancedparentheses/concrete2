@@ -2014,11 +2014,34 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       | .eq, .ref a, .ref b | .neq, .ref a, .ref b =>
         -- Heap-rooted references compare by byte address (the root's offset plus the layout
         -- offsets of their steps), so `&(*p).b` and `&*((p as *mut Int) + 1)` are equal.
+        let stepsEq (xs ys : List RefStep) : Bool :=
+          xs.length == ys.length && (xs.zip ys).all (fun (x, y) => refStepEq x y)
+        -- One past the end of an array: an address that may coincide with whatever the layout
+        -- puts next, which binding-rooted paths cannot tell.
+        let onePast (p : RefPath) : IM Bool := do
+          match p.steps.getLast? with
+          | some (.index i) =>
+            match ← lookupPath cx env { p with steps := p.steps.dropLast } with
+            | .array elems _ _ => pure (i == elems.size)
+            | _ => pure false
+          | _ => pure false
         let same ← match heapRefAddr cx a, heapRefAddr cx b with
           | some x, some y => pure (x == y)
           | _, _ =>
-            pure (refId a == refId b && (refId a).isSome && a.steps.length == b.steps.length
-              && (a.steps.zip b.steps).all (fun (x, y) => refStepEq x y))
+            if (refId a).isNone || (refId b).isNone then
+              fail "interp: comparing references whose places cannot be identified is not modelled"
+            else if refId a == refId b then
+              -- One binding: equal steps are one place, and two indices into one array compare
+              -- as indices; any other pair of places inside one binding would need its layout.
+              if stepsEq a.steps b.steps then pure true
+              else match a.steps.getLast?, b.steps.getLast? with
+                | some (.index _), some (.index _) =>
+                  if stepsEq a.steps.dropLast b.steps.dropLast then pure false
+                  else fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
+                | _, _ => fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
+            else if (← onePast a) || (← onePast b) then
+              fail "interp: comparing a one-past-the-end pointer with a pointer into other storage is not modelled (it depends on the stack layout)"
+            else pure false
         return (env, .val (.bool (if op == .eq then same else !same)))
       | _, _, _ =>
       match op, pointeeOf (normTy cx lhs.ty), lv, rv with
