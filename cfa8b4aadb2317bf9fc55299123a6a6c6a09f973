@@ -1,0 +1,7 @@
+[piece 1 of 3: tests]
+- scripts/tests/check_review_tool.sh:280: The “renumbered hunk” assertion checks only header syntax, so repeating the original `@@ -0,0 +1,300 @@` header in every piece passes despite incorrect offsets and counts. Verify each header’s counts against its body and the offsets across pieces.
+[piece 2 of 3: scripts]
+- scripts/review/review.sh:346: Findings take precedence over blocked pieces, so a partially reviewed round is recorded as `findings`. The next invocation treats that commit as fully reviewed and advances the delta past the blocked changes, allowing a later clean verdict without reviewing them. Any blocked piece must prevent advancing the delta.
+- scripts/review/review.sh:190: Previous findings are loaded only from the last non-blocked round. A blocked round can still contain concrete findings from successful pieces or retry halves, but those findings are omitted from subsequent prompts. Preserve those outstanding findings while keeping the delta anchored before the blocked round.
+[piece 3 of 3: docs]
+- docs/project/REVIEW.md:7: The claimed landing integration is absent: the repository contains neither `train.sh` nor a landing bot calling `scripts/review/verify.sh`; only the review-tool tests invoke verification. The documentation therefore presents review-note enforcement before landing as implemented when this patch supplies no such enforcement.
