@@ -74,7 +74,7 @@ modelled in IEEE `f64`/`f32` (bug 128). An integer-to-float cast rounds to neare
 float-to-integer cast is the checked conversion, and `%` is C `fmod`. `return` from a call argument
 or a struct-literal field now leaves the function, as it does natively (D4). Output printed before
 a trap is kept, so a trapping run's stdout can be compared too (D13). The first float programs
-exposed bug 139, silent wrong code in the binary: SSA cleanup folded `x != x` to false and
+exposed bug 150, silent wrong code in the binary: SSA cleanup folded `x != x` to false and
 `x == x` to true for a float `x`, because its float guard read the comparison's `bool` result type
 instead of the operand type. That fold is fixed. New differential legs in
 `check_codegen_differential.sh` (`float_semantics`, `return_in_value_position`, and

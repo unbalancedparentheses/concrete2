@@ -1,28 +1,28 @@
 import Concrete.Elab.Core
 import Concrete.Semantics.IntArith
 import Concrete.Resolve.Shared
+import Concrete.Check.Layout
+import Std.Data.HashMap
 
 namespace Concrete.Interp
 
 open Concrete
 
-/-! ## Source-level interpreter for the predictable/core subset
+/-! ## Source-level interpreter
 
-    Currently supported (oracle subset, see `docs/verification/INTERPRETER_TRUST.md`):
-    integer/bool/char/string, structs, enums, arrays, match, bounded loops,
-    calls, immutable/mutable borrows of locals, fields, and array elements,
-    and the print_* intrinsics (buffered into a reserved stdout binding so
-    `--interp` output byte-matches the compiled binary — printing programs
-    are differential-testable).
+    A second executable semantics over validated Core, used as the differential oracle against
+    the native binary (see `docs/verification/INTERPRETER_TRUST.md` for the supported subset).
+    Integers, bools, chars, IEEE floats, structs, enums, arrays, match, loops, calls, borrows,
+    module constants, a typed heap (`alloc`/`free`, `malloc`/`realloc`/`free`, raw pointers),
+    `String` over heap memory as the runtime lays it out, the runtime builtins, and a fixed table
+    of C functions (memory, stdio, `FILE *` over an in-run overlay, argv, stdin, getenv).
 
-    Unsupported constructs fail with explicit "interp: ..." diagnostics
-    so the differential harness in `tests/oracle/` records them as
-    PENDING rather than silently mismatching.
+    Unsupported constructs fail with explicit "interp: ..." diagnostics and the interpreter never
+    makes up a value: memory nothing was stored to, a reinterpretation, an unknown foreign
+    function or a host value it cannot know (the clock) is refused with the reason.
 
-    Limitations:
-    - No floats, no alloc expressions (heap `alloc`/`vec_pop`)
-    - Fixed-width arithmetic is CHECKED (traps as the compiled binary does);
-      casts wrap into the target range (silent-truncation policy)
+    Fixed-width arithmetic is CHECKED (traps as the compiled binary does) through `IntArith`;
+    casts wrap into the target range (silent-truncation policy).
 -/
 
 -- ============================================================
@@ -45,6 +45,9 @@ structure RefPath where
   frame : Nat
   steps : List RefStep
   isMut : Bool := false
+  /-- A path rooted in heap memory rather than in a binding: the value of type `ty` stored at
+      byte `off` of block `blk` (`&*p`, `&(*p).f`, `p as &T`). `base`/`frame` are then unused. -/
+  heap : Option (Nat × Nat × Ty) := none
   deriving Repr, Inhabited
 
 -- ============================================================
@@ -54,7 +57,6 @@ structure RefPath where
 inductive IVal where
   | int (val : Int) (ty : Ty)
   | bool (val : Bool)
-  | string (s : String)
   | struct_ (name : String) (fields : List (String × IVal))
   | enum_ (enumName variant : String) (fields : List (String × IVal))
   | array (elems : Array IVal) (elemTy : Ty) (size : Nat)
@@ -66,6 +68,17 @@ inductive IVal where
   | fnPtr (name : String) (scope : Option Nat := none)
   /-- A floating-point value of type `f64` or `f32` (an `f32` holds exactly a binary32 value). -/
   | float (val : Float) (ty : Ty)
+  /-- A pointer into heap block `blk` at byte offset `off` (from `malloc`, `alloc`, a string's
+      buffer). The model has no addresses: a pointer is never converted to an integer, and two
+      pointers compare equal only when they name the same block and offset. A null pointer is
+      the integer 0 at a pointer type (`0 as *mut T`). -/
+  | ptr (blk : Nat) (off : Int)
+  /-- A heap pointer converted to an integer (`p as u64`). The model has no addresses, so the
+      integer stays symbolic: adding or subtracting an integer moves the offset, subtracting two
+      addresses in one block gives their distance, comparing them compares offsets, and casting
+      back to a pointer gives the pointer. Any other use of the number (printing it, multiplying
+      it, hashing it) would need a real address and is refused. -/
+  | addr (blk : Nat) (off : Int) (ty : Ty)
   deriving Repr, Inhabited
 
 -- ============================================================
@@ -137,6 +150,74 @@ def defaultLoopFuel : Nat := 10000000
 def loopBudgetExhausted : String := "interp: loop budget exhausted"
 
 -- ============================================================
+-- The host: files and the environment, read-only
+-- ============================================================
+
+/-- What opening the file at `path` (relative to the working directory, as the binary resolves
+    it) for reading finds: its bytes, nothing, or a directory. -/
+inductive HostFile where
+  | bytes (b : ByteArray)
+  | missing
+  | directory
+
+instance : Inhabited HostFile := ⟨.missing⟩
+
+@[noinline] unsafe def hostReadFileImpl (path : String) : HostFile :=
+  match unsafeIO (System.FilePath.isDir ⟨path⟩) with
+  | .ok true => .directory
+  | _ =>
+    match unsafeIO (IO.FS.readBinFile ⟨path⟩) with
+    | .ok b => .bytes b
+    | .error _ => .missing
+
+/-- The file system as the program would see it at this moment. Reads are the only access the
+    interpreter makes to the host; writes go to the run's own overlay (`IState.files`), so the
+    interpreter never changes the host's files. -/
+@[implemented_by hostReadFileImpl] opaque hostReadFile (path : String) : HostFile
+
+@[noinline] unsafe def hostGetEnvImpl (name : String) : Option String :=
+  match unsafeIO (IO.getEnv name) with
+  | .ok v => v
+  | .error _ => none
+
+/-- The process environment (`getenv`). -/
+@[implemented_by hostGetEnvImpl] opaque hostGetEnv (name : String) : Option String
+
+/-- An open `FILE *`: its file's contents (read up front, as nothing else touches the file
+    during the run), the position, and whether it was opened for writing. -/
+structure FileHandle where
+  path : String
+  data : ByteArray
+  pos : Nat := 0
+  writable : Bool
+  append : Bool := false
+
+-- ============================================================
+-- Heap memory
+-- ============================================================
+
+/-- A value of type `ty`, `size` bytes long, stored in a heap block. -/
+structure Cell where
+  ty : Ty
+  size : Nat
+  val : IVal
+
+/-- One allocation (`malloc`, `alloc`, a string's buffer). Memory is TYPED: a block holds the
+    values stored into it at their byte offsets, not bytes. A read of a type at an offset finds
+    the value stored there with that type, or assembles it from smaller values the layout
+    places there (an integer from the integers covering its bytes, little-endian as on every
+    target the backend supports; a struct from its fields), or refuses: reading memory nothing
+    was stored to, or reinterpreting a value as an unrelated type, is not modelled, and the
+    interpreter says so instead of inventing bytes. -/
+structure Block where
+  size : Nat
+  cells : Std.HashMap Nat Cell := {}
+  /-- The largest cell ever stored, bounding the search for a cell covering a byte. -/
+  maxCell : Nat := 1
+  live : Bool := true
+  what : String := "malloc"
+
+-- ============================================================
 -- The evaluation monad
 -- ============================================================
 
@@ -155,6 +236,8 @@ def loopBudgetExhausted : String := "interp: loop budget exhausted"
 inductive IErr where
   | fail (msg : String)
   | escape (env : Env) (f : Flow)
+  /-- The program ended itself with this status (`exit`, `_exit`): not a failure. -/
+  | exit (code : Int)
 
 instance : Inhabited IErr := ⟨.fail "interp: internal error"⟩
 
@@ -166,7 +249,19 @@ instance : Inhabited IErr := ⟨.fail "interp: internal error"⟩
     its output and then aborts (D13). Kept in the monad's state, it survives a failure, so
     the driver prints what was printed before the trap, exactly as the binary does. -/
 structure IState where
-  out : String := ""
+  out : ByteArray := .empty
+  /-- What the program wrote to standard error (`write(2, ..)`), kept apart from stdout. -/
+  err : ByteArray := .empty
+  /-- The heap: every block ever allocated, by index (freed blocks stay, marked dead, so a use
+      after free is detected rather than reaching a recycled block). -/
+  heap : Array Block := #[]
+  /-- Standard input not yet consumed (`read(0, ..)`). -/
+  stdin : ByteArray := .empty
+  stdinPos : Nat := 0
+  /-- Files this run wrote (closed), by path; they shadow the host's. -/
+  files : List (String × ByteArray) := []
+  /-- Open `FILE *` handles, keyed by the heap block that stands for the `FILE *` pointer. -/
+  handles : List (Nat × FileHandle) := []
 
 /-- `ExceptT` over `StateM`: a thrown failure keeps the state accumulated before it. -/
 abbrev IM := ExceptT IErr (StateM IState)
@@ -175,6 +270,19 @@ abbrev IM := ExceptT IErr (StateM IState)
 structure Ctx where
   fns : List CFnDef
   enums : List CEnumDef
+  /-- Struct, enum and newtype definitions for sizes and field offsets (`Layout`, the backend's
+      own authority), with the builtin `String` struct. -/
+  layout : Layout.Ctx := { structDefs := [], enumDefs := [] }
+  /-- The type arguments of the generic function being evaluated (`T ↦ u8`), from the call's
+      type arguments; `sizeof::<T>()` and pointer arithmetic on `*mut T` need them. -/
+  tyEnv : List (String × Ty) := []
+  /-- Names the program declares as foreign functions (`extern fn`). A foreign call is
+      evaluated only through the explicit table in `evalExtern`; any other is refused. -/
+  externs : List String := []
+  /-- The program's command-line arguments after `argv[0]` (`--interp -- a b`). -/
+  args : List String := []
+  /-- The program name reported as `argv[0]`. -/
+  argv0 : String := "a.out"
   /-- Every module's constants, by name (a name defined twice is refused at its use). -/
   consts : List (String × CExpr) := []
   /-- Every user function with the index of the top-level module whose tree defines it: the
@@ -202,9 +310,387 @@ def liftE {α : Type} : Except String α → IM α
   | .ok v => pure v
   | .error msg => throw (.fail msg)
 
-/-- Append to the interpreter's stdout. -/
-def emitOut (s : String) : IM Unit :=
-  modify fun st => { st with out := st.out ++ s }
+/-- Append bytes to the interpreter's stdout. -/
+def emitBytes (b : ByteArray) : IM Unit :=
+  modify fun st => { st with out := st.out ++ b }
+
+/-- Append text (UTF-8) to the interpreter's stdout. -/
+def emitOut (s : String) : IM Unit := emitBytes s.toUTF8
+
+/-- Append bytes to the interpreter's stderr. -/
+def emitErr (b : ByteArray) : IM Unit :=
+  modify fun st => { st with err := st.err ++ b }
+
+-- ------------------------------------------------------------
+-- Types and layout
+-- ------------------------------------------------------------
+
+/-- A type with the running generic function's type arguments substituted, newtypes unwrapped
+    and spellings unified (`Heap<T>` is `.heap T`, `String` is `.string`), so two spellings of
+    one type compare equal. -/
+partial def normTy (cx : Ctx) (t : Ty) : Ty :=
+  match Layout.resolveNewtype cx.layout (Layout.substTyVars cx.tyEnv t) with
+  | .named "String" => .string
+  | .generic "String" [] _ => .string
+  | .generic "Heap" [i] _ => .heap (normTy cx i)
+  | .generic n args _ => if args.isEmpty then .named n else .generic n (args.map (normTy cx)) []
+  | .ref i => .ref (normTy cx i)
+  | .refMut i => .refMut (normTy cx i)
+  | .ptrMut i => .ptrMut (normTy cx i)
+  | .ptrConst i => .ptrConst (normTy cx i)
+  | .heap i => .heap (normTy cx i)
+  | .array e n => .array (normTy cx e) n
+  | t => t
+
+/-- Does `Layout` know this (normalized) type's size? An unresolved type parameter or an
+    unknown name is refused rather than given a made-up size. -/
+partial def layoutKnown (cx : Ctx) : Ty → Bool
+  | .typeVar _ | .placeholder => false
+  | .named n => (Layout.lookupStruct cx.layout n).isSome || (Layout.lookupEnum cx.layout n).isSome
+  | .generic n args _ =>
+    ((Layout.lookupStruct cx.layout n).isSome || (Layout.lookupEnum cx.layout n).isSome)
+      && args.all (layoutKnown cx)
+  | .array e _ => layoutKnown cx e
+  | _ => true
+
+def sizeOfTy (cx : Ctx) (t : Ty) : Except String Nat :=
+  let t := normTy cx t
+  if layoutKnown cx t then .ok (Layout.tySize cx.layout t)
+  else .error s!"interp: the size of '{tyToStr t}' is not known here (an unresolved type parameter or unknown type)"
+
+def alignOfTy (cx : Ctx) (t : Ty) : Except String Nat :=
+  let t := normTy cx t
+  if layoutKnown cx t then .ok (Layout.tyAlign cx.layout t)
+  else .error s!"interp: the alignment of '{tyToStr t}' is not known here"
+
+/-- Integer types whose stored bytes the model can take apart and put back together. -/
+def isByteInt (t : Ty) : Bool := IntArith.isIntTy t || t == .char
+
+def isPtrLike : Ty → Bool
+  | .ptrMut _ | .ptrConst _ | .heap _ | .ref _ | .refMut _ | .heapArray _ => true
+  | _ => false
+
+/-- The type a pointer-like type points at. -/
+def pointeeOf : Ty → Option Ty
+  | .ptrMut t | .ptrConst t | .heap t | .ref t | .refMut t | .heapArray t => some t
+  | _ => none
+
+/-- Can a value stored at type `stored` be read back at type `read`? The same type; integers of
+    one size (the bits are the same, the reading type's range decides the value); pointers of any
+    pointee (an address is an address); aggregates with the same name. -/
+def readCompatible (cx : Ctx) (stored read : Ty) : Bool :=
+  stored == read
+  || (isByteInt stored && isByteInt read
+      && (sizeOfTy cx stored).toOption == (sizeOfTy cx read).toOption)
+  || (isPtrLike stored && isPtrLike read)
+  || (match stored, read with
+      | .named a, .named b | .generic a _ _, .generic b _ _
+      | .named a, .generic b _ _ | .generic a _ _, .named b => a == b
+      | _, _ => false)
+
+/-- An integer value re-read at another integer type of the same size keeps its bits. -/
+def retypeAt (v : IVal) (t : Ty) : IVal :=
+  match v with
+  | .int n _ => .int (IntArith.wrapToType t n) t
+  | other => other
+
+/-- The little-endian bytes of an integer `n` stored in `size` bytes. -/
+def intBytes (n : Int) (size : Nat) : List Nat :=
+  let u : Nat := (n % ((2 : Int) ^ (8 * size))).toNat
+  (List.range size).map fun k => (u / 2 ^ (8 * k)) % 256
+
+/-- The integer whose little-endian bytes are `bs`, at type `t`. -/
+def intOfBytes (bs : List Nat) (t : Ty) : Int :=
+  let u := bs.foldr (fun b acc => acc * 256 + b) 0
+  IntArith.wrapToType t (Int.ofNat u)
+
+-- ------------------------------------------------------------
+-- Blocks
+-- ------------------------------------------------------------
+
+def getBlock (blk : Nat) (what : String) : IM Block := do
+  match (← get).heap[blk]? with
+  | none => fail "interp: internal error: a pointer names no heap block"
+  | some b =>
+    if b.live then pure b
+    else fail s!"interp: {what} through a pointer to freed memory ({b.what}); a use after free, undefined behaviour in the binary"
+
+def setBlock (blk : Nat) (b : Block) : IM Unit :=
+  modify fun st => { st with heap := st.heap.set! blk b }
+
+def allocBlock (size : Nat) (what : String) : IM Nat := do
+  let st ← get
+  set { st with heap := st.heap.push { size, what } }
+  pure st.heap.size
+
+/-- `free`: the block must be live and the pointer must be its start. -/
+def freeBlock (blk : Nat) (off : Int) : IM Unit := do
+  let b ← getBlock blk "free"
+  if off != 0 then
+    fail "interp: free of a pointer that is not the start of an allocation (undefined behaviour in the binary)"
+  setBlock blk { b with live := false, cells := {} }
+
+/-- The cell covering byte `p`, with its start. -/
+def coveringCell (b : Block) (p : Nat) : Option (Nat × Cell) := Id.run do
+  let lo := p + 1 - (min (p + 1) b.maxCell)
+  let mut q := p
+  let mut found : Option (Nat × Cell) := none
+  for _ in [0 : p + 1 - lo] do
+    if found.isNone then
+      if let some c := b.cells[q]? then
+        if q + c.size > p then found := some (q, c)
+      if q > 0 then q := q - 1
+  return found
+
+/-- A cell taken apart one level: an integer into its bytes, a struct into its fields, an array
+    into its elements. `none` when it cannot be (an enum, a pointer, a float...). -/
+def explodeCell (cx : Ctx) (q : Nat) (c : Cell) : Option (List (Nat × Cell)) :=
+  if isByteInt c.ty && c.size > 1 then
+    match c.val with
+    | .int n _ => some ((intBytes n c.size).zipIdx.map fun (byte, k) =>
+        (q + k, { ty := .u8, size := 1, val := .int byte .u8 }))
+    | _ => none
+  else match c.ty, c.val with
+    | .array et _, .array elems _ _ =>
+      match sizeOfTy cx et with
+      | .ok es => some (elems.toList.zipIdx.map fun (v, i) =>
+          (q + i * es, { ty := normTy cx et, size := es, val := v }))
+      | .error _ => none
+    | t, .struct_ sname fields =>
+      let typeArgs := match t with | .generic _ a _ => a | _ => []
+      match Layout.lookupStruct cx.layout sname with
+      | none => none
+      | some sd =>
+        let sd := Layout.substStructTypeArgs sd typeArgs
+        let parts := sd.fields.filterMap fun (fname, fty) =>
+          match fields.find? (·.1 == fname), sizeOfTy cx fty with
+          | some (_, v), .ok sz =>
+            some (q + Layout.fieldOffset cx.layout sname fname typeArgs,
+                  ({ ty := normTy cx fty, size := sz, val := v } : Cell))
+          | _, _ => none
+        if parts.length == sd.fields.length then some parts else none
+    | _, _ => none
+
+def insertCell (b : Block) (q : Nat) (c : Cell) : Block :=
+  { b with cells := b.cells.insert q c, maxCell := max b.maxCell c.size }
+
+/-- Remove every value overlapping bytes `[lo, hi)`; a value only partly inside is first taken
+    apart (`explodeCell`) so the bytes outside the range keep their values. A partly overwritten
+    value that cannot be taken apart is refused. -/
+partial def clearRange (cx : Ctx) (b : Block) (lo hi : Nat) : Except String Block := do
+  let start := lo + 1 - (min (lo + 1) b.maxCell)
+  let mut b := b
+  for q in [start : hi] do
+    if let some c := b.cells[q]? then
+      if q + c.size > lo then
+        if q ≥ lo && q + c.size ≤ hi then
+          b := { b with cells := b.cells.erase q }
+        else
+          match explodeCell cx q c with
+          | some parts =>
+            b := { b with cells := b.cells.erase q }
+            for (pq, pc) in parts do b := insertCell b pq pc
+            b ← clearRange cx b lo hi
+          | none =>
+            throw s!"interp: a store overwrites part of a stored '{tyToStr c.ty}' value; partial overwrites of such values are not modelled"
+  return b
+
+/-- Store `v` of type `t` at byte `off` of block `blk`. -/
+def writeMem (cx : Ctx) (blk : Nat) (off : Int) (t : Ty) (v : IVal) : IM Unit := do
+  let t := normTy cx t
+  let n ← liftE (sizeOfTy cx t)
+  let b ← getBlock blk "write"
+  if off < 0 || off + n > b.size then
+    fail s!"interp: write of {n} bytes at offset {off} of a {b.size}-byte allocation ({b.what}) is out of bounds (undefined behaviour in the binary)"
+  if n == 0 then return
+  let o := off.toNat
+  let b ← liftE (clearRange cx b o (o + n))
+  setBlock blk (insertCell b o { ty := t, size := n, val := v })
+
+/-- The byte at `p` as an integer 0..255, from the integer value covering it. -/
+def byteAt (cx : Ctx) (b : Block) (p : Nat) : Except String Nat :=
+  match coveringCell b p with
+  | none => .error s!"interp: read of uninitialized memory ({b.what}, byte {p}); the binary reads whatever is there"
+  | some (q, c) =>
+    if isByteInt c.ty then
+      match c.val with
+      | .int n _ => .ok ((intBytes n c.size)[p - q]?.getD 0)
+      | _ => .error "interp: internal error: integer cell without an integer"
+    else match explodeCell cx q c with
+      | some parts =>
+        match parts.find? (fun (pq, pc) => pq ≤ p && p < pq + pc.size) with
+        | some (pq, pc) =>
+          if isByteInt pc.ty then
+            match pc.val with
+            | .int n _ => .ok ((intBytes n pc.size)[p - pq]?.getD 0)
+            | _ => .error "interp: internal error: integer cell without an integer"
+          else .error s!"interp: reading the bytes of a stored '{tyToStr pc.ty}' value (reinterpretation) is not modelled"
+        | none => .error s!"interp: read of uninitialized memory ({b.what}, byte {p})"
+      | none => .error s!"interp: reading the bytes of a stored '{tyToStr c.ty}' value (reinterpretation) is not modelled"
+
+/-- Read a value of type `t` at byte `off` of block `blk`. -/
+partial def readMem (cx : Ctx) (blk : Nat) (off : Int) (t : Ty) : IM IVal := do
+  let t := normTy cx t
+  let n ← liftE (sizeOfTy cx t)
+  let b ← getBlock blk "read"
+  if off < 0 || off + n > b.size then
+    fail s!"interp: read of {n} bytes at offset {off} of a {b.size}-byte allocation ({b.what}) is out of bounds (undefined behaviour in the binary)"
+  let o := off.toNat
+  if n == 0 then return .unit
+  -- The value stored exactly here, at this type (or one it can be read back as).
+  if let some c := b.cells[o]? then
+    if c.size == n && readCompatible cx c.ty t then return retypeAt c.val t
+  -- A value of a larger type covers this place: take it apart and look again.
+  match coveringCell b o with
+  | some (q, c) =>
+    if (q < o || c.size > n) then
+      if let some parts := explodeCell cx q c then
+        let mut b' := { b with cells := b.cells.erase q }
+        for (pq, pc) in parts do b' := insertCell b' pq pc
+        setBlock blk b'
+        return ← readMem cx blk off t
+  | none => pure ()
+  -- Assemble an integer from the integers covering its bytes, a struct from its fields, an
+  -- array from its elements.
+  if isByteInt t then
+    let bytes ← liftE ((List.range n).mapM fun k => byteAt cx b (o + k))
+    return .int (intOfBytes bytes t) t
+  match t with
+  | .array et len => do
+    let es ← liftE (sizeOfTy cx et)
+    let elems ← (List.range len).mapM fun i => readMem cx blk (off + ((i * es : Nat) : Int)) et
+    return .array elems.toArray et len
+  | .named sname | .generic sname _ _ =>
+    let typeArgs := match t with | .generic _ a _ => a | _ => []
+    match Layout.lookupStruct cx.layout sname with
+    | some sd =>
+      let sd := Layout.substStructTypeArgs sd typeArgs
+      let fields ← sd.fields.mapM fun (fname, fty) => do
+        let fo := Layout.fieldOffset cx.layout sname fname typeArgs
+        let v ← readMem cx blk (off + fo) fty
+        pure (fname, v)
+      return .struct_ sname fields
+    | none =>
+      match coveringCell b o with
+      | none => fail s!"interp: read of uninitialized memory ({b.what}, offset {o})"
+      | some (_, c) => fail s!"interp: reading a '{tyToStr t}' where a '{tyToStr c.ty}' was stored (reinterpretation) is not modelled"
+  | _ =>
+    match coveringCell b o with
+    | none => fail s!"interp: read of uninitialized memory ({b.what}, offset {o}, as '{tyToStr t}'); the binary reads whatever is there"
+    | some (_, c) => fail s!"interp: reading a '{tyToStr t}' where a '{tyToStr c.ty}' was stored (reinterpretation) is not modelled"
+
+/-- The byte at `(blk, off)`, 0..255. -/
+def readByte (cx : Ctx) (blk : Nat) (off : Int) : IM Nat := do
+  match ← readMem cx blk off .u8 with
+  | .int n _ => pure n.toNat
+  | _ => fail "interp: internal error: a byte read gave no integer"
+
+/-- `n` bytes from `(blk, off)`. -/
+def readBytes (cx : Ctx) (blk : Nat) (off : Int) (n : Nat) : IM ByteArray := do
+  let b ← getBlock blk "read"
+  if off < 0 || off + n > b.size then
+    fail s!"interp: read of {n} bytes at offset {off} of a {b.size}-byte allocation ({b.what}) is out of bounds (undefined behaviour in the binary)"
+  let o := off.toNat
+  let mut out := ByteArray.emptyWithCapacity n
+  for k in [0 : n] do
+    -- The common case, a byte buffer, without the general read.
+    match b.cells[o + k]? with
+    | some { ty := .u8, val := .int v _, .. } => out := out.push v.toNat.toUInt8
+    | _ => out := out.push (← readByte cx blk (off + k)).toUInt8
+  return out
+
+/-- Store `bytes` as `u8` values at `(blk, off)`. -/
+def writeBytes (cx : Ctx) (blk : Nat) (off : Int) (bytes : ByteArray) : IM Unit := do
+  let b ← getBlock blk "write"
+  let n := bytes.size
+  if off < 0 || off + n > b.size then
+    fail s!"interp: write of {n} bytes at offset {off} of a {b.size}-byte allocation ({b.what}) is out of bounds (undefined behaviour in the binary)"
+  if n == 0 then return
+  let o := off.toNat
+  let mut b ← liftE (clearRange cx b o (o + n))
+  for k in [0 : n] do
+    b := insertCell b (o + k) { ty := .u8, size := 1, val := .int bytes[k]!.toNat .u8 }
+  setBlock blk b
+
+/-- `memmove(dst, src, n)` (also `memcpy`, whose operands never overlap in a valid program):
+    every value wholly inside the source range is copied, at its type; values partly inside are
+    taken apart first; uninitialized source bytes leave the destination bytes uninitialized, as
+    copying garbage does. -/
+partial def copyMem (cx : Ctx) (dblk : Nat) (doff : Int) (sblk : Nat) (soff : Int) (n : Nat) : IM Unit := do
+  if n == 0 then return
+  let sb ← getBlock sblk "read"
+  let db ← getBlock dblk "write"
+  if soff < 0 || soff + n > sb.size then
+    fail s!"interp: copy of {n} bytes from offset {soff} of a {sb.size}-byte allocation ({sb.what}) is out of bounds"
+  if doff < 0 || doff + n > db.size then
+    fail s!"interp: copy of {n} bytes to offset {doff} of a {db.size}-byte allocation ({db.what}) is out of bounds"
+  let so := soff.toNat
+  let doo := doff.toNat
+  -- Isolate the source range: split values straddling its ends.
+  let mut src := sb
+  let edges := [so, so + n]
+  for e in edges do
+    match coveringCell src e with
+    | some (q, c) =>
+      if q < e && e < q + c.size then
+        match explodeCell cx q c with
+        | some parts =>
+          src := { src with cells := src.cells.erase q }
+          for (pq, pc) in parts do src := insertCell src pq pc
+          -- an exploded aggregate may still straddle; retry through the general path
+          setBlock sblk src
+          return ← copyMem cx dblk doff sblk soff n
+        | none => fail s!"interp: a copy splits a stored '{tyToStr c.ty}' value; not modelled"
+    | none => pure ()
+  setBlock sblk src
+  -- Collect the source values (read before writing: the ranges may overlap).
+  let start := so + 1 - (min (so + 1) src.maxCell)
+  let mut moved : List (Nat × Cell) := []
+  for q in [start : so + n] do
+    if let some c := src.cells[q]? then
+      if q ≥ so && q + c.size ≤ so + n then moved := (q - so, c) :: moved
+  let db ← getBlock dblk "write"
+  let mut db ← liftE (clearRange cx db doo (doo + n))
+  for (rel, c) in moved do db := insertCell db (doo + rel) c
+  setBlock dblk db
+
+/-- A fresh `String` value owning a new buffer holding `bytes` (and a NUL after them when
+    `nul`), with capacity `cap` — the shape the backend's runtime builds (a literal is a
+    `malloc`'d copy of its bytes plus a NUL, `len` bytes long, capacity `len + 1`). -/
+def newStringValue (cx : Ctx) (bytes : ByteArray) (cap : Nat) (nul : Bool := false) (what : String := "a string buffer") : IM IVal := do
+  let size := max cap (bytes.size + (if nul then 1 else 0))
+  let blk ← allocBlock size what
+  writeBytes cx blk 0 bytes
+  if nul then writeBytes cx blk bytes.size (ByteArray.mk #[0])
+  return .struct_ "String" [("ptr", .ptr blk 0), ("len", .int bytes.size .uint), ("cap", .int cap .uint)]
+
+/-- The `(ptr, len, cap)` fields of a `String` value. -/
+def stringFields (v : IVal) : IM (IVal × Nat × Nat) := do
+  match v with
+  | .struct_ _ fields =>
+    match fields.find? (·.1 == "ptr"), fields.find? (·.1 == "len"), fields.find? (·.1 == "cap") with
+    | some (_, p), some (_, .int l _), some (_, .int c _) => pure (p, l.toNat, c.toNat)
+    | _, _, _ => fail "interp: a String value without its ptr/len/cap fields"
+  | _ => fail "interp: expected a String value"
+
+/-- The bytes of a `String` value. -/
+def stringBytes (cx : Ctx) (v : IVal) : IM ByteArray := do
+  let (p, len, _) ← stringFields v
+  if len == 0 then return .empty
+  match p with
+  | .ptr blk off => readBytes cx blk off len
+  | _ => fail "interp: a String whose buffer is not a heap pointer"
+
+/-- The bytes from `(blk, off)` up to (not including) the first NUL: a C string. -/
+partial def cStringBytes (cx : Ctx) (blk : Nat) (off : Int) : IM ByteArray := do
+  let mut out := ByteArray.empty
+  let mut o := off
+  repeat
+    let c ← readByte cx blk o
+    if c == 0 then break
+    out := out.push c.toUInt8
+    o := o + 1
+  return out
 
 -- ============================================================
 -- Collect all function definitions from module tree
@@ -217,6 +703,18 @@ partial def collectFns : List CModule → List CFnDef
 partial def collectEnums : List CModule → List CEnumDef
   | [] => []
   | m :: ms => m.enums ++ collectEnums m.submodules ++ collectEnums ms
+
+partial def collectStructs : List CModule → List CStructDef
+  | [] => []
+  | m :: ms => m.structs ++ collectStructs m.submodules ++ collectStructs ms
+
+partial def collectNewtypes : List CModule → List NewtypeDef
+  | [] => []
+  | m :: ms => m.newtypes ++ collectNewtypes m.submodules ++ collectNewtypes ms
+
+partial def collectExterns : List CModule → List String
+  | [] => []
+  | m :: ms => m.externFns.map (·.1) ++ collectExterns m.submodules ++ collectExterns ms
 
 partial def collectLinkerAliases : List CModule → List (String × String)
   | [] => []
@@ -296,19 +794,24 @@ def implMethodFns (modules : List CModule) (fns : List CFnDef) : List CFnDef :=
 def resolveCall (cx : Ctx) (name : String) : Except String (Option (CFnDef × Option Nat)) := do
   if cx.defs.isEmpty then
     return (findFn cx.fns name).map (·, none)
-  let exact (n : String) := cx.defs.filter (·.1.name == n)
-  let pick (what : String) (cands : List (CFnDef × Nat)) :
+  -- Candidates carry their position in `defs`: two definitions with one flattened name (a
+  -- nested `a.b_f` and `a_b.f` are both `a_b_f` in Core) stay two candidates, and are
+  -- refused, never merged into one (Codex review). Only the same definition reached twice
+  -- (through two alias rows) collapses.
+  let indexed := cx.defs.zipIdx
+  let exact (n : String) : List ((CFnDef × Nat) × Nat) := indexed.filter (·.1.1.name == n)
+  let pick (what : String) (cands : List ((CFnDef × Nat) × Nat)) :
       Except String (Option (CFnDef × Option Nat)) :=
     let distinct := cands.foldl (fun acc c =>
-      if acc.any (fun a => a.1.name == c.1.name && a.2 == c.2) then acc else acc ++ [c]) []
+      if acc.any (fun a => a.2 == c.2) then acc else acc ++ [c]) []
     match distinct with
     | [] => .ok none
-    | [(d, i)] => .ok (some (d, some i))
+    | [((d, i), _)] => .ok (some (d, some i))
     | _ =>
       match cx.scope with
       | some t =>
-        match distinct.filter (·.2 == t) with
-        | [(d, i)] => .ok (some (d, some i))
+        match distinct.filter (·.1.2 == t) with
+        | [((d, i), _)] => .ok (some (d, some i))
         | _ => .error s!"interp: call '{name}' {what} reaches {distinct.length} definitions in different modules; the interpreter refuses to pick one"
       | none => .error s!"interp: call '{name}' {what} reaches {distinct.length} definitions in different modules and the calling module is unknown; the interpreter refuses to pick one"
   if let some r ← pick "by name" (exact name) then return some r
@@ -317,7 +820,7 @@ def resolveCall (cx : Ctx) (name : String) : Except String (Option (CFnDef × Op
   -- any alias table, where `c_f ↦ f` alone would be ambiguous.
   let sibling := (cx.topNames.toList.zipIdx).flatMap fun (top, i) =>
     if name.startsWith (top ++ "_") then
-      (exact (name.drop (top.length + 1)).toString).filter (·.2 == i)
+      (exact (name.drop (top.length + 1)).toString).filter (·.1.2 == i)
     else []
   if let some r ← pick "as a sibling module's function" sibling then return some r
   let ownAliases : List (String × String) := match cx.scope with
@@ -450,7 +953,7 @@ def floatTrunc (f : Float) : Option (Int × Bool) :=
     fail); otherwise it truncates toward zero. -/
 def floatToIntChecked (f : Float) (ty : Ty) : Except String Int :=
   match IntArith.intBitWidth ty, floatTrunc f with
-  | none, _ => .error s!"interp: float to '{tyName ty}' conversion is not modelled"
+  | none, _ => .error s!"interp: float to '{tyToStr ty}' conversion is not modelled"
   | _, none => .error "interp: float-to-integer conversion of an infinity or NaN (the binary aborts)"
   | some (w, signed), some (t, frac) =>
     let lo : Int := if signed then -(2 ^ (w - 1) : Nat) else 0
@@ -459,7 +962,7 @@ def floatToIntChecked (f : Float) (ty : Ty) : Except String Int :=
     -- negative value with a dropped fraction.
     let floor := if t < 0 || (t == 0 && f < 0.0) then (if frac then t - 1 else t) else t
     if lo ≤ floor && floor < hi then .ok t
-    else .error s!"interp: float-to-integer conversion out of range for '{tyName ty}' (the binary aborts)"
+    else .error s!"interp: float-to-integer conversion out of range for '{tyToStr ty}' (the binary aborts)"
 
 /-- C `fmod` (LLVM `frem`), exactly: the result has the dividend's sign and is representable. -/
 def floatRem (x y : Float) : Float :=
@@ -488,6 +991,16 @@ private def arithOut : IntArith.ArithResult → Except String IVal
   | .value n ty     => .ok (.int n ty)
   | .trap msg       => .error s!"interp: {msg}"
   | .notApplicable  => .error "interp: unsupported binop on given value types"
+
+def refStepEq : RefStep → RefStep → Bool
+  | .field a, .field b => a == b
+  | .index a, .index b => a == b
+  | _, _ => false
+
+/-- Do two references name the same place? -/
+def refPathEq (a b : RefPath) : Bool :=
+  a.base == b.base && a.frame == b.frame && a.heap.map (fun (x, y, _) => (x, y)) == b.heap.map (fun (x, y, _) => (x, y))
+    && a.steps.length == b.steps.length && (a.steps.zip b.steps).all fun (x, y) => refStepEq x y
 
 def evalBinOp (op : BinOp) (lhs rhs : IVal) : Except String IVal :=
   -- Result type is the LHS (value) type; for shifts this is the
@@ -520,8 +1033,6 @@ def evalBinOp (op : BinOp) (lhs rhs : IVal) : Except String IVal :=
   | .or_, .bool a, .bool b => .ok (.bool (a || b))
   | .eq, .bool a, .bool b => .ok (.bool (a == b))
   | .neq, .bool a, .bool b => .ok (.bool (a != b))
-  | .eq, .string a, .string b => .ok (.bool (a == b))
-  | .neq, .string a, .string b => .ok (.bool (a != b))
   | .bitxor, .int a ty, .int b _ => .ok (.int (IntArith.bitwiseAtWidth ty Nat.xor a b) ty)
   | .bitand, .int a ty, .int b _ => .ok (.int (IntArith.bitwiseAtWidth ty Nat.land a b) ty)
   | .bitor, .int a ty, .int b _ => .ok (.int (IntArith.bitwiseAtWidth ty Nat.lor a b) ty)
@@ -549,6 +1060,37 @@ def evalBinOp (op : BinOp) (lhs rhs : IVal) : Except String IVal :=
   | .gt, .float a _, .float b _ => .ok (.bool (a > b))
   | .leq, .float a _, .float b _ => .ok (.bool (a <= b))
   | .geq, .float a _, .float b _ => .ok (.bool (a >= b))
+  -- Pointers: equal when they name the same place; a pointer to an allocation or a binding is
+  -- never null; order only within one allocation (anything else has no meaning without
+  -- addresses, and is refused).
+  | .eq, .ptr a o, .ptr b q => .ok (.bool (a == b && o == q))
+  | .neq, .ptr a o, .ptr b q => .ok (.bool (!(a == b && o == q)))
+  | .eq, .ptr .., .int 0 _ | .eq, .int 0 _, .ptr .. => .ok (.bool false)
+  | .neq, .ptr .., .int 0 _ | .neq, .int 0 _, .ptr .. => .ok (.bool true)
+  | .eq, .ref _, .int 0 _ | .eq, .int 0 _, .ref _ => .ok (.bool false)
+  | .neq, .ref _, .int 0 _ | .neq, .int 0 _, .ref _ => .ok (.bool true)
+  | .eq, .ref a, .ref b => .ok (.bool (refPathEq a b))
+  | .neq, .ref a, .ref b => .ok (.bool (!refPathEq a b))
+  -- Symbolic addresses (`p as u64`): offset arithmetic only.
+  | .add, .addr b o ty, .int k _ | .add, .int k _, .addr b o ty => .ok (.addr b (o + k) ty)
+  | .sub, .addr b o ty, .int k _ => .ok (.addr b (o - k) ty)
+  | .sub, .addr a o ty, .addr b q _ =>
+    if a == b then .ok (.int (o - q) ty)
+    else .error "interp: the distance between addresses in different allocations is not modelled"
+  | .eq, .addr a o _, .addr b q _ => .ok (.bool (a == b && o == q))
+  | .neq, .addr a o _, .addr b q _ => .ok (.bool (!(a == b && o == q)))
+  | .lt, .addr a o _, .addr b q _ | .gt, .addr a o _, .addr b q _
+  | .leq, .addr a o _, .addr b q _ | .geq, .addr a o _, .addr b q _ =>
+    if a != b then .error "interp: ordering addresses in different allocations is not modelled"
+    else .ok (.bool (match op with
+      | .lt => o < q | .gt => o > q | .leq => o <= q | _ => o >= q))
+  | _, .addr .., _ | _, _, .addr .. =>
+    .error "interp: arithmetic on a pointer's numeric address is not modelled (the interpreter has no addresses)"
+  | .lt, .ptr a o, .ptr b q | .gt, .ptr a o, .ptr b q
+  | .leq, .ptr a o, .ptr b q | .geq, .ptr a o, .ptr b q =>
+    if a != b then .error "interp: ordering pointers into different allocations is not modelled"
+    else .ok (.bool (match op with
+      | .lt => o < q | .gt => o > q | .leq => o <= q | _ => o >= q))
   | _, _, _ => .error "interp: unsupported binop on given value types"
 
 -- ============================================================
@@ -623,7 +1165,11 @@ def evalCast (v : IVal) (targetTy : Ty) (srcTy : Option Ty := none) : Except Str
       match srcTy.bind pointee with
       | some src =>
         if src == dst then .ok (.ref p)
-        else .error s!"interp: reinterpreting pointer cast from pointee '{tyName src}' to '{tyName dst}' is not modelled (the interpreter stores typed values, not bytes); run the compiled binary"
+        -- A pointer to an array, as a pointer to its element type, points at element 0 (the
+        -- same address); pointer arithmetic then moves along the elements.
+        else if (match src with | .array e _ => e == dst | _ => false) then
+          .ok (.ref { p with steps := p.steps ++ [.index 0] })
+        else .error s!"interp: reinterpreting pointer cast from pointee '{tyToStr src}' to '{tyToStr dst}' is not modelled (the interpreter stores typed values, not bytes); run the compiled binary"
       | none => .error "interp: pointer cast from an untyped source is not modelled"
     | none => .error "interp: unsupported cast"
   | _ => .error "interp: unsupported cast"
@@ -655,11 +1201,17 @@ private partial def lookupAt (val : IVal) (steps : List RefStep) : Except String
 private def envViewAtFrame (env : Env) (frame : Nat) : Env :=
   if env.length >= frame then env.drop (env.length - frame) else env
 
-partial def lookupPath (env : Env) (p : RefPath) : Except String IVal := do
+/-- The value a reference names: a binding's (through its path), or a heap cell's. -/
+partial def lookupPath (cx : Ctx) (env : Env) (p : RefPath) : IM IVal := do
+  match p.heap with
+  | some (blk, off, ty) =>
+    let v ← readMem cx blk off ty
+    liftE (lookupAt v p.steps)
+  | none =>
   let view := envViewAtFrame env p.frame
   match envGet view p.base with
-  | none => .error s!"interp: ref path base '{p.base}' not in env"
-  | some v => lookupAt v p.steps
+  | none => fail s!"interp: ref path base '{p.base}' not in env"
+  | some v => liftE (lookupAt v p.steps)
 
 private partial def updateAt (val : IVal) (steps : List RefStep) (newVal : IVal) : Except String IVal :=
   match steps with
@@ -697,21 +1249,362 @@ private partial def envSetSkipping (env : Env) (skip : Nat) (name : String) (val
   | (n, v) :: rest, k + 1 =>
     (n, v) :: envSetSkipping rest k name val
 
-partial def updatePath (env : Env) (p : RefPath) (newVal : IVal) : Except String Env := do
+/-- Store through a reference: into a binding (through its path), or into a heap cell. -/
+partial def updatePath (cx : Ctx) (env : Env) (p : RefPath) (newVal : IVal) : IM Env := do
+  match p.heap with
+  | some (blk, off, ty) =>
+    let newBase ← if p.steps.isEmpty then pure newVal else do
+      let old ← readMem cx blk off ty
+      liftE (updateAt old p.steps newVal)
+    writeMem cx blk off ty newBase
+    return env
+  | none =>
   let skip := if env.length >= p.frame then env.length - p.frame else 0
   let view := envViewAtFrame env p.frame
   match envGet view p.base with
-  | none => .error s!"interp: ref path base '{p.base}' not in env (update)"
+  | none => fail s!"interp: ref path base '{p.base}' not in env (update)"
   | some baseVal => do
-    let newBase ← updateAt baseVal p.steps newVal
+    let newBase ← liftE (updateAt baseVal p.steps newVal)
     return envSetSkipping env skip p.base newBase
 
 /-- If `v` is a ref, follow it; otherwise return `v` unchanged.
     Used for auto-deref on field-access / array-index receivers. -/
-private def autoDeref (env : Env) (v : IVal) : Except String IVal :=
+def autoDeref (cx : Ctx) (env : Env) (v : IVal) : IM IVal :=
   match v with
-  | .ref p => lookupPath env p
-  | other => .ok other
+  | .ref p => lookupPath cx env p
+  | other => pure other
+
+-- ============================================================
+-- Foreign functions
+-- ============================================================
+
+/-- Resolve a call spelling to a foreign function the program declares: the spelling itself, or
+    an import alias of it (`import std.libc.{write as libc_write}`), as the backend's linker
+    aliases resolve it. -/
+def resolveExtern (cx : Ctx) (name : String) : Option String :=
+  if cx.externs.contains name then some name
+  else
+    let own : List (String × String) := match cx.scope with
+      | some t => (cx.scopes[t]?.getD []).filter (fun (p : String × String) => p.1 == name)
+      | none => []
+    let all : List (String × String) :=
+      cx.scopes.toList.flatMap (fun xs => xs.filter (fun (p : String × String) => p.1 == name))
+    let targets := ((if own.isEmpty then all else own).map (·.2)).eraseDups.filter cx.externs.contains
+    match targets with
+    | [t] => some t
+    | _ => none
+
+/-- `n` bytes through a pointer: a heap pointer, or a reference into an array of bytes (a
+    stack buffer passed as `&mut buf as *mut u8`). -/
+def ptrReadBytes (cx : Ctx) (env : Env) (p : IVal) (n : Nat) (what : String) : IM ByteArray := do
+  match p with
+  | .ptr blk off => readBytes cx blk off n
+  | .ref path =>
+    if n == 0 then return .empty
+    let (base, start) := match path.steps.getLast? with
+      | some (.index i) => ({ path with steps := path.steps.dropLast }, i)
+      | _ => (path, 0)
+    match ← lookupPath cx env base with
+    | .array elems _ _ =>
+      let mut out := ByteArray.empty
+      for k in [0 : n] do
+        match elems[start + k]? with
+        | some (.int v ty) =>
+          if (sizeOfTy cx ty).toOption == some 1 then out := out.push (v % 256).toNat.toUInt8
+          else fail s!"interp: {what}: the bytes of a '{tyToStr ty}' array are not modelled"
+        | some _ => fail s!"interp: {what}: a pointer into an array that is not bytes"
+        | none => fail s!"interp: {what}: {n} bytes past the end of a {elems.size}-element array (undefined behaviour in the binary)"
+      return out
+    -- A pointer to one integer (`&b as *const u8`): its little-endian bytes.
+    | .int v ty =>
+      let size := (sizeOfTy cx ty).toOption.getD 0
+      if start == 0 && isByteInt ty && n ≤ size then
+        return ByteArray.mk ((intBytes v size).take n |>.map (·.toUInt8)).toArray
+      else fail s!"interp: {what}: {n} bytes through a pointer to a '{tyToStr ty}' is not modelled"
+    | _ => fail s!"interp: {what}: a pointer to a value that is not bytes is not modelled"
+  | .int 0 _ => fail s!"interp: {what}: a null pointer (the binary crashes)"
+  | _ => fail s!"interp: {what}: argument is not a pointer"
+
+/-- Store bytes through a pointer (see `ptrReadBytes`). -/
+def ptrWriteBytes (cx : Ctx) (env : Env) (p : IVal) (bytes : ByteArray) (what : String) : IM Env := do
+  match p with
+  | .ptr blk off => writeBytes cx blk off bytes; pure env
+  | .ref path =>
+    if bytes.size == 0 then return env
+    let (base, start) := match path.steps.getLast? with
+      | some (.index i) => ({ path with steps := path.steps.dropLast }, i)
+      | _ => (path, 0)
+    match ← lookupPath cx env base with
+    | .array elems ety sz =>
+      if start + bytes.size > elems.size then
+        fail s!"interp: {what}: {bytes.size} bytes past the end of a {elems.size}-element array (undefined behaviour in the binary)"
+      let mut elems := elems
+      for k in [0 : bytes.size] do
+        match elems[start + k]? with
+        | some (.int _ ty) =>
+          if (sizeOfTy cx ty).toOption == some 1 then
+            elems := elems.set! (start + k) (.int (IntArith.wrapToType ty bytes[k]!.toNat) ty)
+          else fail s!"interp: {what}: the bytes of a '{tyToStr ty}' array are not modelled"
+        | _ => fail s!"interp: {what}: a pointer into an array that is not bytes"
+      updatePath cx env base (.array elems ety sz)
+    | .int v ty =>
+      let size := (sizeOfTy cx ty).toOption.getD 0
+      if start == 0 && isByteInt ty && bytes.size ≤ size then
+        let old := intBytes v size
+        let new := bytes.data.toList.map (·.toNat) ++ old.drop bytes.size
+        updatePath cx env base (.int (intOfBytes new ty) ty)
+      else fail s!"interp: {what}: {bytes.size} bytes through a pointer to a '{tyToStr ty}' is not modelled"
+    | _ => fail s!"interp: {what}: a pointer to a value that is not bytes is not modelled"
+  | .int 0 _ => fail s!"interp: {what}: a null pointer (the binary crashes)"
+  | _ => fail s!"interp: {what}: argument is not a pointer"
+
+/-- The bytes up to the first NUL through a pointer. -/
+def ptrCString (cx : Ctx) (env : Env) (p : IVal) (what : String) : IM ByteArray := do
+  match p with
+  | .ptr blk off => cStringBytes cx blk off
+  | .ref _ =>
+    -- A byte array on the stack: read it to its end, then cut at the NUL.
+    let mut n := 1
+    let mut res : Option ByteArray := none
+    while res.isNone do
+      let bs ← ptrReadBytes cx env p n what
+      if bs[n - 1]! == 0 then res := some (bs.extract 0 (n - 1)) else n := n + 1
+    return res.getD .empty
+  | .int 0 _ => fail s!"interp: {what}: a null pointer (the binary crashes)"
+  | _ => fail s!"interp: {what}: argument is not a pointer"
+
+/-- The C library's foreign functions the interpreter models, each exactly (C semantics on the
+    platform it runs on, which is the platform the binary runs on). Every other foreign function
+    is refused, never guessed: the model cannot know what foreign code does. -/
+def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (Env × IVal) := do
+  let fileBlock (f : IVal) : IM Nat := do
+    match ← pure f with
+    | .ptr blk 0 => pure blk
+    | .int 0 _ => fail s!"interp: {name} on a null FILE pointer (the binary crashes)"
+    | _ => fail s!"interp: {name}: argument is not a FILE pointer"
+  let setHandle (blk : Nat) (h : FileHandle) : IM Unit :=
+    modify fun st => { st with handles := st.handles.map fun (b, x) => if b == blk then (b, h) else (b, x) }
+  let int (v : IVal) (what : String) : IM Int := do
+    match ← autoDeref cx env v with
+    | .int n _ => pure n
+    | .bool b => pure (if b then 1 else 0)
+    | _ => fail s!"interp: {name}: {what} is not an integer"
+  let float (v : IVal) : IM Float := do
+    match v with
+    | .float f _ => pure f
+    | _ => fail s!"interp: {name}: argument is not a float"
+  match name, args with
+  | "malloc", [n] => do
+    let size ← int n "the size"
+    if size < 0 then fail "interp: malloc of a negative size"
+    return (env, .ptr (← allocBlock size.toNat s!"malloc({size})") 0)
+  | "calloc", [n, sz] => do
+    let size := (← int n "the count") * (← int sz "the size")
+    let blk ← allocBlock size.toNat s!"calloc({size})"
+    writeBytes cx blk 0 (ByteArray.mk (Array.replicate size.toNat 0))
+    return (env, .ptr blk 0)
+  | "realloc", [p, n] => do
+    let size := (← int n "the size").toNat
+    match ← pure p with
+    | .int 0 _ => return (env, .ptr (← allocBlock size s!"realloc(NULL, {size})") 0)
+    | .ptr ob oo =>
+      let old ← getBlock ob "realloc"
+      if oo != 0 then fail "interp: realloc of a pointer that is not the start of an allocation (undefined behaviour in the binary)"
+      let blk ← allocBlock size s!"realloc({size})"
+      copyMem cx blk 0 ob 0 (min old.size size)
+      freeBlock ob 0
+      return (env, .ptr blk 0)
+    | _ => fail "interp: realloc of a value that is not a heap pointer"
+  | "free", [p] => do
+    match ← pure p with
+    | .int 0 _ => return (env, .unit)
+    | .ptr blk off => freeBlock blk off; return (env, .unit)
+    | _ => fail "interp: free of a value that is not a heap pointer"
+  | "memcpy", [d, s, n] | "memmove", [d, s, n] => do
+    let n := (← int n "the length").toNat
+    match ← pure d, ← pure s with
+    | .ptr db doff, .ptr sb soff => copyMem cx db doff sb soff n; return (env, d)
+    | dv, sv =>
+      -- A stack byte buffer on either side: copy bytes.
+      let bytes ← ptrReadBytes cx env sv n name
+      let env ← ptrWriteBytes cx env dv bytes name
+      return (env, d)
+  | "memset", [p, c, n] => do
+    let n := (← int n "the length").toNat
+    let c := ((← int c "the byte") % 256).toNat.toUInt8
+    let env ← ptrWriteBytes cx env p (ByteArray.mk (Array.replicate n c)) name
+    return (env, p)
+  | "memcmp", [a, b, n] => do
+    -- The sign is what C specifies; the magnitude is the difference of the first differing
+    -- bytes, which is what the C libraries of the supported platforms return.
+    let n := (← int n "the length").toNat
+    let ab ← ptrReadBytes cx env a n name
+    let bb ← ptrReadBytes cx env b n name
+    let diff := (List.range n).findSome? fun k =>
+      if ab[k]! != bb[k]! then some ((ab[k]!.toNat : Int) - bb[k]!.toNat) else none
+    return (env, .int (diff.getD 0) .i32)
+  | "strlen", [p] => do
+    return (env, .int (← ptrCString cx env p name).size .uint)
+  | "puts", [p] => do
+    let bytes ← ptrCString cx env p name
+    emitBytes (bytes.push 10)
+    -- puts returns "a nonnegative number": '\n' on Darwin's libc, the count written on glibc.
+    return (env, .int (if System.Platform.isOSX then 10 else bytes.size + 1) .i32)
+  | "putchar", [c] => do
+    let c := ((← int c "the character") % 256).toNat
+    emitBytes (ByteArray.mk #[c.toUInt8])
+    return (env, .int c .i32)
+  | "write", [fd, buf, n] => do
+    let fd ← int fd "the descriptor"
+    let n := (← int n "the length").toNat
+    let bytes ← ptrReadBytes cx env buf n name
+    if fd == 1 then emitBytes bytes
+    else if fd == 2 then emitErr bytes
+    else fail s!"interp: write to descriptor {fd} is not modelled (only stdout and stderr)"
+    return (env, .int n .int)
+  | "read", [fd, buf, n] => do
+    let fd ← int fd "the descriptor"
+    if fd != 0 then fail s!"interp: read from descriptor {fd} is not modelled (only stdin)"
+    let n := (← int n "the length").toNat
+    let st ← get
+    let avail := st.stdin.size - st.stdinPos
+    let k := min n avail
+    let bytes := st.stdin.extract st.stdinPos (st.stdinPos + k)
+    set { st with stdinPos := st.stdinPos + k }
+    let env ← ptrWriteBytes cx env buf bytes name
+    return (env, .int k .int)
+  | "getenv", [n] => do
+    let keyB ← ptrCString cx env n name
+    match String.fromUTF8? keyB with
+    | none => return (env, .int 0 (.ptrConst .u8))
+    | some key =>
+      match hostGetEnv key with
+      | none => return (env, .int 0 (.ptrConst .u8))
+      | some v =>
+        let bytes := v.toUTF8
+        let blk ← allocBlock (bytes.size + 1) s!"getenv({key})"
+        writeBytes cx blk 0 (bytes.push 0)
+        return (env, .ptr blk 0)
+  | "fopen", [pv, mv] => do
+    let pathB ← ptrCString cx env pv name
+    let modeB ← ptrCString cx env mv name
+    let some path := String.fromUTF8? pathB | fail "interp: fopen of a path that is not UTF-8 is not modelled"
+    let some mode := String.fromUTF8? modeB | fail "interp: fopen mode is not UTF-8"
+    let mode := mode.replace "b" ""
+    let st ← get
+    let existing : Option ByteArray ← match st.files.lookup path with
+      | some b => pure (some b)
+      | none => match hostReadFile path with
+        | .bytes b => pure (some b)
+        | .missing => pure none
+        | .directory => fail s!"interp: fopen of the directory '{path}' is not modelled"
+    let handle? : Option FileHandle := match mode with
+      | "r" => existing.map fun b => { path, data := b, writable := false }
+      | "w" => some { path, data := .empty, writable := true }
+      | "a" => some { path, data := existing.getD .empty, pos := (existing.getD .empty).size, writable := true, append := true }
+      | _ => none
+    if !(["r", "w", "a"].contains mode) then
+      fail s!"interp: fopen mode '{mode}' is not modelled"
+    match handle? with
+    | none => return (env, .int 0 (.ptrConst .u8))
+    | some h =>
+      let blk ← allocBlock 1 s!"FILE {path}"
+      modify fun st => { st with handles := (blk, h) :: st.handles }
+      return (env, .ptr blk 0)
+  | "fread", [buf, sz, cnt, f] | "fwrite", [buf, sz, cnt, f] => do
+    let blk ← fileBlock f
+    let some h := (← get).handles.lookup blk | fail s!"interp: {name} on a closed or unknown FILE"
+    let size := (← int sz "the size").toNat
+    let count := (← int cnt "the count").toNat
+    let n := size * count
+    if name == "fread" then
+      if h.writable then fail "interp: fread on a file opened for writing is not modelled"
+      let k := min n (h.data.size - min h.pos h.data.size)
+      let bytes := h.data.extract h.pos (h.pos + k)
+      let env ← ptrWriteBytes cx env buf bytes name
+      setHandle blk { h with pos := h.pos + k }
+      return (env, .int (if size == 0 then 0 else k / size) .uint)
+    else
+      if !h.writable then return (env, .int 0 .uint)
+      let bytes ← ptrReadBytes cx env buf n name
+      let pos := if h.append then h.data.size else h.pos
+      let before := h.data.extract 0 (min pos h.data.size)
+      let pad := ByteArray.mk (Array.replicate (pos - min pos h.data.size) 0)
+      let after := h.data.extract (pos + n) h.data.size
+      setHandle blk { h with data := before ++ pad ++ bytes ++ after, pos := pos + n }
+      return (env, .int count .uint)
+  | "fseek", [f, o, w] => do
+    let blk ← fileBlock f
+    let some h := (← get).handles.lookup blk | fail "interp: fseek on a closed or unknown FILE"
+    let off ← int o "the offset"
+    let base : Int := match ← int w "the origin" with
+      | 0 => 0 | 1 => h.pos | _ => h.data.size
+    let np := base + off
+    if np < 0 then return (env, .int (-1) .i32)
+    setHandle blk { h with pos := np.toNat }
+    return (env, .int 0 .i32)
+  | "ftell", [f] => do
+    let blk ← fileBlock f
+    let some h := (← get).handles.lookup blk | fail "interp: ftell on a closed or unknown FILE"
+    return (env, .int h.pos .int)
+  | "ferror", [f] => do
+    let _ ← fileBlock f
+    return (env, .int 0 .i32)
+  | "fflush", [f] => do
+    match ← pure f with
+    | .int 0 _ => return (env, .int 0 .i32)
+    | _ => let _ ← fileBlock f; return (env, .int 0 .i32)
+  | "fclose", [f] => do
+    let blk ← fileBlock f
+    let some h := (← get).handles.lookup blk | fail "interp: fclose of a closed or unknown FILE (undefined behaviour in the binary)"
+    modify fun st => { st with
+      handles := st.handles.filter (·.1 != blk),
+      files := if h.writable then (h.path, h.data) :: st.files.filter (·.1 != h.path) else st.files }
+    freeBlock blk 0
+    return (env, .int 0 .i32)
+  | "abort", [] => fail "interp: abort() called (the binary aborts)"
+  | "exit", [code] => throw (.exit (← int code "the status"))
+  | "__concrete_get_argc", [] => return (env, .int (cx.args.length + 1) .i32)
+  | "__concrete_get_argv", [i] => do
+    let i ← int i "the index"
+    let all := cx.argv0 :: cx.args
+    if i < 0 || i > all.length then
+      fail s!"interp: argv[{i}] is out of range (argc is {all.length}; undefined behaviour in the binary)"
+    else if i == all.length then return (env, .int 0 (.ptrConst .u8))
+    else
+      let bytes := (all[i.toNat]!).toUTF8
+      let blk ← allocBlock (bytes.size + 1) s!"argv[{i}]"
+      writeBytes cx blk 0 (bytes.push 0)
+      return (env, .ptr blk 0)
+  -- C `abs`/`labs`: |x|; `abs(INT_MIN)` is undefined behaviour in C, refused.
+  | "abs", [x] | "labs", [x] => do
+    let v ← int x "the argument"
+    let ty : Ty := if name == "abs" then .i32 else .int
+    if v == (if name == "abs" then -(2 ^ 31 : Int) else -(2 ^ 63 : Int)) then
+      fail s!"interp: {name} of the most negative value is undefined behaviour in C"
+    return (env, .int v.natAbs ty)
+  | "sqrt", [x] => return (env, .float (Float.sqrt (← float x)) .float64)
+  | "floor", [x] => return (env, .float (Float.floor (← float x)) .float64)
+  | "ceil", [x] => return (env, .float (Float.ceil (← float x)) .float64)
+  | "fabs", [x] => return (env, .float (Float.abs (← float x)) .float64)
+  | "sin", [x] => return (env, .float (Float.sin (← float x)) .float64)
+  | "cos", [x] => return (env, .float (Float.cos (← float x)) .float64)
+  | "tan", [x] => return (env, .float (Float.tan (← float x)) .float64)
+  | "exp", [x] => return (env, .float (Float.exp (← float x)) .float64)
+  | "log", [x] => return (env, .float (Float.log (← float x)) .float64)
+  | "pow", [x, y] => return (env, .float (Float.pow (← float x) (← float y)) .float64)
+  | _, _ => fail s!"interp: foreign function '{name}' is not modelled (the interpreter evaluates only the C functions in its table; run the compiled binary)"
+
+/-- Does an assignment place go through a dereference or a heap/raw pointer (so it must be
+    resolved as a reference path rather than as a binding plus steps)? -/
+partial def placeNeedsPath : CExpr → Bool
+  | .deref _ _ => true
+  | .ident _ ty => match ty with
+    | .heap _ | .ptrMut _ | .ptrConst _ | .generic "Heap" _ _ => true
+    | _ => false
+  | .fieldAccess obj _ _ => placeNeedsPath obj
+  | .arrayIndex arr _ _ => placeNeedsPath arr
+  | _ => false
 
 -- ============================================================
 -- Helpers (must precede mutual block — no forward refs in Lean 4)
@@ -764,10 +1657,32 @@ partial def evalProjectionBase (cx : Ctx) (env : Env) (obj : CExpr)
   | .ref _ | .refMut _ =>
     let (env, v) ← evalExprVal cx env obj
     match v with
-    | .ref p => return (env, { p with isMut := p.isMut || isMut })
+    | .ref p =>
+      -- `h.f` with `h: &mut Heap<S>` (bug 126's shape): the reference names a binding that
+      -- holds a heap pointer, and the field is in the heap cell it points at.
+      match pointeeOf (normTy cx obj.ty) |>.bind (fun t => match t with
+          | .heap _ | .ptrMut _ | .ptrConst _ => pointeeOf t | _ => none) with
+      | some pt =>
+        match ← lookupPath cx env p with
+        | .ptr blk off =>
+          if off < 0 then fail "interp: a projection through a pointer before the start of its allocation"
+          else return (env, { base := "", frame := 0, steps := [], isMut := p.isMut || isMut, heap := some (blk, off.toNat, pt) })
+        | .int 0 _ => fail "interp: projection through a null pointer (the binary crashes)"
+        | _ => return (env, { p with isMut := p.isMut || isMut })
+      | none => return (env, { p with isMut := p.isMut || isMut })
     -- The heapless model may bind a `&T`-typed name to the value itself (a destructor's
     -- `self` when the destroyed owner was passed by value): its own path is the place.
     | _ => evalBorrowTarget cx env obj isMut
+  -- A heap pointer (`h.v` with `h: Heap<S>`, one hop): the place is the heap cell.
+  | .heap _ | .ptrMut _ | .ptrConst _ =>
+    let (env, v) ← evalExprVal cx env obj
+    match v, pointeeOf (normTy cx obj.ty) with
+    | .ptr blk off, some pt =>
+      if off < 0 then fail "interp: a projection through a pointer before the start of its allocation"
+      else return (env, { base := "", frame := 0, steps := [], isMut, heap := some (blk, off.toNat, pt) })
+    | .ref p, _ => return (env, { p with isMut := p.isMut || isMut })
+    | .int 0 _, _ => fail "interp: projection through a null pointer (the binary crashes)"
+    | _, _ => evalBorrowTarget cx env obj isMut
   | _ => evalBorrowTarget cx env obj isMut
 
 /-- Resolve a CExpr to a reference path.
@@ -794,17 +1709,23 @@ partial def evalBorrowTarget (cx : Ctx) (env : Env) (e : CExpr) (isMut : Bool) :
   | .deref inner _ => do
     -- &(*r) and &mut (*r): forward to r's path, optionally widening mutability
     let (env, v) ← evalExprVal cx env inner
-    match v with
-    | .ref p => return (env, { p with isMut := p.isMut || isMut })
-    | _ => fail "interp: deref of non-ref in borrow target"
+    match v, pointeeOf (normTy cx inner.ty) with
+    | .ref p, _ => return (env, { p with isMut := p.isMut || isMut })
+    -- `&*p` / `&mut *p` through a heap pointer: the heap cell is the place.
+    | .ptr blk off, some pt =>
+      if off < 0 then fail "interp: a borrow through a pointer before the start of its allocation"
+      else return (env, { base := "", frame := 0, steps := [], isMut, heap := some (blk, off.toNat, pt) })
+    | .int 0 _, _ => fail "interp: borrow through a null pointer (the binary crashes)"
+    | _, _ => fail "interp: deref of non-ref in borrow target"
   -- Borrowing a literal yields a ref to a temporary. The interpreter
   -- has no separate static-data area, so we materialize the literal
   -- under a synthetic env name and ref that. The synthetic name is
   -- keyed off the current env length so successive borrows in the
   -- same statement do not collide.
   | .strLit s => do
+    let v ← newStringValue cx s.toUTF8 (s.utf8ByteSize + 1) (nul := true) (what := "a string literal's copy")
     let name := s!"__interp_str_lit_{env.length}"
-    let env := envBind env name (.string s)
+    let env := envBind env name v
     return (env, { base := name, frame := env.length, steps := [], isMut := isMut })
   | .charLit c => do
     let name := s!"__interp_char_lit_{env.length}"
@@ -823,7 +1744,11 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
   match e with
   | .intLit val ty => return (env, .val (.int val ty))
   | .boolLit val => return (env, .val (.bool val))
-  | .strLit s => return (env, .val (.string s))
+  -- A string literal is a fresh `String` over a `malloc`'d copy of its bytes and a NUL, as the
+  -- backend materializes it.
+  | .strLit s => do
+    let v ← newStringValue cx s.toUTF8 (s.utf8ByteSize + 1) (nul := true) (what := "a string literal's copy")
+    return (env, .val v)
   -- A char is its code point carried at type .char (exactly how the compiled
   -- path treats it: casts and print_char operate on the code).
   | .charLit c => return (env, .val (.int (Int.ofNat c.toNat) .char))
@@ -863,6 +1788,26 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     | .or_, .bool true => return (env, .val (.bool true))
     | _, _ =>
       let (env, rv) ← evalExprVal cx env rhs
+      -- Pointer arithmetic counts elements of the pointee type, as the backend's GEP does.
+      match op, pointeeOf (normTy cx lhs.ty), lv, rv with
+      | .add, some pt, _, .int k _ | .sub, some pt, _, .int k _ =>
+        let k := if op == .sub then -k else k
+        match lv with
+        | .ptr blk off =>
+          let es ← liftE (sizeOfTy cx pt)
+          return (env, .val (.ptr blk (off + k * es)))
+        | .ref p =>
+          match p.heap, p.steps.getLast? with
+          | some (blk, off, _), none =>
+            let es ← liftE (sizeOfTy cx pt)
+            return (env, .val (.ptr blk (off + k * es)))
+          | _, some (.index i) =>
+            if (i : Int) + k < 0 then fail "interp: pointer arithmetic before the start of an array"
+            else return (env, .val (.ref { p with steps := p.steps.dropLast ++ [.index (i + k).toNat] }))
+          | _, _ => fail "interp: arithmetic on a pointer to a single value is not modelled"
+        | .int 0 _ => if k == 0 then return (env, .val lv) else fail "interp: arithmetic on a null pointer (undefined behaviour in the binary)"
+        | _ => fail "interp: pointer arithmetic on a value that is not a pointer"
+      | _, _, _, _ =>
       let result ← liftE <| evalBinOp op lv rv
       return (env, .val result)
 
@@ -871,7 +1816,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     let result ← liftE <| evalUnaryOp op v
     return (env, .val result)
 
-  | .call callee _ args _ => do
+  | .call callee typeArgs args _ => do
     let (env, argVals) ← evalCallArgs cx env args
     -- The call form says which kind this is (bug 050), so the interpreter no
     -- longer guesses by probing the environment for every callee name. An
@@ -902,101 +1847,229 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         -- portion of the env.
         let outerLen := env.length
         let callEnv := bindParams (envEnterFrame env) fdef.params argVals
-        let (postEnv, flow) ← evalStmts { cx with scope := calleeScope } callEnv fdef.body
+        -- The callee's type parameters stand for the call's type arguments (resolved in the
+        -- caller's own instantiation), so `sizeof::<T>()` and `*mut T` arithmetic in a generic
+        -- body see the concrete types. A call that names none leaves them unresolved, and
+        -- whatever needs their layout refuses.
+        let tyEnv := if typeArgs.length == fdef.typeParams.length
+          then fdef.typeParams.zip (typeArgs.map (normTy cx)) else []
+        let (postEnv, flow) ← evalStmts { cx with scope := calleeScope, tyEnv } callEnv fdef.body
         let restored := postEnv.drop (postEnv.length - outerLen)
         match flow with
         | .ret v => return (restored, .val v)
         | .val v => return (restored, .val v)
         | _ => return (restored, .val .unit)
     | none =>
-      -- Builtins: a small allowlist of intrinsics whose semantics fit the
-      -- value-passing model. The print_* intrinsics append to the reserved
-      -- stdout (`IState.out`), byte-matching the compiled
-      -- binary's output, so printing programs are differential-testable.
+      -- Builtins, each modelled on its runtime implementation in `EmitBuiltins` (a `String` is
+      -- the `{ptr, len, cap}` struct over a heap buffer, as there), and the compiler's
+      -- intrinsics. Anything else is a foreign function (`evalExtern`, a fixed table) or an
+      -- undefined function: never guessed.
+      let strOf (v : IVal) : IM ByteArray := do stringBytes cx (← autoDeref cx env v)
+      let intOf (v : IVal) (what : String) : IM Int := do
+        match ← autoDeref cx env v with
+        | .int n _ => pure n
+        | _ => fail s!"interp: {what}: argument is not an integer"
+      let retStr (bytes : ByteArray) (cap : Nat) : IM (Env × Flow) := do
+        return (env, .val (← newStringValue cx bytes cap))
+      -- `realloc`-style growth of a `&mut String`'s buffer to `newCap` bytes.
+      let growString (p : RefPath) (newCap : Nat) : IM Env := do
+        let (sp, len, _) ← stringFields (← lookupPath cx env p)
+        let blk ← allocBlock newCap "a string buffer"
+        match sp with
+        | .ptr ob oo =>
+          copyMem cx blk 0 ob oo len
+          freeBlock ob oo
+        | .int 0 _ => pure ()
+        | _ => fail "interp: a String whose buffer is not a heap pointer"
+        let s ← lookupPath cx env p
+        let s := match s with
+          | .struct_ n fs => .struct_ n (fs.map fun (f, v) =>
+              if f == "ptr" then (f, .ptr blk 0) else if f == "cap" then (f, .int newCap .uint) else (f, v))
+          | other => other
+        updatePath cx env p s
+      -- Append `bytes` to the `&mut String` at `p`, growing as the runtime does
+      -- (`max(2 * cap, len + n)`; `string_push_char` uses `max(2 * cap, 8)` when full).
+      let appendString (p : RefPath) (bytes : ByteArray) (pushChar : Bool) : IM Env := do
+        let (_, len, cap) ← stringFields (← lookupPath cx env p)
+        let needed := len + bytes.size
+        let env ← if (pushChar && len == cap) then growString p (max (2 * cap) 8)
+          else if (!pushChar && needed > cap) then growString p (max (2 * cap) needed)
+          else pure env
+        let (sp, _, _) ← stringFields (← lookupPath cx env p)
+        match sp with
+        | .ptr blk off => writeBytes cx blk (off + len) bytes
+        | _ => fail "interp: a String whose buffer is not a heap pointer"
+        let s ← lookupPath cx env p
+        let s := match s with
+          | .struct_ n fs => .struct_ n (fs.map fun (f, v) => if f == "len" then (f, .int needed .uint) else (f, v))
+          | other => other
+        updatePath cx env p s
       match fnName, argVals with
       | "string_length", [arg] => do
-        let s ← (match arg with
-          | .string s => pure s
-          | .ref p => do
-            let v ← liftE <| lookupPath env p
-            match v with
-            | .string s => pure s
-            | _ => fail "interp: string_length: ref does not point to a string"
-          | _ => fail "interp: string_length: argument is not a string")
-        -- Byte length, matching the backend's len field (audit 2026-07-16:
-        -- String.length is CODEPOINTS and drifted from compiled output on
-        -- any non-ASCII string).
-        return (env, .val (.int (Int.ofNat s.utf8ByteSize) .int))
-      | "string_push_char", [sv, cv] => do
-        match sv, ← liftE <| autoDeref env cv with
-        | .ref p, .int c _ =>
-          match ← liftE <| lookupPath env p with
-          | .string s =>
-            -- Backend truncates the code to ONE byte (EmitBuiltins): exact
-            -- for ASCII. For c >= 128 the backend appends a lone byte that
-            -- is invalid UTF-8, which a Lean String cannot hold — Char.ofNat
-            -- encodes it as the 2-byte UTF-8 of U+0080..U+00FF instead
-            -- (named residual; the differential corpus stays in ASCII,
-            -- where the model is exact).
-            let env' ← liftE <| updatePath env p (.string (s.push (Char.ofNat (c.toNat % 256))))
-            return (env', .val .unit)
-          | _ => fail "interp: string_push_char: receiver is not a string"
-        | _, _ => fail "interp: string_push_char: bad arguments"
-      | "string_append", [sv, ov] => do
-        match sv, ← liftE <| autoDeref env ov with
-        | .ref p, .string o =>
-          match ← liftE <| lookupPath env p with
-          | .string s =>
-            let env' ← liftE <| updatePath env p (.string (s ++ o))
-            return (env', .val .unit)
-          | _ => fail "interp: string_append: receiver is not a string"
-        | _, _ => fail "interp: string_append: bad arguments"
-      -- Pure string library (matches EmitBuiltins runtime; extends the oracle so
-      -- string programs are differential-testable instead of PENDING).
+        let (_, len, _) ← stringFields (← autoDeref cx env arg)
+        return (env, .val (.int len .int))
+      | "string_push_char", [.ref p, cv] => do
+        -- The runtime stores the code's low byte (`trunc i64 to i8`).
+        let c ← intOf cv "string_push_char"
+        let env' ← appendString p (ByteArray.mk #[(c % 256).toNat.toUInt8]) (pushChar := true)
+        return (env', .val .unit)
+      | "string_append", [.ref p, ov] => do
+        let o ← strOf ov
+        let env' ← appendString p o (pushChar := false)
+        return (env', .val .unit)
+      | "string_append_int", [.ref p, nv] => do
+        let n ← intOf nv "string_append_int"
+        let env' ← appendString p (toString n).toUTF8 (pushChar := false)
+        return (env', .val .unit)
+      | "string_append_bool", [.ref p, bv] => do
+        let b ← match ← autoDeref cx env bv with
+          | .bool b => pure b
+          | _ => fail "interp: string_append_bool: argument is not a bool"
+        let env' ← appendString p (if b then "true" else "false").toUTF8 (pushChar := false)
+        return (env', .val .unit)
+      | "string_reserve", [.ref p, ev] => do
+        let extra ← intOf ev "string_reserve"
+        let (_, len, cap) ← stringFields (← lookupPath cx env p)
+        let needed := (len : Int) + extra
+        if needed > cap then
+          let env' ← growString p needed.toNat
+          return (env', .val .unit)
+        else return (env, .val .unit)
       | "string_eq", [a, b] => do
-        match ← liftE <| autoDeref env a, ← liftE <| autoDeref env b with
-        | .string sa, .string sb => return (env, .val (.bool (sa == sb)))
-        | _, _ => fail "interp: string_eq: arguments are not strings"
+        return (env, .val (.bool ((← strOf a) == (← strOf b))))
       | "string_concat", [a, b] => do
-        match ← liftE <| autoDeref env a, ← liftE <| autoDeref env b with
-        | .string sa, .string sb => return (env, .val (.string (sa ++ sb)))
-        | _, _ => fail "interp: string_concat: arguments are not strings"
+        -- The runtime frees both operands' buffers (the operands are consumed).
+        let av ← autoDeref cx env a
+        let bv ← autoDeref cx env b
+        let ab ← stringBytes cx av
+        let bb ← stringBytes cx bv
+        let r ← newStringValue cx (ab ++ bb) (ab.size + bb.size)
+        for v in [av, bv] do
+          match (← stringFields v).1 with
+          | .ptr blk off => freeBlock blk off
+          | _ => pure ()
+        return (env, .val r)
       | "string_char_at", [s, i] => do
-        match ← liftE <| autoDeref env s, ← liftE <| autoDeref env i with
-        | .string str, .int idx _ =>
-          -- Matches EmitBuiltins exactly: BYTE index into the UTF-8 data,
-          -- -1 on negative or out-of-range (audit 2026-07-16: the interp
-          -- indexed codepoints and returned 0, drifting from compiled output
-          -- for any non-ASCII string and making OOB invisible to the oracle).
-          let bytes := str.toUTF8
-          if idx < 0 then
-            return (env, .val (.int (-1) .int))
-          else match bytes.data[idx.toNat]? with
-            | some b => return (env, .val (.int (Int.ofNat b.toNat) .int))
-            | none => return (env, .val (.int (-1) .int))
-        | _, _ => fail "interp: string_char_at: bad arguments"
+        -- A BYTE index; -1 when negative or past the end.
+        let bytes ← strOf s
+        let idx ← intOf i "string_char_at"
+        if idx < 0 then return (env, .val (.int (-1) .int))
+        match bytes.data[idx.toNat]? with
+        | some b => return (env, .val (.int b.toNat .int))
+        | none => return (env, .val (.int (-1) .int))
       | "string_contains", [h, n] => do
-        match ← liftE <| autoDeref env h, ← liftE <| autoDeref env n with
-        | .string sh, .string sn =>
-          return (env, .val (.bool (sn == "" || (sh.splitOn sn).length > 1)))
-        | _, _ => fail "interp: string_contains: bad arguments"
+        let hb := (← strOf h).data.toList
+        let nb := (← strOf n).data.toList
+        let found := nb.isEmpty || (nb.length ≤ hb.length &&
+          (List.range (hb.length - nb.length + 1)).any fun i => (hb.drop i).take nb.length == nb)
+        return (env, .val (.bool found))
       | "int_to_string", [n] => do
-        match ← liftE <| autoDeref env n with
-        | .int v _ => return (env, .val (.string (toString v)))
-        | _ => fail "interp: int_to_string: argument is not an integer"
+        -- `snprintf("%ld")` into a 32-byte buffer: capacity 32.
+        retStr (toString (← intOf n "int_to_string")).toUTF8 32
+      | "bool_to_string", [b] => do
+        match ← autoDeref cx env b with
+        | .bool true => retStr "true".toUTF8 4
+        | .bool false => retStr "false".toUTF8 5
+        | _ => fail "interp: bool_to_string: argument is not a bool"
       | "string_slice", [s, st, en] => do
-        match ← liftE <| autoDeref env s, ← liftE <| autoDeref env st, ← liftE <| autoDeref env en with
-        | .string str, .int a _, .int b _ =>
-          let sub := (str.toList.drop a.toNat).take (b.toNat - a.toNat)
-          return (env, .val (.string (String.ofList sub)))
-        | _, _, _ => fail "interp: string_slice: bad arguments"
+        -- Byte offsets, clamped to [0, len], end clamped to at least start (the runtime's
+        -- smax/smin sequence); capacity is the slice length.
+        let bytes ← strOf s
+        let len : Int := bytes.size
+        let a := max 0 (min (← intOf st "string_slice") len)
+        let e := max (max 0 (min (← intOf en "string_slice") len)) a
+        retStr (bytes.extract a.toNat e.toNat) (e - a).toNat
+      | "string_substr", [s, st, ln] => do
+        let bytes ← strOf s
+        let len : Int := bytes.size
+        let start ← intOf st "string_substr"
+        let a := max 0 (min start len)
+        let e := max (max 0 (min (start + (← intOf ln "string_substr")) len)) a
+        retStr (bytes.extract a.toNat e.toNat) (e - a).toNat
       | "string_trim", [s] => do
-        match ← liftE <| autoDeref env s with
-        | .string str =>
-          let ws := fun (c : Char) => c == ' ' || c == '\t' || c == '\n' || c == '\r'
-          let cs := ((str.toList.dropWhile ws).reverse.dropWhile ws).reverse
-          return (env, .val (.string (String.ofList cs)))
-        | _ => fail "interp: string_trim: argument is not a string"
+        let bytes := (← strOf s).data.toList
+        let ws := fun (c : UInt8) => c == 32 || c == 9 || c == 10 || c == 13
+        let left := bytes.dropWhile ws
+        let trimmed := (left.reverse.dropWhile ws).reverse
+        -- An all-whitespace string is a fresh 1-byte buffer of length 0.
+        if trimmed.isEmpty then retStr .empty 1 else retStr (ByteArray.mk trimmed.toArray) trimmed.length
+      | "string_to_int", [s] => do
+        -- `strtol(buf, &end, 10)`, valid only when it consumed every byte of a non-empty
+        -- string: Ok(value) or Err(1). Leading whitespace and a sign are accepted, as by
+        -- strtol; out-of-range values saturate, as strtol's do.
+        let bytes := (← strOf s).data.toList
+        let isWs := fun (c : UInt8) => c == 32 || (9 ≤ c && c ≤ 13)
+        let rest := bytes.dropWhile isWs
+        let (neg, rest) := match rest with
+          | 45 :: r => (true, r) | 43 :: r => (false, r) | r => (false, r)
+        let digits := rest.takeWhile fun c => 48 ≤ c && c ≤ 57
+        let ok := !bytes.isEmpty && !digits.isEmpty && digits.length == rest.length
+        let mag : Int := digits.foldl (fun acc c => acc * 10 + (c.toNat - 48 : Nat)) 0
+        let v := if neg then -mag else mag
+        let v := max (-(2 ^ 63 : Int)) (min v (2 ^ 63 - 1))
+        let res : IVal := if ok then .enum_ "Result" "Ok" [("value", .int v .int)]
+          else .enum_ "Result" "Err" [("error", .int 1 .int)]
+        return (env, .val res)
+      | "drop_string", [sv] => do
+        -- Frees the buffer.
+        match (← stringFields (← autoDeref cx env sv)).1 with
+        | .ptr blk off => freeBlock blk off
+        | _ => pure ()
+        return (env, .val .unit)
+      | "print_string", [arg] => do
+        -- `printf("%.*s", len, data)`: stops at the first NUL byte, as `%s` does.
+        let bytes ← strOf arg
+        emitBytes (ByteArray.mk (bytes.data.toList.takeWhile (· != 0)).toArray)
+        return (env, .val .unit)
+      | "print_int", [arg] => do
+        emitOut s!"{← intOf arg "print_int"}"
+        return (env, .val .unit)
+      | "print_char", [arg] => do
+        -- `putchar`: one byte, the code's low eight bits.
+        let n ← intOf arg "print_char"
+        emitBytes (ByteArray.mk #[(n % 256).toNat.toUInt8])
+        return (env, .val .unit)
+      | "print_bool", [arg] => do
+        match ← autoDeref cx env arg with
+        | .bool b => emitOut (if b then "true" else "false") *> pure (env, .val .unit)
+        | _ => fail "interp: print_bool: argument is not a bool"
+      | "clock_monotonic_ns", [] =>
+        fail "interp: clock_monotonic_ns reads the system clock, a value the interpreter cannot know; run the compiled binary"
+      | "print", _ | "println", _ =>
+        -- Desugared to the print_* intrinsics by Elab; reaching Core means
+        -- a desugar gap, so stay loud instead of guessing a format.
+        fail s!"interp: print/IO intrinsic '{fnName}' not yet supported"
+      -- Heap allocation: `alloc(v)` stores `v` in a new block of its type's size; `free(h)`
+      -- reads the value back (when the call has one) and releases the block.
+      | "alloc", [v] => do
+        let ty := match args with | [a] => a.ty | _ => .unit
+        let size ← liftE (sizeOfTy cx ty)
+        let blk ← allocBlock size "alloc"
+        writeMem cx blk 0 ty v
+        return (env, .val (.ptr blk 0))
+      | "free", [p] => do
+        match ← autoDeref cx env p with
+        | .ptr blk off =>
+          let resTy := e.ty
+          if resTy == .unit || resTy == .never then
+            freeBlock blk off
+            return (env, .val .unit)
+          else
+            let v ← readMem cx blk off resTy
+            freeBlock blk off
+            return (env, .val v)
+        | .int 0 _ =>
+          if e.ty == .unit then return (env, .val .unit)
+          else fail "interp: free of a null pointer whose value is read (the binary crashes)"
+        | _ => fail "interp: free of a value that is not a heap pointer"
+      | "sizeof", [] => do
+        match typeArgs with
+        | [t] => return (env, .val (.int (← liftE (sizeOfTy cx t)) .uint))
+        | _ => fail "interp: sizeof without one type argument"
+      | "alignof", [] => do
+        match typeArgs with
+        | [t] => return (env, .val (.int (← liftE (alignOfTy cx t)) .uint))
+        | _ => fail "interp: alignof without one type argument"
       -- Vec: a growable container, modeled as the `.array` value (elemTy is
       -- cosmetic here — elements are stored as IVals). Mutating ops write back
       -- through the `&mut v` ref (`.ref path`) via updatePath, exactly like
@@ -1007,70 +2080,57 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       | "vec_push", [vref, x] =>
         match vref with
         | .ref path => do
-          match ← liftE <| lookupPath env path with
+          match ← lookupPath cx env path with
           | .array elems ety _ =>
             let elems' := elems.push x
-            let env' ← liftE <| updatePath env path (.array elems' ety elems'.size)
+            let env' ← updatePath cx env path (.array elems' ety elems'.size)
             return (env', .val .unit)
           | _ => fail "interp: vec_push: receiver is not a vec"
         | _ => fail "interp: vec_push: first argument is not a mutable ref"
       | "vec_get", [v, i] => do
-        match ← liftE <| autoDeref env v, ← liftE <| autoDeref env i with
+        match ← autoDeref cx env v, ← autoDeref cx env i with
         | .array elems _ _, .int idx _ =>
           match elems[idx.toNat]? with
           | some e => return (env, .val e)
           | none => fail s!"interp: vec_get: index {idx} out of bounds (len {elems.size})"
         | _, _ => fail "interp: vec_get: bad arguments"
       | "vec_len", [v] => do
-        match ← liftE <| autoDeref env v with
+        match ← autoDeref cx env v with
         | .array elems _ _ => return (env, .val (.int (Int.ofNat elems.size) .int))
         | _ => fail "interp: vec_len: receiver is not a vec"
       | "vec_set", [vref, i, x] =>
-        match vref, (← liftE <| autoDeref env i) with
+        match vref, (← autoDeref cx env i) with
         | .ref path, .int idx _ => do
-          match ← liftE <| lookupPath env path with
+          match ← lookupPath cx env path with
           | .array elems ety sz =>
             if idx.toNat < elems.size then
-              let env' ← liftE <| updatePath env path (.array (elems.set! idx.toNat x) ety sz)
+              let env' ← updatePath cx env path (.array (elems.set! idx.toNat x) ety sz)
               return (env', .val .unit)
             else fail s!"interp: vec_set: index {idx} out of bounds (len {elems.size})"
           | _ => fail "interp: vec_set: receiver is not a vec"
         | _, _ => fail "interp: vec_set: bad arguments"
       | "vec_free", [_] => return (env, .val .unit)
-      | "drop_string", [_] =>
-        -- Linear-discipline no-op: ownership transfer + heap free in the
-        -- compiled binary; the interpreter has no heap, so the consume
-        -- itself is enough. Return unit.
-        return (env, .val .unit)
-      | "print_string", [arg] => do
-        let s ← (match arg with
-          | .string s => pure s
-          | .ref p => do
-            let v ← liftE <| lookupPath env p
-            match v with
-            | .string s => pure s
-            | _ => fail "interp: print_string: ref does not point to a string"
-          | _ => fail "interp: print_string: argument is not a string")
-        emitOut s *> pure (env, .val .unit)
-      | "print_int", [arg] => do
-        let v ← liftE <| autoDeref env arg
-        match v with
-        | .int n _ => emitOut s!"{n}" *> pure (env, .val .unit)
-        | _ => fail "interp: print_int: argument is not an integer"
-      | "print_char", [arg] => do
-        let v ← liftE <| autoDeref env arg
-        match v with
-        | .int n _ => emitOut (String.singleton (Char.ofNat n.toNat)) *> pure (env, .val .unit)
-        | _ => fail "interp: print_char: argument is not a char code"
-      | "print_bool", [arg] => do
-        let v ← liftE <| autoDeref env arg
-        match v with
-        | .bool b => emitOut (if b then "true" else "false") *> pure (env, .val .unit)
-        | _ => fail "interp: print_bool: argument is not a bool"
-      | "print", _ | "println", _ =>
-        -- Desugared to the print_* intrinsics by Elab; reaching Core means
-        -- a desugar gap, so stay loud instead of guessing a format.
-        fail s!"interp: print/IO intrinsic '{fnName}' not yet supported"
+      | "vec_pop", [vref] =>
+        match vref with
+        | .ref path => do
+          match ← lookupPath cx env path with
+          | .array elems ety _ =>
+            match elems.back? with
+            | some x =>
+              let elems' := elems.pop
+              let env' ← updatePath cx env path (.array elems' ety elems'.size)
+              return (env', .val (.enum_ "Option" "Some" [("value", x)]))
+            | none => return (env, .val (.enum_ "Option" "None" []))
+          | _ => fail "interp: vec_pop: receiver is not a vec"
+        | _ => fail "interp: vec_pop: first argument is not a mutable ref"
+      -- A foreign function the program declares: the explicit table, or a refusal.
+      | _, _ =>
+      match resolveExtern cx fnName with
+      | some ext => do
+        let (env', v) ← evalExtern cx env ext argVals
+        return (env', .val v)
+      | none =>
+      match fnName, argVals with
       | _, [arg] =>
         -- H18 drop-glue: a symbolic `T$destroy(&elem)` (Elab's trait-method
         -- call on a `Destroy`-bounded type param, `traitParamCallee`) reaches
@@ -1092,12 +2152,20 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
 
   | .fieldAccess obj field _ => do
     let (env, v) ← evalExprVal cx env obj
-    let target ← liftE <| autoDeref env v
+    let target ← match v, pointeeOf (normTy cx obj.ty) with
+      -- `h.f` with `h: Heap<S>` (one hop): the field of the struct in the heap.
+      | .ptr blk off, some pt => readMem cx blk off pt
+      | .int 0 _, some _ => fail "interp: field access through a null pointer (the binary crashes)"
+      | _, _ => do
+        -- Through a reference to a heap pointer (`h.f`, `h: &mut Heap<S>`, bug 126's shape).
+        match ← autoDeref cx env v, pointeeOf (normTy cx obj.ty) |>.bind pointeeOf with
+        | .ptr blk off, some pt => readMem cx blk off pt
+        | t, _ => pure t
     match target with
     | .struct_ _ fields =>
       match fields.find? (fun (n, _) => n == field) with
       | some (_, fv) => return (env, .val fv)
-      | none => fail s!"interp: field '{field}' not found in struct"
+      | none => fail s!"interp: field '{field}' holds no value (reading a union through a field other than the one last written reinterprets its memory, which is not modelled)"
     | _ => fail "interp: field access on non-struct value"
 
   | .enumLit enumName variant _ fields _ => do
@@ -1110,7 +2178,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     -- reference scrutinee once before matching (the E0715 fix); the interpreter
     -- must agree, or a var/guard arm binds the ref instead of the value (e.g.
     -- `match p { n if n > 5 => .. }` on `p : &Int` would compare a ref to an int).
-    let sv ← liftE <| autoDeref env sv
+    let sv ← autoDeref cx env sv
     evalMatch cx env sv arms
 
   | .arrayLit elems ty => do
@@ -1122,7 +2190,9 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
 
   | .arrayIndex arr idx _ => do
     let (env, av) ← evalExprVal cx env arr
-    let arrayVal ← liftE <| autoDeref env av
+    let arrayVal ← match av, pointeeOf (normTy cx arr.ty) with
+      | .ptr blk off, some pt => readMem cx blk off pt
+      | _, _ => autoDeref cx env av
     match arrayVal with
     | .array elems _ _ => do
       let (env, iv) ← evalExprVal cx env idx
@@ -1139,6 +2209,43 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
 
   | .cast inner targetTy => do
     let (env, v) ← evalExprVal cx env inner
+    let tgt := normTy cx targetTy
+    match v with
+    -- A heap pointer stays a pointer at any pointer type (typed memory decides what a read
+    -- through it may see); as a reference it names the heap cell. As an integer it is a
+    -- symbolic address (`IVal.addr`): the model has no addresses.
+    | .ptr blk off =>
+      match tgt with
+      | .ptrMut _ | .ptrConst _ | .heap _ | .heapArray _ => return (env, .val v)
+      | .ref pt | .refMut pt =>
+        if off < 0 then fail "interp: a reference before the start of an allocation"
+        else return (env, .val (.ref { base := "", frame := 0, steps := [], isMut := true, heap := some (blk, off.toNat, pt) }))
+      | .int | .uint => return (env, .val (.addr blk off tgt))
+      | _ => fail s!"interp: casting a pointer to '{tyToStr tgt}' is not modelled (the interpreter has no addresses)"
+    -- A heap-rooted reference cast to a raw pointer is the pointer itself.
+    | .ref { heap := some (blk, off, _), steps := [], .. } =>
+      match tgt with
+      | .ptrMut _ | .ptrConst _ | .heap _ => return (env, .val (.ptr blk off))
+      | .int | .uint => return (env, .val (.addr blk off tgt))
+      | _ => return (env, .val v)
+    | .addr blk off _ =>
+      match tgt with
+      | .ptrMut _ | .ptrConst _ | .heap _ => return (env, .val (.ptr blk off))
+      | .int | .uint => return (env, .val (.addr blk off tgt))
+      | _ => fail s!"interp: casting a pointer's address to '{tyToStr tgt}' is not modelled"
+    | _ =>
+    -- An array value cast to a pointer is the address of its storage (bug 110): element 0.
+    if (match inner.ty, tgt with
+        | .array _ _, .ptrMut _ | .array _ _, .ptrConst _ => true | _, _ => false) then
+      let (env, p) ← evalBorrowTarget cx env inner true
+      return (env, .val (.ref { p with steps := p.steps ++ [.index 0] }))
+    -- An integer becomes a pointer only as null.
+    match v, tgt with
+    | .int n _, .ptrMut _ | .int n _, .ptrConst _ =>
+      if n == 0 then return (env, .val (.int 0 tgt))
+      else fail "interp: casting a non-zero integer to a pointer is not modelled (the interpreter has no addresses)"
+    | .array .., _ => fail s!"interp: casting an array value to '{tyToStr tgt}' is not modelled"
+    | _, _ =>
     let result ← liftE <| evalCast v targetTy (some inner.ty)
     return (env, .val result)
 
@@ -1163,12 +2270,14 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
   | .borrowMut inner _ => do
     let (env, p) ← evalBorrowTarget cx env inner true
     return (env, .val (.ref p))
-  | .deref inner _ => do
+  | .deref inner ty => do
     let (env, v) ← evalExprVal cx env inner
     match v with
     | .ref p => do
-      let target ← liftE <| lookupPath env p
+      let target ← lookupPath cx env p
       return (env, .val target)
+    | .ptr blk off => return (env, .val (← readMem cx blk off ty))
+    | .int 0 _ => fail "interp: dereference of a null pointer (the binary crashes)"
     | _ => fail "interp: deref of non-ref value"
 
   | .fnRef name _ =>
@@ -1187,7 +2296,7 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
     value. -/
 partial def destroyValue (cx : Ctx) (env : Env) (arg : IVal) :
     IM Env := do
-  let target ← liftE <| autoDeref env arg
+  let target ← autoDeref cx env arg
   match target with
   | .array elems _ _ =>
     let mut env := env
@@ -1216,7 +2325,7 @@ partial def evalTraitParamCall (cx : Ctx) (env : Env)
     (fnName : String) (argVals : List IVal) : IM (Env × Flow) := do
   match splitTraitParamCallee fnName, argVals with
   | some (_, m), recv :: _ =>
-    let target ← liftE <| autoDeref env recv
+    let target ← autoDeref cx env recv
     let tn := match target with
       | .struct_ n _ | .enum_ n _ _ => n
       | _ => ""
@@ -1437,13 +2546,19 @@ partial def evalStmtCore (cx : Ctx) (env : Env) (s : CStmt) : IM (Env × Flow) :
 
   | .fieldAssign obj field value => do
     let (env, newVal) ← evalExprVal cx env value
+    -- A place under a dereference (`(*p).f = v`) or rooted at a heap pointer (`h.f = v`,
+    -- one hop) is the place the borrow machinery resolves.
+    if placeNeedsPath obj then
+      let (env, p) ← evalBorrowTarget cx env (.fieldAccess obj field value.ty) true
+      let env' ← updatePath cx env p newVal
+      return (env', .val .unit)
     -- Resolve the (possibly nested) place `obj`, append the final field, and
     -- write in place — handles `o.i.v`, `a[i].x`, etc., not just `o.f`.
     let (env, root, steps) ← resolvePlaceSteps cx env obj
     let finalSteps := steps ++ [.field field]
     match envGetLocal env root with
     | some (.ref p) =>
-      let env' ← liftE <| updatePath env { p with steps := p.steps ++ finalSteps } newVal
+      let env' ← updatePath cx env { p with steps := p.steps ++ finalSteps } newVal
       return (env', .val .unit)
     | some baseVal =>
       let newBase ← liftE <| updateAt baseVal finalSteps newVal
@@ -1452,6 +2567,10 @@ partial def evalStmtCore (cx : Ctx) (env : Env) (s : CStmt) : IM (Env × Flow) :
 
   | .arrayIndexAssign arr idx value => do
     let (env, newVal) ← evalExprVal cx env value
+    if placeNeedsPath arr then
+      let (env, p) ← evalBorrowTarget cx env (.arrayIndex arr idx value.ty) true
+      let env' ← updatePath cx env p newVal
+      return (env', .val .unit)
     let (env, root, steps) ← resolvePlaceSteps cx env arr
     let (env, idxVal) ← evalExprVal cx env idx
     match idxVal with
@@ -1461,7 +2580,7 @@ partial def evalStmtCore (cx : Ctx) (env : Env) (s : CStmt) : IM (Env × Flow) :
         let finalSteps := steps ++ [.index i.toNat]
         match envGetLocal env root with
         | some (.ref p) =>
-          let env' ← liftE <| updatePath env { p with steps := p.steps ++ finalSteps } newVal
+          let env' ← updatePath cx env { p with steps := p.steps ++ finalSteps } newVal
           return (env', .val .unit)
         | some baseVal =>
           let newBase ← liftE <| updateAt baseVal finalSteps newVal
@@ -1476,8 +2595,13 @@ partial def evalStmtCore (cx : Ctx) (env : Env) (s : CStmt) : IM (Env × Flow) :
     | .ref p =>
       if !p.isMut then fail "interp: deref-assign through immutable ref"
       else do
-        let env' ← liftE <| updatePath env p newVal
+        let env' ← updatePath cx env p newVal
         return (env', .val .unit)
+    | .ptr blk off =>
+      let ty := (pointeeOf (normTy cx target.ty)).getD value.ty
+      writeMem cx blk off ty newVal
+      return (env, .val .unit)
+    | .int 0 _ => fail "interp: store through a null pointer (the binary crashes)"
     | _ => fail "interp: deref-assign on non-ref value"
 
   | .break_ value label => do
@@ -1555,7 +2679,23 @@ partial def evalStmts (cx : Ctx) (env : Env) (stmts : List CStmt) : IM (Env × F
 partial def evalWhile (cx : Ctx) (env : Env) (cond : CExpr) (body : List CStmt) (step : List CStmt) (fuel : Nat) (loopLabel : Option String) : IM (Env × Flow) := do
   if fuel == 0 then fail s!"{loopBudgetExhausted} (iteration limit reached)"
   else
-    let (env, cv) ← evalExprVal cx env cond
+    -- A `break`/`continue` escaping from the CONDITION belongs to this loop (Lower installs the
+    -- loop before lowering its condition), not to the statement around it (Codex review): it
+    -- would otherwise end an enclosing loop.
+    let condR : Sum (Env × IVal) (Env × Flow) ←
+      tryCatch (do let r ← evalExprVal cx env cond; pure (Sum.inl r)) fun
+        | .escape env' f => pure (Sum.inr (env', f))
+        | e => throw e
+    match condR with
+    | .inr (env', .brk bv l) =>
+      if l == none || l == loopLabel then return (env', .val .unit) else return (env', .brk bv l)
+    | .inr (env', .cont l) =>
+      if l == none || l == loopLabel then
+        let (stepEnv, _) ← evalStmts cx env' step
+        evalWhile cx stepEnv cond body step (fuel - 1) loopLabel
+      else return (env', .cont l)
+    | .inr (env', f) => return (env', f)
+    | .inl (env, cv) =>
     match cv with
     | .bool false => return (env, .val .unit)
     | .bool true =>
@@ -1642,50 +2782,73 @@ def mkCtx (modules : List CModule) (loopFuel : Nat := defaultLoopFuel) : Ctx :=
       | [j] => if j == i then some (if ti.traitName == destroyTraitName && ms.name == destroyMethodName
                  then destroyImplKey ti.typeName else traitImplKey ti.typeName ms.name, i) else none
       | _ => none
-  { fns := fns0 ++ implMethodFns modules fns0, enums := collectEnums modules,
+  -- Layout sees every module's types, first definition of a name winning, behind the
+  -- builtin `String` struct (Lower's `syntheticStringDef`, which also comes first).
+  let stringDef : CStructDef := { name := "String", fields := [("ptr", .ptrMut .u8), ("len", .uint), ("cap", .uint)] }
+  let firstByName {α : Type} (name : α → String) (xs : List α) : List α :=
+    xs.foldl (fun acc x => if acc.any (name · == name x) then acc else acc ++ [x]) []
+  let structs := firstByName (·.name) (stringDef :: collectStructs modules)
+  let enums := collectEnums modules
+  { fns := fns0 ++ implMethodFns modules fns0, enums,
+    layout := { structDefs := structs, enumDefs := firstByName (·.name) enums,
+                newtypes := firstByName (·.name) (collectNewtypes modules) },
+    externs := (collectExterns modules).eraseDups,
     consts := collectConsts modules, loopFuel, defs,
     scopes := (tops.map fun (m, _) => collectLinkerAliases [m]).toArray,
     topNames := (modules.map (·.name)).toArray,
     -- A key two impls produce is ambiguous (`implMethodFns` marks it); it gets no scope.
     keyScopes := keyScopes.filter fun (k, _) => (keyScopes.filter (·.1 == k)).length == 1 }
 
-/-- Run one computation from an empty environment and state. -/
-def runIM {α : Type} (m : IM α) : Except String α × String :=
-  let (r, st) := (m.run).run {}
-  match r with
-  | .ok v => (.ok v, st.out)
-  | .error (.fail msg) => (.error msg, st.out)
-  | .error (.escape _ _) => (.error "interp: control flow escaped every enclosing statement", st.out)
-
-/-- Evaluate one Core expression (a report harness's sampled call) to its value. -/
-def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
-  (runIM (do let (_, v) ← evalExprVal cx [] e; pure v)).1
+/-- How a run ended. -/
+inductive Outcome where
+  /-- `main` returned: `some n` for a value, `none` for Unit. -/
+  | returned (v : Option Int)
+  /-- The program called `exit(status)`. -/
+  | exited (status : Int)
+  /-- A trap, or a construct the interpreter does not model; the message says which. -/
+  | failed (msg : String)
 
 /-- The outcome of running a program: everything it printed, and how it ended. -/
 structure RunResult where
-  /-- Bytes printed before the program ended, INCLUDING when it then trapped (D13). -/
-  out : String
-  /-- `ok (some n)`: `main` returned `n`; `ok none`: a Unit `main` finished; `error`: a trap
-      or an unmodelled construct, with the reason. -/
-  result : Except String (Option Int)
+  /-- Bytes printed to stdout before the program ended, INCLUDING when it then trapped (D13). -/
+  out : ByteArray
+  /-- Bytes written to stderr. -/
+  err : ByteArray
+  outcome : Outcome
 
-/-- Interpret a program from its validated Core modules: run `main`. -/
-def interpret (modules : List CModule) : RunResult :=
-  let cx := mkCtx modules
+/-- Run one computation from an empty environment, with `stdin` as standard input. -/
+def runIM {α : Type} (m : IM α) (stdin : ByteArray := .empty) : Except IErr α × IState :=
+  (m.run).run { stdin }
+
+/-- Evaluate one Core expression (a report harness's sampled call) to its value. -/
+def evalClosed (cx : Ctx) (e : CExpr) : Except String IVal :=
+  match (runIM (do let (_, v) ← evalExprVal cx [] e; pure v)).1 with
+  | .ok v => .ok v
+  | .error (.fail msg) => .error msg
+  | .error (.exit c) => .error s!"interp: the program called exit({c})"
+  | .error (.escape _ _) => .error "interp: control flow escaped every enclosing statement"
+
+/-- Interpret a program from its validated Core modules: run `main` with `args` (after
+    `argv[0]`) and `stdin`. -/
+def interpret (modules : List CModule) (args : List String := []) (stdin : ByteArray := .empty)
+    (argv0 : String := "a.out") : RunResult :=
+  let cx := { mkCtx modules with args, argv0 }
   match cx.defs.find? (fun (f, _) => f.name == "main") with
-  | none => { out := "", result := .error "interp: no 'main' function found" }
+  | none => { out := .empty, err := .empty, outcome := .failed "interp: no 'main' function found" }
   | some (mainFn, mainScope) =>
-    let (r, out) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body)
+    let (r, st) := runIM (evalStmts { cx with scope := some mainScope } [] mainFn.body) stdin
     -- `some n`: `main` returned a value (printed on its own line, matching the
     -- compiled binary). `none`: a Unit `main` fell off the end — the compiled
     -- binary prints NO value line, so neither does the interpreter.
-    let result : Except String (Option Int) := match r with
-      | .error msg => .error msg
-      | .ok (_, .ret (.int n _)) => .ok (some n)
-      | .ok (_, .ret _) => .ok none
-      | .ok (_, .val _) => .ok none
-      | .ok _ => .error "interp: main did not return normally"
-    { out, result }
+    let outcome : Outcome := match r with
+      | .error (.fail msg) => .failed msg
+      | .error (.exit c) => .exited c
+      | .error (.escape _ _) => .failed "interp: control flow escaped every enclosing statement"
+      | .ok (_, .ret (.int n _)) => .returned (some n)
+      | .ok (_, .ret _) => .returned none
+      | .ok (_, .val _) => .returned none
+      | .ok _ => .failed "interp: main did not return normally"
+    { out := st.out, err := st.err, outcome }
 
 -- ============================================================
 -- Display
@@ -1706,7 +2869,6 @@ partial def IVal.toString : IVal → String
     let es := ", ".intercalate (elems.toList.map IVal.toString)
     "[" ++ es ++ "]"
   | .unit => "()"
-  | .string s => "\"" ++ s ++ "\""
   | .ref p =>
     let stepStr (s : RefStep) : String := match s with
       | .field n => "." ++ n
@@ -1715,6 +2877,8 @@ partial def IVal.toString : IVal → String
     pfx ++ p.base ++ String.join (p.steps.map stepStr)
   | .fnPtr name _ => "fn " ++ name
   | .float f _ => Float.toString f
+  | .ptr blk off => s!"<heap block {blk} + {off}>"
+  | .addr blk off _ => s!"<address of heap block {blk} + {off}>"
 
 instance : ToString IVal := ⟨IVal.toString⟩
 
