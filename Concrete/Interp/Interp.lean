@@ -1523,11 +1523,24 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     | _ => fail s!"interp: {name}: argument is not a FILE pointer"
   let setHandle (blk : Nat) (h : FileHandle) : IM Unit :=
     modify fun st => { st with handles := st.handles.map fun (b, x) => if b == blk then (b, h) else (b, x) }
+  -- An integer argument, as the C parameter receives it: the C parameter's width (4 bytes for
+  -- an `int`, 8 for `size_t`, `long`, `off_t`) must not exceed the declared argument's, whose
+  -- missing high bits the C function would read unspecified; a wider declaration is truncated
+  -- by the caller below. Anything but an integer (a pointer declared where C takes an
+  -- integer) is refused.
   let int (v : IVal) (what : String) : IM Int := do
-    match ← autoDeref cx env v with
-    | .int n _ => pure n
-    | .bool b => pure (if b then 1 else 0)
-    | _ => fail s!"interp: {name}: {what} is not an integer"
+    let cWidth : Nat :=
+      if ["the descriptor", "the origin", "the status", "the index", "the character", "the byte"].contains what
+        || (name == "abs" && what == "the argument") then 4 else 8
+    match v with
+    | .int n ty =>
+      match sizeOfTy cx ty with
+      | .ok w =>
+        if w < cWidth then
+          fail s!"interp: {name}: {what} declared as the {w * 8}-bit '{tyToStr ty}' where the C parameter is {cWidth * 8}-bit is not modelled"
+        else pure n
+      | .error e => fail e
+    | _ => fail s!"interp: {name}: {what} is not an integer (as the C parameter takes it)"
   let float (v : IVal) : IM Float := do
     match v with
     -- The libm functions take `double`; an argument declared at another type is passed in a
