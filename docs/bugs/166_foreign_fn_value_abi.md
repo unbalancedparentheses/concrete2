@@ -71,9 +71,10 @@ C symbol contains, keeps the index and the symbol apart (Codex review). No langu
 means what it did, and a foreign function value now does what the direct call does.
 
 The adapter is an emission artifact: it does not appear in Core, `--emit-ssa` or any report, and
-its address differs from the C symbol's (and from another module's adapter for the same
-function). That is observable only by comparing function values, which bug 140's comparison rule
-(on `wip/train1`, E0229) refuses, or by handing the value to C as a raw pointer.
+its address differs from the C symbol's. That is observable only by comparing function values,
+which bug 140's comparison rule (on `wip/train1`, E0229) refuses; until it lands, a comparison of
+a foreign function value with another taking of the same function still compares equal (both are
+the module's one adapter), and one with the C symbol obtained through a raw pointer does not.
 
 Regression fixture: `tests/programs/regress_166_foreign_fn_value_abi.con` with its C side
 `regress_166_foreign_fn_value_abi.c`: an 8-byte struct argument, a 16-byte struct argument (two
