@@ -1361,6 +1361,30 @@ partial def updatePath (cx : Ctx) (env : Env) (p : RefPath) (newVal : IVal) : IM
     let newBase ← liftE (updateAt baseVal p.steps newVal)
     return envSetSkipping env skip p.base newBase
 
+/-- The byte address `(block, offset)` a heap-rooted reference names: the root's offset plus
+    the layout offset of each field or element step; `none` for a binding-rooted reference or
+    a step whose layout is not known. -/
+def heapRefAddr (cx : Ctx) (p : RefPath) : Option (Nat × Nat) := do
+  let (blk, off, ty) ← p.heap
+  let mut ty := normTy cx ty
+  let mut o := off
+  for st in p.steps do
+    match st, ty with
+    | .field f, t@(.named n) | .field f, t@(.generic n _ _) =>
+      let typeArgs := match t with | .generic _ a _ => a | _ => []
+      let sd ← Layout.lookupStruct cx.layout n
+      let sd := Layout.substStructTypeArgs sd typeArgs
+      let (_, fty) ← sd.fields.find? (·.1 == f)
+      if !layoutKnown cx t then none
+      o := o + Layout.fieldOffset cx.layout n f typeArgs
+      ty := normTy cx fty
+    | .index i, .array et _ =>
+      let es ← (sizeOfTy cx et).toOption
+      o := o + i * es
+      ty := normTy cx et
+    | _, _ => none
+  return (blk, o)
+
 /-- If `v` is a ref, follow it; otherwise return `v` unchanged.
     Used for auto-deref on field-access / array-index receivers. -/
 def autoDeref (cx : Ctx) (env : Env) (v : IVal) : IM IVal :=
@@ -1571,7 +1595,10 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     return (env, .int c .i32)
   | "write", [fd, buf, n] => do
     let fd ← int fd "the descriptor"
-    let n := (← int n "the length").toNat
+    let nI := (← int n "the length") % 2 ^ 64
+    -- A count past SSIZE_MAX (Darwin: INT_MAX) is EINVAL.
+    if nI > (if System.Platform.isOSX then 2 ^ 31 - 1 else 2 ^ 63 - 1) then return (env, .int (-1) .int)
+    let n := nI.toNat
     let bytes ← ptrReadBytes cx env buf n name
     if fd == 1 then emitDirect bytes
     else if fd == 2 then emitErr bytes
@@ -1581,7 +1608,9 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let fd ← int fd "the descriptor"
     if fd != 0 then fail s!"interp: read from descriptor {fd} is not modelled (only stdin)"
     if (← get).stdinTty then fail "interp: reading standard input from a terminal is not modelled; redirect it from a file"
-    let n := (← int n "the length").toNat
+    let nI := (← int n "the length") % 2 ^ 64
+    if nI > (if System.Platform.isOSX then 2 ^ 31 - 1 else 2 ^ 63 - 1) then return (env, .int (-1) .int)
+    let n := nI.toNat
     let st ← get
     let avail := st.stdin.size - st.stdinPos
     let k := min n avail
@@ -1980,8 +2009,13 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
           (view.findIdx? (·.1 == p.base)).map fun k => .inr (view.length - 1 - k)
       match op, lv, rv with
       | .eq, .ref a, .ref b | .neq, .ref a, .ref b =>
-        let same := refId a == refId b && (refId a).isSome && a.steps.length == b.steps.length
-          && (a.steps.zip b.steps).all (fun (x, y) => refStepEq x y)
+        -- Heap-rooted references compare by byte address (the root's offset plus the layout
+        -- offsets of their steps), so `&(*p).b` and `&*((p as *mut Int) + 1)` are equal.
+        let same ← match heapRefAddr cx a, heapRefAddr cx b with
+          | some x, some y => pure (x == y)
+          | _, _ =>
+            pure (refId a == refId b && (refId a).isSome && a.steps.length == b.steps.length
+              && (a.steps.zip b.steps).all (fun (x, y) => refStepEq x y))
         return (env, .val (.bool (if op == .eq then same else !same)))
       | _, _, _ =>
       match op, pointeeOf (normTy cx lhs.ty), lv, rv with
