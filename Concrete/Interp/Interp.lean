@@ -1169,7 +1169,9 @@ def evalBinOp (op : BinOp) (lhs rhs : IVal) : Except String IVal :=
   | .add, .addr b o ty, .int k _ | .add, .int k _, .addr b o ty => .ok (.addr b (o + k) ty)
   | .sub, .addr b o ty, .int k _ => .ok (.addr b (o - k) ty)
   | .sub, .addr a o ty, .addr b q _ =>
-    if a == b then .ok (.int (o - q) ty)
+    -- The difference of two addresses in one allocation is the difference of their offsets,
+    -- under the integer type's checked subtraction (`a - b` with `a < b` traps at `u64`).
+    if a == b then arithOut (IntArith.evalIntBinOp .sub o ty q)
     else .error "interp: the distance between addresses in different allocations is not modelled"
   | .eq, .addr a o _, .addr b q _ => .ok (.bool (a == b && o == q))
   | .neq, .addr a o _, .addr b q _ => .ok (.bool (!(a == b && o == q)))
