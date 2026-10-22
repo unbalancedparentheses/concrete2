@@ -1590,12 +1590,16 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let some path := String.fromUTF8? pathB | fail "interp: fopen of a path that is not UTF-8 is not modelled"
     let some mode := String.fromUTF8? modeB | fail "interp: fopen mode is not UTF-8"
     let mode := mode.replace "b" ""
+    -- The empty name names no file (ENOENT), in every mode.
+    if path.isEmpty then return (env, .int 0 (.ptrConst .u8))
     if hostSpecial path then
       fail s!"interp: fopen of '{path}', which is not a regular file (a device, FIFO or socket), is not modelled"
     -- One spelling per file (`x` and `./x` are one file to the binary).
     let rawPath := path
     let path := hostCanonical path
-    if mode != "r" && (hostReadFile rawPath matches .bytes _) && hostMultiLinked rawPath then
+    -- Checked on the file itself (a symbolic link is followed): writing a file with several
+    -- hard links changes it under names the interpreter cannot see.
+    if mode != "r" && (hostReadFile rawPath matches .bytes _) && hostMultiLinked path then
       fail s!"interp: writing '{rawPath}', a file with several hard links, is not modelled"
     -- A name longer than NAME_MAX (255 bytes) or a path longer than PATH_MAX fails with
     -- ENAMETOOLONG, in every mode.
@@ -1678,7 +1682,8 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let base : Int := match origin with
       | 0 => 0 | 1 => h.pos | _ => h.data.size
     let np := base + off
-    if np < 0 then return (env, .int (-1) .i32)
+    -- A position before the start, or past what an `off_t` holds, is an error (-1).
+    if np < 0 || np > 2 ^ 63 - 1 then return (env, .int (-1) .i32)
     setHandle blk { h with pos := np.toNat }
     return (env, .int 0 .i32)
   | "ftell", [f] => do
