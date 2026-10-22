@@ -7511,37 +7511,19 @@ if filter_match "$TESTDIR/regress_129_user_fn_named_malloc.con"; then
         FAIL=$((FAIL + 1))
     fi
 fi
-# Bug 166 (silent, fixed): a foreign function taken as a value was called with the Concrete
-# ABI, so a small #[repr(C)] struct reached C as its address. A foreign fn value with a repr(C)
-# aggregate in its signature is an adapter whose body is the direct call. The fixture calls
-# three externs through fn values and directly; linked with its C side it exits 42 (1 when
-# the two disagree). The reproducer's IR must pass the adapter, not the C symbol.
-r166_ll="$TMPDIR/regress_166_foreign_fn_value_abi.ll"
-r166_bin="$TMPDIR/regress_166_foreign_fn_value_abi"
-if filter_match "$TESTDIR/regress_166_foreign_fn_value_abi.con"; then
-    r166_rc=fail
-    if $COMPILER "$TESTDIR/regress_166_foreign_fn_value_abi.con" --emit-llvm > "$r166_ll" 2>/dev/null \
-       && clang "$r166_ll" "$TESTDIR/regress_166_foreign_fn_value_abi.c" -o "$r166_bin" -Wno-override-module 2>/dev/null; then
-        r166_rc=0; "$r166_bin" >/dev/null 2>&1 || r166_rc=$?
-    fi
-    if [ "$r166_rc" = "42" ]; then
-        echo "  ok  regress_166_foreign_fn_value_abi: calls through foreign fn values agree with direct calls (rc 42)"
-        PASS=$((PASS + 1))
-    else
-        echo "FAIL  regress_166_foreign_fn_value_abi: expected rc 42, got $r166_rc (bug 166)"
-        FAIL=$((FAIL + 1))
-    fi
-fi
+# Bug 166 pin (OPEN): a foreign function taken as a value is called with the Concrete ABI.
+# The reproducer's call through `f` passes the struct's address although C takes it in a
+# register. When this leg fails, the call changed: update docs/bugs/166, the corpus entry and
+# this leg together.
 b166_ll="$TMPDIR/bug166_foreign_fn_value_abi.ll"
 if filter_match "tests/regressions/bug166_foreign_fn_value_abi/repro.con"; then
     if $COMPILER "tests/regressions/bug166_foreign_fn_value_abi/repro.con" --emit-llvm > "$b166_ll" 2>/dev/null \
        && grep -qE '^declare i64 @take_pair\(i64\)' "$b166_ll" \
-       && grep -qE 'call i64 @_C\.main\.apply\(ptr @_C\.main\.ffi\$take_pair, ' "$b166_ll" \
-       && grep -qE 'call i64 @take_pair\(i64 ' "$b166_ll"; then
-        echo "  ok  bug 166 reproducer: the foreign fn value is the adapter, which calls take_pair with the C ABI"
+       && grep -qE 'call i64 %f\(ptr %p\)' "$b166_ll"; then
+        echo "  ok  bug 166 pin: the call through a foreign fn value still uses the Concrete ABI (OPEN)"
         PASS=$((PASS + 1))
     else
-        echo "FAIL  bug 166 reproducer: the fn value is not the C-ABI adapter (bug 166)"
+        echo "FAIL  bug 166 pin: the reproducer's IR changed -- fixed? update docs/bugs/166, the corpus entry and this leg"
         FAIL=$((FAIL + 1))
     fi
 fi

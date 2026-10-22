@@ -10,17 +10,6 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
-### A Foreign Function Value Calls C With The C ABI (bug 166, 2026-10-23)
-
-An `extern fn` taken as a value and called through it now passes a small `#[repr(C)]` struct
-the way C declares it. The C calling convention was decided only at a direct call, which
-flattens such a struct into integer registers; a function type carries no convention, so a call
-through a value passed the struct's address, and C read that address as the field. Emission now
-replaces each foreign function value whose signature has a `#[repr(C)]` aggregate with an
-adapter `ffi$<C symbol>`, a Concrete-ABI function whose body is the direct call, so the
-convention is still decided at that one place. Other foreign function values have one ABI and
-are unchanged. Pinned by `regress_166_foreign_fn_value_abi.con` and its C side (rc 42, 1 before).
-
 ### Compiler-Generated Runtime Calls Carry The Helper's Identity (bug 165, 2026-10-23)
 
 `println`, `print` and the variadic `append` reach the runtime helpers whatever the module
