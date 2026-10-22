@@ -1572,7 +1572,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     | .ptr blk off => freeBlock blk off; return (env, .unit)
     | _ => fail "interp: free of a value that is not a heap pointer"
   | "memcpy", [d, s, n] | "memmove", [d, s, n] => do
-    let n := (← int n "the length").toNat
+    let n := ((← int n "the length") % (2 : Int) ^ 64).toNat
     match ← pure d, ← pure s with
     | .ptr db doff, .ptr sb soff => copyMem cx db doff sb soff n; return (env, d)
     | dv, sv =>
@@ -1581,14 +1581,14 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       let env ← ptrWriteBytes cx env dv bytes name
       return (env, d)
   | "memset", [p, c, n] => do
-    let n := (← int n "the length").toNat
+    let n := ((← int n "the length") % (2 : Int) ^ 64).toNat
     let c := ((← int c "the byte") % 256).toNat.toUInt8
     let env ← ptrWriteBytes cx env p (ByteArray.mk (Array.replicate n c)) name
     return (env, p)
   | "memcmp", [a, b, n] => do
     -- The sign is what C specifies; the magnitude is the difference of the first differing
     -- bytes, which is what the C libraries of the supported platforms return.
-    let n := (← int n "the length").toNat
+    let n := ((← int n "the length") % (2 : Int) ^ 64).toNat
     let ab ← ptrReadBytes cx env a n name
     let bb ← ptrReadBytes cx env b n name
     let diff := (List.range n).findSome? fun k =>
@@ -1716,8 +1716,8 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
   | "fread", [buf, sz, cnt, f] | "fwrite", [buf, sz, cnt, f] => do
     let blk ← fileBlock f
     let some h := (← get).handles.lookup blk | fail s!"interp: {name} on a closed or unknown FILE"
-    let size := (← int sz "the size").toNat
-    let count := (← int cnt "the count").toNat
+    let size := ((← int sz "the size") % (2 : Int) ^ 64).toNat
+    let count := ((← int cnt "the count") % (2 : Int) ^ 64).toNat
     let n := size * count
     -- An element size times count past 2^64 overflows `size_t`; what the C library does then
     -- differs between libraries, so it is refused.
@@ -1889,7 +1889,8 @@ partial def evalProjectionBase (cx : Ctx) (env : Env) (obj : CExpr)
       | some pt =>
         match ← lookupPath cx env p with
         | .ptr blk off =>
-          if off < 0 then fail "interp: a projection through a pointer before the start of its allocation"
+          let blkSize := (((← get).heap[blk]?).map (·.size)).getD 0
+          if off < 0 || off > blkSize then fail "interp: a projection through a pointer outside its allocation is not modelled"
           else return (env, { base := "", frame := 0, steps := [], isMut := p.isMut || isMut, heap := some (blk, off.toNat, pt) })
         | .int 0 _ => fail "interp: projection through a null pointer (the binary crashes)"
         | _ => return (env, { p with isMut := p.isMut || isMut })
@@ -1902,7 +1903,8 @@ partial def evalProjectionBase (cx : Ctx) (env : Env) (obj : CExpr)
     let (env, v) ← evalExprVal cx env obj
     match v, pointeeOf (normTy cx obj.ty) with
     | .ptr blk off, some pt =>
-      if off < 0 then fail "interp: a projection through a pointer before the start of its allocation"
+      let blkSize := (((← get).heap[blk]?).map (·.size)).getD 0
+      if off < 0 || off > blkSize then fail "interp: a projection through a pointer outside its allocation is not modelled"
       else return (env, { base := "", frame := 0, steps := [], isMut, heap := some (blk, off.toNat, pt) })
     | .ref p, _ => return (env, { p with isMut := p.isMut || isMut })
     | .int 0 _, _ => fail "interp: projection through a null pointer (the binary crashes)"
@@ -1937,7 +1939,8 @@ partial def evalBorrowTarget (cx : Ctx) (env : Env) (e : CExpr) (isMut : Bool) :
     | .ref p, _ => return (env, { p with isMut := p.isMut || isMut })
     -- `&*p` / `&mut *p` through a heap pointer: the heap cell is the place.
     | .ptr blk off, some pt =>
-      if off < 0 then fail "interp: a borrow through a pointer before the start of its allocation"
+      let blkSize := (((← get).heap[blk]?).map (·.size)).getD 0
+      if off < 0 || off > blkSize then fail "interp: a borrow through a pointer outside its allocation is not modelled"
       else return (env, { base := "", frame := 0, steps := [], isMut, heap := some (blk, off.toNat, pt) })
     | .int 0 _, _ => fail "interp: borrow through a null pointer (the binary crashes)"
     | _, _ => fail "interp: deref of non-ref in borrow target"
