@@ -1707,6 +1707,9 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     let size := (← int sz "the size").toNat
     let count := (← int cnt "the count").toNat
     let n := size * count
+    -- An element size times count past 2^64 overflows `size_t`; what the C library does then
+    -- differs between libraries, so it is refused.
+    if n ≥ 2 ^ 64 then fail s!"interp: {name} with a size times count that overflows size_t is not modelled"
     if name == "fread" then
       if h.writable then fail "interp: fread on a file opened for writing is not modelled"
       let k := min n (h.data.size - min h.pos h.data.size)
