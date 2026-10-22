@@ -1483,7 +1483,7 @@ private def mapSValsInTerm (r : SVal → SVal) : STerm → STerm
     always uses the Concrete one, and a foreign function used directly as that value received a
     pointer where C expects the struct. Every foreign function value whose signature has a
     `#[repr(C)]` aggregate is therefore replaced by an ADAPTER: a Concrete-ABI function
-    `ffi$<C symbol>` of the same type whose body is the direct call, so the flattening is the
+    `ffi$<k>-<C symbol>` of the same type whose body is the direct call, so the flattening is the
     direct call's own and is decided nowhere else. One adapter per module and C symbol; the `$`
     keeps the name out of every source spelling. Signatures without a `#[repr(C)]` aggregate have
     one ABI and keep referring to the C symbol. Returns the rewritten functions, the adapters, and
@@ -1532,8 +1532,10 @@ private def foreignValueAdapters (s : EmitSSAState) (moduleName : String) (fns :
       | none =>
       match t with
       | .fn_ ps _ ret =>
+        -- `ffi$<k>-<C symbol>`: `-` cannot occur in a C symbol (`isForeignSymbolSpelling`),
+        -- so the signature index and the symbol never run together (Codex review).
         let k := (keys.filter (·.1 == csym)).length
-        let a := "ffi$" ++ csym ++ (if k == 0 then "" else s!"${k}")
+        let a := s!"ffi${k}-{csym}"
         let params := ps.zipIdx.map fun (pt, i) => (s!"ffi.a{i}", pt)
         let args := params.map fun (pn, pt) => SVal.reg pn pt
         let isVoid := ret == .unit || ret == .never
