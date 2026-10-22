@@ -2038,7 +2038,15 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
             | _ => pure false
           | _ => pure false
         let same ← match heapRefAddr cx a, heapRefAddr cx b with
-          | some x, some y => pure (x == y)
+          | some (xb, xo), some (yb, yo) => do
+            if xb != yb then
+              let sz (bk : Nat) : IM Nat := do pure ((((← get).heap[bk]?).map (·.size)).getD 0)
+              let live (bk : Nat) : IM Bool := do pure ((((← get).heap[bk]?).map (·.live)).getD false)
+              if !(← live xb) || !(← live yb) then
+                fail "interp: comparing addresses of different allocations after one was freed is not modelled (the allocator may reuse it)"
+              if xo == (← sz xb) || yo == (← sz yb) then
+                fail "interp: comparing a one-past-the-end address with another allocation is not modelled (allocations may be adjacent)"
+            pure (xb == yb && xo == yo)
           | _, _ =>
             if (refId a).isNone || (refId b).isNone then
               fail "interp: comparing references whose places cannot be identified is not modelled"
@@ -2099,6 +2107,15 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
         if a != b && (op == .eq || op == .neq || op == .lt || op == .gt || op == .leq || op == .geq || op == .sub)
             && (!(← liveOf a) || !(← liveOf b)) then
           fail "interp: comparing addresses of different allocations after one was freed is not modelled (the allocator may reuse it)"
+        -- One past the end of one allocation may be the start of the next.
+        if a != b then
+          let offs : Option (Int × Int) := match lv, rv with
+            | .addr _ o _, .addr _ q _ | .ptr _ o, .ptr _ q => some (o, q)
+            | _, _ => none
+          if let some (o, q) := offs then
+            let sz (bk : Nat) : IM Int := do pure ((((← get).heap[bk]?).map (·.size)).getD 0 : Nat)
+            if o == (← sz a) || q == (← sz b) then
+              fail "interp: comparing a one-past-the-end address with another allocation is not modelled (allocations may be adjacent)"
       -- A pointer moved outside its allocation may have wrapped around the address space (the
       -- backend's GEP is not `inbounds`): how it compares is not known.
       if let (.ptr a o, .ptr b q) := (lv, rv) then
@@ -2235,8 +2252,14 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       | "string_reserve", [.ref p, ev] => do
         let extra ← intOf ev "string_reserve"
         let (_, len, cap) ← stringFields (← lookupPath cx env p)
-        let needed := (len : Int) + extra
+        -- `add i64` then an unsigned compare, as the runtime does; the realloc that follows
+        -- fails for an impossible size and the runtime's OOM check aborts.
+        let needed := ((len : Int) + extra) % 2 ^ 64
         if needed > cap then
+          match allocVerdict needed with
+          | .null => fail "interp: string_reserve: the allocation fails and the runtime aborts (out of memory)"
+          | .unknown => fail s!"interp: whether string_reserve's allocation of {needed} bytes succeeds depends on the machine, which is not modelled"
+          | .ok =>
           let env' ← growString p needed.toNat
           return (env', .val .unit)
         else return (env, .val .unit)
@@ -2524,7 +2547,8 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
       match tgt with
       | .ptrMut _ | .ptrConst _ | .heap _ | .heapArray _ => return (env, .val v)
       | .ref pt | .refMut pt =>
-        if off < 0 then fail "interp: a reference before the start of an allocation"
+        let size := ((← get).heap[blk]?).map (·.size) |>.getD 0
+        if off < 0 || off > size then fail "interp: a reference outside its allocation is not modelled"
         else return (env, .val (.ref { base := "", frame := 0, steps := [], isMut := true, heap := some (blk, off.toNat, pt) }))
       | .int | .uint => do
         -- Only an address inside its allocation (or one past it) has a numeric behaviour the
