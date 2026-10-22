@@ -389,11 +389,11 @@ open_bug_reproducers() {
 126|bug126_field_write_through_mut_heap_ref/repro.con|signals|
 126|bug126_field_write_through_mut_heap_ref/repro_read.con|wrong-exit|10
 128|bug128_interp_int_to_float_identity/repro.con|interp-prints|3
-129|bug129_user_fn_captures_libc_symbol/repro.con|signals|
 134|bug134_aggregate_eq_invalid_ir/repro.con|compile-fails|but expected 'i64'
 134|bug134_aggregate_eq_invalid_ir/repro_struct.con|compile-fails|but expected 'i64'
 136|bug136_functional_update_base_reevaluated/repro.con|runs-exit|87
 137|bug137_enum_literal_field_order/repro.con|runs-exit|65
+165|bug165_generated_helper_call_binds_by_spelling/repro.con|signals|
 TABLE
 }
 if [ -z "$ONLY" ]; then
