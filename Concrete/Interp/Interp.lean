@@ -688,7 +688,13 @@ partial def evalExpr (fns : List CFnDef) (enums : List CEnumDef) (env : Env) (e 
         | some (.fnPtr real) => .ok real
         | some _ => .error s!"interp: '{binding}' is not a function pointer"
         | none => .error s!"interp: unbound fn-pointer local '{binding}'"
-    match findFn fns fnName with
+      -- A compiler-generated runtime call (`println`'s `print_int`) is the builtin, never a
+      -- program definition of the same spelling (bug 165).
+      | .runtime helper => .ok helper
+    let userFn := match callee with
+      | .runtime _ => none
+      | _ => findFn fns fnName
+    match userFn with
     | some fdef =>
       if fdef.params.length != argVals.length then
         .error s!"interp: arity mismatch calling '{fnName}': expected {fdef.params.length}, got {argVals.length}"

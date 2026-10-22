@@ -1594,6 +1594,23 @@ for r102 in regress_102_pointer_local_address regress_102_ptr_eq_through_raw_bas
         FAIL=$((FAIL + 1))
     fi
 done
+# Bug 165: println/print/append desugared into helper calls that bound by spelling, so a
+# module's own `fn print_int` was called by `println`. The interpreter prints the program's
+# stdout then its result; the binary must print the same stdout and exit with that result.
+r165_src="$TESTDIR/regress_165_generated_helper_call.con"
+r165_i=$($COMPILER "$r165_src" --interp 2>&1 || true)
+r165_n=""; r165_o=""
+if $COMPILER "$r165_src" -o "$TESTDIR/.r165_bin" >/dev/null 2>&1; then
+    r165_o=$("$TESTDIR/.r165_bin" 2>&1) && r165_n=0 || r165_n=$?
+fi
+rm -f "$TESTDIR/.r165_bin"
+if [ "$r165_n" = "42" ] && [ "$r165_i" = "$(printf '%s\n42' "$r165_o")" ]; then
+    echo "  ok  regress_165_generated_helper_call: --interp == binary (stdout and 42)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  regress_165_generated_helper_call: --interp gave '$r165_i', binary '$r165_o' exit '$r165_n'"
+    FAIL=$((FAIL + 1))
+fi
 # Bug 104 (fixed by the normalized place rule): a reference re-pointed by assignment at
 # block-local storage is refused (E0238). Bug 107 (fixed): shadowing a binding a live
 # reference borrows is refused (E0238); the binary read the shadowing binding's slot.
@@ -7834,6 +7851,10 @@ run_ok "$TESTDIR/regress_133_deref_field_borrow.con" 42
 # Bug 175 (fails closed): a match whose arms all diverge left its merge block open, so a
 # loop around it failed SSA verification (E0708). --interp agreement: the r102 loop.
 run_ok "$TESTDIR/regress_175_match_arms_all_diverge.con" 42
+# Bug 165 (silent): a module defining `fn print_int` got it called by every `println`; the
+# reproducer aborted. --interp agreement: the r165 block.
+run_ok "$TESTDIR/regress_165_generated_helper_call.con" $'7 hi true x\nn=hi ok' 42
+run_ok "tests/regressions/bug165_generated_helper_call_binds_by_spelling/repro.con" 7
 # Bug 088: an unhinted literal is a range-checked `Int` (2^64-1 was accepted:
 # interp 2^64-1, binary -1), and constant casts fold with the interpreter's
 # wrap (the folder compared an unnormalized constant: `u64max as i64 < 0`).
