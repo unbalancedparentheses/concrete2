@@ -116,7 +116,7 @@ silently approximated. Current important exclusions include:
 | A pointer's numeric address used as a number | explicit refusal (`addr` supports only offset arithmetic) |
 | Reading a union through a field other than the one written | explicit refusal |
 | `alloc` with an explicit allocator (`allocCall`) | explicit unsupported diagnostic |
-| The order of `write(1|2, ..)` output after more than 512 bytes of still-buffered stdio output, and a glibc trap with that much buffered | explicit refusal (depends on the C library's buffer size) |
+| The order of `write(1, ..)` or `write(2, ..)` output after more than 512 bytes of still-buffered stdio output, and a glibc trap with that much buffered | explicit refusal (depends on the C library's buffer size) |
 | Reading stdin from a terminal; `argv[0]`; argv or environment strings that are not UTF-8 | explicit refusal |
 | `fopen` of a device, FIFO or socket, a second handle on a file open for writing, writing a file with several hard links, update modes (`r+`...) | explicit refusal |
 | Allocations over 4 GiB (success depends on the machine); past `PTRDIFF_MAX` they are NULL as in C | explicit refusal |
