@@ -271,6 +271,9 @@ structure Block where
   maxCell : Nat := 1
   live : Bool := true
   what : String := "malloc"
+  /-- Allocated by the program's allocator, so `free`/`realloc` may release it. Storage the C
+      library owns (argv strings, the environment, a `FILE`) is not. -/
+  freeable : Bool := true
 
 -- ============================================================
 -- The evaluation monad
@@ -513,14 +516,21 @@ def getBlock (blk : Nat) (what : String) : IM Block := do
 def setBlock (blk : Nat) (b : Block) : IM Unit :=
   modify fun st => { st with heap := st.heap.set! blk b }
 
-def allocBlock (size : Nat) (what : String) : IM Nat := do
+def allocBlock (size : Nat) (what : String) (freeable : Bool := true) : IM Nat := do
   let st ← get
-  set { st with heap := st.heap.push { size, what } }
+  set { st with heap := st.heap.push { size, what, freeable } }
   pure st.heap.size
 
-/-- `free`: the block must be live and the pointer must be its start. -/
+/-- Release a block the C library owns (`fclose` of a `FILE`). -/
+def releaseBlock (blk : Nat) : IM Unit := do
+  let b ← getBlock blk "release"
+  setBlock blk { b with live := false, cells := {} }
+
+/-- `free`: the block must be live, allocated by the program, and the pointer must be its start. -/
 def freeBlock (blk : Nat) (off : Int) : IM Unit := do
   let b ← getBlock blk "free"
+  if !b.freeable then
+    fail s!"interp: free of storage the C library owns ({b.what}); an invalid free, undefined behaviour in the binary"
   if off != 0 then
     fail "interp: free of a pointer that is not the start of an allocation (undefined behaviour in the binary)"
   setBlock blk { b with live := false, cells := {} }
@@ -1534,6 +1544,8 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
         || (name == "abs" && what == "the argument") then 4 else 8
     match v with
     | .int n ty =>
+      if !(IntArith.isIntTy ty || ty == .char) then
+        fail s!"interp: {name}: {what} declared as '{tyToStr ty}' where C takes an integer is not modelled"
       match sizeOfTy cx ty with
       | .ok w =>
         if w < cWidth then
@@ -1657,7 +1669,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
         | some blk => return (env, .ptr blk 0)
         | none =>
         let bytes := v.toUTF8
-        let blk ← allocBlock (bytes.size + 1) s!"getenv({key})"
+        let blk ← allocBlock (bytes.size + 1) s!"getenv({key})" (freeable := false)
         writeBytes cx blk 0 (bytes.push 0)
         modify fun st => { st with hostPtrs := ("env:" ++ key, blk) :: st.hostPtrs }
         return (env, .ptr blk 0)
@@ -1725,7 +1737,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     match handle? with
     | none => return (env, .int 0 (.ptrConst .u8))
     | some h =>
-      let blk ← allocBlock 1 s!"FILE {path}"
+      let blk ← allocBlock 1 s!"FILE {path}" (freeable := false)
       modify fun st => { st with handles := (blk, h) :: st.handles }
       return (env, .ptr blk 0)
   | "fread", [buf, sz, cnt, f] | "fwrite", [buf, sz, cnt, f] => do
@@ -1795,7 +1807,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
     modify fun st => { st with
       handles := st.handles.filter (·.1 != blk),
       files := if h.writable then (h.path, h.data) :: st.files.filter (·.1 != h.path) else st.files }
-    freeBlock blk 0
+    releaseBlock blk
     return (env, .int 0 .i32)
   | "abort", [] => fail "interp: abort() called (the binary aborts)"
   | "exit", [code] => throw (.exit (IntArith.wrapToType .i32 (← int code "the status")))
@@ -1813,7 +1825,7 @@ def evalExtern (cx : Ctx) (env : Env) (name : String) (args : List IVal) : IM (E
       | some blk => return (env, .ptr blk 0)
       | none =>
       let bytes := (all[i.toNat]!).toUTF8
-      let blk ← allocBlock (bytes.size + 1) s!"argv[{i}]"
+      let blk ← allocBlock (bytes.size + 1) s!"argv[{i}]" (freeable := false)
       writeBytes cx blk 0 (bytes.push 0)
       modify fun st => { st with hostPtrs := (s!"argv:{i}", blk) :: st.hostPtrs }
       return (env, .ptr blk 0)
