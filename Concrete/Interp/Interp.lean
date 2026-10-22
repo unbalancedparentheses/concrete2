@@ -2047,6 +2047,13 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
                     | _ => fail "interp: comparing pointers into a value that is not an array"
                   else fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
                 | _, _ => fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
+            -- Zero-sized values may share an address with whatever follows them.
+            else if (← [a, b].anyM fun p => do
+                match ← lookupPath cx env p with
+                | .unit | .struct_ _ [] => pure true
+                | .array elems _ _ => pure elems.isEmpty
+                | _ => pure false) then
+              fail "interp: comparing a pointer to a zero-sized value with a pointer into other storage is not modelled (it depends on the stack layout)"
             else if (← onePast a) || (← onePast b) then
               fail "interp: comparing a one-past-the-end pointer with a pointer into other storage is not modelled (it depends on the stack layout)"
             else pure false
