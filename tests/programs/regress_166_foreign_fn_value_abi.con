@@ -1,0 +1,39 @@
+// Bug 166: a foreign function taken as a VALUE was called with the Concrete ABI. A direct call
+// of an `extern fn` passes a small `#[repr(C)]` struct flattened into integer registers, as C
+// expects; a call through a fn value passed a pointer to it, so C read the struct's address as
+// its field. A foreign function value whose signature has a `#[repr(C)]` aggregate is now an
+// adapter: a Concrete-ABI function whose body is the direct call. Linked with
+// regress_166_foreign_fn_value_abi.c; the parts sum to 42 (each through a fn value, and the
+// same calls made directly as the control).
+
+#[repr(C)]
+struct Copy Pair { v: Int }
+
+#[repr(C)]
+struct Copy Two { a: Int, b: Int }
+
+trusted extern fn take_pair(p: Pair) with() -> Int;
+trusted extern fn take_two(t: Two) with() -> Int;
+trusted extern fn make_pair(v: Int) with() -> Pair;
+
+fn apply(f: fn(Pair) -> Int, p: Pair) -> Int {
+    return f(p);
+}
+
+fn apply_two(f: fn(Two) -> Int, t: Two) -> Int {
+    return f(t);
+}
+
+fn build(f: fn(Int) -> Pair, v: Int) -> Int {
+    let p: Pair = f(v);
+    return p.v;
+}
+
+fn main() -> Int {
+    let via_value: Int = apply(take_pair, Pair { v: 7 })
+        + apply_two(take_two, Two { a: 3, b: 4 })
+        + build(make_pair, 7);
+    let direct: Int = take_pair(Pair { v: 7 }) + take_two(Two { a: 3, b: 4 }) + make_pair(7).v;
+    if via_value != direct { return 1; }
+    return via_value * 2;
+}
