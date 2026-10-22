@@ -2036,7 +2036,15 @@ partial def evalExpr (cx : Ctx) (env : Env) (e : CExpr) : IM (Env × Flow) := do
               if stepsEq a.steps b.steps then pure true
               else match a.steps.getLast?, b.steps.getLast? with
                 | some (.index _), some (.index _) =>
-                  if stepsEq a.steps.dropLast b.steps.dropLast then pure false
+                  if stepsEq a.steps.dropLast b.steps.dropLast then do
+                    -- Distinct elements are distinct addresses unless the element is zero-sized.
+                    match ← lookupPath cx env { a with steps := a.steps.dropLast } with
+                    | .array _ ety _ =>
+                      match sizeOfTy cx ety with
+                      | .ok 0 => pure true
+                      | .ok _ => pure false
+                      | .error e => fail e
+                    | _ => fail "interp: comparing pointers into a value that is not an array"
                   else fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
                 | _, _ => fail "interp: comparing pointers to different parts of one value is not modelled (it needs the value's layout)"
             else if (← onePast a) || (← onePast b) then
