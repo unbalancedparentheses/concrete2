@@ -29,6 +29,11 @@ def accepted(result):
             and not result.stderr.strip())
 
 
+def refused_empty(result):
+    return (result.returncode == 0 and not result.stdout.strip()
+            and result.stderr.strip() == "c empty clause not derived at end of proof")
+
+
 def unit_conflict(path):
     """Diagnostic only: does unit propagation refute the CNF without proof steps?"""
     clauses, clause = [], []
@@ -100,7 +105,6 @@ def main():
         report["toolchain"] = (ROOT / "lean-toolchain").read_text().strip()
         report["commit"] = require(["git", "rev-parse", "HEAD"], out / "commit.log", args.timeout).strip()
         report["working_tree"] = require(["git", "status", "--porcelain"], out / "tree.log", args.timeout)
-        report["cadical_sha256"] = digest(Path(shutil.which("cadical")).resolve())
         report["shim_sha256"] = digest(ROOT / "scripts/bv_capture_solver.sh")
         sample = out / "Samples.lean"
         sample.write_text("""import Std.Tactic.BVDecide
@@ -147,6 +151,7 @@ example (y : BitVec 32) : y &&& 255#32 = (BitVec.setWidth 8 y).setWidth 32 := by
                 project_count += len(formulas)
             for i, cnf in enumerate(formulas):
                 cert = cnf.with_suffix(".lrat")
+                solver = Path(cnf.with_suffix(".solver").read_text().strip()).resolve(strict=True)
                 before = digest(cnf)
                 if not cert.is_file():
                     raise RuntimeError(f"missing original LRAT certificate: {cnf}")
@@ -160,11 +165,12 @@ example (y : BitVec 32) : y &&& 255#32 = (BitVec.setWidth 8 y).setWidth 32 := by
                 # Empty proof acceptance means the formula alone suffices; never count it as
                 # exercising a proof. Operational failures are not evidence of rejection.
                 trivial = accepted(result)
-                if not trivial and "empty clause not derived" not in result.stderr:
+                if not trivial and not refused_empty(result):
                     raise RuntimeError(f"unexpected empty-proof outcome: {cnf}")
                 report["formulas"].append({"group": tag, "cnf": str(cnf.relative_to(out)),
                     "cnf_sha256": before, "lrat": str(cert.relative_to(out)), "lrat_sha256": cert_sha,
                     "empty_proof_accepted": trivial, "unit_propagation_conflict": unit_conflict(cnf),
+                    "solver": str(solver), "solver_sha256": digest(solver),
                     "original_solver_certificate": True, "check_seconds": check_time})
         report["native_axioms"] = sorted(axioms)
         if project_count != len(axioms):

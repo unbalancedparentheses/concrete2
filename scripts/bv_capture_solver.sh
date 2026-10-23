@@ -52,6 +52,7 @@ if [ -z "$REAL" ]; then
 fi
 
 if [ -n "$CAPTURE" ]; then
+  printf '%s\n' "$REAL" > "$CAPTURE.solver" || exit 125
   "$REAL" "$@"
   RC=$?
   if [ "$RC" = 20 ]; then

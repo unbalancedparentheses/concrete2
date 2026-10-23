@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression controls for the experimental audit's fail-closed process boundary."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -32,6 +33,14 @@ class BoundaryTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 audit.run([str(Path(d) / "absent")], log, 1)
 
+    def test_empty_refusal_requires_unambiguous_normal_completion(self):
+        diagnostic = "c empty clause not derived at end of proof\n"
+        for rc, out, err in [(1, "", diagnostic), (-9, "", diagnostic),
+                             (0, "s VERIFIED UNSAT", diagnostic),
+                             (0, "", diagnostic + "other error")]:
+            self.assertFalse(audit.refused_empty(subprocess.CompletedProcess([], rc, out, err)))
+        self.assertTrue(audit.refused_empty(subprocess.CompletedProcess([], 0, "", diagnostic)))
+
     def test_trivial_formulas_do_not_count_as_certificate_exercise(self):
         with tempfile.TemporaryDirectory() as d:
             cnf = Path(d) / "input.cnf"
@@ -41,6 +50,30 @@ class BoundaryTests(unittest.TestCase):
                                    ("p cnf 1 1\n1 0\n", False)]:
                 cnf.write_text(text)
                 self.assertEqual(audit.unit_conflict(cnf), expected)
+
+    def test_capture_records_selected_solver_and_preserves_pair(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "bin").mkdir()
+            solver = root / "bin/cadical"
+            solver.write_text('#!/bin/sh\nprintf "original-proof" > "$2"\nexit 20\n')
+            solver.chmod(0o755)
+            cnf, proof, capture = root / "input.cnf", root / "output.lrat", root / "capture"
+            cnf.write_text("p cnf 1 2\n1 0\n-1 0\n")
+            capture.mkdir()
+            env = dict(os.environ, LEAN_SYSROOT=str(root), CNF_CAPTURE_DIR=str(capture),
+                       BV_CAPTURE_CERTIFICATES="1")
+            shim = Path(__file__).resolve().parents[1] / "bv_capture_solver.sh"
+            r = subprocess.run(["bash", str(shim), str(cnf), str(proof), "--lrat"], env=env)
+            self.assertEqual(r.returncode, 20)
+            copied = list(capture.glob("*.dimacs"))
+            self.assertEqual(len(copied), 1)
+            self.assertEqual(copied[0].read_bytes(), cnf.read_bytes())
+            self.assertEqual(copied[0].with_suffix(".lrat").read_bytes(), proof.read_bytes())
+            self.assertEqual(copied[0].with_suffix(".solver").read_text().strip(), str(solver))
+            env["CNF_CAPTURE_DIR"] = str(root / "missing")
+            r = subprocess.run(["bash", str(shim), str(cnf), str(proof)], env=env, capture_output=True)
+            self.assertEqual(r.returncode, 125)
 
 
 if __name__ == "__main__":
