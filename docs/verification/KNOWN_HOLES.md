@@ -533,15 +533,17 @@ is in [AXIOMS.md](AXIOMS.md) and gate-enforced against
 `scripts/tests/axiom_native_trust.txt`.
 
 Mitigated, not closed: `make test-bv-certificates` captures the CNF Lean bit-blasted,
-re-solves it independently, and verifies a DRAT certificate with drat-trim — a
-separately implemented checker. A single checker bug can therefore no longer carry an
-unsound bit-blasting claim unnoticed. drat-trim is itself unverified C, so this is two
-independent checkers agreeing, not one proved correct.
+re-solves it independently, and verifies a DRAT certificate with drat-trim. The opt-in
+`scripts/tests/check_cake_lpr.py` experiment also checks the original captured LRAT certificate
+with a pinned build of CakeML's `cake_lpr`; see [AXIOMS.md](AXIOMS.md#opt-in-original-certificate-audit-with-cake_lpr).
 
-Two closure paths: a verified checker (`cake_lpr`; not packaged in nixpkgs, and
-building it means trusting a prebuilt CakeML binary), or — fully within our control —
-decomposing those goals until kernel-reduction LRAT checking is practical, which
-AXIOMS.md records as the reason the extension exists.
+Neither closes the project's remaining gap: all six project formulas measured on 2026-10-23
+are already trivially contradictory. Their trust is in the compiled normalization/bit-blasting
+that constructs the formula, not in solving it. A verified SAT checker proves the supplied CNF
+unsatisfiable; it cannot establish that this CNF faithfully encodes the original Lean goal.
+Closure needs a checked goal-to-CNF bridge and certificate checking under the admitted trust
+policy, or decomposition until the relevant checking can be reduced in the kernel. Different
+checker implementations alone are not closure.
 
 ### H21. Nonlinear SMT results cannot be certificate-replayed — OPEN (upstream)
 
