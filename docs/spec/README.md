@@ -198,7 +198,11 @@ example states, never only with the other legs.
 
 - **accept**: the program builds natively and the binary exits `N`. `--interp` exits 0 and
   prints `N` as its last line. `interp-exempt` drops the interpreter leg, and the gate prints
-  every exemption.
+  every exemption. A third leg runs the Lean semantics (decision B17): `--report model-diff`
+  evaluates every function of the program that extracts to the ProofCore model (`Concrete.Proof.eval`,
+  scalar signatures today) on boundary inputs, with the model and with the interpreter, and any
+  disagreement fails the example. A program with no extracted function has no third leg; the gate
+  prints how many examples and inputs it compared.
 - **abort**: the program compiles and traps at run time: the binary is killed by `SIGABRT` (the
   abort helpers of checked operations) and `--interp` stops with a run-time error, not a
   diagnostic that names the trap given by `trap=`. It takes no `exit`, `code` or `stage`.
@@ -240,14 +244,15 @@ and it is counted in SKIPPED.
 | S1 format | Every chapter parses under §2. IDs are unique across chapters, and each ID's prefix is its chapter's. Each entry has one sentence and every field. Every `Uses` names a live definition. A refusal names at least one code, and other kinds name none. Every relative link resolves. |
 | S2 registry | `ids.tsv` has one row per allocated key: an entry version (`REF-3@1`) or an example (`REF-3/stored-field`). Columns: `key`, `state` (`live`, `pending`, `superseded` or `retired:<reason>`) and, for an entry version, the SHA-256 of its normalized sentence (`-` for an example). The `live` and `pending` rows equal what the chapters contain, state for state. A sentence whose hash differs from its version's row needs a new version row. |
 | S3 history | Against a base revision: no `ids.tsv` row is removed, a hash never changes, and a row's state changes only along `pending → live`, `live → superseded` (only when a newer version of the same entry exists) and `pending` or `live → retired:<reason>`. A `superseded` or `retired` row is final, so an ID is never reused. `codes.tsv` gains no `unmigrated` row. When a definition gains a version, every entry that uses it gains one in the same change. The base is `$SPEC_BASE`, or else the merge base with `origin/main`, or `HEAD~1` when that merge base is `HEAD`. |
-| S4 examples | Every example behaves as §2.2 says, on both consumers. |
+| S4 examples | Every example behaves as §2.2 says, on both consumers, and an accepted example's extracted functions agree between the Lean model and the interpreter. |
 | S5 coverage | An enforced or partial refusal has at least one non-pending reject example. Every reject example's `pair` names an accept example of the same entry, and the pair of a non-pending reject example is itself non-pending, so every refusal shows the program it refuses next to the rewrite it accepts. A pending refusal has at least one reject example. A guarantee that is not pending has at least one non-pending accept example that runs on both consumers. One exception, named by the check: a library contract whose `Enforced by:` names only std declarations may be covered by a native project example, since the interpreter runs single files. |
 | S6 codes | Every code in `--report diagnostic-codes` has exactly one row in `codes.tsv`. The class is `rule` (named by an entry), `unmigrated:<chapter>`, `internal` (a compiler invariant failure, such as `ssa-verify` or `lower`), `tooling` (proof, policy and evidence tooling, not language) or `retired`. Class `rule` holds exactly for the codes some entry names. For each code, the ledger's `rules` field equals the set of `<ID>@<version>` of the entries that name it. The spec owns that mapping, and the compiler's copy is checked against it. |
 | S7 sites | Each name in `Enforced by:` and `Semantics:` resolves (a generated Lean file, run with `lake env lean`). The text of its declaration, from its doc comment to the next top-level declaration, contains a `spec: <ID>` comment. Every `spec: <ID>` comment in `Concrete/**/*.lean` names a live entry. Each `proved:` name is a theorem with standard axioms only. Each `trusted:` ID occurs in TRUSTED_COMPUTING_BASE.md. |
 | S8 tracking | Every tracking ID exists: an `R-` ID in ROADMAP.md or its backlog, a `bug-` ID as a record in `docs/bugs/`. |
 | S9 manifests | Every generated manifest (§5) is byte-equal to its generator's output. |
 | S10 site | The site generator (§4) writes one page per chapter with every entry's anchor, and `zola build` succeeds on a scratch copy of `site/`. Without `zola` the check fails, unless `SPEC_SKIP_SITE=1` is set outside CI, which counts it as SKIPPED. CI installs the pinned Zola that `book.yml` uses. |
-| S11 restatement | No normative sentence occurs in a Markdown file outside `docs/spec/` (§6). |
+| S11 restatement | No normative sentence occurs in a Markdown file outside `docs/spec/` (§6), verbatim or nearly: a prose sentence sharing at least half its content words with a normative sentence (Jaccard over words other than articles and connectives, both at least eight words) is a restatement. A design record links the rule instead. The generated site pages are not scanned. |
+| S12 references | Every rule ID another Markdown file names is a live entry or one the spec's prose records without an entry yet; a version `ID@n` at or below the newest exists in `ids.tsv` (a higher one is a proposal); and every link `spec/<chapter>.md#ID`, in any link form, goes to the chapter that holds `ID`. |
 
 Code-to-rule mapping (S6), behaviour (S4) and coverage (S5) are mechanical. The association
 in `Enforced by:` and the placement of a `spec:` comment (S7) are reviewed claims: the gate
