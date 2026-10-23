@@ -96,11 +96,49 @@ it, so a future goal that needs a real certificate is checked there.
 Boundaries the gate enforces on itself:
 
 - **drat-trim is itself unverified C.** Two independent checkers agreeing is strictly better than one
-  and strictly weaker than a verified checker (`cake_lpr` is not packaged in nixpkgs, nor SMTCoq).
+  and strictly weaker than a verified checker. The opt-in `cake_lpr` experiment below checks
+  original LRAT certificates, but does not establish the Lean-goal-to-CNF translation.
 - **A trivially contradictory CNF is reported `VERIFIED` without the proof being read** (drat-trim
   warns `stop reading proof`). Those are counted separately; the sample goals must include a
   non-trivial certificate, and drat-trim must reject an empty certificate, so a rubber-stamping
   checker cannot pass.
+
+### Opt-in original-certificate audit with cake_lpr
+
+`scripts/tests/check_cake_lpr.py` is a bounded experiment, not a proof receipt producer or a
+replacement for the existing gate. Build the pinned upstream CakeML assembly and C wrapper,
+then run the audit after `make build`:
+
+```sh
+nix develop --command bash scripts/tools/build_cake_lpr.sh /tmp/concrete-cakelpr-tools
+nix develop --command python3 scripts/tests/check_cake_lpr.py \
+  --checker-dir /tmp/concrete-cakelpr-tools --output /tmp/concrete-cakelpr-results
+nix develop --command python3 scripts/tests/check_cake_lpr_harness.py
+```
+
+Both output directories must be new. The builder pins upstream revision
+`a36874a8b750b43fe4b385b8ddbf5b033e46a3fa`, validates the assembly and wrapper hashes, and
+records the host compiler and executable digest. Upstream's checksum list at that revision
+predates its wrapper change; our builder explicitly pins the updated wrapper bytes.
+The HOL/CakeML proofs are not regenerated here. Upstream provenance, the host assembler/linker,
+C wrapper and execution environment remain assumptions; `build.json` records a local build,
+not an authenticated attestation.
+
+The capture shim's opt-in strict mode retains each original CNF and binary LRAT certificate
+returned to Lean. No second solve is used. The audit retains hashes, logs, declaring-module
+metadata, the native-axiom population, checker identity and per-formula check time. It requires
+the captured project formula count to match the native-axiom count; this is a coverage check,
+not a proved per-theorem correspondence. A nontrivial sample must need proof steps beyond unit
+propagation. Empty/corrupted certificates and a certificate paired with a satisfiable wrong
+formula exercise refusal. Operational failures are not accepted as successful negative controls;
+timeouts are incomplete and exit nonzero. Missing dependencies never silently skip this experiment.
+
+**Measured on macOS ARM64, 2026-10-23:** the original-certificate path checked eight formulas:
+two sample formulas (one nontrivial) and six project formulas (all refutable by unit propagation).
+It rejected the corrupted-certificate and wrong-formula controls. This strengthens independent
+checking of certificates, but closes neither H20 nor the compiled bit-blasting trust boundary.
+The audit's JSON is diagnostic evidence only and does not upgrade Concrete verdicts.
+Reference: [cake_lpr source and upstream build provenance](https://github.com/tanyongkiam/cake_lpr).
 
 `Concrete.Sha256Spec`'s RFC test vectors and `Concrete.Diagnostic`'s render
 self-test also use `native_decide`, but they are anonymous

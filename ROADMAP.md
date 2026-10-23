@@ -1801,7 +1801,7 @@ looking. A skip whose reason is wrong is a defect with a lid on it.
 |---|---|---|---|
 | **H24** obligation generation restates trap rules, weaker | **R-0464** | `examples/trap_semantics_gap/` — div reports proved and aborts on `MIN / -1`; shift generates no obligation | div obligation covers signed `MIN / -1`, a shift family exists, both derived from `IntArith` |
 | **H19** the Core→obligation bridge is unproven | **R-0460** | — (structural; 0 of 5 register rows fully discharged, 4 of 5 half — the *semantics* half of each is proved, the *lowering* half IS H19) | rows in `VC_BRIDGE_REGISTER.md` discharged, named individually |
-| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/verification/AXIOMS.md](docs/verification/AXIOMS.md) | `make test-bv-certificates` | a verified checker, or decomposition until kernel-reduction LRAT is practical |
+| **H20** `bv_decide`'s certificate check runs as native code | unowned; see [docs/verification/AXIOMS.md](docs/verification/AXIOMS.md) | `make test-bv-certificates`; opt-in original-LRAT `cake_lpr` experiment in AXIOMS.md | checked goal-to-CNF correspondence plus admitted certificate checking, or decomposition until kernel checking is practical; adding a SAT checker alone does not close H20 |
 | **H21** nonlinear SMT results cannot be certificate-replayed | **R-0451** (upstream-blocked) | gate assertion in `check_multi_kernel.sh` | upstream reconstruction support, or a certified nonlinear checker |
 
 **No reproduced unsoundness remains** (2026-08-03). H23 and H24 are both closed and both
