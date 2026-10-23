@@ -10,6 +10,8 @@ theorems that use them.
   PROOF_LAYER_MODE=modules lake env lean scripts/tools/proof_layer_theorems.lean
       the modules that declare at least one theorem of the population, one per line — checked
       against the source files that declare one, so the population cannot shrink unnoticed
+  PROOF_LAYER_MODE=locations lake env lean scripts/tools/proof_layer_theorems.lean
+      one line per theorem: `<name>\t<declaring module>`; namespaces need not match module paths
   PROOF_LAYER_MODE=statements lake env lean scripts/tools/proof_layer_theorems.lean
       one line per theorem: `<name>\t<universe params>\t<statement>`, the statement rendered from
       the kernel's own `Expr` in the canonical form `export_inventory.py statements` renders from a
@@ -77,6 +79,9 @@ partial def ex : Expr → String
       if mode == "modules" then
         if let some i := env.getModuleIdxFor? n then
           if let some m := env.header.moduleNames[i.toNat]? then rows := rows.push (nm m)
+      else if mode == "locations" then
+        if let some i := env.getModuleIdxFor? n then
+          if let some m := env.header.moduleNames[i.toNat]? then rows := rows.push s!"{nm n}\t{nm m}"
       else if mode == "statements" then
         rows := rows.push s!"{nm n}\t{" ".intercalate (t.levelParams.map (lstr ∘ nm))}\t{ex t.type}"
       else

@@ -18,7 +18,17 @@
 # simply captures nothing, so it can never break a build.
 set -uo pipefail
 
-if [ -n "${CNF_CAPTURE_DIR:-}" ] && [ -d "${CNF_CAPTURE_DIR}" ] && [ -f "${1:-}" ]; then
+CAPTURE=""
+if [ "${BV_CAPTURE_CERTIFICATES:-0}" = 1 ]; then
+  # Opt-in strict audit: retain the ORIGINAL CNF/LRAT pair, not a re-solved proof.
+  if [ -z "${CNF_CAPTURE_DIR:-}" ] || [ ! -d "$CNF_CAPTURE_DIR" ] || [ ! -f "${1:-}" ] || [ -z "${2:-}" ]; then
+    echo 'bv_capture_solver: strict capture requires a directory, CNF and proof path' >&2
+    exit 125
+  fi
+  CAPTURE=$(mktemp "$CNF_CAPTURE_DIR/cnf.XXXXXXXX") || exit 125
+  mv "$CAPTURE" "$CAPTURE.dimacs" || exit 125
+  cp "$1" "$CAPTURE.dimacs" || exit 125
+elif [ -n "${CNF_CAPTURE_DIR:-}" ] && [ -d "${CNF_CAPTURE_DIR}" ] && [ -f "${1:-}" ]; then
   cp "$1" "${CNF_CAPTURE_DIR}/cnf.$$.$RANDOM.dimacs" 2>/dev/null || true
 fi
 
@@ -41,4 +51,14 @@ if [ -z "$REAL" ]; then
   exit 127
 fi
 
-exec "$REAL" "$@"
+if [ -n "$CAPTURE" ]; then
+  "$REAL" "$@"
+  RC=$?
+  if [ "$RC" = 20 ]; then
+    cp "$2" "$CAPTURE.lrat" || exit 125
+    cmp -s "$1" "$CAPTURE.dimacs" || exit 125
+  fi
+  exit "$RC"
+else
+  exec "$REAL" "$@"
+fi
