@@ -198,11 +198,14 @@ example states, never only with the other legs.
 
 - **accept**: the program builds natively and the binary exits `N`. `--interp` exits 0 and
   prints `N` as its last line. `interp-exempt` drops the interpreter leg, and the gate prints
-  every exemption. A third leg runs the Lean semantics (decision B17): `--report model-diff`
-  evaluates every function of the program that extracts to the ProofCore model (`Concrete.Proof.eval`,
-  scalar signatures today) on boundary inputs, with the model and with the interpreter, and any
-  disagreement fails the example. A program with no extracted function has no third leg; the gate
-  prints how many examples and inputs it compared.
+  every exemption. A third leg runs the Lean semantics (decision B17), for accept and abort
+  examples that are not pending and not project examples: `--report model-diff` evaluates every
+  function of the program that extracts to the ProofCore model (`Concrete.Proof.eval`, scalar
+  signatures today) on boundary inputs, with the model and with the interpreter. A `MISMATCH` row
+  (both produced a value and they differ) or a failing report fails the example; rows where one side
+  produced no value (`partial`, `model_stuck`, `ERROR`, `exhausted`) compare nothing and do not. A
+  program with no extracted function has no third leg; the gate prints how many examples it compared
+  and on how many agreeing inputs.
 - **abort**: the program compiles and traps at run time: the binary is killed by `SIGABRT` (the
   abort helpers of checked operations) and `--interp` stops with a run-time error, not a
   diagnostic that names the trap given by `trap=`. It takes no `exit`, `code` or `stage`.
@@ -251,7 +254,7 @@ and it is counted in SKIPPED.
 | S8 tracking | Every tracking ID exists: an `R-` ID in ROADMAP.md or its backlog, a `bug-` ID as a record in `docs/bugs/`. |
 | S9 manifests | Every generated manifest (§5) is byte-equal to its generator's output. |
 | S10 site | The site generator (§4) writes one page per chapter with every entry's anchor and the rule index, `scripts/gen/site_reference.py` writes the reference pages, and `zola build` succeeds on a scratch copy of `site/`. `check_site_generated.sh` keeps both sections generated: no tracked copy, every site build runs both generators first, and every site link resolves. Without `zola` the check fails, unless `SPEC_SKIP_SITE=1` is set outside CI, which counts it as SKIPPED. CI installs the pinned Zola that `book.yml` uses. |
-| S11 restatement | No normative sentence occurs in a Markdown file outside `docs/spec/` (§6), verbatim or nearly: a prose sentence sharing at least half its content words with a normative sentence (Jaccard over words other than articles and connectives, both at least eight words) is a restatement. A design record links the rule instead. The generated site pages are not scanned. |
+| S11 restatement | No normative sentence occurs in a Markdown file outside `docs/spec/` (§6), verbatim or nearly: a prose sentence (a heading, list item and table cell each count as a block of their own) whose set of content words has a Jaccard overlap of at least one half with a normative sentence's, both sets holding at least eight distinct words, is a restatement. Content words are all words except articles, connectives, `not`/`no`, the quantifiers `every`/`each`/`any`/`only` and `may`/`must`, so a negated paraphrase counts as a restatement too. A design record links the rule instead. `docs/archive/` and the generated site pages are not scanned. |
 | S12 references | Every rule ID another Markdown file names is a live entry or one the spec's prose records without an entry yet; a version `ID@n` at or below the newest exists in `ids.tsv` (a higher one is a proposal); and every link `spec/<chapter>.md#ID`, in any link form, goes to the chapter that holds `ID`. |
 
 Code-to-rule mapping (S6), behaviour (S4) and coverage (S5) are mechanical. The association
