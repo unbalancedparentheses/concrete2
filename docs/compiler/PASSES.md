@@ -470,10 +470,9 @@ emission:
 Lower -> SSAVerify -> SSACleanup -> BackendIR -> BackendIRVerify -> EmitLLVM
 ```
 
-This is useful even if LLVM remains the only emitter. BackendIR is the
-structured place where runtime checks, trap/source spans, layout and ABI facts,
-helper calls, target constants, and capability/trust labels stay inspectable
-before LLVM text or target code erases compiler intent. This section
+This is useful even if LLVM remains the only emitter: what BackendIR keeps
+structured before LLVM text erases compiler intent is stated as
+[PASS-11](../spec/pipeline.md#PASS-11). This section
 consolidates what the current SSA path guarantees and what BackendIR must
 preserve when added.
 

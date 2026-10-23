@@ -11,203 +11,57 @@ linear rather than affine, and the history of each rule.
 
 ## The one law
 
-**Concrete is linear: a non-Copy value must be used exactly once, and can never
-silently disappear.** "Used" means consumed, moved, returned, or handed off. There is
-no implicit destructor and no catch-all discard — if a value is not `Copy`, the
-checker must see where it goes.
+Concrete is linear: a non-Copy value is used exactly once and never silently disappears. The
+rules that make this precise are the ownership chapter of the specification, linked below; this
+section only orients.
 
 ## Three distinct concepts (do not conflate them)
 
 The bugs this model fixed all came from treating these as one:
 
-| concept | question it answers | who has it |
+| concept | question it answers | stated in |
 |---|---|---|
-| **Copy** | may I *duplicate* it? (use it twice) | primitives, `&T`, raw pointers, `fn` pointers, and structs/enums explicitly marked `Copy` (whose fields are all Copy — a `Copy` type may never own a resource). Generic marked-`Copy` types are **conditionally** Copy: `Option<T>` / `Result<T, E>` / `struct Copy Box<T>` are Copy iff every substituted payload is Copy (`Option<i32>` yes, `Option<String>` no) |
-| **linear** (= non-Copy) | must I *account for* it exactly once? | everything not `Copy`: `String`, `File`, `Vec<T>`, `Heap<T>`, unmarked structs, `Option`/`Result` over linear payloads, protocol/witness tokens |
-| **Destroy** | is there an *explicit consuming cleanup* verb? | resource owners that need teardown (`String`, `File`, …); it is a *verb*, not a structural property — a linear value may have one or not |
+| **Copy** | may I *duplicate* it (use it twice)? | [OWN-D1](../spec/ownership.md#OWN-D1), [OWN-14](../spec/ownership.md#OWN-14), [TYPE-14](../spec/types.md#TYPE-14) |
+| **linear** (= non-Copy) | must I *account for* it exactly once? | [OWN-1](../spec/ownership.md#OWN-1), [OWN-2](../spec/ownership.md#OWN-2) |
+| **Destroy** | is there an *explicit consuming cleanup* verb? | [OWN-13](../spec/ownership.md#OWN-13) |
 
-Two things follow that are easy to get wrong:
+Two things follow that are easy to get wrong. `Copy` answers "duplicable", not "droppable": an
+`&mut T` is not duplicable, and it is linear here because the rule is about accounting, not only
+aliasing. And `Destroy` is not "the reason a value is linear": a permit, receipt or proof witness
+owns no heap and has no `Destroy`, yet must not vanish. `Destroy` only names the cleanup of the
+linear values that need one.
 
-- **`Copy` answers "duplicable", not "droppable".** `&mut T` is not duplicable
-  (exclusive), yet dropping it is harmless — it is *linear* here anyway, because
-  Concrete's rule is about accounting, not just aliasing. If a value genuinely owns
-  nothing and is safe to copy and drop, mark it `Copy` (for generics, the mark is
-  conditional: the instantiation is Copy only when its payloads are).
-- **`Destroy` is not "the reason a value is linear".** A permit / receipt / proof
-  witness owns no heap and has no `Destroy`, yet must not vanish — it is simply a
-  linear value you must hand off. `Destroy` is only the *name of the cleanup* for the
-  linear values that need one.
+## Where each rule is stated
 
-## The rules, by site
+| topic | rule |
+|---|---|
+| use after move; what moves (`let`, arguments, `return`, scrutinees, stores, literals) | [OWN-1](../spec/ownership.md#OWN-1), [OWN-15](../spec/ownership.md#OWN-15) |
+| every owned linear binding (parameters included) is consumed before every exit | [OWN-2](../spec/ownership.md#OWN-2) |
+| branches agree; diverging branches are exempt | [OWN-3](../spec/ownership.md#OWN-3) |
+| loops do not consume outer values | [OWN-4](../spec/ownership.md#OWN-4) |
+| `_`, `let _`, statement discards, `discard(e)` | [OWN-5](../spec/ownership.md#OWN-5), [OWN-6](../spec/ownership.md#OWN-6), [OWN-7](../spec/ownership.md#OWN-7) |
+| no by-value read of a non-Copy part of a place | [OWN-8](../spec/ownership.md#OWN-8), [MEM-4](../spec/memory.md#MEM-4) |
+| no overwrite of a live linear value | [OWN-9](../spec/ownership.md#OWN-9) |
+| `mut`, moves in code that may not run, `defer` | [OWN-10](../spec/ownership.md#OWN-10), [OWN-11](../spec/ownership.md#OWN-11), [OWN-12](../spec/ownership.md#OWN-12) |
+| one binding per name; state per binding identity | [SCOPE-1](../spec/scope.md#SCOPE-1) |
+| guards are read-only | [PAT-4](../spec/patterns.md#PAT-4) |
+| destructuring `let`, `let ... else`, `if let` / `while let` over linear values | [PAT-5](../spec/patterns.md#PAT-5), [PAT-6](../spec/patterns.md#PAT-6) |
+| functional update `S { ..base }` copies only Copy fields | [TYPE-7](../spec/types.md#TYPE-7) |
 
-All "may this disappear?" checks key on **`isCopy`** (never on "owns a resource"):
+### Notes that are not rules
 
-- **`_` may ignore only a `Copy` value.** A wildcard arm (`match e { _ => {} }`) or a
-  `_` payload field (`E::A { _ }`) over a **non-Copy** value is rejected (**E0288**,
-  `wildcardDiscardsNonCopy`). `let _ = e;` is removed entirely (**E0289**).
-- **A bare statement expression** discarding a non-Copy value is rejected
-  (**E0287**); a `Result`/`Option` discard gets the must-use nudge (**E0286**). A
-  deferred non-Copy-returning call (`defer make();`) is **E0287**.
-- **A bare statement expression discarding a *pure, trap-free Copy* value** is
-  rejected (**E0294**, `discardedPureValue`) — computing a value with no effect
-  and throwing it away is a dead computation (`2 + 3;`, `x;`, `a + b;`). This is
-  CapabilityJudgment slice 5. Only *locally-provable-pure* forms are flagged:
-  literals, variable/field reads, and arithmetic/comparison/logical/bitwise/shift
-  operators over them. **Calls are deliberately not flagged** — Concrete's
-  capability model does not track mutation through `&mut` params (nor `trusted`/
-  `extern` FFI effects) as a capability, so an empty capability set does not imply
-  a pure call (`env_assign(&mut e, …)` and `fclose(fp)` both have empty caps yet
-  real effects); flagging pure calls awaits an effect model that tracks mutation.
-  A trap-assertion (`/`, `%`) is not flagged either (division by zero is a real
-  runtime check). Acknowledge an intentional discard of a Copy value with
-  **`discard(expr)`**; `discard` is Copy-only — a non-Copy resource must be
-  consumed or `destroy()`d (**E0295**, `discardNonCopy`), since dropping it would
-  leak it. So the two verbs stay distinct: `destroy(x)` runs a linear resource's
-  destructor; `discard(x)` acknowledges dropping a trivial Copy value.
-- **A named linear local** left unconsumed at scope exit is rejected (**E0208**) —
-  including locals in `if`/`else` branches and match arms (nested-scope checking),
-  and including on `return`/`break` paths. `let g = f;` over a linear `f` **moves**
-  it (`f` is consumed; using `f` afterward is **E0205**).
-- **Params are OWNED LOCALS (H17, ruled 2026-07-05).** The caller moved the value
-  in, so the callee holds the obligation: an owned non-Copy param — including
-  by-value `self`, including `Destroy` impl bodies — must be consumed like any
-  other binding (**E0208**). There are no terminal parameter sinks:
-  `fn drop_it(f: File) {}` rejects; a terminal consumer destructures into Copy
-  raw parts (`fn destroy(self) { let File { fd } = self; }`). `&mut T` params
-  are BORROWS — exclusive (non-Copy, can't be duplicated) but carrying no
-  consume obligation; `&T` params are Copy.
-- **No binder reuses a visible name (SCOPE-1, E0301):** `let f = mk(); let f = mk();`
-  is refused whatever the first binding's state, and so is `let s = transform(s);`
-  and a match-arm, destructure or `for` binder spelled like a visible binding.
-  (E0292, the older still-live-linear rule H16, is subsumed and no longer emitted.)
-  Ownership state (consume, use, reassign, `defer`, borrow freeze) is tracked
-  per binding identity (`LocalId`, R-0492), never per name, so two sibling
-  bindings of one spelling never share state.
-- **Match guards are read-only (E0300, bug 090):** a guard runs before its arm
-  commits, and a false guard falls through to the next arm. Moving a non-Copy value
-  in a guard (`1 if take(h) == 0 => …, _ => take(h)`) — an outer binding or the
-  arm's own payload binder — would move it on a path where a later arm moves it
-  again. Read through a borrow instead (`peek(&h)`) and move inside the arm body.
-- **Exemption:** a block whose textual end is unreachable — a non-terminating
-  `while true {}` (no break) or `abort()` — need not consume its locals (a server's
-  accept loop legitimately holds a resource live forever). `return`/`break`/`continue`
-  do *not* exempt.
-
-### Conservation: a linear value flows to exactly one place
-
-Every site a value can flow *into* **moves** (consumes) a linear operand exactly once —
-duplicating one would let it be freed twice. Concretely:
-
-- **`let g = f;`**, **function argument**, **`return f;`**, **match scrutinee**,
-  **`a = f;` (rebind, H13)**, **`break f;` (loop result, H14)** — all consume `f`;
-  reuse afterward is **E0205**. **Stores consume too:** `*p = v` and
-  `arr[i] = v` move a linear `v` into the slot (2026-07-02).
-- **Linear rebind:** `acc = f(acc, x)` is legal — a `let mut` linear variable may be
-  reassigned once its OLD value has been consumed (the fold/accumulate pattern),
-  including inside loops (the binding is restored within the same statement).
-  Overwriting a still-LIVE linear value stays **E0219**.
-- **Matching through a reference borrows payloads:** `match &e { E::A { p } => … }`
-  binds a non-Copy payload `p` as `&T` (a Copy, droppable view), never moving it out
-  of the borrow; `_` may ignore any payload behind a reference. An owned scrutinee
-  binds payloads owned, as before.
-- **Array literal** `[a, b]` moves each element in — `a`/`b` are consumed, the array
-  owns them (reuse is **E0205**). *(This was a real duplication hole — `[a, b]` used to
-  leave `a`/`b` live, so they could be freed while the array also owned them. Fixed and
-  locked by the conservation gate.)*
-- **Struct literal** `Wrap { f: x }` moves `x` in.
-- **Sub-place reads are Copy-only (H11, closed 2026-07-05):** a *by-value* read of a
-  non-Copy sub-place — `let g = w.f;`, `let x = arr[i];`, a nested `o.w.f`, or a
-  by-value-`self` method on a projection (`w.f.destroy()`) — is rejected (**E0290**):
-  the place would still own the same value (a duplication). Borrow the sub-place
-  (`&w.f`, `&mut arr[i]`), read Copy leaves (`w.f.fd`), or destructure the whole
-  owner. Projection bases, borrow targets, assignment targets, and auto-borrowed
-  receivers are checked *as places*, so `w.f.g`, `arr[i] = v`, and `&self` method
-  calls stay legal. Heap-shell reads follow the same rule (since 2026-10-21, bug 144): `Heap<T>`
-  interiors are linearity-tracked, so `h.next` by value is E0290 and `free(h)` of a non-Copy
-  pointee is E0287. A heap node is taken apart by moving it out of its cell (`let n = *h;`,
-  which frees the cell) and destructuring it.
-- **Struct destructure** `let Wrap { f } = w;` moves the source `w` out and each named
-  field becomes an **owned** binding (must itself be consumed). It is checked natively
-  (a `let __destr = w; let f = __destr.f` desugaring would be unsound for a linear
-  struct — field access does not move — so the linear check runs on the destructure
-  form and it is expanded only at Elab, past the checker).
-- **`let X::V { .. } = e else { … }` (let-else)** desugars to a catch-all `_` match arm,
-  which is illegal over a **non-Copy** enum (the linear `_` rule). For a non-Copy /
-  resource-owning enum, **use a full explicit `match`** instead of let-else.
-- **`if let` / `while let`** desugar the same way and follow the same rule (decision
-  re-confirmed 2026-07-01): over a **non-Copy** enum they are rejected (**E0288**);
-  write an explicit exhaustive `match`. Over a `Copy` enum they work as expected.
-  `Option<i32>`-class instantiations ARE Copy (decision D6, 2026-10-23: a generic declared
-  `Copy` is Copy exactly when every type argument is Copy, decided from the declaration,
-  which is checked once with its parameters taken as Copy; a generic not declared `Copy` is
-  never Copy), so `if let` over them is legal *for the right reason* — the rule is unbent;
-  `Option<File>` still rejects. Gated by `check_pattern_ergonomics.sh`
-  (`neg_if_let_noncopy`, now over a linear payload).
-- **Assigning to a non-Copy field** (`o.f = v`) is rejected (**E0219**): overwriting
-  would leak the old linear value and cannot soundly move the new one in. Destructure
-  and rebuild, or make the field `Copy`. The same rule covers the other overwrite
-  sites (H15, **E0291**): `arr[i] = v` over a non-Copy element and `*r = v` through
-  `&mut T` with non-Copy `T`. Raw-pointer stores (`*mut`) stay exempt — the trusted
-  collection idiom writes UNINITIALIZED slots. What an assignment does to the old value
-  (Copy overwritten with no event; a live non-Copy value never overwritten; the operations
-  that return the displaced value) is stated in
-  [MEMORY_SEMANTICS.md §10](MEMORY_SEMANTICS.md#10-assignment-rules), and the order in which an
-  assignment evaluates its parts (right-hand side first) in
-  [STATEMENT_EXPRESSION_MODEL.md](STATEMENT_EXPRESSION_MODEL.md#evaluation-order-and-assignment)
-  (decided 2026-10-21).
-- **Functional update `S { ..base }`** may not *copy* a non-Copy field from `base`
-  (**E0220**) — the value would be owned by both `base` and the result. Set each
-  non-Copy field explicitly.
-- **Known gap (KNOWN_HOLES H11, open):** projecting a non-Copy value *out* of a place
-  by value — `let g = w.f;` or `let g = arr[i];` — currently copies instead of moving,
-  so it can be owned twice (double-free). The borrow form `&w.f` is correct. The intended
-  rule is "projecting a non-Copy sub-place by value is rejected — borrow it or
-  destructure the whole place"; the fix is position-sensitive and scheduled.
-
-### Control flow: how branches, arms, and loops account for consumption
-
-Refined 2026-07-02 (the H12 std migration forced the checker to model these
-precisely; all four rules are as-built in `Concrete/Check/Check.lean`):
-
-- **Fall-through branches must agree.** After `if`/`else` (or a `match`), the
-  branches that reach the merge point must agree on what was consumed
-  (E0212/E0209) — a value cannot be "maybe consumed" afterwards.
-- **A diverging branch/arm is exempt from the merge** — it never reaches the
-  merge point, so `Some { v } => { use(v) }, None => { drop(x); return 1 }` is
-  sound. If EVERY arm diverges, the code after the match is unreachable and
-  takes the first arm's state.
-- **A branch that exits the function must consume everything live.** An early
-  `return` is a function exit: `if c { return 0; } … drop(s);` leaks `s` on
-  the returning path (E0208). Pending `defer`s count as consumption
-  (they run on the unwind); borrows (`&`/`&mut`) are aliasing-exclusive, not
-  consumption obligations, so letting one lapse is fine. `break`/`continue`
-  keep values live at the loop boundary; `abort()`/infinite loops are exempt
-  (the process never proceeds).
-- **Consuming an outer linear inside a loop** is normally rejected (E0207 —
-  the next iteration would see a moved value), EXCEPT inside a branch that
-  exits the function: `while … { if bad { s.drop(); return 1; } }` is sound
-  because no iteration follows the return. A loop nested *inside* that branch
-  resets the exemption (it iterates before the return).
-- Consequence for APIs: a generic function returning one of two linear
-  arguments (`max<T>(a, b)`) always leaks the other — such helpers require
-  `T: Copy` (`std.math.max/min/clamp`, the `std.test` asserts).
-
-### How to intentionally get rid of a value
-
-- **Copy value:** just drop it (`_`, bare statement, ignore it) — free.
-- **Linear value:** account for it. Consume it (pass it on / return it / call its
-  `destroy()`), or destructure it exhaustively and consume/hand off the parts. Inside
-  an exhaustive match, a `_` on a **Copy** payload is fine:
-
-  ```concrete
-  match vec_pop::<i32>(&mut stack) {   // pop-and-drop, on purpose
-      Option::Some { _ } => {},        // i32 payload is Copy — `_` may ignore it
-      Option::None       => {},
-  }
-  ```
-
-  A resource-bearing payload is non-Copy, so `Some { _ }` over it is rejected — bind
-  and release it: `Option::Some { f } => { f.destroy(); }`.
+- **Parameters are owned locals (H17, ruled 2026-07-05).** The caller moved the value in, so the
+  callee holds the obligation; there are no terminal parameter sinks, and a terminal consumer
+  destructures into Copy raw parts (`fn destroy(self) { let File { fd } = self; }`). `&mut T`
+  parameters are borrows: exclusive, with no consume obligation.
+- **Getting rid of a value on purpose.** A Copy value may simply be dropped. A linear one is
+  consumed (passed on, returned, `destroy()`ed) or destructured exhaustively with its parts handed
+  off; a `_` inside an exhaustive match may ignore a Copy payload, and a resource payload is bound
+  and released (`Option::Some { f } => { f.destroy(); }`).
+- **Generic helpers that return one of two linear arguments** (`max<T>(a, b)`) always leak the
+  other, so they require `T: Copy` (`std.math.max/min/clamp`, the `std.test` asserts).
+- **A loop that never ends, or `abort()`,** is a block whose end is unreachable, so it need not
+  consume its locals: a server's accept loop legitimately holds a resource for ever.
 
 ## Why linear, not affine (the decision, 2026-07-01)
 
@@ -242,7 +96,13 @@ operation may recursively destroy the live owned fields or collection elements. 
 outer disposal decision remains visible in source; the compiler still must not insert
 an implicit scope-end destructor for an otherwise-live linear value.
 
-## Conditional `Copy` (landed 2026-07-05)
+## Conditional `Copy` (history, 2026-07-05)
+
+Superseded by decision D6 (2026-10-23): a generic declared `Copy` is Copy exactly when every
+field is Copy under its parameters' bounds ([TYPE-14](../spec/types.md#TYPE-14), pending R-0510;
+today's rule is [OWN-D1](../spec/ownership.md#OWN-D1)). What follows records the conditional mark as
+it landed.
+
 
 `Copy` on a generic declaration is a *conditional* mark: the instantiation is `Copy`
 iff every field/payload is `Copy` after substitution. `Option<T>` is `Copy` iff `T`

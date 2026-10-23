@@ -3,7 +3,8 @@
 
 Every consumer of the spec goes through this module, so the format has one parser:
 
-  lint          S1 format, S2 registry, S5 coverage, S8 tracking, S11 restatement (no compiler)
+  lint          S1 format, S2 registry, S5 coverage, S8 tracking, S11 restatement, S12 references (no compiler)
+  references    S12: rule IDs and spec links in other documents name entries the spec holds
   history       S3: ids.tsv / codes.tsv transitions against a base revision
   run-examples  S4: every example, natively and with --interp
   codes         the code -> rules map; with --ledger, S6 against `--report diagnostic-codes`
@@ -482,26 +483,106 @@ def check_registry(spec):
     if bad == 0:
         ok(f"S2 registry: {len(exp)} keys registered with matching states and sentence hashes")
 
-def check_restatements(spec, root, scan_root=None):
-    sents = [(e.id, normalize(e.sentence)) for e in spec.entries if e.sentence]
+# Words that carry no claim, left out when two sentences are compared for near duplication.
+STOPWORDS = set("a an the and or of to in is are be by for on at as it its this that with from not no "
+                "every each any which when only may must than then into".split())
+NEAR_DUP = 0.5          # Jaccard overlap of content words at which a sentence restates a rule
+NEAR_DUP_MIN_WORDS = 8  # sentences shorter than this (on either side) are not compared
+
+def content_words(text):
+    return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if w not in STOPWORDS}
+
+def doc_sentences(text):
+    """The prose sentences of a Markdown document: code fences dropped, whitespace collapsed."""
+    t = re.sub(r"```.*?```", " ", text, flags=re.S)
+    t = re.sub(r"\s+", " ", t)
+    # split first (sentence starts are capitalised), then reduce each to the comparable text;
+    # links and inline tags are the only markup that changes the words, and they are cheap to drop
+    out = []
+    for x in re.split(r"(?<=[.!?])\s+(?=[A-Z*`(\[])", t):
+        x = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", x)
+        out.append(re.sub(r"[*_`]", "", x))
+    return out
+
+def scan_docs(root, scan_root):
+    """(path, text) of every Markdown file outside the spec, its generated copies and the archive."""
     excl = [os.path.join(root, "docs", "spec"), os.path.join(root, "site", "content", "spec"),
+            os.path.join(root, "site", "content", "reference"),   # generated from docs/
             os.path.join(root, "docs", "archive"), os.path.join(root, ".lake"), os.path.join(root, "site", "public")]
-    base = scan_root or root
-    bad, files = 0, 0
-    for dp, dn, fn in os.walk(base):
+    for dp, dn, fn in os.walk(scan_root or root):
         dn[:] = [d for d in dn if not d.startswith(".") and os.path.join(dp, d) not in excl and d not in ("node_modules", "public")]
         for f in fn:
             if not f.endswith(".md"): continue
-            p = os.path.join(dp, f); files += 1
-            try: t = normalize(open(p, encoding="utf-8").read())
+            p = os.path.join(dp, f)
+            try: yield p, open(p, encoding="utf-8").read()
             except UnicodeDecodeError: continue
-            for i, s in sents:
-                if s and s in t:
-                    fail("S11", f"{os.path.relpath(p, root)} restates the normative sentence of {i}"); bad += 1
+
+def check_restatements(spec, root, scan_root=None):
+    """S11: no other document restates a normative sentence, verbatim or nearly (decision B18).
+    A design record keeps its reasoning and links the rule (`[OWN-5](../spec/ownership.md#OWN-5)`)."""
+    sents = [(e.id, normalize(e.sentence), content_words(e.sentence)) for e in spec.entries if e.sentence]
+    index = {}   # content word -> the sentences holding it, so only overlapping pairs are compared
+    for k, (_, _, sw) in enumerate(sents):
+        if len(sw) >= NEAR_DUP_MIN_WORDS:
+            for x in sw: index.setdefault(x, []).append(k)
+    bad, files = 0, 0
+    for p, raw in scan_docs(root, scan_root):
+        files += 1
+        t = normalize(raw)
+        rel = os.path.relpath(p, root)
+        for i, s, _ in sents:
+            if s and s in t:
+                fail("S11", f"{rel} restates the normative sentence of {i}"); bad += 1
+        for d in doc_sentences(raw):
+            w = content_words(d)
+            if len(w) < NEAR_DUP_MIN_WORDS: continue
+            shared = {}
+            for x in w:
+                for k in index.get(x, ()): shared[k] = shared.get(k, 0) + 1
+            for k, n in shared.items():
+                i, s, sw = sents[k]
+                j = n / (len(w) + len(sw) - n)
+                if j >= NEAR_DUP and not (s and s in t):
+                    fail("S11", f"{rel} nearly restates the normative sentence of {i} ({j:.2f}): {d[:90]}..."); bad += 1
     if files == 0:
         fail("S11", "scanned no Markdown files")
     elif bad == 0:
-        ok(f"S11 restatement: {len(sents)} normative sentences, none restated in {files} Markdown files")
+        ok(f"S11 restatement: {len(sents)} normative sentences, none restated or nearly restated in {files} Markdown files")
+
+RULE_REF = re.compile(r"\b(REF|SCOPE|PAT|FFI|PASS|OWN|TYPE|MEM|TRUST|STMT|ARITH|CON|MOD|SYN|TRAIT)-(D?[0-9]+)(?:@([0-9]+))?\b")
+SPEC_LINK = re.compile(r"\]\(([^)\s]*?spec/([a-z]+)\.md)#([A-Z]+-D?[0-9]+)\)")
+
+def check_references(spec, root, scan_root=None):
+    """S12: every rule another document names exists. An ID names a live entry, or one the spec's
+    own prose records without an entry yet (SCOPE-4); a version `ID@n` is one the registry holds;
+    a link `spec/<chapter>.md#ID` goes to the chapter that holds ID."""
+    live = {e.id: e for e in spec.entries}
+    prose = " ".join(spec.text.values())
+    recorded = {f"{m.group(1)}-{m.group(2)}" for m in RULE_REF.finditer(prose)}
+    reg = {r[0] for r in (read_tsv(os.path.join(spec.dir, "ids.tsv")) or [])}
+    newest = {}
+    for k in reg:
+        if "@" in k:
+            i, v = k.split("@"); newest[i] = max(newest.get(i, 0), int(v))
+    bad = refs = 0
+    for p, raw in scan_docs(root, scan_root):
+        rel = os.path.relpath(p, root)
+        for m in RULE_REF.finditer(raw):
+            i = f"{m.group(1)}-{m.group(2)}"; refs += 1
+            if i not in live and i not in recorded:
+                fail("S12", f"{rel} names {i}, which the specification does not hold"); bad += 1
+            elif m.group(3) and f"{i}@{m.group(3)}" not in reg and int(m.group(3)) <= newest.get(i, 0):
+                # a version above the newest is a proposal (`REF-5@2` in a design record); one at or
+                # below it that the registry lacks never existed
+                fail("S12", f"{rel} names {i}@{m.group(3)}, a version the registry does not hold"); bad += 1
+        for m in SPEC_LINK.finditer(raw):
+            i, ch = m.group(3), m.group(2)
+            if i in live and live[i].chapter != ch:
+                fail("S12", f"{rel} links {i} in {ch}.md; it is in {live[i].chapter}.md"); bad += 1
+            elif i not in live and i not in recorded:
+                fail("S12", f"{rel} links {i}, which the specification does not hold"); bad += 1
+    if bad == 0:
+        ok(f"S12 references: {refs} rule names outside the specification, every one held by it")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1003,7 +1084,7 @@ def main():
     c = a.cmd
     if c == "lint":
         check_format(spec, a.root); check_registry(spec); check_coverage(spec); check_tracking(spec, a.root)
-        check_restatements(spec, a.root, a.scan_root)
+        check_restatements(spec, a.root, a.scan_root); check_references(spec, a.root, a.scan_root)
     elif c == "register":
         # append-only: add a row for every chapter key ids.tsv lacks; never edits an existing row
         path = os.path.join(spec.dir, "ids.tsv")
@@ -1031,6 +1112,8 @@ def main():
         print(f"{old} -> {new}; update the compiler's tags for {e.id}")
     elif c == "restatements":
         check_restatements(spec, a.root, a.scan_root)
+    elif c == "references":
+        check_references(spec, a.root, a.scan_root)
     elif c == "history":
         check_history(spec, a.base, a.base_ids, a.base_codes, a.base_spec)
     elif c == "run-examples":

@@ -575,10 +575,9 @@ enforcement in exit 2i; bug 182 closes with it.
 
 ### D3. A binder through a reference is a reference (Q3)
 
-**Rule.** Every pattern binder that binds through a scrutinee of reference type (`match r`,
-`match &o`, `if let`, `while let`) has reference type: a payload field of type `T` binds as `&T`,
-and a whole-value binder over `&T` binds as `&T`, whether or not `T` is Copy. A Copy value is read
-with `*value`. Literal and range patterns still compare the referenced value. **Scope (decided
+**Rule.** Stated as [REF-9](../spec/references.md#REF-9): a binder through a reference scrutinee
+(`match r`, `match &o`, `if let`, `while let`) is a reference, Copy payloads included, read with
+`*value`. Literal and range patterns still compare the referenced value. **Scope (decided
 2026-10-23):** D3's `&T` binder rule applies to match-style binders: `match`, `if let` and
 `while let` arms. A destructuring `let` of a struct through a reference (`let P { a, b } = r;` with
 `r: &P`) is refused by REF-6 (E0302), like any `let` that would hold a reference. There is no

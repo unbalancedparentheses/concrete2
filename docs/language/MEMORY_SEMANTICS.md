@@ -177,11 +177,10 @@ If a reference created by a borrow block is assigned to a variable outside the b
 
 Field access on a struct does **not** consume the struct. The struct remains in its current state. The returned value has the field's declared type.
 
-### Field access through a reference or a heap shell (the one-hop rule; normative, decided 2026-10-21)
+### Field access through a reference or a heap shell (the one-hop rule; decided 2026-10-21)
 
-**Rule.** A reference to any place, a heap shell included, denotes that place: with `h: Heap<S>`,
-`&h` and `&mut h` denote the slot `h`, which holds the heap pointer. Field access `e.f`, read or
-written, dereferences at most one reference and then at most one heap layer, in that order:
+**Stated as [MEM-4](../spec/memory.md#MEM-4).** A reference to a heap shell denotes the slot that
+holds the heap pointer, so the one-hop rule reads, by the type of `e`:
 
 | type of `e` | `e.f` denotes |
 |---|---|
@@ -770,10 +769,10 @@ pin it, and its status. Fixtures are under `tests/programs/`. A fixture in *ital
 
 #### REF-1. No function returns a reference
 
-No function, method or trait method, `trusted` included, has a return type that contains a
-reference (§15.1: a reference anywhere, including inside a function type or behind a raw
-pointer). The trusted escape is a raw pointer to the referent (`*const T` where `T` contains no
-reference).
+**Stated as [REF-1](../spec/references.md#REF-1).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Accepted: `fn get(v: &Vec<Int>, i: Int) -> Option<Int>` (a copy-out value); returning a raw
   pointer `*const T`.
@@ -802,9 +801,10 @@ reference).
 
 #### REF-2. No function type returns a reference
 
-A function-pointer type whose return type contains a reference cannot be written, so no callback can
-hand a borrowed element back (this keeps `with_value` sound). Parameters of reference type are
-allowed.
+**Stated as [REF-2](../spec/references.md#REF-2).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Accepted: `fn apply(x: &i64, f: fn(&i64) -> i64) -> i64`.
 - Rejected: `fn apply(x: &i64, f: fn(&i64) -> &i64) -> i64`.
@@ -822,11 +822,10 @@ allowed.
 
 #### REF-3. No reference is stored
 
-The only storage a reference may occupy is a local reference binding (and an argument slot for
-the duration of a call). A reference may not be held in: a struct or enum field type, or a
-newtype's inner type (each also through a type alias); a struct literal field, an enum payload or
-an array literal element; a binding or parameter whose type holds a reference inside an array,
-`Heap` or generic argument, also behind an outer `&`; or a module constant.
+**Stated as [REF-3](../spec/references.md#REF-3).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Accepted: `struct H { f: fn(&Int) -> Int }`; a reference parameter; a borrow-block binder.
 - Rejected: `struct W { t: &String }`; `Option::Some { value: &s }`; `[&a, &b]`;
@@ -876,7 +875,10 @@ G12. [VALUE_MODEL.md](VALUE_MODEL.md) records the value category.
 
 #### REF-4. Generic instantiation preserves REF-1 and REF-3
 
-Three separate conditions, each refusing an instantiation `T := A`:
+**Stated as [REF-4](../spec/references.md#REF-4).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - (a) `A` **contains** a reference and `T` occurs in the generic's return type;
 - (b) after monomorphization (`verifyNoStoredRefs`), an instantiated struct or enum field type
@@ -915,13 +917,10 @@ Three separate conditions, each refusing an instantiation `T := A`:
 
 #### REF-5. A reference originates only from a canonical place
 
-A reference value is created only by: a borrow `&p` / `&mut p` of a canonical place `p`; a
-reference parameter; a borrow-block binder; a reborrow, projection or cast of a reference binding
-whose source is traced (`&*r`, `&mut *r`, `&r.f`, `r as &U`); or an arm-scoped pattern binder that
-binds through such a reference. A reference may be used as a call argument or receiver, the operand
-of `*`, a field or index base, or the scrutinee of a `match`, `if let` or `while let`; it may not
-initialize a `let` or be assigned to any binding (REF-6). Each of the following is refused as the
-source of a reference:
+**Stated as [REF-5](../spec/references.md#REF-5).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - an `if` or `match` whose value is a reference (`let r = if c { &a } else { &b };`,
   `f(if c { &a } else { &b })`) — a deliberate restriction; the backend miscompiled the form
@@ -981,6 +980,10 @@ R-0499 may lift it as REF-5@2.
   (REF-5@2) was weighed and not adopted.
 
 #### REF-6. Reference bindings are scoped: never introduced by `let`, never assigned
+
+**Stated as [REF-6](../spec/references.md#REF-6).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
 
 (Rewritten by the 2026-10-21 decision. The earlier draft allowed a reassignment `r = e` when `e`'s
 source had the same root, normalized path and exactness as `r`'s; that comparison is retired.)
@@ -1079,9 +1082,10 @@ reading the owner while a named shared reference lives (G10); see the relaxation
 
 #### REF-7. No reference is written through a reference
 
-An assignment whose target lies behind a reference and whose value type holds a reference
-(`*slot = &local` with `slot: &mut &T`) is refused: the borrow would land in storage the writer
-does not own and leave the caller holding a reference to the callee's local.
+**Stated as [REF-7](../spec/references.md#REF-7).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Rejected: `fn set(slot: &mut & Int) { let local: Int = 7; *slot = &local; }`.
 - Diagnostic: E0238, the deref-assignment case of `checkStmt` (`land2-fix`, bug 091 integration
@@ -1091,12 +1095,10 @@ does not own and leave the caller holding a reference to the callee's local.
 
 #### REF-8. A reference's source stays the same live binding
 
-While a reference binding is live, its source root may not be moved or consumed (E0204,
-`consumeVar`), accessed while a borrow block freezes it (E0203), mutably borrowed or written while
-a shared reference to it is live or used while an exclusive one is (E0231 / E0232), or shadowed by
-a new binding of the same name (E0238, `guardShadowedSource`, `land2-fix`, bug 107). A reference's
-own uses obey the same exclusivity through its ancestry of reborrows and copies (`refParent`,
-`land2-fix`).
+**Stated as [REF-8](../spec/references.md#REF-8).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 After the 2026-10-21 decision (REF-6) the reference bindings whose source lies in the current
 frame are borrow-block binders and arm binders, so the rule is restated for the three forms that
@@ -1182,13 +1184,10 @@ value out of a projection or through a reference is E0290 (H11); a match guard t
 
 #### SCOPE-1. One lexical name, one binding
 
-A binder may not reuse the spelling of a local value binding visible at its declaration (§15.1).
-Binders are: function parameters (two parameters of one function included), `let` binders, `let`
-destructuring binders, match-arm payload and value binders, `if let` and `while let` binders,
-`for` header binders, and borrow-block reference and region names. The visible binding's state and
-type do not matter: `let s = transform(s)` is rejected although the right-hand side consumed `s`,
-and a Copy binding is protected like a linear one. This is the rule ratified for R-0435 on
-2026-07-25 and inherited by R-0500.
+**Stated as [SCOPE-1](../spec/scope.md#SCOPE-1).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Accepted: the shapes of SCOPE-2.
 - Rejected: `let x: Int = 1; let x: Int = x + 41;`; `if a > 0 { let a: Int = 7; }` with a
@@ -1264,6 +1263,10 @@ and a Copy binding is protected like a linear one. This is the rule ratified for
 
 #### SCOPE-2. What is not a collision
 
+**Stated as [SCOPE-2](../spec/scope.md#SCOPE-2).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 - Bindings in sibling scopes: the two branches of an `if`, consecutive blocks, sibling match arms,
   consecutive loops. Neither binding is visible from the other.
 - A declaration in a loop body: it is one lexical binding however many times it executes.
@@ -1284,10 +1287,10 @@ both (`Concrete/IR/Lower.lean`), pinned by *`regress_087_sibling_promoted.con`* 
 
 #### SCOPE-3. Blocks are lexical on every consumer
 
-A binding declared in a block is not visible after it, and every consumer (Check, Elab, the
-interpreter, Lower, extraction, evidence frames) resolves a name to the innermost visible binding.
-Once SCOPE-1 lands only sibling reuse reaches the renaming path; until then programs that shadow
-must at least mean the lexical thing.
+**Stated as [SCOPE-3](../spec/scope.md#SCOPE-3).** The rest of this section is the rule's design
+record (examples, diagnostics, sites, fixtures, history); where it differs from the
+specification, the specification governs.
+
 
 - Status: **enforced** (exit 2i): batch 2 is on `main`; the shadowing fixture is now rejected by
   SCOPE-1, and its renamed twin `regress_2i_scope1_087_renamed.con` runs 42 in modes

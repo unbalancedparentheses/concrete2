@@ -3,7 +3,7 @@
 # the language, and this gate checks the compiler, the interpreter, the Lean sources, the acceptance
 # manifests, the website and the other docs against it.
 #
-#   S1 format, S2 registry, S5 coverage, S8 tracking, S11 restatement   spec.py lint (no compiler)
+#   S1 format, S2 registry, S5 coverage, S8 tracking, S11 restatement, S12 references   spec.py lint (no compiler)
 #   S3 history     ids.tsv / codes.tsv / Semantics: links against a base revision
 #   S4 examples    every example natively and with --interp; pending examples must match `now=` exactly
 #   S6 codes       every `--report diagnostic-codes` code classified; ledger rule tags == the spec's
@@ -42,7 +42,7 @@ step() {
   if [ "$rc" -ne 0 ] && ! grep -q '^  FAIL ' <<<"$out"; then no "spec.py $1 exited $rc without a FAIL line"; fi
 }
 
-echo "=== S1 S2 S5 S8 S11: format, registry, coverage, tracking, restatement ==="
+echo "=== S1 S2 S5 S8 S11 S12: format, registry, coverage, tracking, restatement, references ==="
 step lint
 
 echo ""
@@ -170,6 +170,15 @@ fresh_copy; mutate "$TMP/n/spec/types.md" 's.replace("pending=R-0500 now=accept:
   && control "N8: an unknown tracking ID" S8 "R-9999" -- lint "${SP[@]}"
 mkdir -p "$TMP/n11"; printf 'Some prose.\n\n%s\n' "$(grep -m1 '^\*\*REF-6@1\.\*\*' docs/spec/$REF | sed 's/^\*\*REF-6@1\.\*\* //')" > "$TMP/n11/planted.md"
 control "N11: a normative sentence copied into another doc" S11 "planted.md restates the normative sentence of REF-6" -- restatements --scan-root "$TMP/n11"
+# a paraphrase: REF-1's sentence with its wording shuffled and a few words changed
+mkdir -p "$TMP/n11b"; printf 'Prose.\n\nNo function, method or trait method, trusted ones too, may have a return type containing a reference.\n' > "$TMP/n11b/planted.md"
+control "N11b: a near restatement of a normative sentence" S11 "planted.md nearly restates the normative sentence of REF-1" -- restatements --scan-root "$TMP/n11b"
+mkdir -p "$TMP/n12a"; printf 'See OWN-99 for the rule.\n' > "$TMP/n12a/planted.md"
+control "N12a: a document names a rule the spec does not hold" S12 "planted.md names OWN-99" -- references --scan-root "$TMP/n12a"
+mkdir -p "$TMP/n12b"; printf 'See [OWN-5](../spec/types.md#OWN-5).\n' > "$TMP/n12b/planted.md"
+control "N12b: a link to a rule in the wrong chapter" S12 "planted.md links OWN-5 in types.md" -- references --scan-root "$TMP/n12b"
+mkdir -p "$TMP/n12c"; printf 'As OWN-5@0 said.\n' > "$TMP/n12c/planted.md"
+control "N12c: a rule version that never existed" S12 "planted.md names OWN-5@0" -- references --scan-root "$TMP/n12c"
 
 # S4: wrong expectations on real examples (run only the mutated example)
 fresh_copy; mutate "$TMP/n/spec/$REF" 's.replace("name=return-value exit=42", "name=return-value exit=41", 1)' \

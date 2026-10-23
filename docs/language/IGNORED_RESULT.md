@@ -59,9 +59,8 @@ Other forms that are *not* discards and so never trip E0286:
 ## Discarding a pure Copy value is a dead computation (E0294)
 
 The must-use rule above keys on *fallibility*; a parallel rule keys on
-*effect-freedom*. A statement expression that discards a **pure, trap-free,
-non-Unit Copy** value computes something with no effect and throws it away — a
-dead computation:
+*effect-freedom*, stated as [OWN-7](../spec/ownership.md#OWN-7). Computing a value with no
+effect and throwing it away is a dead computation:
 
 ```concrete pseudocode
 2 + 3;            // error[check]: (E0294) pure value of type 'i64' is computed
