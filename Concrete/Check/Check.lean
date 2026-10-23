@@ -1608,7 +1608,7 @@ partial def checkExprCore (e : Expr) (hint : Option Ty := none) (mode : UseMode 
           -- behind a reference would duplicate it, so those keep the ref type.
           let isRefScrutinee := match scrTy with | .ref _ | .refMut _ => true | _ => false
           let bindTy ← do
-            if isRefScrutinee && (← isCopyType innerTyR) then pure innerTyR else pure scrTy
+            pure scrTy
           let scrCopy ← isCopyType bindTy
           if binding != "_" then
             -- A named value pattern over a non-Copy scrutinee is a move into the
