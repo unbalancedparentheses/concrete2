@@ -10,6 +10,16 @@ For current priorities and remaining work, see [ROADMAP.md](ROADMAP.md).
 
 ## Major Milestones
 
+### A Foreign Function With A `#[repr(C)]` Aggregate Is Not A Value (bug 166, 2026-10-23)
+
+Taking as a value an `extern fn` whose signature has a `#[repr(C)]` struct is refused (E0588). The
+C calling convention is decided only at a direct call, which passes such a struct in registers; a
+function type carries no convention, so a call through a value passed the struct's address and C
+read it as the field. Foreign functions without such an aggregate have one ABI and stay usable as
+values. The rule is normative in FFI.md "Foreign Function Values", with a calling convention in
+the function type recorded as the long-term design note (TIGHTENING_DECISIONS Q4). Pinned by two
+E0588 fixtures, the reproducer, and a scalar control.
+
 ### Compiler-Generated Runtime Calls Carry The Helper's Identity (bug 165, 2026-10-23)
 
 `println`, `print` and the variadic `append` reach the runtime helpers whatever the module
