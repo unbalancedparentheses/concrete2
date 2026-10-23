@@ -1455,7 +1455,7 @@ partial def checkExprCore (e : Expr) (hint : Option Ty := none) (mode : UseMode 
               -- freely droppable), a Copy payload binds by value. An OWNED
               -- scrutinee binds payloads owned, as before.
               let bindTy ← do
-                if isRefScrutinee && !(← isCopyType fieldTy) then pure (Ty.ref fieldTy)
+                if isRefScrutinee then pure (Ty.ref fieldTy)
                 else pure fieldTy
               -- An arm binder may shadow a live binding: it is arm-scoped, so
               -- the outer binding is visible again (with its own obligation)
