@@ -67,8 +67,7 @@ source ──▶ Parse ──▶ Resolve ──▶ Check ──▶ Elab/Core ─
   leak.*
 
 ### after BackendIR (planned)
-- Runtime checks, trap/source spans, layout/ABI facts, helper calls, target
-  constants, and capability/trust labels are still structured and inspectable.
+- [PASS-11](../spec/pipeline.md#PASS-11): backend facts stay structured, and
   `BackendIRVerify` rejects malformed backend intent before LLVM text emission.
   This boundary is valuable even if LLVM remains the only emitter: it prevents
   report/audit/codegen facts from being reconstructed out of raw LLVM strings.

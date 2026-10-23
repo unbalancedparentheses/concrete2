@@ -495,11 +495,28 @@ def content_words(text):
 def doc_sentences(text):
     """The prose sentences of a Markdown document: code fences dropped, whitespace collapsed."""
     t = re.sub(r"```.*?```", " ", text, flags=re.S)
-    t = re.sub(r"\s+", " ", t)
-    # split first (sentence starts are capitalised), then reduce each to the comparable text;
-    # links and inline tags are the only markup that changes the words, and they are cheap to drop
+    # Markdown blocks first: a paragraph, and each heading, list item and table cell on its own,
+    # so unrelated text in the same block cannot dilute a restated sentence
+    blocks, cur = [], []
+    for ln in t.split("\n"):
+        s = ln.strip()
+        if not s:
+            if cur: blocks.append(" ".join(cur)); cur = []
+        elif re.match(r"#+ ", s):                       # a heading is a block of one line
+            if cur: blocks.append(" ".join(cur)); cur = []
+            blocks.append(re.sub(r"^#+\s*", "", s))
+        elif re.match(r"([-*+] |[0-9]+[.)] |>)", s):
+            if cur: blocks.append(" ".join(cur))
+            cur = [re.sub(r"^([-*+]|[0-9]+[.)]|>)\s*", "", s)]
+        elif s.startswith("|"):
+            if cur: blocks.append(" ".join(cur)); cur = []
+            blocks.extend(c for c in s.strip("|").split("|") if c.strip())
+        else: cur.append(s)
+    if cur: blocks.append(" ".join(cur))
+    # then sentences (their starts are capitalised), each reduced to the comparable text: links and
+    # emphasis are the only markup that changes the words
     out = []
-    for x in re.split(r"(?<=[.!?])\s+(?=[A-Z*`(\[])", t):
+    for x in (y for blk in blocks for y in re.split(r"(?<=[.!?])\s+(?=[A-Z*`(\[])", blk)):
         x = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", x)
         out.append(re.sub(r"[*_`]", "", x))
     return out
@@ -550,7 +567,8 @@ def check_restatements(spec, root, scan_root=None):
         ok(f"S11 restatement: {len(sents)} normative sentences, none restated or nearly restated in {files} Markdown files")
 
 RULE_REF = re.compile(r"\b(REF|SCOPE|PAT|FFI|PASS|OWN|TYPE|MEM|TRUST|STMT|ARITH|CON|MOD|SYN|TRAIT)-(D?[0-9]+)(?:@([0-9]+))?\b")
-SPEC_LINK = re.compile(r"\]\(([^)\s]*?spec/([a-z]+)\.md)#([A-Z]+-D?[0-9]+)\)")
+# any form of link to a rule anchor: inline (with or without a title), reference-style, bare URL
+SPEC_LINK = re.compile(r"((?:[^\s()\[\]]*/)?spec/([a-z]+)\.md)#([A-Z]+-D?[0-9]+)\b")
 
 def check_references(spec, root, scan_root=None):
     """S12: every rule another document names exists. An ID names a live entry, or one the spec's

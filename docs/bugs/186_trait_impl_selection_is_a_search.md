@@ -62,7 +62,7 @@ compiler's `Option`/`Result`, the always-visible std types, then the primitives 
 module. It refuses, each with its own code and spec rule
 ([docs/spec/traits.md](../spec/traits.md)):
 
-- E0590, TRAIT-1: two impls of one trait whose targets are equal up to parameter naming.
+- E0590, [TRAIT-1](../spec/traits.md#TRAIT-1): duplicate impls.
 - E0591, TRAIT-2: two impls of one trait whose targets unify.
 - E0592, TRAIT-3: an impl in a module that defines neither its trait nor its type (Austral's
   instance locality, at module granularity).

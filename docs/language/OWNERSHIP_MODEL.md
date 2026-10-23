@@ -98,10 +98,9 @@ an implicit scope-end destructor for an otherwise-live linear value.
 
 ## Conditional `Copy` (history, 2026-07-05)
 
-Superseded by decision D6 (2026-10-23): a generic declared `Copy` is Copy exactly when every
-field is Copy under its parameters' bounds ([TYPE-14](../spec/types.md#TYPE-14), pending R-0510;
-today's rule is [OWN-D1](../spec/ownership.md#OWN-D1)). What follows records the conditional mark as
-it landed.
+Superseded by decision D6 (2026-10-23), now [TYPE-14](../spec/types.md#TYPE-14): whether an
+instantiation is Copy is decided from the declaration alone, from its type arguments rather than
+by inspecting fields after substitution. What follows records the conditional mark as it landed.
 
 
 `Copy` on a generic declaration is a *conditional* mark: the instantiation is `Copy`

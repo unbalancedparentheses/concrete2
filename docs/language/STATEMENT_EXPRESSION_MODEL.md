@@ -236,12 +236,10 @@ repair or containment is exit 0b (R-0482) under the defect disposition rule.
 
 ## Exits in operand position
 
-**Rule (d) (normative, decided 2026-10-21).** `return`, `break` and `continue` may not occur inside
-a call argument (a method receiver included), a struct, enum or array literal element (a
-functional-update base included), or an operator operand (binary, unary, cast, index). A `break` or
-`continue` bound by a loop entered inside that operand is not an exit from it and stays legal. An
-exit stays legal in statement position, in a tail (`return if c { return 1; } else { 2 };`), and in
-a `let` or assignment initializer's branch chain (`let v = match o { Option::Some { value } =>
+**Rule (d) (decided 2026-10-21), stated as [STMT-5](../spec/statements.md#STMT-5).** An exit is
+refused inside a call argument, a literal element or an operator operand; it stays legal in
+statement position, in a tail (`return if c { return 1; } else { 2 };`), and in a `let` or
+assignment initializer's branch chain (`let v = match o { Option::Some { value } =>
 value, Option::None => { return 1; } };`, the let-else idiom). Diagnostic: E0278
 (`exitInOperand`), at the exit.
 

@@ -682,16 +682,14 @@ positive-control mutations (§15.6); it has no diagnostic of its own.
 - A **reference type** is `&T` or `&mut T`, including one spelled through a type alias. Raw
   pointers (`*const T`, `*mut T`) are not references; they are the trusted escape and are outside
   these rules.
-- A type **holds a reference** when it is a reference type, or an array, `Heap`, heap array or
-  generic instantiation one of whose element or argument types holds a reference (`tyStoresRef`
-  in `Concrete/Check/CheckHelpers.lean`). A function-pointer type does not hold one (a
+- A type **holds a reference**: [REF-D2](../spec/references.md#REF-D2) (`tyStoresRef` in
+  `Concrete/Check/CheckHelpers.lean`). A function-pointer type does not hold one (a
   `fn(&T) -> U` value stores no reference), and a raw pointer is not looked through. A named
   struct or enum can hold one only through its type arguments, because REF-3 forbids reference
   fields. A bare outer reference is looked through for bindings (`tyHoldsRefInAggregate`), so a
   binding of type `& &T` or `&[Int; 2]` holds no reference in an aggregate.
-- A type **contains a reference** when a reference type occurs anywhere in it, including inside
-  raw pointers, `Heap`, arrays, generic arguments and both the parameters and the result of a
-  function type (`tyContainsRef` in `Concrete/Check/CheckHelpers.lean`). REF-1, REF-2 and REF-4
+- A type **contains a reference**: [REF-D1](../spec/references.md#REF-D1) (`tyContainsRef` in
+  `Concrete/Check/CheckHelpers.lean`). REF-1, REF-2 and REF-4
   use this wider predicate; REF-3 uses "holds".
 - A **canonical place** is a binding followed by any number of field (`.f`), index (`[i]`) and
   newtype (`.0`) projections, where each dereference `*e` is of a reference or raw pointer whose
@@ -995,9 +993,7 @@ Two syntactic rules:
   alias or inferred (`let s = r;` with `r: &P`). After monomorphization the same holds for a
   binder whose type became a reference by instantiating a type parameter (`let y: T = x;` in a
   generic body at `T := &Int`); like REF-4(c), it is refused at the instantiation.
-- (b) **No reference binding is assigned.** No reference binding (a parameter, a borrow-block
-  binder or an arm-scoped pattern binder) is the target of an assignment `r = e`, whatever `e` is.
-  Writing *through* a reference (`*r = v`, `r.f = v` with `r: &mut S`) assigns the referenced
+- (b) **No reference binding is assigned** ([REF-6](../spec/references.md#REF-6)). Writing *through* a reference (`*r = v`, `r.f = v` with `r: &mut S`) assigns the referenced
   place, not the binding, and is governed by REF-7 and the adjacent E0291 rule. After
   monomorphization the same holds for an assignment whose target's type became a reference by
   instantiating a type parameter (`x = y;` in `fn f<T: Copy>(x: T, y: T)` called at `T := &Int`,

@@ -173,10 +173,14 @@ control "N11: a normative sentence copied into another doc" S11 "planted.md rest
 # a paraphrase: REF-1's sentence with its wording shuffled and a few words changed
 mkdir -p "$TMP/n11b"; printf 'Prose.\n\nNo function, method or trait method, trusted ones too, may have a return type containing a reference.\n' > "$TMP/n11b/planted.md"
 control "N11b: a near restatement of a normative sentence" S11 "planted.md nearly restates the normative sentence of REF-1" -- restatements --scan-root "$TMP/n11b"
+mkdir -p "$TMP/n11c"; printf '# Functions\nNo function, method or trait method, trusted ones too, may have a return type containing a reference.\n\n- an unrelated list item with many other words in it to dilute a merged block\n' > "$TMP/n11c/planted.md"
+control "N11c: a near restatement right under a heading" S11 "planted.md nearly restates the normative sentence of REF-1" -- restatements --scan-root "$TMP/n11c"
 mkdir -p "$TMP/n12a"; printf 'See OWN-99 for the rule.\n' > "$TMP/n12a/planted.md"
 control "N12a: a document names a rule the spec does not hold" S12 "planted.md names OWN-99" -- references --scan-root "$TMP/n12a"
 mkdir -p "$TMP/n12b"; printf 'See [OWN-5](../spec/types.md#OWN-5).\n' > "$TMP/n12b/planted.md"
 control "N12b: a link to a rule in the wrong chapter" S12 "planted.md links OWN-5 in types.md" -- references --scan-root "$TMP/n12b"
+mkdir -p "$TMP/n12d"; printf '[rule]: ../spec/types.md#OWN-5 "title"\n' > "$TMP/n12d/planted.md"
+control "N12d: a reference-style link to a rule in the wrong chapter" S12 "planted.md links OWN-5 in types.md" -- references --scan-root "$TMP/n12d"
 mkdir -p "$TMP/n12c"; printf 'As OWN-5@0 said.\n' > "$TMP/n12c/planted.md"
 control "N12c: a rule version that never existed" S12 "planted.md names OWN-5@0" -- references --scan-root "$TMP/n12c"
 
