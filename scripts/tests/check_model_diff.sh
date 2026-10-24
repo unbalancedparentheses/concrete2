@@ -362,7 +362,8 @@ grep -qP "\tmain\.body_local_assigned\t" "$TMP/s" \
 echo ""
 echo "=== T: bug 086 — a discarded statement is not the value; a nested return exits ==="
 T="tests/regressions/bug086_discarded_tail/repro.con"
-"$BIN" "$T" --report model-diff > "$TMP/t" 2>&1
+"$BIN" "$T" --report model-diff > "$TMP/t" 2>&1; trc=$?
+[ "$trc" -eq 0 ] && ok "T: the report succeeds on the bug 086 fixture" || no "T: the report failed (exit $trc)"
 # The two shapes bug 086 mis-modelled are extracted since 2026-10-24 and must agree at the values
 # the bug got wrong: the discarded `id(x);` is evaluated and dropped (g(8) is 7; the bug said 8),
 # and the `let` whose `if` value returns exits the function (letret(1) is 1; the bug said 11).
@@ -402,22 +403,28 @@ dzr="$(grep -P "\tmain\.dz\t" "$TMP/d")"
 if [ -n "$dzr" ] && ! grep -qvP '^partial\tmain\.dz\t.*\truntime=trap$' <<<"$dzr"; then
   ok "D: dz traps at runtime on every input and the model is only partial ($(grep -c . <<<"$dzr"))"
 else no "D: dz: $(grep -vP '^partial\t.*runtime=trap$' <<<"$dzr" | head -2 | tr '\t' ' ' | tr '\n' '|')"; fi
-# Refused shapes: a Unit-typed discarded call (no value in the model) and a branch that both
-# returns early and yields a value. Listed, not extracted, no rows.
-for fn in unit_call mixed; do
+# Refused shapes: a Unit-typed discarded call (no value in the model), a branch that both returns
+# early and yields a value, and a branch whose discarded value block declares a `let` the code after
+# it reads (capture, capm: a local `K` shadowing the module constant `K`; the model said 99 where
+# the runtime gives 7). Listed, not extracted, no rows.
+for fn in unit_call mixed capture capm; do
   st="$(grep -A1 -E "^\s*main\.$fn\(" "$TMP/dx" | grep -oE 'status: .*' | head -1)"
   if [ -n "$st" ] && [ "$st" != "status: extracted" ] && ! grep -qP "\tmain\.$fn\t" "$TMP/d"; then
     ok "D: $fn is listed and not extracted ($st)"
   else no "D: $fn: ${st:-no entry}, $(grep -cP "\tmain\.$fn\t" "$TMP/d") rows"; fi
 done
+# Perturbing one function changes exactly its agreeing rows to MISMATCH: the perturbed report must
+# exit 0, read MISMATCH on every row of the function that agreed, and keep EVERY other row (of the
+# function and of all the others) byte for byte, so a report that loses or changes other rows fails.
 for fn in used called exit reassign arm_assign; do
-  CONCRETE_MODEL_DIFF_PERTURB="main.$fn" "$BIN" "$DF" --report model-diff > "$TMP/dp" 2>&1
-  mine="$(grep -cP "^MISMATCH\tmain\.$fn\t" "$TMP/dp" || true)"
+  CONCRETE_MODEL_DIFF_PERTURB="main.$fn" "$BIN" "$DF" --report model-diff > "$TMP/dp" 2>&1; dprc=$?
   was="$(grep -cP "^agree\tmain\.$fn\t" "$TMP/d" || true)"
-  others="$(grep -P '^MISMATCH\t' "$TMP/dp" | grep -cvP "\tmain\.$fn\t" || true)"
-  [ "$mine" -gt 0 ] && [ "$mine" -eq "$was" ] && [ "$others" -eq 0 ] \
-    && ok "D: perturbing $fn turns all $was of its agreeing rows into MISMATCH, and only those" \
-    || no "D: perturbing $fn: $mine MISMATCH rows of $was agreeing, $others others"
+  grep -P '\tmain\.' "$TMP/d" | sed -E "s/^agree(\tmain\.$fn\t.*\tmodel=)[^\t]*/MISMATCH\1/" | sed -E 's/\tmodel=[^\t]*//' > "$TMP/dexp"
+  grep -P '\tmain\.' "$TMP/dp" | sed -E 's/\tmodel=[^\t]*//' > "$TMP/dgot"
+  same_others="$(diff <(grep -vP "\tmain\.$fn\t" "$TMP/d" | grep -P '\tmain\.') <(grep -vP "\tmain\.$fn\t" "$TMP/dp" | grep -P '\tmain\.') > /dev/null && echo y)"
+  [ "$dprc" -eq 0 ] && [ "$was" -gt 0 ] && [ "$same_others" = y ] && cmp -s "$TMP/dexp" "$TMP/dgot" \
+    && ok "D: perturbing $fn turns all $was of its agreeing rows into MISMATCH, every other row unchanged" \
+    || no "D: perturbing $fn: exit $dprc, $was agreeing rows; the perturbed report is not exactly those rows flipped"
 done
 
 echo ""

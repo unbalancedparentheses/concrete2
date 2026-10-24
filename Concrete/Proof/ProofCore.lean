@@ -838,7 +838,12 @@ def cStmtsLetsAtEnd (declared : List String) : List CStmt → List String
   | [] => declared
   | (.return_ _ _) :: _ => []
   | (.letDecl n _ _ _) :: rest => cStmtsLetsAtEnd (n.name :: declared) rest
-  | [.expr _ true] => []  -- a value tail is the block's value; nothing falls through
+  -- A value tail does NOT end the scope here: this is asked only of a branch composed with a
+  -- continuation, where the tail is a discarded statement value and control goes on to the
+  -- continuation, inside the branch's `letIn`s. Treating it as "nothing falls through" let a
+  -- branch-local `let K = 99; K` capture a later read of the module constant `K` (match statement
+  -- arm since 2026-10-23, discarded `if` since 2026-10-24; Codex review): the model said 99, the
+  -- runtime 7. It is handled by the `(.expr e _) :: rest` case below.
   | (.ifElse _ t (some e)) :: rest =>
     if cStmtsDiverge t && cStmtsDiverge e then [] else cStmtsLetsAtEnd declared rest
   | (.expr e _) :: rest => if cExprDiverges e then [] else cStmtsLetsAtEnd declared rest

@@ -1,6 +1,7 @@
 // Discarded statements and `let`/assignments whose `if`/`match` value can return (2026-10-24).
 // check_model_diff.sh leg D pins the values in the comments, each against the interpreter.
 mod main {
+    const K: Int = 7;
     enum Copy Opt { Some { v: i32 }, None }
 
     fn id(x: i32) -> i32 { return x; }
@@ -60,6 +61,26 @@ mod main {
             },
             Opt::None => { return 9; }
         }
+    }
+    // A branch-local `let` of a discarded value must not capture a later read of the constant
+    // `K` (SCOPE-1 lets a local shadow a module constant): capture(b) = 7 and capm(n) = 7. The
+    // model said 99 for capture(true) and capm(0) until the Codex review of 2026-10-24; both are
+    // now refused (the model has one namespace for the local and the constant).
+    fn capture(b: bool) -> Int {
+        discard(if b {
+            let K: Int = 99;
+            K
+        } else {
+            0
+        });
+        return K;
+    }
+    fn capm(n: Int) -> Int {
+        match n {
+            0 => { let K: Int = 99; K },
+            _ => 0,
+        }
+        return K;
     }
     pub fn main() -> i32 { return 0; }
 }
