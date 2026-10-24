@@ -140,6 +140,18 @@ small functional state model:
   branch that assigns carries its own value of `x` into that code (2026-10-23)
 - a `match` statement followed by more code extracts with that code as each arm's continuation, as
   an `if` statement does; an arm whose pattern binds a name that code reads is refused (2026-10-23)
+- a discarded statement followed by more code (`f(x);`, and `discard(e)`, which elaborates to a
+  discarded `if` expression) is evaluated and dropped: a `letIn` of a binder no source name can
+  spell, so a stuck value leaves the model stuck. A Unit-typed one (a call of a function returning
+  `()`) has no value in the model and is refused. Normalization removes an unused `let`, so where
+  the dropped value traps, the comparison reads `partial` (2026-10-24)
+- `let x = v` or `x = v` where `v` is an `if`/`match` value some branch of which returns: the code
+  after it is pushed into the branches, so a branch that returns is the function's result and one
+  that yields binds `x` and continues. A branch that both returns early and yields a value is
+  refused, as is an arm whose pattern binds a name the code after reads (2026-10-24)
+- a value-position branch (an `if` expression's branch, a `match` expression's arm) every path of
+  which returns may assign: no code after the expression can read what its assignments lose
+  (2026-10-24)
 - loop-carried variable updates become environment rebinding
 - array assignment becomes `arraySet` plus rebinding of the array name
 - richer loop exits use `LoopStep::Cont` / `LoopStep::Break`

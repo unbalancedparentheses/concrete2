@@ -1,0 +1,65 @@
+// Discarded statements and `let`/assignments whose `if`/`match` value can return (2026-10-24).
+// check_model_diff.sh leg D pins the values in the comments, each against the interpreter.
+mod main {
+    enum Copy Opt { Some { v: i32 }, None }
+
+    fn id(x: i32) -> i32 { return x; }
+    fn safe_div(a: i32, b: i32) -> i32 { return a / b; }
+    fn noop(x: i32) { }
+
+    // `discard(e)`: e is computed and dropped. used(x) = x + 2.
+    fn used(x: i64) -> i64 {
+        discard(x + 1);
+        return x + 2;
+    }
+    // A discarded call followed by more code. called(x) = x * 2.
+    fn called(x: i32) -> i32 {
+        id(x);
+        return x * 2;
+    }
+    // A discarded value that traps: the runtime stops at the division by zero, so the model's
+    // value (if any) can only be partial, never a different answer. dz(x) traps for every x.
+    fn dz(x: i32) -> i32 {
+        safe_div(x, 0);
+        return 1;
+    }
+    // A Unit-typed discarded call has no value in the model: not extracted.
+    fn unit_call(x: i32) -> i32 {
+        noop(x);
+        return x;
+    }
+    // `let v = match ...` where an arm returns (the spec's STMT-5): exit(0) = 42, exit(5) = 6.
+    fn exit(x: i32) -> i32 {
+        let o: Opt = if x == 0 { Opt::None } else { Opt::Some { v: x } };
+        let v: i32 = match o {
+            Opt::Some { v } => v,
+            Opt::None => { return 42; }
+        };
+        return v + 1;
+    }
+    // An assignment whose `if` value can return: reassign(0) = 7, reassign(3) = 13.
+    fn reassign(x: i32) -> i32 {
+        let mut y: i32 = 10;
+        y = if x == 0 { return 7; } else { y + x };
+        return y;
+    }
+    // A branch that both returns early and yields a value is not modelled: not extracted.
+    fn mixed(x: i32) -> i32 {
+        let y: i32 = if x > 0 { if x > 5 { return 1; } 2 } else { 3 };
+        return y;
+    }
+    // A match arm every path of which returns may assign (the spec's PAT-8):
+    // arm_assign(x) = 42 if x < 1, else 0.
+    fn arm_assign(x: i32) -> i32 {
+        let o: Opt = Opt::Some { v: x };
+        match o {
+            Opt::Some { v } => {
+                let mut out: i32 = 0;
+                if v < 1 { out = 42; }
+                return out;
+            },
+            Opt::None => { return 9; }
+        }
+    }
+    pub fn main() -> i32 { return 0; }
+}

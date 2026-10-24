@@ -98,6 +98,11 @@ model. Three changes raised that to 56, every compared input agreeing:
 - the functional state model gained assignments outside loops and `match` statements followed by
   more code ([PROVABLE_V1.md](PROVABLE_V1.md), "Statements And State"): 42 to 49.
 
+On 2026-10-24 (the survey counts 118 accepted examples, the 57 compared then included) three
+further state-model rules raised the count from 57 to 61: discarded statements evaluated and
+dropped (OWN-5, OWN-7), `let`/assignments whose `if`/`match` value can return (STMT-5), and
+returning value-position branches that assign (PAT-8). check_model_diff.sh legs D and T pin them.
+
 What blocks the remaining 61, by examples blocked (one example can have several blockers):
 
 | blocker (`--report extraction`) | examples | status in PROVABLE_V1 |

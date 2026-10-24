@@ -33,8 +33,12 @@
 #   M  the state model outside loops (2026-10-23): assignments rebind, a match statement's arms
 #      continue to the code after it, an if-expression branch that assigns is refused, and a
 #      statement arm's value is discarded (the two counterexamples of its review);
-#   T  the bug 086 fixture: a discarded `e;` or a return out of a non-tail expression is not
-#      extracted; a tail match/if whose arms return agrees.
+#   T  the bug 086 fixture: a discarded `e;` is evaluated and dropped, not the block's value, and a
+#      `let` whose `if` value returns exits the function (both pinned at the values the bug got
+#      wrong); a tail match/if whose arms return agrees.
+#   D  discarded statements (`discard(e)`, `f(x);`) and `let`/assignments whose if/match value can
+#      return (2026-10-24): pinned, all agreeing, each perturbed; a discarded trap is only partial;
+#      a Unit-typed discard and a branch that both returns and yields are refused.
 #
 # Sampling, not proof: agreement on boundaries is evidence, not a theorem (R-0460 owns the theorems).
 set -uo pipefail
@@ -359,18 +363,62 @@ echo ""
 echo "=== T: bug 086 — a discarded statement is not the value; a nested return exits ==="
 T="tests/regressions/bug086_discarded_tail/repro.con"
 "$BIN" "$T" --report model-diff > "$TMP/t" 2>&1
-# Not modelable exactly (a call the model cannot see; a return out of a let initializer):
-# they must not be extracted at all, so no row can claim a value. (A return inside a call
-# argument, `argret`, is refused by the language since bug 142 and left the fixture.)
-for fn in g letret; do
-  grep -qP "\tmain\.$fn\t" "$TMP/t" && no "T: $fn is extracted: $(grep -m1 -P "\tmain\.$fn\t" "$TMP/t" | tr '\t' ' ')" \
-    || ok "T: $fn is not extracted"
-done
+# The two shapes bug 086 mis-modelled are extracted since 2026-10-24 and must agree at the values
+# the bug got wrong: the discarded `id(x);` is evaluated and dropped (g(8) is 7; the bug said 8),
+# and the `let` whose `if` value returns exits the function (letret(1) is 1; the bug said 11).
+# (A return inside a call argument, `argret`, is refused by the language since bug 142.)
+want "$TMP/t" g 8 7 T
+want "$TMP/t" g 0 7 T
+want "$TMP/t" letret 1 1 T
+want "$TMP/t" letret 0 12 T
+for fn in g letret; do allagree "$TMP/t" "$fn" T; done
 want "$TMP/t" tailmatch 0 5 T
 want "$TMP/t" tailmatch 1 6 T
 want "$TMP/t" tailif 1 3 T
 want "$TMP/t" tailif 0 4 T
 for fn in tailmatch tailif; do allagree "$TMP/t" "$fn" T; done
+
+echo ""
+echo "=== D: discarded statements, and let/assign values that can return (2026-10-24) ==="
+DF="tests/regressions/model_diff_discard/repro.con"
+"$BIN" "$DF" --report model-diff > "$TMP/d" 2>&1; drc=$?
+"$BIN" "$DF" --report extraction > "$TMP/dx" 2>&1; dxrc=$?
+[ "$drc" -eq 0 ] && [ "$dxrc" -eq 0 ] && ok "D: both reports succeed on the discard fixture" \
+  || no "D: model-diff exit $drc, extraction exit $dxrc"
+grep -qE '^MISMATCH' "$TMP/d" && no "D: a mismatch: $(grep -m3 '^MISMATCH' "$TMP/d" | tr '\t' ' ' | tr '\n' '|')" \
+  || ok "D: no mismatch on the discard fixture"
+want "$TMP/d" used 7 9 D          # discard(x + 1) is dropped
+want "$TMP/d" called 7 14 D       # a discarded call followed by code
+want "$TMP/d" exit 0 42 D         # the arm that returns is the function's result
+want "$TMP/d" exit 7 8 D          # the arm that yields binds v and goes on
+want "$TMP/d" reassign 0 7 D
+want "$TMP/d" reassign 7 17 D
+want "$TMP/d" arm_assign 0 42 D   # a returning arm's assignment reaches its own return
+want "$TMP/d" arm_assign 7 0 D
+for fn in used called exit reassign arm_assign; do allagree "$TMP/d" "$fn" D; done
+# A discarded value that traps: the runtime traps on every input. The model drops an unused value
+# (normalization removes a dead `let`), so it may only read `partial` there, never agree or differ.
+dzr="$(grep -P "\tmain\.dz\t" "$TMP/d")"
+if [ -n "$dzr" ] && ! grep -qvP '^partial\tmain\.dz\t.*\truntime=trap$' <<<"$dzr"; then
+  ok "D: dz traps at runtime on every input and the model is only partial ($(grep -c . <<<"$dzr"))"
+else no "D: dz: $(grep -vP '^partial\t.*runtime=trap$' <<<"$dzr" | head -2 | tr '\t' ' ' | tr '\n' '|')"; fi
+# Refused shapes: a Unit-typed discarded call (no value in the model) and a branch that both
+# returns early and yields a value. Listed, not extracted, no rows.
+for fn in unit_call mixed; do
+  st="$(grep -A1 -E "^\s*main\.$fn\(" "$TMP/dx" | grep -oE 'status: .*' | head -1)"
+  if [ -n "$st" ] && [ "$st" != "status: extracted" ] && ! grep -qP "\tmain\.$fn\t" "$TMP/d"; then
+    ok "D: $fn is listed and not extracted ($st)"
+  else no "D: $fn: ${st:-no entry}, $(grep -cP "\tmain\.$fn\t" "$TMP/d") rows"; fi
+done
+for fn in used called exit reassign arm_assign; do
+  CONCRETE_MODEL_DIFF_PERTURB="main.$fn" "$BIN" "$DF" --report model-diff > "$TMP/dp" 2>&1
+  mine="$(grep -cP "^MISMATCH\tmain\.$fn\t" "$TMP/dp" || true)"
+  was="$(grep -cP "^agree\tmain\.$fn\t" "$TMP/d" || true)"
+  others="$(grep -P '^MISMATCH\t' "$TMP/dp" | grep -cvP "\tmain\.$fn\t" || true)"
+  [ "$mine" -gt 0 ] && [ "$mine" -eq "$was" ] && [ "$others" -eq 0 ] \
+    && ok "D: perturbing $fn turns all $was of its agreeing rows into MISMATCH, and only those" \
+    || no "D: perturbing $fn: $mine MISMATCH rows of $was agreeing, $others others"
+done
 
 echo ""
 bounded_summary

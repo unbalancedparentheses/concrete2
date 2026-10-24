@@ -875,11 +875,58 @@ partial def cExprAssigns : CExpr → Bool
   | _ => false
 end
 
+/-- Would extracting `body` as a VALUE (an `if` expression's branch, a `match` expression's arm,
+    extracted with no continuation) lose an assignment? Only when it assigns AND control can fall
+    off its end: a body every path of which returns never reaches the code after the expression,
+    so its assignments are read only by its own later statements, which the statement extractor
+    threads (`PAT-8`'s `match e { E::A { v } => { ...; while ... { out = 42; ... } return out; } }`). -/
+def cBodyLosesAssign (body : List CStmt) : Bool := cStmtsAssign body && !cStmtsDiverge body
+
 /-- May `branch` be composed with the continuation `k` (already extracted)? Only when none of the
     branch's own `let`s that reach its end is mentioned by `k` — then nesting `k` inside them changes
     nothing. A fresh local nothing after the branch names stays extractable. -/
 def cBranchComposes (branch : List CStmt) (k : Proof.PExpr) : Bool :=
   (cStmtsLetsAtEnd [] branch).all fun n => !pexprMentions n k
+
+/-- One branch of `cEscapingBind`, already extracted as `pbody` with no continuation. A branch
+    every path of which returns is the function's result, and `pb` is unreachable from it. A
+    branch with no `return`, `break` or `continue` anywhere yields its value: `x` is bound to it
+    and control goes on to `pb`. That branch must not assign (its value is extracted with no
+    continuation, so an assignment would be lost) and its pattern must not bind a name `pb` reads
+    (the binder would capture it). Anything else is refused. -/
+def cLetBranch (x : String) (pb : Proof.PExpr) (binders : List String) (body : List CStmt)
+    (pbody : Proof.PExpr) : Option Proof.PExpr :=
+  if cStmtsDiverge body then some pbody
+  else if body.all cStmtNoEscape && !cStmtsAssign body && !binders.any (pexprMentions · pb) then
+    some (.letIn x pbody pb)
+  else none
+
+/-- `x = v; rest` (or `let x = v; rest`) where `v` is an `if` or `match` VALUE some branch of
+    which returns (STMT-5: `let v = match o { Some { value } => value, None => { return 42; } };`).
+    Such a `v` is not a value of the model: a branch that returns leaves the function, and one that
+    yields a value continues to `rest` with `x` bound to it. `pv` is `v` extracted as a value
+    (`cExprToPExprImpl`, so each branch is already its own extraction with no continuation, and
+    guards, range patterns and assigning branches were refused there); `pb` is `rest`. The
+    continuation is pushed into the branches (`cLetBranch`). The condition or scrutinee must not
+    escape. Anything else is refused. -/
+def cEscapingBind (x : String) (val : CExpr) (pv pb : Proof.PExpr) : Option Proof.PExpr :=
+  match val, pv with
+  | .ifExpr cond thenBranch elseBranch _, .ifThenElse pc pt pe => do
+    if !cExprNoEscape cond then none
+    let bt ← cLetBranch x pb [] thenBranch pt
+    let be ← cLetBranch x pb [] elseBranch pe
+    some (.ifThenElse pc bt be)
+  | .match_ scrutinee arms _, .match_ ps parms => do
+    if !cExprNoEscape scrutinee || arms.length != parms.length then none
+    let bs ← (arms.zip parms).mapM fun (arm, (pat, pbody)) =>
+      match arm with
+      | .enumArm _ _ bindings none body =>
+        (cLetBranch x pb (bindings.map (·.1.name)) body pbody).map (pat, ·)
+      | .litArm _ none body => (cLetBranch x pb [] body pbody).map (pat, ·)
+      | .varArm binding _ none body => (cLetBranch x pb [binding.name] body pbody).map (pat, ·)
+      | _ => none
+    some (.match_ ps bs)
+  | _, _ => none
 
 /-- Set a loop step's `Cont` field: replace `name`'s entry in place, or append it. -/
 def upsertAssign (assigns : List (String × Proof.PExpr)) (name : String) (pv : Proof.PExpr) :
@@ -896,6 +943,18 @@ def cExprTailOk : CExpr → Bool
   | .ifExpr c _ _ _ => cExprNoEscape c
   | .match_ s _ _ => cExprNoEscape s
   | e => cExprNoEscape e
+
+/-- The binder a discarded statement value is `let`-bound to. `%` cannot occur in a Concrete
+    identifier, so no source read can name it, and nothing the extractor emits reads it. -/
+def discardBinder : String := "%discard"
+
+/-- May a discarded statement `e;` be modelled as evaluate-and-drop? It must not leave the
+    enclosing block (a `return` inside it is bug 086's class) and must have a value the model can
+    hold: a Unit-typed call has none. In an extracted function a call can only be to an
+    authority-free function and reach no state except through a reference, which the extractor
+    refuses, so dropping the value loses no effect the runtime has. -/
+def cDiscardable (e : CExpr) : Bool :=
+  cExprNoEscape e && (match CExpr.ty e with | .unit => false | _ => true)
 
 mutual
 def cExprToPExprImpl : CExpr → Option Proof.PExpr
@@ -949,7 +1008,7 @@ def cExprToPExprImpl : CExpr → Option Proof.PExpr
     let pargs ← cExprListToPExpr args
     some (.applyVar binding.name pargs)
   | .ifExpr cond thenBranch elseBranch _ => do
-    if cStmtsAssign thenBranch || cStmtsAssign elseBranch then none
+    if cBodyLosesAssign thenBranch || cBodyLosesAssign elseBranch then none
     let pc ← cExprToPExprImpl cond
     let pt ← cStmtsToPExpr thenBranch
     let pe ← cStmtsToPExpr elseBranch
@@ -987,7 +1046,7 @@ def cMatchArmToP : CMatchArm → Option (Proof.PMatchPat × Proof.PExpr)
   -- A guarded arm is not modelled in the proof path (V1); like range patterns,
   -- it makes the function non-proof-extractable (disclosed in identifyUnsupported).
   | .enumArm enumName variant bindings none body => do
-    if cStmtsAssign body then none   -- a value-position body (see `cStmtsAssign`)
+    if cBodyLosesAssign body then none   -- a value-position body (see `cBodyLosesAssign`)
     let pbody ← cStmtsToPExpr body
     some (.enumPat enumName variant (bindings.map (·.1.name)), pbody)
   | .litArm value none body => do
@@ -998,11 +1057,11 @@ def cMatchArmToP : CMatchArm → Option (Proof.PMatchPat × Proof.PExpr)
     let v ← match pval with
       | .lit v => some v
       | _ => none
-    if cStmtsAssign body then none   -- a value-position body (see `cStmtsAssign`)
+    if cBodyLosesAssign body then none   -- a value-position body (see `cBodyLosesAssign`)
     let pbody ← cStmtsToPExpr body
     some (.litPat v, pbody)
   | .varArm binding _bindTy none body => do
-    if cStmtsAssign body then none   -- a value-position body (see `cStmtsAssign`)
+    if cBodyLosesAssign body then none   -- a value-position body (see `cBodyLosesAssign`)
     let pbody ← cStmtsToPExpr body
     some (.varPat binding.name, pbody)
   | .enumArm _ _ _ (some _) _ | .litArm _ (some _) _ | .varArm _ _ (some _) _ => none
@@ -1031,8 +1090,8 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
   -- Only a VALUE-position trailing expression (no `;`, `isValue`) is the block's value (bug 086).
   -- A discarded `e;` is a statement: it neither produces the value nor ends the block, so treating
   -- it as the value (`if c { id(x); } return 7;` modeled as `if c then id(x) else 7`) was wrong.
-  -- A pure discard is rejected by the checker (E0294), so what remains is a call or a control-flow
-  -- expression with effects the model cannot see; it falls through to the refusal below.
+  -- A discarded statement is extracted as evaluate-and-drop (`cDiscardable`, below) only where
+  -- code follows it; at the very end of a function with no continuation it is refused.
   | [.expr e true], none => if cExprTailOk e then cExprToPExprImpl e else none
   -- A trailing value of a branch that has a continuation is a statement's discarded value: an `if`
   -- or `match` STATEMENT's arm ends in a value, and control goes on to the code after it (Codex
@@ -1046,9 +1105,37 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
     let _ ← cExprToPExprImpl e
     some kk
   -- A discarded `match`/`if` whose every arm returns is the function's exit, so its arms' values
-  -- are the result and the continuation is unreachable.
-  | [.expr e false], _ =>
+  -- are the result and the continuation is unreachable. Otherwise, with a continuation, it is the
+  -- last statement of a branch: a `match` statement continues to `kk` from each arm (as below), and
+  -- any other discarded value is evaluated and dropped (`cDiscardThen`).
+  | [.expr e false], none =>
     if cExprDiverges e && cExprTailOk e then cExprToPExprImpl e else none
+  | [.expr (.match_ scrutinee arms mty) false], some kk =>
+    if cExprDiverges (.match_ scrutinee arms mty) && cExprTailOk (.match_ scrutinee arms mty) then
+      cExprToPExprImpl (.match_ scrutinee arms mty)
+    else do
+      if !cExprNoEscape scrutinee then none
+      let ps ← cExprToPExprImpl scrutinee
+      let parms ← cMatchArmsToPK kk arms
+      some (.match_ ps parms)
+  -- A discarded `if` EXPRESSION is an `if` statement (`discard(e)` elaborates to
+  -- `if true { e; } else {}` in expression form): its branches continue to `kk`, exactly as the
+  -- singleton `.ifElse` case below.
+  | [.expr (.ifExpr cond t e ty) false], some kk =>
+    if cExprDiverges (.ifExpr cond t e ty) && cExprTailOk (.ifExpr cond t e ty) then
+      cExprToPExprImpl (.ifExpr cond t e ty)
+    else do
+      if !cExprNoEscape cond then none
+      if !(cBranchComposes t kk && cBranchComposes e kk) then none  -- bug 101
+      let pc ← cExprToPExprImpl cond
+      let pt ← cStmtsToPExprKImpl t (some kk)
+      let pe ← cStmtsToPExprKImpl e (some kk)
+      some (.ifThenElse pc pt pe)
+  | [.expr e false], some kk =>
+    if cExprDiverges e && cExprTailOk e then cExprToPExprImpl e else do
+      if !cDiscardable e then none
+      let pe ← cExprToPExprImpl e
+      some (.letIn discardBinder pe kk)
   -- A `match` STATEMENT followed by more code: each arm falls through to that code, as an `if`
   -- statement's branches do (`.ifElse ... :: rest` below). Its arms are extracted with the
   -- continuation; one that returns ignores it.
@@ -1058,11 +1145,35 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
     let pkRest ← cStmtsToPExprKImpl rest k
     let parms ← cMatchArmsToPK pkRest arms
     some (.match_ ps parms)
-  | (.letDecl name _ _ val) :: rest, k => do
-    if !cExprNoEscape val then none
-    let pv ← cExprToPExprImpl val
+  -- A discarded expression statement followed by more code (`f(x);`, and `discard(e)`, which
+  -- elaborates to `if true { e; } else {}`): the value is computed and dropped, so it is a `let` of
+  -- a binder no source name can spell (`discardBinder`). `eval` of `letIn` is strict, so a value
+  -- that is stuck leaves the model stuck, as a trap stops the runtime. A Unit-typed statement (a
+  -- call of a function returning `()`) has no value in the model and stays refused.
+  -- A discarded `if` expression followed by more code: the `.ifElse ... :: rest` case below.
+  | (.expr (.ifExpr cond t e _) false) :: rest, k => do
+    if !cExprNoEscape cond then none
+    let pc ← cExprToPExprImpl cond
+    let pkRest ← cStmtsToPExprKImpl rest k
+    if !(cBranchComposes t pkRest && cBranchComposes e pkRest) then none  -- bug 101
+    let pt ← cStmtsToPExprKImpl t (some pkRest)
+    let pe ← cStmtsToPExprKImpl e (some pkRest)
+    some (.ifThenElse pc pt pe)
+  | (.expr e false) :: rest, k => do
+    if !cDiscardable e then none
+    let pe ← cExprToPExprImpl e
     let pb ← cStmtsToPExprKImpl rest k
-    some (.letIn name.name pv pb)
+    some (.letIn discardBinder pe pb)
+  | (.letDecl name _ _ val) :: rest, k =>
+    if !cExprNoEscape val then do
+      -- an `if`/`match` value some branch of which returns (`cEscapingBind`)
+      let pv ← cExprToPExprImpl val
+      let pb ← cStmtsToPExprKImpl rest k
+      cEscapingBind name.name val pv pb
+    else do
+      let pv ← cExprToPExprImpl val
+      let pb ← cStmtsToPExprKImpl rest k
+      some (.letIn name.name pv pb)
   -- A scalar or value assignment `x = e` outside a loop: the functional state model
   -- (docs/verification/PROVABLE_V1.md, "Statements And State") rebinds the name, as a loop body's
   -- assignment already does in `cStmtsToStepExprK`. The continuation `rest` reads the new binding.
@@ -1070,11 +1181,16 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
   -- so each path carries its own value of `x` into it. SCOPE-1 guarantees `x` names one binding
   -- (no shadowing), and `cBranchComposes` (bug 101) still refuses a branch whose `let` the
   -- continuation names.
-  | (.assign name val) :: rest, k => do
-    if !cExprNoEscape val then none
-    let pv ← cExprToPExprImpl val
-    let pb ← cStmtsToPExprKImpl rest k
-    some (.letIn name.name pv pb)
+  | (.assign name val) :: rest, k =>
+    if !cExprNoEscape val then do
+      -- an `if`/`match` value some branch of which returns (`cEscapingBind`)
+      let pv ← cExprToPExprImpl val
+      let pb ← cStmtsToPExprKImpl rest k
+      cEscapingBind name.name val pv pb
+    else do
+      let pv ← cExprToPExprImpl val
+      let pb ← cStmtsToPExprKImpl rest k
+      some (.letIn name.name pv pb)
   -- Array index assignment `arr[i] = v`.  Only supported when
   -- `arr` is a simple identifier — we model the mutation as a
   -- shadowing letIn that rebinds the name to (arraySet arr idx
@@ -1456,7 +1572,7 @@ private partial def identifyUnsupportedExpr : CExpr → List String
   | .ifExpr cond thenBr elseBr _ =>
     -- An `if` EXPRESSION's branch extracts with no continuation, so an assignment in it would be
     -- lost; the extractor refuses it (`cStmtsAssign`), and this names why.
-    (if cStmtsAssign thenBr || cStmtsAssign elseBr then ["mutable assignment in an if expression's branch"] else []) ++
+    (if cBodyLosesAssign thenBr || cBodyLosesAssign elseBr then ["mutable assignment in an if expression's branch"] else []) ++
     identifyUnsupportedExpr cond ++
     thenBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) [] ++
     elseBr.foldl (fun acc s => acc ++ identifyUnsupportedStmt s) []

@@ -3,7 +3,7 @@
 mod main {
     fn id(x: i32) -> i32 { return x; }
     // `id(x);` is a discarded statement; g returns 7 for every x (the model said x for x > 0).
-    // Its effect is a call the model cannot see, so it is not extracted (no rows).
+    // Since 2026-10-24 it is extracted as evaluate-and-drop, and g(8) must read 7 on both sides.
     fn g(x: i32) -> i32 {
         if x > 0 {
             id(x);
@@ -11,7 +11,8 @@ mod main {
         return 7;
     }
     // A `return` inside a `let` initializer exits the function: letret(1) = 1 (the model said 11).
-    // Not modelable as a value, so not extracted.
+    // Since 2026-10-24 the code after the `let` is pushed into the branch that yields, and the
+    // branch that returns is the result: letret(1) must read 1 on both sides.
     fn letret(x: i32) -> i32 {
         let y: i32 = if x > 0 { return 1; } else { 2 };
         return y + 10;
