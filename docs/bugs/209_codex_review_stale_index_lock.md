@@ -1,71 +1,77 @@
-# Bug 209: a Codex review left a stale `index.lock` in the agent's worktree
+# Bug 209: a `git status` killed on a timeout left a stale `index.lock` in agent worktrees
 
-**Status:** FIXED (branch `checker-unidentified-cause`, for landing train 11)
-**Found:** 2026-10-23, during the Hetzner gate-host and checker-cause work: three times an empty
-`.git/worktrees/<name>/index.lock` appeared in the agent's own worktree after a
-`codex exec --sandbox read-only` review, and the next `git commit` or `git merge` there failed with
-"Unable to create ... index.lock: File exists" while no git process was running.
+**Status:** FIXED (in this repository: review runs; the owning tool is outside it, see Structural
+owner). First filed 2026-10-23 with the wrong cause (a Codex review); corrected 2026-10-24.
+**Found:** 2026-10-23, during the Hetzner gate-host and checker-cause work: four times an empty
+`.git/worktrees/<name>/index.lock` appeared in the agent's own worktree, and the next `git commit` or
+`git merge` there failed with "Unable to create ... index.lock: File exists" while no git process
+was running. Each time it followed a `codex exec --sandbox read-only` review in that worktree.
 **Severity:** loud. No wrong result: the next git write in that worktree refused until someone
-removed the lock by hand, which `/creview` step 5 and AGENTS.md already told agents to do.
+removed the lock by hand.
 
 ## Reproducer
 
 In a scratch worktree with every tracked file's stat data dirty (`git ls-files -z | xargs -0 touch`),
-poll `.git/worktrees/<name>/index.lock` every 5 ms while running
+poll `.git/worktrees/<name>/index.lock` every 10 ms and log the git processes and their parents
+whenever it exists, while a Codex session runs there and for seven minutes after it ends.
 
-```
-codex exec --sandbox read-only "Run git status, then git show --stat HEAD, ..." </dev/null
-```
+Observed (2026-10-24): during the session, Codex's own sandboxed `git status` takes the lock for
+about 50 ms and releases it; with `GIT_OPTIONAL_LOCKS=0` it takes none (the variable reaches both the
+sandboxed commands and the Codex CLI's own `git status --porcelain`, logged through a `git` shim on
+PATH). AFTER the session, the lock keeps appearing every one to two minutes. The process caught
+holding it was `git -C <worktree> status --short`, started by `llm-archive checkpoint`.
 
-Observed: the lock appears about 2 s into the run, for about 50 ms, while Codex's sandboxed
-`git status` refreshes the index; the read-only sandbox does not prevent it. Killing a
-`git status` with SIGKILL inside that window leaves the lock behind, 0 bytes (2 of 60 kills at
-0.25 s). The same Codex run with `GIT_OPTIONAL_LOCKS=0` in its environment shows the variable inside
-its commands and takes no lock.
+Killing a `git status` with SIGKILL while it holds the lock leaves it behind, 0 bytes (2 of 60 kills
+at 0.25 s): the shape every stale lock had.
 
-Expected: a read-only review never writes into the caller's repository.
+Expected: a tool that only reads a repository never leaves anything in it.
 
 ## Cause
 
-`git status` (and other porcelain reads) opportunistically refresh the index: they create
-`index.lock`, write the refreshed index and rename it over `index`. Codex runs git inside the
-caller's worktree, and its `--sandbox read-only` policy did not stop that write. A reviewer command
-stopped mid-refresh (a command timeout, or the session ending) leaves the empty lock. The review
-entry points ran Codex with the caller's environment unchanged: `scripts/review/review.sh`
-(`run_one`) and the by-hand commands in `.claude/commands/creview.md`.
+`llm-archive` (the user's session archiver, `~/projects/llm-archive`, run by launchd) records the
+working directory of every Claude and Codex session and, for its handoff journal, runs
+`git -C <cwd> status --short` there through `projects.git_output`, which is `subprocess.run(...,
+timeout=...)`; `journal.py` calls it with `git_timeout=1`. `git status` refreshes the index under
+`index.lock` whenever it can. In a worktree of about 4,000 files on a loaded machine the refresh can
+take longer than a second; `subprocess.run` then kills git, which cannot remove its lock. The lock
+followed Codex reviews because each review is a recorded session whose directory the archiver then
+visits.
+
+The first filing blamed Codex: its sandboxed `git status` does take the lock, and the timing
+matched. Codex releases it normally; the watcher above separates the two.
 
 ## Fix
 
-The review run tells git it may not take optional locks.
-
-- `scripts/review/review.sh` runs the reviewer as `GIT_OPTIONAL_LOCKS=0 "$CODEX_BIN" exec ...`.
-  With it, `git status` reads the index and writes nothing.
-- `.claude/commands/creview.md`: the by-hand round commands carry `GIT_OPTIONAL_LOCKS=0`, and
-  step 5 says why; removing a lock nobody owns stays the fallback.
-- `docs/project/REVIEW.md` records the environment of the reviewer call.
+- Here: the review runs keep `GIT_OPTIONAL_LOCKS=0` (`scripts/review/review.sh`, `/creview`,
+  AGENTS.md; pinned by `check_review_tool.sh`). It is correct hardening, since a reviewer only
+  reads, but it was not the cause.
+- The owner of the cause is `llm-archive`: its read-only git calls (`projects.git_output`) must run
+  with `GIT_OPTIONAL_LOCKS=0`, so a status reads the index and writes nothing and a timeout kill
+  leaves nothing behind. That change is in the user's repository, not this one.
+- Until it lands, a lock that no process owns (`lsof <path>/index.lock` empty) may be removed, as
+  AGENTS.md already says.
 
 ## Containment
 
 `check_review_tool.sh`: the fake reviewer records `GIT_OPTIONAL_LOCKS` for every call, and two legs
-require that every call saw `0` (the second fails on any call that did not). Before the fix every
-call records `optional_locks=unset`.
+require that every call saw `0`, with the gate itself exporting `1` so an inherited value cannot
+satisfy them. Nothing in this repository can contain a tool outside it.
 
 ## Structural cause
 
-A process that only reads a repository wrote into it: the review run's git commands share the
-caller's `.git`, and git's default is to refresh the index under a lock whenever it can. The run did
-not own that path, and an interrupted write left an artifact there for the next process to trip
-over. This is class 16, artifacts at paths no run owns: 179 and 191 were intermediates and test
-files at shared names; here it is a lock file in a repository the run was only meant to read.
+Read-only observers of a repository (a session archiver, a reviewer) ran git porcelain that writes:
+git's default refreshes the index under a lock whenever it can, and a reader that may be killed or
+timed out leaves that lock for the next writer. The observer did not own the path it wrote. Class 16,
+artifacts at paths no run owns: 179 and 191 were intermediates and test files at shared names; here
+it is a lock file in a repository the observer only meant to read.
 
 ## Structural owner
 
-The review entry point, `scripts/review/review.sh`, which owns how the reviewer is invoked; the
-`/creview` playbook for by-hand rounds. `check_review_tool.sh` enforces it. Class 16 in
-[STRUCTURAL_CLASSES.md](STRUCTURAL_CLASSES.md).
+Every tool that inspects a worktree it does not own runs git with `GIT_OPTIONAL_LOCKS=0`. Here that
+is `scripts/review/review.sh` (enforced by `check_review_tool.sh`). For the cause itself,
+`llm-archive`'s `projects.git_output`. Class 16 in [STRUCTURAL_CLASSES.md](STRUCTURAL_CLASSES.md).
 
 ## Residual
 
-A Codex run started by hand without the variable can still take the lock; `/creview` and AGENTS.md
-name the rule and the removal fallback. Other tools that run git in a worktree from outside (an
-editor's git integration, a desktop app) are not covered.
+Any other tool that runs git porcelain in these worktrees from outside (an editor's git integration,
+a desktop app) can do the same until it sets the variable.

@@ -277,9 +277,9 @@ run_one() {
   local out="$WORK/out.$RUN_N.txt" log="$WORK/log.$RUN_N.txt"
   : >"$out"
   # GIT_OPTIONAL_LOCKS=0 (bug 209): the reviewer runs git in the caller's worktree, and its sandbox
-  # does not stop `git status` from taking .git's index.lock to refresh the index. A command it
-  # stops mid-refresh left that lock behind, 0 bytes, and the next commit in the worktree failed.
-  # Without optional locks a status reads the index and writes nothing.
+  # does not stop `git status` from taking .git's index.lock to refresh the index. A reader killed
+  # mid-refresh leaves that lock behind, 0 bytes, and the next commit there fails (bug 209's were
+  # left by a session archiver's 1 s timeout). Without optional locks a status writes nothing.
   GIT_OPTIONAL_LOCKS=0 "$CODEX_BIN" exec --sandbox read-only --ephemeral --color never -C "$ROOT" -o "$out" \
     "$(prompt_for "$kind" "$label" "$group" "$paths")" <"$piece" >"$log" 2>&1 || rc=$?
   msg="$(cat "$out")"

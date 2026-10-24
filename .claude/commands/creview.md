@@ -26,9 +26,10 @@ Codex what you believe is correct.
 3. **Rounds 2 to 5** see only the delta since the last reviewed SHA, plus the open findings.
 4. Stop when a round reports no remaining findings, or after round 5. Never exceed 5 rounds; list
    whatever is still open as follow-ups in the report and, when it matters, in the record or roadmap.
-5. Always run Codex with `GIT_OPTIONAL_LOCKS=0` (bug 209): its sandboxed `git status` otherwise
-   takes the worktree's `index.lock`, and a command stopped mid-refresh leaves it behind. If a lock
-   is still found, remove it only when no process owns it.
+5. Always run Codex with `GIT_OPTIONAL_LOCKS=0` (bug 209): a reviewer only reads, and its sandboxed
+   `git status` otherwise takes the worktree's `index.lock` briefly. Stale locks in agent worktrees
+   came from a session archiver's git killed on a 1-second timeout. If one is found, remove it only
+   when no process owns it (`lsof <path>/index.lock` is empty).
 
 Report: the rounds run, each round's findings with the fix commit or the rejection reason, the
 final verdict, and the head SHA reviewed.
