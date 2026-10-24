@@ -477,7 +477,13 @@ want "$TMP/g" grange 7 2 G
 want "$TMP/g" grange 255 3 G
 want "$TMP/g" shadow 255 1 G       # the binder K is the scrutinee
 want "$TMP/g" shadow 7 7 G         # the later arm reads the constant K, not the binder
-GFNS="classify neg pick var_guard stmt grange shadow"
+want "$TMP/g" at199 "" 1 G         # 0..200 includes 199
+want "$TMP/g" at200 "" 40 G        # ... and excludes 200
+want "$TMP/g" at254 "" 40 G        # 200..=254 includes 254
+want "$TMP/g" g10 "" 3 G           # 0..10 excludes 10
+want "$TMP/g" negm10 "" 1 G        # -10..=-1 includes -10
+want "$TMP/g" negm11 "" 3 G
+GFNS="classify neg pick var_guard stmt grange shadow at199 at200 at254 g10 negm10 negm11"
 for fn in $GFNS; do allagree "$TMP/g" "$fn" G; done
 st="$(grep -A1 -E "^\s*main\.many\(" "$TMP/gx" | grep -oE 'status: .*' | head -1)"
 if [ -n "$st" ] && [ "$st" != "status: extracted" ] && ! grep -qP "\tmain\.many\t" "$TMP/g"; then

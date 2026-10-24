@@ -66,6 +66,15 @@ mod main {
             _ => { return K; }
         }
     }
+    // The range endpoints, at inputs the sampler does not produce (Codex review): an exclusive
+    // upper bound excludes itself, an inclusive one includes itself, a lower bound includes itself.
+    // at199() = 1, at200() = 40, at254() = 40, g10() = 3, negm10() = 1, negm11() = 3.
+    fn at199() -> i32 { return classify(199); }
+    fn at200() -> i32 { return classify(200); }
+    fn at254() -> i32 { return classify(254); }
+    fn g10() -> i32 { return grange(10); }
+    fn negm10() -> i32 { return neg(-10); }
+    fn negm11() -> i32 { return neg(-11); }
     // More than six guards: the rest of the chain is copied into each false guard, so this is
     // refused (not extracted).
     fn many(x: i32) -> i32 {
