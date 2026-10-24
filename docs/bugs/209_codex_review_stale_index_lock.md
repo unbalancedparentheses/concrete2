@@ -1,7 +1,8 @@
 # Bug 209: a `git status` killed on a timeout left a stale `index.lock` in agent worktrees
 
-**Status:** FIXED (in this repository: review runs; the owning tool is outside it, see Structural
-owner). First filed 2026-10-23 with the wrong cause (a Codex review); corrected 2026-10-24.
+**Status:** OPEN: the cause is fixed on `llm-archive` branch `git-optional-locks` (e37ef07), not yet
+merged or installed. This repository's review runs are hardened. First filed 2026-10-23 as FIXED,
+with the wrong cause (a Codex review); corrected 2026-10-24.
 **Found:** 2026-10-23, during the Hetzner gate-host and checker-cause work: four times an empty
 `.git/worktrees/<name>/index.lock` appeared in the agent's own worktree, and the next `git commit` or
 `git merge` there failed with "Unable to create ... index.lock: File exists" while no git process
@@ -45,9 +46,12 @@ matched. Codex releases it normally; the watcher above separates the two.
 - Here: the review runs keep `GIT_OPTIONAL_LOCKS=0` (`scripts/review/review.sh`, `/creview`,
   AGENTS.md; pinned by `check_review_tool.sh`). It is correct hardening, since a reviewer only
   reads, but it was not the cause.
-- The owner of the cause is `llm-archive`: its read-only git calls (`projects.git_output`) must run
-  with `GIT_OPTIONAL_LOCKS=0`, so a status reads the index and writes nothing and a timeout kill
-  leaves nothing behind. That change is in the user's repository, not this one.
+- The owner of the cause is `llm-archive`: its read-only git calls (`projects.git_output`) run with
+  `GIT_OPTIONAL_LOCKS=0`, so a status reads the index and writes nothing and a timeout kill leaves
+  nothing behind. Branch `git-optional-locks` (e37ef07) of that repository, with a test that the
+  setting reaches git and that a status over stale stat data leaves the index untouched (it fails
+  with the setting removed, and against the unfixed installed copy). The bug closes when that
+  branch is merged and the launchd agents run it.
 - Until it lands, a lock that no process owns (`lsof <path>/index.lock` empty) may be removed, as
   AGENTS.md already says.
 

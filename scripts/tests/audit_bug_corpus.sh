@@ -225,7 +225,7 @@ declare -A BUG_TEST_MAP=(
 
 # Bugs that don't need a .con regression test (with reason).
 declare -A SKIP_BUGS=(
-  [209]="FIXED 2026-10-23, cause corrected 2026-10-24 -- a read-only git status killed by a session archiver's 1 s timeout left stale index.lock files in agent worktrees; review runs set GIT_OPTIONAL_LOCKS=0. Regression vehicle is check_review_tool.sh (every reviewer call runs with GIT_OPTIONAL_LOCKS=0), not a tests/programs fixture"
+  [209]="OPEN (fix on llm-archive branch git-optional-locks, unmerged); cause corrected 2026-10-24 -- a read-only git status killed by a session archiver's 1 s timeout left stale index.lock files in agent worktrees; review runs set GIT_OPTIONAL_LOCKS=0. Regression vehicle is check_review_tool.sh (every reviewer call runs with GIT_OPTIONAL_LOCKS=0), not a tests/programs fixture"
   [207]="FIXED 2026-10-23 -- check_binder_refs.sh aborted before its verdict on a failed assertion. Regression vehicle is the mutation harness (families 55-57 KILLED), not a tests/programs fixture"
   [106]="FIXED 2026-10-20 -- model-diff report hang + swallowed gate failures. Regression vehicle is check_model_diff.sh (watchdog/exit legs and the thesis_demo exhausted-row leg), not a tests/programs fixture"
   [006]="string literal collision -- fixed in EmitSSA, covered by cross-module tests"
