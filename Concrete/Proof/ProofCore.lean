@@ -949,6 +949,77 @@ def cExprTailOk : CExpr → Bool
   | .match_ s _ _ => cExprNoEscape s
   | e => cExprNoEscape e
 
+/-- The test of one arm of a REFINED match (one with a guard or a range pattern): an ordinary
+    pattern, or an integer range `lo..hi` / `lo..=hi`. -/
+inductive ArmTest where
+  | pat (p : Proof.PMatchPat)
+  | range (lo hi : Proof.PExpr) (inclusive : Bool)
+
+/-- One extracted arm of a refined match: its test, its guard, the names its pattern binds and its
+    body (already extracted, with the statement's continuation when it has one). -/
+abbrev ArmPiece := ArmTest × Option Proof.PExpr × List String × Proof.PExpr
+
+/-- The binder a refined match's scrutinee is `let`-bound to, so it is evaluated once, as at
+    runtime. `%` cannot occur in a Concrete identifier. A nested refined match binds its own,
+    which shadows this one only inside that match. -/
+def scrutineeBinder : String := "%scrutinee"
+
+/-- Does any arm carry a guard or a range pattern? Only then is a match extracted as a chain. -/
+def cArmsRefined (arms : List CMatchArm) : Bool :=
+  arms.any fun
+    | .rangeArm .. => true
+    | .enumArm _ _ _ (some _) _ | .litArm _ (some _) _ | .varArm _ _ (some _) _ => true
+    | _ => false
+
+/-- Check one arm before it joins a refined match (`cArmPieces`). With no continuation (`k = none`,
+    a match EXPRESSION) its body is a value: it may not lose an assignment (`cBodyLosesAssign`).
+    With one (a match STATEMENT followed by code) its body falls through to `k`, so neither its
+    pattern's names nor its own `let`s may be read by `k` (as `cMatchArmToPK`). -/
+def armPiece (k : Option Proof.PExpr) (t : ArmTest) (g : Option Proof.PExpr) (binders : List String)
+    (body : List CStmt) (pbody : Proof.PExpr) : Option ArmPiece :=
+  match k with
+  | none => if cBodyLosesAssign body then none else some (t, g, binders, pbody)
+  | some kk =>
+    if binders.any (pexprMentions · kk) || !cBranchComposes body kk then none
+    else some (t, g, binders, pbody)
+
+/-- The arms of a refined match as a decision chain over the scrutinee binder `s`, tried in source
+    order as at runtime (PAT-4, bug 066): an arm whose pattern matches runs its guard in the
+    pattern's bindings, and a false guard, like a failed pattern, goes on to the next arm. A range
+    `lo..hi` is `lo <= s && s < hi` (`<=` when inclusive). No arm left is stuck (`match` with no
+    arms): a match is exhaustive, so the runtime never gets there. The rest of the chain sits under
+    a guarded arm's bindings, so it may not read any of them (a pattern name may shadow a module
+    constant the later arms read); more than six guards are refused, since the rest of the chain is
+    copied into each guard's false branch. -/
+def refinedChain (s : String) : List ArmPiece → Option Proof.PExpr
+  | [] => some (.match_ (.var s) [])
+  | (t, g, binders, b) :: rest => do
+    let next ← refinedChain s rest
+    if g.isSome && binders.any (pexprMentions · next) then none
+    let body := match g with
+      | some pg => .ifThenElse pg b next
+      | none => b
+    match t with
+    | .pat p => some (.match_ (.var s) [(p, body), (.varPat "_", next)])
+    | .range lo hi incl =>
+      let geLo : Proof.PExpr := .binOp .le lo (.var s)
+      let ltHi : Proof.PExpr := .binOp (if incl then .le else .lt) (.var s) hi
+      some (.ifThenElse (.ifThenElse geLo ltHi (.lit (.bool false))) body next)
+
+/-- A refined match: the scrutinee bound once, then the chain. -/
+def cRefinedMatch (ps : Proof.PExpr) (pieces : List ArmPiece) : Option Proof.PExpr := do
+  if (pieces.filter (·.2.1.isSome)).length > 6 then none
+  let c ← refinedChain scrutineeBinder pieces
+  some (.letIn scrutineeBinder ps c)
+
+/-- A match's extraction: its arms as they are when every arm is an ordinary pattern without a
+    guard (`direct`), otherwise the decision chain of its refined arms (`refined`). -/
+def pickMatch (ps : Proof.PExpr) (direct : Option (List (Proof.PMatchPat × Proof.PExpr)))
+    (refined : Option (List ArmPiece)) : Option Proof.PExpr :=
+  match direct with
+  | some parms => some (.match_ ps parms)
+  | none => refined.bind (cRefinedMatch ps)
+
 /-- The binder a discarded statement value is `let`-bound to. `%` cannot occur in a Concrete
     identifier, so no source read can name it, and nothing the extractor emits reads it. -/
 def discardBinder : String := "%discard"
@@ -961,6 +1032,9 @@ def discardBinder : String := "%discard"
 def cDiscardable (e : CExpr) : Bool :=
   cExprNoEscape e && (match CExpr.ty e with | .unit => false | _ => true)
 
+-- The termination proof of this block (well-founded, by `sizeOf`) outgrew the default budget
+-- when the refined-match arms (`cArmPieces`) joined it (2026-10-24).
+set_option maxHeartbeats 1000000 in
 mutual
 def cExprToPExprImpl : CExpr → Option Proof.PExpr
   | .intLit n _ => some (.lit (.int n))
@@ -1033,8 +1107,9 @@ def cExprToPExprImpl : CExpr → Option Proof.PExpr
     some (.arrayIndex pa pi)
   | .match_ scrutinee arms _ => do
     let ps ← cExprToPExprImpl scrutinee
-    let parms ← cMatchArmsToP arms
-    some (.match_ ps parms)
+    -- guards and range patterns (2026-10-24): a decision chain (`cRefinedMatch`)
+    let refined := if cArmsRefined arms then cArmPieces none arms else none
+    pickMatch ps (cMatchArmsToP arms) refined
   | .cast inner tgt => do
     let pi ← cExprToPExprImpl inner
     castToPExpr (CExpr.ty inner) tgt pi
@@ -1121,8 +1196,8 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
     else do
       if !cExprNoEscape scrutinee then none
       let ps ← cExprToPExprImpl scrutinee
-      let parms ← cMatchArmsToPK kk arms
-      some (.match_ ps parms)
+      let refined := if cArmsRefined arms then cArmPieces (some kk) arms else none
+      pickMatch ps (cMatchArmsToPK kk arms) refined
   -- A discarded `if` EXPRESSION is an `if` statement (`discard(e)` elaborates to
   -- `if true { e; } else {}` in expression form): its branches continue to `kk`, exactly as the
   -- singleton `.ifElse` case below.
@@ -1148,8 +1223,8 @@ def cStmtsToPExprKImpl : List CStmt → Option Proof.PExpr → Option Proof.PExp
     if !cExprNoEscape scrutinee then none
     let ps ← cExprToPExprImpl scrutinee
     let pkRest ← cStmtsToPExprKImpl rest k
-    let parms ← cMatchArmsToPK pkRest arms
-    some (.match_ ps parms)
+    let refined := if cArmsRefined arms then cArmPieces (some pkRest) arms else none
+    pickMatch ps (cMatchArmsToPK pkRest arms) refined
   -- A discarded expression statement followed by more code (`f(x);`, and `discard(e)`, which
   -- elaborates to `if true { e; } else {}`): the value is computed and dropped, so it is a `let` of
   -- a binder no source name can spell (`discardBinder`). `eval` of `letIn` is strict, so a value
@@ -1402,6 +1477,73 @@ def cMatchArmsToP :
     let prest ← cMatchArmsToP rest
     some (parm :: prest)
 
+/-- The arms of a refined match (`cRefinedMatch`), each extracted with the continuation `k`
+    (`none` for a match expression) and checked by `armPiece`. A guard must not escape. -/
+def cArmPieces (k : Option Proof.PExpr) : List CMatchArm → Option (List ArmPiece)
+  | [] => some []
+  | .enumArm enumName variant bindings none body :: rest => do
+    let names := bindings.map (·.1.name)
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.enumPat enumName variant names)) none names body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .enumArm enumName variant bindings (some g) body :: rest => do
+    if !cExprNoEscape g then none
+    let names := bindings.map (·.1.name)
+    let pg ← cExprToPExprImpl g
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.enumPat enumName variant names)) (some pg) names body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .litArm value none body :: rest => do
+    let pval ← cExprToPExprImpl value
+    let v ← match pval with
+      | .lit v => some v
+      | _ => none
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.litPat v)) none [] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .litArm value (some g) body :: rest => do
+    if !cExprNoEscape g then none
+    let pval ← cExprToPExprImpl value
+    let v ← match pval with
+      | .lit v => some v
+      | _ => none
+    let pg ← cExprToPExprImpl g
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.litPat v)) (some pg) [] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .varArm binding _ none body :: rest => do
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.varPat binding.name)) none [binding.name] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .varArm binding _ (some g) body :: rest => do
+    if !cExprNoEscape g then none
+    let pg ← cExprToPExprImpl g
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.pat (.varPat binding.name)) (some pg) [binding.name] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .rangeArm lo hi incl none body :: rest => do
+    let pl ← cExprToPExprImpl lo
+    let ph ← cExprToPExprImpl hi
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.range pl ph incl) none [] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+  | .rangeArm lo hi incl (some g) body :: rest => do
+    if !cExprNoEscape g then none
+    let pl ← cExprToPExprImpl lo
+    let ph ← cExprToPExprImpl hi
+    let pg ← cExprToPExprImpl g
+    let pb ← cStmtsToPExprKImpl body k
+    let p ← armPiece k (.range pl ph incl) (some pg) [] body pb
+    let pr ← cArmPieces k rest
+    some (p :: pr)
+
 /-- An arm of a `match` STATEMENT, whose body falls through to the code after the match: the
     body is extracted with that continuation `k`, as an `if` statement's branches are. Refused when
     the arm's pattern binds a name `k` reads (the binding would capture it), or when the body's
@@ -1529,12 +1671,12 @@ private partial def identifyUnsupportedExpr : CExpr → List String
     -- construct inside the scrutinee or arm bodies is reported.
     let scrutUns := identifyUnsupportedExpr scrutinee
     let armUns := arms.foldl (fun acc arm =>
-      -- Range patterns and match guards are not modelled in the proof path yet
-      -- (V1); disclose them so a function using one is flagged, not mis-modelled.
-      let armMarker := match arm with | .rangeArm .. => ["range pattern"] | _ => []
+      -- Range patterns and match guards are extracted as a decision chain since 2026-10-24
+      -- (`cRefinedMatch`); a guard's own unsupported constructs are disclosed here.
+      let armMarker : List String := []
       let guardMarker := match arm with
-        | .enumArm _ _ _ (some _) _ | .litArm _ (some _) _
-        | .varArm _ _ (some _) _ | .rangeArm _ _ _ (some _) _ => ["match guard"]
+        | .enumArm _ _ _ (some g) _ | .litArm _ (some g) _
+        | .varArm _ _ (some g) _ | .rangeArm _ _ _ (some g) _ => identifyUnsupportedExpr g
         | _ => []
       let body := match arm with
         | .enumArm _ _ _ _ b => b

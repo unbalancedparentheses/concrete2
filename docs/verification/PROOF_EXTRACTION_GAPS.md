@@ -102,6 +102,8 @@ On 2026-10-24 (the survey counts 118 accepted examples, the 57 compared then inc
 further state-model rules raised the count from 57 to 61: discarded statements evaluated and
 dropped (OWN-5, OWN-7), `let`/assignments whose `if`/`match` value can return (STMT-5), and
 returning value-position branches that assign (PAT-8). check_model_diff.sh legs D and T pin them.
+Match guards and range patterns, extracted as a decision chain, raised it to 63 (PAT-2, PAT-7;
+leg G). PAT-4 still needs a shared borrow (`peek(&r)` in its guard).
 
 What blocks the remaining 61, by examples blocked (one example can have several blockers):
 

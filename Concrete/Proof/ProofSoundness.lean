@@ -539,7 +539,7 @@ theorem match_preservation
     cExprToPExpr (.match_ scrutinee arms ty)
       = some (.match_ ps parms) := by
   simp only [cExprToPExpr] at *
-  simp [cExprToPExprImpl, h_scrut, h_arms]
+  simp [cExprToPExprImpl, pickMatch, h_scrut, h_arms]
 
 /-! ## R-18: `while_flat_preservation` (extraction)
 

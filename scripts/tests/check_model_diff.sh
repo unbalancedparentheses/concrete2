@@ -39,6 +39,8 @@
 #   D  discarded statements (`discard(e)`, `f(x);`) and `let`/assignments whose if/match value can
 #      return (2026-10-24): pinned, all agreeing, each perturbed; a discarded trap is only partial;
 #      a Unit-typed discard and a branch that both returns and yields are refused.
+#   G  match guards and range patterns (2026-10-24): a decision chain in source order, a false guard
+#      going on to the next arm; pinned, all agreeing, each perturbed; more than six guards refused.
 #
 # Sampling, not proof: agreement on boundaries is evidence, not a theorem (R-0460 owns the theorems).
 set -uo pipefail
@@ -413,18 +415,82 @@ for fn in unit_call mixed capture capm; do
     ok "D: $fn is listed and not extracted ($st)"
   else no "D: $fn: ${st:-no entry}, $(grep -cP "\tmain\.$fn\t" "$TMP/d") rows"; fi
 done
-# Perturbing one function changes exactly its agreeing rows to MISMATCH: the perturbed report must
-# exit 0, read MISMATCH on every row of the function that agreed, and keep EVERY other row (of the
-# function and of all the others) byte for byte, so a report that loses or changes other rows fails.
+# Perturbing one function changes exactly its model values: the perturbed report must exit 0 and
+# equal, row for row and byte for byte, the unperturbed report with that function's model values
+# perturbed as modelDiffPerturb does (an integer plus one, a boolean negated, no value left as is)
+# and each verdict re-derived from the new model value. Every other row must be unchanged.
+perturb_expect(){ python3 -I - "$1" "$2" <<'PY'
+import re, sys
+fn, path = sys.argv[1], sys.argv[2]
+for line in open(path):
+    line = line.rstrip("\n")
+    f = line.split("\t")
+    if len(f) == 6 and f[1] == fn and f[4].startswith("model=") and f[5].startswith("runtime="):
+        m, r = f[4][6:], f[5][8:]
+        if m == "true": m = "false"
+        elif m == "false": m = "true"
+        elif re.fullmatch(r"-?[0-9]+", m): m = str(int(m) + 1)
+        has_m, has_r = m != "—", r not in ("trap", "exhausted")
+        if r == "exhausted": v = "exhausted"
+        elif has_m and has_r: v = "agree" if m == r else "MISMATCH"
+        elif has_m: v = "partial"
+        elif has_r: v = "model_stuck"
+        else: v = "ERROR"
+        line = "\t".join([v, f[1], f[2], f[3], "model=" + m, "runtime=" + r])
+    print(line)
+PY
+}
 for fn in used called exit reassign arm_assign; do
   CONCRETE_MODEL_DIFF_PERTURB="main.$fn" "$BIN" "$DF" --report model-diff > "$TMP/dp" 2>&1; dprc=$?
   was="$(grep -cP "^agree\tmain\.$fn\t" "$TMP/d" || true)"
-  grep -P '\tmain\.' "$TMP/d" | sed -E "s/^agree(\tmain\.$fn\t.*\tmodel=)[^\t]*/MISMATCH\1/" | sed -E 's/\tmodel=[^\t]*//' > "$TMP/dexp"
-  grep -P '\tmain\.' "$TMP/dp" | sed -E 's/\tmodel=[^\t]*//' > "$TMP/dgot"
-  same_others="$(diff <(grep -vP "\tmain\.$fn\t" "$TMP/d" | grep -P '\tmain\.') <(grep -vP "\tmain\.$fn\t" "$TMP/dp" | grep -P '\tmain\.') > /dev/null && echo y)"
-  [ "$dprc" -eq 0 ] && [ "$was" -gt 0 ] && [ "$same_others" = y ] && cmp -s "$TMP/dexp" "$TMP/dgot" \
-    && ok "D: perturbing $fn turns all $was of its agreeing rows into MISMATCH, every other row unchanged" \
-    || no "D: perturbing $fn: exit $dprc, $was agreeing rows; the perturbed report is not exactly those rows flipped"
+  # the summary line counts verdicts, which the perturbation moves; every other line must match
+  perturb_expect "main.$fn" "$TMP/d" | grep -v '^MODEL-DIFF:' > "$TMP/dexp"
+  grep -v '^MODEL-DIFF:' "$TMP/dp" > "$TMP/dgot"
+  [ "$dprc" -eq 0 ] && [ "$was" -gt 0 ] && [ -s "$TMP/dgot" ] && cmp -s "$TMP/dexp" "$TMP/dgot" \
+    && ok "D: perturbing $fn changes exactly its model values ($was agreeing rows now MISMATCH), every other row unchanged" \
+    || no "D: perturbing $fn: exit $dprc; the perturbed report differs from the expected one: $(diff "$TMP/dexp" "$TMP/dgot" | head -3 | tr '\t' ' ' | tr '\n' '|')"
+done
+
+echo ""
+echo "=== G: match guards and range patterns (2026-10-24) ==="
+GF="tests/regressions/model_diff_guards/repro.con"
+"$BIN" "$GF" --report model-diff > "$TMP/g" 2>&1; grc=$?
+"$BIN" "$GF" --report extraction > "$TMP/gx" 2>&1; gxrc=$?
+[ "$grc" -eq 0 ] && [ "$gxrc" -eq 0 ] && ok "G: both reports succeed on the guard fixture" \
+  || no "G: model-diff exit $grc, extraction exit $gxrc"
+grep -qE '^MISMATCH' "$TMP/g" && no "G: a mismatch: $(grep -m3 '^MISMATCH' "$TMP/g" | tr '\t' ' ' | tr '\n' '|')" \
+  || ok "G: no mismatch on the guard fixture"
+want "$TMP/g" classify 128 1 G     # 0..200 is exclusive of 200
+want "$TMP/g" classify 255 40 G    # an alternative after an inclusive range
+want "$TMP/g" neg -1 1 G           # -10..=-1 includes -1
+want "$TMP/g" neg 0 2 G
+want "$TMP/g" neg 1 3 G
+want "$TMP/g" pick 0 0 G
+want "$TMP/g" pick 7 107 G         # the guard v > 10 is false: the next arm with the same pattern
+want "$TMP/g" pick 255 255 G
+want "$TMP/g" var_guard 7 1 G
+want "$TMP/g" var_guard 1 2 G
+want "$TMP/g" stmt 7 2 G           # a guarded statement arm assigns, then the code after it runs
+want "$TMP/g" stmt 1 0 G           # 1 matches the pattern, but the guard k > 5 is false
+want "$TMP/g" grange 0 1 G
+want "$TMP/g" grange 7 2 G
+want "$TMP/g" grange 255 3 G
+want "$TMP/g" shadow 255 1 G       # the binder K is the scrutinee
+want "$TMP/g" shadow 7 7 G         # the later arm reads the constant K, not the binder
+GFNS="classify neg pick var_guard stmt grange shadow"
+for fn in $GFNS; do allagree "$TMP/g" "$fn" G; done
+st="$(grep -A1 -E "^\s*main\.many\(" "$TMP/gx" | grep -oE 'status: .*' | head -1)"
+if [ -n "$st" ] && [ "$st" != "status: extracted" ] && ! grep -qP "\tmain\.many\t" "$TMP/g"; then
+  ok "G: many (seven guards) is listed and not extracted ($st)"
+else no "G: many: ${st:-no entry}, $(grep -cP "\tmain\.many\t" "$TMP/g") rows"; fi
+for fn in $GFNS; do
+  CONCRETE_MODEL_DIFF_PERTURB="main.$fn" "$BIN" "$GF" --report model-diff > "$TMP/gp" 2>&1; gprc=$?
+  was="$(grep -cP "^agree\tmain\.$fn\t" "$TMP/g" || true)"
+  perturb_expect "main.$fn" "$TMP/g" | grep -v '^MODEL-DIFF:' > "$TMP/gexp"
+  grep -v '^MODEL-DIFF:' "$TMP/gp" > "$TMP/ggot"
+  [ "$gprc" -eq 0 ] && [ "$was" -gt 0 ] && [ -s "$TMP/ggot" ] && cmp -s "$TMP/gexp" "$TMP/ggot" \
+    && ok "G: perturbing $fn changes exactly its model values ($was agreeing rows now MISMATCH)" \
+    || no "G: perturbing $fn: exit $gprc; the perturbed report differs from the expected one: $(diff "$TMP/gexp" "$TMP/ggot" | head -3 | tr '\t' ' ' | tr '\n' '|')"
 done
 
 echo ""

@@ -97,7 +97,7 @@ The current `ProvableV1` ProofCore expression surface is:
 | if/then/else and early-return fall-through shape | Supported. |
 | non-recursive direct calls | Supported when FnTable-complete. |
 | struct literals and field access | Supported. |
-| enum literals and match | Supported for the extracted pattern forms. |
+| enum literals and match | Supported for the extracted pattern forms. Since 2026-10-24 also match guards and integer range patterns (`lo..hi`, `lo..=hi`), as a decision chain over the scrutinee (bound once): arms in source order, a guard evaluated in its pattern's bindings, a false guard going on to the next arm, as at runtime (PAT-4). More than six guards in one match are refused (the rest of the chain is copied into each false guard). |
 | casts | Supported for the current identity/widening proof model; narrowing remains outside the stable claim. |
 | array literals | Supported. |
 | array reads | Supported; out of bounds evaluates to `none` in the proof model. |

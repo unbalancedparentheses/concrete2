@@ -1,0 +1,84 @@
+// Match guards and range patterns in the model (2026-10-24): a decision chain over the scrutinee,
+// arms tried in source order, a false guard going on to the next arm (PAT-4, PAT-7, bug 066).
+// check_model_diff.sh leg G pins the values in the comments, each against the interpreter.
+mod main {
+    const K: i32 = 7;
+    enum Copy Opt { Some { v: i32 }, None }
+
+    // Ranges, an inclusive range, an alternative and a catch-all (the spec's PAT-7):
+    // classify(0) = 1, classify(199) = 1, classify(200) = 40, classify(255) = 40.
+    fn classify(b: u8) -> i32 {
+        match b {
+            0..200 => { return 1; },
+            200..=254 | 255 => { return 40; },
+            _ => { return 3; }
+        }
+    }
+    // Negative bounds: neg(-10) = 1, neg(-1) = 1, neg(0) = 2, neg(-11) = 3.
+    fn neg(x: i32) -> i32 {
+        return match x {
+            -10..=-1 => 1,
+            0 => 2,
+            _ => 3,
+        };
+    }
+    // A guard on a binding enum arm; a false guard falls to the next arm with the same pattern:
+    // pick(0) = 0, pick(11) = 11, pick(5) = 105.
+    fn pick(x: i32) -> i32 {
+        let o: Opt = if x == 0 { Opt::None } else { Opt::Some { v: x } };
+        return match o {
+            Opt::Some { v } if v > 10 => v,
+            Opt::Some { v } => v + 100,
+            Opt::None => 0,
+        };
+    }
+    // A guard on a variable arm: var_guard(4) = 1, var_guard(3) = 2.
+    fn var_guard(x: i32) -> i32 {
+        match x {
+            n if n > 3 => { return 1; },
+            _ => { return 2; }
+        }
+    }
+    // A match STATEMENT with guarded literal arms that assign, then more code (the spec's PAT-7
+    // main): stmt(7) = 2, stmt(1) = 0, stmt(8) = 0.
+    fn stmt(k: i32) -> i32 {
+        let mut extra: i32 = 0;
+        match k {
+            1 | 7 if k > 5 => { extra = 2; },
+            _ => {}
+        }
+        return extra;
+    }
+    // A guarded range: grange(5) = 1, grange(4) = 2, grange(20) = 3.
+    fn grange(x: i32) -> i32 {
+        match x {
+            0..10 if x % 5 == 0 => { return 1; },
+            0..10 => { return 2; },
+            _ => { return 3; }
+        }
+    }
+    // A guarded arm's binder named like the module constant K, while a LATER arm reads the constant:
+    // Elab gives the binder its own name, so the later arm reads 7 (shadow(255) = 1, shadow(7) = 7);
+    // the extractor would refuse the chain if the names collided.
+    fn shadow(x: i32) -> i32 {
+        match x {
+            K if K > 100 => { return 1; },
+            _ => { return K; }
+        }
+    }
+    // More than six guards: the rest of the chain is copied into each false guard, so this is
+    // refused (not extracted).
+    fn many(x: i32) -> i32 {
+        match x {
+            n if n == 1 => { return 1; },
+            n if n == 2 => { return 2; },
+            n if n == 3 => { return 3; },
+            n if n == 4 => { return 4; },
+            n if n == 5 => { return 5; },
+            n if n == 6 => { return 6; },
+            n if n == 7 => { return 7; },
+            _ => { return 0; }
+        }
+    }
+    pub fn main() -> i32 { return 0; }
+}
