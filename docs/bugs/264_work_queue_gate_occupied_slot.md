@@ -1,5 +1,11 @@
 # Bug 264 — lifecycle gate occupies the slot it expects a dependent task to use
 
+<!-- bug-ledger
+summary: work-queue lifecycle gate dispatched unrelated work into the slot later expected for a dependent task; completion reconciliation and dependency dispatch now have separate assertions.
+coverage: tooling-only defect pinned by scripts/tests/check_work_queue.sh, including pre-landing dependency blocking with available capacity and post-landing dispatch; no compiler fixture applies.
+silent: no
+-->
+
 **Status:** FIXED on `fix/work-queue-lifecycle-gate` (pending landing).
 **Found:** 2026-10-25, sequential landing validation after repairing bug 263.
 **Severity:** loud test failure, not a compiler defect.
