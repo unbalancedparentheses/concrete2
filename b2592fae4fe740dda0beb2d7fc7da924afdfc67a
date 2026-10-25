@@ -1,0 +1,2 @@
+[piece 5 of 15: docs]
+- ROADMAP.md:239: The self-hosted runner instructions omit the separate `CONCRETE_SELF_HOSTED_CAMPAIGN` switch. Mutation, fuzz and proof-replay jobs use that variable, so setting `CONCRETE_SELF_HOSTED=true` alone leaves them on GitHub-hosted runners. Both switches also require the exact value `true`, rather than merely being set.
