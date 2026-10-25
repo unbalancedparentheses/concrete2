@@ -292,14 +292,26 @@ if LEAN_OUT="$(lake env lean "$TMP_DIR/type_identity.lean" 2>&1)"; then
 else
   rc=$?
   printf '%s\n' "$LEAN_OUT" >&2
-  # An assertion that failed (`assertTypeIdentity` throws "FAILED: <label>") is this gate's verdict,
-  # reported as one: the identity property is broken. Anything else is the probe not elaborating,
-  # which is no verdict about the property.
-  if FAILED_LABEL="$(printf '%s\n' "$LEAN_OUT" | grep -o 'FAILED: .*' | awk 'NR==1')" && [ -n "$FAILED_LABEL" ]; then
-    echo "  FAIL ${FAILED_LABEL#FAILED: }"
-    echo ""
-    echo "TYPE-IDENTITY: PASS=$(printf '%s\n' "$LEAN_OUT" | grep -c '^  ok   ' || true) FAIL=1"
-    exit 1
+  # An assertion that failed is this gate's verdict, reported as one: the identity property is
+  # broken. It is recognised only in its exact form: apart from the `  ok   ` lines of the assertions
+  # that passed, the output is ONE line, the `#eval`'s uncaught `FAILED: <label>` (thrown by
+  # `assertTypeIdentity`) at the `#eval`'s own position, compared literally, for a label the probe
+  # asserts. Any other output, alone or beside it, is the probe not elaborating: no verdict about the
+  # property (FATAL below). A label holding a double quote would not match its source text and fails
+  # closed to FATAL; the probe has none.
+  EVAL_LINE="$(grep -n '^#eval do$' "$TMP_DIR/type_identity.lean" | cut -d: -f1 || true)"
+  OTHER_LINES="$(printf '%s\n' "$LEAN_OUT" | grep -v '^  ok   ' || true)"
+  FAIL_PREFIX="$TMP_DIR/type_identity.lean:${EVAL_LINE}:0: error: FAILED: "
+  if [ -n "$EVAL_LINE" ] && [ "$(printf '%s\n' "$OTHER_LINES" | grep -c '' || true)" -eq 1 ] \
+     && [ "${OTHER_LINES#"$FAIL_PREFIX"}" != "$OTHER_LINES" ]; then
+    FAILED_LABEL="${OTHER_LINES#"$FAIL_PREFIX"}"
+    if [ -n "$FAILED_LABEL" ] \
+       && grep -qF "assertTypeIdentity \"$FAILED_LABEL\"" "$TMP_DIR/type_identity.lean"; then
+      echo "  FAIL $FAILED_LABEL"
+      echo ""
+      echo "TYPE-IDENTITY: PASS=$(printf '%s\n' "$LEAN_OUT" | grep -c '^  ok   ' || true) FAIL=1"
+      exit 1
+    fi
   fi
   echo "FATAL: semantic TypeId probe did not elaborate" >&2
   exit "$rc"
