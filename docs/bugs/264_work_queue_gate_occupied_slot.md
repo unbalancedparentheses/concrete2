@@ -22,9 +22,11 @@ elsewhere in the gate already set the cap to zero.
 
 ## Fix
 
-Use `QUEUE_MAX_AGENTS=0` for completion reconciliation, assert the slot stays empty, then
-restore the cap of one for the post-landing tick. Keep the assertions that the dependency
-blocks before landing and starts afterwards. No scheduler code or dispatch policy changes.
+Use `QUEUE_MAX_AGENTS=0` for completion reconciliation and assert the slot stays empty.
+Then explicitly dispatch with capacity before landing: unrelated bug-201 must start while
+R-0539 remains blocked. Release that unrelated work with the existing kill-switch mechanism,
+then restore the cap of one for the post-landing tick. Thus the dependency must block actual
+dispatch before landing and permit it afterwards. No scheduler code or dispatch policy changes.
 Coverage is `scripts/tests/check_work_queue.sh`'s lifecycle scenario, including the new
 empty-slot precondition and the existing landed-event and dependent-dispatch assertions.
 
@@ -32,8 +34,8 @@ empty-slot precondition and the existing landed-event and dependent-dispatch ass
 
 A test intended to observe lifecycle reconciliation also enabled unrelated dispatch, then
 asserted a result incompatible with that permitted dispatch. This is test-state isolation,
-outside the compiler structural classes. The same gate's budget and usage-limit scenarios
-already distinguish reconciliation from dispatch by setting a zero cap.
+outside the compiler structural classes. The same gate's usage-limit scenarios already use
+zero-cap ticks to reconcile an exited run without dispatching another agent.
 
 ## Structural owner
 
