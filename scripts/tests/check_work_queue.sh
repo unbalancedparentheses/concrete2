@@ -419,8 +419,11 @@ echo ready > "$STUB/behave/R-0547"
 QUEUE_MAX_AGENTS=1 tick "$T0"
 wt="$(st R-0547 worktree)"
 wait_exit R-0547
-QUEUE_MAX_AGENTS=1 tick "$((T0+60))"
+# Bug 264: reconcile completion without dispatching unrelated ready work. Otherwise
+# bug-201 can occupy the only slot while R-0539 still waits for its dependency to land.
+QUEUE_MAX_AGENTS=0 tick "$((T0+60))"
 [ "$(st R-0547 status)" = done ] && [ "$(events heartbeat)" -ge 1 ] && ok "clean review + passing gates notes on the wip head: done" || no "done: status=$(st R-0547 status)"
+[ -z "$(running_ids)" ] && ok "completion-only tick leaves the dependent's test slot free" || no "completion-only tick dispatched unrelated work"
 QUEUE_MAX_AGENTS=0 tick "$((T0+120))"
 [ ! -d "$wt" ] && [ "$(events worktree_removed)" = 1 ] && ok "a done task's published worktree is removed" || no "worktree $wt still present"
 [ "$(git -C "$TMP/remote.git" rev-parse main)" = "$main0" ] && ok "main untouched by the whole lifecycle" || no "main moved"
