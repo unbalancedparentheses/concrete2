@@ -15,10 +15,11 @@ remain dated to the inspected baseline above. The changelog entry uses the newer
 
 This note preserves the full Bend/Roc discussion, including corrections to initial
 interpretations. The [roadmap](../../ROADMAP.md#the-current-execution-queue) remains
-the only execution queue. Its final research section links here without adding
-tasks, prerequisites, or acceptance bars to existing milestones. Earlier discussion
-ranked some ideas as useful next steps; the final disposition is to consider them
-later, subject to Concrete's design policy and workload evidence.
+the only execution queue. Its final [open research questions](../../ROADMAP.md#open-research-questions-bend-and-roc)
+record uncertainties while the owner is deciding, not planned features or tasks.
+Earlier discussion ranked some ideas as useful next steps, but no adoption or
+scheduling decision has been made. Any future consideration remains subject to
+Concrete's design policy and workload evidence.
 
 ## 1. Concrete's Philosophy Is The Admission Filter
 
