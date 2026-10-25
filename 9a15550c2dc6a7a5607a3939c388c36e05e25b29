@@ -1,0 +1,4 @@
+[piece 1 of 2: tests]
+- scripts/tests/check_work_queue.sh:424: Setting the cap to zero removes the only pre-landing dispatch attempt after R-0547 completes, making the later “dependent waits” assertion pass even if dispatch ignores dependencies. The status JSON check uses separate reporting logic and cannot verify dispatch enforcement. Exercise dispatch with available capacity before landing, then release any unrelated work before testing the dependent’s start.
+[piece 2 of 2: docs]
+- docs/bugs/264_work_queue_gate_occupied_slot.md:35: The budget scenarios do not disable dispatch with a zero cap: they use `QUEUE_MAX_AGENTS=1` or `2` and verify that exhausted budgets prevent starts. Setting a zero cap would bypass the budget check in `dispatch.py`, so the documented precedent contradicts what those tests exercise.
