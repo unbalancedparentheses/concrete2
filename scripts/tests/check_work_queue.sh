@@ -419,13 +419,24 @@ echo ready > "$STUB/behave/R-0547"
 QUEUE_MAX_AGENTS=1 tick "$T0"
 wt="$(st R-0547 worktree)"
 wait_exit R-0547
-QUEUE_MAX_AGENTS=1 tick "$((T0+60))"
+# Bug 264: reconcile completion without dispatching unrelated ready work. Otherwise
+# bug-201 can occupy the only slot while R-0539 still waits for its dependency to land.
+QUEUE_MAX_AGENTS=0 tick "$((T0+60))"
 [ "$(st R-0547 status)" = done ] && [ "$(events heartbeat)" -ge 1 ] && ok "clean review + passing gates notes on the wip head: done" || no "done: status=$(st R-0547 status)"
+[ -z "$(running_ids)" ] && ok "completion-only tick leaves the dependent's test slot free" || no "completion-only tick dispatched unrelated work"
 QUEUE_MAX_AGENTS=0 tick "$((T0+120))"
 [ ! -d "$wt" ] && [ "$(events worktree_removed)" = 1 ] && ok "a done task's published worktree is removed" || no "worktree $wt still present"
 [ "$(git -C "$TMP/remote.git" rev-parse main)" = "$main0" ] && ok "main untouched by the whole lifecycle" || no "main moved"
 grep -q '"blocked": "dependencies"' "$QUEUE_HOME/status.json" && [ "$(st R-0539 status)" = "" ] \
   && ok "its dependent (R-0539) waits while the work is ready but not landed" || no "R-0539 started before R-0547 landed"
+# Exercise real dispatch with capacity before landing: reporting alone does not
+# establish that the dependency blocks a start. Then release unrelated work so
+# the post-landing assertion tests dependency readiness, not an occupied slot.
+QUEUE_MAX_AGENTS=1 tick "$((T0+121))"
+[ "$(running_ids)" = bug-201 ] && [ "$(st R-0539 status)" = "" ] \
+  && ok "available capacity dispatches unrelated work but not the blocked dependent" || no "pre-landing dispatch ignored the dependency"
+echo kill > "$QUEUE_PAUSE_FILE"; tick "$((T0+122))"; rm -f "$QUEUE_PAUSE_FILE"
+[ -z "$(running_ids)" ] && ok "unrelated work released before post-landing dispatch" || no "post-landing test slot still occupied"
 # The landing bot's part, simulated: R-0547's wip head reaches main.
 git -C "$TMP/seed" fetch -q origin "refs/heads/wip/queue/R-0547" && git -C "$TMP/seed" merge -q --ff-only FETCH_HEAD \
   && git -C "$TMP/seed" push -q origin main 2>/dev/null
