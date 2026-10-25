@@ -1,0 +1,7 @@
+[piece 5 of 15: docs]
+- ROADMAP.md:239: The runner configuration claim omits the separate `CONCRETE_SELF_HOSTED_CAMPAIGN` switch. Campaign jobs use that variable independently, and both switches require the exact value `true`; merely setting `CONCRETE_SELF_HOSTED` does not route all CI jobs to self-hosted runners.
+[piece 6 of 15: docs]
+- ROADMAP.md:12387: R-0550 requires every reproducer’s pre-fix commit to fail a compile-time gate, but includes bug 248, which concerns array copying during interpreter execution. Timing compilation stages cannot detect that defect or validate its repair. Remove 248 from this acceptance requirement or add an interpreter-execution scaling check.
+[piece 8 of 15: docs]
+- docs/bugs/066_interp_discards_match_guard_effects.md:5: The coverage claim attributes the unobservable binder leak to Elab alpha-renaming, but `check_match_guard_effects.sh` now pins the restoration probe as an E0301 rejection. Removing alpha-renaming would not make that probe exercise restoration; the checker still rejects it.
+- docs/bugs/094_binding_state_updates_keyed_by_name.md:4: The summary says arm binders may shadow and destructuring rejects live non-Copy shadowing with E0292. Current scope checking rejects these shadowing forms with E0301, as the listed regression tests and this document’s “Exit 2i” section confirm.
