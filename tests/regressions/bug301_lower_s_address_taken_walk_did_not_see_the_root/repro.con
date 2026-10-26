@@ -1,0 +1,6 @@
+// Bug 301: Lower's address-taken walk did not see the root local of a field or element borrow
+// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
+// here what it does (Observed) and what it should do (Expected).
+fn main() -> Int {
+    return 0;
+}
