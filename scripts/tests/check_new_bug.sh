@@ -40,7 +40,7 @@ mkdir -p "$W/docs" "$W/scripts/tests" "$W/scripts/gen" "$W/.github/workflows" "$
 cp -R docs/bugs "$W/docs/bugs"
 cp ROADMAP.md CHANGELOG.md "$W/"
 cp -R changelog.d "$W/changelog.d"
-cp scripts/gen/bug_ledger.py scripts/gen/changelog.py scripts/gen/migrate_ledgers.py scripts/gen/new_bug.sh "$W/scripts/gen/"
+cp scripts/gen/bug_ledger.py scripts/gen/bug_areas.py scripts/gen/changelog.py scripts/gen/migrate_ledgers.py scripts/gen/new_bug.sh "$W/scripts/gen/"
 cp scripts/tests/audit_bug_corpus.sh scripts/tests/check_bug_filing_complete.sh \
    scripts/tests/run_tests.sh scripts/tests/run_ci_gates_local.sh "$W/scripts/tests/"
 # The copied gates start by sourcing the gate-shell guard from beside themselves.
