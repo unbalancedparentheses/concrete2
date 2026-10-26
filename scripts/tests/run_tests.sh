@@ -8454,6 +8454,10 @@ run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 # exits (a second `return`, `break`s and a `continue`) read a never-stored slot. The binary returns
 # 42 (main's returned 208; `--interp` printed 42 when the fixture was written).
 run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
+# Bug 303: the value `if` kept the bindings its arms declare after its merge, so a later loop's
+# header phi took a loop counter defined on one arm's path and the program was refused (E0708). Every
+# branch merge now drops its arms' bindings. Binary = --interp = 42.
+run_ok "$TESTDIR/regress_303_value_if_arm_scope.con" 42
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
 # struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built
