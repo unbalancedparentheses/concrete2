@@ -1,0 +1,5 @@
+[piece 1 of 3: tests]
+- scripts/tests/check_new_bug.sh:377: The test removes the lock before checking it, so it cannot verify that the refused filing preserved the holder’s lock. A regression that deletes another filing’s lock would pass. Assert that the lock and its PID remain intact before removing it.
+- scripts/tests/check_new_bug.sh:375: The test claims to verify that a blocked filing waits, but only checks refusal text and reservation count. Immediate refusal would pass even with `NEW_BUG_LOCK_WAIT=2`; check elapsed time or otherwise verify the waiting behavior.
+[piece 2 of 3: scripts]
+- scripts/gen/new_bug.sh:54: The comment says a second run waits and then refuses, but the loop acquires the lock and proceeds if the first run releases it before the timeout. Refusal occurs only when the lock remains held for `NEW_BUG_LOCK_WAIT` seconds; the documented behavior contradicts the implementation.
