@@ -119,7 +119,8 @@ def write_report(path, run, repo, results, escalated, sus):
             first = (r["fail_lines"] or [r["reason"]])[0]
             first = re.sub(r"^(FAIL|FAILED)\s+", "", first)[:100].replace('"', "'")
             out += ["File a bug skeleton (not run automatically; check its usage first):", "", "```sh",
-                    f'bash scripts/gen/new_bug.sh "{r["gate"]}: {first}"', "```", ""]
+                    f'bash scripts/gen/new_bug.sh "{r["gate"]}: {first}" --silent no '
+                    '--new-batch ci --probe "CI failure triage" --effort "1 probe"', "```", ""]
     out += ["## Suspected commits", ""]
     if isinstance(sus, tuple):
         b, note, commits, files = sus

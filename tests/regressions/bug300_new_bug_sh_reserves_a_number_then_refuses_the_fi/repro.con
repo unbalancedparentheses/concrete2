@@ -1,6 +1,0 @@
-// Bug 300: new_bug.sh reserves a number, then refuses the filing for want of a discovery row naming it
-// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
-// here what it does (Observed) and what it should do (Expected).
-fn main() -> Int {
-    return 0;
-}

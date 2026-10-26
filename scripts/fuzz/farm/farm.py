@@ -1209,7 +1209,10 @@ def promote(args):
     print(fixture)
     print("== file it (scripts/gen/new_bug.sh allocates NNN and writes the record skeleton):")
     print(f"scripts/gen/new_bug.sh {json.dumps(title)} --silent "
-          f"{'yes' if meta['class'] == 'silent' else 'no'}")
+          f"{'yes' if meta['class'] == 'silent' else 'no'} "
+          "--new-batch fuzz --probe \"fuzz farm campaign <name>\" --effort \"<N> hours\"")
+    print("(or --batch \"<probe text>\" in place of --new-batch when the campaign already has its "
+          "docs/bugs/discovery.tsv row)")
     print(f"cp {rel} tests/regressions/bugNNN_{bug_slug}/repro.con && rm -r tests/regressions/{slug}")
     print("then fill the FILL-IN(new_bug.sh) fields and pin the reproducer in a gate leg.")
     return 0

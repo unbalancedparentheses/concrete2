@@ -1,8 +1,8 @@
 # Bug-discovery record: one row per probe batch, the input of the reliability exit's discovery-rate
 # signal (ROADMAP Phase 1 exit 2m) and of the bug dashboard (scripts/gen/bug_dashboard.py, which
 # check_docs_drift.sh runs with --check). Every bug record from 079 on (docs/bugs/NNN_*.md) is
-# attributed to exactly one row; whoever files a bug adds it to the batch that found it, or adds that
-# batch, in the same commit, and regenerates the dashboard.
+# attributed to exactly one row, written by scripts/gen/new_bug.sh when the bug is filed (--batch adds it
+# to an existing row, --new-batch adds the row), in the same commit as the record (bug 300).
 # A row is a batch: a bounded piece of probing with a recorded effort, whether or not it found bugs.
 # A batch that finds nothing is recorded too: zero rows are the signal.
 # Columns (tab-separated, every cell non-empty, "-" for none):

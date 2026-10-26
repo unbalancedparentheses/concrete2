@@ -29,11 +29,16 @@ fragment ([changelog.d/README.md](../../changelog.d/README.md)); never edit a ge
 fact about a bug lives in its record and nowhere else, so two branches filing bugs edit different
 files and cannot conflict.
 
-Start with `scripts/gen/new_bug.sh "<title>" [--class N] [--silent yes|no]`. It takes the next number
-no branch, worktree or reservation has used and reserves it on origin (`refs/bug-reservations/NNN`),
-so two writers never get one number; it writes the record, a reproducer skeleton under
-`tests/regressions/` and a `changelog.d/` fragment, regenerates the views and lists every
-`FILL-IN(new_bug.sh)` placeholder left to fill in. `check_bug_filing_complete.sh` refuses a
+Start with `scripts/gen/new_bug.sh "<title>" --silent yes|no --batch <text> [--class N]`, or with
+`--new-batch <kind> --probe <text> --effort <size>` in place of `--batch` when the probe batch that
+found the bug has no row yet. It takes the next number no branch, worktree or reservation has used
+and reserves it on origin (`refs/bug-reservations/NNN`), so two writers never get one number; it
+writes the record, a reproducer skeleton under `tests/regressions/`, a `changelog.d/` fragment and
+the bug's [discovery record](discovery.tsv) attribution (`--batch` adds it to the one row whose probe
+cell contains the text), regenerates the views and the dashboard, and lists every
+`FILL-IN(new_bug.sh)` placeholder left to fill in. Everything it can refuse it checks before
+reserving; if it still fails after the reservation it removes what it wrote and prints the
+`new_bug.sh --number NNN ...` command that files the same bug under the number it holds (bug 300). `check_bug_filing_complete.sh` refuses a
 placeholder, so a draft can be backed up on `wip/*` but cannot land.
 
 A bug record is `docs/bugs/NNN_short_name.md`. Every time a bug is found,
@@ -89,10 +94,11 @@ edit them:
 without regenerating), and `audit_bug_corpus.sh` and `check_bug_filing_complete.sh` fail on a
 record with no coverage or a fixture that does not exist.
 
-Also record the bug's number in the [discovery record](discovery.tsv), in the row of the probe
-batch that found it (adding that batch if it is new), and in that row's `silent` column when it is
-silent; the record's `silent:` line must agree. Then regenerate the roadmap's
-[bug dashboard](../../ROADMAP.md#bug-dashboard) (`python3 scripts/gen/bug_dashboard.py --write`;
+The bug's number is recorded in the [discovery record](discovery.tsv), in the row of the probe
+batch that found it, and in that row's `silent` column when it is silent; the record's `silent:`
+line must agree. `new_bug.sh` writes both from `--batch`/`--new-batch` and `--silent`; when a fact
+changes later (the bug turns out silent, or belongs to another batch), edit both and regenerate the
+roadmap's [bug dashboard](../../ROADMAP.md#bug-dashboard) (`python3 scripts/gen/bug_dashboard.py --write`;
 `refresh_generated.sh` runs it too). A probe batch that finds nothing is recorded too: its zero is
 the discovery-rate signal of Phase 1 exit 2m.
 

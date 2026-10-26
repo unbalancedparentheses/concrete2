@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# File a new bug: allocate its number race-safely, write the record, the reproducer skeleton and the
-# changelog fragment, regenerate the ledger views, and print what the author still has to fill in.
+# File a new bug: allocate its number race-safely, write the record, the reproducer skeleton, the
+# changelog fragment and its discovery attribution, regenerate the views, and print what is left.
 #
-#   scripts/gen/new_bug.sh "<title>" [--class N] [--silent yes|no]
+#   scripts/gen/new_bug.sh "<title>" --silent yes|no --batch <text> [--class N]
+#   scripts/gen/new_bug.sh "<title>" --silent yes|no --new-batch <kind> --probe <text> --effort <size> [--class N]
+#   scripts/gen/new_bug.sh --number NNN "<title>" ...  file under NNN, already reserved and unfiled
 #   scripts/gen/new_bug.sh --number-only "<title>"     allocate and reserve a number, write nothing
+#
+# DISCOVERY (bug 300). Every bug from 079 on is attributed to one probe batch of
+# docs/bugs/discovery.tsv, and bug_dashboard.py refuses a record without one. The row names the
+# number, which only exists once it is reserved, so the scaffold writes the attribution itself:
+# --batch adds the bug to the one existing row whose probe cell contains <text>; --new-batch adds a
+# row dated today with that kind, probe and effort. Either one, and --silent (the row's silent cell
+# and the record's silent: line must agree), is required when the tree has the discovery record and
+# the dashboard, and is checked before a number is reserved. A filing that still fails after the
+# reservation removes everything it wrote, restores discovery.tsv, and prints the --number command
+# that files the same bug under the number it holds.
 #
 # NUMBER. The next number is one above the highest bug number seen anywhere another writer could
 # have used one:
@@ -26,6 +38,7 @@
 #   docs/bugs/NNN_<slug>.md                      the record, with its bug-ledger block
 #   tests/regressions/bugNNN_<slug>/repro.con    the reproducer skeleton
 #   changelog.d/<date>-bugNNN-<slug>.md          the changelog fragment
+#   docs/bugs/discovery.tsv                      the bug added to its batch's row (see DISCOVERY)
 # then `scripts/gen/bug_ledger.py --write` (and bug_dashboard.py when present) regenerates the views.
 # Every placeholder carries the token FILL-IN(new_bug.sh); check_bug_filing_complete.sh refuses a
 # record, reproducer or fragment that still holds one, so a draft can be backed up on wip/* but
@@ -36,7 +49,7 @@
 set -euo pipefail
 
 die() { echo "new_bug: $*" >&2; exit 1; }
-usage() { sed -n '2,7p' "$0" >&2; exit 2; }
+usage() { sed -n '2,19p' "$0" >&2; exit 2; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -44,11 +57,18 @@ REMOTE="${CONCRETE_BUG_REMOTE:-origin}"
 TODAY="${NEW_BUG_DATE:-$(date +%Y-%m-%d)}"
 TOKEN="FILL-IN(new_bug.sh)"
 
-TITLE=""; CLASS=""; SILENT=""; NUMBER_ONLY=0
+TITLE=""; CLASS=""; SILENT=""; NUMBER_ONLY=0; NUMBER=""
+BATCH=""; NEW_KIND=""; NEW_PROBE=""; NEW_EFFORT=""; HAVE_BATCH=0; HAVE_NEW=0; HAVE_PROBE=0; HAVE_EFFORT=0
+ARGS=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
     --class) [ $# -ge 2 ] || usage; CLASS="$2"; shift 2 ;;
     --silent) [ $# -ge 2 ] || usage; SILENT="$2"; shift 2 ;;
+    --batch) [ $# -ge 2 ] || usage; BATCH="$2"; HAVE_BATCH=1; shift 2 ;;
+    --new-batch) [ $# -ge 2 ] || usage; NEW_KIND="$2"; HAVE_NEW=1; shift 2 ;;
+    --probe) [ $# -ge 2 ] || usage; NEW_PROBE="$2"; HAVE_PROBE=1; shift 2 ;;
+    --effort) [ $# -ge 2 ] || usage; NEW_EFFORT="$2"; HAVE_EFFORT=1; shift 2 ;;
+    --number) [ $# -ge 2 ] || usage; NUMBER="$2"; shift 2 ;;
     --number-only) NUMBER_ONLY=1; shift ;;
     -h|--help) usage ;;
     -*) echo "new_bug: unknown option $1" >&2; usage ;;
@@ -61,6 +81,23 @@ git remote get-url "$REMOTE" >/dev/null 2>&1 || die "no remote '$REMOTE' (set CO
 [[ "$TODAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "NEW_BUG_DATE must be YYYY-MM-DD"
 [ -z "$CLASS" ] || [[ "$CLASS" =~ ^[1-9][0-9]*$ ]] || die "--class takes a class number from docs/bugs/STRUCTURAL_CLASSES.md"
 case "$SILENT" in ""|yes|no) ;; *) die "--silent takes yes or no" ;; esac
+[ -z "$NUMBER" ] || [[ "$NUMBER" =~ ^[0-9]{3}$ ]] || die "--number takes a three-digit bug number"
+[ "$NUMBER_ONLY" = 0 ] || [ -z "$NUMBER" ] || die "--number files under a number already held; --number-only reserves a new one"
+DISC="docs/bugs/discovery.tsv"
+TRACKED=0; if [ -f "$DISC" ] && [ -f scripts/gen/bug_dashboard.py ]; then TRACKED=1; fi
+if [ "$NUMBER_ONLY" = 1 ]; then
+  [ "$HAVE_BATCH$HAVE_NEW$HAVE_PROBE$HAVE_EFFORT" = 0000 ] || die "--number-only writes nothing, so it takes no batch"
+else
+  [ "$HAVE_BATCH" = 0 ] || [ "$HAVE_NEW" = 0 ] || die "--batch and --new-batch both given: a bug belongs to exactly one batch"
+  [ "$HAVE_NEW" = 1 ] || [ "$HAVE_PROBE$HAVE_EFFORT" = 00 ] || die "--probe and --effort describe the row of a --new-batch"
+  if [ "$TRACKED" = 1 ]; then
+    [ "$HAVE_BATCH$HAVE_NEW" != 00 ] || die "no discovery batch given. Every bug from 079 on is attributed to the probe batch that found it ($DISC), and that row must name the number this run reserves, so the scaffold writes it: pass --batch <text from the probe cell of an existing row>, or --new-batch <kind> --probe <what was probed> --effort <size> for a new row dated $TODAY"
+    [ -n "$SILENT" ] || die "--silent yes|no is required: the record's silent: line and the discovery row's silent cell must agree"
+    [ "$HAVE_NEW" = 0 ] || { [ "$HAVE_PROBE" = 1 ] && [ "$HAVE_EFFORT" = 1 ]; } || die "--new-batch needs --probe and --effort"
+  else
+    [ "$HAVE_BATCH$HAVE_NEW" = 00 ] || die "this tree has no discovery record ($DISC with scripts/gen/bug_dashboard.py), so --batch and --new-batch have no row to write"
+  fi
+fi
 
 no_op_in_progress() {
   local p
@@ -69,6 +106,71 @@ no_op_in_progress() {
   done
 }
 no_op_in_progress
+
+# The discovery attribution (bug 300). `check` validates --batch or --new-batch against the record
+# and its rules (bug_dashboard.py's own constants); `apply NNN` adds NNN to the matched row, or
+# inserts the new row in date order, with NNN in the silent cell when --silent yes.
+discovery() {
+  python3 -I - "$ROOT" "$DISC" "$1" "${2:-}" "$SILENT" "$HAVE_BATCH" "$BATCH" "$NEW_KIND" "$NEW_PROBE" "$NEW_EFFORT" "$TODAY" <<'PY'
+import os, sys
+root, rel, mode, num, silent, have_batch, batch, kind, probe, effort, today = sys.argv[1:12]
+sys.path.insert(0, os.path.join(root, "scripts", "gen"))
+import bug_dashboard as d
+def refuse(m):
+    print(f"new_bug: {m}", file=sys.stderr); sys.exit(1)
+path = os.path.join(root, rel)
+lines = open(path, encoding="utf-8").read().split("\n")
+data = [i for i, ln in enumerate(lines) if ln and not ln.startswith("#")]
+if not data or lines[data[0]].split("\t") != d.COLS:
+    refuse(f"{rel} has no header row {' '.join(d.COLS)}")
+rows, col = data[1:], {c: i for i, c in enumerate(d.COLS)}
+def cell(i, c):
+    cs = lines[i].split("\t")
+    return cs[col[c]].strip() if len(cs) == len(d.COLS) else ""
+target = None
+if have_batch == "1":
+    if not batch.strip():
+        refuse("--batch takes text from the probe cell of the batch that found the bug")
+    hits = [i for i in rows if batch in cell(i, "probe")]
+    if len(hits) != 1:
+        shown = "".join(f"\n  {cell(i, 'date')}  {cell(i, 'probe')[:90]}" for i in hits[:5])
+        refuse(f"--batch '{batch}' matches {len(hits)} rows of {rel}, not one{':' if hits else ''}{shown}\n"
+               "give text only the batch that found the bug has, or add its row with --new-batch")
+    target = hits[0]
+else:
+    for name, v in (("--new-batch", kind), ("--probe", probe), ("--effort", effort)):
+        if not v.strip() or any(c in v for c in "\t\n\r"):
+            refuse(f"{name} takes one non-empty line with no tab")
+    if kind not in d.COUNTING | d.ATTRIBUTION:
+        refuse(f"--new-batch kind '{kind}' is not one of {', '.join(sorted(d.COUNTING | d.ATTRIBUTION))}")
+    tm = d.CLASS_TAG.match(probe)
+    if tm and kind not in d.COUNTING:
+        refuse(f"a 'class N: ' probe tag marks a counting batch, not a {kind} row")
+    if tm and int(tm.group(1)) not in {c[0] for c in d.load_classes(root)}:
+        refuse(f"the probe is tagged class {tm.group(1)}, which STRUCTURAL_CLASSES.md does not have")
+    if kind in d.COUNTING and today >= d.EFFORT_REQUIRED_FROM and not d.EFFORT.match(effort):
+        refuse(f"a counting batch from {d.EFFORT_REQUIRED_FROM} on records its effort as "
+               f"'<N> hours|programs|probes|examples|cases', got '{effort}'")
+if mode == "check":
+    sys.exit(0)
+def add(v):
+    return num if v.strip() == "-" else v + "," + num
+if target is not None:
+    cs = lines[target].split("\t")
+    cs[col["bugs"]] = add(cs[col["bugs"]])
+    if silent == "yes":
+        cs[col["silent"]] = add(cs[col["silent"]])
+    lines[target] = "\t".join(cs)
+else:
+    pos = data[0]
+    for i in rows:
+        if cell(i, "date") <= today:
+            pos = i
+    lines.insert(pos + 1, "\t".join([today, kind, probe, effort, num, num if silent == "yes" else "-"]))
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(lines))
+PY
+}
 
 # ----------------------------------------------------------------------------- validate up front
 # Everything that could refuse runs before a number is reserved, so a refusal never burns one.
@@ -79,6 +181,11 @@ if [ "$NUMBER_ONLY" = 0 ]; then
     || die "the ledger views are stale before the new bug is added; run python3 scripts/gen/bug_ledger.py --write first"
   python3 -I scripts/gen/changelog.py --check >/dev/null \
     || die "changelog.d/ or CHANGELOG.md is already malformed (above); repair it first"
+  if [ "$TRACKED" = 1 ]; then
+    python3 -I scripts/gen/bug_dashboard.py --check >/dev/null \
+      || die "the bug dashboard is stale or refuses this tree before the new bug is added (above); repair it, then run python3 scripts/gen/bug_dashboard.py --write"
+    discovery check || exit 1
+  fi
 fi
 python3 -I - "$ROOT" "$TITLE" "$CLASS" <<'PY' || exit 1
 import os, sys
@@ -111,17 +218,27 @@ if [ "${NEW_BUG_NO_FETCH:-0}" != 1 ]; then
   no_op_in_progress
 fi
 # On any failure after the first file is written (a refused record, a failed write), every file this
-# run created is removed and the views are regenerated without it, so a failed filing leaves the tree
-# as it found it. The reserved number stays reserved.
-WRITING=0; REC=""; REPRO=""; REPRO_DIR=""; FRAG=""
+# run created is removed, discovery.tsv is restored, and the views are regenerated without it, so a
+# failed filing leaves the tree as it found it. The reserved number stays reserved, and the message
+# names the --number command that files the same bug under it.
+WRITING=0; HELD=0; REC=""; REPRO=""; REPRO_DIR=""; FRAG=""; DISC_BAK=""
 cleanup() {
-  local rc=$?
+  local rc=$? resume
   rm -f "${seen:-}"
   if [ "$rc" -ne 0 ] && [ "$WRITING" = 1 ]; then
     rm -f "$REC" "$REPRO" "$FRAG"; [ -z "$REPRO_DIR" ] || rmdir "$REPRO_DIR" 2>/dev/null || true
+    [ -z "$DISC_BAK" ] || cat "$DISC_BAK" > "$DISC" || true
     python3 -I scripts/gen/bug_ledger.py --write >/dev/null 2>&1 || true
-    echo "new_bug: filing failed; removed the files it had written (bug ${num:-?} stays reserved: reuse it or leave the gap)" >&2
+    [ "$TRACKED" = 0 ] || python3 -I scripts/gen/bug_dashboard.py --write >/dev/null 2>&1 || true
+    echo "new_bug: filing failed; removed the files it had written and restored the views" >&2
   fi
+  if [ "$rc" -ne 0 ] && [ "$HELD" = 1 ]; then
+    resume="scripts/gen/new_bug.sh"; [ -n "$NUMBER" ] || resume="$resume --number $num"
+    resume="$resume$(printf ' %q' "${ARGS[@]}")"
+    echo "new_bug: bug $num stays reserved and unfiled; once the cause above is repaired, file it with" >&2
+    echo "  $resume" >&2
+  fi
+  rm -f "$DISC_BAK"
 }
 seen="$(mktemp)"; trap cleanup EXIT
 record_nums() { sed -nE 's#^(.*/)?([0-9]{3})_[^/]*\.md$#\2#p'; }
@@ -133,6 +250,23 @@ while IFS= read -r wt; do
   find "$wt/docs/bugs" -maxdepth 1 -name '[0-9][0-9][0-9]_*.md' | record_nums >> "$seen"
 done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
 reservations="$(git ls-remote "$REMOTE" 'refs/bug-reservations/*')" || die "git ls-remote $REMOTE failed; cannot read the reservations"
+if [ -n "$NUMBER" ]; then
+  # --number: file under a number already reserved (by --number-only, or by a run that failed after
+  # reserving it) that no branch or worktree has a record for. Nothing is pushed.
+  num="$NUMBER"
+  ! grep -qx "$num" "$seen" || die "bug $num already has a record on a branch or in a worktree; a filed number is never filed again"
+  rsha="$(printf '%s\n' "$reservations" | awk -v r="refs/bug-reservations/$num" '$2 == r { print $1 }')"
+  [ -n "$rsha" ] || die "bug $num is not reserved on $REMOTE (refs/bug-reservations/$num); omit --number to reserve a new number"
+  git fetch --quiet --no-write-fetch-head "$REMOTE" "refs/bug-reservations/$num" \
+    || die "could not fetch refs/bug-reservations/$num from $REMOTE"
+  rmsg="$(git cat-file commit "$rsha")" || die "could not read the reservation commit of bug $num"
+  rby="$(printf '%s\n' "$rmsg" | sed -n 's/^by \(.*\) at .*/\1/p')"
+  case "$rby" in "$(git config user.email || echo unknown)@"*) ;;
+    *) die "bug $num was reserved by '${rby:-unknown}', not by this user; file under a number you reserved" ;; esac
+  HELD=1
+  no_op_in_progress
+  echo "new_bug: filing under bug $num, reserved on $REMOTE (refs/bug-reservations/$num)"
+else
 printf '%s\n' "$reservations" | sed -nE 's#.*refs/bug-reservations/([0-9]+)$#\1#p' >> "$seen"
 max="$(awk '/^[0-9]+$/ { n = $0 + 0; if (n > m) m = n } END { print m + 0 }' "$seen")"
 n=$((max + 1))
@@ -167,11 +301,13 @@ while :; do
   echo "new_bug: bug $num was reserved concurrently; trying the next number" >&2
   n=$((n + 1))
 done
+[ "$NUMBER_ONLY" = 1 ] || HELD=1
 no_op_in_progress
 echo "new_bug: reserved bug $num on $REMOTE (refs/bug-reservations/$num)"
 if [ "$NUMBER_ONLY" = 1 ]; then
   echo "$num"
   exit 0
+fi
 fi
 
 # ----------------------------------------------------------------------------- write
@@ -220,22 +356,32 @@ mkdir -p "$REPRO_DIR"
   printf '%s what changed for a user, the regression leg, and the structural owner\n' "$TOKEN"
   printf '([bug %s](docs/bugs/%s)).\n' "$num" "$(basename "$REC")"
 } > "$FRAG"
+if [ "$TRACKED" = 1 ]; then
+  DISC_BAK="$(mktemp)" && cat "$DISC" > "$DISC_BAK" || die "could not back up $DISC"
+  discovery apply "$num" || die "could not add bug $num to $DISC (above)"
+fi
 
 if ! python3 -I scripts/gen/bug_ledger.py --write >/dev/null || ! python3 -I scripts/gen/bug_ledger.py --check >/dev/null \
    || ! python3 -I scripts/gen/changelog.py --check >/dev/null; then
   die "the ledger or changelog refused the new files (above)"
 fi
-if [ -f scripts/gen/bug_dashboard.py ]; then python3 -I scripts/gen/bug_dashboard.py --write >/dev/null; fi
-WRITING=0
+if [ -f scripts/gen/bug_dashboard.py ]; then
+  python3 -I scripts/gen/bug_dashboard.py --write >/dev/null || die "the bug dashboard refused the new files (above)"
+fi
+WRITING=0; HELD=0
 
 echo "new_bug: filed bug $num"
 echo "  record      $REC"
 echo "  reproducer  $REPRO"
 echo "  changelog   $FRAG"
+if [ "$TRACKED" = 1 ]; then
+  if [ "$HAVE_BATCH" = 1 ]; then echo "  discovery   $DISC: added to the batch matching '$BATCH'"
+  else echo "  discovery   $DISC: new $NEW_KIND batch dated $TODAY"; fi
+fi
 echo "  views       regenerated (python3 scripts/gen/bug_ledger.py --write)"
 echo
 echo "Still to fill in (every $TOKEN; check_bug_filing_complete.sh refuses them on landing):"
 grep -n -F "$TOKEN" "$REC" "$REPRO" "$FRAG" | sed -E 's/^([^:]+:[0-9]+):.*FILL-IN\(new_bug\.sh\) ?/  \1  /'
 [ -n "$CLASS" ]  || echo "  $REC  no class: add 'class: N' to the ledger block (docs/bugs/STRUCTURAL_CLASSES.md), or add a class"
 [ -n "$SILENT" ] || echo "  $REC  no silent: add 'silent: yes' (wrong code, unsound claim) or 'silent: no' to the ledger block"
-echo "Then: pin the reproducer in a gate leg, rerun python3 scripts/gen/bug_ledger.py --write, and commit all four."
+echo "Then: pin the reproducer in a gate leg, rerun python3 scripts/gen/bug_ledger.py --write, and commit them all."
