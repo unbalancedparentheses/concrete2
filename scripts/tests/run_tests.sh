@@ -8454,6 +8454,9 @@ run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 # exits (a second `return`, `break`s and a `continue`) read a never-stored slot. The binary returns
 # 42 (main's returned 208; `--interp` printed 42 when the fixture was written).
 run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
+# Bug 304: a value `if` or `match` written as a comparison operand took the comparison's Bool hint
+# as its type in Elab, so CoreCheck refused the program Check accepted (E0510). Binary = --interp = 42.
+run_ok "$TESTDIR/regress_304_comparison_operand_hint.con" 42
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
 # struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built
