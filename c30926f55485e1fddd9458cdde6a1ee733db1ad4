@@ -1,0 +1,2 @@
+[piece 1 of 2: tests]
+- scripts/tests/check_work_queue.sh:349: The earlier namespace-coverage finding remains partially open: local `main` still equals `main_sha`, so a source checkout incorrectly detached at local `main` passes. Moving `origin/main` distinguishes that ref, and the symbolic-ref check fixes detached-state coverage, but remote `main` must advance after cloning to distinguish the dispatcher’s fetched base from local `main`.
