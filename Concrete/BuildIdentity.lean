@@ -22,7 +22,7 @@ Staleness is a gate failure rather than a silent wrong answer:
 namespace Concrete
 
 /-- 128-bit digest over the compiler's own sources at build time. -/
-def buildIdentity : String := "fcfabb117d494b0f2ad5387d02d35918"
+def buildIdentity : String := "2b186c8abc43bdfc31d77d2ce486a638"
 
 /-- How many source files the identity above was computed over.
 
