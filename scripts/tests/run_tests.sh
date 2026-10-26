@@ -8454,6 +8454,10 @@ run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 # exits (a second `return`, `break`s and a `continue`) read a never-stored slot. The binary returns
 # 42 (main's returned 208; `--interp` printed 42 when the fixture was written).
 run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
+# Bug 305: a `break`, `continue` or labelled `break` out of a `borrow mut` block lost the writes
+# made through its reference (the block wrote a copy back only when it fell through its end).
+# Binary = --interp = 42.
+run_ok "$TESTDIR/regress_305_borrow_block_early_exit.con" 42
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
 # struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built
