@@ -4,4 +4,4 @@
 (a `return`, a binding, an `if` condition): a comparison no longer passes its result type to its
 operands as a hint, in Check and Elab alike (`TypeJudgment.binOpOperandHint`). Regression leg:
 `regress_304_comparison_operand_hint.con` in `run_tests.sh`. Structural owner: R-0499
-([bug 304](docs/bugs/304_a_value_if_or_match_written_as_a_comparison_op.md)).
+([bug 304](docs/bugs/304_a_value_if_or_match_written_as_a_comparison_oper.md)).
