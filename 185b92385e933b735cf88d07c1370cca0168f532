@@ -1,0 +1,6 @@
+[piece 1 of 2: tests]
+- scripts/tests/lib/compile_scaling_budgets.tsv:54: Still open: there are no `hbbudget`, `instr`, or `rate` records. Absolute allocation and instruction budgets remain unenforced, and `host_factor()` always returns 1, leaving the host-load fix inactive.
+- docs/bugs/294_scaling_gate_wall_budgets_under_load.md:78: The revised documentation incorrectly claims the current configuration retains “wall growth for every run.” `instr_judged()` requires counts and a counted baseline, but no recorded rates or instruction budgets, so counted modes already skip wall-growth checks.
+[piece 2 of 2: docs]
+- scripts/tests/lib/compile_scaling_budgets.tsv:54: The earlier missing-budget finding remains open: there are still no `hbbudget`, `instr`, or `rate` records. Absolute allocation and instruction budgets remain unenforced, and host normalization remains inactive, so unchanged work can still fail under host load.
+- docs/bugs/294_scaling_gate_wall_budgets_under_load.md:78: “Wall growth for every run” contradicts `judge()`: counted modes with a counted baseline skip wall-growth checks even without recorded instruction budgets or rates. The missing measurement commit therefore does not make the gate judge as before.
