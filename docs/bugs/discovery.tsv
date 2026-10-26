@@ -101,3 +101,4 @@ date	kind	probe	effort	bugs	silent
 2026-10-26	ci	gates-shell branch CI (run 40269354812): a transform-register leg failed on printf: write error: Broken pipe with its pattern present	unrecorded	283	283
 2026-10-26	follow-on	checking an earlier observation that binder references in literal match arms were missing from the R-0004 evidence producer: literal, range and bool match probes under --report subject-facts and migration-manifest	6 programs	284	284
 2026-10-26	development	designing the nested-branch lowering fix (R-0550 nested-ifs): Lower's address-taken walk read against Core's expression constructors, then probes of each site with an address-take in an enum payload	6 programs	285	285
+2026-10-26	development	nested while loops beyond the R-0550 shapes, timed per stage at 2000 and 8000 levels and profiled with callgrind after the bug 286 fix	1 shape	292	-

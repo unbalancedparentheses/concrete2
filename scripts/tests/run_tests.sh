@@ -8446,6 +8446,11 @@ fi
 # fixture was written) for the cases where a site must still walk; then the `lower` stage of a nest
 # 8000 deep within 400 ms, retried once at 800 ms (118 ms with the fix on the dev host).
 run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
+# Bug 292: each loop's header phis were added by mapping the whole finished-block list, so n nested
+# loops took n² to lower (depth 8000: 3011 ms on main, 1084 ms with bug 286's fix). The fixture's
+# nested loops (continue, break, an aggregate merged in a loop) return 42; then the `lower` stage of
+# 8000 nested `while`s within 500 ms, retried once at 900 ms (279 ms with the fix, dev host).
+run_ok "$TESTDIR/regress_292_loop_header_patches.con" 42
 r265_gen() {  # r265_gen SHAPE N: a generated `fn main` of the given shape and size on stdout
     awk -v shape="$1" -v n="$2" 'BEGIN {
         print "fn main() -> Int {"
@@ -9292,6 +9297,38 @@ case "$r286_ms" in
            PASS=$((PASS + 1))
        else
            echo "FAIL  bug 286: lowering 8000 nested ifs took ${r286_first} ms, then ${r286_ms} ms in lower (budget 400, retry 800)"
+           FAIL=$((FAIL + 1))
+       fi ;;
+esac
+r292_src="$TMPDIR/r292_nested_while_8000.con"
+awk -v n=8000 'BEGIN {
+    print "fn main() -> Int {"
+    print "    let mut s: i64 = 0;"
+    line = "    "
+    for (i = 0; i < n; i++) line = line "while s < 1 { "
+    line = line "s = s + 1; "
+    for (i = 0; i < n; i++) line = line "} "
+    print line
+    print "    return (s - 1 + 42) as Int;"
+    print "}"
+}' > "$r292_src"
+r265_stage_ms "$r292_src" lower; r292_first="$r265_ms"; r292_ms="$r292_first"
+case "$r292_first" in
+    ''|*[!0-9]*) ;;
+    *) if [ "$r292_first" -gt 500 ]; then r265_stage_ms "$r292_src" lower; r292_ms="$r265_ms"; fi ;;
+esac
+case "$r292_ms" in
+    incomplete)
+        echo "  INCOMPLETE bug 292: lowering 8000 nested whiles timed out twice (180 s each)"
+        INCOMPLETE=$((INCOMPLETE + 1)) ;;
+    ''|*[!0-9]*)
+        echo "FAIL  bug 292: lowering 8000 nested whiles failed ($r292_ms)"
+        FAIL=$((FAIL + 1)) ;;
+    *) if [ "$r292_first" -le 500 ] || [ "$r292_ms" -le 900 ]; then
+           echo "  ok  bug 292: lowering 8000 nested whiles within budget (${r292_ms} ms, lower)"
+           PASS=$((PASS + 1))
+       else
+           echo "FAIL  bug 292: lowering 8000 nested whiles took ${r292_first} ms, then ${r292_ms} ms in lower (budget 500, retry 900)"
            FAIL=$((FAIL + 1))
        fi ;;
 esac
