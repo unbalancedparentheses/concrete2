@@ -1,0 +1,2 @@
+[piece 3 of 3: docs]
+- docs/bugs/discovery.tsv:112: This records the same 11-shape R-0550 Resolve/Check/Elab probing task already attributed to development on line 111 as a separate counting hunt, excluding its other finding, bug 298. This incorrectly advances every class’s quiet streak and raises ROADMAP’s satisfied classes from 16 to 18. Attribute bug 295 to the existing batch; development batches do not count toward exit 2m.
