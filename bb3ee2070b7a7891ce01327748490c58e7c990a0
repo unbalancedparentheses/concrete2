@@ -1,0 +1,2 @@
+[piece 1 of 2: tests]
+- tests/programs/regress_285_enum_payload_addr_taken.con:63: The earlier finding remains open: the nested value `if` can pre-promote `x`, storing 6 inside the RHS even if `&&` pre-promotion is broken. The skipped-RHS path then loads an uninitialized slot, which clang can still fold to the expected 6. The revision catches the original missing enum traversal but does not reliably check `&&` promotion independently. Add the requested IR assertion that initialization dominates the skipped-RHS path.
