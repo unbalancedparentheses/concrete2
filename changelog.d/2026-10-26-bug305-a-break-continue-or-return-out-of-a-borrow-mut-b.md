@@ -4,4 +4,4 @@ A `break`, `continue` (labelled or not) or `return` that leaves a `borrow mut` b
 longer loses the writes made through its reference: the reference is now the owner's own storage,
 lowered as `&mut owner` is, instead of a copy written back only at the block's fall-through end.
 Regression leg: `regress_305_borrow_block_early_exit.con` in `run_tests.sh`. Structural owner:
-R-0501 ([bug 305](docs/bugs/305_a_break_continue_or_return_out_of_a_borrow_mut.md)).
+R-0501 ([bug 305](docs/bugs/305_a_break_continue_or_return_out_of_a_borrow_mut_b.md)).
