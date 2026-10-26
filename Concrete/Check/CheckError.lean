@@ -356,14 +356,17 @@ structure TypeEnv where
   -- read/write on a NON-local struct is rejected unless the touched field(s)
   -- are `pub`. This is what makes representation invariants (String's
   -- {ptr,len,cap}) unforgeable from other modules.
-  localStructNames : List String := []
+  localStructNames : Std.HashSet String := {}
   /-- Bug 253: the identities of the newtypes and structs DEFINED here (module + submodules). A
       spelling's declaration is local when its identity is one of these: an imported declaration
       whose spelling a child module also declares is not (a decoy child type granted the import's
       construction and field rights). The name lists above answer only for a declaration that
       carries no identity (a parsed one: this module's own, or a child's). -/
-  localNewtypeIds : List TypeId := []
-  localStructIds : List TypeId := []
+  localNewtypeIds : Std.HashSet TypeId := {}
+  localStructIds : Std.HashSet TypeId := {}
+  /-- Bug 291: `structs`, `enums` and `newtypes` by name (first declaration of a name), built with
+      them in `checkModule`; every lookup by spelling asks this, not the lists. -/
+  typeIndex : TypeNameIndex := {}
   deriving Repr
 
 abbrev CheckM := ExceptT Diagnostics (StateM TypeEnv)
