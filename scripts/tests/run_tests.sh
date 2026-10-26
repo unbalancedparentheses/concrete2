@@ -8448,7 +8448,7 @@ fi
 run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 # Bug 292: each loop's header phis were added by mapping the whole finished-block list, so n nested
 # loops took n² to lower (depth 8000: 3011 ms on main, 1084 ms with bug 286's fix). The fixture's
-# nested loops (continue, break, an aggregate merged in a loop) return 42; then the `lower` stage of
+# nested loops (continue, break, an aggregate-valued match in a loop) return 42; then the `lower` stage of
 # 8000 nested `while`s within 500 ms, retried once at 900 ms (279 ms with the fix, dev host).
 run_ok "$TESTDIR/regress_292_loop_header_patches.con" 42
 r265_gen() {  # r265_gen SHAPE N: a generated `fn main` of the given shape and size on stdout
