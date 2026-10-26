@@ -1,0 +1,2 @@
+[piece 1 of 1: docs]
+- scripts/tests/lib/compile_scaling_budgets.tsv:54: Still open: no `hbbudget`, `instr`, or `rate` records exist. Absolute allocation and instruction budgets remain unenforced, and `host_factor()` always returns 1, so unchanged work can still fail under host load. The documentation now correctly describes this limitation but does not resolve it.
