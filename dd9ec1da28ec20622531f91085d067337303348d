@@ -1,0 +1,2 @@
+[piece 2 of 3: tests]
+- tests/programs/regress_302_loop_keeps_addr_taken_slot.con:51: The condition-borrow case does not detect the claimed alias regression: `p` is created after the loop, so even the old lowering loads `x` at loop exit and then promotes it again for this fresh borrow, returning the expected 15. Preserve a pointer obtained in the condition across the loop exit to check that condition-promoted storage retains its identity.
