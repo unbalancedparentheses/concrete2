@@ -1,0 +1,4 @@
+[piece 1 of 3: tests]
+- scripts/tests/check_work_queue.sh:346: This assertion does not establish that the source checkout uses the dispatcher’s namespace: `origin/main`, local `main`, and `refs/queue/remote/origin/main` all still point to `main_sha`, so using the stale agent-owned ref would pass. Advance remote `main` after cloning to distinguish them. Also, checking `HEAD`’s SHA does not verify the claimed detached state; that requires checking whether `HEAD` is symbolic.
+[piece 3 of 3: docs]
+- docs/bugs/299_work_queue_dispatcher_fetch_races_agent_pushes.md:72: The claim that the gate enforces “a tick writes no ref outside its namespace” contradicts both code and coverage. `Q.ready()` fetches into `refs/notes/remote/concrete-*`, outside `refs/queue/remote/*`; the new test checks only two remote-tracking refs with no agents running. Limit this guarantee to the dispatcher’s branch fetch.
