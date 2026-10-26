@@ -334,7 +334,9 @@ OTHER=970; FILING=971; RACE=972
 res_at $OTHER reserved other@example.invalid && res_at $FILING filing gate@example.invalid && res_at $RACE reserved gate@example.invalid
 refuse "--number for another user's reservation" "not by this user" bash "$NB" --number $OTHER "x defect" "${BA[@]}"
 refuse "--number for a number another run is filing" "is being filed" bash "$NB" --number $FILING "x defect" "${BA[@]}"
-# Two runs claiming one held number, from two clones: the lease lets exactly one file it.
+# Two runs claiming one held number, from two clones: the lease lets exactly one file it. As in leg 2
+# the interleaving is the scheduler's: without the lease this leg failed 2 runs of 3 (it can catch a
+# double claim, it cannot force one). The 'is being filed' refusal above is the deterministic half.
 git clone -q -b main "$O" "$TMP/c2" && git -C "$TMP/c2" config user.email gate@example.invalid && git -C "$TMP/c2" config user.name gate
 (cd "$W" && bash "$NB" --number $RACE "Race control A" "${BA[@]}") > "$TMP/raceA.out" 2>&1 & pa=$!
 (cd "$TMP/c2" && bash scripts/gen/new_bug.sh --number $RACE "Race control B" "${BA[@]}") > "$TMP/raceB.out" 2>&1 & pb=$!
