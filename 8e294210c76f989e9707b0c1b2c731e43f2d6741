@@ -1,0 +1,6 @@
+[piece 2 of 3: scripts]
+- scripts/gen/bug_areas.py:402: Record fallbacks discard gate and docs weights even for fixed bugs. A gate-only repair filed with its record therefore becomes “underived,” contradicting the documented code → gate → docs priority, whose code-only exception applies to open bugs.
+- scripts/gen/bug_areas.py:415: The shared-weight check overwrites `basis = "record"`. When an unnamed repair files two records together, both are reported as placed by shared fix commits instead of record fallback, making the documented basis and coverage counts incorrect.
+- scripts/gen/bug_areas.py:633: For an even number of observations, the reported median selects the upper middle value instead of averaging the middle pair. For example, durations of 0 and 2 days report a median of 2 rather than 1.
+[piece 3 of 3: docs]
+- docs/bugs/AREAS.md:100: Bug 034 is incorrectly classified as Std/cli, with Lower absent even from secondary areas. Its record and commit `6b2698b5` identify the fix as `prePromoteAddrTaken` in `Concrete/IR/Lower.lean`; the larger std.cli addition merely exposed the defect. Similarly, bug 249 is classified as Interp despite its fix being parser array accumulation. These incorrect assignments distort the stage totals and research reports; add record-backed overrides or correct the attribution before regenerating.
