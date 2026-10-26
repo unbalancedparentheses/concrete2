@@ -8454,6 +8454,18 @@ run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 # exits (a second `return`, `break`s and a `continue`) read a never-stored slot. The binary returns
 # 42 (main's returned 208; `--interp` printed 42 when the fixture was written).
 run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
+# Bug 306: the interpreter ran a `for` loop's step before the body's deferred calls on fall-through
+# (and after them on `continue`); the binary runs it after them on both. run_ok compares the binary
+# with 42 and the interpreter leg below compares `--interp` with the same value.
+run_ok "$TESTDIR/regress_306_for_step_after_body_defers.con" 42
+r306_i=$($COMPILER "$TESTDIR/regress_306_for_step_after_body_defers.con" --interp </dev/null 2>&1 | awk 'END{print}' || true)
+if [ "$r306_i" = "42" ]; then
+    echo "  ok  regress_306_for_step_after_body_defers.con: --interp == binary (42)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  regress_306_for_step_after_body_defers.con: --interp gave '$r306_i', want 42 (the binary's exit)"
+    FAIL=$((FAIL + 1))
+fi
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
 # struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built
