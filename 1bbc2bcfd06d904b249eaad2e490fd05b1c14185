@@ -1,0 +1,4 @@
+[piece 2 of 3: tests]
+- tests/programs/regress_292_loop_header_patches.con:31: `p` is declared before the loop, so lowering promotes it to a stable alloca before entering the body. Branch reconciliation skips promoted variables, so `merged` never exercises the deferred aggregate-merge stores claimed by this fixture. Declare the aggregate inside the loop before the `if` to exercise that patch path.
+[piece 3 of 3: docs]
+- docs/bugs/292_loop_header_patch_maps_all_blocks.md:69: The claimed aggregate-merge coverage is absent: `merged` declares `p` before the loop, so Lower promotes it to a stable alloca before entering the loop and skips it during branch reconciliation. Both branches store directly; neither exercises `insertStoresBeforeTerm` or its deferred suffix patches. The fixture therefore cannot detect regressions in that changed path.
