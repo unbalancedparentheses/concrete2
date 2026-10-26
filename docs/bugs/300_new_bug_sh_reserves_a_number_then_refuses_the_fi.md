@@ -70,9 +70,13 @@ and passed while every real filing failed.
   `--silent yes`. When the tree has the discovery record and the dashboard, a batch and `--silent`
   are required and checked before the reservation, against the dashboard's own rules (kinds, the
   effort format of counting batches, class tags), together with `bug_dashboard.py --check`.
-- A failure after the reservation restores `discovery.tsv` with the other files and prints the
-  command that files the same bug under the held number: `new_bug.sh --number NNN ...` files under
-  a reservation made by this user that no branch or worktree has a record for, and pushes nothing.
+- A failure after the reservation restores `discovery.tsv` with the other files, hands the number
+  back and prints the command that files the same bug under it. A reservation's first line names
+  its state: `bug NNN reserved:` is held and free to file (`--number-only`, or handed back by a
+  failed filing), `bug NNN filing:` is taken by a run. `new_bug.sh --number NNN ...` files under a
+  `reserved` number this user holds that no branch or worktree has a record for, claiming it by
+  moving the ref to a `filing` commit with a lease on the one it read, so of two concurrent claims
+  exactly one files it (Codex review).
 - `check_new_bug.sh` copies `bug_dashboard.py`, so leg 3 runs the whole filing through the
   dashboard, and leg 6 covers the attribution, the refusals before any reservation, the rollback
   and the `--number` rerun. The pre-push hook selects `check_new_bug.sh` when `bug_dashboard.py`
