@@ -1,0 +1,2 @@
+[piece 3 of 3: docs]
+- docs/project/WORK_QUEUE.md:107: The claim that `QUEUE_BASE` must name a branch and anything else is refused contradicts `Q.__init__`, which checks only the remote prefix and a nonempty suffix. For example, `QUEUE_BASE=origin/main~1` is accepted and resolves to the parent of the fetched main tip, allowing dispatch from an older commit despite the documented restriction.
