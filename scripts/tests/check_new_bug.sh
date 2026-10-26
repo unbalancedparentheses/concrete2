@@ -335,7 +335,7 @@ res_at $OTHER reserved other@example.invalid && res_at $FILING filing gate@examp
 refuse "--number for another user's reservation" "not by this user" bash "$NB" --number $OTHER "x defect" "${BA[@]}"
 refuse "--number for a number another run is filing" "is being filed" bash "$NB" --number $FILING "x defect" "${BA[@]}"
 # Two runs claiming one held number, from two clones: the lease lets exactly one file it.
-git clone -q "$O" "$TMP/c2" && git -C "$TMP/c2" config user.email gate@example.invalid && git -C "$TMP/c2" config user.name gate
+git clone -q -b main "$O" "$TMP/c2" && git -C "$TMP/c2" config user.email gate@example.invalid && git -C "$TMP/c2" config user.name gate
 (cd "$W" && bash "$NB" --number $RACE "Race control A" "${BA[@]}") > "$TMP/raceA.out" 2>&1 & pa=$!
 (cd "$TMP/c2" && bash scripts/gen/new_bug.sh --number $RACE "Race control B" "${BA[@]}") > "$TMP/raceB.out" 2>&1 & pb=$!
 ra=0; rb=0; wait $pa || ra=$?; wait $pb || rb=$?
