@@ -1,0 +1,6 @@
+[piece 2 of 3: tests]
+- tests/programs/regress_297_argument_order.con:36: The fixture does not test write-back order: `x`, `y`, and `z` are distinct locals, so reversing their write-backs produces identical results. Removing `mutBorrows.reverse` would still pass despite the claimed coverage.
+- tests/programs/regress_297_argument_order.con:40: Summing `pick(0)` through `pick(3)` hides any permutation of the arms’ returned values: the total remains 34 even if merge values are associated with the wrong predecessors. Check each result separately or use distinct weights to detect that regression.
+[piece 3 of 3: docs]
+- changelog.d/2026-10-26-bug297-call-arguments-appended.md:1: The headline incorrectly claims wide matches now compile in linear time. This patch removes quadratic list accumulation, but the bug record explicitly identifies remaining superlinear dominator construction and assigns its fix to another branch.
+- docs/bugs/297_call_arguments_and_merge_inputs_appended.md:69: The fixture does not pin all the claimed ordering properties. Its write-backs target distinct variables, so reversing their order is unobservable; field values and match results are summed, so permutations also preserve the expected result of 42.
