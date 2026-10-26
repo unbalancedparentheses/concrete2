@@ -8,7 +8,7 @@ silent: yes
 exit: 0b
 -->
 
-**Status:** FIXED (branch `wip/bug-305`)
+**Status:** OPEN — a repair is on `wip/bug-305` and waits for the owner's answer to OD2 (below)
 **Found:** 2026-10-26, hunting silent wrong code in Lower's handling of borrows and address-taken
 locals after bugs 285 and 287 (hand probes of every `CStmt` constructor; `.borrowIn`).
 **Severity:** silent wrong code. The native binary loses writes made through the reference on an
@@ -65,10 +65,23 @@ a branch or loop around the block promotes the owner before it, and a block in s
 promotes it where the block starts, which dominates the body. There is no copy and no write-back,
 on any exit.
 
-On the owner decisions: the fix does not order a write-back against deferred calls (OD2's "one
-defined order for cleanup, loan end and write-back"); it removes the write-back, so the owner holds
-every write through the reference when each write is made, which is what the interpreter does. The
-`return`-with-`defer` case above follows from that and is described here, not pinned by the fixture.
+**Owner decision (OD2).** The Codex review of this repair (2026-10-26, round 1) found that it picks
+a side on OD2 ("one defined order for cleanup, loan end and write-back", ROADMAP exit 2n): with the
+reference aliasing the owner, an enclosing deferred call that reads the owner after a `return` out
+of the block sees the writes (7 above; main's binary prints 1), which fixes that order observably.
+So the repair does not land until the owner answers. The options:
+
+1. The reference aliases the owner (this branch). Every exit keeps the writes; an enclosing
+   deferred call sees them. Native then agrees with the interpreter on every case above. This is
+   the observable order of the 2026-10-23 proposal (inner deferred calls, then loan end and
+   write-back, then the enclosing scopes' cleanup).
+2. Keep the copy and write it back on every exit, at a defined point among the deferred calls
+   (the exit-order rule OD2 would state); any order other than option 1's makes `return` with an
+   enclosing `defer` read the owner's old value while `break` and `continue` keep the writes.
+3. Refuse a `break`, `continue` or `return` out of a `borrow mut` block (a language rule).
+
+Recommendation: option 1. The `break` and `continue` cases (no deferred call involved) lose writes
+under every option except an explicit refusal, so they stay silent wrong code on main until then.
 
 ## Structural cause
 
