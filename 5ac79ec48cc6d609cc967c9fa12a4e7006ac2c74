@@ -1,0 +1,2 @@
+[piece 2 of 3: tests]
+- tests/programs/regress_285_enum_payload_addr_taken.con:62: The `&&` case does not reliably detect the claimed regression: `x` is always 6, so clang can fold the uninitialized load to 6 even with broken promotion. Bug 285’s record confirms this case already returns the expected result before the fix. Add an IR assertion checking that initialization dominates the skipped-RHS path.
