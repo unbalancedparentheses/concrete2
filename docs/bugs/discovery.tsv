@@ -100,3 +100,4 @@ date	kind	probe	effort	bugs	silent
 2026-10-26	development	R-0550 compile-time scaling gate: 15 generated shapes (array literals, long functions, many locals, lets with blocks, many functions, structs and enums, deep nesting) timed per stage at 1000 to 160000 elements	unrecorded	273,274,275,276,277,278,279,280,281,282	-
 2026-10-26	ci	gates-shell branch CI (run 40269354812): a transform-register leg failed on printf: write error: Broken pipe with its pattern present	unrecorded	283	283
 2026-10-26	follow-on	checking an earlier observation that binder references in literal match arms were missing from the R-0004 evidence producer: literal, range and bool match probes under --report subject-facts and migration-manifest	6 programs	284	284
+2026-10-26	development	scaling probes of Check and Lower over matched enums (task 3 of the R-0550 follow-up): n enum types, each built and matched once in main, at 2000 and 8000, per-stage trace and callgrind	1 program	290	-
