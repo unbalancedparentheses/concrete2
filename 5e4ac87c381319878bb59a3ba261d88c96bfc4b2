@@ -1,0 +1,7 @@
+[piece 1 of 3: tests]
+- scripts/gen/new_bug.sh:136: The previous concurrency finding remains open. Rollback now removes only its own bug, but discovery updates still read and rewrite the entire file without locking. If another filing saves after rollback reads the file but before rollback saves, rollback erases that filing’s attribution while leaving its bug record intact.
+[piece 2 of 3: scripts]
+- scripts/gen/new_bug.sh:155: The previous concurrency finding remains open. `revert` still reads and rewrites the entire discovery.tsv without locking. If another filing updates the file after that read, rollback overwrites its attribution while leaving its bug record intact. Filing and rollback still need serialization.
+- scripts/gen/new_bug.sh:137: Removing the backup makes failed writes unrecoverable. `save()` truncates discovery.tsv before writing; a partial write (for example, disk exhaustion) destroys existing attribution that `revert` cannot reconstruct. Write through a temporary file and atomically replace the original to preserve it on failure.
+[piece 3 of 3: docs]
+- scripts/gen/new_bug.sh:134: The earlier concurrency finding remains open. Rollback now removes its own attribution, but `apply` and `revert` still read and rewrite all of `discovery.tsv` without locking. If another filing completes between that read and write, the stale write erases its attribution while leaving its bug record intact. The revised documentation’s claim that rollback preserves concurrent filings is therefore still false.
