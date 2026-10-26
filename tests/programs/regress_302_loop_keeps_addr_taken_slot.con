@@ -10,9 +10,11 @@ trusted fn rd(p: *mut i64) -> i64 {
     return *p;
 }
 
-fn bump(p: &mut i64) -> bool {
-    *p = *p + 1;
-    return *p < 3;
+// Advances `*x` and leaves its address in `*out`.
+trusted fn step(x: &mut i64, out: &mut *mut i64) -> bool {
+    *out = x as *mut i64;
+    *x = *x + 1;
+    return *x < 3;
 }
 
 // A write to `x` after the loop is seen through the pointer.
@@ -41,14 +43,15 @@ fn write_ptr_read_local() -> i64 {
     return x;
 }
 
-// The first borrow is in the loop condition.
+// The first borrow is in the loop condition, and the pointer it leaves outlives the loop.
 fn borrowed_in_condition() -> i64 {
     let mut x: i64 = 0;
+    let mut y: i64 = 0;
+    let mut p: *mut i64 = &mut y as *mut i64;
     let mut n: i64 = 0;
-    while bump(&mut x) {
+    while step(&mut x, &mut p) {
         n = n + 1;
     }
-    let p: *mut i64 = &mut x as *mut i64;
     x = x + 10;
     return rd(p) + n;
 }

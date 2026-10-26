@@ -8456,7 +8456,7 @@ run_ok "$TESTDIR/regress_286_nested_region_addr_taken.con" 42
 run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
 # Bug 302: a loop moved a scalar whose address it takes back into a register at its exit, so a raw
 # pointer taken in the loop no longer aliased the local (a write after the loop on either side was
-# lost). Binary = --interp = 42 (main's binary returned 30).
+# lost). Binary = --interp = 42 (main's binary returned 20).
 run_ok "$TESTDIR/regress_302_loop_keeps_addr_taken_slot.con" 42
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy

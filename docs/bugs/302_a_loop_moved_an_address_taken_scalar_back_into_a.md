@@ -36,7 +36,7 @@ On main ea21a2e8 the binary prints `1`, `--interp` prints `5`. If `x` is first b
 loop (`let mut p: *mut i64 = &mut x as *mut i64;`) the binary prints `5`: the result depended on
 where the first borrow was. `regress_302_loop_keeps_addr_taken_slot.con` (a write to the local
 after a `while`, a write through the pointer after a `for`, and a first borrow in the loop
-condition): main's binary exits 30, `--interp` 42.
+condition, whose pointer outlives the loop): main's binary exits 20, `--interp` 42.
 
 ## Expected
 
