@@ -1,0 +1,2 @@
+[piece 1 of 1: tests]
+- scripts/tests/lib/compile_scaling_budgets.tsv:71: The expanded sizes and modes have no corresponding budgets: all six shapes lack LLVM budgets, four lack newly enabled native budgets, and five lack every 100000-element stage budget. `compile_scaling.py` treats each missing budget as a failure (“has no recorded budget”), so the scaling gate now necessarily fails even with a correct compiler. Record the CI measurements for these configurations before enabling them.
