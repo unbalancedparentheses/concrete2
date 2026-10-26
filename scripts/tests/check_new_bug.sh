@@ -20,8 +20,9 @@
 #      filing; a filing with no batch, an ambiguous or unknown batch, or a malformed new row is
 #      refused before a number is reserved; a failure after the reservation restores discovery.tsv
 #      and prints a --number command that files the same bug under the number it holds, without a
-#      second reservation; --number refuses a number that is not reserved, is another user's, or
-#      already has a record.
+#      second reservation; --number refuses a number that is not reserved, is another user's, is
+#      being filed by another run, or already has a record, and of two concurrent --number runs on
+#      one held number exactly one files it.
 #
 # Copies the ledger inputs the way check_ledgers.sh does (migrating the copy when this tree is not
 # migrated yet), so it needs no compiler build. Runs in seconds.
@@ -322,7 +323,28 @@ else
 fi
 refuse "--number for a number nobody reserved" "is not reserved" bash "$NB" --number 990 "x defect" "${BA[@]}"
 refuse "--number for a number that has a record" "already has a record" bash "$NB" --number "$NEXT" "x defect" "${BA[@]}"
-refuse "--number for another writer's reservation" "not by this user" bash "$NB" --number "$(printf '%03d' $((M + 40)))" "x defect" "${BA[@]}"
+refuse "--number for a reservation new_bug.sh did not make" "not a reservation new_bug.sh can file under" \
+  bash "$NB" --number "$(printf '%03d' $((M + 40)))" "x defect" "${BA[@]}"
+# Hand-made reservations at fresh numbers: another user's held number, and one a run is filing.
+res_at() { # number, state, owner
+  local c; c="$(G commit-tree "$(G hash-object -t tree /dev/null)" -m "bug $1 $2: control" -m "by $3@host at 2026-01-02T00:00:00Z, nonce $1$2")"
+  G push -q origin "$c:refs/bug-reservations/$1"
+}
+OTHER=970; FILING=971; RACE=972
+res_at $OTHER reserved other@example.invalid && res_at $FILING filing gate@example.invalid && res_at $RACE reserved gate@example.invalid
+refuse "--number for another user's reservation" "not by this user" bash "$NB" --number $OTHER "x defect" "${BA[@]}"
+refuse "--number for a number another run is filing" "is being filed" bash "$NB" --number $FILING "x defect" "${BA[@]}"
+# Two runs claiming one held number, from two clones: the lease lets exactly one file it.
+git clone -q "$O" "$TMP/c2" && git -C "$TMP/c2" config user.email gate@example.invalid && git -C "$TMP/c2" config user.name gate
+(cd "$W" && bash "$NB" --number $RACE "Race control A" "${BA[@]}") > "$TMP/raceA.out" 2>&1 & pa=$!
+(cd "$TMP/c2" && bash scripts/gen/new_bug.sh --number $RACE "Race control B" "${BA[@]}") > "$TMP/raceB.out" 2>&1 & pb=$!
+ra=0; rb=0; wait $pa || ra=$?; wait $pb || rb=$?
+filed="$(ls "$W/docs/bugs/${RACE}_"* "$TMP/c2/docs/bugs/${RACE}_"* 2>/dev/null | wc -l | tr -d ' ')"
+if { [ "$ra" = 0 ] && [ "$rb" != 0 ]; } || { [ "$ra" != 0 ] && [ "$rb" = 0 ]; }; then
+  if [ "$filed" = 1 ] && grep -qE 'claimed it first|is being filed' "$TMP/raceA.out" "$TMP/raceB.out"; then
+    ok "two concurrent --number runs on one held number: exactly one filed it, the other was refused"
+  else no "two concurrent --number runs: $filed records for bug $RACE, or the loser gave another reason: $(cat "$TMP/raceA.out" "$TMP/raceB.out" | tr '\n' ' ' | cut -c1-300)"; fi
+else no "two concurrent --number runs on bug $RACE: exit statuses $ra and $rb, not one success: $(cat "$TMP/raceA.out" "$TMP/raceB.out" | tr '\n' ' ' | cut -c1-300)"; fi
 refuse "--number with --number-only" "--number-only reserves a new one" bash "$NB" --number-only --number 990 "x defect"
 
 echo "NEW-BUG: PASS=$PASS FAIL=$FAIL"

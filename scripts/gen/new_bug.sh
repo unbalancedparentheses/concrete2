@@ -14,8 +14,8 @@
 # row dated today with that kind, probe and effort. Either one, and --silent (the row's silent cell
 # and the record's silent: line must agree), is required when the tree has the discovery record and
 # the dashboard, and is checked before a number is reserved. A filing that still fails after the
-# reservation removes everything it wrote, restores discovery.tsv, and prints the --number command
-# that files the same bug under the number it holds.
+# reservation removes everything it wrote, restores discovery.tsv, hands the number back as
+# `reserved` (see RESERVATION) and prints the --number command that files the same bug under it.
 #
 # NUMBER. The next number is one above the highest bug number seen anywhere another writer could
 # have used one:
@@ -33,6 +33,10 @@
 # names the title, the user, the host and the time, so `git ls-remote origin 'refs/bug-reservations/*'`
 # lists who holds what. A reservation publishes no code, and the pre-push hook accepts exactly that
 # shape on that namespace (its reservation tier) and nothing else there.
+# The message's first line also names the number's state: `bug NNN reserved: <title>` is held and
+# free to file (--number-only makes it; a failed filing hands its number back to it), and
+# `bug NNN filing: <title>` is taken by a filing run (a full run reserves straight into it; --number
+# moves a `reserved` number to it with a lease on the commit it read, so one of two claims wins).
 #
 # FILES (the tree must be migrated to the ledger: scripts/gen/migrate_ledgers.sh):
 #   docs/bugs/NNN_<slug>.md                      the record, with its bug-ledger block
@@ -221,7 +225,7 @@ fi
 # run created is removed, discovery.tsv is restored, and the views are regenerated without it, so a
 # failed filing leaves the tree as it found it. The reserved number stays reserved, and the message
 # names the --number command that files the same bug under it.
-WRITING=0; HELD=0; REC=""; REPRO=""; REPRO_DIR=""; FRAG=""; DISC_BAK=""
+WRITING=0; HELD=0; CLAIM=""; REC=""; REPRO=""; REPRO_DIR=""; FRAG=""; DISC_BAK=""
 cleanup() {
   local rc=$? resume
   rm -f "${seen:-}"
@@ -233,10 +237,14 @@ cleanup() {
     echo "new_bug: filing failed; removed the files it had written and restored the views" >&2
   fi
   if [ "$rc" -ne 0 ] && [ "$HELD" = 1 ]; then
-    resume="scripts/gen/new_bug.sh"; [ -n "$NUMBER" ] || resume="$resume --number $num"
-    resume="$resume$(printf ' %q' "${ARGS[@]}")"
-    echo "new_bug: bug $num stays reserved and unfiled; once the cause above is repaired, file it with" >&2
-    echo "  $resume" >&2
+    if release; then
+      resume="scripts/gen/new_bug.sh"; [ -n "$NUMBER" ] || resume="$resume --number $num"
+      resume="$resume$(printf ' %q' "${ARGS[@]}")"
+      echo "new_bug: bug $num stays reserved and unfiled; once the cause above is repaired, file it with" >&2
+      echo "  $resume" >&2
+    else
+      echo "new_bug: bug $num stays reserved and unfiled, and could not be handed back for --number (refs/bug-reservations/$num still reads 'filing'); leave the gap" >&2
+    fi
   fi
   rm -f "$DISC_BAK"
 }
@@ -250,26 +258,6 @@ while IFS= read -r wt; do
   find "$wt/docs/bugs" -maxdepth 1 -name '[0-9][0-9][0-9]_*.md' | record_nums >> "$seen"
 done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
 reservations="$(git ls-remote "$REMOTE" 'refs/bug-reservations/*')" || die "git ls-remote $REMOTE failed; cannot read the reservations"
-if [ -n "$NUMBER" ]; then
-  # --number: file under a number already reserved (by --number-only, or by a run that failed after
-  # reserving it) that no branch or worktree has a record for. Nothing is pushed.
-  num="$NUMBER"
-  ! grep -qx "$num" "$seen" || die "bug $num already has a record on a branch or in a worktree; a filed number is never filed again"
-  rsha="$(printf '%s\n' "$reservations" | awk -v r="refs/bug-reservations/$num" '$2 == r { print $1 }')"
-  [ -n "$rsha" ] || die "bug $num is not reserved on $REMOTE (refs/bug-reservations/$num); omit --number to reserve a new number"
-  git fetch --quiet --no-write-fetch-head "$REMOTE" "refs/bug-reservations/$num" \
-    || die "could not fetch refs/bug-reservations/$num from $REMOTE"
-  rmsg="$(git cat-file commit "$rsha")" || die "could not read the reservation commit of bug $num"
-  rby="$(printf '%s\n' "$rmsg" | sed -n 's/^by \(.*\) at .*/\1/p')"
-  case "$rby" in "$(git config user.email || echo unknown)@"*) ;;
-    *) die "bug $num was reserved by '${rby:-unknown}', not by this user; file under a number you reserved" ;; esac
-  HELD=1
-  no_op_in_progress
-  echo "new_bug: filing under bug $num, reserved on $REMOTE (refs/bug-reservations/$num)"
-else
-printf '%s\n' "$reservations" | sed -nE 's#.*refs/bug-reservations/([0-9]+)$#\1#p' >> "$seen"
-max="$(awk '/^[0-9]+$/ { n = $0 + 0; if (n > m) m = n } END { print m + 0 }' "$seen")"
-n=$((max + 1))
 
 # A reservation push is gated by the pre-push hook like any push. A hook without the reservation
 # tier would treat it as an unknown ref and run its fallback gates on whatever is checked out, so
@@ -283,31 +271,74 @@ fi
 
 empty_tree="$(git hash-object -t tree /dev/null)"
 who="$(git config user.email || echo unknown)@$(hostname -s 2>/dev/null || echo host)"
-tries=0
-while :; do
-  tries=$((tries + 1)); [ "$tries" -le 50 ] || die "could not reserve a number after 50 attempts"
-  num="$(printf '%03d' "$n")"
-  [ "${#num}" -eq 3 ] || die "bug numbers past 999 need a wider record name (docs/bugs/NNN_*.md)"
-  # The nonce makes every attempt a distinct commit: two identical requests in one second would
-  # otherwise build one SHA, and pushing a SHA the remote already holds "succeeds" for both.
-  nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-  c="$(git commit-tree "$empty_tree" -m "bug $num reserved: $TITLE" -m "by $who at $(date -u +%Y-%m-%dT%H:%M:%SZ), nonce $nonce")"
-  if git push --quiet --force-with-lease="refs/bug-reservations/$num:" "$REMOTE" "$c:refs/bug-reservations/$num" 2>/dev/null; then
-    break
+# res_commit STATE [NOTE]: a reservation commit for $num. The nonce makes every one distinct: two
+# identical requests in one second would otherwise build one SHA, and pushing a SHA the remote
+# already holds "succeeds" for both.
+res_commit() {
+  local nonce; nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+  git commit-tree "$empty_tree" -m "bug $num $1: $TITLE" -m "by $who at $(date -u +%Y-%m-%dT%H:%M:%SZ), nonce $nonce${2:+, $2}"
+}
+# release: hand a number this run claimed for filing back as `reserved`, with a lease on the claim, so
+# a later --number run can take it.
+release() {
+  local c; c="$(res_commit reserved "released after a failed filing")" || return 1
+  git push --quiet --force-with-lease="refs/bug-reservations/$num:$CLAIM" "$REMOTE" "$c:refs/bug-reservations/$num" 2>/dev/null
+}
+
+if [ -n "$NUMBER" ]; then
+  # --number: claim a `reserved` number (from --number-only, or released by a failed filing) that this
+  # user holds and no branch or worktree has a record for, by moving its ref to a `filing` commit
+  # with a lease on the reservation it read: of two runs claiming one number, exactly one wins.
+  num="$NUMBER"
+  ! grep -qx "$num" "$seen" || die "bug $num already has a record on a branch or in a worktree; a filed number is never filed again"
+  rsha="$(printf '%s\n' "$reservations" | awk -v r="refs/bug-reservations/$num" '$2 == r { print $1 }')"
+  [ -n "$rsha" ] || die "bug $num is not reserved on $REMOTE (refs/bug-reservations/$num); omit --number to reserve a new number"
+  git fetch --quiet --no-write-fetch-head "$REMOTE" "refs/bug-reservations/$num" \
+    || die "could not fetch refs/bug-reservations/$num from $REMOTE"
+  rsub="$(git log -1 --format=%s "$rsha")" && rbody="$(git log -1 --format=%b "$rsha")" \
+    || die "could not read the reservation commit of bug $num"
+  case "$rsub" in
+    "bug $num reserved: "*) ;;
+    "bug $num filing: "*) die "bug $num is being filed, or was filed, by another run (refs/bug-reservations/$num reads '$rsub'); a held number is filed once" ;;
+    *) die "refs/bug-reservations/$num ('$rsub') is not a reservation new_bug.sh can file under" ;;
+  esac
+  rby="$(printf '%s\n' "$rbody" | sed -n 's/^by \(.*\) at .*/\1/p')"
+  case "$rby" in "$(git config user.email || echo unknown)@"*) ;;
+    *) die "bug $num was reserved by '${rby:-unknown}', not by this user; file under a number you reserved" ;; esac
+  c="$(res_commit filing "claimed with --number")"
+  git push --quiet --force-with-lease="refs/bug-reservations/$num:$rsha" "$REMOTE" "$c:refs/bug-reservations/$num" 2>/dev/null \
+    || die "could not claim bug $num: another run claimed it first, or the push failed"
+  CLAIM="$c"; HELD=1
+  no_op_in_progress
+  echo "new_bug: claimed bug $num on $REMOTE for filing (refs/bug-reservations/$num)"
+else
+  printf '%s\n' "$reservations" | sed -nE 's#.*refs/bug-reservations/([0-9]+)$#\1#p' >> "$seen"
+  max="$(awk '/^[0-9]+$/ { n = $0 + 0; if (n > m) m = n } END { print m + 0 }' "$seen")"
+  n=$((max + 1))
+  # --number-only leaves the number `reserved`; a full filing creates it already `filing`.
+  state=filing; [ "$NUMBER_ONLY" = 0 ] || state=reserved
+  tries=0
+  while :; do
+    tries=$((tries + 1)); [ "$tries" -le 50 ] || die "could not reserve a number after 50 attempts"
+    num="$(printf '%03d' "$n")"
+    [ "${#num}" -eq 3 ] || die "bug numbers past 999 need a wider record name (docs/bugs/NNN_*.md)"
+    c="$(res_commit "$state")"
+    if git push --quiet --force-with-lease="refs/bug-reservations/$num:" "$REMOTE" "$c:refs/bug-reservations/$num" 2>/dev/null; then
+      break
+    fi
+    # Rejected: taken by a concurrent reservation (try the next number), or the push itself failed.
+    git ls-remote --exit-code "$REMOTE" "refs/bug-reservations/$num" >/dev/null 2>&1 \
+      || die "the reservation push for bug $num failed and the ref does not exist; check access to '$REMOTE'"
+    echo "new_bug: bug $num was reserved concurrently; trying the next number" >&2
+    n=$((n + 1))
+  done
+  [ "$NUMBER_ONLY" = 1 ] || { CLAIM="$c"; HELD=1; }
+  no_op_in_progress
+  echo "new_bug: reserved bug $num on $REMOTE (refs/bug-reservations/$num)"
+  if [ "$NUMBER_ONLY" = 1 ]; then
+    echo "$num"
+    exit 0
   fi
-  # Rejected: taken by a concurrent reservation (try the next number), or the push itself failed.
-  git ls-remote --exit-code "$REMOTE" "refs/bug-reservations/$num" >/dev/null 2>&1 \
-    || die "the reservation push for bug $num failed and the ref does not exist; check access to '$REMOTE'"
-  echo "new_bug: bug $num was reserved concurrently; trying the next number" >&2
-  n=$((n + 1))
-done
-[ "$NUMBER_ONLY" = 1 ] || HELD=1
-no_op_in_progress
-echo "new_bug: reserved bug $num on $REMOTE (refs/bug-reservations/$num)"
-if [ "$NUMBER_ONLY" = 1 ]; then
-  echo "$num"
-  exit 0
-fi
 fi
 
 # ----------------------------------------------------------------------------- write
@@ -357,7 +388,10 @@ mkdir -p "$REPRO_DIR"
   printf '([bug %s](docs/bugs/%s)).\n' "$num" "$(basename "$REC")"
 } > "$FRAG"
 if [ "$TRACKED" = 1 ]; then
-  DISC_BAK="$(mktemp)" && cat "$DISC" > "$DISC_BAK" || die "could not back up $DISC"
+  # Restoration is armed only once the backup is whole: a failed copy must never overwrite the record.
+  bak="$(mktemp)" || die "could not back up $DISC"
+  cat "$DISC" > "$bak" || { rm -f "$bak"; die "could not back up $DISC"; }
+  DISC_BAK="$bak"
   discovery apply "$num" || die "could not add bug $num to $DISC (above)"
 fi
 
