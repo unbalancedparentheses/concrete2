@@ -32,7 +32,7 @@ fn main() with(Console) { f(); }
 
 On main ea21a2e8 `--interp` prints `1 1 3`, the binary `0 1 2`. Without the `continue` line
 `--interp` prints `1 2 3`, the binary `0 1 2`. `regress_306_for_step_after_body_defers.con`:
-the binary exits 42, `--interp` on main prints 274.
+the binary exits 42, `--interp` on main prints 254.
 
 ## Expected
 
