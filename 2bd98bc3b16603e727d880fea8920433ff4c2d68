@@ -1,0 +1,5 @@
+[piece 1 of 2: compiler]
+- Concrete/Resolve/PeekType.lean:97: The previous finding remains partially open: skipping every multi-statement arm prevents incorrect shadowed-name lookup, but `gid(if c { let x: i64 = 1; x } else { let y: i64 = 2; y })` still cannot infer `T`. Neither arm contributes a type, so this valid call is still rejected.
+- Concrete/Resolve/PeekType.lean:160: Discarding every `.varArm` also discards `_` wildcard arms, which introduce no binding. Consequently, `gid(match k { _ => 42 })` now yields `.placeholder` and fails generic inference, although the previous implementation could infer `i64` safely.
+[piece 2 of 2: docs]
+- Concrete/Resolve/PeekType.lean:96: The previous finding remains partially open: `gid(if c { let x: i64 = 1; x } else { let y: i64 = 2; y })` still cannot infer `T`, because both arms are skipped. Skipping these arms prevents the incorrect constant lookup, but does not resolve inference for arm-local values.
