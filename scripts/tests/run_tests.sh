@@ -8495,6 +8495,9 @@ else
     echo "FAIL  regress_306_for_step_after_body_defers.con: --interp gave '$r306_i', want 42 (the binary's exit)"
     FAIL=$((FAIL + 1))
 fi
+# Bug 307: a call argument `&mut x` passed a temporary copy of `x` and wrote it back after the call,
+# so a raw pointer derived from the reference did not alias `x`. Binary = --interp = 42.
+run_ok "$TESTDIR/regress_307_call_arg_mut_borrow_aliases.con" 42
 # Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
 # lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
 # struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built

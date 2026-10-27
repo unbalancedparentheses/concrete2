@@ -1,0 +1,57 @@
+// Bug 307: a call argument `&mut x` (x not yet slot-backed) passed a temporary copy of `x` and
+// loaded it back into `x` after the call, so the callee's reference was not `x`'s storage. A raw
+// pointer a trusted callee derived from it pointed at the temporary afterwards: a write through it
+// was lost to `x`, and a later write to `x` was not seen through it. `&mut x` as an argument is now
+// `x`'s own storage, as `&mut x` is everywhere else.
+trusted fn leak(p: &mut i64) -> *mut i64 {
+    return p as *mut i64;
+}
+
+trusted fn wr(p: *mut i64, v: i64) {
+    *p = v;
+}
+
+trusted fn rd(p: *mut i64) -> i64 {
+    return *p;
+}
+
+fn bump(p: &mut i64) {
+    *p = *p + 1;
+}
+
+// A write through the pointer after the call is seen by `x`.
+fn write_ptr_read_local() -> i64 {
+    let mut x: i64 = 1;
+    let q: *mut i64 = leak(&mut x);
+    wr(q, 5);
+    return x;
+}
+
+// A write to `x` after the call is seen through the pointer.
+fn write_local_read_ptr() -> i64 {
+    let mut x: i64 = 1;
+    let q: *mut i64 = leak(&mut x);
+    x = 7;
+    return rd(q);
+}
+
+// Two calls borrow the same local: both pointers name it.
+fn two_borrows() -> i64 {
+    let mut x: i64 = 1;
+    let q1: *mut i64 = leak(&mut x);
+    let q2: *mut i64 = leak(&mut x);
+    wr(q1, 9);
+    return rd(q2);
+}
+
+// A plain `&mut` argument still updates the local (the write the copy-back used to make).
+fn plain() -> i64 {
+    let mut x: i64 = 20;
+    bump(&mut x);
+    return x;
+}
+
+fn main() -> Int {
+    // 5 + 7 + 9 + 21 = 42
+    return (write_ptr_read_local() + write_local_read_ptr() + two_borrows() + plain()) as Int;
+}
