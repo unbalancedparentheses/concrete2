@@ -1,0 +1,2 @@
+[piece 2 of 3: scripts]
+- scripts/fuzz/farm/farm.py:134: Enabling `borrow` by default breaks campaigns using existing snapshots: generators come from the snapshot, and pre-patch `fuzz_differential.py` has no `BorrowGen`. Updating the independently installed farm engine therefore raises an uncaught `AttributeError` whenever a worker reaches a borrow batch, aborting its campaign until a newer snapshot is successfully built. Check snapshot support before scheduling this generator.
