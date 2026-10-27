@@ -3493,8 +3493,19 @@ partial def evalWhile (cx : Ctx) (baseLen : Nat) (env : Env) (cond : CExpr) (bod
         if brkLabel == none || brkLabel == loopLabel then return (restore bodyEnv, .val .unit)
         else return (restore bodyEnv, .brk bv brkLabel)
       | .val _ =>
-        let (stepEnv, _) ← evalStmts cx bodyEnv step
-        evalWhile cx baseLen (restore stepEnv) cond body step (fuel - 1) loopLabel
+        -- The step's own control flow (a `return` or `break` inside it) still leaves the loop, as
+        -- it did when the step was evaluated as part of the body (Codex review of bug 306).
+        let (stepEnv, stepFlow) ← evalStmts cx bodyEnv step
+        match stepFlow with
+        | .ret v => return (restore stepEnv, .ret v)
+        | .brk bv brkLabel =>
+          if brkLabel == none || brkLabel == loopLabel then return (restore stepEnv, .val .unit)
+          else return (restore stepEnv, .brk bv brkLabel)
+        | .cont contLabel =>
+          if contLabel == none || contLabel == loopLabel then
+            evalWhile cx baseLen (restore stepEnv) cond body step (fuel - 1) loopLabel
+          else return (restore stepEnv, .cont contLabel)
+        | .val _ => evalWhile cx baseLen (restore stepEnv) cond body step (fuel - 1) loopLabel
       | .cont contLabel =>
         if contLabel == none || contLabel == loopLabel then
           -- Continue skips the rest of body, so run step before looping.

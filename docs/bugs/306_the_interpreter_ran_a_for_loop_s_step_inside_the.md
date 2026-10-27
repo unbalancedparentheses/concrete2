@@ -8,7 +8,7 @@ silent: yes
 exit: 0b
 -->
 
-**Status:** FIXED (branch `wip/bug-306`)
+**Status:** OPEN — a repair is on `wip/bug-306-r2` and waits for the owner's answer to OD2 (below)
 **Found:** 2026-10-27, by the differential fuzzer's new borrow mode (`fuzz_differential.py --mode
 borrow`): every remaining mismatch of 1000 programs on a build with bugs 301 – 305 fixed was this
 one, and none remained with `for` loops off (`BorrowGen.fors`).
@@ -54,6 +54,17 @@ step after it (Codex confirmation, 2026-10-26).
 `CStmt.whileBodyBlock body step` (Elab/Core.lean) names the body's own block once; Lower and the
 interpreter both use it, and the interpreter runs the step after the block on fall-through as on
 `continue`.
+
+**Owner decision (OD2).** The Codex review of this repair (2026-10-27, round 1) found that running
+the body's deferred calls before the step, on fall-through as on `continue`, implements the exit
+order OD2 leaves to the owner ("one defined order for cleanup, loan end and write-back"), and that
+the fixture pins it. So the repair does not land until the owner answers. The options: (1) the
+body's deferred calls run before the step on every path (the binary today, and this branch);
+(2) the step runs inside the body's scope, before its deferred calls, on every path (Lower would
+change, and `continue` would run the step before the deferred calls); (3) leave the two paths
+different (the interpreter today). Recommendation: option 1, which STMT-6's rationale describes for
+`continue`. Until then the binary and the interpreter disagree, and the differential gates see it
+only when a `for` body defers a call that reads what the step writes.
 
 ## Structural cause
 
