@@ -1,0 +1,2 @@
+[piece 1 of 3: compiler]
+- Concrete/Resolve/PeekType.lean:99: The binding scan ignores `.letStructDestructure`, which remains undesugared during Check and Elab. With a module constant `n: bool` and a struct `S` containing `n: i64`, `gid(if c { let S { n } = s; n } else { 0 })` peeks the constant and infers `T = bool`, incorrectly rejecting the valid call. Previously this multi-statement arm was skipped, allowing the else arm to infer `i64`. Struct-destructuring binders must also prevent lookup outside the arm.
