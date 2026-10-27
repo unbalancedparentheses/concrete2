@@ -1,0 +1,3 @@
+[piece 1 of 3: tests]
+- scripts/tests/lib/compile_scaling.py:602: A missing instruction baseline still triggers instruction-growth checking with a substituted zero baseline, despite the documented fallback to wall growth. Counts growing x12 can therefore produce `FAIL-INSTR` even when wall growth and all budgets pass. Skip instruction-growth checking when its baseline is unavailable.
+- scripts/tests/lib/compile_scaling.py:703: The quadratic-growth control supplies 6,000,000 instructions against a 1,000,000 instruction budget. It passes even if instruction-growth checking is removed entirely, so it does not verify the claimed quadratic detection. Keep the synthetic counts within their instruction budgets and require failure from growth.
