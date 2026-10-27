@@ -1,0 +1,2 @@
+[piece 1 of 1: compiler]
+- Concrete/Resolve/PeekType.lean:108: Treating every non-expression statement as a binder regresses inference for arms containing assignments. For example, with mutable `x: i64`, `gid(if c { x = 1; 2 } else { x = 2; 3 })` previously inferred `T = i64`; now both arms return `.placeholder`, so the valid call fails with E0220. Assignments introduce no names and should not prevent peeking the trailing value.
