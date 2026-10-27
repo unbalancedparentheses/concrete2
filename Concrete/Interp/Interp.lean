@@ -3480,7 +3480,11 @@ partial def evalWhile (cx : Ctx) (baseLen : Nat) (env : Env) (cond : CExpr) (bod
     match cv with
     | .bool false => return (restore env, .val .unit)
     | .bool true =>
-      let (bodyEnv, flow) ← evalStmts cx env body
+      -- Bug 306: the body's own block (`CStmt.whileBodyBlock`: the desugared body less the step it
+      -- ends with) is one scope, whose deferred calls run when it ends; the step runs after it, on
+      -- fall-through as on `continue` (STMT-6). Evaluating the whole list as one block ran the
+      -- step first and the body's deferred calls after it, only on fall-through.
+      let (bodyEnv, flow) ← evalStmts cx env (CStmt.whileBodyBlock body step)
       match flow with
       | .ret v => return (restore bodyEnv, .ret v)
       | .brk bv brkLabel =>
@@ -3489,9 +3493,8 @@ partial def evalWhile (cx : Ctx) (baseLen : Nat) (env : Env) (cond : CExpr) (bod
         if brkLabel == none || brkLabel == loopLabel then return (restore bodyEnv, .val .unit)
         else return (restore bodyEnv, .brk bv brkLabel)
       | .val _ =>
-        -- Step is already included in body (for-loop desugaring appends it).
-        -- Only run step explicitly on continue (where body was cut short).
-        evalWhile cx baseLen (restore bodyEnv) cond body step (fuel - 1) loopLabel
+        let (stepEnv, _) ← evalStmts cx bodyEnv step
+        evalWhile cx baseLen (restore stepEnv) cond body step (fuel - 1) loopLabel
       | .cont contLabel =>
         if contLabel == none || contLabel == loopLabel then
           -- Continue skips the rest of body, so run step before looping.

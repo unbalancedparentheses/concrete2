@@ -1,0 +1,32 @@
+// Bug 306: in `for (init; cond; step) { body }` the body's block ends, running its deferred calls,
+// before the step runs, on fall-through as on `continue` (STMT-6). The interpreter ran the step
+// first on fall-through, so a deferred call reading the counter saw the stepped value there and
+// the unstepped one after `continue`. The binary and the interpreter now agree.
+fn record(k: &i64, acc: &mut i64) {
+    *acc = *acc * 10 + *k;
+}
+
+fn fall_through() -> i64 {
+    let mut acc: i64 = 0;
+    for (let mut k: i64 = 0; k < 3; k = k + 1) {
+        defer record(&k, &mut acc);
+    }
+    return acc;
+}
+
+fn with_continue() -> i64 {
+    let mut acc: i64 = 0;
+    for (let mut k: i64 = 0; k < 3; k = k + 1) {
+        defer record(&k, &mut acc);
+        if k == 1 {
+            continue;
+        }
+    }
+    return acc;
+}
+
+fn main() -> Int {
+    // Each deferred call records the counter before the step: 0, 1, 2 -> 12 (the digits 0 1 2).
+    // 12 + 12 + 18 = 42
+    return (fall_through() + with_continue() + 18) as Int;
+}
