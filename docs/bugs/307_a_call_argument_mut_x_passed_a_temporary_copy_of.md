@@ -33,7 +33,7 @@ fn main() with(Console) { println(a()); }
 On main ea21a2e8 the binary prints `1`, `--interp` `5`; with `x = 7; return rd(q);` after the call,
 the binary prints `1` and `--interp` `7`. `let r = &mut x; leak(r)` was right: only the direct
 argument spelling took the copy. `regress_307_call_arg_mut_borrow_aliases.con` (both directions,
-two calls borrowing the same local, and a plain `&mut` argument): main's binary exits 13,
+two calls borrowing the same local, and a plain `&mut` argument): main's binary exits 24,
 `--interp` 42.
 
 ## Expected
