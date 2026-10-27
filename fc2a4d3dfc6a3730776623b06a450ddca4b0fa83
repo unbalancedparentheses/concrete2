@@ -1,0 +1,3 @@
+[piece 1 of 1: docs]
+- research/process/bug-areas-2026-10.md:63: Class 1 spans 11 stages, not ten, in the generated primary-class table. Class 17 also spans 11, so class 1 is tied for widest.
+- research/process/bug-areas-2026-10.md:80: The claim that mean time to fix is near zero for every stage contradicts `bug_ledger.py report`: even including bugs filed fixed, Mono averages 13.4 days and EmitSSA 10.9 days.
