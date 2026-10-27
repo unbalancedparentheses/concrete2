@@ -1,0 +1,2 @@
+[piece 2 of 3: scripts]
+- scripts/fuzz/farm/farm.py:894: Filtering out unavailable `borrow` support leaves `order` empty when configured with `--generators borrow` against an older snapshot. `_campaign_loop` then evaluates `gi % len(order)` and crashes with `ZeroDivisionError`, instead of gracefully skipping the unsupported generator. Handle the empty list before entering the campaign loop.
