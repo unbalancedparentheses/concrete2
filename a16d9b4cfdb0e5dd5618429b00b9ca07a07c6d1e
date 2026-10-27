@@ -1,0 +1,2 @@
+[piece 2 of 3: scripts]
+- scripts/fuzz/farm/farm.py:135: The new borrow campaign picks a side on OD2 by treating overlapping deferred loans as valid programs. For example, seed 1 generates `defer bump(&mut d3, 4); defer show(&d3);`. Whether the first loan persists until execution—and therefore conflicts with the second—is explicitly awaiting the owner’s decision. The `diff` oracle reports compilation rejection as a finding, encoding acceptance before that decision. This must not land with these cases enabled.
