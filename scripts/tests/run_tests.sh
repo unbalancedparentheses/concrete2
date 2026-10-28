@@ -8460,6 +8460,8 @@ run_ok "$TESTDIR/regress_287_defer_borrow_promoted_at_registration.con" 42
 # returned 249). Binary = --interp = 42; and no root is promoted lazily (`%addr.N`), since every
 # borrow in the fixture is inside a branch.
 run_ok "$TESTDIR/regress_301_place_borrow_root.con" 42
+run_ok "$TESTDIR/regress_314_for_body_always_breaks.con" 42
+run_ok "tests/regressions/bug314_a_for_loop_whose_body_always_breaks_fails_ssa_ve/repro.con" 42
 r301_ssa=$($COMPILER "$TESTDIR/regress_301_place_borrow_root.con" --emit-ssa 2>&1 || true)
 if [[ "$r301_ssa" == *"define i64 @and_rhs("* && "$r301_ssa" != *"%addr."* ]]; then
     echo "  ok  regress_301_place_borrow_root.con: every borrowed root is promoted before its branch"
