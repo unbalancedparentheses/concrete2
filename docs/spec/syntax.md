@@ -118,7 +118,7 @@ fn main() -> Int {
 - Uses: none
 - Codes: E0283 (check)
 - Status: enforced
-- Enforced by: Concrete.checkStmt
+- Enforced by: Concrete.checkStmt, Concrete.refuseReservedLetBinder
 - Semantics: none
 - Obligation: none
 - Evidence: tested
@@ -132,6 +132,16 @@ are refused by MOD-3.
 fn main() -> Int {
     let __destr_x: Int = 42;
     return __destr_x;
+}
+```
+
+```con reject name=destructuring-binder code=E0283 stage=check pair=ordinary-spelling
+struct S { a: Int }
+
+fn main() -> Int {
+    let s: S = S { a: 42 };
+    let S { a: __destr_a } = s;
+    return __destr_a;
 }
 ```
 

@@ -10183,6 +10183,8 @@ run_err "$TESTDIR/error_262_parent_constructs_child_newtype.con" "(E0263)"
 run_err "$TESTDIR/error_262_sibling_constructs_newtype.con" "(E0296)"
 run_err "$TESTDIR/error_262_child_constructs_parent_newtype.con" "(E0296)"
 run_ok "$TESTDIR/regress_262_own_rights_beside_child.con" 42
+run_err "tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con" "(E0283)"
+run_err "$TESTDIR/error_312_enum_destructure_reserved_binder.con" "(E0283)"
 run_ok "$TESTDIR/regress_262_imported_fn_beside_child_newtype.con" 42
 for r262 in "error_262_parent_constructs_child_newtype.con:(E0263)" \
             "error_262_sibling_constructs_newtype.con:(E0296)" \
