@@ -1,0 +1,2 @@
+enum E { A { x: Int, x: Int } }
+fn main() -> Int { return 42; }

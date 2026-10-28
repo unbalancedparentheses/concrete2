@@ -1,0 +1,19 @@
+mod nz {
+    pub struct Copy NonZero { v: Int }
+    pub fn mk(v: Int) -> Option<NonZero> {
+        if v == 0 { return Option::None; }
+        return Option::Some { value: NonZero { v: v } };
+    }
+    pub fn get(n: NonZero) -> Int { return n.v; }
+}
+mod m {
+    import nz.{NonZero, mk, get};
+    pub fn main() -> Int {
+        let mut out: Int = 0;
+        match mk(42) {
+            Option::Some { value } => { let NonZero { v } = value; out = v; },
+            Option::None => {}
+        }
+        return out;
+    }
+}

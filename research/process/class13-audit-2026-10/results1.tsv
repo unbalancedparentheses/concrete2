@@ -5,3 +5,13 @@ mod3_dup_const_fn	exit 42	42	by design (separate const/callable namespaces, Chec
 syn3_param, syn3_pattern_binder	accept	accept	outside SYN-3 text (let only)
 own7_cast	accept	accept	outside OWN-7 list (cast not listed)
 all other batch-1 probes	refused at the stated rule's code	same	enforced
+# batch 2 and 3 (results2.txt, results3.txt), candidate gaps:
+type11_private_field_destructure, type11_destr_*	accept	accept	TYPE-11 gap: a destructuring let outside the declaring module binds private fields (silent; privacy bypass)
+syn3_let_struct_destr	accept	accept	SYN-3 gap: a destructuring let binds a __destr_ name (only letDecl is checked)
+mod3_dup_method_same_impl, mod3_dup_static_same_impl, trait_dup_in_trait_impl	llvm-as leak	interp internal error	no rule refuses two methods of one name in ONE impl (TRAIT-5 covers two impls)
+enum_dup_variant	llvm-as leak	accepts 42	no rule refuses duplicate member names inside one declaration
+enum_dup_variant_field, generic_dup_tparam, struct_dup_tparam, dup_cap_param, trait_dup_in_trait_decl	accept	accept	same (duplicate member names accepted)
+main_generic_ok, main_generic_bounded	link error, no rule	accepts 42	STMT-7 gap (generic main)
+mem6_neg_lit_i32	abort	runtime error	MEM-6 refusal half covers a[5] but not a constant negative index (loud)
+pat3_repeat_lit	accept	accept	blocked on OD18 (unreachable arms)
+trait9_extra_method, main_cap_param, mod2_private_type_unimported	accept	accept	outside the rule text

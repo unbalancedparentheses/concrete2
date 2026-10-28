@@ -1,0 +1,2 @@
+struct W<T, T> { a: T }
+fn main() -> Int { return 42; }

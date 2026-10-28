@@ -1,0 +1,9 @@
+struct S { a: Int }
+struct T { b: Int }
+fn main() -> Int {
+    let s: S = S { a: 40 };
+    let S { a: __destr_S } = s;
+    let t: S = S { a: 2 };
+    let S { a } = t;
+    return __destr_S + a;
+}

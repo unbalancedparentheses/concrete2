@@ -1,0 +1,6 @@
+struct Copy S { a: Int }
+impl S {
+    fn mk() -> Int { return 1; }
+    fn mk() -> Int { return 42; }
+}
+fn main() -> Int { return S::mk(); }

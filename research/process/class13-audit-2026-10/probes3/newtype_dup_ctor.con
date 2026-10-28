@@ -1,0 +1,3 @@
+newtype N = Int;
+newtype N = i32;
+fn main() -> Int { return 42; }

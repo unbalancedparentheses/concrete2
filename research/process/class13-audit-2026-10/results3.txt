@@ -1,0 +1,27 @@
+dup_cap_param	| exit=42	| out=42
+dup_import	| ERR:error[check]: (E0299) import binds 'h', which is already bound to 'a.f' by another import (	| ERR:error[check]: (E0299) import binds 'h', which is already bound to 'a.f' by anothe
+dup_label	| exit=42	| out=42
+enum_dup_variant	| ERR:LLVM IR validation failed for /tmp/nix-shell.LOJ6cf/tmp.XXNWxNuK/enum_dup_variant.con.ll: llvm-as: /tmp/nix-shell.LOJ6cf	| out=42
+enum_dup_variant_field	| exit=42	| out=42
+extern_dup_param	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+fn_dup_param	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+generic_dup_tparam	| exit=42	| out=42
+main_generic_bounded	| ERR:error[link]: no `main` function found; an executable needs an entry point — define 	| out=42
+runprobes.sh: line 4: 3581662 Aborted                    timeout 20 "/tmp/c13p_$n.bin" > /dev/null 2>&1
+mem6_neg_lit_i32	| exit=134	| ERR:interp: negative array index -1 
+mod3_dup_static_same_impl	| ERR:LLVM IR validation failed for /tmp/nix-shell.LOJ6cf/tmp.XXzaxk14/mod3_dup_static_same_impl.con.ll: llvm-as: /tmp/nix-she	| ERR:call 'S_mk' by name reaches 2 definitions in different modules; the interpreter refuses to pick one 
+newtype_dup_ctor	| ERR:error[check]: (E0299) a newtype named 'N' is also declared in this module as a newtype (lin	| ERR:error[check]: (E0299) a newtype named 'N' is also declared in this module as a ne
+struct_dup_field_decl	| ERR:error[check]: (E0208) linear variable 's' was never consumed	| ERR:error[check]: (E0208) linear variable 's' was never consumed
+struct_dup_tparam	| exit=42	| out=42
+syn3_collide_temp	| exit=42	| out=42
+syn3_enum_destr	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'E' — non-Copy values mus	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'E' — non-Copy 
+trait5_inherent_and_trait	| ERR:error[check]: (E0594) method 'g' of 'S' is provided by both an inherent impl (here) and imp	| ERR:error[check]: (E0594) method 'g' of 'S' is provided by both an inherent impl (her
+trait5_two_inherent	| ERR:error[check]: (E0594) method 'g' of 'S' is provided by both an inherent impl (here) and an 	| ERR:error[check]: (E0594) method 'g' of 'S' is provided by both an inherent impl (her
+trait_dup_in_trait_decl	| exit=42	| out=42
+trait_dup_in_trait_impl	| ERR:LLVM IR validation failed for /tmp/nix-shell.LOJ6cf/tmp.XXQ9SWfH/trait_dup_in_trait_impl.con.ll: llvm-as: /tmp/nix-shell	| ERR: call 'S_g' by name reaches 2 definitions in different modules; the interpreter refuses to pick one 
+trait_dup_param_name	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+trust4_fnptr_cap2	| ERR:error[check]: (E0240) function 'f' requires capability 'Console' but 'call' does not declar	| ERR:error[check]: (E0240) function 'f' requires capability 'Console' but 'call' does 
+type11_destr_copy_partial	| exit=42	| out=42
+type11_destr_linear	| exit=42	| out=42
+type11_destr_newtype_invariant	| exit=42	| out=42
+type11_destr_pub_ok	| exit=42	| out=42

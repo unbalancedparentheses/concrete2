@@ -1,0 +1,112 @@
+ffi3_array_param	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_body	| ERR:error[parse]: (E0001) expected ;, got {	| ERR:error[parse]: (E0001) expected ;, got {
+ffi3_enum_param	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_fnptr_param	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_nonrepr_struct	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_ptr_to_ref	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_ref_param	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi3_string_ret	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `with(...)`	| ERR:error[resolve]: (E0116) foreign binding 'foo' does not declare its effects: write `
+ffi4_align_not_pow2	| ERR:error[core-check]: (E0577) [main] #[repr(align(3))] on struct 'S' must be a power of two	| ERR:error[core-check]: (E0577) [main] #[repr(align(3))] on struct 'S' must be a power of t
+ffi4_generic_repr	| ERR:error[core-check]: (E0572) [main] #[repr(C)] struct 'S' cannot have type parameters	| ERR:error[core-check]: (E0572) [main] #[repr(C)] struct 'S' cannot have type parameters
+ffi4_nonffi_field	| ERR:error[core-check]: (E0573) [main] #[repr(C)] struct 'S' has non-FFI-safe field 't' of type T	| ERR:error[core-check]: (E0573) [main] #[repr(C)] struct 'S' has non-FFI-safe field 't' of 
+main_cap_param	| exit=42	| out=42
+main_generic_ok	| ERR:error[link]: no `main` function found; an executable needs an entry point — define 	| out=42
+mem3_let_noinit	| ERR:error[parse]: (E0001) expected =, got ;	| ERR:error[parse]: (E0001) expected =, got ;
+mod2_private_const	| ERR:error[resolve]: (E0111) 'C' is not public in module 'a'	| ERR:error[resolve]: (E0111) 'C' is not public in module 'a'
+mod2_private_fn	| ERR:error[resolve]: (E0111) 'f' is not public in module 'a'	| ERR:error[resolve]: (E0111) 'f' is not public in module 'a'
+mod2_private_method	| ERR:error[check]: (E0264) no method 'hidden' on type 'S'	| ERR:error[check]: (E0264) no method 'hidden' on type 'S'
+mod2_private_qualified	| ERR:error[resolve]: (E0101) unknown function 'a_f'	| ERR:error[resolve]: (E0101) unknown function 'a_f'
+mod2_private_static_method	| ERR:error[check]: (E0264) no method 'make' on type 'S'	| ERR:error[check]: (E0264) no method 'make' on type 'S'
+mod2_private_type_unimported	| exit=42	| out=42
+mod2_private_variant_enum	| ERR:error[resolve]: (E0111) 'E' is not public in module 'a'	| ERR:error[resolve]: (E0111) 'E' is not public in module 'a'
+mod3_dup_method_same_impl	| ERR:LLVM IR validation failed for /tmp/nix-shell.7f977d/tmp.XXMP5Ste/mod3_dup_method_same_impl.con.ll: llvm-as: /tmp/nix-she	| ERR: call 'S_g' by name reaches 2 definitions in different modules; the interpreter refuses to pick one 
+own11_and_moves	| ERR:error[check]: (E0244) the right operand of '&&' may not move or consume 'r': it runs only w	| ERR:error[check]: (E0244) the right operand of '&&' may not move or consume 'r': it r
+own11_assert_moves	| ERR:error[check]: (E0243) a proof-only statement (assert, assume, ghost let) may not move or co	| ERR:error[check]: (E0243) a proof-only statement (assert, assume, ghost let) may not 
+own11_ghost_moves	| ERR:error[check]: (E0243) a proof-only statement (assert, assume, ghost let) may not move or co	| ERR:error[check]: (E0243) a proof-only statement (assert, assume, ghost let) may not 
+own12_defer_arith_arg	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow of a local 	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow o
+own12_defer_call_arg	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow of a local 	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow o
+own12_defer_field_arg	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow of a local 	| ERR:error[check]: (E0279) a deferred call's argument must be a local name, a borrow o
+own12_defer_method	| ERR:error[check]: (E0282) defer body must be a function call	| ERR:error[check]: (E0282) defer body must be a function call
+own12_move_reserved	| ERR:error[check]: (E0206) variable 'r' is reserved by defer	| ERR:error[check]: (E0206) variable 'r' is reserved by defer
+own13_copy_and_destroy	| ERR:error[core-check]: (E0570) [main] type 'C' implements Destroy and cannot be Copy	| ERR:error[core-check]: (E0570) [main] type 'C' implements Destroy and cannot be Copy
+own13_destroy_cap	| ERR:error[core-check]: (E0584) [main] impl Destroy for 'R' requires capabilities (Console) beyond Al	| ERR:error[core-check]: (E0584) [main] impl Destroy for 'R' requires capabilities (Console)
+own14_copy_enum_linear	| ERR:error[core-check]: (E0571) [main] Copy struct 'E::A' contains non-copy field 'r'	| ERR:error[core-check]: (E0571) [main] Copy struct 'E::A' contains non-copy field 'r'
+own14_copy_linear_field	| ERR:error[core-check]: (E0571) [main] Copy struct 'C' contains non-copy field 'r'	| ERR:error[core-check]: (E0571) [main] Copy struct 'C' contains non-copy field 'r'
+own1_borrow_after_move	| ERR:error[check]: (E0205) linear variable 'r' used after move	| ERR:error[check]: (E0205) linear variable 'r' used after move
+own1_use_after_move_method	| ERR:error[check]: (E0205) linear variable 'r' used after move	| ERR:error[check]: (E0205) linear variable 'r' used after move
+own2_break_leak	| ERR:error[check]: (E0210) break would skip unconsumed linear variable 'r'	| ERR:error[check]: (E0210) break would skip unconsumed linear variable 'r'
+own2_continue_leak	| ERR:error[check]: (E0211) continue would skip unconsumed linear variable 'r'	| ERR:error[check]: (E0211) continue would skip unconsumed linear variable 'r'
+own2_self_not_consumed	| ERR:error[check]: (E0208) linear variable 'self' was never consumed	| ERR:error[check]: (E0208) linear variable 'self' was never consumed
+own3_match_disagree	| ERR:error[check]: (E0209) match arms disagree on consumption of 'r'	| ERR:error[check]: (E0209) match arms disagree on consumption of 'r'
+own4_for_step_consume	| ERR:error[check]: (E0207) cannot consume linear variable 'r' inside a loop (declared outside th	| ERR:error[check]: (E0207) cannot consume linear variable 'r' inside a loop (declared 
+own4_while_cond_consume	| ERR:error[check]: (E0207) cannot consume linear variable 'r' inside a loop (declared outside th	| ERR:error[check]: (E0207) cannot consume linear variable 'r' inside a loop (declared 
+own5_discard_linear	| ERR:error[check]: (E0295) `discard(...)` only acknowledges discarding a Copy value; 'R' is a no	| ERR:error[check]: (E0295) `discard(...)` only acknowledges discarding a Copy value; '
+own5_stmt_linear_call	| ERR:error[check]: (E0287) value of non-Copy type 'R' is discarded without being consumed	| ERR:error[check]: (E0287) value of non-Copy type 'R' is discarded without being consu
+own5_underscore_arm	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'R' — non-Copy values mus	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'R' — non-Copy 
+own8_array_elem	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of array element by value 	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of array element
+own8_field_through_ref	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of field 'r' of 'S' by val	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of field 'r' of 
+own8_heap_interior	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of field 'r' of 'S' by val	| ERR:error[check]: (E0290) cannot move non-Copy value of type 'R' out of field 'r' of 
+own9_overwrite_deref	| ERR:error[check]: (E0291) cannot overwrite non-Copy pointee (through &mut) of type 'R' — overwr	| ERR:error[check]: (E0291) cannot overwrite non-Copy pointee (through &mut) of type 'R
+own9_overwrite_elem	| ERR:error[check]: (E0291) cannot overwrite non-Copy array element of type 'R' — overwriting wou	| ERR:error[check]: (E0291) cannot overwrite non-Copy array element of type 'R' — overw
+own9_overwrite_field	| ERR:error[check]: (E0219) cannot assign to non-Copy field 'r' — overwriting would leak the old 	| ERR:error[check]: (E0219) cannot assign to non-Copy field 'r' — overwriting would lea
+pat2_bool_missing	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a default '_' a	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a def
+pat2_char_missing	| ERR:error[parse]: (E0001) expected match pattern, got char('a')	| ERR:error[parse]: (E0001) expected match pattern, got char('a')
+pat2_guarded_only	| ERR:error[core-check]: (E0530) [main] non-exhaustive match: missing variant 'A' in enum 'E'	| ERR:error[core-check]: (E0530) [main] non-exhaustive match: missing variant 'A' in enum 'E
+pat2_int_no_catchall	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a default '_' a	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a def
+pat2_value_match_int	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a default '_' a	| ERR:error[core-check]: (E0534) [main] non-exhaustive match on non-enum type requires a def
+pat3_bool_lit_on_int	| ERR:error[check]: (E0309) a literal pattern does not fit a scrutinee of type 'i64'	| ERR:error[check]: (E0309) a literal pattern does not fit a scrutinee of type 'i64'
+pat3_lit_wrong_type	| ERR:error[parse]: (E0001) expected match pattern, got char('a')	| ERR:error[parse]: (E0001) expected match pattern, got char('a')
+pat3_missing_field	| ERR:error[core-check]: (E0533) [main] variant 'A' has 2 fields but arm binds 1	| ERR:error[core-check]: (E0533) [main] variant 'A' has 2 fields but arm binds 1
+pat3_nofields_linear	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'R' — non-Copy values mus	| ERR:error[check]: (E0288) `_` cannot discard a non-Copy value of type 'R' — non-Copy 
+pat3_other_enum_variant	| ERR:error[check]: (E0309) the variant pattern `F::A` does not fit a scrutinee of type 'E'	| ERR:error[check]: (E0309) the variant pattern `F::A` does not fit a scrutinee of type
+pat3_range_on_bool	| ERR:error[check]: (E0309) a range pattern does not fit a scrutinee of type 'bool'	| ERR:error[check]: (E0309) a range pattern does not fit a scrutinee of type 'bool'
+pat3_repeat_lit	| exit=42	| out=42
+pat3_repeat_variant	| ERR:error[core-check]: (E0532) [main] duplicate match arm for variant 'A'	| ERR:error[core-check]: (E0532) [main] duplicate match arm for variant 'A'
+pat4_guard_moves_outer	| ERR:error[check]: (E0300) match guard moves non-Copy value 'r'; a guard is read-only (a false g	| ERR:error[check]: (E0300) match guard moves non-Copy value 'r'; a guard is read-only 
+pat5_else_not_diverge	| ERR:error[check]: (E0308) the `else` block of a `let ... else` must diverge (end in `return`, `	| ERR:error[check]: (E0308) the `else` block of a `let ... else` must diverge (end in `
+pat5_omit_noncopy	| ERR:error[check]: (E0252) missing field 'b' in struct destructure 'S'	| ERR:error[check]: (E0252) missing field 'b' in struct destructure 'S'
+pat5_refutable_no_else	| ERR:error[core-check]: (E0530) [main] non-exhaustive match: missing variant 'B' in enum 'E'	| ERR:error[core-check]: (E0530) [main] non-exhaustive match: missing variant 'B' in enum 'E
+ref12_elem_assign_shared	| ERR:error[check]: (E0237) cannot mutably borrow the assignment target through a shared referenc	| ERR:error[check]: (E0237) cannot mutably borrow the assignment target through a share
+ref12_field_assign_shared	| ERR:error[check]: (E0237) cannot mutably borrow the assignment target through a shared referenc	| ERR:error[check]: (E0237) cannot mutably borrow the assignment target through a share
+ref12_mutborrow_shared_field	| ERR:error[check]: (E0237) cannot mutably borrow a place through a shared reference ('s' is a `&	| ERR:error[check]: (E0237) cannot mutably borrow a place through a shared reference ('
+ref12_mut_method_shared	| ERR:error[check]: (E0237) cannot mutably borrow the receiver of `&mut self` method 'set' throug	| ERR:error[check]: (E0237) cannot mutably borrow the receiver of `&mut self` method 's
+ref1_trait_method_ref	| ERR:error[check]: (E0236) method 'get' of trait 'T' may not return a reference ('&i64'); refere	| ERR:error[check]: (E0236) method 'get' of trait 'T' may not return a reference ('&i64
+ref2_fntype_ret_ref	| ERR:error[check]: (E0236) function type may not return a reference ('&i64'); references are sec	| ERR:error[check]: (E0236) function type may not return a reference ('&i64'); referenc
+ref3_array_of_refs_param	| ERR:error[check]: (E0239) parameter 'a' stores a reference in an aggregate ('[&i64; 1]'); refer	| ERR:error[check]: (E0239) parameter 'a' stores a reference in an aggregate ('[&i64; 1
+ref3_const_ref	| ERR:error[check]: (E0239) module constant 'C' stores a reference in an aggregate ('&i64'); refe	| ERR:error[check]: (E0239) module constant 'C' stores a reference in an aggregate ('&i
+ref3_newtype_ref	| ERR:error[check]: (E0239) inner type of newtype 'N' stores a reference in an aggregate ('&i64')	| ERR:error[check]: (E0239) inner type of newtype 'N' stores a reference in an aggregat
+ref6_borrow_binder_assign	| ERR:error[check]: (E0303) a reference binding is never assigned: 'r' has type '&i64'	| ERR:error[check]: (E0303) a reference binding is never assigned: 'r' has type '&i64'
+scope1_borrow_binder_shadow	| ERR:error[check]: (E0301) 'r' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'r' is already bound in this scope or an enclosing one; a n
+scope1_contract_binds	| ERR:error[check]: (E0305) a contract of 'f' contains the pattern binder `r`; a contract express	| ERR:error[check]: (E0305) a contract of 'f' contains the pattern binder `r`; a contra
+scope1_for_shadow	| ERR:error[check]: (E0301) 'i' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'i' is already bound in this scope or an enclosing one; a n
+scope1_nested_block	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+scope1_param_shadow	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+scope1_pattern_shadow	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a new binding	| ERR:error[check]: (E0301) 'x' is already bound in this scope or an enclosing one; a n
+syn3_let_struct_destr	| exit=42	| out=42
+trait10_bound_unsat	| ERR:error[check]: (E0241) type 'i64' does not implement trait 'T' required by generic function 	| ERR:error[check]: (E0241) type 'i64' does not implement trait 'T' required by generic
+trait10_copy_unsat	| ERR:error[check]: (E0241) type 'R' does not implement trait 'Copy' required by generic function	| ERR:error[check]: (E0241) type 'R' does not implement trait 'Copy' required by generi
+trait9_extra_method	| exit=42	| out=42
+trait9_missing_method	| ERR:error[core-check]: (E0581) [main] trait impl for 'S' is missing method 'b'	| ERR:error[core-check]: (E0581) [main] trait impl for 'S' is missing method 'b'
+traitx_impl_unknown_trait	| ERR:error[core-check]: (E0580) [main] unknown trait 'Nope'	| ERR:error[core-check]: (E0580) [main] unknown trait 'Nope'
+trust4_bound_cap	| ERR:error[check]: (E0240) function 'T::go' requires capability 'Console' but 'g' does not decla	| ERR:error[check]: (E0240) function 'T::go' requires capability 'Console' but 'g' does
+trust4_fnptr_cap	| ERR:error[resolve]: (E0108) unknown type 'Unit'	| ERR:error[resolve]: (E0108) unknown type 'Unit'
+trust7_raw_read_linear	| ERR:error[check]: (E0311) cannot move a non-Copy 'R' out of raw memory with `*p`: the slot woul	| ERR:error[check]: (E0311) cannot move a non-Copy 'R' out of raw memory with `*p`: the
+type10_builtin_args	| ERR:error[check]: (E0268) alloc() takes exactly 1 argument	| ERR:error[check]: (E0268) alloc() takes exactly 1 argument
+type10_free_nonheap	| ERR:error[check]: (E0274) free() requires Heap<T> type, got i64	| ERR:error[check]: (E0274) free() requires Heap<T> type, got i64
+type11_functional_update	| ERR:error[check]: (E0297) cannot construct 'S' here: field 'x' is private to its defining modul	| ERR:error[check]: (E0297) cannot construct 'S' here: field 'x' is private to its defi
+type11_newtype_construct	| ERR:error[check]: (E0296) newtype 'N' cannot be constructed here: direct construction is privat	| ERR:error[check]: (E0296) newtype 'N' cannot be constructed here: direct construction
+type11_private_field_destructure	| exit=42	| out=42
+type11_private_field_pattern_enum	| ERR:error[parse]: (E0001) expected => or -> in match arm, got {	| ERR:error[parse]: (E0001) expected => or -> in match arm, got {
+type11_private_field_read	| ERR:error[check]: (E0298) field 'x' of 'S' is private to its defining module	| ERR:error[check]: (E0298) field 'x' of 'S' is private to its defining module
+type11_private_field_write	| ERR:error[check]: (E0298) field 'x' of 'S' is private to its defining module	| ERR:error[check]: (E0298) field 'x' of 'S' is private to its defining module
+type15_bare_generic	| ERR:error[resolve]: (E0113) 'W' takes 1 type argument, but 0 were given	| ERR:error[resolve]: (E0113) 'W' takes 1 type argument, but 0 were given
+type15_too_many_args	| ERR:error[resolve]: (E0113) 'W' takes 1 type argument, but 2 were given	| ERR:error[resolve]: (E0113) 'W' takes 1 type argument, but 2 were given
+type16_array_recursive	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size
+type16_generic_recursive	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size
+type16_recursive	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size	| ERR:error[core-check]: (E0583) [main] recursive type 'S' has infinite size
+type4_arg_width	| ERR:error[check]: (E0220) type mismatch in argument 'x' of 'f': expected i32, got i64	| ERR:error[check]: (E0220) type mismatch in argument 'x' of 'f': expected i32, got i64
+type4_break_value	| ERR:error[check]: (E0220) type mismatch in let binding 'y': expected bool, got i64	| ERR:error[check]: (E0220) type mismatch in let binding 'y': expected bool, got i64
+type4_field_width	| ERR:error[check]: (E0220) type mismatch in field 'a' of struct 'S': expected i32, got i64	| ERR:error[check]: (E0220) type mismatch in field 'a' of struct 'S': expected i32, got
+type4_return_width	| ERR:error[check]: (E0220) type mismatch in return value: expected i32, got i64	| ERR:error[check]: (E0220) type mismatch in return value: expected i32, got i64
+type9_arity	| ERR:error[check]: (E0262) function 'f' expects 1 arguments, got 2	| ERR:error[check]: (E0262) function 'f' expects 1 arguments, got 2
+type9_method_not_in_bound	| ERR:error[check]: (E0265) no method 'b' for type variable 'X'	| ERR:error[check]: (E0265) no method 'b' for type variable 'X'

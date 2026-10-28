@@ -1,0 +1,2 @@
+trait T { fn g(&self, x: Int, x: Int) -> Int; }
+fn main() -> Int { return 42; }
