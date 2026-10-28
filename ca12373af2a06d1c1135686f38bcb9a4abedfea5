@@ -1,0 +1,2 @@
+[piece 3 of 3: docs]
+- docs/spec/modules.md:195: MOD-5 extends method-name uniqueness to methods within a single inherent or trait impl, choosing additional refusal behavior in OD6’s trait-coherence scope (which includes TRAIT-5). OD6 remains proposed, and ROADMAP.md explicitly forbids extending these rules through bug fixes or documentation before the owner answers. The LLVM failure establishes a defect but does not authorize this particular language rule; calling it MOD-5 does not remove the owner-decision dependency.
