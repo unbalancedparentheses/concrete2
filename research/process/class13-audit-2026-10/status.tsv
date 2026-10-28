@@ -1,6 +1,6 @@
-# branch	bug	head	state
-wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	Codex-clean round 1; gates on OVH green (run_tests, golden 54/0, mutation patterns, check_spec PASS=285 FAIL=0); CI run 40714251471 dispatched
-wip/bug-311	311 TYPE-11 sibling destructure of private fields (E0298)	94ffd684	stacked on bug-310; BuildIdentity, gates and Codex review pending
-wip/bug-312	312 SYN-3 destructuring binders (E0283)	9a74c4fa	stacked on bug-311; pending
-wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	959ad7fc	stacked on bug-312; narrowed per coordinator; pending
-wip/spec-code-coverage	S12 gate	d1cf75fe	WIP
+# branch	bug	head	state (updated 2026-10-28)
+wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY TO LAND: Codex clean (round 1), Kimi clean; OVH gates green; CI run 40714251471 in progress (all finished jobs green)
+wip/bug-311	311 TYPE-11 sibling destructure (E0298)	17ff9114+	stacked on 310; gates green; Codex round 1 raised OD21 (answered: shares field-read test, parent outcome unchanged); round 2 pending
+wip/bug-312	312 SYN-3 destructuring binders (E0283)	dce4b959	stacked on 311; gates green; Codex clean round 1; Kimi pending
+wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	ca12373a+	stacked on 312; Codex round 1 raised OD6 (answered in record); round 2 pending
+wip/spec	S12 witness gate, S13 docs/language gate, OPEN-1..22, absorbed VALUE_FLOW_SPEC GRAMMAR MACRO_STANCE TUPLES UNITS_OF_MEASURE	81b1fc77	slices pushed; Codex+Kimi review pending
