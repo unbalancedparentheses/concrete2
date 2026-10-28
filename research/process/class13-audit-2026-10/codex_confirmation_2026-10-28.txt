@@ -1,0 +1,5 @@
+G1: VERDICT CONFIRMED | loud natively; silent acceptance in interp | OD: none | `mainParamErrs` ignores type parameters, allowing a generic entry point that native compilation loses while the interpreter executes it.
+G2: VERDICT CONFIRMED | silent | OD: none | Struct destructuring reads private fields across sibling modules without checking TYPE-11; OD21’s parent–child question does not apply.
+G3: VERDICT CONFIRMED | silent | OD: none | Destructuring binders bypass SYN-3’s reserved-prefix check and inherit Verify’s blanket `__destr_` exemption, although these probes demonstrate no wrong result.
+G4: VERDICT CONFIRMED | loud | OD: none | Duplicate methods within one impl and duplicate enum variants escape into LLVM validation failures, confirming a pipeline defect independently of OD6; acceptance of the other duplicate forms alone does not establish unsoundness under the cited rules.
+G5: VERDICT NOT-A-BUG | loud runtime abort | OD: none | MEM-6 requires refusal of proven violations, but the bounds evaluator neither substitutes `i` nor evaluates unary negation, so these probes remain unproved and correctly trap at runtime.

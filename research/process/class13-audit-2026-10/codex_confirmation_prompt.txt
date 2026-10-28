@@ -1,0 +1,15 @@
+You are independently confirming candidate defects in the Concrete compiler (Lean 4) at this checkout (origin/main ca49fada). Do not modify files. Read the cited spec entries in docs/spec/, the cited compiler code, the reproducers under research/process/class13-audit-2026-10/probes*/ and the measured outcomes in research/process/class13-audit-2026-10/results2.txt, results3.txt (native = `concrete f.con -o bin && ./bin`, interp = `concrete f.con --interp`, built on Linux from this commit). For each candidate give: VERDICT: CONFIRMED or NOT-A-BUG, one-sentence reason, whether it is silent (wrong code or unsound acceptance) or loud, and whether a fix would pick a side of any owner decision OD1-OD22 (ROADMAP.md, "Owner decisions"); if so name it.
+
+G1 STMT-7@2 (docs/spec/statements.md#STMT-7): `fn main<T>() -> Int { return 42; }` (probes2/main_generic_ok.con, probes3/main_generic_bounded.con). Native: `error[link]: no main function found`; --interp runs it and prints 42. Check.checkModule (Concrete/Check/Check.lean, mainParamErrs) refuses only value parameters (E0310).
+
+G2 TYPE-11@1 (docs/spec/types.md#TYPE-11, status partial R-0500): a destructuring `let S { x } = s;` in another module binds a private (non-pub) field x (probes2/type11_private_field_destructure.con, probes3/type11_destr_linear.con, type11_destr_copy_partial.con, type11_destr_newtype_invariant.con); accepted by both consumers, while `s.x` is refused E0298. Check.lean `.letStructDestructure` case of checkStmt has no privacy check. Note OD21 concerns only a parent module over its child; these probes use sibling modules.
+
+G3 SYN-3@1 (docs/spec/syntax.md#SYN-3): `let S { a: __destr_0 } = s;` (probes2/syn3_let_struct_destr.con, probes3/syn3_collide_temp.con) is accepted; only the `.letDecl` case checks the `__destr_` prefix (Check.lean ~2441), while Verify.lean's post-mono REF-6 check exempts every `__destr_` let.
+
+G4 duplicate member names inside one declaration: two methods of one name in ONE impl (probes2/mod3_dup_method_same_impl.con, probes3/mod3_dup_static_same_impl.con, trait_dup_in_trait_impl.con) reach llvm-as natively (LLVM IR validation failed) and an internal error in --interp; `enum E { A, A }` (probes3/enum_dup_variant.con) reaches llvm-as natively and runs under --interp; duplicate variant fields, duplicate type parameters, duplicate capability parameters and duplicate method declarations in a trait are accepted by both. MOD-3 covers module-level names and TRAIT-5 two impls (Check.declarationCollisions says "Two methods of one name on one type are TRAIT-5's (E0594)"); PASS-5..10 / README S4 say no lower layer (llvm-as) may leak.
+
+G5 MEM-6@1 (docs/spec/memory.md#MEM-6): "an index the compiler proves out of bounds is refused": `a[5]` on [Int;3] is refused (E0900) but a constant-folded negative index (`let i: Int = 0 - 1; a[i]`, probes3/mem6_neg_lit_i32.con, and probes/mem6_neg_oob.con `a[-1]`) compiles and aborts at run time in both consumers.
+
+Answer in the format:
+G1: VERDICT ... | silent/loud | OD: none/ODn | reason
+...
