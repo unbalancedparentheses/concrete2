@@ -1,7 +1,7 @@
-# branch	bug	head	state (updated 2026-10-28)
-wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY: Codex clean, Kimi clean, OVH gates green, CI 40714251471 success
-wip/bug-311	311 TYPE-11 sibling destructure (E0298)	660b5fef	BLOCKED on OD21: Codex (2 rounds) holds that sharing structIsLocal extends the parent exemption into a new path; Kimi clean; gates green. Needs the owner's call.
-wip/bug-312	312 SYN-3 destructuring binders (E0283)	9f4a1f3d	on bug-310 (not 311): Codex clean, Kimi clean, OVH full gates green; CI 40727025466
-wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	8934e640	on bug-312: Codex clean, Kimi clean, OVH full gates green; CI 40727030713
-wip/bug-314	314 for loop whose body always breaks: E0703 natively (Lower)	fdb2bbae	on main: Codex clean (2 rounds), Kimi clean, OVH full suite, SSA, examples, golden green; CI 40731064688
-wip/spec	S12 witness gate, S13 docs/language gate, open kind with OPEN-1..22, 9 docs/language files absorbed	c6d25fb7	Codex clean (round 4), Kimi clean (round 3); check_spec PASS=292 FAIL=0 on OVH; S12 0 missing over 2120 programs; CI 40731496013
+# branch	bug	head	state (updated 2026-10-28, rebased onto origin/main 96c9f918)
+wip/bug-310	310 STMT-7 generic main (E0310)	c07a0265	pre-rebase 61c95d88: Codex+Kimi clean, CI 40714251471 success; rebased: reviews and CI 40760265425 running
+wip/bug-311	311 TYPE-11 sibling destructure (E0298)	aad27057	BLOCKED on OD21 (Codex); on bug-310
+wip/bug-312	312 SYN-3 destructuring binders (E0283)	0312c28f	pre-rebase 9f4a1f3d: Codex+Kimi clean, CI 40727025466 success; rebased: reviews and CI 40760269542 running
+wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	61a3551c	CI 40727030713 failed R-0550 enums/check heartbeats (+30%); fixed (firstDupBy, no allocation without a duplicate; OVH: no heartbeat failure); reviews and CI 40760274123 running
+wip/bug-314	314 for loop always breaking: E0703 (Lower)	8a578efa	pre-rebase fdb2bbae: Codex+Kimi clean, CI 40731064688 success; rebased: reviews and CI 40760278314 running
+wip/spec	S12, S13 (now one_spec.py via check_docs_drift), OPEN-1..22, 9 docs absorbed	66b2975d	Codex round 4 + Kimi clean before the CI fixes; CI 40731496013 failed gate-selection precision and stale views, both fixed; CI 40760282537 running
