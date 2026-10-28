@@ -2550,6 +2550,13 @@ partial def lowerStmt (stmt : CStmt) : LowerM Unit := do
       startBlock stepLabel
       -- Build phi nodes at step block for continue edges
       let continueEdges ← peekContinueEdges
+      -- Bug-pending: a body that always leaves the loop (`break;` or `break v;` at its end) and has no
+      -- `continue` gives the step block no predecessor. Lowering it anyway read the header's phis
+      -- in a block the header does not dominate and added a back-edge from nowhere (E0703). The
+      -- block is unreachable: terminate it, so the step is skipped and the header keeps only its
+      -- preheader edge (`stepTerm` below).
+      if term && continueEdges.isEmpty then
+        terminateBlock .unreachable
       if !continueEdges.isEmpty then
         for (name, phiReg, _, ty) in headerPhis do
           let bodyVal := (bodyEndVars.find? name).getD (.reg phiReg ty)
