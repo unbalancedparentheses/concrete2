@@ -1,0 +1,6 @@
+[piece 1 of 3: tests]
+- scripts/spec/spec.py:1080: The earlier gate-membership finding remains open: matching paths on non-comment lines still does not establish execution. Disabling an invocation with `if false; then ... fi`, or enclosing a chapter’s fixture table in a multiline HTML comment, leaves its paths eligible as witnesses. S12 can therefore stay green after a fixture stops running in its gate.
+[piece 2 of 3: scripts]
+- scripts/spec/spec.py:1069: The previous gate-membership finding remains open. Filtering whole-line comments still accepts paths in inline comments (`: # run_err "$TESTDIR/example.con"`), disabled shell branches, and Markdown prose or multiline HTML comments. These references do not establish that a gate executes the fixture, so removing its actual invocation can still leave it eligible and S12 green.
+[piece 3 of 3: docs]
+- scripts/spec/spec.py:1072: The previous gate-membership finding remains open. Filtering whole-line comments and matching full paths still does not establish execution: `: # run_err "$TESTDIR/example.con"` or `echo "$TESTDIR/example.con"` keeps a fixture eligible without running it. S12 can therefore accept witnesses that violate the gate-membership guarantee in docs/spec/README.md:264.
