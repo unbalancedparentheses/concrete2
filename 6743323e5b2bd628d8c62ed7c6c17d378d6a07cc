@@ -1,0 +1,9 @@
+[piece 1 of 4: compiler]
+- scripts/spec/spec.py:1080: The previous gate-membership finding remains open: `RUN_ERR_RE` still accepts a `run_err` invocation inside `if false; then ... fi`. Disabling a fixture this way leaves it eligible as an S12 witness even though the gate no longer executes it. The new filtering fixes inline-comment and `echo` references but does not establish execution.
+[piece 2 of 4: tests]
+- scripts/spec/spec.py:1076: The earlier gate-membership finding remains open. The new invocation regex still accepts `run_err` lines inside `if false; then ... fi`. Disabling a fixture’s invocation therefore leaves it eligible as an S12 witness, allowing coverage to remain green although its gate never executes it.
+[piece 3 of 4: scripts]
+- scripts/spec/spec.py:1075: The previous gate-membership finding remains open: `RUN_ERR_RE` still matches invocations inside `if false; then ... fi`, uncalled functions, or heredocs. Disabling a fixture’s actual invocation therefore leaves it eligible as an S12 witness. Inline comments and `echo` references are excluded now, but execution is still not established.
+- scripts/spec/spec.py:1077: Reject rows from every chapter count as executed witnesses, although `MANIFESTS` generates the gate’s manifest only from `references`, `scope`, and `patterns`. Tables in other chapters, such as `traits` and `trusted`, can therefore keep fixtures eligible after their `run_err` invocations are removed, even though `check_rules_2i.sh` never executes those rows.
+[piece 4 of 4: docs]
+- scripts/spec/spec.py:1075: The earlier gate-membership finding remains open. `RUN_ERR_RE` still accepts a `run_err` invocation inside `if false; then … fi`, so disabling a fixture’s execution leaves it eligible as an S12 witness. Restricting matches to structured-runner syntax fixes the inline-comment and `echo` cases but does not establish that the gate executes the fixture.
