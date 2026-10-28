@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-280 records: 171 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 5 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+281 records: 171 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 6 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -344,5 +344,6 @@ checker refusal is a Check bug here.
 | [309](309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md) | Lower | Lower | commits | — |
 | [310](310_a_generic_main_is_accepted_by_check_the_native_b.md) | Check | Check | commits | — |
 | [311](311_a_destructuring_let_in_another_module_binds_a_st.md) | Check | Check | commits | — |
+| [312](312_a_destructuring_let_binds_a_name_with_the_compil.md) | — | — | unfixed | — |
 
 <!-- END GENERATED: bug areas -->
