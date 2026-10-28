@@ -52,6 +52,14 @@ of two methods of one name in one impl, inherent or of a trait. The code is E032
 `codes.tsv`, the `MOD-5@1` rule tag); `docs/spec/modules.md` gains MOD-5 with two reject examples.
 Two impls of one type stay TRAIT-5's (E0594), value parameters SCOPE-1's (E0301).
 
+OD6 (trait coherence, open) is untouched. OD6 decides how impls of one trait and type relate, where
+an impl may live and how an ambiguous call resolves; two impls of one type naming one method stay
+TRAIT-5's provisional rule. MOD-5 judges a single declaration against itself: an enum naming a
+variant twice, or one impl block defining a method twice. No option of OD6 gives such a block a
+meaning (the native build rejected it in `llvm-as`, and `--interp` either ran the first definition
+or stopped on an internal error), so refusing it at check only moves the existing failure to the
+front end with a code (Codex round 1 asked; answered here).
+
 The other repeated members the audit found accepted (two fields of a struct or variant, two type or
 capability parameters, a trait declaring one method twice) are left as they are: whether and where
 they are refused is for the owner (the scope of OD6 and the declaration rules), so this fix takes no

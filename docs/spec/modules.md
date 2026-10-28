@@ -207,7 +207,10 @@ fn main() -> Int {
 `--interp` ran the first or stopped on an internal error (bug 313). Two impls of one type that
 declare the same method are TRAIT-5's; a function's value parameters are bindings, refused by
 SCOPE-1. Other repeated member names (fields, type and capability parameters, a trait's method
-declarations) are not decided by this entry.
+declarations) are not decided by this entry. The entry takes no side on trait coherence (OPEN-6):
+it says nothing about methods of one name in different impls, which TRAIT-5 governs, and refuses
+only a declaration that names one member twice, which no build could compile under any of OD6's
+options (the native build failed in `llvm-as`).
 
 ```con reject name=duplicate-variant code=E0324 stage=check pair=distinct-members
 enum E { A, A }
