@@ -37,7 +37,7 @@ between them. Same audit: bugs 310, 311 and 312.
 ## Structural owner
 
 R-0499 (the Core checker as the one well-formedness judgment of declarations). Until then
-`memberCollisions` is MOD-5's one site over every member list of every declaration, and
+`memberCollisions` is MOD-5's one site, over an enum's variants and the methods of each impl block, and
 check_spec.sh S12 (`wip/spec-code-coverage`) asks for a negative witness per rule code.
 
 ## Containment while open
