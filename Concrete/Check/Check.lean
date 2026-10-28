@@ -3833,6 +3833,25 @@ def declarationCollisions (m : Module) : Diagnostics :=
     errs.reverse
   dupes callables ++ dupes constants ++ dupes types
 
+/-- The first key that occurs twice in `xs` (bug 313, MOD-5). A short list is searched pairwise in
+    place, so the common case allocates nothing per declaration (R-0550's heartbeat budgets); a long
+    one, where pairwise search would be quadratic, builds a set. -/
+private def firstDupBy {α : Type} (key : α → String) (xs : List α) : Option String := Id.run do
+  if xs.length ≤ 32 then
+    let mut rest := xs
+    while true do
+      match rest with
+      | [] => return none
+      | x :: tl =>
+        if tl.any (fun y => key y == key x) then return some (key x)
+        rest := tl
+    return none
+  let mut seen : Std.HashSet String := {}
+  for x in xs do
+    if seen.contains (key x) then return some (key x)
+    seen := seen.insert (key x)
+  return none
+
 -- spec: MOD-5 (docs/spec/modules.md; this declaration enforces the rule)
 /-- MOD-5 (bug 313): an enum binds each variant name once, and one impl binds each method name
     once. Nothing checked either: two variants of one name, or two methods of one name in one
@@ -3842,34 +3861,21 @@ def declarationCollisions (m : Module) : Diagnostics :=
     capability parameters, a trait's method declarations) are not judged here. -/
 def memberCollisions (m : Module) : Diagnostics :=
   -- R-0550: this runs over every enum and impl of every program, so the common case (no duplicate)
-  -- allocates nothing per declaration: a short member list is searched pairwise in place, and only
-  -- a long one (where pairwise search would be quadratic) builds a set.
-  let firstDup := fun {α : Type} (key : α → String) (xs : List α) => Id.run do
-    if xs.length ≤ 32 then
-      let rec go : List α → Option String
-        | [] => none
-        | x :: rest =>
-          if rest.any (fun y => key y == key x) then some (key x) else go rest
-      return go xs
-    let mut seen : Std.HashSet String := {}
-    for x in xs do
-      if seen.contains (key x) then return some (key x)
-      seen := seen.insert (key x)
-    return none
+  -- allocates nothing per declaration (`firstDupBy`), and diagnostics are built only for a duplicate.
   let report (owner memberKind name : String) (sp : Span) : Diagnostic :=
     let e := CheckError.memberCollision owner memberKind name
     { severity := .error, message := e.message, pass := "check",
       span := (if sp.line == 0 then none else some sp), hint := e.hint, code := e.code }
   let errs := m.enums.foldl (fun acc d =>
-      match firstDup (·.name) d.variants with
+      match firstDupBy (·.name) d.variants with
       | some n => report s!"enum '{d.name}'" "variant" n d.span :: acc
       | none => acc) []
   let errs := m.implBlocks.foldl (fun acc ib =>
-      match firstDup (·.name) ib.methods with
+      match firstDupBy (·.name) ib.methods with
       | some n => report s!"impl '{ib.typeName}'" "method" n ib.span :: acc
       | none => acc) errs
   let errs := m.traitImpls.foldl (fun acc tb =>
-      match firstDup (·.name) tb.methods with
+      match firstDupBy (·.name) tb.methods with
       | some n => report s!"impl '{tb.traitName}' for '{tb.typeName}'" "method" n tb.span :: acc
       | none => acc) errs
   errs.reverse
