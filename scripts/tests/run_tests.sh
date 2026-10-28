@@ -1997,6 +1997,9 @@ run_err "$TESTDIR/error_111_main_params.con"            "(E0310)"
 run_err "$TESTDIR/error_111_main_params_unit.con"       "(E0310)"
 run_err "$TESTDIR/error_111_submodule_main_params.con"  "(E0310)"
 run_err "tests/regressions/bug111_main_params_accepted/repro.con" "(E0310)"
+run_err "tests/regressions/bug310_a_generic_main_is_accepted_by_check_the_native_b/repro.con" "(E0310)"
+run_err "$TESTDIR/error_310_generic_main_bounded.con"     "(E0310)"
+run_err "$TESTDIR/error_310_submodule_generic_main.con"  "(E0310)"
 # Bug 127: struct-literal initializers run in source order and land at their declared offsets,
 # natively and under --interp (the binary used to run them in declaration order). One synchronous
 # loop compiles each source once (a parallel run_ok on the same file would race on its .ll), and
