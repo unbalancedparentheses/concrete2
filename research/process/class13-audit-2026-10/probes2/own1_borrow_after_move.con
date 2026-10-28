@@ -1,0 +1,8 @@
+struct R { a: Int }
+fn eat(r: R) { let R { a } = r; }
+fn peek(r: &R) -> Int { return r.a; }
+fn main() -> Int {
+    let r: R = R { a: 42 };
+    eat(r);
+    return peek(&r);
+}

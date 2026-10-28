@@ -1,0 +1,9 @@
+enum E { A, B }
+fn main() -> Int {
+    let e: E = E::A;
+    let c: bool = true;
+    match e {
+        E::A if c => { return 42; },
+        E::B => { return 1; },
+    }
+}

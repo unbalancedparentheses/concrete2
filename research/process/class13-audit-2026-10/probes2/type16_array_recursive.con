@@ -1,0 +1,2 @@
+struct S { a: [S; 1] }
+fn main() -> Int { return 42; }

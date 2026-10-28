@@ -1,0 +1,4 @@
+trait T { fn a(&self) -> Int; }
+struct S { x: Int }
+impl T for S { fn a(&self) -> Int { return 1; } fn z(&self) -> Int { return 2; } }
+fn main() -> Int { return 42; }

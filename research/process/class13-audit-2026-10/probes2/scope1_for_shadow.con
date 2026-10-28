@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let i: Int = 42;
+    for (let mut i: Int = 0; i < 1; i = i + 1) { }
+    return i;
+}

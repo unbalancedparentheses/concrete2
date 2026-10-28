@@ -1,0 +1,7 @@
+mod a {
+    enum E { A, B }
+}
+mod m {
+    import a.{E};
+    pub fn main() -> Int { return 42; }
+}

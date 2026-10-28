@@ -1,0 +1,6 @@
+mod a {
+    fn f() -> Int { return 42; }
+}
+mod m {
+    pub fn main() -> Int { return a::f(); }
+}

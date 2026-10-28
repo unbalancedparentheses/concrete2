@@ -1,0 +1,125 @@
+REF-D1	definition	enforced	none	Concrete.tyContainsRef	0
+REF-D2	definition	enforced	none	Concrete.tyStoresRef, Concrete.tyHoldsRefInAggregate	0
+REF-1	refusal	enforced	E0236 (check, post-mono)	Concrete.checkFn, Concrete.verifyNoReturnedRefs, Concrete.checkModule	3
+REF-2	refusal	enforced	E0236 (check)	Concrete.resolveType, Concrete.checkModule	3
+REF-3	refusal	enforced	E0239 (check, post-mono)	Concrete.checkModule, Concrete.verifyNoStoredRefs	2
+REF-4	refusal	enforced	E0236 (check), E0239 (post-mono), E0238 	Concrete.refuseNestedRefInstantiation, Concrete.refuseNestedRefSpecialization, Concrete.ve	2
+REF-5	refusal	enforced	E0238 (check)	Concrete.normPlace, Concrete.refuseRefValuedBranch, Concrete.checkRefArg, Concrete.recordR	5
+REF-6	refusal	enforced	E0302 (check, post-mono), E0303 (check, 	Concrete.checkStmt, Concrete.verifyNoRefBindingsPostMono	3
+REF-7	refusal	enforced	E0238 (check)	Concrete.checkStmt	2
+REF-8	refusal	enforced	E0203 (check), E0204 (check), E0218 (che	Concrete.consumeVar, Concrete.checkCallBorrowConflicts, Concrete.checkWriteAccess	4
+REF-9	guarantee	enforced	none	Concrete.payloadBinderTy, Concrete.wholeBinderTy	1
+REF-10	guarantee	enforced	none	Concrete.consumeCallArgIdent	1
+REF-11	refusal	enforced	E0293 (check)	Concrete.pathsOverlap, Concrete.checkCallRootReads	2
+REF-12	refusal	enforced	E0237 (elab, check)	Concrete.checkMutAccess, Concrete.checkWriteAccess	2
+SCOPE-D1	definition	enforced	none	Concrete.scope1Diagnostics	0
+SCOPE-1	refusal	enforced	E0301 (check), E0305 (check), E0292 (che	Concrete.scope1Diagnostics, Concrete.constInitDiagnostics	2
+SCOPE-2	guarantee	enforced	none	Concrete.scope1Diagnostics	2
+SCOPE-3	guarantee	enforced	none	Concrete.scope1Diagnostics, Concrete.bindLocal, Concrete.enterBlock	1
+PAT-1	guarantee	enforced	none	Concrete.parseBindingList	1
+PAT-2	refusal	enforced	E0530 (core-check), E0534 (core-check)	Concrete.ccCheckExpr	3
+PAT-3	refusal	enforced	E0304 (check), E0309 (check), E0531 (cor	Concrete.checkExprCore, Concrete.ccCheckExpr	6
+PAT-4	refusal	enforced	E0300 (check)	Concrete.checkGuard	2
+PAT-5	refusal	enforced	E0252 (check), E0308 (check)	Concrete.checkStmt, Concrete.checkExprCore	3
+PAT-6	guarantee	enforced	none	Concrete.parseStmt	1
+PAT-7	guarantee	enforced	none	Concrete.parseStmt, Concrete.ccCheckExpr	1
+PAT-8	refusal	enforced	E0318 (check)	Concrete.checkStmt	2
+FFI-1	refusal	enforced	E0588 (elab, core-check)	Concrete.refuseForeignFnValue	2
+FFI-2	guarantee	pending R-0502	none		0
+FFI-3	refusal	enforced	E0116 (resolve), E0117 (resolve), E0574 	Concrete.coreCheckProgram, Concrete.ccCheckModuleDecls	6
+FFI-4	refusal	enforced	E0572 (core-check), E0573 (core-check), 	Concrete.ccCheckModuleDecls	2
+FFI-5	refusal	enforced	E0118 (resolve), E0119 (resolve)	Concrete.Pipeline.emit	2
+OWN-D1	definition	enforced	none	Concrete.isCopyType	0
+OWN-1	refusal	enforced	E0205 (check), E0230 (check)	Concrete.consumeVar, Concrete.checkSharedAccess, Concrete.checkStmt	3
+OWN-2	refusal	enforced	E0208 (check), E0210 (check), E0211 (che	Concrete.checkScopeExit, Concrete.checkBlockLocalsConsumed, Concrete.checkReturnPathConsum	3
+OWN-3	refusal	enforced	E0209 (check), E0212 (check), E0213 (che	Concrete.mergeVarStates, Concrete.checkNoBranchConsumption, Concrete.checkExprCore	2
+OWN-4	refusal	enforced	E0207 (check)	Concrete.consumeVar	2
+OWN-5	refusal	enforced	E0287 (check), E0288 (check), E0289 (che	Concrete.checkStmt, Concrete.checkExprCore	5
+OWN-6	refusal	enforced	E0286 (check)	Concrete.checkStmt	2
+OWN-7	refusal	enforced	E0294 (check)	Concrete.checkStmt	2
+OWN-8	refusal	enforced	E0290 (check)	Concrete.checkExprCore	2
+OWN-9	refusal	enforced	E0219 (check), E0291 (check)	Concrete.checkStmt	3
+OWN-10	refusal	enforced	E0217 (check), E0233 (check)	Concrete.checkStmt, Concrete.checkMutAccess	3
+OWN-11	refusal	enforced	E0243 (check), E0244 (check)	Concrete.refuseErasedConsumption, Concrete.refuseConditionalConsumption	2
+OWN-12	refusal	enforced	E0206 (check), E0279 (check), E0282 (che	Concrete.consumeVar, Concrete.checkStmt	3
+OWN-13	refusal	enforced	E0570 (core-check), E0584 (core-check), 	Concrete.ccCheckModuleDecls, Concrete.checkExprCore	2
+OWN-14	refusal	enforced	E0571 (core-check, post-mono)	Concrete.ccCheckModuleDecls	3
+OWN-15	guarantee	enforced	none	Concrete.checkExprCore, Concrete.checkStmt	1
+PASS-1	preservation	enforced	none	Concrete.monoProgram	1
+PASS-2	preservation	enforced	none	Concrete.payloadBinderTy, Concrete.wholeBinderTy	1
+PASS-3	preservation	pending R-0508	none		0
+PASS-4	preservation	pending R-0503	none		0
+PASS-5	preservation	enforced	none	Concrete.Pipeline.check	3
+PASS-6	preservation	enforced	none	Concrete.Pipeline.elaborate, Concrete.Pipeline.coreCheck	1
+PASS-7	preservation	enforced	none	Concrete.Pipeline.monomorphize, Concrete.verifyPostMono	1
+PASS-8	preservation	enforced	none	Concrete.coreCheckProgram	4
+PASS-9	preservation	enforced	none	Concrete.Pipeline.lower, Concrete.ssaVerifyProgram	1
+PASS-10	preservation	enforced	none	Concrete.Pipeline.emit, compileSSA	2
+PASS-11	preservation	pending R-0503	none		0
+TYPE-1	guarantee	enforced	none	Concrete.Ty	1
+TYPE-2	guarantee	enforced	none	Concrete.Ty, Concrete.monoProgram	1
+TYPE-3	guarantee	enforced	none	std/src/text.con#Text	1
+TYPE-4	refusal	enforced	E0220 (check), E0222 (check), E0224 (che	Concrete.expectTy, Concrete.checkExprCore, Concrete.checkStmt, Concrete.ccCheckExpr, Concr	3
+TYPE-5	refusal	enforced	E0223 (check), E0504 (core-check), E0505	Concrete.checkExprCore, Concrete.checkStmt, Concrete.ccCheckExpr, Concrete.ccCheckStmt	2
+TYPE-6	refusal	enforced	E0228 (check), E0229 (check), E0501 (cor	Concrete.checkExprCore, Concrete.ccCheckExpr	2
+TYPE-7	refusal	enforced	E0250 (check), E0251 (check), E0252 (che	Concrete.checkExprCore, Concrete.checkStmt, Concrete.ccCheckExpr	5
+TYPE-8	refusal	enforced	E0221 (check), E0554 (core-check), E0555	Concrete.checkExprCore, Concrete.ccCheckExpr, Concrete.ccCheckStmt	2
+TYPE-9	refusal	enforced	E0262 (check), E0264 (check), E0265 (che	Concrete.checkExprCore	4
+TYPE-10	refusal	enforced	E0268 (check), E0269 (check), E0270 (che	Concrete.checkExprCore	5
+TYPE-11	refusal	partial R-0500	E0296 (check), E0297 (check), E0298 (che	Concrete.checkExprCore, Concrete.checkStmt	4
+TYPE-12	guarantee	enforced	none	Concrete.expandAliasDeep, Concrete.closeAliasMap	1
+TYPE-13	guarantee	enforced	none	Concrete.isCopyType	1
+TYPE-14	guarantee	enforced	none	Concrete.Layout.isCopyTyGeneric	2
+TYPE-15	refusal	enforced	E0113 (resolve), E0114 (resolve), E0115 	Concrete.resolveProgram	6
+TYPE-16	refusal	enforced	E0583 (core-check)	Concrete.ccCheckModuleDecls	3
+MEM-1	guarantee	pending R-0502	none		0
+MEM-2	guarantee	pending R-0502	none		0
+MEM-3	guarantee	enforced	none	Concrete.parseStmt	1
+MEM-4	guarantee	enforced	none	Concrete.checkExprCore	1
+MEM-5	guarantee	enforced	none	Concrete.checkExprCore	1
+MEM-6	guarantee	enforced	none	Concrete.Pipeline.lower	2
+TRUST-1	refusal	pending R-0502	new (check)		2
+TRUST-2	guarantee	pending R-0506	none		0
+TRUST-3	guarantee	pending R-0506	none		0
+TRUST-4	refusal	enforced	E0121 (resolve), E0240 (check), E0242 (c	Concrete.ccCheckExpr, Concrete.checkExprCore	4
+TRUST-5	guarantee	enforced	none	Concrete.ccCheckExpr	1
+TRUST-6	refusal	pending R-0509	new (check)		2
+TRUST-7	refusal	enforced	E0311 (check)	Concrete.checkExprCore	2
+STMT-1	guarantee	pending R-0496	none		0
+STMT-2	guarantee	pending R-0496	none		0
+STMT-3	guarantee	pending R-0496	none		0
+STMT-4	guarantee	enforced	none	Concrete.Pipeline.lower	2
+STMT-5	refusal	enforced	E0278 (check)	Concrete.checkExprCore	2
+STMT-6	refusal	enforced	E0216 (check), E0280 (check), E0281 (che	Concrete.checkStmt, Concrete.ccCheckStmt	2
+STMT-7	refusal	enforced	E0310 (check)	Concrete.checkModule	2
+STMT-8	guarantee	enforced	none	Concrete.checkExprCore	1
+STMT-9	refusal	enforced	E0307 (check)	Concrete.checkFn	2
+STMT-10	refusal	enforced	E0319 (check)	Concrete.checkFn	2
+ARITH-1	guarantee	pending R-0493	none		0
+ARITH-2	refusal	enforced	E0227 (check)	Concrete.checkExprCore	2
+ARITH-3	guarantee	enforced	none	Concrete.Pipeline.emit, Concrete.Pipeline.lower	4
+ARITH-4	guarantee	enforced	none	Concrete.Pipeline.emit	1
+ARITH-5	refusal	partial R-0500	E0553 (core-check)	Concrete.ccCheckExpr	3
+ARITH-6	guarantee	enforced	none	Concrete.Pipeline.emit, Concrete.checkExprCore	1
+CON-1	guarantee	pending R-0473	none		0
+CON-2	guarantee	enforced	none	Concrete.Report.callSiteObligations, Concrete.Report.loopVCGoals	1
+CON-3	refusal	partial R-0473	E0320 (check), E0321 (check)	Concrete.checkModule	4
+CON-4	refusal	partial R-0499	E0420 (elab)	Concrete.throwElab	3
+MOD-1	refusal	enforced	E0100 (resolve), E0101 (resolve), E0102 	Concrete.Pipeline.resolve	2
+MOD-2	refusal	enforced	E0110 (resolve), E0111 (resolve), E0126 	Concrete.Pipeline.resolve	2
+MOD-3	refusal	enforced	E0299 (check), E0120 (resolve), E0578 (c	Concrete.checkModule	2
+MOD-4	refusal	enforced	E0122 (resolve), E0123 (resolve), E0124 	Concrete.Pipeline.resolveFiles	2
+SYN-1	refusal	enforced	E0001 (parse)	Concrete.parse	4
+SYN-2	guarantee	enforced	none	Concrete.parseExprPrec	1
+SYN-3	refusal	enforced	E0283 (check)	Concrete.checkStmt	2
+TRAIT-D1	definition	enforced	none	Concrete.Coherence.resolveHead, Concrete.Coherence.moduleImpls	0
+TRAIT-1	refusal	enforced	E0590 (check)	Concrete.Coherence.pairwise	2
+TRAIT-2	refusal	enforced	E0591 (check)	Concrete.Coherence.pairwise, Concrete.Coherence.unify	2
+TRAIT-3	refusal	enforced	E0592 (check)	Concrete.Coherence.moduleImpls	2
+TRAIT-4	refusal	enforced	E0593 (check)	Concrete.Coherence.moduleImpls	2
+TRAIT-5	refusal	enforced	E0594 (check)	Concrete.Coherence.pairwise	2
+TRAIT-6	refusal	enforced	E0595 (check)	Concrete.boundMethodCandidates, Concrete.checkExprCore	2
+TRAIT-7	guarantee	enforced	none	Concrete.Coherence.checkProgram	2
+TRAIT-8	refusal	enforced	E0579 (core-check), E0580 (core-check)	Concrete.ccCheckModuleDecls	3
+TRAIT-9	refusal	enforced	E0581 (core-check), E0582 (core-check), 	Concrete.ccCheckModuleDecls	5
+TRAIT-10	refusal	enforced	E0241 (check)	Concrete.checkTraitBounds	3

@@ -1,0 +1,10 @@
+struct R { a: Int }
+struct S { r: R }
+fn main() with(Alloc) -> Int {
+    let h: Heap<S> = alloc(S { r: R { a: 42 } });
+    let x: R = h.r;
+    let R { a } = x;
+    let S { r } = *h;
+    let R { a: b } = r;
+    return a;
+}

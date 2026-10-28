@@ -1,0 +1,8 @@
+struct R { a: Int }
+fn drop_r(r: R) { let R { a } = r; }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    defer drop_r(r);
+    let R { a } = r;
+    return 42 + a * 0;
+}

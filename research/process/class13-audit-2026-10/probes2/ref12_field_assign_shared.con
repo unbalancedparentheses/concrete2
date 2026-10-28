@@ -1,0 +1,3 @@
+struct S { a: Int }
+fn g(s: &S) { s.a = 42; }
+fn main() -> Int { let s: S = S { a: 1 }; g(&s); let S { a } = s; return a; }

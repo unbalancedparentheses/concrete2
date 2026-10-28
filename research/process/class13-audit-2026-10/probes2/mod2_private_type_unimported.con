@@ -1,0 +1,8 @@
+mod a {
+    struct H { x: Int }
+    pub fn mk() -> H { return H { x: 42 }; }
+}
+mod m {
+    import a.{mk};
+    pub fn main() -> Int { return 42; }
+}

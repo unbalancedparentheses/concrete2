@@ -1,0 +1,2 @@
+trait T { fn get(&self) -> &Int; }
+fn main() -> Int { return 42; }

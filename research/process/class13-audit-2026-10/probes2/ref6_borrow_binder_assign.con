@@ -1,0 +1,8 @@
+fn main() -> Int {
+    let a: Int = 1;
+    let b: Int = 42;
+    borrow a as r in R {
+        borrow b as q in Q { r = q; }
+    }
+    return a;
+}

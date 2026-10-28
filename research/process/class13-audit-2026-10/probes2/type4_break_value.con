@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let x: Int = 1;
+    let y: bool = if x == 1 { 42 } else { 1 };
+    return 42;
+}

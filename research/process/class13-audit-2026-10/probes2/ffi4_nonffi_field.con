@@ -1,0 +1,4 @@
+struct T { a: i32 }
+#[repr(C)]
+struct S { t: T }
+fn main() -> Int { return 42; }

@@ -1,0 +1,7 @@
+struct R { a: Int }
+fn main() -> Int {
+    let arr: [R; 1] = [R { a: 42 }];
+    let x: R = arr[0];
+    let R { a } = x;
+    return a;
+}

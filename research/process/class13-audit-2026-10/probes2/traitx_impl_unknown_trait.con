@@ -1,0 +1,3 @@
+struct S { a: Int }
+impl Nope for S { fn f(&self) -> Int { return 1; } }
+fn main() -> Int { return 42; }

@@ -1,0 +1,2 @@
+extern fn foo() -> String;
+fn main() -> Int { return 42; }

@@ -1,0 +1,7 @@
+fn main() -> Int {
+    let x: bool = true;
+    match x {
+        0..=1 => { return 1; },
+        _ => { return 42; },
+    }
+}

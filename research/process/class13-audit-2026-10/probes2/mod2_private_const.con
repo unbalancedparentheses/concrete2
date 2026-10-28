@@ -1,0 +1,7 @@
+mod a {
+    const C: Int = 42;
+}
+mod m {
+    import a.{C};
+    pub fn main() -> Int { return C; }
+}

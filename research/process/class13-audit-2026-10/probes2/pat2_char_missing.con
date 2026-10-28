@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let x: char = 'a';
+    match x {
+        'a' => { return 42; },
+    }
+}

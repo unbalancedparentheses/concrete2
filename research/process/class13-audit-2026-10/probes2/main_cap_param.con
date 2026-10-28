@@ -1,0 +1,3 @@
+fn main<cap C>() -> Int {
+    return 42;
+}

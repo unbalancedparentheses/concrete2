@@ -1,0 +1,7 @@
+struct R { a: Int }
+fn eat(r: R) -> bool { let R { a } = r; return false; }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    while eat(r) { }
+    return 42;
+}

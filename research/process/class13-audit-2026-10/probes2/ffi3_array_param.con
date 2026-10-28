@@ -1,0 +1,2 @@
+extern fn foo(x: [i32; 4]) -> i32;
+fn main() -> Int { return 42; }

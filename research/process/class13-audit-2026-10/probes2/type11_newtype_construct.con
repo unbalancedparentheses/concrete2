@@ -1,0 +1,7 @@
+mod a {
+    pub newtype N = Int;
+}
+mod m {
+    import a.{N};
+    pub fn main() -> Int { let n: N = N(42); return 42; }
+}

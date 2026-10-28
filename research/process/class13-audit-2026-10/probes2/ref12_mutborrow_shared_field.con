@@ -1,0 +1,4 @@
+struct S { a: Int }
+fn h(x: &mut Int) { *x = 42; }
+fn g(s: &S) { h(&mut s.a); }
+fn main() -> Int { let s: S = S { a: 1 }; g(&s); let S { a } = s; return a; }

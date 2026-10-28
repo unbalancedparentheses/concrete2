@@ -1,0 +1,5 @@
+trait T { fn go(&self) with(Console) -> Int; }
+struct S { a: Int }
+impl T for S { fn go(&self) with(Console) -> Int { return 42; } }
+fn g<X: T>(x: &X) -> Int { return x.go(); }
+fn main() with(Console) -> Int { let s: S = S { a: 1 }; let r: Int = g(&s); let S { a } = s; return r; }

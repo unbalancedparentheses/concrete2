@@ -1,0 +1,3 @@
+trait T { fn a(&self) -> Int; }
+fn g<X: T>(x: &X) -> Int { return 42; }
+fn main() -> Int { let y: Int = 1; return g(&y); }

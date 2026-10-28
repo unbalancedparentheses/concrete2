@@ -1,0 +1,7 @@
+# probe	native	interp	verdict
+mem6_neg_oob	runtime abort (134)	runtime error	MEM-6 partial: constant negative index not refused, a[5] is (E0900); loud
+stmt7_main_generic	error[link] no main found	accepts, prints 42	STMT-7 gap: generic main not refused at check; consumers disagree
+mod3_dup_const_fn	exit 42	42	by design (separate const/callable namespaces, Check.declarationCollisions doc); MOD-3 sentence wording broader than enforcement; SCOPE-2 lists no const/fn namespaces
+syn3_param, syn3_pattern_binder	accept	accept	outside SYN-3 text (let only)
+own7_cast	accept	accept	outside OWN-7 list (cast not listed)
+all other batch-1 probes	refused at the stated rule's code	same	enforced

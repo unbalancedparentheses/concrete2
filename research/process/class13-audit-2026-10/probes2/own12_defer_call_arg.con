@@ -1,0 +1,7 @@
+struct R { a: Int }
+fn drop_r(r: R) { let R { a } = r; }
+fn mk() -> R { return R { a: 1 }; }
+fn main() -> Int {
+    defer drop_r(mk());
+    return 42;
+}

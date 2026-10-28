@@ -1,0 +1,6 @@
+fn f(x: Int) { }
+fn main() -> Int {
+    let x: Int = 1;
+    defer f(x + 1);
+    return 42;
+}

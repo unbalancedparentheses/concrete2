@@ -1,0 +1,2 @@
+struct W<T> { a: T }
+fn main() -> Int { let w: W<Int, Int> = W { a: 42 }; return w.a; }

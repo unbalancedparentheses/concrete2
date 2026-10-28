@@ -1,0 +1,4 @@
+fn main() with(Alloc) -> Int {
+    let h: Heap<Int> = alloc(1, 2);
+    return 42;
+}

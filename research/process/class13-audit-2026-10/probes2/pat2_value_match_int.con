@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let x: Int = 1;
+    let y: Int = match x { 1 => 42, };
+    return y;
+}

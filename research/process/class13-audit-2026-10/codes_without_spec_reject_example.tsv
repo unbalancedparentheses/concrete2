@@ -1,0 +1,105 @@
+REF-4	E0239	['post-mono']	25	scripts/tests/check_spec.sh scripts/tests/run_tests.sh tests/programs/error_091_norm_alias_cast_let.con tests/programs/error_091_norm_alias_ref_field.con
+REF-4	E0238	['check', 'mono']	49	scripts/tests/check_rules_2i.sh scripts/tests/check_tightening_rules.sh scripts/tests/run_tests.sh tests/programs/error_091_borrow_provenance_unknown.con
+REF-6	E0234	['check']	3	scripts/tests/run_tests.sh tests/programs/error_2i_ref6_borrow_block_copy.con tests/programs/error_escape_field.con
+REF-6	E0238	['check']	49	scripts/tests/check_rules_2i.sh scripts/tests/check_tightening_rules.sh scripts/tests/run_tests.sh tests/programs/error_091_borrow_provenance_unknown.con
+REF-8	E0204	['check']	5	scripts/tests/run_tests.sh tests/programs/error_091_norm_free_under_projected_borrow.con tests/programs/error_g17_if_let_borrow_root_moved.con tests/programs/error_g17_match_borrow_heap_freed_in_arm.con
+REF-8	E0218	['check']	0	
+REF-8	E0231	['check']	6	scripts/tests/run_tests.sh tests/programs/error_091_norm_copied_mut_ref.con tests/programs/error_091_norm_deref_read_under_reborrow.con tests/programs/error_091_norm_field_write_under_reborrow.con
+REF-8	E0235	['check']	0	
+REF-8	E0238	['check']	49	scripts/tests/check_rules_2i.sh scripts/tests/check_tightening_rules.sh scripts/tests/run_tests.sh tests/programs/error_091_borrow_provenance_unknown.con
+SCOPE-1	E0305	['check']	17	scripts/tests/check_rules_2i.sh scripts/tests/run_tests.sh tests/programs/error_2i_contract_borrow_to_generic.con tests/programs/error_2i_contract_generic_call.con
+SCOPE-1	E0292	['check']	3	scripts/tests/fuzz_linearity.py scripts/tests/run_tests.sh tests/programs/error_094_destructure_shadows_live.con
+SCOPE-1	E0214	['check']	2	tests/programs/error_borrow_shadow.con tests/programs/regress_2i_scope2_borrow_after_loop.con
+SCOPE-1	E0215	['check']	2	tests/programs/error_2i_scope1_region_name.con tests/programs/regress_2i_scope1_region_name_renamed.con
+PAT-3	E0304	['check']	0	
+PAT-3	E0531	['core-check']	0	
+FFI-3	E0117	['resolve']	4	scripts/tests/run_tests.sh tests/programs/error_113_submodule_extern_effectful_pure.con tests/programs/error_extern_effectful_declared_pure.con tests/programs/error_link_name_effectful_pure.con
+FFI-4	E0572	['core-check']	0	
+FFI-4	E0573	['core-check']	0	
+FFI-4	E0576	['core-check']	0	
+FFI-4	E0585	['core-check']	3	scripts/tests/run_tests.sh tests/programs/error_repr_align_exceeds_natural.con tests/programs/repr_align.con
+FFI-5	E0118	['resolve']	8	scripts/tests/check_gate_selection.sh scripts/tests/check_stack_budget.sh scripts/tests/run_tests.sh tests/programs/error_extern_named_intrinsic.con
+OWN-2	E0210	['check']	7	scripts/tests/check_loop_control.sh scripts/tests/fuzz_linearity.py scripts/tests/run_tests.sh tests/programs/error_149_labelled_break_skips.con
+OWN-2	E0211	['check']	5	scripts/tests/check_loop_control.sh scripts/tests/fuzz_linearity.py scripts/tests/run_tests.sh tests/programs/error_149_labelled_continue_skips.con
+OWN-3	E0209	['check']	7	scripts/tests/fuzz_linearity.py scripts/tests/test_bundle_smoke.sh scripts/tests/test_reducer_smoke.sh tests/programs/error_094_arm_binder_shadows_live.con
+OWN-3	E0213	['check']	3	scripts/tests/check_divergence_detection.sh scripts/tests/check_gate_mutation_coverage.sh scripts/tests/fuzz_linearity.py
+OWN-5	E0289	['check']	2	scripts/tests/check_linear_discard.sh tests/programs/ignored_result/resource_underscore_still_errors.con
+OWN-11	E0243	['check']	4	scripts/tests/run_tests.sh tests/programs/error_147_assert_consumes_heap.con tests/programs/error_147_assert_revives_binding.con tests/programs/error_147_ghost_let_consumes_heap.con
+OWN-12	E0282	['check']	0	
+OWN-13	E0584	['core-check']	3	scripts/tests/check_collections_copy_only.sh scripts/tests/run_tests.sh tests/programs/error_091_nested_destroy_caps.con
+OWN-13	E0272	['check']	0	
+OWN-13	E0273	['check']	0	
+TYPE-4	E0222	['check']	1	scripts/tests/check_loop_control.sh
+TYPE-4	E0225	['check']	1	tests/programs/regress_stmt_match_arm_unit.con
+TYPE-4	E0226	['check']	0	
+TYPE-4	E0500	['core-check']	2	scripts/tests/run_tests.sh tests/programs/regress_040_match_binder_types.con
+TYPE-4	E0560	['core-check']	2	scripts/tests/check_corecheck_boundary.sh tests/programs/regress_177_alias_value_hints.con
+TYPE-5	E0504	['core-check']	0	
+TYPE-5	E0505	['core-check']	0	
+TYPE-5	E0508	['core-check']	0	
+TYPE-5	E0540	['core-check']	0	
+TYPE-5	E0541	['core-check']	0	
+TYPE-6	E0228	['check']	8	scripts/tests/check_corecheck_boundary.sh scripts/tests/check_differential_positions.sh scripts/tests/check_gate_mutation_coverage.sh scripts/tests/check_mixed_width_binops.sh
+TYPE-6	E0501	['core-check', 'post-mono']	12	scripts/tests/run_tests.sh tests/programs/error_210_child_module_arith.con tests/programs/error_210_child_module_newtype_arith.con tests/programs/error_210_enum_arith.con
+TYPE-6	E0502	['core-check']	0	
+TYPE-6	E0503	['core-check']	1	tests/programs/regress_304_comparison_operand_hint.con
+TYPE-6	E0506	['core-check']	0	
+TYPE-6	E0507	['core-check']	0	
+TYPE-6	E0509	['core-check']	0	
+TYPE-7	E0250	['check']	0	
+TYPE-7	E0251	['check']	0	
+TYPE-7	E0254	['check']	1	tests/programs/bug_064_aliased_imported_type.con
+TYPE-7	E0260	['check']	0	
+TYPE-7	E0261	['check']	0	
+TYPE-7	E0416	['elab']	0	
+TYPE-7	E0550	['core-check']	0	
+TYPE-7	E0551	['core-check']	0	
+TYPE-7	E0552	['core-check']	1	tests/programs/regress_index_through_ref.con
+TYPE-8	E0554	['core-check']	0	
+TYPE-8	E0555	['core-check']	2	scripts/tests/run_tests.sh tests/programs/error_d14_heap_deref_assign.con
+TYPE-9	E0264	['check']	6	scripts/tests/check_shadow_body_v2.sh scripts/tests/run_tests.sh tests/programs/error_239_method_call_answered_by_free_fn.con tests/programs/import_closure_metadata/src/main.con
+TYPE-9	E0265	['check']	1	tests/programs/error_231_enclosing_trait_bound.con
+TYPE-9	E0266	['check']	0	
+TYPE-9	E0522	['core-check']	4	tests/programs/regress_239_imported_extern_alias_beside_method_arity.con tests/programs/regress_239_method_call_beside_extern_of_other_arity.con tests/programs/regress_239_nested_method_beside_extern.con tests/programs/regress_intrinsic_shadowing.con
+TYPE-9	E0322	['check']	7	scripts/tests/run_tests.sh tests/programs/error_221_bound_method_type_argument.con tests/programs/error_221_extra_type_argument.con tests/programs/error_221_fn_pointer_type_argument.con
+TYPE-10	E0268	['check']	0	
+TYPE-10	E0269	['check']	0	
+TYPE-10	E0270	['check']	0	
+TYPE-10	E0271	['check']	0	
+TYPE-11	E0297	['check']	3	scripts/tests/check_construction_rights.sh scripts/tests/run_tests.sh tests/programs/error_253_child_struct_decoy_literal.con
+TRUST-1	new	['check']	365	scripts/tests/README.md scripts/tests/check_artifact_fuzz.sh scripts/tests/check_assume_migration.sh scripts/tests/check_attestation_manifest.sh
+TRUST-4	E0240	['check']	13	scripts/tests/check_callable_values.sh scripts/tests/check_cap_struct_cross_package.sh scripts/tests/check_capability_judgment.sh scripts/tests/check_capability_polymorphism_design.sh
+TRUST-4	E0242	['check']	4	scripts/tests/check_absence_not_fact.sh scripts/tests/check_cap_inference.sh tests/regressions/cap_inference/uninferable/src/main.con tests/regressions/cap_inference/uninferable_method/src/main.con
+TRUST-6	new	['check']	365	scripts/tests/README.md scripts/tests/check_artifact_fuzz.sh scripts/tests/check_assume_migration.sh scripts/tests/check_attestation_manifest.sh
+STMT-6	E0216	['check']	1	scripts/tests/check_spec.sh
+STMT-6	E0281	['check']	0	
+STMT-6	E0542	['core-check']	0	
+STMT-6	E0543	['core-check']	0	
+MOD-1	E0101	['resolve']	4	scripts/tests/check_artifact_fuzz.sh scripts/tests/check_partial_facts.sh scripts/tests/check_rich_diagnostics.sh scripts/tests/run_tests.sh
+MOD-1	E0102	['resolve']	0	
+MOD-1	E0103	['resolve']	2	tests/programs/regress_096_type_identity_same_named.con tests/programs/regress_217_sibling_type_precedence.con
+MOD-1	E0104	['resolve']	3	scripts/tests/run_tests.sh tests/programs/regress_229_alias_and_enum_literal_precedence.con tests/programs/regress_229_value_does_not_hide_type.con
+MOD-1	E0105	['resolve']	0	
+MOD-1	E0106	['resolve']	3	scripts/tests/check_construction_rights.sh tests/programs/regress_223_aliased_struct_methods.con tests/programs/regress_243_aliased_newtype_import.con
+MOD-1	E0107	['resolve']	0	
+MOD-1	E0108	['resolve']	23	scripts/tests/check_type_alias.sh scripts/tests/run_tests.sh tests/programs/error_215_cast_field_spelling.con tests/programs/error_215_cast_unknown_type.con
+MOD-1	E0109	['resolve']	0	
+MOD-1	E0112	['resolve']	3	scripts/tests/check_type_alias.sh tests/programs/type_alias/neg_mutually_recursive_alias.con tests/programs/type_alias/neg_recursive_alias.con
+MOD-1	E0125	['resolve']	4	scripts/tests/check_generic_enum_inventory.sh scripts/tests/run_tests.sh tests/programs/error_231_enclosing_trait_bound.con tests/programs/error_231_unknown_bound_trait.con
+MOD-1	E0200	['check']	0	
+MOD-1	E0201	['check']	8	scripts/tests/check_diagnostic_codes_present.sh scripts/tests/phase1_snapshots/invalid_contract_expression.contracts.txt tests/programs/error_123_const_initializer_elab_error.con tests/programs/error_217_nested_undeclared_name.con
+MOD-1	E0202	['check']	0	
+MOD-1	E0263	['check']	3	scripts/tests/check_partial_facts.sh scripts/tests/run_tests.sh tests/programs/error_262_parent_constructs_child_newtype.con
+MOD-1	E0267	['check']	0	
+MOD-2	E0110	['resolve']	3	scripts/tests/check_assumption_summary.sh scripts/tests/check_module_visibility.sh scripts/tests/example_manifest.txt
+MOD-2	E0126	['resolve']	3	scripts/tests/run_tests.sh tests/programs/error_233_import_trait.con tests/programs/regress_233_import_constant.con
+MOD-2	E0284	['check']	0	
+MOD-2	E0285	['check']	1	tests/programs/regress_233_import_constant.con
+MOD-2	E0323	['check']	2	tests/programs/regress_233_nested_import_constant.con tests/regressions/bug233_import_public_constant_refused/project/src/user.con
+MOD-2	E0418	['elab']	0	
+MOD-2	E0419	['elab']	0	
+MOD-2	E0423	['elab']	0	
+MOD-3	E0120	['resolve']	2	scripts/tests/run_tests.sh tests/programs/error_import_alias_intrinsic.con
+MOD-3	E0578	['check', 'core-check']	0	
+MOD-4	E0123	['resolve']	0	
+MOD-4	E0124	['resolve']	0	

@@ -1,0 +1,3 @@
+#[ensures(match result { r => r > 0 })]
+fn f() -> Int { return 42; }
+fn main() -> Int { return f(); }

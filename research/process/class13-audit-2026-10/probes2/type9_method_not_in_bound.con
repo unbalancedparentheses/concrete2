@@ -1,0 +1,4 @@
+trait T { fn a(&self) -> Int; }
+trait U { fn b(&self) -> Int; }
+fn g<X: T>(x: &X) -> Int { return x.b(); }
+fn main() -> Int { return 42; }

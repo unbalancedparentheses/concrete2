@@ -1,0 +1,7 @@
+struct R { a: Int }
+impl R { fn get(&self) -> Int { return self.a; } fn done(self) { let R { a } = self; } }
+fn main() -> Int {
+    let r: R = R { a: 42 };
+    r.done();
+    return r.get();
+}

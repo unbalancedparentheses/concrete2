@@ -1,0 +1,6 @@
+struct R { a: Int }
+fn mk() -> R { return R { a: 1 }; }
+fn main() -> Int {
+    mk();
+    return 42;
+}

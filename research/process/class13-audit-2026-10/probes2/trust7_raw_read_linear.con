@@ -1,0 +1,3 @@
+struct R { a: Int }
+trusted fn f(p: *const R) -> Int { let r: R = *p; let R { a } = r; return a; }
+fn main() -> Int { return 42; }

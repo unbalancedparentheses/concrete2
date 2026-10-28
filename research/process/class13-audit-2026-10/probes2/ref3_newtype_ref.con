@@ -1,0 +1,2 @@
+newtype N = &Int;
+fn main() -> Int { return 42; }

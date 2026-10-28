@@ -1,0 +1,9 @@
+mod a {
+    pub struct Copy S { x: Int }
+    pub fn mk() -> S { return S { x: 1 }; }
+    pub fn get(s: S) -> Int { return s.x; }
+}
+mod m {
+    import a.{S, mk, get};
+    pub fn main() -> Int { let mut s: S = mk(); s.x = 42; return get(s); }
+}

@@ -1,0 +1,8 @@
+struct R { a: Int }
+fn eat(r: R) -> bool { let R { a } = r; return true; }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    let c: bool = false;
+    if c && eat(r) { return 1; }
+    return 42;
+}

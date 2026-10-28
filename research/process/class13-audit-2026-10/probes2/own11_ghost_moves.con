@@ -1,0 +1,6 @@
+struct R { a: Int }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    ghost let g: R = r;
+    return 42;
+}

@@ -1,0 +1,4 @@
+struct S { a: Int }
+impl S { fn set(&mut self) { self.a = 42; } }
+fn g(s: &S) { s.set(); }
+fn main() -> Int { let s: S = S { a: 1 }; g(&s); let S { a } = s; return a; }

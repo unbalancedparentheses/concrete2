@@ -1,0 +1,2 @@
+fn f(x: i32) -> Int { return 42; }
+fn main() -> Int { let y: i64 = 1; return f(y); }

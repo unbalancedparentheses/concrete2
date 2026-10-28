@@ -1,0 +1,8 @@
+mod a {
+    pub struct S { pub x: Int }
+    impl S { fn hidden(&self) -> Int { return 42; } }
+}
+mod m {
+    import a.{S};
+    pub fn main() -> Int { let s: S = S { x: 1 }; let v: Int = s.hidden(); let S { x } = s; return v; }
+}

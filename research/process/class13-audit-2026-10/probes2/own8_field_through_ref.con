@@ -1,0 +1,10 @@
+struct R { a: Int }
+struct S { r: R }
+fn take(s: &S) -> Int { let x: R = s.r; let R { a } = x; return a; }
+fn main() -> Int {
+    let s: S = S { r: R { a: 42 } };
+    let v: Int = take(&s);
+    let S { r } = s;
+    let R { a } = r;
+    return v;
+}

@@ -1,0 +1,9 @@
+struct R { a: Int }
+struct S { r: R }
+fn main() -> Int {
+    let mut s: S = S { r: R { a: 1 } };
+    s.r = R { a: 42 };
+    let S { r } = s;
+    let R { a } = r;
+    return a;
+}

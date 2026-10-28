@@ -1,0 +1,6 @@
+struct R { a: Int }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    discard(r);
+    return 42;
+}

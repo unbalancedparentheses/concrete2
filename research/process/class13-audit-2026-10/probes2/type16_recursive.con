@@ -1,0 +1,3 @@
+struct S { e: E }
+enum E { A { s: S }, B }
+fn main() -> Int { return 42; }

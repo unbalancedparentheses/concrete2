@@ -1,0 +1,2 @@
+const C: &Int = &1;
+fn main() -> Int { return 42; }

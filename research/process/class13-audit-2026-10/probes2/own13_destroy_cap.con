@@ -1,0 +1,3 @@
+struct R { a: Int }
+impl Destroy for R { fn destroy(self) with(Console) { let R { a } = self; } }
+fn main() -> Int { let r: R = R { a: 42 }; destroy(r); return 42; }

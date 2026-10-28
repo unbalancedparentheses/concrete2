@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let x: Int = 1;
+    if true { let x: Int = 42; return x; }
+    return x;
+}

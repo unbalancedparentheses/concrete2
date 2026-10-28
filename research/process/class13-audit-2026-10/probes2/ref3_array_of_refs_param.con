@@ -1,0 +1,2 @@
+fn f(a: [&Int; 1]) -> Int { return 42; }
+fn main() -> Int { return 42; }

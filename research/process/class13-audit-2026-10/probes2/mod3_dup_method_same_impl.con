@@ -1,0 +1,6 @@
+struct S { a: Int }
+impl S {
+    fn g(self) -> Int { let S { a } = self; return a; }
+    fn g(self) -> Int { let S { a } = self; return a + 1; }
+}
+fn main() -> Int { let s: S = S { a: 41 }; return s.g(); }

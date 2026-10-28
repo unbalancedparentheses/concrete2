@@ -1,0 +1,2 @@
+fn f(g: fn(&Int) -> &Int) -> Int { return 42; }
+fn main() -> Int { return 42; }

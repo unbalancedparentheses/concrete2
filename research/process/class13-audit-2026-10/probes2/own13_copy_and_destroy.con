@@ -1,0 +1,3 @@
+struct Copy C { a: Int }
+impl Destroy for C { fn destroy(self) { } }
+fn main() -> Int { let c: C = C { a: 42 }; return c.a; }

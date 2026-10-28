@@ -1,0 +1,8 @@
+struct R { a: Int }
+fn set(p: &mut R) { *p = R { a: 42 }; }
+fn main() -> Int {
+    let mut r: R = R { a: 1 };
+    set(&mut r);
+    let R { a } = r;
+    return a;
+}

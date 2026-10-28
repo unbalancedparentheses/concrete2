@@ -1,0 +1,4 @@
+fn main() with(Alloc) -> Int {
+    let x: Int = free(5);
+    return 42;
+}

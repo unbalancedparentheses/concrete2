@@ -1,0 +1,7 @@
+struct R { a: Int }
+fn eat(r: R) -> Int { let R { a } = r; return 1; }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    for (let mut i: Int = 0; i < 2; i = i + eat(r)) { }
+    return 42;
+}

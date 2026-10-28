@@ -1,0 +1,8 @@
+enum E { A { x: Int, y: Int }, B }
+fn main() -> Int {
+    let e: E = E::A { x: 42, y: 1 };
+    match e {
+        E::A { x } => { return x; },
+        E::B => { return 1; },
+    }
+}

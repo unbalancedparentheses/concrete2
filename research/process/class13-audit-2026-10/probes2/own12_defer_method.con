@@ -1,0 +1,7 @@
+struct R { a: Int }
+impl R { fn done(self) { let R { a } = self; } }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    defer r.done();
+    return 42;
+}

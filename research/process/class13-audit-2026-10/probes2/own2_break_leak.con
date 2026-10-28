@@ -1,0 +1,11 @@
+struct R { a: Int }
+fn main() -> Int {
+    let mut i: Int = 0;
+    while i < 3 {
+        let r: R = R { a: i };
+        if i == 1 { break; }
+        let R { a } = r;
+        i = i + 1;
+    }
+    return 42;
+}

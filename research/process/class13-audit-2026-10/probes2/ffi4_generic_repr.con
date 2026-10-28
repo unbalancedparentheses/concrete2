@@ -1,0 +1,3 @@
+#[repr(C)]
+struct S<T> { a: T }
+fn main() -> Int { return 42; }

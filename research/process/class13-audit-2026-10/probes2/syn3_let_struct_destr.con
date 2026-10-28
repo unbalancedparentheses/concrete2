@@ -1,0 +1,6 @@
+struct S { a: Int }
+fn main() -> Int {
+    let s: S = S { a: 42 };
+    let S { a: __destr_0 } = s;
+    return __destr_0;
+}

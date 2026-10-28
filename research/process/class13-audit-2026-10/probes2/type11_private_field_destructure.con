@@ -1,0 +1,8 @@
+mod a {
+    pub struct S { x: Int }
+    pub fn mk() -> S { return S { x: 42 }; }
+}
+mod m {
+    import a.{S, mk};
+    pub fn main() -> Int { let s: S = mk(); let S { x } = s; return x; }
+}

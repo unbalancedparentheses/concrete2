@@ -1,0 +1,2 @@
+fn g(s: &[Int; 2]) { s[0] = 42; }
+fn main() -> Int { let a: [Int; 2] = [1, 2]; g(&a); return a[0]; }

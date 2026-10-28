@@ -1,0 +1,3 @@
+struct R { a: Int }
+enum Copy E { A { r: R }, B }
+fn main() -> Int { return 42; }

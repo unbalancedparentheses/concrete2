@@ -1,0 +1,3 @@
+enum E { A, B }
+extern fn foo(x: E) -> i32;
+fn main() -> Int { return 42; }

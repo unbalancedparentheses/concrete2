@@ -1,0 +1,11 @@
+struct R { a: Int }
+fn eat(r: R) { let R { a } = r; }
+fn main() -> Int {
+    let r: R = R { a: 1 };
+    let x: Int = 2;
+    match x {
+        1 => { eat(r); },
+        _ => { },
+    }
+    return 42;
+}

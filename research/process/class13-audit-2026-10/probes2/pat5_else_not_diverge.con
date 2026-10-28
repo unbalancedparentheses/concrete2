@@ -1,0 +1,6 @@
+enum E { A { x: Int }, B }
+fn main() -> Int {
+    let e: E = E::B;
+    let E::A { x } = e else { };
+    return x;
+}

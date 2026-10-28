@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let r: Int = 1;
+    let mut x: Int = 42;
+    borrow x as r in R { }
+    return x;
+}

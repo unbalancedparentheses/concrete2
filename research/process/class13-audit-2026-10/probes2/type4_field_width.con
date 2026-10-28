@@ -1,0 +1,2 @@
+struct S { a: i32 }
+fn main() -> Int { let y: i64 = 1; let s: S = S { a: y }; return 42; }

@@ -1,0 +1,3 @@
+struct W<T> { a: T }
+fn f(w: W) -> Int { return 42; }
+fn main() -> Int { return 42; }

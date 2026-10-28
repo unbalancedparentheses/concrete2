@@ -1,0 +1,8 @@
+struct S { a: Int }
+fn f(x: Int) { }
+fn main() -> Int {
+    let s: S = S { a: 1 };
+    defer f(s.a);
+    let S { a } = s;
+    return 42;
+}
