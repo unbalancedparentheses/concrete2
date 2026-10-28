@@ -1,0 +1,6 @@
+# branch	bug	head	state
+wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	Codex-clean round 1; gates on OVH green (run_tests, golden 54/0, mutation patterns, check_spec PASS=285 FAIL=0); CI run 40714251471 dispatched
+wip/bug-311	311 TYPE-11 sibling destructure of private fields (E0298)	94ffd684	stacked on bug-310; BuildIdentity, gates and Codex review pending
+wip/bug-312	312 SYN-3 destructuring binders (E0283)	9a74c4fa	stacked on bug-311; pending
+wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	959ad7fc	stacked on bug-312; narrowed per coordinator; pending
+wip/spec-code-coverage	S12 gate	d1cf75fe	WIP
