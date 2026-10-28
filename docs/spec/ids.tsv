@@ -403,3 +403,4 @@ MOD-4/inline-module	live	-
 SYN-1/head-constant-struct-literal	live	-
 SYN-1/head-constant-parenthesized	live	-
 STMT-7/generic-main	live	-
+TYPE-11/destructure-private-field	live	-
