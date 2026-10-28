@@ -18,7 +18,7 @@ checker refusal is a Check bug here.
 
 | stage | bugs | open | silent | shared or fallback | top modules |
 |--|-:|-:|-:|-:|--|
-| Check | 74 | 0 | 40 | 5 | Check 35, CoreCheck 13, CheckHelpers 9, Verify 5 |
+| Check | 75 | 0 | 40 | 5 | Check 36, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 38 | 0 | 12 | 3 | Lower 37, - 1 |
 | Resolve | 27 | 2 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
 | Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
@@ -30,9 +30,9 @@ checker refusal is a Check bug here.
 | Std | 8 | 0 | 0 | 0 | map 4, fs 2, libc 1, net 1 |
 | EmitLLVM | 7 | 0 | 3 | 4 | EmitBuiltins 5, EmitLLVM 1, Symbols 1 |
 | Report | 7 | 1 | 3 | 0 | AssumptionSummary 2, ModelDiff 2, Report 2, ReportObligations 1 |
-| Gates | 7 | 0 | 1 | 0 | run_tests 2, authority_facts 1, check_binder_refs 1, check_gate_lock 1 |
 | CLI | 6 | 0 | 2 | 1 | Main 4, Pipeline 1, PipelineTest 1 |
 | Tooling | 6 | 0 | 1 | 1 | Makefile 1, dispatch 1, farm 1, new_bug 1 |
+| Gates | 6 | 0 | 1 | 0 | authority_facts 1, check_binder_refs 1, check_gate_lock 1, compile_scaling_budgets 1 |
 | SSA | 5 | 1 | 0 | 2 | SSACleanup 4, SSAVerify 1 |
 
 ### Structural class by stage (primary class)
@@ -51,7 +51,7 @@ checker refusal is a Check bug here.
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
 | 11. Absence read as a fact (fail-open defaults) | 12 | Gates 3, Resolve 2, Proof 2, Report 2, Check 1, SSA 1, Tooling 1 |
 | 12. One fact kept in two places | 27 | Resolve 11, Check 5, Elab 3, Parse 2, Interp 2, Proof 1, Std 1, CLI 1, Tooling 1 |
-| 13. Documented rules with no enforcing site | 22 | Check 13, Resolve 4, Gates 2, Parse 1, Elab 1, Lower 1 |
+| 13. Documented rules with no enforcing site | 22 | Check 14, Resolve 4, Parse 1, Elab 1, Lower 1, Gates 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
 | 15. Ownership state not modeled along control-flow paths | 7 | Check 7 |
 | 16. Artifacts at paths no run owns | 5 | Tooling 2, Std 1, CLI 1, Gates 1 |
@@ -345,6 +345,6 @@ checker refusal is a Check bug here.
 | [310](310_a_generic_main_is_accepted_by_check_the_native_b.md) | Check | Check | commits | — |
 | [311](311_a_destructuring_let_in_another_module_binds_a_st.md) | Check | Check | commits | — |
 | [312](312_a_destructuring_let_binds_a_name_with_the_compil.md) | Gates | run_tests | commits | — |
-| [313](313_duplicate_member_names_inside_one_declaration_re.md) | Gates | run_tests | commits | — |
+| [313](313_duplicate_member_names_inside_one_declaration_re.md) | Check | Check | commits | — |
 
 <!-- END GENERATED: bug areas -->
