@@ -188,3 +188,75 @@ fn main() -> Int {
     return present::answer();
 }
 ```
+
+<a id="MOD-5"></a>
+### MOD-5. A declaration binds each member name once
+
+**MOD-5@1.** A declaration binds each of its member names once: a struct or enum variant its fields, an enum its variants, a trait or a single impl its methods, and a type, function or impl its type and capability parameters.
+
+- Kind: refusal
+- Uses: none
+- Codes: E0324 (check)
+- Status: enforced
+- Enforced by: Concrete.memberCollisions, Concrete.checkModule
+- Semantics: none
+- Obligation: none
+- Evidence: tested
+
+**Rationale.** A member named twice made the meaning of a use depend on which declaration a lookup
+met first, and two methods or variants of one name reached `llvm-as` as redefinitions (bug 313).
+A function's value parameters are bindings, refused by SCOPE-1; two impls of one type that declare
+the same method are TRAIT-5's.
+
+```con reject name=duplicate-variant code=E0324 stage=check pair=distinct-members
+enum E { A, A }
+
+fn main() -> Int {
+    let e: E = E::A;
+    match e {
+        E::A => { return 42; }
+    }
+}
+```
+
+```con reject name=duplicate-method code=E0324 stage=check pair=distinct-members
+struct Copy S { a: Int }
+
+impl S {
+    fn get(&self) -> Int {
+        return 1;
+    }
+    fn get(&self) -> Int {
+        return 42;
+    }
+}
+
+fn main() -> Int {
+    let s: S = S { a: 1 };
+    return s.get();
+}
+```
+
+```con accept name=distinct-members exit=42
+enum E { A, B }
+
+struct Copy S { a: Int }
+
+impl S {
+    fn get(&self) -> Int {
+        return 40;
+    }
+    fn two(&self) -> Int {
+        return 2;
+    }
+}
+
+fn main() -> Int {
+    let e: E = E::B;
+    let s: S = S { a: 1 };
+    match e {
+        E::A => { return 0; },
+        E::B => { return s.get() + s.two(); }
+    }
+}
+```

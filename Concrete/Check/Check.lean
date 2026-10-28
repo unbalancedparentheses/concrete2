@@ -3846,10 +3846,58 @@ def declarationCollisions (m : Module) : Diagnostics :=
     errs.reverse
   dupes callables ++ dupes constants ++ dupes types
 
--- spec: REF-3, spec: STMT-7, spec: MOD-3, spec: REF-1, spec: REF-2, spec: CON-3 (docs/spec/references.md; this declaration enforces the rule)
+-- spec: MOD-5 (docs/spec/modules.md; this declaration enforces the rule)
+/-- MOD-5 (bug 313): a declaration binds each of its member names once. Nothing checked it: two
+    methods of one name in one impl, and two variants of one name in one enum, reached `llvm-as`
+    as redefinitions (`--interp` stopped on an internal error, or ran the first variant), and
+    two fields of a struct or variant, two type or capability parameters, or two methods of a
+    trait were accepted, the first declaration silently winning. One judgment over every member
+    list of every declaration of the module; a function's value parameters are SCOPE-1's
+    (E0301), and two impls of one type are TRAIT-5's (E0594). -/
+def memberCollisions (m : Module) : Diagnostics :=
+  let dup : List String → Option String := fun names => Id.run do
+    let mut seen : Std.HashSet String := {}
+    for n in names do
+      if n != "_" then
+        if seen.contains n then return some n
+        seen := seen.insert n
+    return none
+  let report (owner memberKind : String) (names : List String) (sp : Span) : Diagnostics :=
+    match dup names with
+    | some n =>
+      let e := CheckError.memberCollision owner memberKind n
+      [{ severity := .error, message := e.message, pass := "check",
+         span := (if sp.line == 0 then none else some sp), hint := e.hint, code := e.code }]
+    | none => []
+  let fnMembers (owner : String) (f : FnDef) : Diagnostics :=
+    report owner "type parameter" f.typeParams f.span ++ report owner "capability parameter" f.capParams f.span
+  m.structs.flatMap (fun d =>
+      let o := s!"struct '{d.name}'"
+      report o "field" (d.fields.map (·.name)) d.span ++ report o "type parameter" d.typeParams d.span
+        ++ report o "capability parameter" d.capParams d.span)
+    ++ m.enums.flatMap (fun d =>
+      let o := s!"enum '{d.name}'"
+      report o "variant" (d.variants.map (·.name)) d.span ++ report o "type parameter" d.typeParams d.span
+        ++ d.variants.flatMap (fun v => report s!"variant '{d.name}::{v.name}'" "field" (v.fields.map (·.name)) d.span))
+    ++ m.newtypes.flatMap (fun d => report s!"newtype '{d.name}'" "type parameter" d.typeParams d.span)
+    ++ m.traits.flatMap (fun d =>
+      let o := s!"trait '{d.name}'"
+      report o "method" (d.methods.map (·.name)) d.span ++ report o "type parameter" d.typeParams d.span)
+    ++ m.implBlocks.flatMap (fun ib =>
+      let o := s!"impl '{ib.typeName}'"
+      report o "method" (ib.methods.map (·.name)) ib.span ++ report o "type parameter" ib.typeParams ib.span
+        ++ report o "capability parameter" ib.capParams ib.span
+        ++ ib.methods.flatMap (fun f => fnMembers s!"method '{ib.typeName}::{f.name}'" f))
+    ++ m.traitImpls.flatMap (fun tb =>
+      let o := s!"impl '{tb.traitName}' for '{tb.typeName}'"
+      report o "method" (tb.methods.map (·.name)) tb.span ++ report o "type parameter" tb.typeParams tb.span
+        ++ tb.methods.flatMap (fun f => fnMembers s!"method '{tb.typeName}::{f.name}'" f))
+    ++ m.functions.flatMap (fun f => fnMembers s!"function '{f.name}'" f)
+
+-- spec: REF-3, spec: STMT-7, spec: MOD-3, spec: MOD-5, spec: REF-1, spec: REF-2, spec: CON-3 (docs/spec/references.md; this declaration enforces the rule)
 def checkModule (m : Module) (summary : FileSummary)
     (imports : ResolvedImports := {}) : Except Diagnostics Unit :=
-  let collisions := declarationCollisions m ++ importBindingCollisions m imports
+  let collisions := declarationCollisions m ++ memberCollisions m ++ importBindingCollisions m imports
   if !collisions.isEmpty then .error collisions else
   -- Bug 111: the entry wrapper calls `main` with no arguments, so `main` may not declare
   -- parameters (MAIN_EXIT_MODEL.md, decision of 2026-10-21). Every module-level `main` is
