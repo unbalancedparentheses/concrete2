@@ -1,0 +1,6 @@
+// Bug 314: a for loop whose body always breaks fails SSA verification natively (E0703) while --interp runs it
+// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
+// here what it does (Observed) and what it should do (Expected).
+fn main() -> Int {
+    return 0;
+}
