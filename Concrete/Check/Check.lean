@@ -3840,12 +3840,20 @@ def checkModule (m : Module) (summary : FileSummary)
   -- Bug 111: the entry wrapper calls `main` with no arguments, so `main` may not declare
   -- parameters (MAIN_EXIT_MODEL.md, decision of 2026-10-21). Every module-level `main` is
   -- checked, as Elab tags each one an entry point.
+  -- STMT-7: nor type or capability parameters, which nothing would instantiate (the native
+  -- build lost the entry point, `--interp` ran the generic body).
   let mainParamErrs : Diagnostics := m.functions.filterMap fun f =>
-    if f.name == mainFnName && !f.params.isEmpty then
-      let e := CheckError.mainHasParams f.params.length
-      some { severity := .error, message := e.message, pass := "check", span := some f.span,
-             hint := e.hint, code := e.code }
-    else none
+    if f.name != mainFnName then none else
+    let err? : Option CheckError :=
+      if !f.params.isEmpty then some (CheckError.mainHasParams f.params.length)
+      else if !f.typeParams.isEmpty then
+        some (CheckError.mainIsGeneric s!"{f.typeParams.length} type parameter(s)")
+      else if !f.capParams.isEmpty then
+        some (CheckError.mainIsGeneric s!"{f.capParams.length} capability parameter(s)")
+      else none
+    err?.map fun e =>
+      { severity := .error, message := e.message, pass := "check", span := some f.span,
+        hint := e.hint, code := e.code }
   if !mainParamErrs.isEmpty then .error mainParamErrs else
   -- Use pre-built summaries from FileSummary
   let fnSigs : List FnSummary := summary.functions.map Prod.snd
