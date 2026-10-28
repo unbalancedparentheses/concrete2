@@ -435,6 +435,7 @@ the report counts those bugs as ambiguous.
 - [309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md](309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md) — the short-circuit lowering of `&&` / `||` merged only the scalars its right operand changed and skipped every aggregate, on the assumption that a boolean operand cannot change one; a loop inside the right operand (in a value `match` or `if`) promotes every aggregate in scope and un-promotes it at its exit, rebinding it to a load made on the right operand's path, so after the merge the aggregate named a register that does not dominate its later uses and the program was refused (E0703)
 - [310_a_generic_main_is_accepted_by_check_the_native_b.md](310_a_generic_main_is_accepted_by_check_the_native_b.md) — a generic main is accepted by Check: the native build loses its entry point and --interp runs it
 - [311_a_destructuring_let_in_another_module_binds_a_st.md](311_a_destructuring_let_in_another_module_binds_a_st.md) — a destructuring let in another module binds a struct's private fields (TYPE-11 enforced only for literals, reads and writes)
+- [312_a_destructuring_let_binds_a_name_with_the_compil.md](312_a_destructuring_let_binds_a_name_with_the_compil.md) — a destructuring let binds a name with the compiler's __destr_ prefix (SYN-3 checked only on a plain let)
 
 ## Open Numbered Bugs
 
@@ -448,7 +449,6 @@ the report counts those bugs as ambiguous.
 - [216_field_write_non_mut_binding.md](216_field_write_non_mut_binding.md) — a write into a field, a nested array element or a heap cell of a binding not declared `mut` is accepted, while `&mut` of the same place is refused (E0233) and a direct array element write is refused (E0217, bug 030); both backends agree. Whether OWN-10 covers such writes is not stated (post-R-0492 differential hunt, 2026-10-23) ((needs a language decision))
 - [226_submodule_imports_private_function.md](226_submodule_imports_private_function.md) — a submodule (a module written after `main`, any `mod x;` file, every std module) may import a private function or `extern fn` of another module, which MOD-2@1 refuses and Resolve refuses from a top-level module (E0111): Check's and Elab's `resolveImports` admits every function. Found by bug 217's fix, 2026-10-24 ((the fix needs a visibility for std's internal `std.libc` imports))
 - [270_loop_header_phi_per_binding.md](270_loop_header_phi_per_binding.md) — Lower gives every loop a header phi for every binding in scope, so n loops in a function of n bindings emit n² phis that the cleanup then removes (quadratic to lower)
-- [312_a_destructuring_let_binds_a_name_with_the_compil.md](312_a_destructuring_let_binds_a_name_with_the_compil.md) — a destructuring let binds a name with the compiler's __destr_ prefix (SYN-3 checked only on a plain let)
 
 <!-- END GENERATED: bug list -->
 

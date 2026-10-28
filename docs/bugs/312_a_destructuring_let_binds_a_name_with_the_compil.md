@@ -1,45 +1,55 @@
 # Bug 312 — a destructuring let binds a name with the compiler's __destr_ prefix (SYN-3 checked only on a plain let)
 
-**Status:** OPEN
-**Found:** 2026-10-28, FILL-IN(new_bug.sh) by what (workload, probe, review, example)
-**Severity:** FILL-IN(new_bug.sh) what goes wrong for a user (silent wrong code, unsound claim, crash, refusal)
+**Status:** FIXED (branch `wip/syn3-destructure`)
+**Found:** 2026-10-28, by the class-13 spec audit (`wip/class13-audit`, `research/process/class13-audit-2026-10/`): one program per clause of each normative rule, native against `--interp`.
+**Severity:** silent: an unsound acceptance. A program SYN-3 forbids compiles, and its binder carries the spelling Verify's post-mono REF-6 check exempts. No wrong result was observed (Elab renames binders apart), so the harm is the hole in REF-6's backstop, not a miscompile today.
 
 <!-- bug-ledger
 summary: a destructuring let binds a name with the compiler's __destr_ prefix (SYN-3 checked only on a plain let)
-coverage: reproducer tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con, pinned by FILL-IN(new_bug.sh) the gate leg that pins it (for example check_example_outputs.sh, open-bug reproducers leg)
+coverage: reproducer tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con, pinned by run_tests.sh (`run_err` legs for the reproducer and `error_312_enum_destructure_reserved_binder.con`) and check_spec.sh S4 (`SYN-3/destructuring-binder`)
 class: 13
 silent: yes
 -->
 
 ## Reproducer
 
-`tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con`: FILL-IN(new_bug.sh) the smallest program that shows the defect.
+`tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con`: `let S { a: __destr_S } = s;`.
 
 ## Observed
 
-FILL-IN(new_bug.sh) what the binary and `--interp` do (exit status, output, diagnostic).
+On main ca49fada both consumers accept the reproducer and return 42; an enum destructuring `let E::A { v: __destr_v } = e else { .. };` is accepted too, while `let __destr_x: Int = 42;` is refused (E0283).
 
 ## Expected
 
-FILL-IN(new_bug.sh) what the normative rule says, with a link to it.
+[SYN-3@1](../spec/syntax.md#SYN-3): a `let` does not bind a name that begins with `__destr_`. A destructuring `let` is a `let`, so each of its binders is refused that prefix at check (E0283).
 
 ## Cause
 
-FILL-IN(new_bug.sh) the code that produces it (file, function).
+`Concrete/Check/Check.lean`, `checkStmt`: only the `.letDecl` case tested the prefix. The `.letStructDestructure` case and the arm that an enum destructuring `let` desugars to (binders marked `letBound`) did not, and `Concrete/Check/Verify.lean`'s post-mono REF-6 check exempts every `let` named `__destr_*`.
 
 ## Structural cause
 
-FILL-IN(new_bug.sh) the design fact that let this bug exist: which class of
-[STRUCTURAL_CLASSES.md](STRUCTURAL_CLASSES.md) it is an instance of (or the new class it adds),
-and the other bugs of that class.
+Class 13: a documented rule enforced at one of the forms it covers. The prefix test was written
+inline at the plain `let`, and each `let` form adds its binders on its own path, so a new form
+(struct destructuring, then the enum destructuring desugared into an arm) skipped it. Same audit:
+bugs 310 and 311 and the duplicate-member gap.
 
 ## Structural owner
 
-FILL-IN(new_bug.sh) the roadmap task, exit or verified-pipeline stage that removes the
-cause for the whole class, not only this spelling.
+R-0492 (one binder identity, so compiler temporaries are not recognized by spelling and no
+check needs a spelling exemption). Until then one function, `refuseReservedLetBinder`, is the rule's
+enforcing declaration and every `let` form calls it on each binder; check_spec.sh S12
+(`wip/spec-code-coverage`) asks for a negative witness per rule code.
 
 ## Containment while open
 
-FILL-IN(new_bug.sh) the gate leg that pins the current behaviour, and what a user
-does meanwhile. A silent defect is stopped at once by repair or fail-closed containment
-([defect disposition rule](../../ROADMAP.md#the-current-execution-queue)).
+Fixed with the filing.
+
+## Fix
+
+`refuseReservedLetBinder` (CheckError.lean, `spec: SYN-3`) holds the prefix test; the plain `let`,
+each struct-destructuring binder and each `letBound` arm binder call it. SYN-3 names it in
+`Enforced by:` and gains the reject example `destructuring-binder`. Match-arm and parameter
+binders are outside SYN-3's text and stay accepted.
+
+Codex confirmation 2026-10-28: CONFIRMED — destructuring binders bypass SYN-3's reserved-prefix check and inherit Verify's blanket `__destr_` exemption, although the probes demonstrate no wrong result (silent; OD: none).

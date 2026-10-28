@@ -1,6 +1,12 @@
-// Bug 312: a destructuring let binds a name with the compiler's __destr_ prefix (SYN-3 checked only on a plain let)
-// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
-// here what it does (Observed) and what it should do (Expected).
+// Bug 312: a destructuring `let` binds `__destr_S`, the spelling of the temporary Elab introduces
+// for `let S { .. } = s` and that Verify's post-mono REF-6 check exempts. Before the fix both
+// consumers accepted it (42); a plain `let __destr_S` was refused. Expected: refused at check,
+// E0283 (SYN-3).
+struct S { a: Int }
 fn main() -> Int {
-    return 0;
+    let s: S = S { a: 40 };
+    let S { a: __destr_S } = s;
+    let t: S = S { a: 2 };
+    let S { a } = t;
+    return __destr_S + a;
 }
