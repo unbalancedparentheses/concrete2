@@ -1,0 +1,6 @@
+// Bug 313: duplicate member names inside one declaration reach llvm-as or are accepted (no rule or site checks fields, variants, methods or parameters)
+// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
+// here what it does (Observed) and what it should do (Expected).
+fn main() -> Int {
+    return 0;
+}
