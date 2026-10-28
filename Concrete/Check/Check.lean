@@ -3841,23 +3841,38 @@ def declarationCollisions (m : Module) : Diagnostics :=
     function's value parameters are SCOPE-1's (E0301). Other repeated members (fields, type and
     capability parameters, a trait's method declarations) are not judged here. -/
 def memberCollisions (m : Module) : Diagnostics :=
-  let dup : List String → Option String := fun names => Id.run do
+  -- R-0550: this runs over every enum and impl of every program, so the common case (no duplicate)
+  -- allocates nothing per declaration: a short member list is searched pairwise in place, and only
+  -- a long one (where pairwise search would be quadratic) builds a set.
+  let firstDup := fun {α : Type} (key : α → String) (xs : List α) => Id.run do
+    if xs.length ≤ 32 then
+      let rec go : List α → Option String
+        | [] => none
+        | x :: rest =>
+          if rest.any (fun y => key y == key x) then some (key x) else go rest
+      return go xs
     let mut seen : Std.HashSet String := {}
-    for n in names do
-      if seen.contains n then return some n
-      seen := seen.insert n
+    for x in xs do
+      if seen.contains (key x) then return some (key x)
+      seen := seen.insert (key x)
     return none
-  let report (owner memberKind : String) (names : List String) (sp : Span) : Diagnostics :=
-    match dup names with
-    | some n =>
-      let e := CheckError.memberCollision owner memberKind n
-      [{ severity := .error, message := e.message, pass := "check",
-         span := (if sp.line == 0 then none else some sp), hint := e.hint, code := e.code }]
-    | none => []
-  m.enums.flatMap (fun d => report s!"enum '{d.name}'" "variant" (d.variants.map (·.name)) d.span)
-    ++ m.implBlocks.flatMap (fun ib => report s!"impl '{ib.typeName}'" "method" (ib.methods.map (·.name)) ib.span)
-    ++ m.traitImpls.flatMap (fun tb =>
-      report s!"impl '{tb.traitName}' for '{tb.typeName}'" "method" (tb.methods.map (·.name)) tb.span)
+  let report (owner memberKind name : String) (sp : Span) : Diagnostic :=
+    let e := CheckError.memberCollision owner memberKind name
+    { severity := .error, message := e.message, pass := "check",
+      span := (if sp.line == 0 then none else some sp), hint := e.hint, code := e.code }
+  let errs := m.enums.foldl (fun acc d =>
+      match firstDup (·.name) d.variants with
+      | some n => report s!"enum '{d.name}'" "variant" n d.span :: acc
+      | none => acc) []
+  let errs := m.implBlocks.foldl (fun acc ib =>
+      match firstDup (·.name) ib.methods with
+      | some n => report s!"impl '{ib.typeName}'" "method" n ib.span :: acc
+      | none => acc) errs
+  let errs := m.traitImpls.foldl (fun acc tb =>
+      match firstDup (·.name) tb.methods with
+      | some n => report s!"impl '{tb.traitName}' for '{tb.typeName}'" "method" n tb.span :: acc
+      | none => acc) errs
+  errs.reverse
 
 -- spec: REF-3, spec: STMT-7, spec: MOD-3, spec: MOD-5, spec: REF-1, spec: REF-2, spec: CON-3 (docs/spec/references.md; this declaration enforces the rule)
 def checkModule (m : Module) (summary : FileSummary)
