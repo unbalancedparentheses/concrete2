@@ -102,7 +102,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 11** (1 silent, 5 loud, 5 filed before the discovery record) of 279 bug records.
+**Open bugs: 10** (1 silent, 4 loud, 5 filed before the discovery record) of 279 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
@@ -110,7 +110,6 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
 | 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
 | 12. One fact kept in two places | 2 | 0 | 064, 226 |
-| 13. Documented rules with no enforcing site | 1 | 0 | 310 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
 
 | open bugs by Phase 1 exit | open | silent | bugs |
@@ -118,7 +117,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | exit 0b | 1 | 1 | 122 |
 | exit 2c | 1 | 0 | 114 |
 | exit 2n | 2 | 0 | 216, 226 |
-| no exit names it | 7 | 0 | 049, 054, 058, 064, 077, 270, 310 |
+| no exit names it | 6 | 0 | 049, 054, 058, 064, 077, 270 |
 
 | discovery rate: counting probe batch | date | effort | found | silent | loud | signal |
 |---|---|---|---|---|---|---|

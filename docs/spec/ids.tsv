@@ -402,3 +402,4 @@ MOD-4/missing-module-file	live	-
 MOD-4/inline-module	live	-
 SYN-1/head-constant-struct-literal	live	-
 SYN-1/head-constant-parenthesized	live	-
+STMT-7/generic-main	live	-

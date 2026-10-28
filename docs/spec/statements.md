@@ -238,6 +238,12 @@ fn main(argc: Int) -> Int {
 }
 ```
 
+```con reject name=generic-main code=E0310 stage=check pair=main-exit-status
+fn main<T>() -> Int {
+    return 42;
+}
+```
+
 ```con accept name=main-exit-status exit=42
 fn main() -> Int {
     return 42;
