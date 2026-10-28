@@ -102,7 +102,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 10** (1 silent, 4 loud, 5 filed before the discovery record) of 278 bug records.
+**Open bugs: 11** (1 silent, 5 loud, 5 filed before the discovery record) of 279 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
@@ -110,6 +110,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
 | 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
 | 12. One fact kept in two places | 2 | 0 | 064, 226 |
+| 13. Documented rules with no enforcing site | 1 | 0 | 310 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
 
 | open bugs by Phase 1 exit | open | silent | bugs |
@@ -117,41 +118,41 @@ a link failure, an interpreter refusal or an unrejected leak.
 | exit 0b | 1 | 1 | 122 |
 | exit 2c | 1 | 0 | 114 |
 | exit 2n | 2 | 0 | 216, 226 |
-| no exit names it | 6 | 0 | 049, 054, 058, 064, 077, 270 |
+| no exit names it | 7 | 0 | 049, 054, 058, 064, 077, 270, 310 |
 
 | discovery rate: counting probe batch | date | effort | found | silent | loud | signal |
 |---|---|---|---|---|---|---|
-| spec: language-specification examples (docs/spec: pilot, pipeline, ownership and types chapters, both consumers, and their reviews) | 2026-10-23 | 116 programs | 2 | 2 | 0 | found bugs |
 | workload: Phase 7 workload 9 lzpack (LZSS + PackBits codec, CRC container) and nine probe programs on its shapes (fixed-array hash chains through &mut, ring buffer, Huffman tree, trait codecs, fn values in structs, shift and cast edges, nested linear Result/Option, borrow and defer forms), plus a 400-case corrupt-stream fuzz against a Python reference | 2026-10-23 | 10 programs | 2 | 0 | 2 | found bugs |
 | fuzz: fuzz farm mutation generator findings open at eb122a01 (13 crash signatures re-run on the OVH server, interpreter vs binary) plus about 100 hand probes after R-0492 steps 1-3 (shadowing, fn-pointer locals, generics, match through references, defer exits, nested modules, diagnostics) | 2026-10-23 | 113 programs | 8 | 5 | 3 | found bugs |
 | workload: Phase 7 workload 10 stackvm (assembler, bytecode codec and load-time verifier, interpreter and disassembler over a 23-variant enum, a generic bounded stack, two traits and defer cleanup) with a differential gate against an independent Python implementation, and 25 probe programs on its shapes (imported enums with impls and trait bounds through each import path, import aliases, linear values in loops, Destroy impls, temporaries as receivers, borrow conflicts, diagnostics) | 2026-10-23 | 26 programs | 5 | 0 | 5 | found bugs |
 | hunt: differential hunt (interpreter vs native binary) on main 9622f7e0: 3500 fuzz_differential.py cases (seeds 102501, 102502) and hand probes on module constants, enum payloads across modules, generics and traits across module boundaries, nested submodules, defer and loops under --interp | 2026-10-24 | 60 programs | 5 | 0 | 5 | found bugs |
 | hunt: Lower borrows and address-taken locals: hand probes of every CExpr and CStmt constructor, and the differential fuzzer's borrow mode (fuzz_differential.py --mode borrow) | 2026-10-26 | 3000 programs | 6 | 2 | 4 | found bugs |
+| spec: class-13 audit: one forbidden program per clause of each normative rule in docs/spec (125 entries), native against --interp (wip/class13-audit) | 2026-10-28 | 207 probes | 1 | 0 | 1 | quiet |
 
 | discovery rate by primary structural class | quiet counting batches in a row | holds |
 |---|---|---|
-| 1. Declaration identity by spelled name, not a resolved `DefId` | 3 | yes |
-| 2. Binder identity by name, not a `LocalId` | 8 | yes |
-| 3. Destruction dispatched by synthesized `<Type>_destroy` names | 9 | yes |
-| 4. No reference-provenance model in the source checker | 9 | yes |
-| 5. Borrow tracking by syntax instead of normalized places | 9 | yes |
-| 6. Capability facts not carried across dispatch, specialization or package boundaries | 9 | yes |
-| 7. Semantics implemented several times (interpreter, proof model, folder, backend disagree) | 5 | yes |
-| 8. Storage, places and control flow decided ad hoc in `Lower` | 0 | no |
-| 9. Evidence verdicts computed per surface and joined to their subject by name | 9 | yes |
-| 10. Evidence identity computed from a partial subject | 9 | yes |
-| 11. Absence read as a fact (fail-open defaults) | 9 | yes |
-| 12. One fact kept in two places | 0 | no |
-| 13. Documented rules with no enforcing site | 3 | yes |
-| 14. Trusted `std` and FFI code with no checked contract | 9 | yes |
-| 15. Ownership state not modeled along control-flow paths | 6 | yes |
-| 16. Artifacts at paths no run owns | 9 | yes |
-| 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | no |
-| 18. Pipeline artifacts not bound to their payload | 9 | yes |
-| 19. A mention read as a use (tool facts inferred from where a name is spelled) | 9 | yes |
-| no class yet | 9 | yes |
+| 1. Declaration identity by spelled name, not a resolved `DefId` | 4 | yes |
+| 2. Binder identity by name, not a `LocalId` | 9 | yes |
+| 3. Destruction dispatched by synthesized `<Type>_destroy` names | 10 | yes |
+| 4. No reference-provenance model in the source checker | 10 | yes |
+| 5. Borrow tracking by syntax instead of normalized places | 10 | yes |
+| 6. Capability facts not carried across dispatch, specialization or package boundaries | 10 | yes |
+| 7. Semantics implemented several times (interpreter, proof model, folder, backend disagree) | 6 | yes |
+| 8. Storage, places and control flow decided ad hoc in `Lower` | 1 | no |
+| 9. Evidence verdicts computed per surface and joined to their subject by name | 10 | yes |
+| 10. Evidence identity computed from a partial subject | 10 | yes |
+| 11. Absence read as a fact (fail-open defaults) | 10 | yes |
+| 12. One fact kept in two places | 1 | no |
+| 13. Documented rules with no enforcing site | 4 | yes |
+| 14. Trusted `std` and FFI code with no checked contract | 10 | yes |
+| 15. Ownership state not modeled along control-flow paths | 7 | yes |
+| 16. Artifacts at paths no run owns | 10 | yes |
+| 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 2 | no |
+| 18. Pipeline artifacts not bound to their payload | 10 | yes |
+| 19. A mention read as a use (tool facts inferred from where a name is spelled) | 10 | yes |
+| no class yet | 10 | yes |
 
-Discovery signal (exit 2m): 17 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 17 counting batches recorded. 70 attribution-only batches (reviews, follow-ons, CI, controls, development) found 116 further bugs.
+Discovery signal (exit 2m): 17 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 18 counting batches recorded. 70 attribution-only batches (reviews, follow-ons, CI, controls, development) found 116 further bugs.
 
 <!-- END GENERATED: bug dashboard -->
 
