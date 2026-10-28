@@ -3145,6 +3145,10 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) (ends : Option EndsTree := none
     -- Bug 311 (TYPE-11): a destructuring `let` reads every field it binds, so outside the
     -- declaring module it names only `pub` fields, exactly as `s.f` does (E0298). A non-Copy
     -- struct must bind every field, so one with a private field is consumed through its module.
+    -- The test is the field-read site's own (`structIsLocal`), so a module that may read the field
+    -- may destructure it and no other may: the fix refuses only modules that already could not
+    -- read the field. Whether a parent module reads its child's private fields is OD21, open; this
+    -- leaves the parent's outcome exactly as it was (accepted) and adds nothing for it.
     match ← lookupStruct structName with
     | some sd =>
       if !(← getEnv).structIsLocal sd then

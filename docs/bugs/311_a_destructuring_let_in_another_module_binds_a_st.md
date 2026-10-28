@@ -44,8 +44,12 @@ destructuring witness for E0298.
 
 ## Containment while open
 
-Fixed with the filing. A parent module's rights over its child's fields are OD21's question; this
-fix keeps today's notion of the declaring module (`structIsLocal`) and takes no side on it.
+Fixed with the filing. A parent module's rights over its child's fields are OD21's question, open.
+The fix takes no side on it: it refuses a destructuring exactly where a field read `s.f` is already
+refused (the read site's own test, `structIsLocal`), so it changes the outcome only for modules that
+could not read the field, such as a sibling. A parent destructuring its child's private field was
+accepted before and is accepted after, with no fixture pinning it either way; the owner's answer to
+OD21 decides the read and the destructuring together, since they share one test.
 
 ## Fix
 
