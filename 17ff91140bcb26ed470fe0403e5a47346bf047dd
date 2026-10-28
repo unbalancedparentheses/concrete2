@@ -1,0 +1,2 @@
+[piece 1 of 3: compiler]
+- Concrete/Check/Check.lean:3150: The new privacy check extends OD21’s disputed parent-module representation rights to destructuring: `structIsLocal` includes child declarations, so a parent can destructure its child’s private fields while other importing modules receive E0298. Reusing that predicate encodes the parent exemption in a new enforcement path. OD21 remains proposed, and ROADMAP.md forbids extending either side before the owner answers; this patch must wait for that decision.
