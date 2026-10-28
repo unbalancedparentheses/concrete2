@@ -102,7 +102,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 10** (1 silent, 4 loud, 5 filed before the discovery record) of 279 bug records.
+**Open bugs: 11** (2 silent, 4 loud, 5 filed before the discovery record) of 280 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
@@ -110,6 +110,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
 | 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
 | 12. One fact kept in two places | 2 | 0 | 064, 226 |
+| 13. Documented rules with no enforcing site | 1 | 1 | 311 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
 
 | open bugs by Phase 1 exit | open | silent | bugs |
@@ -117,7 +118,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | exit 0b | 1 | 1 | 122 |
 | exit 2c | 1 | 0 | 114 |
 | exit 2n | 2 | 0 | 216, 226 |
-| no exit names it | 6 | 0 | 049, 054, 058, 064, 077, 270 |
+| no exit names it | 7 | 1 | 049, 054, 058, 064, 077, 270, 311 |
 
 | discovery rate: counting probe batch | date | effort | found | silent | loud | signal |
 |---|---|---|---|---|---|---|
@@ -126,7 +127,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | workload: Phase 7 workload 10 stackvm (assembler, bytecode codec and load-time verifier, interpreter and disassembler over a 23-variant enum, a generic bounded stack, two traits and defer cleanup) with a differential gate against an independent Python implementation, and 25 probe programs on its shapes (imported enums with impls and trait bounds through each import path, import aliases, linear values in loops, Destroy impls, temporaries as receivers, borrow conflicts, diagnostics) | 2026-10-23 | 26 programs | 5 | 0 | 5 | found bugs |
 | hunt: differential hunt (interpreter vs native binary) on main 9622f7e0: 3500 fuzz_differential.py cases (seeds 102501, 102502) and hand probes on module constants, enum payloads across modules, generics and traits across module boundaries, nested submodules, defer and loops under --interp | 2026-10-24 | 60 programs | 5 | 0 | 5 | found bugs |
 | hunt: Lower borrows and address-taken locals: hand probes of every CExpr and CStmt constructor, and the differential fuzzer's borrow mode (fuzz_differential.py --mode borrow) | 2026-10-26 | 3000 programs | 6 | 2 | 4 | found bugs |
-| spec: class-13 audit: one forbidden program per clause of each normative rule in docs/spec (125 entries), native against --interp (wip/class13-audit) | 2026-10-28 | 207 probes | 1 | 0 | 1 | quiet |
+| spec: class-13 audit: one forbidden program per clause of each normative rule in docs/spec (125 entries), native against --interp (wip/class13-audit) | 2026-10-28 | 207 probes | 2 | 1 | 1 | found bugs |
 
 | discovery rate by primary structural class | quiet counting batches in a row | holds |
 |---|---|---|
@@ -142,7 +143,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 10. Evidence identity computed from a partial subject | 10 | yes |
 | 11. Absence read as a fact (fail-open defaults) | 10 | yes |
 | 12. One fact kept in two places | 1 | no |
-| 13. Documented rules with no enforcing site | 4 | yes |
+| 13. Documented rules with no enforcing site | 0 | no |
 | 14. Trusted `std` and FFI code with no checked contract | 10 | yes |
 | 15. Ownership state not modeled along control-flow paths | 7 | yes |
 | 16. Artifacts at paths no run owns | 10 | yes |
@@ -151,7 +152,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 19. A mention read as a use (tool facts inferred from where a name is spelled) | 10 | yes |
 | no class yet | 10 | yes |
 
-Discovery signal (exit 2m): 17 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 18 counting batches recorded. 70 attribution-only batches (reviews, follow-ons, CI, controls, development) found 116 further bugs.
+Discovery signal (exit 2m): 16 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 18 counting batches recorded. 70 attribution-only batches (reviews, follow-ons, CI, controls, development) found 116 further bugs.
 
 <!-- END GENERATED: bug dashboard -->
 
