@@ -3142,6 +3142,19 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) (ends : Option EndsTree := none
           if !(fieldKeys.contains sf.name) then
             throwCheck (.missingFieldInLiteral sf.name s!"struct destructure '{structName}'") (some stmt.getSpan)
       | none => pure ()
+    -- TYPE-11 (bug-pending): a destructuring `let` reads every field it binds, so outside the
+    -- declaring module it names only `pub` fields, exactly as `s.f` does (E0298). A non-Copy
+    -- struct must bind every field, so one with a private field is consumed through its module.
+    match ← lookupStruct structName with
+    | some sd =>
+      if !(← getEnv).structIsLocal sd then
+        for pb in bindings do
+          match sd.fields.find? (·.name == pb.fieldName) with
+          | some f =>
+            if !f.isPublic then
+              throwCheck (.fieldAccessPrivate structName pb.fieldName) (some stmt.getSpan)
+          | none => pure ()
+    | none => pure ()
     for pb in bindings do
       let b := pb.name
       match ← lookupStructField structName pb.fieldName with
