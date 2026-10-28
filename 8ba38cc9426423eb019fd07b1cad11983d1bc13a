@@ -1,0 +1,2 @@
+[piece 3 of 3: docs]
+- docs/bugs/AREAS.md:347: Bug 312 is classified as `Gates | run_tests`, but its fix enforces rejection in `Concrete/Check/Check.lean` and `CheckError.lean`. Under this document’s stated classification rule, it belongs to Check; the stage and structural-class totals consequently misattribute this bug.
