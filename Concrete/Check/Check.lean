@@ -1808,6 +1808,7 @@ partial def checkExprCore (e : Expr) (hint : Option Ty := none) (mode : UseMode 
             -- the scrutinee's normalization, taken before any binder can shadow its name
             let scrutPre ← if isRefScrutinee then some <$> normRef scrutinee else pure none
             for (binding, sf) in bindings.zip ev.fields do
+              if fromLet then refuseReservedLetBinder binding (some e.getSpan)
               let fieldTy := substTy typeMapping sf.ty
               -- A reference STORED in a payload has no traced source: binding it out of the
               -- enum would be an alias the checker cannot see (normalized place rule, E0238).
@@ -2438,8 +2439,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) (ends : Option EndsTree := none
     let envErase ← getEnv
     -- `__destr_*` names Elab's struct-destructuring temporary, which the post-mono REF-6 check
     -- exempts; a source `let` may not take that spelling (exit 2i review).
-    if name.startsWith "__destr_" then
-      throwCheck (.reservedName name) (some stmt.getSpan)
+    refuseReservedLetBinder name (some stmt.getSpan)
     -- REF-6@1 (a), exit 2i: no `let` binds a reference. A written (or aliased) reference type
     -- is refused before the initializer is checked; an inferred one right after.
     match ty with
@@ -3144,6 +3144,7 @@ partial def checkStmt (stmt : Stmt) (retTy : Ty) (ends : Option EndsTree := none
       | none => pure ()
     for pb in bindings do
       let b := pb.name
+      refuseReservedLetBinder b (some stmt.getSpan)
       match ← lookupStructField structName pb.fieldName with
       | some fieldTy =>
         -- REF-6 (a `let` may not hold a reference) with D3 (a binder through a reference is a

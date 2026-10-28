@@ -1056,4 +1056,13 @@ def throwCheck (e : CheckError) (span : Option Span := none)
            related := related, evidence := ruleEvidence r,
            nextAction := r.bind ruleNextAction }]
 
+
+-- spec: SYN-3 (docs/spec/syntax.md; this declaration enforces the rule)
+/-- SYN-3 (bug 312): no `let` binder of a source program begins with `__destr_`, the prefix of
+    the temporaries Elab introduces for a struct destructuring (`destructureTempName`), which
+    Verify's post-mono REF-6 check exempts. Every `let` form calls it on every binder: a plain
+    `let`, a struct destructuring and an enum destructuring (a `letBound` arm binder). -/
+def refuseReservedLetBinder (name : String) (span : Option Span) : CheckM Unit :=
+  if name.startsWith "__destr_" then throwCheck (.reservedName name) span else pure ()
+
 end Concrete
