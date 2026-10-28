@@ -538,6 +538,23 @@ mod m {
 }
 ```
 
+```con reject name=destructure-private-field code=E0298 stage=check pair=foreign-constructor
+mod box {
+    pub struct Copy Bx { v: Int }
+    pub fn mk() -> Bx {
+        return Bx { v: 42 };
+    }
+}
+mod m {
+    import box.{Bx, mk};
+    pub fn main() -> Int {
+        let b: Bx = mk();
+        let Bx { v } = b;
+        return v;
+    }
+}
+```
+
 ```con accept name=foreign-constructor exit=42
 mod num {
     pub newtype NonZero = Int;
