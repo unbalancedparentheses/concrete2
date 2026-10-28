@@ -9,6 +9,7 @@ summary: a destructuring let in another module binds a struct's private fields (
 coverage: reproducer tests/regressions/bug311_a_destructuring_let_in_another_module_binds_a_st/repro.con, pinned by run_tests.sh (`run_err` legs for the reproducer, `error_311_destructure_private_linear.con` and `error_311_destructure_private_copy_partial.con`; `run_ok` for `regress_311_destructure_pub_fields.con`) and check_spec.sh S4 (`TYPE-11/destructure-private-field`)
 class: 13
 silent: yes
+exit: 0b
 -->
 
 ## Reproducer
