@@ -1,0 +1,6 @@
+// Bug 311: a destructuring let in another module binds a struct's private fields (TYPE-11 enforced only for literals, reads and writes)
+// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
+// here what it does (Observed) and what it should do (Expected).
+fn main() -> Int {
+    return 0;
+}
