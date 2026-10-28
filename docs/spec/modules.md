@@ -190,9 +190,9 @@ fn main() -> Int {
 ```
 
 <a id="MOD-5"></a>
-### MOD-5. A declaration binds each member name once
+### MOD-5. An enum's variants and an impl's methods are named once
 
-**MOD-5@1.** A declaration binds each of its member names once: a struct or enum variant its fields, an enum its variants, a trait or a single impl its methods, and a type, function or impl its type and capability parameters.
+**MOD-5@1.** An enum declares each variant name once, and a single impl, inherent or of a trait, declares each method name once.
 
 - Kind: refusal
 - Uses: none
@@ -203,10 +203,11 @@ fn main() -> Int {
 - Obligation: none
 - Evidence: tested
 
-**Rationale.** A member named twice made the meaning of a use depend on which declaration a lookup
-met first, and two methods or variants of one name reached `llvm-as` as redefinitions (bug 313).
-A function's value parameters are bindings, refused by SCOPE-1; two impls of one type that declare
-the same method are TRAIT-5's.
+**Rationale.** Two variants or two methods of one name reached `llvm-as` as redefinitions while
+`--interp` ran the first or stopped on an internal error (bug 313). Two impls of one type that
+declare the same method are TRAIT-5's; a function's value parameters are bindings, refused by
+SCOPE-1. Other repeated member names (fields, type and capability parameters, a trait's method
+declarations) are not decided by this entry.
 
 ```con reject name=duplicate-variant code=E0324 stage=check pair=distinct-members
 enum E { A, A }

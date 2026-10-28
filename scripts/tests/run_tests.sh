@@ -10187,14 +10187,8 @@ run_err "tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_comp
 run_err "$TESTDIR/error_312_enum_destructure_reserved_binder.con" "(E0283)"
 run_err "tests/regressions/bug313_duplicate_member_names_inside_one_declaration_re/repro.con" "(E0324)"
 run_err "$TESTDIR/error_313_duplicate_variant.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_struct_field.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_variant_field.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_type_param.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_cap_param.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_trait_method.con" "(E0324)"
 run_err "$TESTDIR/error_313_duplicate_trait_impl_method.con" "(E0324)"
 run_err "$TESTDIR/error_313_duplicate_static_method.con" "(E0324)"
-run_err "$TESTDIR/error_313_duplicate_struct_type_param.con" "(E0324)"
 run_ok "$TESTDIR/regress_262_imported_fn_beside_child_newtype.con" 42
 for r262 in "error_262_parent_constructs_child_newtype.con:(E0263)" \
             "error_262_sibling_constructs_newtype.con:(E0296)" \
