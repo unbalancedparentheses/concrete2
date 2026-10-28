@@ -1,0 +1,2 @@
+type A = A;
+fn main() -> Int { return 42; }

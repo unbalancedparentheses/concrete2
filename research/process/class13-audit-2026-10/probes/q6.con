@@ -1,0 +1,5 @@
+fn h(c: bool) -> bool {
+    let b: bool = (if c { 1 } else { 2 }) >= 2;
+    return b;
+}
+fn main() with(Console) { if h(true) { println(1); } }

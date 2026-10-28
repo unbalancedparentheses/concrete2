@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let c: bool = true;
+    if c { Result::<Int, Int>::Ok { value: 1 } } else { Result::<Int, Int>::Err { error: 2 } };
+    return 42;
+}

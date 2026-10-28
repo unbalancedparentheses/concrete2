@@ -1,0 +1,4 @@
+fn main() -> Int {
+    let a: [u8; 2] = [1, 300];
+    return 42;
+}

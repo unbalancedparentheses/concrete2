@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let c: char = 'a';
+    let d: char = c + c;
+    return 42;
+}

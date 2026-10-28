@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let mut s: Int = 0;
+    for (let mut __destr_i: Int = 0; __destr_i < 42; __destr_i = __destr_i + 1) { s = s + 1; }
+    return s;
+}

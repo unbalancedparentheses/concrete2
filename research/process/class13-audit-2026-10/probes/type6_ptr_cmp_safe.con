@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let x: Int = 1;
+    let p: *const Int = &x as *const Int;
+    let b: bool = p == p;
+    return 42;
+}

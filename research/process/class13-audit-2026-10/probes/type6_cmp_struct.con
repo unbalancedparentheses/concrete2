@@ -1,0 +1,9 @@
+struct S { a: Int }
+fn main() -> Int {
+    let s: S = S { a: 1 };
+    let t: S = S { a: 1 };
+    let b: bool = s == t;
+    let S { a } = s;
+    let S { a: c } = t;
+    return 42;
+}

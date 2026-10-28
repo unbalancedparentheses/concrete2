@@ -1,0 +1,25 @@
+struct Copy P { x: i64, y: i64 }
+fn get(p: &i64) -> i64 { return *p; }
+fn show(p: &i64) with(Console) { println(*p); }
+trusted fn wr(p: *mut i64, v: i64) { *p = v; }
+trusted fn rd(p: *mut i64) -> i64 { return *p; }
+fn rawloop() -> i64 {
+    let mut x: i64 = 1;
+    let mut p: *mut i64 = &mut x as *mut i64;
+    let mut i: i64 = 0;
+    while i < 2 { p = &mut x as *mut i64; i = i + 1; }
+    wr(p, 9);
+    return x;
+}
+fn rawloop2() -> i64 {
+    let mut x: i64 = 1;
+    let mut y: i64 = 0;
+    let mut i: i64 = 0;
+    let mut p: *mut i64 = &mut y as *mut i64;
+    while i < 2 { p = &mut x as *mut i64; i = i + 1; }
+    x = 5;
+    return rd(p);
+}
+fn main() with(Console) {
+    println(rawloop()); println(rawloop2());
+}

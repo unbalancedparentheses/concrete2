@@ -1,0 +1,2 @@
+fn alloc(x: Int) -> Int { return 42; }
+fn main() -> Int { return alloc(1); }

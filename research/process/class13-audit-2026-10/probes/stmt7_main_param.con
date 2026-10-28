@@ -1,0 +1,3 @@
+fn main(x: Int) -> Int {
+    return 42;
+}

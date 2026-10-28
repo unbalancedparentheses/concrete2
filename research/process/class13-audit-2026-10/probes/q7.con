@@ -1,0 +1,9 @@
+fn h(c: bool) -> i64 {
+    let v: i64 = if c { 1 } else { 2 };
+    if v >= 2 { return 1; }
+    return 0;
+}
+fn k(c: bool) -> bool {
+    return (if c { 1 } else { 2 }) >= 2;
+}
+fn main() with(Console) { println(h(true)); if k(true) { println(1); } }

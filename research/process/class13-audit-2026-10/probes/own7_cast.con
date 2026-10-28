@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let x: i32 = 3;
+    x as i64;
+    return 42;
+}

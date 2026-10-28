@@ -1,0 +1,7 @@
+enum E { A { v: Int } }
+fn main() -> Int {
+    let e: E = E::A { v: 42 };
+    match e {
+        E::A { v: __destr_x } => { return __destr_x; },
+    }
+}

@@ -1,0 +1,24 @@
+struct Copy P { x: i64, y: i64 }
+fn addv(r: &mut i64, d: i64) { *r = *r + d; }
+fn get(p: &i64) -> i64 { return *p; }
+fn f(c: bool) -> i64 {
+    let mut s: P = P { x: 1, y: 2 };
+    if c { addv(&mut s.x, 10); }
+    return s.x + s.y;
+}
+fn g(c: bool) -> i64 {
+    let mut s: P = P { x: 1, y: 2 };
+    let mut r: i64 = 0;
+    if c { s.x = 5; r = get(&s.x); }
+    return s.x + r;
+}
+fn h(n: i64) -> i64 {
+    let mut s: P = P { x: 0, y: 0 };
+    let mut i: i64 = 0;
+    while i < n { addv(&mut s.x, i); i = i + 1; }
+    return s.x;
+}
+fn main() with(Console) -> Int {
+    println(f(false)); println(f(true)); println(g(false)); println(g(true)); println(h(5));
+    return 0;
+}

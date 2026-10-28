@@ -1,0 +1,4 @@
+fn main() -> Int {
+    'a: while true { break 'b; }
+    return 42;
+}

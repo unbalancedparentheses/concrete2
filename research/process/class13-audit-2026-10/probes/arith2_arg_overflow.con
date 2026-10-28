@@ -1,0 +1,4 @@
+fn f(x: u8) -> Int { return 42; }
+fn main() -> Int {
+    return f(300);
+}

@@ -1,0 +1,4 @@
+const C: u8 = 300;
+fn main() -> Int {
+    return 42;
+}

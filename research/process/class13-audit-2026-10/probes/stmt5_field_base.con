@@ -1,0 +1,5 @@
+struct S { a: Int }
+fn main() -> Int {
+    let x: Int = (return 42).a;
+    return x;
+}

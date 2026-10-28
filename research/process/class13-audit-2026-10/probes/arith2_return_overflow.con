@@ -1,0 +1,5 @@
+fn f() -> u8 { return 1000; }
+fn main() -> Int {
+    let x: u8 = f();
+    return 42;
+}

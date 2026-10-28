@@ -1,0 +1,4 @@
+fn f(x: Int) -> Int {
+    if x > 0 { return 1; }
+}
+fn main() -> Int { return f(0) + 42; }

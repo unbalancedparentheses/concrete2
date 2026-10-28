@@ -1,0 +1,7 @@
+fn main() -> Int {
+    let x: u8 = 3;
+    match x {
+        0..=300 => { return 42; },
+        _ => { return 1; },
+    }
+}

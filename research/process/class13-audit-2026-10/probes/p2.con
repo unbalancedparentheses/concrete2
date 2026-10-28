@@ -1,0 +1,38 @@
+fn show(p: &i64) with(Console) { println(*p); }
+fn brk(c: i64) -> i64 {
+    let mut n: i64 = 0;
+    let mut i: i64 = 0;
+    while i < 3 {
+        borrow mut n as r in R {
+            *r = *r + 10;
+            if i == c { break; }
+        }
+        i = i + 1;
+    }
+    return n * 100 + i;
+}
+fn cont() -> i64 {
+    let mut n: i64 = 0;
+    let mut i: i64 = 0;
+    while i < 3 {
+        i = i + 1;
+        borrow mut n as r in R {
+            *r = *r + 10;
+            if i == 2 { continue; }
+        }
+    }
+    return n;
+}
+fn ret(c: bool) with(Console) -> i64 {
+    let mut n: i64 = 1;
+    defer show(&n);
+    borrow mut n as r in R {
+        *r = 7;
+        if c { return 5; }
+    }
+    return 0;
+}
+fn main() with(Console) {
+    println(brk(1)); println(brk(9)); println(cont());
+    println(ret(true)); println(ret(false));
+}

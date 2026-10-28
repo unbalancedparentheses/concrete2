@@ -1,0 +1,2 @@
+fn f(x: Self) -> Int { return 42; }
+fn main() -> Int { return 42; }

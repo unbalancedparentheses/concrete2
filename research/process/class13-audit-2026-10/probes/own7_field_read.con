@@ -1,0 +1,7 @@
+struct S { a: Int }
+fn main() -> Int {
+    let s: S = S { a: 1 };
+    s.a;
+    let S { a } = s;
+    return 42 + a * 0;
+}

@@ -1,0 +1,4 @@
+fn main() -> Int {
+    let x: u8 = -1;
+    return 42;
+}

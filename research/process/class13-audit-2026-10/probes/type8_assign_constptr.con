@@ -1,0 +1,6 @@
+fn set(p: *const Int) with(Unsafe) { *p = 42; }
+fn main() with(Unsafe) -> Int {
+    let mut a: Int = 5;
+    set(&mut a as *mut Int as *const Int);
+    return a;
+}

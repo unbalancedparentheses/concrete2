@@ -1,0 +1,4 @@
+fn main() -> Int {
+    let a: [Int; 0] = [];
+    return 42;
+}

@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let a: bool = true;
+    let b: bool = a & false;
+    return 42;
+}

@@ -1,0 +1,5 @@
+fn main() -> Int {
+    let f: f64 = 1.0;
+    let g: f64 = f << 1;
+    return 42;
+}

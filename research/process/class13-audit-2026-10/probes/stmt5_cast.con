@@ -1,0 +1,4 @@
+fn main() -> Int {
+    let x: i64 = (return 42) as i64;
+    return 0;
+}

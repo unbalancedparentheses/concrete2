@@ -1,0 +1,14 @@
+fn f(c: bool) -> i64 {
+    if (if c { 1 } else { 2 }) >= 2 { return 10; }
+    return 0;
+}
+fn g(c: bool) -> i64 {
+    let mut y: i64 = 1;
+    if (if c { 1 } else { y = 3; y }) >= 2 { return 10; }
+    return 0;
+}
+fn h(c: bool) -> bool {
+    let b: bool = (if c { 1 } else { 2 }) >= 2;
+    return b;
+}
+fn main() with(Console) { println(f(true)); println(f(false)); println(g(false)); }

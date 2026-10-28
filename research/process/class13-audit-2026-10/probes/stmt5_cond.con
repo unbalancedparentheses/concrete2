@@ -1,0 +1,9 @@
+fn f(x: Int) -> Int { return x; }
+fn main() -> Int {
+    let mut i: Int = 0;
+    while i < 3 {
+        let y: Int = f(if i == 1 { break; } else { 1 });
+        i = i + y;
+    }
+    return 42;
+}

@@ -1,0 +1,4 @@
+fn main() -> Int {
+    let a: Int = 5;
+    return a[0];
+}

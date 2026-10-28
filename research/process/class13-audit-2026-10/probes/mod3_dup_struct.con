@@ -1,0 +1,3 @@
+struct S { a: Int }
+struct S { b: Int }
+fn main() -> Int { return 42; }

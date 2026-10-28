@@ -1,0 +1,6 @@
+fn set(r: &Int) { *r = 42; }
+fn main() -> Int {
+    let a: Int = 5;
+    set(&a);
+    return a;
+}

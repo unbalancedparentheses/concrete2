@@ -1,0 +1,12 @@
+fn f(c: bool) -> i64 {
+    let mut x: i64 = 1;
+    let r: i64 = if c {
+        2
+    } else {
+        for (let mut k: i64 = 0; k < 3; k = k + 1) { x = x + 1; }
+        5
+    };
+    for (let mut j: i64 = 0; j < 2; j = j + 1) { x = x + j; }
+    return x + r;
+}
+fn main() with(Console) { println(f(true)); println(f(false)); }

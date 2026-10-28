@@ -1,0 +1,2 @@
+fn f(__destr_x: Int) -> Int { return __destr_x; }
+fn main() -> Int { return f(42); }
