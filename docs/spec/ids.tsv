@@ -404,3 +404,7 @@ SYN-1/head-constant-struct-literal	live	-
 SYN-1/head-constant-parenthesized	live	-
 STMT-7/generic-main	live	-
 SYN-3/destructuring-binder	live	-
+MOD-5@1	live	2737172e13d9cb18f254d24c063115ca
+MOD-5/duplicate-variant	live	-
+MOD-5/duplicate-method	live	-
+MOD-5/distinct-members	live	-
