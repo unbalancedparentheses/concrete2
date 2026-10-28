@@ -1,0 +1,12 @@
+[piece 1 of 4: tests]
+- scripts/tests/run_tests.sh:2538: The new E0124 rejection test encodes the one-module-per-file side of OD9, which remains proposed in ROADMAP.md. The owner-decision restriction explicitly includes new tests and fixtures, even for existing compiler behaviour; this pin must wait for the owner’s explicit answer.
+[piece 2 of 4: scripts]
+- scripts/spec/spec.py:1117: Coverage is keyed only by diagnostic code, so a witness for one rule covers every rule sharing that code. For example, E0236 covers REF-1, REF-2 and REF-4 regardless of which rule actually rejected the program. Removing one rule’s enforcement can therefore leave S12 green, contradicting its claim to check that each rule’s enforcing site is load-bearing.
+- scripts/spec/spec.py:1096: The compiler’s return code is ignored. A compiler that prints a diagnostic but exits successfully—or crashes after printing it—is counted as refusing the program. Require a normal, nonzero exit before recording rejection witnesses.
+- scripts/spec/spec.py:1079: Substring searches over runner text do not establish that a gate runs a fixture. Commenting out its invocation leaves it eligible, and basename matches can select an unrelated file in another directory. Consequently, S12 accepts witnesses that do not meet its documented gate-membership requirement.
+[piece 3 of 4: docs]
+- docs/spec/README.md:264: S12 does not establish that an enforcing site is load-bearing. `check_code_coverage` looks up witnesses solely by diagnostic code, ignoring the rule, stage and declaration. For example, an E0238 witness for REF-5 also satisfies REF-7 even if REF-7’s enforcement disappears. The documented guarantee requires site-specific checks or mutation testing.
+[piece 4 of 4: docs]
+- docs/spec/syntax.md:17: The keyword list incorrectly classifies `ghost` as reserved and omits `cap`. `Lexer.lookupKeyword` recognizes `cap`, while `ghost` remains an identifier that the parser treats contextually before `let`.
+- docs/spec/syntax.md:25: `assert` has no runtime effect either. `Concrete/Elab/Elab.lean` elaborates it into proof evidence with an empty runtime statement list, so this exception incorrectly implies that assertions execute.
+- docs/spec/types.md:869: The new rationale builds on checked arithmetic as settled language policy, taking a side on OD10. ROADMAP still marks OD10 proposed and explicitly prohibits documents from building on an unresolved owner decision as settled; this requires the owner’s answer before landing.
