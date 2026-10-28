@@ -1,6 +1,7 @@
 # branch	bug	head	state (updated 2026-10-28)
-wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY TO LAND: Codex clean, Kimi clean, OVH gates green, CI 40714251471 success
-wip/bug-311	311 TYPE-11 sibling destructure (E0298)	660b5fef	BLOCKED: Codex (2 rounds) holds that reusing structIsLocal extends OD21's parent exemption into the destructuring path; Kimi clean; gates green. Needs the owner/coordinator call on OD21 (any implementation must accept or refuse the parent case). 312 and 313 no longer depend on it.
-wip/bug-312	312 SYN-3 destructuring binders (E0283)	9f4a1f3d	rebased onto bug-310 alone; Codex was clean on the earlier stack; final-head Codex+Kimi and gates running
-wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	8934e640	on bug-312; Codex clean (round with OD6 answer), Kimi findings fixed; final-head reviews and gates running
-wip/spec	S12, S13, OPEN-1..22, 6 docs absorbed	0d5173e9	Codex round 2 findings fixed (gate membership now structural); Kimi running
+wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY: Codex clean, Kimi clean, OVH gates green, CI 40714251471 success
+wip/bug-311	311 TYPE-11 sibling destructure (E0298)	660b5fef	BLOCKED on OD21: Codex (2 rounds) holds that sharing structIsLocal extends the parent exemption into a new path; Kimi clean; gates green. Needs the owner's call.
+wip/bug-312	312 SYN-3 destructuring binders (E0283)	9f4a1f3d	on bug-310 (not 311): Codex clean, Kimi clean, OVH full gates green; CI 40727025466
+wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	8934e640	on bug-312: Codex clean, Kimi clean, OVH full gates green; CI 40727030713
+wip/bug-314	314 for loop whose body always breaks: E0703 natively (Lower)	fdb2bbae	on main: Codex clean (2 rounds), Kimi clean, OVH full suite, SSA, examples, golden green; CI 40731064688
+wip/spec	S12 witness gate, S13 docs/language gate, open kind with OPEN-1..22, 9 docs/language files absorbed	c6d25fb7	Codex clean (round 4), Kimi clean (round 3); check_spec PASS=292 FAIL=0 on OVH; S12 0 missing over 2120 programs; CI 40731496013

@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let mut i: Int = 0;
+    let z: Int = 0;
+    while i < 3 { i = i + 1; break 1 / z; }
+    return 42;
+}

@@ -1,0 +1,4 @@
+fn main() -> Int {
+    for (let mut i: Int = 0; i < 3; i = i + 1) { break true; }
+    return 42;
+}

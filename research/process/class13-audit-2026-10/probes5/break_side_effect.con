@@ -1,0 +1,7 @@
+fn f(r: &mut Int) -> Int { *r = 7; return 1; }
+fn main() -> Int {
+    let mut x: Int = 0;
+    let mut i: Int = 0;
+    while i < 3 { i = i + 1; break f(&mut x); }
+    return 35 + x;
+}

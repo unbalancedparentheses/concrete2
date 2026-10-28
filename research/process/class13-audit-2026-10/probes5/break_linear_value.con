@@ -1,0 +1,7 @@
+struct R { a: Int }
+fn mk() -> R { return R { a: 1 }; }
+fn main() -> Int {
+    let mut i: Int = 0;
+    while i < 3 { i = i + 1; break mk(); }
+    return 42;
+}
