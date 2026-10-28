@@ -1,6 +1,6 @@
 # branch	bug	head	state (updated 2026-10-28)
-wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY TO LAND: Codex clean (round 1), Kimi clean; OVH gates green; CI run 40714251471 in progress (all finished jobs green)
-wip/bug-311	311 TYPE-11 sibling destructure (E0298)	17ff9114+	stacked on 310; gates green; Codex round 1 raised OD21 (answered: shares field-read test, parent outcome unchanged); round 2 pending
-wip/bug-312	312 SYN-3 destructuring binders (E0283)	dce4b959	stacked on 311; gates green; Codex clean round 1; Kimi pending
-wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	ca12373a+	stacked on 312; Codex round 1 raised OD6 (answered in record); round 2 pending
-wip/spec	S12 witness gate, S13 docs/language gate, OPEN-1..22, absorbed VALUE_FLOW_SPEC GRAMMAR MACRO_STANCE TUPLES UNITS_OF_MEASURE	81b1fc77	slices pushed; Codex+Kimi review pending
+wip/bug-310	310 STMT-7 generic main (E0310)	61c95d88	READY TO LAND: Codex clean, Kimi clean, OVH gates green, CI 40714251471 success
+wip/bug-311	311 TYPE-11 sibling destructure (E0298)	660b5fef	BLOCKED: Codex (2 rounds) holds that reusing structIsLocal extends OD21's parent exemption into the destructuring path; Kimi clean; gates green. Needs the owner/coordinator call on OD21 (any implementation must accept or refuse the parent case). 312 and 313 no longer depend on it.
+wip/bug-312	312 SYN-3 destructuring binders (E0283)	9f4a1f3d	rebased onto bug-310 alone; Codex was clean on the earlier stack; final-head Codex+Kimi and gates running
+wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	8934e640	on bug-312; Codex clean (round with OD6 answer), Kimi findings fixed; final-head reviews and gates running
+wip/spec	S12, S13, OPEN-1..22, 6 docs absorbed	0d5173e9	Codex round 2 findings fixed (gate membership now structural); Kimi running
