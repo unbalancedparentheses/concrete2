@@ -654,6 +654,10 @@ inductive CheckError where
   -- `main` read an undefined register. `fn main() -> Int` is the entry signature
   -- (MAIN_EXIT_MODEL.md, 2026-10-21); arguments come from `std.args`.
   | mainHasParams (count : Nat)
+  -- STMT-7: `main` is the entry point `fn main()`, so it declares no type or capability
+  -- parameters either. A generic `main` was never instantiated: the native build lost its
+  -- entry point (a `link` error naming no rule) while `--interp` ran the generic body.
+  | mainIsGeneric (what : String)
   -- Slices 7-9: Module-level validation (Copy/Destroy, repr, FFI, traits) moved to CoreCheck
 
 def CheckError.message : CheckError → String
@@ -798,6 +802,7 @@ def CheckError.message : CheckError → String
   | .refStoredInAggregate desc tyName => s!"{desc} stores a reference in an aggregate ('{tyName}'); references are second-class and may not be stored in a struct, enum, array or generic container"
   | .guardMovesLinear name => s!"match guard moves non-Copy value '{name}'; a guard is read-only (a false guard falls through to a later arm, which would see '{name}' already moved)"
   | .mainHasParams n => s!"`main` declares {n} parameter(s), but the program entry point takes none (`fn main() -> Int`): the generated entry wrapper calls it with no arguments"
+  | .mainIsGeneric what => s!"`main` declares {what}, but the program entry point is `fn main()`: nothing instantiates a generic entry point"
   | .conflictingCallBorrows name _ => s!"'{name}' is borrowed more than once in the same call with at least one `&mut` — the borrows would alias one object with exclusivity"
   | .intLiteralOutOfRange value tyName lo hi =>
     s!"integer literal {value} is out of range for type '{tyName}' ({lo}..={hi})"
@@ -809,6 +814,7 @@ def CheckError.hint : CheckError → Option String
   | .shadowsLiveLinear name => some s!"consume '{name}' before re-binding the name, or use a different name"
   | .refStoredInAggregate _ _ => some "pass the reference down as a function argument, store an owned value or a raw pointer (trusted), or use a scoped callback (docs/language/VALUE_MODEL.md)"
   | .guardMovesLinear name => some s!"borrow '{name}' in the guard (`&{name}`), or move it inside the arm body"
+  | .mainIsGeneric _ => some "declare `fn main() -> Int` and call a generic function from it at the types you need"
   | .mainHasParams _ => some "read command-line arguments through `std.args` (`import std.args.{count, get};`, which need `with(Env)`) and declare `fn main() -> Int`"
   | .conflictingCallBorrows _ _ => some "pass one borrow, or restructure so the exclusive access happens in its own statement"
   | .variableUsedAfterMove _ => some "consider cloning or restructuring to avoid the move"
@@ -982,6 +988,7 @@ def CheckError.code : CheckError → String
   | .fieldAccessPrivate _ _ => "E0298"
   | .guardMovesLinear _ => "E0300"
   | .mainHasParams _ => "E0310"
+  | .mainIsGeneric _ => "E0310"
   | .patternFieldMismatch _ _ => "E0304"
   | .shadowsVisibleBinding _ _ => "E0301"
   | .letBindsReference _ _ => "E0302"
