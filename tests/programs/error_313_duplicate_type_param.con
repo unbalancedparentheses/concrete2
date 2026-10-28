@@ -1,0 +1,7 @@
+// Bug 313 (MOD-5): two type parameters of one name were accepted (E0324).
+fn f<T, T>(x: T) -> T {
+    return x;
+}
+fn main() -> Int {
+    return f(42);
+}
