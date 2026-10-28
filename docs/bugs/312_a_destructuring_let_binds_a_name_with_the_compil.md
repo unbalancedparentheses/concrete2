@@ -9,6 +9,8 @@ summary: a destructuring let binds a name with the compiler's __destr_ prefix (S
 coverage: reproducer tests/regressions/bug312_a_destructuring_let_binds_a_name_with_the_compil/repro.con, pinned by run_tests.sh (`run_err` legs for the reproducer and `error_312_enum_destructure_reserved_binder.con`) and check_spec.sh S4 (`SYN-3/destructuring-binder`)
 class: 13
 silent: yes
+exit: 0b
+area: Check — the fix is in Concrete/Check (Check.lean, CheckError.lean); the fix commit's line weight is mostly run_tests.sh fixtures
 -->
 
 ## Reproducer
@@ -36,9 +38,11 @@ bugs 310 and 311 and the duplicate-member gap.
 
 ## Structural owner
 
-R-0492 (one binder identity, so compiler temporaries are not recognized by spelling and no
-check needs a spelling exemption). Until then one function, `refuseReservedLetBinder`, is the rule's
-enforcing declaration and every `let` form calls it on each binder; check_spec.sh S12
+R-0499 (S8: the Core checker as the one judgment, where every binder a `let` form introduces is
+one binder node), with R-0492 (one binder identity, so compiler temporaries are not recognized by
+spelling and Verify needs no spelling exemption) removing the reason the prefix is reserved at all.
+Until then one function, `refuseReservedLetBinder`, is the rule's enforcing declaration and every
+`let` form calls it on each binder; check_spec.sh S12
 (`wip/spec-code-coverage`) asks for a negative witness per rule code.
 
 ## Containment while open
