@@ -60,8 +60,9 @@ if [ -n "$XBASE$XHEAD" ]; then
 elif [ -n "$FILES" ]; then
   [ -f "$FILES" ] || { echo "select_gates: no such file $FILES" >&2; exit 2; }
   sed '/^$/d; /^#/d' "$FILES" | LC_ALL=C sort -u > "$TMPD/changed"
-  # The base a workflow edit is compared against (which commands it added or re-spelled):
-  # SELECT_GATES_BASE, else where HEAD left origin/main. With neither, a workflow edit selects all.
+  # The base a gate-manifest or workflow edit is compared against (which commands it added or
+  # re-spelled, read off the base's scripts/tests/gates.tsv): SELECT_GATES_BASE, else where HEAD left
+  # origin/main. With neither, or a base with no manifest, such an edit selects all.
   MB="${SELECT_GATES_BASE:-$(git merge-base origin/main HEAD 2>/dev/null || true)}"
 else
   BASE="${BASE:-origin/main}"

@@ -153,6 +153,9 @@ if SELECT_GATES_BASE=HEAD select_fixture wfhead "$TMPD/wf.paths"; then
   n="$(count wfhead)"
   if [ "$n" -lt "$NINV" ]; then ok "a workflow edit compared with a base selects only what reads it or changed ($n)"
   else no "a workflow edit compared with HEAD still selects every gate"; fi
+  # A workflow-only edit that re-spells a command leaves the manifest (the runner's list) behind; the
+  # registration gate refuses that disagreement, so every workflow edit must select it.
+  must wfhead check_gate_registration.sh
 fi
 
 echo "=== indirect inputs (each one an under-selection found in review) ==="

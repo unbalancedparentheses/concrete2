@@ -4,8 +4,9 @@
 # This exists because eight R-0004 gates — the replay producer, receipt issuance and consumption,
 # the V2 migration plan, clean-checkout reproducibility, build identity, the Slice 8 adversarial
 # suite, the attestation manifest — were written, passed when run by hand, and were absent from
-# `.github/workflows/lean_action_ci.yml`. That file is where `run_ci_gates_local.sh` derives its
-# gate list, so nothing ever ran them again: not on the next commit, not for anyone else. A fully
+# `.github/workflows/lean_action_ci.yml`. That file was where `run_ci_gates_local.sh` derived its
+# gate list (it now reads scripts/tests/gates.tsv, which this gate keeps equal to the workflow's
+# commands), so nothing ever ran them again: not on the next commit, not for anyone else. A fully
 # green local pass certified the entire evidence path while executing none of it.
 #
 # ABSENCE IS QUIETER THAN FAILURE, which is the whole problem. A failing gate is loud and gets
@@ -200,22 +201,24 @@ fi
 echo "=== the workflow's gate commands are exactly the manifest's step rows ==="
 # THE EXTRACTION, KEPT AS THE CROSS-CHECK. run_ci_gates_local.sh used to regex-extract its list from
 # the workflow text; it now reads the manifest. This is that extractor, run against the whole
-# workflow: every command it finds must be a via=step row and every via=step row must be found, so a
-# workflow step added without a row (which the local run would silently skip) or a row whose step
-# was removed is a failure. The excluded spellings are the via=ci-only rows: CI-only by design.
+# workflow: every command it finds must be a via=step or via=ci-only row and every such row must be
+# found, so a workflow step added without a row (which the local run would silently skip) or a row
+# whose step was removed is a failure. Only the workflow's non-gate helpers are left out (the lake
+# seeder under scripts/dev/ and the mutation-shard aggregator under scripts/tests/lib/); the CI-only
+# gate runs are compared too, as via=ci-only rows, so a new mode of one cannot slip in unlisted.
 #
 # Strip any trailing REDIRECTION from the extracted command. The character class stops at `&`, so a
 # workflow line ending `... --trust-gate 2>&1 | tee /tmp/trust-gate.log` was captured as
 # `... --trust-gate 2>` — a redirect with no target, which the runner then failed to parse.
 _extract_cmds() { # workflow text file -> gate commands, raw spelling, LC_ALL=C sorted unique
   grep -oE '([A-Z_][A-Z0-9_]*=[^ ;|&]+[[:space:]]+)*((bash|python3|sh)[[:space:]]+)?(\./)?scripts/[^ ;|&]*\.(sh|py)[^;|&]*' "$1" \
-    | grep -v -E 'check_gate_mutation_coverage\.sh|aggregate_mutation_shards\.py|scripts/dev/seed-lake\.sh|check_checker_pin_freshness\.sh --tier campaign' \
+    | grep -v -E '(^|[[:space:]/])scripts/(dev|tests/lib)/' \
     | sed 's/[[:space:]][0-9]*[<>].*$//' \
     | sed 's/[[:space:]]*$//' \
     | LC_ALL=C sort -u
 }
-_manifest_step_cmds() { # manifest -> the cmd of every via=step row, LC_ALL=C sorted unique
-  awk -F'\t' '/^#/ || $1 == "id" { next } NF == 15 && $5 == "step" { print $2 }' "$1" | LC_ALL=C sort -u
+_manifest_step_cmds() { # manifest -> the cmd of every via=step and via=ci-only row, LC_ALL=C sorted unique
+  awk -F'\t' '/^#/ || $1 == "id" { next } NF == 15 && ($5 == "step" || $5 ~ /^ci-only:/) { print $2 }' "$1" | LC_ALL=C sort -u
 }
 _wf_vs_manifest() { # workflow manifest -> diff lines (< workflow only, > manifest only); empty = agree
   diff <(_extract_cmds "$1") <(_manifest_step_cmds "$2") | grep -E '^[<>]' || true
@@ -223,9 +226,9 @@ _wf_vs_manifest() { # workflow manifest -> diff lines (< workflow only, > manife
 wf_diff="$(_wf_vs_manifest "$WORKFLOW" "$MANIFEST")"
 n_wf="$(_extract_cmds "$WORKFLOW" | grep -c . || true)"
 if [ -z "$wf_diff" ] && [ "$n_wf" -ge 100 ]; then
-  ok "the workflow's $n_wf extracted gate commands are exactly the manifest's via=step rows"
+  ok "the workflow's $n_wf extracted gate commands are exactly the manifest's via=step and via=ci-only rows"
 else
-  no "the workflow's gate commands ($n_wf) and the manifest's via=step rows differ (< workflow only, > manifest only):"
+  no "the workflow's gate commands ($n_wf) and the manifest's step/ci-only rows differ (< workflow only, > manifest only):"
   printf '       %s\n' "$wf_diff" | head -20
 fi
 printf '      - name: Planted\n        run: bash scripts/tests/check_planted_unlisted_step.sh\n' \
@@ -233,6 +236,12 @@ printf '      - name: Planted\n        run: bash scripts/tests/check_planted_unl
 case "$(_wf_vs_manifest "$PLANT_DIR/wf.yml" "$MANIFEST")" in
   *"< bash scripts/tests/check_planted_unlisted_step.sh"*) ok "CONTROL: a workflow step whose command has no manifest row is reported" ;;
   *) no "CONTROL: a workflow step with no manifest row passed the cross-check — the local run would skip it silently" ;;
+esac
+printf '      - name: Planted\n        run: bash scripts/tests/check_gate_mutation_coverage.sh --planted-mode\n' \
+  | cat "$WORKFLOW" - > "$PLANT_DIR/wf.yml"
+case "$(_wf_vs_manifest "$PLANT_DIR/wf.yml" "$MANIFEST")" in
+  *"< bash scripts/tests/check_gate_mutation_coverage.sh --planted-mode"*) ok "CONTROL: a new mode of a CI-only gate with no manifest row is reported" ;;
+  *) no "CONTROL: an unlisted CI-only gate invocation passed the cross-check" ;;
 esac
 grep -vF 'run: bash scripts/tests/check_gate_lock.sh' "$WORKFLOW" > "$PLANT_DIR/wf.yml"
 case "$(_wf_vs_manifest "$PLANT_DIR/wf.yml" "$MANIFEST")" in

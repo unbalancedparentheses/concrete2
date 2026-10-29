@@ -473,7 +473,7 @@ def main():
     ap.add_argument("--changed")
     ap.add_argument("--explain", action="store_true")
     ap.add_argument("--durations")
-    ap.add_argument("--base", help="commit the change is measured from (for workflow edits)")
+    ap.add_argument("--base", help="commit the change is measured from (for gate-manifest and workflow edits)")
     a = ap.parse_args()
     inventory = [l.rstrip("\n") for l in open(a.inventory) if l.strip()]
     src = open(a.changed) if a.changed else sys.stdin

@@ -792,8 +792,9 @@ while IFS= read -r h; do
   [ -n "${TMP_OK[$f:$t]:-}" ] && continue
   TMPHITS="$TMPHITS $h"
 done < <(fixed_tmp_scan "${TMPSCAN[@]}")
-# The workflow's gate commands are extracted and run by run_ci_gates_local.sh, so an env prefix that
-# names a fixed /tmp path there (EXAMPLES_OUT_DIR=/tmp/... was one) is shared the same way.
+# The workflow's gate commands are run by run_ci_gates_local.sh (as the manifest rows that mirror
+# them), so an env prefix that names a fixed /tmp path there (EXAMPLES_OUT_DIR=/tmp/... was one) is
+# shared the same way.
 while IFS= read -r h; do
   [ -n "$h" ] && TMPHITS="$TMPHITS lean_action_ci.yml:${h#*:}"
 done < <(grep -nE '^[[:space:]]*(- )?run:.*scripts/.*\.(sh|py)' "$ROOT_DIR/.github/workflows/lean_action_ci.yml" \

@@ -10,13 +10,14 @@
 # one thing the re-run added that the standalone step does not already establish — that the gate IS
 # a standalone step, so dropping or disabling that step turns the umbrella red instead of silently
 # removing the coverage. The gate's own assertions then run exactly once: in its step on CI, and as
-# its extracted command in run_ci_gates_local.sh.
+# its manifest row's command in run_ci_gates_local.sh.
 #
 # "Runs as its own unconditional CI step" means: some step's one-line `run:` IS the invocation of
 # `scripts/tests/<name>` (optional VAR= prefixes, bash/python3/sh or ./, plain arguments; no pipeline,
 # list or substitution), the step has no `if:` other than exactly `always()` and no
 # `continue-on-error`, and its job has no job-level `if:` (the scheduled-only jobs have one). The
-# workflow is read as text with the indentation conventions run_ci_gates_local.sh's extractor uses.
+# workflow is read as text with the indentation conventions the workflow's gate-command extraction
+# (check_gate_registration.sh) uses.
 
 _DELEGATED_WF="${DELEGATED_GATES_WORKFLOW:-.github/workflows/lean_action_ci.yml}"
 

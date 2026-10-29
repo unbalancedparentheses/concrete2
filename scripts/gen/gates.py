@@ -47,8 +47,8 @@ AREA_MAP = "docs/bugs/area_map.tsv"
 MAKEFILE = "Makefile"
 MK = "mk/gates.mk"
 MK_INCLUDE = "include mk/gates.mk"
-# Workflow block markers. They name no scripts/... .sh/.py path: run_ci_gates_local.sh extracts gate
-# commands from the whole workflow text, comments included.
+# Workflow block markers. They name no scripts/... .sh/.py path: check_gate_registration.sh extracts
+# gate commands from the whole workflow text, comments included, to compare with the manifest.
 BEGIN_RE = re.compile(r"^( *)# BEGIN GENERATED: gates ([a-z0-9-]+) from ([a-z0-9-]+) \(.*\)$")
 END_RE = re.compile(r"^ *# END GENERATED: gates ([a-z0-9-]+)$")
 
