@@ -1,0 +1,2 @@
+[piece 1 of 1: tests]
+- scripts/tests/check_roadmap_coverage.sh:394: `endswith(n2)` lacks a name boundary, so appending `NotV1c also waits for exit 2q` to row 3 is incorrectly accepted as a declaration about `V1c`. Previously this reported an unknown deliverable. Require a boundary before the complete name to preserve that validation.
