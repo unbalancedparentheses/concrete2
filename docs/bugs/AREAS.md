@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-280 records: 170 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 6 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+290 records: 170 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 11 by the commit that filed or closed the record, 23 by an `area:` override; 15 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -27,9 +27,9 @@ checker refusal is a Check bug here.
 | Parse | 11 | 0 | 3 | 0 | Parser 7, Lexer 2, AST 1, LocalId 1 |
 | EmitSSA | 10 | 0 | 1 | 3 | EmitSSA 10 |
 | Mono | 8 | 0 | 1 | 0 | Mono 7, - 1 |
+| Report | 8 | 2 | 3 | 1 | Report 3, AssumptionSummary 2, ModelDiff 2, ReportObligations 1 |
 | Std | 8 | 0 | 0 | 0 | map 4, fs 2, libc 1, net 1 |
 | EmitLLVM | 7 | 0 | 3 | 4 | EmitBuiltins 5, EmitLLVM 1, Symbols 1 |
-| Report | 7 | 1 | 3 | 0 | AssumptionSummary 2, ModelDiff 2, Report 2, ReportObligations 1 |
 | CLI | 6 | 0 | 2 | 1 | Main 4, Pipeline 1, PipelineTest 1 |
 | Tooling | 6 | 0 | 1 | 1 | Makefile 1, dispatch 1, farm 1, new_bug 1 |
 | Gates | 6 | 0 | 0 | 0 | authority_facts 1, check_binder_refs 1, check_gate_lock 1, compile_scaling 1 |
@@ -51,7 +51,7 @@ checker refusal is a Check bug here.
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
 | 11. Absence read as a fact (fail-open defaults) | 13 | Gates 4, Resolve 2, Proof 2, Report 2, Check 1, SSA 1, Tooling 1 |
 | 12. One fact kept in two places | 27 | Resolve 11, Check 5, Elab 3, Parse 2, Interp 2, Proof 1, Std 1, CLI 1, Tooling 1 |
-| 13. Documented rules with no enforcing site | 18 | Check 11, Resolve 4, Parse 1, Elab 1, Lower 1 |
+| 13. Documented rules with no enforcing site | 19 | Check 11, Resolve 4, Parse 1, Elab 1, Lower 1, Report 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
 | 15. Ownership state not modeled along control-flow paths | 7 | Check 7 |
 | 16. Artifacts at paths no run owns | 5 | Tooling 2, Std 1, CLI 1, Gates 1 |
@@ -343,6 +343,16 @@ checker refusal is a Check bug here.
 | [308](308_a_value_if_or_match_passed_to_a_generic_paramete.md) | Resolve | PeekType | commits | — |
 | [309](309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md) | Lower | Lower | commits | — |
 | [315](315_the_scaling_gate_judged_wall_time_growth_on_a_ho.md) | Gates | compile_scaling | commits | — |
-| [318](318_a_struct_literal_in_an_if_while_or_match_head_is.md) | — | — | unfixed | — |
+| [318](318_a_struct_literal_in_an_if_while_or_match_head_is.md) | Report | Report | record | Check |
+| [319](319_a_call_that_re_lends_a_mut_binding_is_not_overla.md) | — | — | unfixed | — |
+| [320](320_main_may_return_int_or_bool_the_native_exit_stat.md) | — | — | unfixed | — |
+| [321](321_a_bare_variant_name_ignores_a_payload_and_a_stru.md) | — | — | unfixed | — |
+| [322](322_trusted_code_compares_raw_pointers_with_and_the.md) | — | — | unfixed | — |
+| [323](323_break_with_a_value_is_accepted_inside_a_while_or.md) | — | — | unfixed | — |
+| [324](324_a_copy_type_or_an_array_satisfies_a_destroy_boun.md) | — | — | unfixed | — |
+| [325](325_a_call_statement_whose_result_is_not_unit_discar.md) | — | — | unfixed | — |
+| [326](326_a_field_access_opens_a_heap_or_heaparray_implici.md) | — | — | unfixed | — |
+| [327](327_an_integer_or_float_literal_with_no_expected_typ.md) | — | — | unfixed | — |
+| [328](328_a_method_taking_self_or_mut_self_is_called_on_an.md) | — | — | unfixed | — |
 
 <!-- END GENERATED: bug areas -->
