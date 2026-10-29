@@ -10,7 +10,7 @@ are deferred until a workload needs them; one level of destructuring plus a fiel
 inner `match` expresses the same programs ([No nested patterns](#no-nested-patterns),
 `check_nested_patterns.sh`). **Tuples** do not exist; the named struct is the one product type
 ([types.md, "No anonymous tuples"](types.md#no-anonymous-tuples), `check_no_tuples.sh`). The design records are
-[PATTERN_ERGONOMICS.md](../language/PATTERN_ERGONOMICS.md) and
+[PATTERN_ERGONOMICS.md](../archive/design-records/PATTERN_ERGONOMICS.md) and
 [PATTERN_DESTRUCTURING.md](../language/PATTERN_DESTRUCTURING.md).
 
 ## Rules
@@ -300,6 +300,14 @@ skipped the rest of the function, or reached the backend, which failed in `llvm-
 `return` is STMT-9. Over a non-Copy enum the
 `else` arm would discard the scrutinee, so `let ... else` there is refused (OWN-5); write a
 `match`.
+
+A field binding written `_` in a variant or destructuring pattern holds its field's position, so
+the other binders still bind the right fields, but it adds no name (reading `_` is E0100) and its
+field is not loaded; it may ignore only a Copy field (OWN-5). The pattern forms of ROADMAP old
+Phase 6 #5 (ranges, `if let` and `while let`, guards, alternatives, matching through a reference,
+functional update, `_` binders) are gated by `scripts/tests/check_pattern_ergonomics.sh`; their
+implementation history is the archived
+[PATTERN_ERGONOMICS.md](../archive/design-records/PATTERN_ERGONOMICS.md).
 
 ```con reject name=struct-field-missing code=E0252 stage=check pair=destructure-all
 struct P { a: Int, b: Int }
