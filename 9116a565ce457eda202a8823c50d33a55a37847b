@@ -1,0 +1,2 @@
+[piece 2 of 2: docs]
+- docs/bugs/AREAS.md:260: The patch encodes sides of owner decisions by changing bug 189 from `open OPEN-22` to `violates TRUST-5@2`, and similarly settles OD16 and OD17 at lines 282 and 286. These classifications make per-method trust, parenthesized head literals, and mutable field bindings normative. Although ROADMAP records owner answers, this answers the requested owner-decision check **yes**; under your stated landing restriction, the patch must not land.
