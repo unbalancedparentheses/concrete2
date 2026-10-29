@@ -105,7 +105,7 @@ check-perf-tracking	bash scripts/tests/check_perf_tracking.sh	grammar	Perf-track
 check-leanprof-profile	bash scripts/tests/check_leanprof_profile.sh	grammar	Compiler-profile harness (finding on a planted hot spot, none on noise)	step	-	-	Compiler-profile gate (scripts/perf/leanprof_profile.sh, R-0551).	pr	-	-	gates	n	y	-
 check-grammar-ll1	bash scripts/tests/check_grammar_ll1.sh	grammar	LL(1) grammar (three independent checkers agree)	step	Parse	-	The grammar is LL(1), and three independent checkers agree on why.	pr	-	-	gates	n	y	-
 run-tests	./scripts/tests/run_tests.sh	main-tests	Run main test suite	step	-	-	COMPLETION IS ASSERTED, NOT INFERRED FROM OUTPUT.	pr	-	-	gates	y	n	-
-test-golden	bash ./scripts/tests/test_golden.sh	main-tests	Run golden tests (--emit-core / --emit-ssa / --fmt baselines)	step	-	-	Golden baselines for --emit-core, --emit-ssa, --fmt	pr	-	test-golden	gates	y	n	-
+test-golden	bash ./scripts/tests/test_golden.sh	main-tests	Run golden tests (--emit-core / --emit-ssa / --fmt baselines)	step	-	-	Golden baselines for --emit-core, --emit-ssa, --fmt	pr	-	test-golden	gates	y	y	-
 run-tests-macos	./scripts/tests/run_tests.sh	macos	Run main test suite	step	-	-	COMPLETION IS ASSERTED, NOT INFERRED FROM OUTPUT.	pr	-	-	gates	n	n	-
 proof-gate	bash scripts/ci/proof_gate.sh	proof-replay	Run proof evidence gate (Lean kernel theorem checking)	step	Proof	-	Proof Evidence Gate	campaign	-	-	gates	n	y	-
 check-smt-replay	bash scripts/tests/check_smt_replay.sh	proof-replay	Lean-replay gate (SMT -> kernel upgrade artifact)	step	Proof	-	Lean-replay gate (SMT -> kernel upgrade artifact)	campaign	-	test-smt-replay	gates	y	y	-

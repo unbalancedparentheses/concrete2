@@ -310,8 +310,10 @@ jobs:
           done
           exit 1
 
+      # BEGIN GENERATED: gates main-tests from test-golden (scripts/tests/gates.tsv; gates.py --write)
       - name: Run golden tests (--emit-core / --emit-ssa / --fmt baselines)
         run: bash ./scripts/tests/test_golden.sh
+      # END GENERATED: gates main-tests
 
   macos:
     name: Build + main tests (macOS)
