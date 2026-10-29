@@ -199,55 +199,55 @@ test-proof-patterns: build ## Proof-patterns corpus gate
 	$(NIX_DEVELOP) bash ./scripts/tests/check_proof_patterns.sh
 
 test-one-producer: ## One producer per fact: formula copies and unregistered consumers (grep-only, ~1s)
-	$(NIX_DEVELOP) bash scripts/tests/check_one_producer.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_one_producer.sh
 
 test-attestation-manifest: build ## Attestation manifest: table -> attested subject, on the real corpus
-	$(NIX_DEVELOP) bash scripts/tests/check_attestation_manifest.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_attestation_manifest.sh
 
 test-coverage-baseline: build ## R-0004 package 3: eligibility-denominated coverage, every disposition named
-	$(NIX_DEVELOP) bash scripts/tests/check_coverage_baseline.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_coverage_baseline.sh
 
 test-replay-producer: build ## R-0004 package 3: kernel replay is one typed producer whose failures are values
-	$(NIX_DEVELOP) bash scripts/tests/check_replay_producer.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_replay_producer.sh
 
 test-receipt-issuance: build ## R-0004 package 3: production receipt issuance follows the composed authority verdict
-	$(NIX_DEVELOP) bash scripts/tests/check_receipt_issuance.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_receipt_issuance.sh
 
 test-receipt-consumption: build ## R-0004 package 3: a stored receipt is untrusted input, re-checked against fresh facts
-	$(NIX_DEVELOP) bash scripts/tests/check_receipt_consumption.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_receipt_consumption.sh
 
 test-checker-identity: build ## R-0208 slice 1a: receipts bind the checker that actually ran (loaded images), not lean-toolchain text
-	$(NIX_DEVELOP) bash scripts/tests/check_checker_identity.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_checker_identity.sh
 
 test-kernel-recheck: build ## R-0208 slice 1b: receipts mint only for theorems the kernel re-checked in the replay run
-	$(NIX_DEVELOP) bash scripts/tests/check_kernel_recheck.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_kernel_recheck.sh
 
 test-checker-policy: build ## R-0208 decisions 3-4: compiled checker advisory register, decided beside currency
-	$(NIX_DEVELOP) bash scripts/tests/check_checker_policy.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_checker_policy.sh
 
 test-lean14576: build ## R-0208 fire drill: the retained upstream reproducer, isolated, against the pinned checker
-	$(NIX_DEVELOP) bash scripts/tests/check_lean14576_reproducer.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_lean14576_reproducer.sh
 
 test-v2-migration-plan: build ## R-0004 package 3: the V1->V2 migration dry run reconciles and manufactures no freshness
-	$(NIX_DEVELOP) bash scripts/tests/check_v2_migration_plan.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_v2_migration_plan.sh
 
 test-clean-checkout: build ## R-0004 package 3: clean-checkout reproducibility and compiler provenance
-	$(NIX_DEVELOP) bash scripts/tests/check_clean_checkout.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_clean_checkout.sh
 
 test-build-identity-freshness: build ## R-0004 package 3: the embedded compiler build identity matches its sources
-	$(NIX_DEVELOP) bash scripts/tests/check_build_identity_freshness.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_build_identity_freshness.sh
 
 test-slice8-adversarial: build ## R-0004 Slice 8: adversarial attacks on the receipt store, through the production consumer
-	$(NIX_DEVELOP) bash scripts/tests/check_slice8_adversarial.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_slice8_adversarial.sh
 
 test-evidence-reproducibility: build ## R-0004 package 3: identities/roots/correspondence are properties of the program, not its path
-	$(NIX_DEVELOP) bash scripts/tests/check_evidence_reproducibility.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_evidence_reproducibility.sh
 
 test-atomic-flip-entrance: build ## R-0004 package 2: is the CallableId->DefinitionIdentity flip safe to perform?
-	$(NIX_DEVELOP) bash scripts/tests/check_atomic_flip_entrance.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_atomic_flip_entrance.sh
 
 test-impl-manifest: build ## Implementation manifest accounting on the real corpus (R-0004 slice 6) — shadow
-	$(NIX_DEVELOP) bash scripts/tests/check_impl_manifest.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_impl_manifest.sh
 
 test-classification-freshness: build ## Classification table matches a fresh derivation (R-0004 slice 6) — MANDATORY, ~1s
 	$(NIX_DEVELOP) bash ./scripts/tests/check_classification_freshness.sh
@@ -677,7 +677,7 @@ docs-serve: ## Serve the documentation site locally on port 18080
 ##@ Misc
 
 check-grammar: ## Verify the grammar is LL(1) (three independent checkers must agree)
-	$(NIX_DEVELOP) bash scripts/tests/check_grammar_ll1.sh
+	$(NIX_DEVELOP) bash ./scripts/tests/check_grammar_ll1.sh
 
 help: ## Show this help (targets grouped by category)
 	@awk 'BEGIN {FS = ":.*##"} \
