@@ -501,13 +501,17 @@ jobs:
           use-github-cache: ${{ steps.lake_seed.outputs.seeded != 'true' }}
           build-args: "--log-level=warning"
 
+      # BEGIN GENERATED: gates external-checker from check-external-checker (scripts/tests/gates.tsv; gates.py --write)
       - name: External-checker gate (proof evidence re-checked by con-leche)
         run: bash scripts/tests/check_external_checker.sh
+      # END GENERATED: gates external-checker
 
       # LANDING TIER: a pin behind the revision the Lean Kernel Arena evaluates is a warning
       # annotation, never a failure (landings stay reproducible). Offline, it prints SKIP.
+      # BEGIN GENERATED: gates external-checker from check-checker-pin-freshness-tier-landing (scripts/tests/gates.tsv; gates.py --write)
       - name: Checker pin freshness (warns when a pin lags the Lean Kernel Arena)
         run: bash scripts/tests/check_checker_pin_freshness.sh --tier landing
+      # END GENERATED: gates external-checker
 
   checker-pin-freshness:
     name: Checker pin freshness (campaign finding)
