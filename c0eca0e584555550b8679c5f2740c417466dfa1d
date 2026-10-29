@@ -1,0 +1,2 @@
+[piece 1 of 2: compiler]
+- grammar/concrete.ebnf:230: The new comment extends OD16’s condition-head disambiguation rule to counted-loop upper bounds. OD16 and SYN-4 cover `if`/`while`/`match` heads; the relayed OD47 approval authorizes the production replacement and conflict removal, not this extension. This picks a side on an owner-controlled decision and must not land without explicit owner approval.
