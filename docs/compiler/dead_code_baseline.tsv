@@ -45,17 +45,6 @@ Concrete.collectMethodValueRefsExpr	def	Concrete/Proof/CallCollect.lean	unreview
 Concrete.collectMethodValueRefsStmt	def	Concrete/Proof/CallCollect.lean	unreviewed
 Concrete.collectRuntimeCallsStmts	def	Concrete/Proof/CallCollect.lean	unreviewed
 Concrete.Proof.IdentifiedPFnDef.toPFnDef	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.base64CharOfSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.base64ValOfSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.hmacSha256Spec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.nonZeroU32TryFromU64Spec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.numericTryNewSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.optionMapSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.optionUnwrapOrSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.portTryFromU32Spec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.resultMapErrSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.resultMapSpec	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.Proof.sha256CompressSpec	def	Concrete/Proof/Proof.lean	unreviewed
 Concrete.CFnDef.isProofEligible	def	Concrete/Proof/ProofCore.lean	unreviewed
 Concrete.ObligationStatus.allCanonical	def	Concrete/Proof/ProofCore.lean	unreviewed
 Concrete.ProofRegistryEntry.allCoverageKinds	def	Concrete/Proof/ProofCore.lean	unreviewed

@@ -144,8 +144,9 @@ def module_file(module):
 def load_walks(paths):
     """Merge the walks: one row per (decl, file); reachable if any walk reaches it.
     Two declarations of one walk with one key (generated, private or macro-scoped names) merge
-    harmlessly while all are reachable; when one is not, the key cannot say which, so it is
-    returned in `dup` and the check refuses it."""
+    harmlessly while all are reachable without the allowlist; when one is not, the key cannot say
+    which (and an allowlist row naming the key would root both), so it is returned in `dup` and the
+    check refuses it."""
     rows = {}
     dup = set()
     for p in paths:
@@ -160,7 +161,7 @@ def load_walks(paths):
                     raise SystemExit(f"inventory {p}: malformed row {line!r}")
                 decl, kind, module, lineno, r0, r1 = cols
                 k = (decl, module_file(module))
-                seen_here[k].append(r1 == "1")
+                seen_here[k].append(r0 == "1")
                 if k in rows:
                     old = rows[k]
                     old["r0"] |= r0 == "1"
@@ -220,7 +221,10 @@ def cmd_check(args):
         if all(r["r0"] for r in found):
             fails.append(f"allowlist row {decl} is reachable without the allowlist: delete the row, so the "
                          f"allowlist only holds what the environment cannot see")
-        if not mentions(path, short(decl)):
+        if not path.startswith(("scripts/", "tests/")) or path.startswith("scripts/tools/dead_code"):
+            fails.append(f"allowlist row {decl}: {path} is not a script or test; only a reference the Lean "
+                         f"environment cannot see (a gate, a generator, a test) is a reason to allowlist")
+        elif not mentions(path, short(decl)):
             fails.append(f"allowlist row {decl}: {path} does not mention {short(decl)!r}, so nothing references "
                          f"it by name there")
         if any((decl, r["file"]) in base_keys for r in found):

@@ -24,6 +24,9 @@ ROOTS (live by definition):
   * every declaration of a module named by `--root-module M` (generated data modules:
     Concrete.BuildIdentity, the classification table, the generated attestations; their content
     is written by scripts/gen, not by hand, so whatever they reference is live);
+  * every declaration whose type is a constant named by `--root-type T`: a tool that enumerates the
+    environment by type (scripts/gen/classifications.lean reads every `PFnDef` and `SpecDecl`
+    with `evalConst`) reaches them without naming them;
   * the names in `--allow FILE` (one full declaration name per line): the string-referenced
     allowlist (docs/compiler/dead_code_allowlist.tsv), reached in a SECOND pass only, so the tool
     can tell which allowlist rows are needed.
@@ -44,7 +47,7 @@ Output (stdout), one row per candidate, sorted:
   decl  kind  module  line  reached-without-allowlist(0/1)  reached-with-allowlist(0/1)
 `decl` is the user name (private and macro-scoped names shown as their user name).
 
-Usage: lake env lean --run scripts/tools/dead_code_inventory.lean [--roots F] [--allow F] [--root-module M]... <Module>...
+Usage: lake env lean --run scripts/tools/dead_code_inventory.lean [--roots F] [--allow F] [--root-module M]... [--root-type T]... <Module>...
        lake env lean --run scripts/tools/dead_code_inventory.lean --control
 -/
 import Lean
@@ -62,22 +65,26 @@ def lineOf (env : Environment) (n : Name) : Nat :=
   | some r => r.range.pos.line
   | none => 0
 
-/-- Last components that Lean generates for a definition or an inductive. -/
-def generatedSuffixes : List String :=
-  ["eq_def", "eq_unfold", "induct", "mutual_induct", "fun_cases", "induct_unfolding",
-   "partial_correctness", "fixpoint_induct", "injEq", "inj", "sizeOf_spec", "noConfusionType",
-   "noConfusion", "casesOn", "recOn", "rec", "below", "brecOn", "binductionOn", "ibelow",
-   "ctorIdx", "toCtorIdx", "ofNat", "ctorElim", "ctorElimType", "splitter", "matcher",
-   "congr_simp", "elim", "ext", "ext_iff", "match_on_same_ctor", "het"]
+/-- The nearest proper prefix of `n` that is a declaration (a private prefix resolved to its user
+name when only that exists), if any. -/
+partial def declaredPrefix (env : Environment) (n : Name) : Option Name :=
+  match n with
+  | .anonymous => none
+  | .str pre _ | .num pre _ =>
+    if pre.isAnonymous then none
+    else if env.contains pre then some pre
+    else if env.contains (userName pre) then some (userName pre)
+    else declaredPrefix env pre
 
-def numberedPrefixes : List String := ["eq_", "match_", "proof_", "_proof_", "_sunfold", "splitter_"]
+/-- The declaration an auxiliary belongs to, or `none` when `n` is a unit of its own.
 
-def isGeneratedComponent (s : String) : Bool :=
-  generatedSuffixes.contains s || s.startsWith "_" ||
-    numberedPrefixes.any fun p => s.startsWith p && (s.drop p.length).all Char.isDigit
-
-/-- The declaration an auxiliary belongs to, or `none` when `n` is a unit of its own. -/
-partial def parentOf (env : Environment) (n : Name) : Option Name :=
+PROVENANCE, NOT NAME: a declaration Lean generated (`match_N`, `eq_N`, `_unsafe_rec`, `proof_N`,
+`T.ofNat_ctorIdx`, `T.c.elim`, a `deriving` handler's helpers, ...) has no source range, so a
+declaration WITH a range is user-written and is its own unit whatever its name (`Foo.ofNat`,
+`Foo.ext`), and one without a range belongs to its nearest declared prefix. Constructors,
+recursors and structure projections belong to their inductive, and a declaration nested under an
+instance is that instance's helper. -/
+def parentOf (env : Environment) (n : Name) : Option Name :=
   match env.find? n with
   | some (.ctorInfo c) => some c.induct
   | some (.recInfo r) => r.all.head?
@@ -85,26 +92,11 @@ partial def parentOf (env : Environment) (n : Name) : Option Name :=
     if let some p := env.getProjectionFnInfo? n then
       match env.find? p.ctorName with
       | some (.ctorInfo c) => some c.induct
-      | _ => some n.getPrefix
-    else
-      match n with
-      | .str pre s =>
-        -- a private declaration's generated children may be public, and the reverse
-        let pre := if !env.contains pre && env.contains (userName pre) then userName pre else pre
-        if pre.isAnonymous then none
-        else if !env.contains pre then
-          -- `_private.M.0.foo` and macro-scoped names have prefixes that are not declarations;
-          -- climb until one is, but only through generated components.
-          if isGeneratedComponent s then parentOf env pre else none
-        else if isGeneratedComponent s then some pre
-        -- no source range: Lean generated it under `pre` (`T.ofNat_ctorIdx`, `T.c.elim`, ...)
-        else if lineOf env n == 0 then some pre
-        else if Meta.isInstanceCore env pre then some pre   -- a derived instance's helper
-        else match env.find? pre with
-          | some (.inductInfo _) => if generatedSuffixes.contains s then some pre else none
-          | _ => none
-      | .num pre _ => if env.contains pre then some pre else parentOf env pre
-      | .anonymous => none
+      | _ => declaredPrefix env n
+    else if lineOf env n == 0 then declaredPrefix env n
+    else match declaredPrefix env n with
+      | some pre => if Meta.isInstanceCore env pre then some pre else none
+      | none => none
 
 /-- The unit an auxiliary ultimately belongs to. -/
 partial def unitOf (env : Environment) (n : Name) (fuel : Nat := 16) : Name :=
@@ -116,7 +108,9 @@ partial def unitOf (env : Environment) (n : Name) (fuel : Nat := 16) : Name :=
 def isRootType (ty : Expr) : Bool :=
   let heads := [``ParserDescr, ``TrailingParserDescr, ``Macro, ``Lean.Parser.Parser,
     ``Lean.Parser.TrailingParser, ``Lean.Elab.Command.CommandElab, ``Lean.Elab.Term.TermElab,
-    ``Lean.Elab.Tactic.Tactic, ``Lean.PrettyPrinter.Delaborator.Delab]
+    ``Lean.Elab.Tactic.Tactic, ``Lean.PrettyPrinter.Delaborator.Delab,
+    ``Lean.PrettyPrinter.Unexpander, ``Lean.PrettyPrinter.Parenthesizer,
+    ``Lean.PrettyPrinter.Formatter]
   match ty.getForallBody.getAppFn with
   | .const c _ => heads.contains c
   | _ => false
@@ -140,13 +134,11 @@ structure Graph where
 
 def buildGraph (env : Environment) : Graph := Id.run do
   let mut succ : Std.HashMap Name (Array Name) := {}
-  -- children: n ↦ the declarations directly under it whose last component is generated
+  -- children: a declaration ↦ the auxiliaries that belong to it (its `_unsafe_rec` twin, which
+  -- nothing names, is reached this way)
   let mut children : Std.HashMap Name (Array Name) := {}
   for (n, _) in env.constants.toList do
-    match n with
-    | .str pre s =>
-      if isGeneratedComponent s then children := children.insert pre ((children.getD pre #[]).push n)
-    | _ => pure ()
+    if let some p := parentOf env n then children := children.insert p ((children.getD p #[]).push n)
   for (n, ci) in env.constants.toList do
     let mut out := ci.type.getUsedConstants
     if let some v := ci.value? (allowOpaque := true) then out := out ++ v.getUsedConstants
@@ -197,7 +189,8 @@ def lastComponent (n : Name) : String :=
 
 /-- One row per compiler unit. `moduleOf` returns the defining module of any constant. -/
 def inventory (env : Environment) (moduleOf : Name → Option Name) (isFixedRoot : Name → Name → Bool)
-    (rootWords : Array String) (allow : Array String) : Array String := Id.run do
+    (rootWords : Array String) (allow : Array String) (rootTypes : Array Name := #[]) :
+    Array String := Id.run do
   let g := buildGraph env
   let words : Std.HashSet String := Std.HashSet.ofArray rootWords
   let allowSet : Std.HashSet String := Std.HashSet.ofArray allow
@@ -222,6 +215,8 @@ def inventory (env : Environment) (moduleOf : Name → Option Name) (isFixedRoot
       if let some i := getInitFnNameFor? env n then roots := roots.push i
     if isUnit && (simp.isLemma (.decl n) || simp.isDeclToUnfold n) then roots := roots.push n
     if isRootType ci.type then roots := roots.push n
+    if let .const t _ := ci.type then
+      if rootTypes.contains t then roots := roots.push n
     if Meta.isInstanceCore env n then
       let deps := ci.type.getUsedConstants.filter fun c =>
         match moduleOf c with
@@ -267,6 +262,9 @@ def readsField (s : LiveS) : Nat := s.b
 def usedByAllow (n : Nat) : Nat := n
 def allowOnly (n : Nat) : Nat := usedByAllow n
 def guardOnly (n : Nat) : Nat := n
+def orphan (n : Nat) : Nat := n
+def orphan.ofNat (n : Nat) : Nat := n
+def orphan._helper (n : Nat) : Nat := n
 #guard guardOnly 1 == 1
 def main : IO Unit := IO.println (toString (partialLive 3 + readsField ⟨1, 2⟩))
 "
@@ -287,6 +285,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let mut rootsFile : Option String := none
   let mut allowFile : Option String := none
   let mut rootModules : Array Name := #[]
+  let mut rootTypes : Array Name := #[]
   let mut mods : Array Import := #[]
   let mut rest := args
   while !rest.isEmpty do
@@ -294,10 +293,11 @@ unsafe def main (args : List String) : IO UInt32 := do
     | "--roots" :: f :: r => rootsFile := some f; rest := r
     | "--allow" :: f :: r => allowFile := some f; rest := r
     | "--root-module" :: m :: r => rootModules := rootModules.push m.toName; rest := r
+    | "--root-type" :: t :: r => rootTypes := rootTypes.push t.toName; rest := r
     | a :: r => mods := mods.push { module := a.toName }; rest := r
     | [] => break
   if mods.isEmpty then
-    IO.eprintln "usage: dead_code_inventory.lean [--roots F] [--allow F] [--root-module M]... <Module.Name>... | --control"
+    IO.eprintln "usage: dead_code_inventory.lean [--roots F] [--allow F] [--root-module M]... [--root-type T]... <Module.Name>... | --control"
     return 2
   let env ← importModules mods {} 0 (loadExts := true)
   let moduleOf (n : Name) : Option Name := do
@@ -306,7 +306,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let isFixedRoot (n m : Name) : Bool :=
     rootModules.contains m ||
       (n == `main && (m == `Main || m == `Concrete.Pipeline.PipelineTest || m == `Browser))
-  let rows := inventory env moduleOf isFixedRoot (← readLines rootsFile) (← readLines allowFile)
+  let rows := inventory env moduleOf isFixedRoot (← readLines rootsFile) (← readLines allowFile) rootTypes
   for r in rows do IO.println r
   -- which compiler modules contributed candidates, on stderr (the gate's not-vacuous check)
   let mut counts : NameMap Nat := {}

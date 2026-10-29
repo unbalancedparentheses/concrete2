@@ -9,7 +9,6 @@
 decl	file	reason
 Concrete.CallableId.specialize	scripts/tests/check_callable_identity.sh	gate probe: a Lean heredoc in the gate elaborates against it
 Concrete.Proof.BodyScope.encode?	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
-Concrete.Proof.BodyScope.pop	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
 Concrete.Proof.BodyScope.resolve?	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
 Concrete.Proof.BoundTableEntry	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
 Concrete.Proof.DependencyEdge.invalidatedByBodyChange	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
