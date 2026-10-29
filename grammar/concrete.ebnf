@@ -225,16 +225,11 @@ else_tail = 'if' if_tail
           | block
           ;
 
-(* 'for' '(' ... ')' block  |  'for' block *)
-for_tail = '(' [ for_init ';' ] expr ';' [ for_step ] ')' block
-         | block
-         ;
-
-for_init = 'let' [ 'mut' ] IDENT [ ':' type ] '=' expr
-         | expr
-         ;
-
-for_step = expr_or_assign ;
+(* The counted loop (OD47, decided 2026-10-29; STMT-6): 'for' i 'from' a 'until' b block, *)
+(* half-open, the index immutable. The C-style forms are removed. 'from' and 'until' are  *)
+(* reserved words. The upper bound is a condition-head expression: a '{' outside brackets  *)
+(* ends it and opens the block, as in an 'if' or 'while' head (SYN-4, OD16).               *)
+for_tail = IDENT 'from' expr 'until' expr block ;
 
 labeled_tail = 'while' while_tail
              | 'for' for_tail
