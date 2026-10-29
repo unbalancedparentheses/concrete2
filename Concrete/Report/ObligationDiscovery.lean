@@ -183,10 +183,11 @@ def dropStaleHyps (scope : List Expr) (assigned : List String) : List Expr :=
   let assignedSet : Std.HashSet String := assigned.foldl (·.insert ·) ∅
   scope.filter fun h => (collectIdents h).all (fun v => !assignedSet.contains v)
 
-/-- `{fnQual}@{line}#{obl}` — the loop VC id. Duplicated from `loopVCKey` below only
-    because that definition appears later in the file than its first use here; the gate
-    asserts the two formats stay identical. -/
-def loopVCKeyFwd (fnQual : String) (line : Nat) (obl : String) : String :=
+/-- `{fnQual}@{line}#{obl}`: the stable identity of one loop obligation, shared by the goal
+    collector, the renderer and discovery, so discharge results map back to the right line.
+    (There used to be a second copy, `loopVCKey`, because the first use came before the
+    definition in one file.) -/
+def loopVCKey (fnQual : String) (line : Nat) (obl : String) : String :=
   s!"{fnQual}@{line}#{obl}"
 
 /-- The loop VCs an obligation's hypotheses OWE — R-0461, closing H23.
@@ -215,7 +216,7 @@ def loopInvariantDebt (f : FnDef) (fq : String) (hyps : List Expr) : List String
   let hypForms := hyps.map Concrete.fmtExpr
   f.loopContracts.flatMap fun lc =>
     if lc.invariants.any (fun inv => hypForms.contains (Concrete.fmtExpr inv))
-    then [loopVCKeyFwd fq lc.line "O1", loopVCKeyFwd fq lc.line "O2"]
+    then [loopVCKey fq lc.line "O1", loopVCKey fq lc.line "O2"]
     else []
 
 -- ────────────────────────────────────────────────────────────────────────────

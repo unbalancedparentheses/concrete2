@@ -272,11 +272,6 @@ def provenViolationDiagnostics (modules : List Module) : Diagnostics := Id.run d
       ds := ds ++ [d]
   return ds
 
-/-- Stable identity for one loop obligation, shared by the goal collector and
-    the renderer so discharge results map back to the right line. -/
-def loopVCKey (fnQual : String) (line : Nat) (obl : String) : String :=
-  s!"{fnQual}@{line}#{obl}"
-
 /-- Collect the loop VCs that a kernel decision procedure can discharge:
     `invariant_init` (O1), `variant_nonnegative` (O4), `variant_decreases` (O5).
     Each is `(key, leanGoal)` where the goal is the same string the report
