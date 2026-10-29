@@ -1,0 +1,8 @@
+[piece 3 of 5: docs]
+- ROADMAP.md:511: OD23–OD32 and their bug records assign enforcement to “exit 2q,” but the Phase 1 exit table ends at 2p. This leaves the promised migration without a defined exit, owner or acceptance criteria.
+- ROADMAP.md:521: OD33 and OD34 list options but omit recommendations, including in their linked open-decision entries. They therefore do not satisfy the requested requirement that every OD33–OD41 question include options and a recommendation while remaining undecided.
+[piece 4 of 5: docs]
+- docs/spec/ids.tsv:437: Changing the registered hash of `REF-11@3` violates the immutable-version rule and fails S3’s history check against the supplied base. Preserve version 3 as superseded and register the changed sentence under a new version.
+- docs/spec/ids.tsv:461: Renumbering the open questions deletes `OPEN-23@1` and `OPEN-24@1` from the append-only registry, causing S3 to fail. Retain both original rows with their original hashes and mark them retired while adding OPEN-33 and OPEN-34.
+[piece 5 of 5: docs]
+- docs/spec/types.md:225: TYPE-6@2 still permits comparisons on `bool` and `char`, while its OD26 explanation at lines 242–244 and ROADMAP’s recorded decision say comparisons take numbers only. This preserves nonnumeric comparisons as normative behavior rather than identifying them as a pending compiler discrepancy, so the rule does not faithfully record the decision.
