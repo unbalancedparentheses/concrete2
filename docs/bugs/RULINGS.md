@@ -23,7 +23,7 @@ of [docs/spec/ids.tsv](../spec/ids.tsv), or the generator refuses the record.
 
 | ruling | bugs | open | silent |
 |---|--:|--:|--:|
-| violates a rule | 156 | 15 | 81 |
+| violates a rule | 156 | 14 | 81 |
 | spec gap | 32 | 2 | 5 |
 | open owner question | 0 | 0 | 0 |
 | permitted by a rule (not a bug) | 0 | 0 | 0 |
@@ -37,7 +37,7 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 | chapter | prefix | bugs | open | silent | violates | spec gap | open question | permitted |
 |---|---|--:|--:|--:|--:|--:|--:|--:|
 | pipeline.md | PASS | 42 | 2 | 6 | 22 | 20 | 0 | 0 |
-| modules.md | MOD | 32 | 1 | 11 | 27 | 5 | 0 | 0 |
+| modules.md | MOD | 32 | 0 | 11 | 27 | 5 | 0 | 0 |
 | types.md | TYPE | 20 | 1 | 11 | 18 | 2 | 0 | 0 |
 | ownership.md | OWN | 19 | 3 | 8 | 18 | 1 | 0 | 0 |
 | scope.md | SCOPE | 13 | 0 | 5 | 13 | 0 | 0 | 0 |
@@ -77,7 +77,7 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 | ARITH-5@1 | arithmetic.md | 2 | 128, 130 |
 | ARITH-6@1 | arithmetic.md | 2 | 140, 150 |
 | MEM-5@1 | memory.md | 2 | 144, 146 |
-| MOD-2@1 | modules.md | 2 | **226**, 230 |
+| MOD-2@1 | modules.md | 2 | 226, 230 |
 | OWN-11@1 | ownership.md | 2 | 147, 148 |
 | OWN-5@2 | ownership.md | 2 | 145, 197 |
 | OWN-8@2 | ownership.md | 2 | 115, 144 |
@@ -99,7 +99,7 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 | FFI-3@1 | ffi.md | 1 | 113 |
 | FFI-4@1 | ffi.md | 1 | 037 |
 | MEM-4@3 | memory.md | 1 | **326** |
-| MOD-6@1 | modules.md | 1 | **226** |
+| MOD-6@1 | modules.md | 1 | 226 |
 | OWN-10@2 | ownership.md | 1 | **216** |
 | OWN-12@1 | ownership.md | 1 | 143 |
 | OWN-15@3 | ownership.md | 1 | **328** |

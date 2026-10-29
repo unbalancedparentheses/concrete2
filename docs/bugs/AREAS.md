@@ -20,7 +20,7 @@ checker refusal is a Check bug here.
 |--|-:|-:|-:|-:|--|
 | Check | 72 | 0 | 39 | 5 | Check 33, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 39 | 0 | 13 | 3 | Lower 38, - 1 |
-| Resolve | 27 | 2 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
+| Resolve | 27 | 1 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
 | Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
 | Interp | 19 | 0 | 5 | 8 | Interp 19 |
 | Proof | 19 | 1 | 8 | 2 | ProofCore 11, Proof 3, CallCollect 2, BodyIdentity 1 |
