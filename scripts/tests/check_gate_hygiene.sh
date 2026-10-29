@@ -1061,9 +1061,19 @@ for n, line in enumerate(re.sub(r"\\\n\t?", "", src).split("\n"), 1):
             cmd.append(tok)
 print("\n".join(bad))
 PYEOF
-mk_bad="$(python3 -I "$MKTMP/mk_check.py" "$ROOT_DIR/Makefile")"
+# The gate targets themselves are generated into mk/gates.mk (scripts/gen/gates.py), which the
+# Makefile includes; both files are read, and a missing include file is a failure, not an empty lint.
+mk_bad=""
+for mkf in Makefile mk/gates.mk; do
+  if [ ! -f "$ROOT_DIR/$mkf" ]; then mk_bad="$mk_bad
+$mkf: missing"; continue; fi
+  mk_out="$(python3 -I "$MKTMP/mk_check.py" "$ROOT_DIR/$mkf")"
+  [ -n "$mk_out" ] && mk_bad="$mk_bad
+$(sed "s|^|$mkf |" <<<"$mk_out")"
+done
+mk_bad="${mk_bad#$'\n'}"
 if [ -z "$mk_bad" ]; then
-  ok "every Makefile recipe that runs a gate enters the dev shell"
+  ok "every Makefile and mk/gates.mk recipe that runs a gate enters the dev shell"
 else
   no "Makefile recipe(s) run a gate outside the dev shell: $(tr '\n' ' ' <<<"$mk_bad")"
 fi

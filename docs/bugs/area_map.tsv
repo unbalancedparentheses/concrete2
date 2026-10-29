@@ -116,6 +116,7 @@ lake-manifest.json	ignore	-	-
 lakefile.toml	code	Tooling	lakefile
 lean-toolchain	code	Tooling	lean-toolchain
 lean_tests/	ignore	-	-
+mk/gates.mk	ignore	-	-
 paper/	ignore	-	-
 proofs/	code	Proof	proofs
 research/	docs	Docs	research

@@ -7,6 +7,10 @@
 #
 #   scripts/tests/ci_gate_inventory.txt   the `cmd` of every `via=step` row, LC_ALL=C sorted, unique
 #                                         (run_ci_gates_local.sh compares it with the workflow)
+#   mk/gates.mk                           a make target per row with a `make` cell, included from the
+#                                         Makefile: `<make>: [build] ## <claim>`, recipe
+#                                         `$(NIX_DEVELOP) <cmd>` ($(NIX_DEVELOP_PROVERS) for shell
+#                                         provers) with the script spelled ./scripts/...
 #
 # python3 scripts/gen/gates.py --write regenerates them; --check fails when one is stale or a row is
 # invalid. check_gate_registration.sh runs --check, fails on any scripts/tests/{check,test,run}_*.sh,
@@ -41,7 +45,7 @@
 #           Tooling Gates Docs; `-` until assigned
 #   owner   who answers for the gate when it goes red (a name or team token), `-` until assigned
 #   claim   one line: what a pass establishes (seeded from the Makefile `##` text, else the script's
-#           header comment)
+#           header comment); for a make row it is the target's `make help` text, so no `##`
 #   tier    when it runs:
 #             prepush   the pre-push hook runs it on every push (an unconditional --first), and CI does
 #             pr        CI runs it on every push and pull request (the landing tier); the hook may
@@ -52,10 +56,12 @@
 #             manual    only when someone runs it (a make target or by hand)
 #             skip      not run at all (with via=skip:<reason>)
 #   spec    comma-separated live keys of docs/spec/ids.tsv the gate enforces, or `-`
-#   make    the make target that runs exactly `cmd`, or `-`; unique across rows
+#   make    the make target that runs exactly `cmd`, or `-`; unique across rows, never also written by
+#           hand in the Makefile (targets whose recipe is not one plain gate command stay there)
 #   shell   the nix devshell it runs in: gates (`nix develop .#gates`, or the default shell) or provers
 #           (`nix develop .#provers`, the second kernels)
-#   build   y when it needs the compiler built (`.lake/build/bin/concrete`), else n
+#   build   y when it needs the compiler built (`.lake/build/bin/concrete`), else n; a make row with y
+#           depends on the `build` target
 #   gen     y when it fails on a stale generated view (it runs a scripts/gen generator's check), else n
 #   kind    the test taxonomy of a test-suite row (later slices); `-` for a gate
 #
@@ -373,7 +379,7 @@ test-bundle-smoke	bash scripts/tests/test_bundle_smoke.sh	-	-	skip:not run by CI
 test-determinism	bash scripts/tests/test_determinism.sh	-	-	agg:run_tests.sh	-	-	Deterministic Artifact Regression Suite	pr	-	-	gates	y	n	-
 test-fuzz	bash scripts/tests/test_fuzz.sh	-	-	skip:parser fuzz smoke run by hand; CI fuzzes through fuzz_differential.py and fuzz_linearity.py	-	-	Structured fuzzing for the Concrete compiler.	manual	-	-	gates	y	n	-
 test-golden	bash ./scripts/tests/test_golden.sh	main-tests	Run golden tests (--emit-core / --emit-ssa / --fmt baselines)	step	-	-	Golden baselines for --emit-core, --emit-ssa, --fmt	pr	-	test-golden	gates	y	n	-
-test-mutation	bash scripts/tests/test_mutation.sh	-	-	skip:the older per-rule mutation harness; superseded in CI by check_gate_mutation_coverage.sh, run by hand with make test-mutation	Gates	-	An incomplete run (timed out twice) is red without being a verdict: never a kill.	campaign	-	-	gates	y	n	-
+test-mutation	bash scripts/tests/test_mutation.sh	-	-	skip:the compiler-source mutation harness (mutates the tree in place, rebuilds per mutation); no CI step runs it, run it by hand with make test-mutation	Gates	-	Mutation testing for the compiler: each targeted source mutation must be killed by a gate (HEAVY: rebuilds per mutation; refuses outside the gate shell)	campaign	-	test-mutation	gates	y	n	-
 test-oracle	bash scripts/tests/test_oracle.sh	-	-	agg:run_tests.sh	-	-	Differential oracle tests	pr	-	test-oracle	gates	y	n	-
 test-parser-fuzz	bash scripts/tests/test_parser_fuzz.sh	-	-	skip:not run by CI; run by hand with make test-fuzz (parser fuzzing)	Parse	-	Parser fuzzing	manual	-	test-fuzz	gates	y	n	-
 test-perf	bash scripts/tests/test_perf.sh	-	-	agg:run_tests.sh	-	-	Performance regression tracking for the Concrete compiler.	pr	-	-	gates	y	n	-

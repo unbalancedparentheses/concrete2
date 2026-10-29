@@ -88,7 +88,7 @@ _ppr_gate_defs() { # root -> digest
   list="$(mktemp)" || return 1
   hashes="$(mktemp)" || { rm -f "$list"; return 1; }
   if ! git -C "$root" ls-files -co --exclude-standard -- scripts .githooks .github/workflows \
-         Makefile lean-toolchain lakefile.toml lakefile.lean lake-manifest.json flake.nix flake.lock \
+         Makefile mk lean-toolchain lakefile.toml lakefile.lean lake-manifest.json flake.nix flake.lock \
          2>/dev/null | LC_ALL=C sort -u > "$list"; then
     rm -f "$list" "$hashes"; return 1
   fi

@@ -9,11 +9,16 @@
 
 Generated views:
   scripts/tests/ci_gate_inventory.txt   the cmd of every via=step row, LC_ALL=C sorted, unique
+  mk/gates.mk                           a make target for every row with a `make` cell (included
+                                        from the Makefile): `<make>: [build] ## <claim>` running
+                                        `$(NIX_DEVELOP[_PROVERS]) <cmd>`, the script spelled ./scripts/
 
 FAIL-CLOSED: an invalid manifest (wrong column line, wrong cell count, an empty cell, a duplicate id
 or make target, a value outside a column's vocabulary, a spec key that is not live in
 docs/spec/ids.tsv, rows out of id order, a script without a row, a step row whose job or step the
-workflow does not have or whose step does not run its cmd) is reported row by row and exits 1;
+workflow does not have or whose step does not run its cmd, a make row whose cmd is not a plain
+`bash`/`python3` invocation, a make target the Makefile also defines by hand, a Makefile that does not
+include mk/gates.mk) is reported row by row and exits 1;
 nothing is written. Unreadable inputs exit 2.
 
 --root runs against another tree (the registration gate's negative controls use a planted copy).
@@ -31,6 +36,9 @@ WORKFLOW = ".github/workflows/lean_action_ci.yml"
 HOOK = ".githooks/pre-push"
 SPEC_IDS = "docs/spec/ids.tsv"
 AREA_MAP = "docs/bugs/area_map.tsv"
+MAKEFILE = "Makefile"
+MK = "mk/gates.mk"
+MK_INCLUDE = "include mk/gates.mk"
 
 COLS = ["id", "cmd", "job", "step", "via", "area", "owner", "claim", "tier", "spec", "make",
         "shell", "build", "gen", "kind"]
@@ -47,6 +55,10 @@ LISTED_DIRS = [("scripts/tests", re.compile(r"^(check|test|run)_[A-Za-z0-9_]+\.s
                ("scripts/tests", re.compile(r"^check_[A-Za-z0-9_]+\.py$")),
                ("scripts/ci", re.compile(r"^[A-Za-z0-9_]+\.sh$"))]
 AGG_DIRS = ["scripts/tests", "scripts/ci", "scripts/gen"]
+# A make row's cmd: optional VAR=value words, then bash or python3 and the script. Its recipe spells
+# the script ./scripts/... (the Makefile's form; the workflow's steps mostly omit the ./).
+MAKE_CMD_RE = re.compile(r"^((?:[A-Z_][A-Z0-9_]*=\S+\s+)*)(bash|python3) (?:\./)?(scripts/\S+)(.*)$")
+DEVSHELL_VAR = {"gates": "NIX_DEVELOP", "provers": "NIX_DEVELOP_PROVERS"}
 
 
 class Refuse(Exception):
@@ -218,6 +230,19 @@ def validate(root, rows, with_workflow):
                 errs.append(f"{at}: {c} must be y or n")
         if r["kind"] not in KINDS:
             errs.append(f"{at}: kind '{r['kind']}' is not one of {' '.join(sorted(KINDS))}")
+    hand = set(re.findall(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", read(root, MAKEFILE), re.M))
+    if MK_INCLUDE not in read(root, MAKEFILE).split("\n"):
+        errs.append(f"{MAKEFILE} does not have the line '{MK_INCLUDE}'; the generated gate targets would not exist")
+    for r in rows:
+        if r["make"] == "-":
+            continue
+        at = f"{MANIFEST}:{r['_line']} ({r['id']})"
+        if not MAKE_CMD_RE.match(r["cmd"]):
+            errs.append(f"{at}: make target {r['make']}: cmd is not 'bash|python3 [./]scripts/...', so no recipe is generated for it")
+        if r["make"] in hand:
+            errs.append(f"{at}: make target {r['make']} is also written by hand in {MAKEFILE}; remove one")
+        if "##" in r["claim"]:
+            errs.append(f"{at}: claim of a make row cannot contain '##' (it is the target's ## help text)")
     covered = {script_of(r["cmd"]) for r in rows}
     for s in listed_scripts(root):
         if s not in covered:
@@ -242,8 +267,26 @@ def render_inventory(rows):
     return "".join(c + "\n" for c in cmds)
 
 
+def recipe(r):
+    m = MAKE_CMD_RE.match(r["cmd"])
+    return f"$({DEVSHELL_VAR[r['shell']]}) {m.group(1)}{m.group(2)} ./{m.group(3)}{m.group(4)}"
+
+
+def render_mk(rows):
+    out = [f"# GENERATED from {MANIFEST} by scripts/gen/gates.py; do not edit. Change a row's make, claim,",
+           "# build, shell or cmd cell and run: python3 scripts/gen/gates.py --write. The Makefile includes this",
+           "# file; `make help` lists these targets under the heading below.",
+           "",
+           f"##@ Gates (generated from {MANIFEST})",
+           ""]
+    for r in sorted((r for r in rows if r["make"] != "-"), key=lambda r: r["make"]):
+        pre = " build" if r["build"] == "y" else ""
+        out += [f"{r['make']}:{pre} ## {r['claim']}", "\t" + recipe(r), ""]
+    return "\n".join(out)
+
+
 def views(rows):
-    return {INVENTORY: render_inventory(rows)}
+    return {INVENTORY: render_inventory(rows), MK: render_mk(rows)}
 
 
 def main():
@@ -277,6 +320,7 @@ def main():
             if cur == text:
                 continue
             if a.write:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
                 print(f"gates.py: wrote {rel}")
