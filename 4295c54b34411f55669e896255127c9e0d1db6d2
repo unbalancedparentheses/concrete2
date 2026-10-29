@@ -1,0 +1,10 @@
+[piece 4 of 7: docs]
+- ROADMAP.md:506: The patch picks a side on OD20 by declaring `std.libc` private to std and marking the decision settled, unblocking bug 226. This encodes an owner-only decision and must not land under the review’s stated restriction.
+- ROADMAP.md:507: The patch picks a side on OD21 by denying parents construction and private-field access rights over child modules. This settles the explicitly open representation-rights choice and must not land under the owner-decision restriction.
+- ROADMAP.md:508: The patch picks a side on OD22 by making per-method trust and refusal of `trusted impl` final. Ratifying the provisional bug 189 repair encodes an owner-only decision and must not land under the stated restriction.
+[piece 5 of 7: docs]
+- docs/spec/README.md:63: The patch retires OPEN-20–OPEN-22 as decided, endorsing private `std.libc` bindings, declaring-module-only representation rights, and per-method-only trust. These choose sides on OD20–OD22, which are proposed in the base commit. Under the review’s owner-decision restriction, this must not land; recording claimed owner answers within the patch does not independently establish authorization.
+[piece 6 of 7: docs]
+- docs/spec/modules.md:214: MOD-6 chooses OD20’s “private to std” policy and encodes it in a rejection fixture. OD20 is proposed at the base commit; marking it decided within this patch does not supply owner authorization. This picks a side and must not land.
+- docs/spec/types.md:515: This settles OD21 against parent-module representation rights and adds fixtures requiring that outcome. It chooses an owner-reserved policy, despite leaving enforcement pending, and must not land.
+- docs/spec/trusted.md:165: TRUST-5@2 settles OD22 by forbidding trust on `impl` blocks, making bug 189’s provisional behavior normative. This chooses an owner-reserved outcome and must not land.
