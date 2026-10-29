@@ -983,6 +983,7 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates proof-gate from proof-gate-proof-gate (scripts/tests/gates.tsv; gates.py --write)
       - name: Run proof evidence gate
         run: bash scripts/ci/proof_gate.sh
 
@@ -1036,15 +1037,18 @@ jobs:
 
       - name: End-of-Phase-2 VC/SMT examples gate
         run: bash scripts/tests/check_vc_examples.sh
+      # END GENERATED: gates proof-gate
 
       - name: Operational-VC-auto-discharge forcing-probe gate (Phase 9 #16a)
         run: bash scripts/tests/check_operational_vc_auto_discharge.sh
 
+      # BEGIN GENERATED: gates proof-gate from check-phase2-vc (scripts/tests/gates.tsv; gates.py --write)
       - name: Phase 2 VC/discharge validation artifact (umbrella)
         run: bash scripts/tests/check_phase2_vc.sh
 
       - name: ObligationCore ledger gate (Phase 3 schema + vocabulary)
         run: bash scripts/tests/check_obligation_core.sh
+      # END GENERATED: gates proof-gate
 
       - name: Unified scoped-collector gate (Phase 3 #3 adversarial)
         run: bash scripts/tests/check_scoped_collector.sh
@@ -1097,11 +1101,13 @@ jobs:
       - name: prove-as-ledger-view gate (Phase 3 #16)
         run: bash scripts/tests/check_obligation_prove_views.sh
 
+      # BEGIN GENERATED: gates proof-gate from check-phase3-obligation-core (scripts/tests/gates.tsv; gates.py --write)
       - name: Phase 3 capstone — ObligationCore single truth source (umbrella)
         run: bash scripts/tests/check_phase3_obligation_core.sh
 
       - name: ObligationCore red-team gate (Phase 3 hardening)
         run: bash scripts/tests/check_obligation_redteam.sh
+      # END GENERATED: gates proof-gate
 
   # LANGUAGE-SURFACE GATES, SPLIT FOUR WAYS. One job ran every gate below in sequence and took ~80
   # minutes (run 39775852735), the longest job of the landing tier. The four jobs below each take
