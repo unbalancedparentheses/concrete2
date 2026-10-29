@@ -220,7 +220,8 @@ def baseline_additions(base_rows, rows):
     original in place still counts as added."""
     before = {key(r[0], r[1], r[2]) for r in base_rows}
     now = {key(r[0], r[1], r[2]) for r in rows}
-    removed = collections.Counter((r[0], r[1], r[3]) for r in base_rows if key(r[0], r[1], r[2]) not in now)
+    gone = {key(r[0], r[1], r[2]): r[3] for r in base_rows if key(r[0], r[1], r[2]) not in now}
+    removed = collections.Counter((k[0], k[1], stage) for k, stage in gone.items())  # one credit per key
     added = []
     for row in rows:
         if key(row[0], row[1], row[2]) in before:
