@@ -83,6 +83,7 @@ bash scripts/tests/check_corecheck_boundary.sh
 bash scripts/tests/check_counterexample_reduction.sh
 bash scripts/tests/check_coverage_baseline.sh
 bash scripts/tests/check_cross_package_caps.sh
+bash scripts/tests/check_dead_code_ratchet.sh
 bash scripts/tests/check_defer.sh
 bash scripts/tests/check_dependency_edges.sh
 bash scripts/tests/check_descriptor_coverage.sh

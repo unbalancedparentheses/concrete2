@@ -1193,6 +1193,15 @@ jobs:
       - name: Browser compiler root (builds; native adapter answers the parity cases)
         run: bash scripts/tests/check_browser_native.sh
 
+      # The dead-code ratchet (cleanup item 15): no NEW compiler declaration unreachable from the
+      # executables, theorems, proof libraries and tools, and a baseline that only shrinks against
+      # the base revision (hence this job: it checks out full history).
+      - name: Dead-code ratchet (no new unreachable compiler declarations)
+        env:
+          # A push is compared with the revision before ALL of its commits, not with the tip's parent.
+          DEAD_CODE_BASE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: bash scripts/tests/check_dead_code_ratchet.sh
+
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 

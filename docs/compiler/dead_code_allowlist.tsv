@@ -1,0 +1,47 @@
+# Compiler declarations referenced only BY NAME from outside the Lean environment, so the
+# dead-code finder (scripts/tests/check_dead_code_ratchet.sh) cannot see the reference: a gate
+# elaborates a Lean heredoc against it, greps `def X`, or names it in a containment check. Each
+# row is a ROOT of the reachability walk. Columns: the declaration (its full user name), a file
+# that references it by name (the gate checks the file mentions the short name), and why.
+# A row is refused when its declaration is reachable without it: the allowlist holds only what the
+# environment cannot see. A gate-only API listed here is tested but unused by the compiler; when
+# its gate goes, so does the row (and the declaration becomes a NEW unreachable one).
+decl	file	reason
+Concrete.CallableId.specialize	scripts/tests/check_callable_identity.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.BodyScope.encode?	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.BodyScope.pop	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.BodyScope.resolve?	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.BoundTableEntry	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.DependencyEdge.invalidatedByBodyChange	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.DependencyEdge.propagatesTrust	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.FnTable.lookupById	scripts/tests/check_callable_identity.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.FnTable.ofAttested	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ProofEvidenceReceipt.comparable	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ProofEvidenceReceipt.disposition	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ProofEvidenceReceipt.isCurrentAgainst	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ReplayResult.allAccepted	scripts/tests/check_replay_producer.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ReplayResult.fullyBound	scripts/tests/check_replay_producer.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.ReplayResult.verdictFor	scripts/tests/check_replay_producer.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.SubjectCompletenessV2.blockers	scripts/tests/check_evidence_tree.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.SubjectCompletenessV2.bodyComplete	scripts/tests/check_evidence_tree.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.SubjectCompletenessV2.dependenciesComplete	scripts/tests/check_evidence_tree.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.SubjectCompletenessV2.isComplete	scripts/tests/check_evidence_tree.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.allNodeTags	scripts/tests/check_identity_use_bytes.sh	gate probe: a Lean heredoc in the gate elaborates against it; test_mutation.sh mutates it
+Concrete.Proof.armBinders	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.bindEntryImplementations	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.boundEntryImplementationOf	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.classificationsComplete	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.entryEvidenceContains	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.entryEvidenceForTable	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.evBinderRef	scripts/tests/check_evidence_build.sh	gate probe: a Lean heredoc in the gate elaborates against it; test_mutation.sh mutates it
+Concrete.Proof.evParen	scripts/tests/check_evidence_build.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.mergeClassifications	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.patternBindingCount	scripts/tests/check_evidence_tree.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.renderClassification	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.scopeUpTo	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.stmtBinders	scripts/tests/check_body_scope.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Proof.tableHoldsModelNamed	scripts/tests/check_dependency_edges.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.Report.scopedWalkS	scripts/tests/check_no_duplicate_obligation_walkers.sh	the gate requires `def scopedWalkS` to exist (the unified obligation collector)
+Concrete.TypeId.ofBuiltin	scripts/tests/check_type_identity.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.TypeId.ofUser	scripts/tests/check_type_identity.sh	gate probe: a Lean heredoc in the gate elaborates against it
+Concrete.implementationManifestOf	scripts/tests/check_impl_manifest.sh	named by the gate's containment grep (the shadow manifest must not reach a new consumer)
