@@ -422,6 +422,7 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates proof-replay from proof-gate (scripts/tests/gates.tsv; gates.py --write)
       - name: Run proof evidence gate (Lean kernel theorem checking)
         run: bash scripts/ci/proof_gate.sh
 
@@ -430,6 +431,7 @@ jobs:
 
       - name: Proof-patterns corpus gate
         run: bash scripts/tests/check_proof_patterns.sh
+      # END GENERATED: gates proof-replay
 
   external-checker:
     name: External proof re-check (con-leche)
