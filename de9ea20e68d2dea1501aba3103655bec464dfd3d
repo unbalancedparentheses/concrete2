@@ -1,0 +1,6 @@
+[piece 1 of 3: compiler]
+- Concrete/Resolve/FileSummary.lean:489: `importRefusal` implements OD20 by admitting `std.libc` imports within std and rejecting them outside std. ROADMAP.md records this as owner-decided on 2026-10-29, but the patch still implements behavior covered by OD20 and therefore meets your explicit owner-decision finding/no-land criterion.
+[piece 2 of 3: tests]
+- scripts/tests/run_tests.sh:8944: The patch implements OD20’s choice that `std.libc` bindings are private to std. ROADMAP.md records owner approval dated 2026-10-29, but your explicit review rule includes implementing an owner decision, so this triggers the requested landing blocker.
+[piece 3 of 3: docs]
+- docs/spec/modules.md:219: The patch implements OD20 by making `std.libc` privacy enforced and defining std membership by module definition path. Although ROADMAP records the owner’s decision, this still implements behavior covered by OD20 and therefore triggers your explicit owner-decision landing prohibition.
