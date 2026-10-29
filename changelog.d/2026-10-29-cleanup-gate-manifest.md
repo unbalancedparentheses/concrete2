@@ -17,9 +17,9 @@ control for each refusal. The seeding found three scripts no CI step reaches: `t
 ### Gate Make Targets Generated From the Manifest (cleanup 5, slice 2, 2026-10-29)
 
 The 185 Makefile targets that each run one gate command are now generated into `mk/gates.mk` from
-the manifest's `make` cells and included from the Makefile; the targets whose recipe is more than
-one plain gate command (run_tests.sh, the oracles, the docs-drift and example pairs, the proof gate,
-the fuzz smoke) stay hand-written. Each generated target line and recipe is byte-identical to the
+the manifest's `make` cells and included from the Makefile. Targets whose recipe is not one plain
+`bash`/`python3` gate command (run_tests.sh under `sh`, the oracles, the docs-drift and example
+pairs, the fuzz smoke) stay hand-written, as do `test-proof-gate` and `check-grammar` for now. Each generated target line and recipe is byte-identical to the
 hand-written one it replaces (18 recipes were first respelled `bash ./scripts/tests/...` like the
 other 167), and `make -pRrq`'s rule database is unchanged for every target apart from the new
 include node, `make test-mutation` (the mutation harness, under `$(NIX_DEVELOP)`), and 59 gate
