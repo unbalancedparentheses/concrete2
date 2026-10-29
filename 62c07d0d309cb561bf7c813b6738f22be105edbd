@@ -1,0 +1,3 @@
+[piece 1 of 3: compiler]
+- Concrete/Resolve/Resolve.lean:1063: `stdOwn` admits every spelling from `std.libc`, including nonexistent declarations. A std module importing a misspelled binding reaches the final `(errs, syms, tys)` fallback without a diagnostic, whereas `resolveImports` rejects it. Resolve therefore still disagrees with Check/Elab about valid imports.
+- Concrete/Elab/Elab.lean:3347: A submodule’s E0326 is discarded by the following `.error _ => {}` branch. If the forbidden import is unused, elaboration succeeds without reporting it. Resolve likewise discards this refusal through `importScope`, so a program submodule importing `std.libc` receives E0326 only from Check, contrary to the requested every-pass enforcement.
