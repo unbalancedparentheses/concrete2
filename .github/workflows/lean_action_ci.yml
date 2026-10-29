@@ -2209,8 +2209,10 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates campaign-mint-batch from check-mint-batch-accounting (scripts/tests/gates.tsv; gates.py --write)
       - name: Mint-batch accounting gate (the batch reconciliation controls, actually run)
         run: bash scripts/tests/check_mint_batch_accounting.sh
+      # END GENERATED: gates campaign-mint-batch
 
   campaign-publisher:
     name: Campaign gates (missing-result refusal, summary golden)
