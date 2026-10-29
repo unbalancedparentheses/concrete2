@@ -3,7 +3,7 @@
 Status: standing reference (project direction, moved from docs/language: the rules it commits to are
 stated in the language specification, [docs/spec](../spec/README.md)).
 
-This document makes Concrete's long-term language shape decisions explicit instead of letting them emerge from local convenience. It synthesizes commitments from [IDENTITY.md](IDENTITY.md), [DESIGN_POLICY.md](DESIGN_POLICY.md), [DECISIONS.md](DECISIONS.md), and [SAFETY.md](../language/SAFETY.md) into a single picture of what Concrete is becoming.
+This document makes Concrete's long-term language shape decisions explicit instead of letting them emerge from local convenience. It synthesizes commitments from [IDENTITY.md](IDENTITY.md), [DESIGN_POLICY.md](DESIGN_POLICY.md), [DECISIONS.md](DECISIONS.md), and [SAFETY.md](../verification/SAFETY.md) into a single picture of what Concrete is becoming.
 
 ## The Language Concrete Is Trying To Be
 
@@ -41,7 +41,7 @@ Semantic effects (file, network, allocation, etc.) are declared in function sign
 - `trusted` — audited pointer-level containment behind safe APIs
 - `with(Unsafe)` — foreign boundary authority
 
-Each concept does one thing. They do not overlap. See [SAFETY.md](../language/SAFETY.md).
+Each concept does one thing. They do not overlap. See [SAFETY.md](../verification/SAFETY.md).
 
 ### Ownership model: linear by default
 
@@ -102,6 +102,6 @@ These are areas where the current design may evolve, but only under explicit cri
 - [IDENTITY.md](IDENTITY.md) — what Concrete is and is not
 - [DESIGN_POLICY.md](DESIGN_POLICY.md) — feature admission criteria
 - [DECISIONS.md](DECISIONS.md) — recorded "no" and "not yet" decisions
-- [SAFETY.md](../language/SAFETY.md) — the three-way trust/capability/unsafe model
+- [SAFETY.md](../verification/SAFETY.md) — the three-way trust/capability/unsafe model
 - [PROVABLE_SUBSET.md](../verification/PROVABLE_SUBSET.md) — proof-eligible subset definition
 - [../research/language/high-integrity-profile.md](../../research/language/high-integrity-profile.md) — high-integrity profile direction

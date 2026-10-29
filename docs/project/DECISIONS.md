@@ -8,7 +8,7 @@ Every entry records what was decided, why, and what Concrete does instead. Perma
 
 For the admission criteria applied to new features, see [DESIGN_POLICY.md](DESIGN_POLICY.md).
 For the language identity and positioning, see [IDENTITY.md](IDENTITY.md).
-For the safety model, see [SAFETY.md](../language/SAFETY.md).
+For the safety model, see [SAFETY.md](../verification/SAFETY.md).
 
 ## Permanent Decisions
 
@@ -187,7 +187,7 @@ informational benchmark scripts cannot substantiate it.
 
 **Status:** Decided (2026-03-15)
 
-`trusted` permits exactly four pointer-level operations (arithmetic, deref, assign, cast) without `with(Unsafe)`. It does not suppress capabilities, does not permit extern calls, does not relax linearity. See [SAFETY.md](../language/SAFETY.md).
+`trusted` permits exactly four pointer-level operations (arithmetic, deref, assign, cast) without `with(Unsafe)`. It does not suppress capabilities, does not permit extern calls, does not relax linearity. See [SAFETY.md](../verification/SAFETY.md).
 
 ## Deferred Decisions
 
