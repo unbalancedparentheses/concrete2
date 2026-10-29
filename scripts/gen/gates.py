@@ -73,6 +73,8 @@ AGG_DIRS = ["scripts/tests", "scripts/ci", "scripts/gen"]
 # the script ./scripts/... (the Makefile's form; the workflow's steps mostly omit the ./).
 MAKE_CMD_RE = re.compile(r"^((?:[A-Z_][A-Z0-9_]*=\S+\s+)*)(bash|python3) (?:\./)?(scripts/\S+)(.*)$")
 DEVSHELL_VAR = {"gates": "NIX_DEVELOP", "provers": "NIX_DEVELOP_PROVERS"}
+# A generated workflow step runs exactly one command: no list, pipe, redirection or substitution.
+GEN_CMD_BAD = re.compile(r"[;&|<>`\n]|\$\(")
 
 
 class Refuse(Exception):
@@ -173,10 +175,13 @@ def workflow_steps(text):
 
 
 def yaml_scalar(value):
-    """The plain scalar when YAML reads it back unchanged, else a double-quoted one."""
+    """A plain scalar only when it starts with a letter and PyYAML reads it back unchanged, else a
+    double-quoted one. The letter rule is for GitHub's YAML 1.2 parser, which PyYAML (YAML 1.1) does
+    not speak: `1e3` or `0o17` are strings to PyYAML and numbers to 1.2. A name starting with a letter
+    can still be a 1.1 keyword (yes, on, null), and those PyYAML does not read back as strings."""
     yaml = yaml_mod()
     try:
-        plain = yaml.safe_load("k: " + value) == {"k": value} and not value.startswith(("'", '"'))
+        plain = bool(re.match(r"[A-Za-z]", value)) and yaml.safe_load("k: " + value) == {"k": value}
     except yaml.YAMLError:
         plain = False
     return value if plain else json.dumps(value, ensure_ascii=False)
@@ -317,8 +322,15 @@ def validate(root, rows, wf_text):
         if r["gen"] == "y":
             if kind != "step":
                 errs.append(f"{at}: gen=y generates a workflow step, so via must be step")
-            elif yaml_mod().safe_load("k: " + r["cmd"]) != {"k": r["cmd"]}:
-                errs.append(f"{at}: gen=y, but cmd is not a plain YAML scalar; keep the step hand-written")
+            elif GEN_CMD_BAD.search(r["cmd"]):
+                errs.append(f"{at}: gen=y, but cmd is not one plain command (no ; & | < > ` $( or newline); keep the step hand-written")
+            else:
+                try:
+                    plain = yaml_mod().safe_load("k: " + r["cmd"]) == {"k": r["cmd"]}
+                except yaml_mod().YAMLError:
+                    plain = False
+                if not plain:
+                    errs.append(f"{at}: gen=y, but cmd is not a plain YAML scalar; keep the step hand-written")
         if r["kind"] not in KINDS:
             errs.append(f"{at}: kind '{r['kind']}' is not one of {' '.join(sorted(KINDS))}")
     hand = set(re.findall(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", read(root, MAKEFILE), re.M))

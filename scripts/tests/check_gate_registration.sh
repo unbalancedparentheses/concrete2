@@ -311,6 +311,8 @@ _plant; sed 's|^\(      - name: \)Gate lock (a lock is refused|\1Gate lock EDITE
 _gp; _refused "a hand edit inside a generated workflow block" "lean_action_ci.yml is stale"
 _plant; _mut '$1=="check-multi-kernel" {$14="y"} {print}'
 _gp; _refused "a gen=y row that no generated block of its job reaches" "no generated block of job multi-kernel reaches it"
+_plant; _mut '$1=="check-gate-lock" {$2=$2" && true"} {print}'
+_gp; _refused "a gen=y row whose cmd is more than one command" "is not one plain command"
 echo "=== a CI gate the host cannot run is a named skip in run_ci_gates_local.sh, never a pass ==="
 # The Examples job runs check_example_outputs.sh under EXAMPLE_VALGRIND=1; macOS has no valgrind.
 # run_ci_gates_local.sh classifies such commands with scripts/tests/lib/host_tools.sh, lists them
