@@ -492,7 +492,8 @@ Coverage is counted per pattern form: an unguarded catch-all covers every value;
 unguarded variant arms, every value once each variant has one; over `bool`, `true` and `false`;
 over an integer, the literals and ranges. Repeating a variant an earlier unguarded arm covers is
 already PAT-3's refusal. Ranges that together span an integer type's whole range are not counted as
-covering every value, since PAT-2 requires the catch-all after them.
+covering every value, since PAT-2 requires the catch-all after them. The rule judges the arms a
+`match` writes: the fallback arm of an `if let`, `let ... else` or `while let` is not one.
 
 ```con reject name=arm-after-catch-all code=E0325 stage=check pair=catch-all-last
 fn main() -> Int {

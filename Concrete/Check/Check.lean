@@ -675,9 +675,18 @@ private def intervalCovered (ivals : List (Int × Int)) (lo hi : Int) : Bool := 
     range spanned by ranges is not counted as covering every value, since PAT-2 still requires
     the catch-all there. An unguarded arm repeating a variant is PAT-3's refusal (E0532, CoreCheck)
     and is left to it. Patterns are flat (a variant arm's fields are binders), so a variant arm
-    matches every value of its variant. -/
-def unreachableMatchArm (variants : Option (List String)) (arms : List MatchArm) :
+    matches every value of its variant.
+    The rule is about a written `match`. The parser desugars `if let`, `let ... else` and
+    `while let` into a variant arm and a fallback `_` arm, both carrying the statement's own span
+    (`matchSp`), which no written arm has (a written arm's span starts at its pattern, after the
+    `match` keyword); that fallback is not judged, so `if let` over a one-variant enum stays
+    accepted. -/
+def unreachableMatchArm (matchSp : Span) (variants : Option (List String)) (arms : List MatchArm) :
     Option (Span × String) := Id.run do
+  let atMatch : Span → Bool := fun s =>
+    s.line == matchSp.line && s.col == matchSp.col && s.endLine == matchSp.endLine && s.endCol == matchSp.endCol
+  if let [.mk s1 .., .varArm s2 "_" none _] := arms then
+    if atMatch s1 && atMatch s2 then return none
   let intOf : Expr → Option Int
     | .intLit _ n => some n
     | .unaryOp _ .neg (.intLit _ n) => some (-n)
@@ -689,6 +698,9 @@ def unreachableMatchArm (variants : Option (List String)) (arms : List MatchArm)
   for arm in arms do
     let sp := match arm with
       | .mk sp .. | .litArm sp .. | .varArm sp .. | .rangeArm sp .. => sp
+    -- An unguarded arm repeating a variant is PAT-3's refusal (E0532) wherever it stands.
+    if let .mk _ _ v _ none _ := arm then
+      if seenVariants.contains v then continue
     if let some why := everything then return some (sp, why)
     match arm with
     | .varArm _ b g _ =>
@@ -1839,7 +1851,7 @@ partial def checkExprCore (e : Expr) (hint : Option Ty := none) (mode : UseMode 
     -- cover can never be selected.
     let armVariants ← if enumName == "" then pure none else
       pure ((← lookupEnum enumName).map fun ed => ed.variants.map (·.name))
-    if let some (armSp, why) := unreachableMatchArm armVariants arms then
+    if let some (armSp, why) := unreachableMatchArm e.getSpan armVariants arms then
       throwCheck (.unreachableMatchArm why) (some armSp)
     if enumName != "" then
       match ← lookupEnum enumName with

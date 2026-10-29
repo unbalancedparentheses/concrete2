@@ -6,7 +6,7 @@
 
 <!-- bug-ledger
 summary: A match ran a specific arm written after an unguarded catch-all arm instead of refusing it
-coverage: reproducer tests/regressions/bug317_a_match_ran_a_specific_arm_written_after_an_ungu/repro.con, pinned by run_tests.sh (`run_err` legs for the reproducer, `error_317_guarded_after_catch_all.con`, `error_317_range_inside_ranges.con`, `error_317_value_match_after_every_variant.con` and `regress_213_arm_after_binding_arm.con` on both consumers; `run_ok` plus the `--interp` leg for `regress_317_partial_range_coverage.con`) and check_spec.sh S4 (the PAT-9 examples)
+coverage: reproducer tests/regressions/bug317_a_match_ran_a_specific_arm_written_after_an_ungu/repro.con, pinned by run_tests.sh (`run_err` legs for the reproducer, `error_317_guarded_after_catch_all.con`, `error_317_range_inside_ranges.con`, `error_317_value_match_after_every_variant.con` and `regress_213_arm_after_binding_arm.con` on both consumers, and `error_317_repeated_variant_is_pat3.con` for E0532; `run_ok` plus the `--interp` legs for `regress_317_partial_range_coverage.con` and `regress_317_if_let_one_variant.con`) and check_spec.sh S4 (the PAT-9 examples)
 class: 13
 silent: yes
 -->
@@ -60,7 +60,10 @@ from `checkExprCore`'s `match` case, E0325, `rule: PAT-9@1`), in source order: a
 catch-all, after an unguarded arm for every variant of the enum, after `true` and `false`, a
 repeated literal and a literal or range inside earlier literals and ranges, and a guarded repeat
 of a variant. A guarded arm covers nothing. CoreCanonicalize no longer reorders arms. An unguarded
-repeated variant stays PAT-3's (E0532). Ranges that together span an integer type are not counted
+repeated variant stays PAT-3's (E0532) wherever it stands. The fallback `_` arm the parser adds when
+it desugars `if let`, `let ... else` or `while let` is not a written arm and is not judged (it
+carries the statement's own span, which no written arm has), so `if let` over a one-variant enum
+stays accepted. Ranges that together span an integer type are not counted
 as covering every value, since PAT-2 requires the catch-all after them. Bug 213's fixture is now a
 refusal on both consumers.
 

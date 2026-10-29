@@ -10283,12 +10283,15 @@ run_err "$TESTDIR/error_317_guarded_after_catch_all.con" "(E0325)"
 run_err "$TESTDIR/error_317_range_inside_ranges.con" "(E0325)"
 run_err "$TESTDIR/error_317_value_match_after_every_variant.con" "(E0325)"
 run_ok "$TESTDIR/regress_317_partial_range_coverage.con" 42
+run_ok "$TESTDIR/regress_317_if_let_one_variant.con" 42
+run_err "$TESTDIR/error_317_repeated_variant_is_pat3.con" "(E0532)"
 r317_interp=$($COMPILER "$TESTDIR/regress_317_partial_range_coverage.con" --interp 2>&1 || true)
-if [ "$r317_interp" = "42" ]; then
-    echo "  ok  bug 317: partly covered arms stay reachable — interp == binary (42)"
+r317_iflet=$($COMPILER "$TESTDIR/regress_317_if_let_one_variant.con" --interp 2>&1 || true)
+if [ "$r317_interp" = "42" ] && [ "$r317_iflet" = "42" ]; then
+    echo "  ok  bug 317: partly covered arms and desugared fallbacks stay accepted — interp == binary (42)"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  bug 317: interp gave '$r317_interp', want 42"
+    echo "FAIL  bug 317: interp gave '$r317_interp' and '$r317_iflet', want 42 and 42"
     FAIL=$((FAIL + 1))
 fi
 # Bug 211: a generic operator instantiated at a struct or enum reached the backend; the post-Mono
