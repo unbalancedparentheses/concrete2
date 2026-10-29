@@ -871,8 +871,10 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates ssa-tests from test-ssa (scripts/tests/gates.tsv; gates.py --write)
       - name: Run SSA test suite
         run: bash ./scripts/tests/test_ssa.sh
+      # END GENERATED: gates ssa-tests
 
   trust-gate:
     name: Trust gate (correctness contracts)
