@@ -1,0 +1,7 @@
+[piece 1 of 3: tests]
+- docs/spec/types.md:225: The previous TYPE-6 finding remains open: TYPE-6@2 still normatively permits `bool` and `char` comparisons, while ROADMAP.md:514 records the owner’s OD26 decision that comparisons take numbers only. Adding OPEN-42 does not reconcile these conflicting rules; retaining those comparisons requires an owner clarification or identifying them as a pending compiler discrepancy.
+[piece 2 of 3: scripts]
+- docs/spec/types.md:225: The previous TYPE-6 finding remains open: the normative rule still permits `bool` and `char` comparisons, contradicting OD26’s recorded “numbers only” decision. Adding undecided OD42 does not amend that decision; these comparisons should be identified as a pending compiler discrepancy unless the owner explicitly changes OD26.
+[piece 3 of 3: docs]
+- ROADMAP.md:511: The earlier exit-2q finding remains open in this patch: OD23–OD32 still depend on an exit absent from the Phase 1 table. The stated companion slice resolves this only when its definition lands together with these references.
+- docs/spec/types.md:244: The earlier TYPE-6 finding remains open. Adding OPEN-42 does not reconcile TYPE-6@2’s normative permission for `bool` and `char` comparisons with OD26’s recorded “numbers only” decision. Keeping those comparisons as an explicit rule selects an interpretation while the clarification is unanswered; distinguish current compiler behavior from the unresolved normative rule.
