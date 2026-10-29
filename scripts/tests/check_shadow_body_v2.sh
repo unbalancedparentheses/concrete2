@@ -67,7 +67,7 @@ refs="$(code_refs bodyBytesV2 Concrete/ Main.lean)"
 # still three files. An owner set that GREW would need the argument to be made again; one where a
 # name is substituted for the same code does not, and recording which of the two happened is the
 # reason this asserts the set rather than a count.
-if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Proof/ImplementationIdentity.lean Concrete/Report/Report.lean " ]; then
+if [ "$refs" = "Concrete/Proof/IdentityUseBytes.lean Concrete/Proof/ImplementationIdentity.lean Concrete/Report/LeanStubs.lean " ]; then
   ok "bodyBytesV2 owners are the definition, the implementation digest, and the shadow report line"
 else
   no "bodyBytesV2 reached a new owner ($refs) — if a STATUS now depends on structural bytes, that is the V1 freeze breaking"

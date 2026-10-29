@@ -259,7 +259,7 @@ fi
 grep -q "Report.profileClosures projectModules pc" Concrete/Check/Policy.lean \
   && ok "the policy enforcement path uses the transitively-closed sets" \
   || no "policy enforcement is back on the direct-callee check — it rejects builds, so this matters most"
-grep -qE "^def profileClosures" Concrete/Report/Report.lean \
+grep -qE "^def profileClosures" Concrete/Report/Effects.lean \
   && ok "both closures come from one place (cannot obtain one without the other)" \
   || no "profileClosures is gone — consumers can drift apart again"
 

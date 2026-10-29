@@ -226,7 +226,7 @@ if command -v lake >/dev/null 2>&1; then
   done
   # PROVENANCE: identity must be carried from ProofCore, not re-derived by
   # splitting a qualified name in the report layer.
-  if grep -n "splitOn" Concrete/Report/Report.lean | has_match -E "declN|defMod"; then
+  if cat Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean | grep -n "splitOn" | has_match -E "declN|defMod"; then
     no "the generator still splits a qualified name to build an identity"
   else
     ok "the generator reads a carried CallableId, not a split qualName"

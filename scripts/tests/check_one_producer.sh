@@ -100,7 +100,7 @@ owners() {  # label | fragment | expected set (space separated, in code_refs ord
 # Report held a second copy of this formula until 2d351a2d. ProofCore reads it for the subject binding
 # (bug 079), the same digest the generator computes over each specification's value.
 owners "sourceBodyDigestV1Of" 'sourceBodyDigestV1Of' \
-  'Concrete/Proof/BodyIdentity.lean Concrete/Proof/DependencyEdge.lean Concrete/Proof/ImplementationIdentity.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
+  'Concrete/Proof/BodyIdentity.lean Concrete/Proof/DependencyEdge.lean Concrete/Proof/ImplementationIdentity.lean Concrete/Proof/ProofCore.lean Concrete/Report/LeanStubs.lean'
 
 # Edge KIND classification. This is the fact `shadowEdgeKinds` had a second, weaker producer for.
 owners "classifiedEdgeOf" 'classifiedEdgeOf' \
@@ -114,7 +114,7 @@ owners "classifiedEdgeOf" 'classifiedEdgeOf' \
 # a receipt computed over a different node set than the status report reads would be evidence about
 # a closure nobody else believes in.
 owners "dependencyNodesOf" 'dependencyNodesOf' \
-  'Concrete/Proof/Issue.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean'
+  'Concrete/Proof/Issue.lean Concrete/Proof/ProofCore.lean Concrete/Report/LeanStubs.lean'
 
 # The currency decision. A second opinion on "is this edge current" is a fail-open waiting to
 # happen — this predicate was `| _ => true` once, which made `unclassified` current by default.
@@ -125,7 +125,7 @@ owners "dependencyNodesOf" 'dependencyNodesOf' \
 # release gate runs, and one that would have repeated for every status added since. It now asks this
 # predicate instead of restating a subset of it, which is the direction this gate wants.
 owners "isCurrentForDependents" 'isCurrentForDependents' \
-  'Concrete/Proof/DependencyEdge.lean Concrete/Proof/DependencyRoot.lean Concrete/Proof/ProofCore.lean Concrete/Report/Report.lean Main.lean'
+  'Concrete/Proof/DependencyEdge.lean Concrete/Proof/DependencyRoot.lean Concrete/Proof/ProofCore.lean Concrete/Report/LeanStubs.lean Main.lean'
 
 # ================================================================================================
 # R-0479 — A FACT IS NEVER DEFAULTED TO A VALID VALUE OF ITSELF.

@@ -146,7 +146,7 @@ fi
 # CONTAINMENT: this is shadow. The manifest must not reach a status derivation.
 if grep -rn "implementationManifestOf\|implementationManifestResultOf" Concrete/ --include=*.lean \
      | grep -v "^Concrete/Proof/ProofCore.lean:" \
-     | grep -v "^Concrete/Report/Report.lean:" \
+     | grep -v "^Concrete/Report/LeanStubs.lean:" \
      | grep -v "^Concrete/Proof/BodyIdentity.lean:" | has_match .; then
   no "the manifest producer reached a new consumer — check it is not a status derivation"
 else

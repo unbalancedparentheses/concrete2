@@ -46,12 +46,12 @@ fi
 #    list of identity references, where `p + 1`, `p * 2` and `p - 9` collide; `bodyV2`
 #    digests the structural body, where they do not. Dropping the flat line would remove
 #    the comparison the shadow period exists for.
-if grep -q "shadow bodyV2" Concrete/Report/Report.lean; then
+if grep -q "shadow bodyV2" Concrete/Report/LeanStubs.lean; then
   ok "CLOSED: shadow mode reports the structural body digest (gated by check_shadow_body_v2)"
 else
   no "the structural shadow line is gone from the report — the comparison it enables is how V2 is observed before it is trusted"
 fi
-if grep -qE "Proof\.shadowIdentityUseDigest " Concrete/Report/Report.lean; then
+if grep -qE "Proof\.shadowIdentityUseDigest " Concrete/Report/LeanStubs.lean; then
   ok "the flat identity-use line is still reported alongside it, so the two can be compared"
 else
   no "the flat shadow line was removed — without it there is nothing to compare the structural digest against"

@@ -285,8 +285,11 @@ def cmd_check(args):
     if args.base_baseline:
         base_rows = read_tsv_abs(args.base_baseline, len(HEADER)) if os.path.getsize(args.base_baseline) else []
         before = {key(r[0], r[1], r[2]) for r in base_rows}
+        # A declaration that MOVED to another file (a module split) is the same declaration: it
+        # counts as added only if the base had no row of that kind and name in the stage it left.
+        moved_from = {(r[0], r[1], r[3]) for r in base_rows}
         for k, row in base_keys.items():
-            if k not in before:
+            if k not in before and (row[0], row[1], row[3]) not in moved_from:
                 fails.append(f"baseline row ADDED: {row[0]} {row[1]} ({row[2]}) is not in the base revision's "
                              f"baseline. The baseline only shrinks; make the declaration total instead")
 

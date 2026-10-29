@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Diagnostic-code registry completeness gate (ROADMAP 13m, first slice).
 #
-# `--report diagnostic-codes` (Concrete/Report/Report.lean) claims to be the ledger
+# `--report diagnostic-codes` (Concrete/Report/Query.lean) claims to be the ledger
 # of every diagnostic the compiler can emit. It silently drifted 8 codes
 # behind Check.lean (E0286–E0293 were shipped but unlisted, found 2026-07-06).
 # This gate extracts every `=> "E NNNN"` code from the CheckError.code and
@@ -29,7 +29,7 @@ for f in Concrete/Check/CheckError.lean Concrete/Check/CoreCheck.lean Concrete/C
   [ -z "$codes" ] && { no "$f: extracted no codes (pattern drift?)"; continue; }
   while IFS= read -r c; do
     # `entryR` is an entry that also names the exit 2i rules the code enforces (§15.5)
-    if ! grep -qE "entryR? \"$c\"" Concrete/Report/Report.lean; then
+    if ! grep -qE "entryR? \"$c\"" Concrete/Report/Query.lean; then
       no "$c (emitted by $f) has no entry in Report.lean diagnostic-codes"
       missing=1
     fi

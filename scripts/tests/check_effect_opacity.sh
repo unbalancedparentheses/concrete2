@@ -191,14 +191,14 @@ echo "=== admission is rendered on EVERY state, not just one (STRUCTURAL) ==="
 #
 # Upgrade path, when a fixture with a registered proof over an effect-opaque function
 # exists: assert on its rendered output and delete these two.
-if grep -q "renderProofStatusBody e sourceMap ++ admissionLine e" "$ROOT_DIR/Concrete/Report/Report.lean"; then
+if grep -q "renderProofStatusBody e sourceMap ++ admissionLine e" "$ROOT_DIR/Concrete/Report/ProofStatus.lean"; then
   ok "admissionLine is appended once at the dispatch, so no state can be skipped"
 else
   no "admission rendering is per-state again — \`proved\` will be skipped"
 fi
 # And the text it appends must disclaim admitted-proof coverage, or rendering it on
 # `proved` would still leave the artifact reading as an unqualified program proof.
-if grep -A16 "def admissionLine" "$ROOT_DIR/Concrete/Report/Report.lean" | has_match "does not count as admitted proof"; then
+if grep -A16 "def admissionLine" "$ROOT_DIR/Concrete/Report/ProofStatus.lean" | has_match "does not count as admitted proof"; then
   ok "the appended text denies admitted-proof coverage to an inadmissible artifact"
 else
   no "the admission line no longer disclaims admitted proof coverage"

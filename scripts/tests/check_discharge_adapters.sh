@@ -4,7 +4,7 @@
 # Every status-changing backend is a typed `DischargeAdapter` with a DECLARED set
 # of evidence classes it may produce; `DischargeAdapter.fold` applies a result
 # only when the class is in that set. The firewall is therefore structural:
-#   - the COMPILE-TIME `example`s in Concrete/Report/Report.lean prove smtAdapter /
+#   - the COMPILE-TIME `example`s in Concrete/Report/VCSchema.lean prove smtAdapter /
 #     runtimeAdapter / assumptionAdapter / oracleAdapter declare NO static-proof
 #     class, and that the fold rejects a foreign class — kernel-checked, so a
 #     green build already guarantees the firewall;
@@ -60,10 +60,10 @@ ckjson "assume VC is 'assumed', never a proof class" "$ASM" "" "$PATH" \
   "all(v['status']=='assumed' for v in d['vcs'] if v['kind']=='assume') and any(v['kind']=='assume' for v in d['vcs'])"
 
 echo "=== structural firewall is kernel-checked at build time ==="
-grep -q "def proofClasses" Concrete/Report/Report.lean \
-  && grep -q "smtAdapter.allowed.all (fun c => !proofClasses.contains c)" Concrete/Report/Report.lean \
+grep -q "def proofClasses" Concrete/Report/VCSchema.lean \
+  && grep -q "smtAdapter.allowed.all (fun c => !proofClasses.contains c)" Concrete/Report/VCSchema.lean \
   && ok "compile-time firewall examples present (build green ⇒ proven)" \
-  || no "firewall examples missing from Concrete/Report/Report.lean"
+  || no "firewall examples missing from Concrete/Report/VCSchema.lean"
 
 echo "=== R-0465: the multi-kernel classes are INSIDE the firewall ==="
 # These were the strongest classes in the system and the only ones the firewall did not
@@ -71,7 +71,7 @@ echo "=== R-0465: the multi-kernel classes are INSIDE the firewall ==="
 # example covered them. `foldMultiKernelResults` assigned its status by direct record update
 # behind a hand-rolled `actsOn` — not unsound, but convention where everything around it was
 # structure, and that distinction is the firewall's entire purpose.
-R="Concrete/Report/Report.lean"
+R="Concrete/Report/VCSchema.lean"
 grep -q "def multiKernelAdapter" "$R" \
   && ok "multiKernelAdapter exists" \
   || no "no multiKernelAdapter — the badge classes are outside the firewall again"

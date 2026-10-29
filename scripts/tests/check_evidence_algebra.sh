@@ -102,16 +102,16 @@ grep -qE "w.kernel == k.name && w.obligation == ob" "$EV" \
 # not the yardstick, it is simply the one never measured. The real obstacle was that Lean's
 # lowering was not expressible as a driver, which R-0450's slice (2026-08-03) removed. Still
 # a real gap, still R-0450, but a TODO rather than an asymmetry that cannot be closed.
-if grep -rn "loweringAgreed := true" Main.lean Concrete/Report/Report.lean 2>/dev/null \
+if grep -rn "loweringAgreed := true" Main.lean Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean 2>/dev/null \
      | grep "kernel :=" | has_match .; then
   no "a consumer writes 'loweringAgreed := true' — validation asserted, not derived"
 else
   ok "NO kernel asserts validation as a literal — lean included, since R-0450"
 fi
-grep -q "loweringAgreed := if leanChecked then leanW.isSome else true" Concrete/Report/Report.lean \
+grep -q "loweringAgreed := if leanChecked then leanW.isSome else true" Concrete/Report/VCSchema.lean \
   && ok "lean's receipt DERIVES from a minted witness when the check ran" \
   || no "lean's receipt no longer derives from a witness"
-grep -q "loweringAgreed := rocqW.isSome" Concrete/Report/Report.lean \
+grep -q "loweringAgreed := rocqW.isSome" Concrete/Report/VCSchema.lean \
   && ok "receipts DERIVE loweringAgreed from the minted witness" \
   || no "receipts no longer derive loweringAgreed from a witness"
 
@@ -134,7 +134,7 @@ echo "=== C3's companion: the capped status is not a proof class ==="
 # provenance, which is what turned these rows from proved substrate into rows that fire on
 # live verdicts. The fixture assertions in check_known_wrong_corpus.sh are now inverted and
 # guard the fix; that gate, not this one, is what proves the hole is shut.
-grep -q 'example : (!proofClasses.contains "assumed") = true := rfl' Concrete/Report/Report.lean \
+grep -q 'example : (!proofClasses.contains "assumed") = true := rfl' Concrete/Report/VCSchema.lean \
   && ok "compile-time proof that the capped status is not a proof class" \
   || no "missing companion example tying C3 to proofClasses"
 
@@ -157,11 +157,11 @@ done
 echo "=== every consumer goes through the shared derivation ==="
 # Report, ledger fold and release policy must all call multiKernelVerdict. A surface
 # that computes its own class is a surface that can know something the others do not.
-CONSUMERS="$(grep -rc "multiKernelVerdict" Main.lean Concrete/Report/Report.lean 2>/dev/null | tr '\n' ' ')"
+CONSUMERS="$(grep -rc "multiKernelVerdict" Main.lean Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean 2>/dev/null | tr '\n' ' ')"
 [ "$(grep -c "multiKernelVerdict" Main.lean)" -ge 2 ] \
   && ok "Main.lean routes report AND policy through multiKernelVerdict" \
   || no "a Main.lean surface still computes its own multi-kernel class ($CONSUMERS)"
-grep -q "multiKernelVerdict" Concrete/Report/Report.lean \
+grep -q "multiKernelVerdict" Concrete/Report/VCSchema.lean \
   && ok "the ledger fold routes through multiKernelVerdict" \
   || no "foldMultiKernelResults does not use the shared derivation"
 
@@ -207,7 +207,7 @@ echo "=== R-0461: the cap is wired, and enforced as well as displayed ==="
 # provenance and something acts on the result. Both halves are asserted because H23's
 # first fix had the display and not the enforcement, and a report that reads `assumed`
 # while `check` exits 0 is a hole with better manners.
-grep -q "def capOnHypothesisDebt" Concrete/Report/Report.lean \
+grep -q "def capOnHypothesisDebt" Concrete/Report/VCSchema.lean \
   && ok "capOnHypothesisDebt exists" \
   || no "capOnHypothesisDebt MISSING — nothing populates Evidence.assumes (H23 reopens)"
 grep -q "Report.capOnHypothesisDebt (Report.dischargeVCs" Main.lean \
@@ -235,12 +235,12 @@ grep -q "def foundationOf" "$EV" && grep -q "def foundationSummary" "$EV" \
   && ok "one definition of which kernel rests on which foundation" \
   || no "foundationOf/foundationSummary missing"
 # The duplicate this replaced: independenceOf had its own contains-chain in another module.
-if grep -q 'attest.contains "isabelle"' Concrete/Report/Report.lean; then
+if cat Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean | grep -q 'attest.contains "isabelle"'; then
   no "independenceOf still hard-codes kernel foundations — two copies can disagree"
 else
   ok "independenceOf derives from foundationSummary (no second copy)"
 fi
-grep -q "foundationSummary attest" Concrete/Report/Report.lean \
+grep -q "foundationSummary attest" Concrete/Report/VCSchema.lean \
   && ok "the ledger's independence facts and the badge share one derivation" \
   || no "independenceOf does not call foundationSummary"
 # `other` must count as its OWN foundation: fail-open here flatters the badge.
@@ -299,10 +299,10 @@ grep -q "exprHasNonlinMul o.mainExpr then none" "$RO" \
   && ok "restricted to omega's linear domain (no false 'disagrees' on nonlinear)" \
   || no "the nonlinear filter is gone — this check will cry wolf and be ignored"
 # Enforcement, not display. This is the H23 lesson applied in advance.
-grep -q "if leanChecked && leanW.isNone then base" Concrete/Report/Report.lean \
+grep -q "if leanChecked && leanW.isNone then base" Concrete/Report/VCSchema.lean \
   && ok "an unvalidated Lean rendering earns NO badge (enforced, not just reported)" \
   || no "a faulty Lean rendering would still be badged — display without enforcement"
-grep -q "engine := if leanChecked && leanW.isNone then v.engine" Concrete/Report/Report.lean \
+grep -q "engine := if leanChecked && leanW.isNone then v.engine" Concrete/Report/VCSchema.lean \
   && ok "and the engine field does not advertise kernels whose badge was withheld" \
   || no "engine still lists attesters beside a deliberately withheld badge"
 

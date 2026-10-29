@@ -7,7 +7,7 @@
 # three cannot disagree about what the line means. Each used to grep `Max stack bound:\s*[0-9]+`
 # on its own, and the compiler used to print a number even when some function had no bound, so a
 # budget PASSED a program with unbounded stack. The producer now prints `unbounded` in that case
-# (Concrete/Report/Report.lean, stackSummaryLine); this reader treats it, and anything it does not
+# (Concrete/Report/Effects.lean, stackSummaryLine); this reader treats it, and anything it does not
 # recognise, as a refusal -- never as a number.
 
 # stack_max_bound: read stack-depth report text on stdin.

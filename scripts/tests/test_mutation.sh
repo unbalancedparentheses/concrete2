@@ -841,7 +841,7 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # Missing lemmas make an entry unreachable to the kernel while the table still
 # looks complete — a proof about that identity cannot be used, and nothing says
 # so. The incorrect/missing-lemma class.
-MUT_FILE+=("Concrete/Report/Report.lean")
+MUT_FILE+=("Concrete/Report/LeanStubs.lean")
 MUT_OLD+=("  let lookupLemmas := extracted.map fun e =>")
 MUT_NEW+=("  let lookupLemmas := (extracted.take 1).map fun e => -- MUTATION: one lemma only")
 MUT_DESC+=("Generator: lookup lemma emitted for one entry only")
@@ -850,7 +850,7 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # 46. Generator: an entry is dropped from the table but keeps its lemma
 # The entry-deletion class. The table shrinks while the lemmas still claim the
 # missing entry is reachable, so `rfl` on that lookup no longer holds.
-MUT_FILE+=("Concrete/Report/Report.lean")
+MUT_FILE+=("Concrete/Report/LeanStubs.lean")
 MUT_OLD+=("\", \".intercalate entryNames}]")
 MUT_NEW+=("\", \".intercalate entryNames.dropLast}]")
 MUT_DESC+=("Generator: an entry is dropped but keeps its lookup lemma")
@@ -881,7 +881,7 @@ gate_for_last "scripts/tests/check_callable_identity.sh"
 # nothing to object to. Only CORRESPONDENCE catches it — the identity must sit on
 # the body that belongs to it — which is why the correspondence legs exist and why
 # this mutation is the thing that proves they are load-bearing.
-MUT_FILE+=("Concrete/Report/Report.lean")
+MUT_FILE+=("Concrete/Report/LeanStubs.lean")
 MUT_OLD+=("    let idLit := match e.callableId with")
 MUT_NEW+=("    let rotIdx := (((extracted.findIdx? (·.qualName == e.qualName)).getD 0) + 1) % extracted.length
     let idLit := match (extracted[rotIdx]?).bind (·.callableId) with -- MUTATION: identities rotated among entries")

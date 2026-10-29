@@ -182,7 +182,7 @@ probe "pureCoreFns binds f as a callable" "some" \
 echo "=== no surface renders a representative proof as universal ==="
 # A report that printed a parameter application identically to a definition call
 # would let a reader upgrade `proof_coverage(representative)` by eye.
-if grep -q 'applyVar binding args' Concrete/Report/Report.lean; then
+if grep -q 'applyVar binding args' Concrete/Report/LeanStubs.lean; then
   ok "the report renders .applyVar with its own case"
 else
   no "the report has no distinct rendering for .applyVar"

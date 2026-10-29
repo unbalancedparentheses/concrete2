@@ -114,7 +114,7 @@ mutate_self_test() {
   local TAB; TAB="$(printf '\t')"
   local -a MUT=(
     "manifest fact|docs/stdlib/STDLIB_SURFACE_MANIFEST.tsv|option${TAB}unwrap_or_else${TAB}"
-    "diagnostic-code ledger|Concrete/Report/Report.lean|entry \"E0296\""
+    "diagnostic-code ledger|Concrete/Report/Query.lean|entry \"E0296\""
     "value-flow constructor row|docs/spec/ownership.md|\`letDestructure\`"
   )
   for m in "${MUT[@]}"; do

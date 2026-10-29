@@ -428,7 +428,7 @@ if grep -q 'code := "E0808"' Concrete/IR/Mono.lean; then
 else
   no "Mono no longer emits E0808 — the residual containment was deleted, so an instantiation that escapes specialization would be laid out from an unsubstituted declaration"
 fi
-if grep -q 'entry "E0808"' Concrete/Report/Report.lean; then
+if grep -q 'entry "E0808"' Concrete/Report/Query.lean; then
   ok "E0808 remains in the --report diagnostic-codes ledger"
 else
   no "E0808 lost its diagnostic-ledger row"

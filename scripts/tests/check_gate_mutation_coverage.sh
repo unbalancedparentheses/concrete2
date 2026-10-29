@@ -828,7 +828,7 @@ add "diagnostic-quality" "Concrete/Check/CoreCheck.lean" "check_diagnostics_qual
 add "fact-invalidation" "Concrete/Report/ReportObligations.lean" "check_scoped_collector.sh" yes \
   '| _ => scope.drop aHere' \
   '| _ => scope'
-add "report-schema-row" "Concrete/Report/Report.lean" "check_vc_schema.sh" yes \
+add "report-schema-row" "Concrete/Report/Facts.lean" "check_vc_schema.sh" yes \
   '("kind", .str v.kind),' \
   '("knd", .str v.kind),'
 
@@ -858,7 +858,7 @@ add "trap-quotient-condition" "Concrete/Semantics/IntArith.lean" "check_known_wr
 
 # The multi-kernel firewall: let attestation act on an unproved VC and a badge can be
 # minted for something no kernel proved.
-add "attestation-precondition" "Concrete/Report/Report.lean" "check_discharge_adapters.sh" yes \
+add "attestation-precondition" "Concrete/Report/VCSchema.lean" "check_discharge_adapters.sh" yes \
   $'    actsOn := fun s => s == "proved_by_kernel_decision" || s == "proved_by_lean"\n                       || s == "proved_by_lean_replay",' \
   $'    actsOn := fun _ => true,'
 
@@ -1624,7 +1624,7 @@ add "admission-does-not-select-replay-targets" "Concrete/Proof/ProofCore.lean" "
 # state where an unreported refusal reads as a program-level guarantee rather than a
 # pending item. Restricting the wrapper to the non-proved states reproduces it. Killed by
 # `check_effect_opacity.sh`'s dispatch-site assertion.
-add "admission-rendered-on-proved-too" "Concrete/Report/Report.lean" "check_effect_opacity.sh" yes \
+add "admission-rendered-on-proved-too" "Concrete/Report/ProofStatus.lean" "check_effect_opacity.sh" yes \
   $'  renderProofStatusBody e sourceMap ++ admissionLine e' \
   $'  renderProofStatusBody e sourceMap ++ (match e.state with | ProofState.proved => "" | _ => admissionLine e)'
 

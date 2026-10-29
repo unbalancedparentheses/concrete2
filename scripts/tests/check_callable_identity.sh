@@ -877,7 +877,7 @@ echo "=== the set of emission surfaces is pinned ==="
 # every property above, and the usual way that fails is that nobody notices a new
 # surface exists. This pins the count: adding a surface fails here until its
 # author extends this gate to cover it.
-SURFACES="$(grep -c "renderCallableId" Concrete/Report/Report.lean || true)"
+SURFACES="$(cat Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean | grep -c "renderCallableId" || true)"
 [ "$SURFACES" = "3" ] \
   && ok "renderCallableId has exactly 3 references (1 definition + 2 generators)" \
   || no "renderCallableId reference count is $SURFACES, expected 3 — a new emission surface must be covered by this gate"

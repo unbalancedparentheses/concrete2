@@ -17,14 +17,17 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate_env.sh" || exit 2
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
-R="Concrete/Report/Report.lean"; O="Concrete/Proof/ObligationCore.lean"; M="Main.lean"
+R="Concrete/Report/VCSchema.lean"; O="Concrete/Proof/ObligationCore.lean"; M="Main.lean"
+# Report.lean is split by report kind: the record lives in VCSchema, and "exactly one" or "none"
+# is asked of all the report modules, so a second copy in another one cannot hide.
+R_ALL="Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean"
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 echo "=== there is exactly ONE obligation record type ==="
 # the canonical record is a single `structure Obligation` in Report ...
-nstruct="$(grep -cE "^structure Obligation\b" "$R" || true)"
+nstruct="$(cat $R_ALL | grep -cE "^structure Obligation\b" || true)"
 [ "$nstruct" = "1" ] && ok "exactly one 'structure Obligation' (in Report)" \
   || no "expected exactly one 'structure Obligation' in Report, found $nstruct"
 # ... ObligationCore aliases it, never redefines it.
@@ -39,7 +42,7 @@ echo "=== Report.VC is a compatibility alias, NOT independent storage ==="
 grep -q "^abbrev VC := Obligation" "$R" \
   && ok "VC is an abbrev of the one record" \
   || no "VC is not an abbrev of Obligation"
-grep -qE "^structure VC\b" "$R" \
+cat $R_ALL | grep -qE "^structure VC\b" \
   && no "Report.VC came back as an independent storage struct" \
   || ok "no 'structure VC' (VC is not a second model)"
 
@@ -57,7 +60,7 @@ grep -q "proofLinkLedger" "$M" \
   || no "obligation-ledger no longer unions the proof-link family"
 
 echo "=== no family-specific scoped collector (one walker) ==="
-old="$(grep -cE "def scopedCallsS|def scopedBoundsS|def scopedDivS|def scopedArithS|def scopedAssertsS" "$R" || true)"
+old="$(cat $R_ALL | grep -cE "def scopedCallsS|def scopedBoundsS|def scopedDivS|def scopedArithS|def scopedAssertsS" || true)"
 [ "$old" = "0" ] && ok "no per-family scoped*S collector" || no "a family-specific collector returned ($old)"
 
 echo "=== VC reports render the obligation schedule (no recompute path) ==="
