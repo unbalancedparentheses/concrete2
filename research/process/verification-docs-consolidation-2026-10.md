@@ -67,7 +67,7 @@ output strings. Sizes are bytes at `71df9c25`. KH is short for KNOWN_HOLES.md.
 |---|---:|---|---|---|
 | [README.md](../../docs/verification/README.md) | 536 | index: read CLAIMS_TODAY, then the charter, EVIDENCE_ARCHITECTURE and VERIFICATION_IR. It names 4 of the 49 documents | reference (index) | none specific |
 | [ASSUMPTION_FILES.md](../../docs/verification/ASSUMPTION_FILES.md) | 6,771 | `assumptions.toml` schema v1, the enforced fields, widening and drift | normative ("contract") | `check_assumptions.sh` (comment, line 9) |
-| [AXIOMS.md](../../docs/verification/AXIOMS.md) | 13,498 | proof-layer trust: tier 0 kernel allowlist (`propext`, `Classical.choice`, `Quot.sound`), tier 1 native trust (`Lean.ofReduceBool`, `Lean.trustCompiler`, six theorems, four owners), tier 2 forbidden, re-check by con-leche and nanoda | normative (gate-enforced) | **(parsed)** `check_axiom_inventory.sh:114,123` (theorem names, allowlist); **(parsed)** `check_external_checker.sh:199` (axiom owners); `check_docs_drift.sh:83` (present-tense list); comments in `check_bv_certificates.sh`, `check_evidence_algebra.sh`, `check_checker_pin_freshness.sh`, `bv_capture_solver.sh`, `axiom_native_trust.txt`, `axiom_native_owners.txt`, `Concrete/Report/Evidence.lean:28`, `lean_action_ci.yml:2553`, `Makefile:141` |
+| [AXIOMS.md](../../docs/verification/AXIOMS.md) | 13,498 | proof-layer trust: tier 0 kernel allowlist (`propext`, `Classical.choice`, `Quot.sound`), tier 1 native trust (`Lean.ofReduceBool`, `Lean.trustCompiler`, six theorems, four owners; the gate's legacy classifier also lists `Lean.ofReduceNat`, `check_axiom_inventory.sh:31`), tier 2 forbidden, re-check by con-leche and nanoda | normative (gate-enforced) | **(parsed)** `check_axiom_inventory.sh:114,123` (theorem names, allowlist); **(parsed)** `check_external_checker.sh:199` (axiom owners); `check_docs_drift.sh:83` (present-tense list); comments in `check_bv_certificates.sh`, `check_evidence_algebra.sh`, `check_checker_pin_freshness.sh`, `bv_capture_solver.sh`, `axiom_native_trust.txt`, `axiom_native_owners.txt`, `Concrete/Report/Evidence.lean:28`, `lean_action_ci.yml:2553`, `Makefile:141` |
 | [CLAIMS_TODAY.md](../../docs/verification/CLAIMS_TODAY.md) | 21,264 | the public claim surface: enforced, proof-backed, reported and trusted claims, non-claims, TCB summary | normative ("canonical public reference"; "remains the authoritative statement", line 14) | **(parsed)** `check_docs_drift.sh:72,100` (paths and `--report` kinds must exist) |
 | [CLAIM_TAXONOMY.md](../../docs/verification/CLAIM_TAXONOMY.md) | 17,085 | five composite labels (enforced, proved, reported, trusted assumption, backend/target assumption), their mapping to the report, CLI and JSON, and the forbidden conflations | normative for the current schema (the header defers to R-0440) | none |
 | [CONTRACTS_AND_VCS.md](../../docs/verification/CONTRACTS_AND_VCS.md) | 35,266 | claim, obligation, evidence and audit architecture, contract syntax, contract IR, a 13-row evidence-class table, the SMT pipeline | target ("design proposal") but listed as present-tense | **(parsed)** `check_docs_drift.sh:81` |
@@ -89,7 +89,7 @@ output strings. Sizes are bytes at `71df9c25`. KH is short for KNOWN_HOLES.md.
 | [PROOF_CONTRACT.md](../../docs/verification/PROOF_CONTRACT.md) | 17,177 | what a proof attachment means: the artifact, implementation selection, typed dependency edges, the `proved` state, integrity states, reliance, a decision table | normative ("canonical reference") | none |
 | [PROOF_EXTRACTION_GAPS.md](../../docs/verification/PROOF_EXTRACTION_GAPS.md) | 6,121 | extractor refusals found by workload proofs, 2026-10-21 and 2026-10-23 | record ("findings record") | none |
 | [PROOF_LADDER.md](../../docs/verification/PROOF_LADDER.md) | 15,888 | the reusable proof layer, the discharge ladder (cheapest trust first), `assume` as a trapdoor, shipped against planned | mixed ("partly shipped, partly design") | comment: `Concrete/Proof/Sha256Spec.lean:9` |
-| [PROOF_OBLIGATIONS_REGISTER.md](../../docs/verification/PROOF_OBLIGATIONS_REGISTER.md) | 37,273 | per-rule register of ProofCore extraction rules R-01 … R-28 and G-02, G-05, with assumptions and the future theorem for each | register ("contract document") | comments: `Concrete/Proof/{Proof,ProofCore,ProofSoundness}.lean` cite rows R-01, R-02, R-16 and R-17 |
+| [PROOF_OBLIGATIONS_REGISTER.md](../../docs/verification/PROOF_OBLIGATIONS_REGISTER.md) | 37,273 | per-rule register of ProofCore extraction rules R-01 … R-28 and trust gates G-01 … G-06, with assumptions and the future theorem for each | register ("contract document") | comments: `Concrete/Proof/{Proof,ProofCore,ProofSoundness}.lean` cite rows R-01, R-02, R-16 and R-17 |
 | [PROOF_PRESSURE_SET.md](../../docs/verification/PROOF_PRESSURE_SET.md) | 3,981 | the six-function fixture `examples/proof_pressure` and the state each function exercises | reference (fixture description) | none |
 | [PROOF_SEMANTICS_BOUNDARY.md](../../docs/verification/PROOF_SEMANTICS_BOUNDARY.md) | 10,687 | language semantics against proof semantics: overlap, fixed-width arithmetic, excluded surface, how to read `proved`, the extraction bridge | normative ("canonical reference") | none |
 | [PROOF_STATE_MODEL.md](../../docs/verification/PROOF_STATE_MODEL.md) | 14,539 | how PExpr models environment, arrays, structs, loop state and failure (functional updates, step functions, `none` as stuck) | target in its header ("design proposal"), but the Lean sources cite it as the encoding | comments: `Concrete/Proof/Proof.lean:267,2497`, `ProofCore.lean:1112,1205,1357`, `ProofSoundness.lean:567` |
@@ -160,24 +160,29 @@ come on top) point into it. No golden output under `tests/` contains the paths t
 Six documents carry no `Status:` line: AXIOMS, EVIDENCE_CLASSES, EVIDENCE_PRODUCER_MATRIX,
 OBLIGATION_CORE, PROOFKIT_GUIDE and SMT_SOUNDNESS. PURE_CORE_PROOF_ARC writes it as
 `**Status:**`. The Status lines of eighteen documents call them canonical, normative or a
-contract, and three claim to be the one public statement (§3, C1).
+contract, and two of them claim to be the one public statement of current guarantees (§3, C1).
 
 ## 3. Overlaps and contradictions
 
 ### 3.1 Contradictions (the documents disagree)
 
-- **C1. Three documents each claim to be the one statement of current claims.**
+- **C1. Two documents each claim to be the one statement of current guarantees.**
   CLAIMS_TODAY.md:14 says it "remains the authoritative statement of what Concrete supports
   today". GUARANTEE_STATEMENT.md:3 calls itself "the single precise statement of what Concrete
-  guarantees". VERIFICATION_STATUS.md:3 is "canonical capability map for `main`" (it defers to
-  CLAIMS_TODAY on line 14). [docs/README.md](../../docs/README.md) line 31 lists
+  guarantees", and neither defers to the other. VERIFICATION_STATUS.md:3 ("canonical capability
+  map for `main`") is not a third rival: CLAIMS_TODAY.md:19-20 names it as the cross-axis
+  capability map, and it defers to CLAIMS_TODAY on line 14. It overlaps, though, because it
+  restates the same claims on its own axes. [docs/README.md](../../docs/README.md) line 31 lists
   VERIFICATION_STATUS as "proof status vocabulary", which is not what it contains.
 - **C2. Evidence is ranked in one document and explicitly not ranked in others.**
   GUARANTEE_STATEMENT.md:152-182 defines "four guarantee tiers" and says "each tier strictly
   contains the ones above it". VERIFICATION_CHARTER.md:159 ("Evidence is a vector, not a ladder"),
   CLAIM_TAXONOMY.md:3-6 ("must not present the current labels as a universal evidence ordering")
   and the R-0440 decision note in PROOF_LADDER.md:8-12 all reject a total order.
-- **C3. Five different "five classes".**
+- **C3. Several "class" lists, each presented as the taxonomy.** Some of these lists classify
+  different things: report labels, construct-inventory states, target evidence and guarantee
+  tiers. That is the problem. No document says which list is which kind of thing, and the ones
+  that do classify the same thing disagree.
   - CLAIM_TAXONOMY.md:19-134: enforced, proved, reported, trusted assumption, backend/target
     assumption.
   - EVIDENCE_CLASSES.md:3-4: proved, enforced, reported, assumed, trusted (and "tested" at :70).
@@ -189,7 +194,8 @@ contract, and three claim to be the one public statement (§3, C1).
   - GUARANTEE_STATEMENT.md:152: four tiers.
   - TRUSTED_BOUNDARY_GUIDE.md:11-15: an "evidence level" called `trusted-assumption`.
 
-  They describe one report schema in incompatible terms.
+  CLAIM_TAXONOMY, EVIDENCE_CLASSES and PROVABLE_V1 all describe the current report schema, and
+  they describe it in incompatible terms.
 - **C4. Evidence-class names that the compiler does not emit.** CONTRACTS_AND_VCS.md:117-118 and
   :617-618 define `proved_by_smt_replayed_in_lean`, `proved_by_trusted_solver` and
   `enforced_by_checker`. The Lean sources emit `solver_trusted`, `proved_by_lean_replay`,
@@ -204,10 +210,12 @@ contract, and three claim to be the one public statement (§3, C1).
   GUARANTEE_STATEMENT.md:87 say recursion, allocation, FFI and blocking form an *advisory* gate 5,
   and that "a function that passes gates 1–4 is extracted". PROVABLE_V1.md:36-49,
   PROOF_WORKFLOW.md:68-82 and CLAIMS_TODAY.md:96-103 list no recursion and no allocation as
-  required. The code's `CFnDef.isProofEligible` (`Concrete/Proof/ProofCore.lean:1574-1578`) checks
-  only empty capabilities, not trusted, not an entry point and no trusted impl origin. FFI,
-  allocation and blocking are excluded through capabilities. Recursion is left to extraction and
-  the call rules.
+  required. The code agrees with the second group. `CFnDef.isProofEligible`
+  (`Concrete/Proof/ProofCore.lean:1574-1578`) holds only the source gates, but the eligibility
+  assessment (`ProofCore.lean:3278-3289`) computes `profileReasons` (recursion, unbounded loops,
+  allocation, FFI, floating point, blocking I/O) and sets `eligible := passesSource &&
+  passesProfile`. The "advisory" documents are therefore wrong about the shipped compiler.
+  Floating point, which is a profile reason in the code, is in none of the lists.
 - **C7. Is authority-free the same as pure?** GUARANTEE_STATEMENT.md:82 lists "**Pure** — empty
   capability set (no effects)", and :34-40 says "`capSet.isEmpty` = pure". PROVABLE_V1.md:42 and
   PROVABLE_SUBSET.md:58-59 say authority-free "is not by itself a purity/totality claim".
@@ -231,6 +239,31 @@ contract, and three claim to be the one public statement (§3, C1).
   values, ByteView) or deferred, with old phase numbers. Open decisions are now owned by the owner
   decisions table of [ROADMAP.md](../../ROADMAP.md#owner-decisions) and by the OPEN entries of
   [docs/spec/decisions.md](../../docs/spec/decisions.md).
+- **C11. The proof status set.** This is the largest current-state conflict.
+  CLAIM_TAXONOMY.md:270-285 declares "the seven canonical proof/obligation status terms" (proved,
+  unbound, stale, missing, blocked, ineligible, trusted). The compiler also emits `needs_recheck`,
+  `deps_not_current`, `correspondence_unjustified` and `spec_unbound` (string literals in
+  `Concrete/Proof/ProofCore.lean`; the `ObligationStatus` constructors start at :1889).
+  PROOF_CONTRACT.md:230 still labels `needs_recheck` an "R-0004 target".
+- **C12. Diagnostic codes outside the classification.** `Concrete/Check/Policy.lean` emits
+  E0613–E0617 (vacuity, assumptions, hypothesis debt, solver evidence, two-kernel policy, from
+  :229 on), and `ProofCore.lean` emits E0811–E0813 for the newer proof states. None of them has a
+  row in `docs/spec/codes.tsv`. So either `--report diagnostic-codes` does not list them, or S6
+  would fail. Either way, no document owns their meaning.
+- **C13. Out-of-bounds behaviour.** PROOF_STATE_MODEL.md:197-206 says source-level out-of-bounds
+  access "is undefined behavior (panics in debug builds; UB in release)". MEM-6 in
+  [docs/spec/memory.md](../../docs/spec/memory.md) makes it a checked abort.
+- **C14. Dependency-edge vocabularies.** PROOF_CONTRACT.md:102-114 has four edges (`contract`,
+  `body`, `trusted`, `missing`). EVIDENCE_ARCHITECTURE.md:150-163 has six (`contract`, `model`,
+  `implementation`, `trusted`, `missing`, `unclassified`). `Concrete/Proof/DependencyEdge.lean`
+  has five (`contract`, `body`, `trusted`, `missing`, `unclassified`).
+- **C15. H23.** TRUSTED_COMPUTING_BASE.md:292-301 still calls the hypothesis set "currently
+  unsound" ("Until R-0461 composes status …"). KNOWN_HOLES.md:413 marks H23 CLOSED 2026-08-03
+  (R-0461).
+- **C16. PROVABLE_V1 contradicts itself on widths.** Lines 85-93 support `div`, `bitand` and
+  wrapping add at u32 or i32 only. Line 115 says that since 2026-10-23 they work at every integer
+  width, and that `shl` works at every width. The "Excluded" list after it still excludes shifts
+  and `bitand` at widths other than `u32`.
 
 ### 3.2 Overlaps (one fact in several places)
 
@@ -253,7 +286,8 @@ contract, and three claim to be the one public statement (§3, C1).
 
 Two smaller collisions:
 
-- PROOF_OBLIGATIONS_REGISTER numbers its rows `R-01` … `R-28`. That is the roadmap's `R-NNNN`
+- PROOF_OBLIGATIONS_REGISTER numbers its rows `R-01` … `R-28` (its trust gates are `G-01` …
+  `G-06`). That is the roadmap's `R-NNNN`
   namespace, and the Lean comments that cite "R-01 and R-02" read like roadmap tasks.
 - `scripts/tools/claim_inventory.sh:13` documents its usage as writing
   `docs/verification/claim-inventory.tsv`, a file that does not exist; the frozen copies carry the
@@ -290,14 +324,14 @@ regex, §1). `trusted.md`/`TRUST-` is taken, which is why the TCB chapter is `tr
 | chapter | prefix | what it owns | fed by (normative parts) | becomes rationale or design record | gates whose fact it owns |
 |---|---|---|---|---|---|
 | `claims.md` | `CLAIM-` | the vocabulary: the composite labels as emitted today (definitions), the forbidden conflations, which words a report may use for which evidence, no semantically dark construct, evidence as separate dimensions | CLAIM_TAXONOMY §1, §6 and §7; EVIDENCE_CLASSES; PROOF_STORY_MATRIX "Claim Classes"; PROVABLE_V1 "Claim Classes"; the vocabulary in CONTRACTS_AND_VCS and PROVER_NEUTRAL; VERIFICATION_CHARTER "Product invariants" | VERIFICATION_CHARTER (whole), CLAIM_TAXONOMY §2-5 (mappings, later generated) | `check_evidence_algebra.sh` (named by the entries as `Enforced by:`) |
-| `provable.md` | `PROV-` | proof eligibility, the admitted ProofCore surface (the ProvableV1 allowlist), the failure model, the compatibility rule, how the proof model differs from the language | PROVABLE_V1; EFFECT_PROOF_BOUNDARIES §2-3; PROOF_SEMANTICS_BOUNDARY §2-6; the decisions in PROOF_STATE_MODEL | PROVABLE_SUBSET, PROOF_STATE_MODEL, EFFECT_PROOF_BOUNDARIES §8; PROOF_EXTRACTION_GAPS as a record | showcase ProvableV1 conformance; codes E0802, E0803, E0804 and E0612 move to `rule` |
-| `attachment.md` | `ATT-` | in-source proof links, fingerprints, coverage, freshness and the integrity states (stale, missing, unbound), typed dependency edges, the identity definitions | PROOF_CONTRACT; PROOF_WORKFLOW §4-7 (normative sentences only); IDENTITY_SEPARATION §3 (D1–D7 as `ATT-D` definitions); THREAT_MODEL §1 and §7 | IDENTITY_SEPARATION §1-2 and §4 (record), PROOF_WORKFLOW (stays a guide) | `check_dependency_edges.sh`, `check_one_producer.sh`, `check_identity_*`; codes E0800, E0801, E0805, E0806, E0807 and E0810 move to `rule` |
-| `obligations.md` | `OBL-` | the obligation record and kinds, the scoped context, the runtime-safety families, discharge adapters, Core-to-obligation faithfulness, prover-neutral propositions (TermIR, VIR as pending) | OBLIGATION_CORE; PROVER_NEUTRAL "THE NORMATIVE RULE", "The record" and "Composition"; the shipped parts of CONTRACTS_AND_VCS; VERIFICATION_IR (pending entries) | CONTRACTS_AND_VCS (design record), VC_GENERATOR_DESIGN, PROOF_AUDIT_PIPELINE, PROVER_NEUTRAL "As-built versus as-specified" | `check_vc_bridge_register.sh` (the register stays, §4.4) |
-| `solvers.md` | `SMT-` | the external-solver firewall, the meaning of `solver_trusted`, `solver_checked` and `solver_replayed`, encoding assumptions, unsupported theories, the discharge order | SMT_SOUNDNESS; PROOF_LADDER "discharge ladder" and "`assume` is a controlled trapdoor"; PURE_CORE_PROOF_ARC "Evidence classes" | PROOF_LADDER (rest) | `check_smt_path.sh`, `check_smt_negatives.sh`, `check_smt_policy.sh`, `check_smt_replay.sh` |
-| `kernels.md` | `KRN-` | the kernel axiom allowlist, declared native trust (theorems and owners), forbidden axioms, independent re-check, checker identity, pin freshness and acceptance, what a multi-kernel badge means | AXIOMS; EXTERNAL_CHECKER "Pins and their freshness"; PROVER_NEUTRAL "DECIDED (2026-07-31)"; TCB §2 | AXIOMS measurements, EXTERNAL_CHECKER bump evaluations (records), R-0208-closure | `check_axiom_inventory.sh`, `check_external_checker.sh`, `check_checker_pin_freshness.sh`, `check_claim_inventory.sh`, `check_bv_certificates.sh`, `check_lean14576_reproducer.sh` |
-| `receipts.md` | `RCPT-` | evidence objects as separate facts (correspondence, validity, closure, replay receipt, policy decision), authorship modes, independence, revocation and advisories, degradation | EVIDENCE_ARCHITECTURE (pending entries tracked by R-0440 and related tasks); VERIFICATION_IR "Identities" and "Certificate profiles"; THREAT_MODEL §8-9 | EVIDENCE_ARCHITECTURE prose, PROOF_SYNTHESIS (see V7) | none yet (pending) |
-| `trustbase.md` | `TCB-` | the trusted base as named assumptions with stable IDs (`TCB-n`), per-profile TCBs, the interpreter's trust boundary, assumption files | TRUSTED_COMPUTING_BASE; GUARANTEE_STATEMENT §3-4; PROOF_SEMANTICS_BOUNDARY §7; INTERPRETER_TRUST §1, §3 and §4; ASSUMPTION_FILES (schema and enforced fields) | TCB "Why This Exists", INTERPRETER_TRUST §5, TRUSTED_BOUNDARY_GUIDE (stays a guide) | `check_assumptions.sh`; spec.py S7's `trusted:` lookup |
-| `registers.md` | `REG-` | the rules every register obeys: a hole is tracked, gated and disclosed; status headings; every obligation family has a VC-bridge row; every constructor is classified in the producer matrix; wrong-code admission and lifecycle; frozen baselines change only by amendment | KNOWN_HOLES "governing rule" and "How to use this file"; VC_BRIDGE_REGISTER "Why" and "What faithful means"; WRONG_CODE_CORPUS; EVIDENCE_PRODUCER_MATRIX columns; IDENTITY_MIGRATION_PLAN §6 (amendment rule) | the registers themselves stay as data (§4.4) | `check_hole_status_consistency.sh`, `check_known_wrong_corpus.sh`, `check_vc_bridge_register.sh`, `check_evidence_tree.sh`, `test_wrong_code.sh`, `check_identity_rows.sh`, `check_identity_freeze.sh` |
+| `provable.md` | `PROV-` | proof eligibility, the admitted ProofCore surface (the ProvableV1 allowlist), the failure model, the compatibility rule, how the proof model differs from the language | PROVABLE_V1; EFFECT_PROOF_BOUNDARIES §2-3 and §4.1-4.2 (the shipped admission model: summary-based admission refusals, and failed admission still kept under replay and drift maintenance); PROOF_SEMANTICS_BOUNDARY §2-6; the decisions in PROOF_STATE_MODEL, minus its out-of-bounds UB text (C13), which MEM-6 already governs | PROVABLE_SUBSET, PROOF_STATE_MODEL, EFFECT_PROOF_BOUNDARIES §8; PROOF_EXTRACTION_GAPS as a record | showcase ProvableV1 conformance; codes E0802, E0803, E0804 and E0612 (see §4.3 on codes) |
+| `attachment.md` | `ATT-` | in-source proof links, fingerprints, coverage, freshness and the integrity states (stale, missing, unbound), typed dependency edges, the identity definitions | PROOF_CONTRACT; PROOF_WORKFLOW §4-7 (normative sentences only); the compiler's full status set (C11) and edge set (C14); PROOF_THEOREM_SHAPES' required shapes and naming rules ("must", line 5); IDENTITY_SEPARATION §3 (D1–D7 as `ATT-D` definitions); THREAT_MODEL §1 and §7 | IDENTITY_SEPARATION §1-2 and §4 (record), PROOF_WORKFLOW (stays a guide) | `check_dependency_edges.sh`, `check_one_producer.sh`, `check_identity_*`; codes E0800, E0801, E0805–E0807, E0810 and E0811–E0813 (see §4.3 on codes) |
+| `obligations.md` | `OBL-` | the obligation record and kinds, the scoped context, the runtime-safety families, discharge adapters, Core-to-obligation faithfulness, prover-neutral propositions (TermIR, VIR as pending) | OBLIGATION_CORE; PROVER_NEUTRAL "THE NORMATIVE RULE", "The record", "Composition", "Evidence vocabulary" and its fail-closed driver requirements; the shipped parts of CONTRACTS_AND_VCS; VERIFICATION_IR "Purpose and ownership", "VIR v1 boundary" and "Semantics" (pending entries) | CONTRACTS_AND_VCS (design record), VC_GENERATOR_DESIGN, PROOF_AUDIT_PIPELINE, PROVER_NEUTRAL "As-built versus as-specified" | `check_vc_bridge_register.sh` (the register stays, §4.4) |
+| `solvers.md` | `SMT-` | the external-solver firewall, the meaning of `solver_trusted`, `solver_checked` and `solver_replayed`, encoding assumptions, unsupported theories, the discharge order | SMT_SOUNDNESS; PROOF_LADDER "discharge ladder" and "`assume` is a controlled trapdoor"; PURE_CORE_PROOF_ARC "Evidence classes" | PROOF_LADDER (rest) | `check_smt_path.sh`, `check_smt_negatives.sh`, `check_smt_policy.sh`, `check_smt_replay.sh`; codes E0615 and E0616 (solver evidence) |
+| `kernels.md` | `KRN-` | the kernel axiom allowlist, declared native trust (theorems and owners), forbidden axioms, independent re-check, checker identity, pin freshness and acceptance, what a multi-kernel badge means | AXIOMS; EXTERNAL_CHECKER "Pins and their freshness"; PROVER_NEUTRAL "DECIDED (2026-07-31)" and "The trust boundaries" (kernel side); TCB §2 | AXIOMS measurements, EXTERNAL_CHECKER bump evaluations (records), R-0208-closure | `check_axiom_inventory.sh`, `check_external_checker.sh`, `check_checker_pin_freshness.sh`, `check_claim_inventory.sh`, `check_bv_certificates.sh`, `check_lean14576_reproducer.sh`; code E0617 (two-kernel policy) |
+| `receipts.md` | `RCPT-` | evidence objects as separate facts (correspondence, validity, closure, replay receipt, policy decision), authorship modes, independence, revocation and advisories, degradation | EVIDENCE_ARCHITECTURE (pending entries tracked by R-0440 and related tasks); VERIFICATION_IR "Identities and canonical encoding", "Certificate profiles" and "Extension admission"; THREAT_MODEL §8-9 | EVIDENCE_ARCHITECTURE prose, PROOF_SYNTHESIS (see V7) | none yet (pending) |
+| `trustbase.md` | `TCB-` | the trusted base as named assumptions with stable IDs (`TCB-n`), per-profile TCBs, the interpreter's trust boundary, assumption files | TRUSTED_COMPUTING_BASE (with C15 corrected); GUARANTEE_STATEMENT §3-4; PROOF_SEMANTICS_BOUNDARY §7; INTERPRETER_TRUST §1, §3 and §4; ASSUMPTION_FILES (schema and enforced fields); TRUSTED_BOUNDARY_GUIDE's three-way split and wrapper rules ("canonical"); PROVER_NEUTRAL "The trust boundaries" (non-kernel side) | TCB "Why This Exists", INTERPRETER_TRUST §5, TRUSTED_BOUNDARY_GUIDE (stays a guide) | `check_assumptions.sh`; spec.py S7's `trusted:` lookup; codes E0613 and E0614 (vacuity, assumptions) |
+| `registers.md` | `REG-` | the rules every register obeys: a hole is tracked, gated and disclosed; status headings; every obligation family has a VC-bridge row; every constructor is classified in the producer matrix; wrong-code admission and lifecycle; frozen baselines change only by amendment | KNOWN_HOLES "governing rule" and "How to use this file"; THREAT_MODEL §10 (the required non-vacuous controls); VC_BRIDGE_REGISTER "Why" and "What faithful means"; WRONG_CODE_CORPUS; EVIDENCE_PRODUCER_MATRIX columns; IDENTITY_MIGRATION_PLAN §6 (amendment rule) | the registers themselves stay as data (§4.4) | `check_hole_status_consistency.sh`, `check_known_wrong_corpus.sh`, `check_vc_bridge_register.sh`, `check_evidence_tree.sh`, `test_wrong_code.sh`, `check_identity_rows.sh`, `check_identity_freeze.sh` |
 
 Two more moves stay inside the existing language spec:
 
@@ -309,11 +343,19 @@ Two more moves stay inside the existing language spec:
   EVIDENCE_PRODUCER_MATRIX's RATIFIED section are replaced by citations of OWN-, TRUST-, STMT-4 and
   MEM-. The verification chapters cite language rules and do not restate them.
 
+THREAT_MODEL's remaining categories (§2-6) describe which mechanism catches which threat. They
+become the rationale of the chapters that own those mechanisms, and each "Required defenses" line
+becomes an entry in the owning chapter. S11 detects only verbatim restatements
+(`spec.py:497-516`), so it cannot show that a migration lost a sentence or kept a paraphrase.
+Each absorbing slice therefore commits a claim map: every normative sentence of the absorbed
+document, each with the entry, rationale, register row or open decision it went to. Review checks
+the map.
+
 ### 4.3 What the format needs from `spec.py`
 
 The entry format carries over unchanged: an anchor, a heading, one sentence, the fields, a
 rationale and examples. Verification rules are often enforced by a gate script or a report rather
-than by a compile-time diagnostic, so four extensions are needed. Each lands with a negative
+than by a compile-time diagnostic, so five extensions are needed. Each lands with a negative
 control in README §3.1.
 
 1. **Gate sites (S7).** `Enforced by:` may name `scripts/tests/<gate>.sh`. The gate must contain a
@@ -321,14 +363,29 @@ control in README §3.1.
    how every gate in the table above becomes a site.
 2. **A `policy` kind (S1, S5).** A policy entry is a rule about evidence, admission or a register
    whose violation fails a gate or produces a report verdict, not a compile diagnostic. S5
-   coverage for a policy entry: at least one `Enforced by:` gate. That gate must be in
-   `scripts/tests/ci_gate_inventory.txt`, so it actually runs in CI, and must have a negative
-   control (a self-test or planted defect) named in the entry's fixtures table. Refusals that carry
-   E08xx codes keep the `refusal` kind and the S12 witness rule.
+   coverage applies to an `enforced` or `partial` policy entry. It needs at least one
+   `Enforced by:` gate, that gate must be in `scripts/tests/ci_gate_inventory.txt` so it actually
+   runs in CI, and it must have a negative control (a self-test or planted defect) named in the
+   entry's fixtures table. A `pending` policy entry needs only a resolvable tracking ID (S8), as
+   pending entries do today. When it turns `enforced`, the gate and control requirement applies in
+   the same change.
 3. **Trusted IDs (S7).** `Evidence: trusted: <ID>` must name a live `TCB-` entry. Today it only
    has to occur somewhere in the text of TRUSTED_COMPUTING_BASE.md. This lands with `trustbase.md`
    and is stricter than the current substring test.
-4. **Report examples (S4), later.** An example of the form
+4. **Proof and policy codes (S1, S6).** Today only a `refusal` may name codes
+   (`spec.py:358-361`), stages come from a fixed compiler-stage set (`spec.py:24`, with no `proof`
+   or `policy`), and S6 requires the compiler ledger's `rules` field to equal the spec's mapping
+   (`spec.py:794-805`). A `coverage_allow.tsv` row does not waive S6. Many proof codes are
+   warnings or informational report diagnostics (`ProofCore.lean:2140-2160`), not refusals.
+   Moving E06xx and E08xx from `tooling` to `rule` therefore needs all three of the following, or
+   the codes stay `tooling` and the entries cite them in prose only:
+   - the stages `proof` and `policy`;
+   - a rule that a `policy` entry may name a non-blocking diagnostic code;
+   - the compiler tagging those diagnostics with `rule: ID@v` (V9).
+
+   First, C12 must be resolved: E0613–E0617 and E0811–E0813 are emitted but unclassified, so they
+   need ledger rows before any of this.
+5. **Report examples (S4), later.** An example of the form
    `con accept report=<kind> expect=<field>:<value>` compiles a program, runs `--report <kind>`
    and compares one JSON field. It is needed only for entries whose evidence is a report state,
    such as stale, unbound or `solver_trusted`. Until it exists, those entries are `policy` entries
@@ -340,8 +397,14 @@ S13 extends to `docs/verification/`. `one_spec.py` gains a second list,
 disposition is one of:
 
 - `absorb`: the row must disappear, and the file with it, as in `unabsorbed.tsv`;
-- `register`, `guide`, `record` or `runbook`: the row and file stay, the file's `Status:` line must
-  name that role, and S11 keeps it free of normative sentences.
+- `register`, `guide`, `record`, `runbook`, `public` (CLAIMS_TODAY) or `index` (README): the row
+  and file stay, the Markdown file's `Status:` line must name that role, and S11 keeps it free of
+  normative sentences;
+- `data`: a TSV or text file read by a gate or named by a Lean string. It has no Status line, and
+  the row names its reader.
+
+Slice 1 adds the role words to the Status lines of every retained file in the same commit that
+introduces the check, so the check never sees a retained file without one.
 
 A new file under docs/verification is refused unless it adds a row with a non-`absorb`
 disposition. An `absorb` row can never be added, so the normative part only shrinks.
@@ -372,13 +435,13 @@ Once the absorb rows are gone, the directory holds only roles that are not speci
 
 | reader | today | after |
 |---|---|---|
-| `check_axiom_inventory.sh:114,123`, `check_external_checker.sh:199` | grep AXIOMS.md for theorem names, owners and the allowlist | `kernels.md` holds generated tables (S9-style: `spec.py manifest` from `axiom_native_trust.txt` and `axiom_native_owners.txt`). The gates read the data files and the S9 check keeps the table equal to them, replacing three hand greps with one byte-equality check. Done in one commit with the slice that absorbs AXIOMS |
+| `check_axiom_inventory.sh:114,123`, `check_external_checker.sh:199` | grep AXIOMS.md for theorem names, owners and the allowlist | the kernel allowlist is hard-coded twice today (`ALLOWLIST` in `check_axiom_inventory.sh:27`, `STANDARD_AXIOMS` in `check_external_checker.sh:66`, with the legacy `NATIVE_AXIOMS` at :31). The slice first moves it to one data file beside `axiom_native_trust.txt` and `axiom_native_owners.txt`, read by both gates. `spec.py`'s S9, which today knows only the `exit_2i` manifest, gains a generic "table generated from a data file" manifest. `kernels.md`'s tables are then generated from the three files and S9 keeps them byte-equal, so the three greps become one equality check. All of this lands in the commit that absorbs AXIOMS |
 | `spec.py:906` | substring of TRUSTED_COMPUTING_BASE.md | a live `TCB-` entry (§4.3, item 3) |
 | `check_docs_drift.sh:71-104` (`PRESENT_DOCS`, `REPORT_DOCS`) | 9 named verification documents | a glob over `docs/verification/*.md` minus `record` rows, plus `docs/spec/*.md` for `--report` kinds. Archived audits leave the list in the slice that archives them |
-| `check_hole_status_consistency.sh`, `check_submodule_check_coverage.sh`, `check_known_wrong_corpus.sh` | KNOWN_HOLES headings | unchanged; KNOWN_HOLES stays a register, and the REG- entries name these gates as sites |
+| `check_hole_status_consistency.sh`, `check_submodule_check_coverage.sh` (and `check_known_wrong_corpus.sh`, whose block headings `check_hole_status_consistency.sh:59-105` parses; it names KNOWN_HOLES only in comments) | KNOWN_HOLES headings | unchanged; KNOWN_HOLES stays a register, and the REG- entries name these gates as sites |
 | `check_vc_bridge_register.sh` | VC_BRIDGE_REGISTER rows | unchanged; site of a REG- entry |
 | `check_evidence_tree.sh:342` | EVIDENCE_PRODUCER_MATRIX constructors | unchanged; site of a REG- entry |
-| `check_convergence_inventory.sh:177,203` | the RATIFIED source-order line | checks that STMT-4 is live in `docs/spec/ids.tsv`, and the matrix section becomes a citation |
+| `check_convergence_inventory.sh:177,203` | the RATIFIED source-order line | requires the exact versioned rule: `STMT-4@1` is `live` in `docs/spec/ids.tsv`, and STMT-4's normative sentence in `statements.md` still contains "literal elements and fields in the order written". A new STMT-4 version fails the gate until someone checks it. The matrix section becomes a citation of STMT-4@1 |
 | `check_claim_inventory.sh`, `checker_acceptance_evidence.sh`, `check_identity_*.sh`, `identity_*.sh` | TSV paths | unchanged (data stays put) |
 | `site_reference.py:32`, `book.yml` | publish PROVABLE_SUBSET.md | entry removed when `provable.md` lands, because S10 publishes the chapter. `check_site_generated.sh` must stay green |
 | `Report.lean:1446,4118,6076` | print `docs/verification/PROVABLE_V1.md`, `PROOF_WORKFLOW.md` and `PROOF_STORY_MATRIX.md` | print the `provable.md` anchor in the slice that absorbs PROVABLE_V1. That is a compiler change and needs CI. PROOF_WORKFLOW and PROOF_STORY_MATRIX keep their paths |
@@ -390,14 +453,19 @@ Each slice keeps every live claim: each normative sentence becomes an entry, rat
 or register row, or is listed in the slice's commit message as a contradiction that waits for an
 owner decision. Each slice fixes every inbound link, including anchors (`check_doc_links.sh`
 checks anchors) and the root-relative links in `changelog.d/`, and keeps `check_spec.sh`,
-`check_docs_drift.sh` and `check_doc_links.sh` green. No slice changes a stated policy.
-Contradictions stay as they are, marked by `open` entries (`Status: open Vn`), until the owner
-answers.
+`check_docs_drift.sh` and `check_doc_links.sh` green. No slice changes a stated policy, except
+by correcting a document to what the shipped compiler does (C6, C9, C11, C14, C15 and C16 are
+of that kind; the note cites the code for each). A contradiction that needs a policy choice stays
+in its documents, listed in the slice's claim map, until the owner answers. It cannot be written
+as an `open` entry: S1 accepts `Status: open ODn` only for a real owner decision of the ROADMAP
+table (`spec.py:349-353`). The V-decisions below become open entries only after the owner admits
+them to that table.
 
 0. **This note.** Research only.
 1. **Tooling.** `spec.py` gains gate sites, the `policy` kind and its coverage rule, and negative
    controls for both. `one_spec.py` gains `verification_docs.tsv` with every current file
-   classified, and its own controls. README §1 gains the part-two inventory rows (chapters
+   classified, and its own controls. Every retained file gets its role word in its Status line in
+   the same commit. README §1 gains the part-two inventory rows (chapters
    planned, none written). There are no document moves. Needs `check_spec.sh` on CI (S7 resolves
    Lean names).
 2. **Status lines and the archive.** Add the missing `Status:` lines (six documents), correct
@@ -417,18 +485,20 @@ answers.
    INTERPRETER_TRUST boundary and the ASSUMPTION_FILES schema rules. TRUSTED_BOUNDARY_GUIDE and
    GUARANTEE_STATEMENT §3-4 then cite TCB- IDs.
 5. **`registers.md` (REG-).** The register rules, with the existing gates as sites. Registers
-   gain a `Status: register` line and a citation of their REG- entry. PROOF_OBLIGATIONS_REGISTER
+   gain a citation of their REG- entry (their Status lines were done in slice 1). PROOF_OBLIGATIONS_REGISTER
    rows are renamed only if V10 says so.
 6. **`attachment.md` (ATT-).** PROOF_CONTRACT, the identity definitions and the normative
-   sentences of PROOF_WORKFLOW. E0800, E0801, E0805–E0807 and E0810 are reclassified to `rule`,
-   with S12 witnesses or `coverage_allow.tsv` rows. Diagnostic rule tags are added only if V9 says
-   so.
+   sentences of PROOF_WORKFLOW. It states the compiler's status and edge sets (C11, C14), and
+   PROOF_CONTRACT and CLAIM_TAXONOMY are corrected to match them. Proof codes are reclassified to
+   `rule` only if V9 approves the rule tags and §4.3 item 4 has landed. Otherwise they stay
+   `tooling`.
 7. **`solvers.md` (SMT-) and `obligations.md` (OBL-).** SMT_SOUNDNESS, OBLIGATION_CORE, the
    shipped parts of CONTRACTS_AND_VCS and the PROVER_NEUTRAL rule. The C4 names (CONTRACTS_AND_VCS
    becomes a design record, so its names stop being present-tense) and the C5 meaning wait for V4.
 8. **`provable.md` (PROV-).** PROVABLE_V1, the eligibility rules and the proof-semantics boundary.
-   `Report.lean`'s strings and `site_reference.py` change here (compiler slice on CI). C6, C7 and
-   C8 need V3.
+   `Report.lean`'s strings and `site_reference.py` change here (compiler slice on CI). C6 is corrected
+   to the code; C7 and C8 need V3. PROVABLE_V1's width rows are reconciled with line 115
+   (C16).
 9. **`claims.md` (CLAIM-).** The vocabulary, after V2. CLAIM_TAXONOMY, EVIDENCE_CLASSES and the
    class tables in PROOF_STORY_MATRIX and PROVABLE_V1 then cite the chapter.
 10. **`receipts.md` (RCPT-).** EVIDENCE_ARCHITECTURE and VERIFICATION_IR as pending entries,
@@ -455,10 +525,10 @@ recommends an answer for each but decides none.
   "strictly contains" tier ordering is withdrawn in favour of the charter's "vector, not a ladder".
   Also to decide: whether backend/target assumption is its own class (CLAIM_TAXONOMY) or part of
   `trusted` (the other three lists), and whether `open` and `tested` are classes.
-- **V3. Proof eligibility (C6, C7, C8).** Whether no recursion, no allocation, no FFI and no
-  blocking are required (PROVABLE_V1) or advisory (EFFECT_PROOF_BOUNDARIES,
-  GUARANTEE_STATEMENT), and whether "pure" may be used for authority-free. The spec states what
-  the code does either way. The decision is which documents are corrected.
+- **V3. Proof eligibility wording (C7, C8).** Whether "pure" may be used for authority-free. C6
+  needs no decision, because the code requires the profile gates and the advisory documents are
+  corrected to it. Whether floating point stays a profile reason is an existing code choice that
+  the spec only records.
 - **V4. The SMT class names (C4, C5).** Recommended: SMT_SOUNDNESS's meanings, which match the
   code. PURE_CORE_PROOF_ARC's "`solver_checked` … HELPER" rule is restated as `solver_trusted`.
   That rewords a pinned arc rule, so it needs the owner.
@@ -473,8 +543,10 @@ recommends an answer for each but decides none.
 - **V8. KNOWN_HOLES' stale decision list (C10) and the H20/T1 duplication.** Whether to delete
   :1186-1223, since open decisions now live in the ROADMAP table and `decisions.md`, and whether
   native-code trust is a hole (H20, OPEN) or a trust-ledger entry (T1). Today it is both.
-- **V9. Rule tags on proof diagnostics.** Whether E08xx diagnostics carry `rule: ATT-n@v` as
-  language diagnostics do. This changes compiler output and goldens.
+- **V9. Rule tags on proof and policy diagnostics.** Whether E06xx and E08xx diagnostics carry
+  `rule: ID@v` as language diagnostics do. This changes compiler output and goldens. It is a
+  prerequisite for classifying those codes as `rule` (§4.3, item 4). Also: what owns the
+  unclassified E0613–E0617 and E0811–E0813 (C12).
 - **V10. Register row IDs.** Whether PROOF_OBLIGATIONS_REGISTER's `R-01` … rows are renamed
   (for example `PX-01`) so they do not read as roadmap tasks. That touches Lean comments.
 - **V11. VERIFY_GATES.** Whether its never-delete rule and boundary severities (post-elab is a

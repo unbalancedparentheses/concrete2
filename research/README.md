@@ -228,7 +228,7 @@ If you want the highest-leverage current research first:
 
 - [process/testing-strategy.md](process/testing-strategy.md) — gaps beyond the current suites: fuzzing, property tests, and differential testing (`P1`, `Open`)
 - [process/bug-areas-2026-10.md](process/bug-areas-2026-10.md) — which stages, modules and structural classes the 270 bugs were fixed in, silent shares, discovery and time to fix, measured 2026-10-26 (`P1`, `Research`; method owned by [docs/bugs/README.md](../docs/bugs/README.md#bug-areas))
-- [process/verification-docs-consolidation-2026-10.md](process/verification-docs-consolidation-2026-10.md) — inventory of the 59 files in docs/verification (roles, gate readers, overlaps and ten contradictions) and a proposal to consolidate them into verification chapters of docs/spec plus registers, guides and records, in twelve slices with eleven owner decisions (`P1`, `Research`; owner [R-0554](../docs/project/ROADMAP_TASKS.md#task-r-0554) item 5)
+- [process/verification-docs-consolidation-2026-10.md](process/verification-docs-consolidation-2026-10.md) — inventory of the 59 files in docs/verification (roles, gate readers, overlaps and sixteen contradictions) and a proposal to consolidate them into verification chapters of docs/spec plus registers, guides and records, in twelve slices with eleven owner decisions (`P1`, `Research`; owner [R-0554](../docs/project/ROADMAP_TASKS.md#task-r-0554) item 5)
 
 ## Meta And Long-Horizon
 
