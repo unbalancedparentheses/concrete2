@@ -7,7 +7,7 @@
 #
 #   scripts/tests/ci_gate_inventory.txt   the `cmd` of every `via=step` row, LC_ALL=C sorted, unique
 #                                         (run_ci_gates_local.sh compares it with the workflow)
-#   mk/gates.mk                           a make target per row with a `make` cell, included from the
+#   mk/gates.mk                           a .PHONY make target per row with a `make` cell, included from the
 #                                         Makefile: `<make>: [build] ## <claim>`, recipe
 #                                         `$(NIX_DEVELOP) <cmd>` ($(NIX_DEVELOP_PROVERS) for shell
 #                                         provers) with the script spelled ./scripts/...
