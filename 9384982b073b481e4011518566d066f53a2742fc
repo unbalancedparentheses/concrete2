@@ -1,0 +1,2 @@
+[piece 2 of 2: docs]
+- ROADMAP.md:562: V1c explicitly lists 2q as “not blocked by,” contradicting the approved requirement that 2q blocks it once its correspondence proof is built. The prose exception above does not fix the checked prerequisite list: `check_roadmap_coverage.sh` enforces identical prerequisites for all row-3 deliverables, so it accepts this omission and rejects adding 2q to V1c alone. Represent and validate V1c’s additional prerequisite separately.
