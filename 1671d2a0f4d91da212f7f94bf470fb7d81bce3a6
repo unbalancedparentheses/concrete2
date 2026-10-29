@@ -1,0 +1,5 @@
+[piece 2 of 3: tests]
+- tests/rules/exit_2i.tsv:132: The new fixture expects `REF-11@3`, but `h(&mut p, &mut p.g)` produces `REF-8@1`: `checkCallBorrowConflicts` recognizes the prefix overlap and passes `byRoot = false`, which `CheckError.ruleTag` maps to `REF-8@1`. The `check_rules_2i.sh` gate checks the exact rule tag, so this row fails despite receiving E0293.
+[piece 3 of 3: docs]
+- docs/spec/references.md:894: The new fixture expects `REF-11@3`, but overlapping paths produce `REF-8@1`: `checkCallBorrowConflicts` identifies the prefix overlap, and `CheckError.rule` assigns that diagnostic to REF-8. The inline rejection fixture has the same mismatch. These conformance checks fail despite the compiler correctly rejecting the program.
+- docs/spec/modules.md:266: MOD-7 retains inline submodules inside their parent’s file without identifying this as pending nonconformance. That introduces an exception to OD9’s recorded “one file per module” answer. Recording current support is appropriate, but treating it as compatible with the decided rule changes the owner’s answer.
