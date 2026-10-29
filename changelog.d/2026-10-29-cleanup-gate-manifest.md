@@ -13,3 +13,16 @@ the manifest, and cross-checks each row's `via` against its reachability walk, w
 control for each refusal. The seeding found three scripts no CI step reaches: `test_bundle_smoke.sh`,
 `test_parser_fuzz.sh` and `test_verify_gates.sh` (make targets only); they are recorded as
 `skip` rows with tier `manual`.
+
+### Gate Make Targets Generated From the Manifest (cleanup 5, slice 2, 2026-10-29)
+
+The 185 Makefile targets that each run one gate command are now generated into `mk/gates.mk` from
+the manifest's `make` cells and included from the Makefile; the targets whose recipe is more than
+one plain gate command (run_tests.sh, the oracles, the docs-drift and example pairs, the proof gate,
+the fuzz smoke) stay hand-written. Each generated target line and recipe is byte-identical to the
+hand-written one it replaces (18 recipes were first respelled `bash ./scripts/tests/...` like the
+other 167), and `make -pRrq`'s rule database is unchanged for every target apart from the new
+include node, `make test-mutation` (the mutation harness, under `$(NIX_DEVELOP)`), and 59 gate
+targets that are now `.PHONY` like the rest. `check_gate_hygiene.sh` lints the generated recipes
+too, and the registration gate refuses a stale `mk/gates.mk`, a generated target also written by
+hand, and a Makefile that does not include it.
