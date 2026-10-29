@@ -1,0 +1,2 @@
+[piece 1 of 1: docs]
+- docs/spec/ids.tsv:457: Changing the existing `SYN-4@1` hash violates the immutable registry history enforced by `scripts/spec/spec.py:563`; the S3 check fails against the supplied base. Preserve the old hash, retire the pending version, and register the revised sentence under a new version.
