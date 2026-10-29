@@ -6,8 +6,9 @@ namespace Concrete.Report
 
 namespace Json
 
-/-- Escape a string for JSON output. -/
-private def escapeStr (s : String) : String :=
+/-- Escape a string for JSON output. The one escaper of the report layer: every JSON surface
+    (facts, diagnostics, the compiler ledger, debug bundles, obligation records) calls it. -/
+def escapeStr (s : String) : String :=
   s.foldl (fun acc c =>
     acc ++ match c with
     | '"' => "\\\""
@@ -15,6 +16,12 @@ private def escapeStr (s : String) : String :=
     | '\n' => "\\n"
     | '\t' => "\\t"
     | c => c.toString) ""
+
+/-- A JSON string literal: `s` escaped and quoted. -/
+def quote (s : String) : String := "\"" ++ escapeStr s ++ "\""
+
+/-- A JSON array of string literals. -/
+def stringArray (xs : List String) : String := "[" ++ ", ".intercalate (xs.map quote) ++ "]"
 
 /-- A minimal JSON value. -/
 inductive Val where

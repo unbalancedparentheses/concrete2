@@ -65,15 +65,7 @@ structure BundleState where
   verifyDs     : Diagnostics := []
 
 /-- Escape a string for JSON output. -/
-private def jsonEscape (s : String) : String :=
-  s.foldl (fun acc c =>
-    acc ++ match c with
-    | '"'  => "\\\""
-    | '\\' => "\\\\"
-    | '\n' => "\\n"
-    | '\t' => "\\t"
-    | c    => c.toString
-  ) ""
+private def jsonEscape (s : String) : String := Report.Json.escapeStr s
 
 /-- Generate the manifest.json content. -/
 def renderManifest (st : BundleState) (compilerVersion : String) : String :=

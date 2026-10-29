@@ -277,12 +277,10 @@ def assumeFunctions (obs : List Obligation) : List String :=
 def solverTrustedIds (obs : List Obligation) : List String :=
   (obs.filter (·.status == "solver_trusted")).map (·.id) |>.eraseDups
 
-/-- Minimal JSON string escaper (self-contained; matches `proveReportJson`). -/
-private def esc (s : String) : String :=
-  s.foldl (fun a c => a ++ (match c with
-    | '"' => "\\\"" | '\\' => "\\\\" | '\n' => "\\n" | '\t' => "\\t" | c => c.toString)) ""
-private def q (s : String) : String := "\"" ++ esc s ++ "\""
-private def jarrStr (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
+/-- JSON strings through the report layer's one escaper (`Report.Json`). -/
+private def esc (s : String) : String := Report.Json.escapeStr s
+private def q (s : String) : String := Report.Json.quote s
+private def jarrStr (xs : List String) : String := Report.Json.stringArray xs
 private def jobjStr (kvs : List (String × String)) : String :=
   "{" ++ ", ".intercalate (kvs.map (fun (n, x) => q n ++ ": " ++ q x)) ++ "}"
 

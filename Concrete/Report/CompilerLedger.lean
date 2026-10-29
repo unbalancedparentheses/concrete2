@@ -1,3 +1,5 @@
+import Concrete.Report.Json
+
 /-!
 # CompilerLedger — the non-proof compiler fact store (Phase 4 #2)
 
@@ -95,11 +97,9 @@ def recordReplayCommand (l : CompilerLedger) (id cmd : String) : CompilerLedger 
 def linkObligations (l : CompilerLedger) (reference : String) : CompilerLedger := { l with obligationLink := reference }
 
 -- ── views ────────────────────────────────────────────────────────────────────
-private def esc (s : String) : String :=
-  s.foldl (fun a c => a ++ (match c with
-    | '"' => "\\\"" | '\\' => "\\\\" | '\n' => "\\n" | '\t' => "\\t" | c => c.toString)) ""
-private def q (s : String) : String := "\"" ++ esc s ++ "\""
-private def arr (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
+private def esc (s : String) : String := Report.Json.escapeStr s
+private def q (s : String) : String := Report.Json.quote s
+private def arr (xs : List String) : String := Report.Json.stringArray xs
 private def pairArr (xs : List (String × String)) : String :=
   "[" ++ ", ".intercalate (xs.map (fun (a, b) => "{" ++ q "name" ++ ": " ++ q a ++ ", " ++ q "value" ++ ": " ++ q b ++ "}")) ++ "]"
 

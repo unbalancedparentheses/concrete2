@@ -1,4 +1,5 @@
 import Concrete.Frontend.Token
+import Concrete.Report.Json
 
 namespace Concrete
 
@@ -263,10 +264,8 @@ def renderDiagnostics (ds : Diagnostics) (sourceMap : SourceMap := []) : String 
 -- `Diagnostic.toJson` (below) read the same fields.
 -- ============================================================
 
-private def jesc (s : String) : String :=
-  s.foldl (fun a c => a ++ (match c with
-    | '"' => "\\\"" | '\\' => "\\\\" | '\n' => "\\n" | '\t' => "\\t" | c => c.toString)) ""
-private def jq (s : String) : String := "\"" ++ jesc s ++ "\""
+private def jesc (s : String) : String := Report.Json.escapeStr s
+private def jq (s : String) : String := Report.Json.quote s
 
 /-- A diagnostic as a JSON object: the SAME code / severity / message / pass /
     file / span / hint / context the human renderer uses (Phase 4 #4). -/

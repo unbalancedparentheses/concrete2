@@ -1176,9 +1176,7 @@ def showObligation (modules : List Module) (qualName oblId0 : String)
     return s!"obligation `{oblId}` not found on {qualName} (loops expose O1/O2/O3/O4/O5)."
 
 /-- JSON-escape and quote a string. Shared by the prove JSON emitters. -/
-def jsonStr (s : String) : String :=
-  "\"" ++ s.foldl (fun a c => a ++ (match c with
-    | '"' => "\\\"" | '\\' => "\\\\" | '\n' => "\\n" | '\t' => "\\t" | c => c.toString)) "" ++ "\""
+def jsonStr (s : String) : String := Json.quote s
 
 /-- `concrete prove --show-obligation <id> --json`: one obligation, structured.
     Carries the same stable id as `--json` / `--report contracts`. Accepts the
