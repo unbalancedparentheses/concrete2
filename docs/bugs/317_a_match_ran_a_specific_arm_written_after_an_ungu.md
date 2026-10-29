@@ -22,10 +22,9 @@ diagnostic.
 
 ## Expected
 
-[PAT-9@1](../spec/patterns.md#PAT-9): a `match` selects the first arm in source order whose
-pattern matches and whose guard holds, and an arm that no value can reach because earlier
-unguarded arms cover every value it matches is refused. The `_` arm covers every value, so the
-`1` arm is refused at check (E0325, `rule: PAT-9@1`) on both consumers.
+[PAT-9@1](../spec/patterns.md#PAT-9) (OD18): the arm that runs is the first written one that
+matches, and an arm that cannot run is refused. Here `_` comes first and matches every value, so
+the `1` arm is refused at check (E0325, `rule: PAT-9@1`) on both consumers.
 
 ## Cause
 
