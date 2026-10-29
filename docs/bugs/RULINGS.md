@@ -17,13 +17,13 @@ of [docs/spec/ids.tsv](../spec/ids.tsv), or the generator refuses the record.
 
 <!-- BEGIN GENERATED: spec rulings (scripts/gen/bug_ledger.py; edit the records' ruling lines) -->
 
-292 bug records, 289 of them ruled: violates a rule 156, spec gap 32, open owner question 0, permitted by a rule 0, outside the spec 101; not ruled yet (fixed bugs filed before bug 300) 3. Open bugs are in bold.
+293 bug records, 290 of them ruled: violates a rule 157, spec gap 32, open owner question 0, permitted by a rule 0, outside the spec 101; not ruled yet (fixed bugs filed before bug 300) 3. Open bugs are in bold.
 
 ### By kind
 
 | ruling | bugs | open | silent |
 |---|--:|--:|--:|
-| violates a rule | 156 | 15 | 81 |
+| violates a rule | 157 | 15 | 82 |
 | spec gap | 32 | 2 | 5 |
 | open owner question | 0 | 0 | 0 |
 | permitted by a rule (not a bug) | 0 | 0 | 0 |
@@ -38,7 +38,7 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 |---|---|--:|--:|--:|--:|--:|--:|--:|
 | pipeline.md | PASS | 42 | 2 | 6 | 22 | 20 | 0 | 0 |
 | modules.md | MOD | 32 | 1 | 11 | 27 | 5 | 0 | 0 |
-| types.md | TYPE | 20 | 1 | 11 | 18 | 2 | 0 | 0 |
+| types.md | TYPE | 21 | 1 | 12 | 19 | 2 | 0 | 0 |
 | ownership.md | OWN | 19 | 3 | 8 | 18 | 1 | 0 | 0 |
 | scope.md | SCOPE | 13 | 0 | 5 | 13 | 0 | 0 | 0 |
 | memory.md | MEM | 13 | 1 | 8 | 12 | 1 | 0 | 0 |
@@ -90,6 +90,7 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 | REF-5@1 | references.md | 2 | 123, 182 |
 | STMT-11@1 | statements.md | 2 | 305, 306 |
 | SYN-4@1 | syntax.md | 2 | 212, **318** |
+| TYPE-11@1 | types.md | 2 | 253, 311 |
 | TYPE-12@1 | types.md | 2 | 199, 246 |
 | TYPE-15@1 | types.md | 2 | 073, 200 |
 | TYPE-16@1 | types.md | 2 | 024, 205 |
@@ -124,7 +125,6 @@ Every bug counts once under each chapter its ruling names: the rules it violates
 | TRAIT-9@1 | traits.md | 1 | 091 |
 | TRUST-5@2 | trusted.md | 1 | 189 |
 | TRUST-7@1 | trusted.md | 1 | 198 |
-| TYPE-11@1 | types.md | 1 | 253 |
 | TYPE-14@2 | types.md | 1 | 036 |
 | TYPE-2@1 | types.md | 1 | 240 |
 | TYPE-5@1 | types.md | 1 | 192 |
