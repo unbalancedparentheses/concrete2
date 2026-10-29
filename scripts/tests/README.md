@@ -50,12 +50,14 @@ hand-edited or stale.
   `audit_bug_corpus.sh`.
 - **To log a change, add a `changelog.d/` fragment** ([changelog.d/README.md](../../changelog.d/README.md)).
   Never edit CHANGELOG.md; fragments are folded into it on main.
-- **To add a CI gate, add its command to `ci_gate_inventory.txt`** in the commit that adds it to the
-  workflow, once that file exists (sorted, one command per line). `run_ci_gates_local.sh` compares
-  it with the workflow, by content.
+- **To add a gate, add its row to `gates.tsv`** (the gate manifest; its header explains every column)
+  and run `python3 scripts/gen/gates.py --write`, in the commit that adds the gate (and its workflow
+  step, for a CI gate). `ci_gate_inventory.txt` is generated from the manifest's `via=step` rows;
+  `run_ci_gates_local.sh` compares it with the workflow, by content, and `check_gate_registration.sh`
+  fails on a check/test/run script without a row or a stale generated view.
 - **Never edit a generated view**: the bug lists in `docs/bugs/README.md`, the bugs column of
   `docs/bugs/STRUCTURAL_CLASSES.md`'s table, ROADMAP's generated exit bug spans and dashboards,
-  and `Concrete/BuildIdentity.lean`. After a rebase that conflicts in one of them, run
+  `scripts/tests/ci_gate_inventory.txt`, and `Concrete/BuildIdentity.lean`. After a rebase that conflicts in one of them, run
   `bash scripts/gen/refresh_generated.sh` and `git add` the result.
 
 `scripts/gen/migrate_ledgers.sh` performs the one-time move from the hand-maintained views to the

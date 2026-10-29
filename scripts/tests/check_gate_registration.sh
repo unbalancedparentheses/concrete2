@@ -129,6 +129,12 @@ for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh scripts/tools/*.sh;
       done >> "$EDGES_FILE"
 done
 
+# A MANIFEST STEP ROW IS A WORKFLOW EDGE. gates.py --check (above) parsed the YAML and confirmed that
+# each via=step / via=ci-only row's step runs its cmd, which the text scan cannot always see: it does
+# not count `./scripts/tests/run_tests.sh` (no interpreter word) or the fuzz_*.py drivers.
+while IFS=$'\t' read -r vpath vvia; do
+  case "$vvia" in step|ci-only:*) echo "WORKFLOW $(basename "$vpath")" ;; esac
+done < "$VIA_FILE" >> "$EDGES_FILE"
 awk '$1=="WORKFLOW"{print $2}' "$EDGES_FILE" | sort -u > "$REACHABLE_FILE"
 while :; do
   before="$(wc -l < "$REACHABLE_FILE")"
@@ -191,17 +197,16 @@ else
 fi
 
 echo "=== each manifest row's via agrees with the reachability walk ==="
-# step / ci-only: the workflow invokes the script directly. agg:<s> / tool:<s>: <s> invokes it and CI
-# reaches <s>. skip:<reason>: CI does NOT reach it — a skip that has become false is stale, and would
-# hide the next time the gate silently drops out of CI.
+# step / ci-only: checked against the YAML by gates.py --check (the step exists and runs the cmd).
+# agg:<s> / tool:<s>: <s> invokes it and CI reaches <s>. skip:<reason>: CI does NOT reach it — a
+# skip that has become false is stale, and would hide the next time the gate silently drops out of CI.
 _edge() { awk -v a="$1" -v b="$2" '$1==a && $2==b {f=1} END {exit !f}' "$EDGES_FILE"; }
 _via_problems() { # via-list file ("<path>\t<via>") -> one line per disagreement
   local vpath vvia b agg
   while IFS=$'\t' read -r vpath vvia; do
     b="$(basename "$vpath")"
     case "$vvia" in
-      step|ci-only:*)
-        _edge WORKFLOW "$b" || echo "$vpath: via=${vvia%%:*}, but the workflow does not invoke $b" ;;
+      step|ci-only:*) ;;
       agg:*|tool:*)
         agg="${vvia#*:}"
         if ! _edge "$agg" "$b"; then echo "$vpath: via=$vvia, but $agg does not invoke $b"
@@ -229,10 +234,10 @@ printf 'scripts/tests/check_gate_hygiene.sh\tagg:run_fast_surface_gates.sh\n' > 
 [ -n "$(_via_problems "$PLANT_DIR/via")" ] \
   && ok "CONTROL: an agg row naming an aggregator that does not invoke the gate is reported" \
   || no "CONTROL: an agg row with the wrong aggregator passed the via cross-check"
-printf 'scripts/tests/check_rocksdb_slice1.sh\tstep\n' > "$PLANT_DIR/via"
+printf 'scripts/tests/check_rocksdb_slice1.sh\tagg:check_gate_hygiene.sh\n' > "$PLANT_DIR/via"
 [ -n "$(_via_problems "$PLANT_DIR/via")" ] \
-  && ok "CONTROL: a step row for a script the workflow does not invoke is reported" \
-  || no "CONTROL: a step row for an uninvoked script passed the via cross-check"
+  && ok "CONTROL: an agg row for a script nothing in CI invokes is reported" \
+  || no "CONTROL: an agg row for an uninvoked script passed the via cross-check"
 
 echo "=== negative controls: gates.py --check refuses each defect in a planted copy ==="
 # A copy of the inputs gates.py reads, with scripts/tests a directory of links so a script can be

@@ -15,6 +15,7 @@
 #   bug dashboard   ROADMAP.md's bug dashboard (scripts/gen/bug_dashboard.py), when present
 #   candidates      ROADMAP.md's "Implemented, not yet accepted" table (scripts/gen/candidate_table.py)
 #   build identity  Concrete/BuildIdentity.lean (scripts/gen/build_identity.sh, from the compiler sources)
+#   gate views      scripts/tests/ci_gate_inventory.txt (scripts/gen/gates.py, from scripts/tests/gates.tsv)
 #
 # CHANGELOG.md is not here: entries are changelog.d/ fragments, folded on main by
 # scripts/gen/changelog.py --fold, so it never conflicts.
@@ -35,6 +36,7 @@ if [ -f scripts/gen/candidate_table.py ]; then
   python3 -I scripts/gen/candidate_table.py --write
 fi
 bash scripts/gen/build_identity.sh
+python3 -I scripts/gen/gates.py --write
 
 left="$(grep -lE '^(<{7}|>{7})( |$)' docs/bugs/README.md docs/bugs/STRUCTURAL_CLASSES.md docs/bugs/AREAS.md docs/bugs/RULINGS.md ROADMAP.md \
           Concrete/BuildIdentity.lean 2>/dev/null || true)"
