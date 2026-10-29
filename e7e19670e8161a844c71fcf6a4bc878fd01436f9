@@ -1,0 +1,2 @@
+[piece 1 of 1: docs]
+- changelog.d/2026-10-29-spec-owner-decisions.md:22: The added brace rule encodes behaviour covered by OD16, which this review explicitly prohibits. It also omits SYN-4@1’s restriction to braces outside parentheses or brackets: as written, it says braces in permitted parenthesized struct literals end the head, and settles cases still reserved for OPEN-34.
