@@ -125,8 +125,8 @@ a link failure, an interpreter refusal or an unrejected leak.
 |---|---|---|---|
 | exit 0b | 3 | 3 | 122, 332, 333 |
 | exit 2c | 1 | 0 | 114 |
-| exit 2q | 13 | 10 | 216, 226, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328 |
-| no exit names it | 7 | 0 | 049, 054, 058, 064, 077, 270, 331 |
+| exit 2q | 14 | 10 | 216, 226, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 331 |
+| no exit names it | 6 | 0 | 049, 054, 058, 064, 077, 270 |
 
 | open bugs by spec ruling ([RULINGS.md](docs/bugs/RULINGS.md)) | open | silent | bugs |
 |---|---|---|---|
