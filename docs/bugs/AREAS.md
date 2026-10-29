@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-279 records: 170 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 5 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+280 records: 170 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 5 open bugs are not fixed yet and 1 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -343,5 +343,6 @@ checker refusal is a Check bug here.
 | [308](308_a_value_if_or_match_passed_to_a_generic_paramete.md) | Resolve | PeekType | commits | — |
 | [309](309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md) | Lower | Lower | commits | — |
 | [315](315_the_scaling_gate_judged_wall_time_growth_on_a_ho.md) | Gates | compile_scaling | commits | — |
+| [317](317_a_match_ran_a_specific_arm_written_after_an_ungu.md) | — | — | underived | — |
 
 <!-- END GENERATED: bug areas -->

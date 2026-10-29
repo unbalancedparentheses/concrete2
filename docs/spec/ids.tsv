@@ -445,6 +445,15 @@ STMT-11@1	pending	7b8bdb59250d397cdf2c3bff2da23cc2
 MOD-7@1	pending	61f2ddd8f325d560b10239b263992456
 OPEN-23@1	live	c5c7e9ea1cc555ec694776ab91344c13
 TRUST-6@2	pending	08f3bb8fb9eb30319d9218ba580d5286
-PAT-9@1	pending	35e2167c3a43ba510434adcfe56ae438
-PAT-9/arm-after-catch-all	pending	-
+PAT-9@1	live	35e2167c3a43ba510434adcfe56ae438
+PAT-9/arm-after-catch-all	live	-
 PAT-9/catch-all-last	live	-
+PAT-9/literal-repeated	live	-
+PAT-9/literal-inside-earlier-range	live	-
+PAT-9/after-both-bools	live	-
+PAT-9/after-every-variant	live	-
+PAT-9/guarded-after-its-variant	live	-
+PAT-9/literal-before-range	live	-
+PAT-9/both-bools	live	-
+PAT-9/every-variant	live	-
+PAT-9/guarded-before-its-variant	live	-

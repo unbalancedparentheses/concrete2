@@ -1,0 +1,38 @@
+// Bug 317 (PAT-9): arms that only partly overlap earlier ones stay reachable, and the first arm in
+// source order that matches runs. 5..=12 overlaps 0..=9 but 10 reaches it; the guarded `7` arm
+// covers nothing, so the unguarded `7` after it is reachable when the guard fails. Expected: 42.
+fn classify(x: i32, g: bool) -> i32 {
+    match x {
+        0..=9 => {
+            if x == 7 {
+                return 0;
+            }
+            return 1;
+        },
+        5..=12 => {
+            return 30;
+        },
+        _ => {
+            return 100;
+        },
+    }
+}
+
+fn guarded(x: i32, g: bool) -> i32 {
+    match x {
+        7 if g => {
+            return 1000;
+        },
+        7 => {
+            return 11;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+
+fn main() -> Int {
+    // 1 (x = 3) + 30 (x = 10) + 11 (guard false) = 42
+    return (classify(3, false) + classify(10, false) + guarded(7, false)) as Int;
+}

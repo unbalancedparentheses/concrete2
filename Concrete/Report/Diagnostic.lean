@@ -150,6 +150,7 @@ def codeRuleTag : String → Option String
   | "E0316" => some "TYPE-7@1"
   | "E0317" => some "TYPE-9@1"
   | "E0318" => some "PAT-8@1"
+  | "E0325" => some "PAT-9@1"
   | "E0319" => some "STMT-10@1"
   | "E0320" => some "CON-3@1"
   | "E0321" => some "CON-3@1"

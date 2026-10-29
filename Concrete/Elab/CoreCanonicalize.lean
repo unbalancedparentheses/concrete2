@@ -6,8 +6,7 @@ namespace Concrete
 
 Runs after Elab, before CoreCheck. Canonicalizes the Core IR,
 recursing through all top-level modules and nested submodules:
-- Normalize pattern match arm ordering (wildcard/var arms last)
-- Canonical ordering of struct fields in literals (match definition order)
+- Keeps match arms and struct-literal fields in source order (both are evaluation order)
 - Normalize type representations (Ty.generic "Heap" [t] → Ty.heap t)
 - Types in submodule traitDefs/traitImpls are canonicalized
 -/
@@ -31,18 +30,11 @@ private def canonTy : Ty → Ty
   | .fn_ ps cs ret => .fn_ (ps.map canonTy) cs (canonTy ret)
   | t => t
 
--- ============================================================
--- Match arm ordering: wildcard/var arms last
--- ============================================================
-
-private def armIsWildcard : CMatchArm → Bool
-  | .varArm _ _ none _ => true   -- a GUARDED var arm can fall through, so it is not a catch-all
-  | _ => false
-
-/-- Sort match arms: specific arms first, var/wildcard arms last. -/
-private def sortMatchArms (arms : List CMatchArm) : List CMatchArm :=
-  let (specific, wild) := arms.partition (fun a => !armIsWildcard a)
-  specific ++ wild
+-- Match arms are NOT reordered (bug 317, PAT-9, decided by the owner as OD18 on 2026-10-29): the
+-- first arm in source order whose pattern matches and whose guard holds runs. This pass used to
+-- move unguarded catch-all arms after the others, so a specific arm written after `_` became
+-- selectable; Check now refuses such an arm (E0325), so every accepted match already ends with
+-- its catch-all, and a reorder here would only hide a source-order change from the consumers.
 
 -- ============================================================
 -- Core expression/statement canonicalization
@@ -80,8 +72,7 @@ partial def canonExpr (structs : List CStructDef) : CExpr → CExpr
   | .enumLit en v targs fields ty =>
     .enumLit en v (targs.map canonTy) (fields.map fun (n, e) => (n, canonExpr structs e)) (canonTy ty)
   | .match_ scrut arms ty =>
-    let arms' := sortMatchArms (arms.map (canonArm structs))
-    .match_ (canonExpr structs scrut) arms' (canonTy ty)
+    .match_ (canonExpr structs scrut) (arms.map (canonArm structs)) (canonTy ty)
   | .borrow inner ty => .borrow (canonExpr structs inner) (canonTy ty)
   | .borrowMut inner ty => .borrowMut (canonExpr structs inner) (canonTy ty)
   | .deref inner ty => .deref (canonExpr structs inner) (canonTy ty)

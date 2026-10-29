@@ -62,3 +62,10 @@ shape of an unreachable region holding real uses.
 
 R-0501 (S10 Place MIR: match lowering over a decision tree whose unreachable arms are pruned once),
 with R-0504 (S12 validators).
+
+## Superseded by PAT-9
+
+The owner decided OD18 on 2026-10-29: the first arm in source order that matches runs, and an arm
+earlier unguarded arms cover is refused. [Bug 317](317_a_match_ran_a_specific_arm_written_after_an_ungu.md)
+removed CoreCanonicalize's reordering and refuses such arms at check (E0325), so this record's
+fixture is now a refusal; Lower's stop at the first catch-all stays as a guard.

@@ -439,6 +439,8 @@ inductive CheckError where
   -- Bug 196 (PAT-3): a match arm's pattern does not fit the scrutinee's type (a variant of another
   -- enum, a literal or range over an enum, a variant over a non-enum, a literal of another type).
   | patternDoesNotFit (pattern : String) (scrutineeTy : String)
+  -- Bug 317 (PAT-9, OD18): earlier unguarded arms already match every value this arm matches.
+  | unreachableMatchArm (why : String)
   | ifCondNotBool (ty : String)
   -- Bug 192: the condition of an `if` / `while` / `for` STATEMENT (TYPE-5; the expression form
   -- uses `ifCondNotBool`). Its type was computed and discarded, so an integer condition compiled.
@@ -690,6 +692,7 @@ def CheckError.message : CheckError → String
   | .missingReturn fnName retTy => s!"function '{fnName}' returns '{retTy}', but the end of its body is reachable without a `return`"
   | .letElseFallsThrough => "the `else` block of a `let ... else` must diverge (end in `return`, `break`, `continue` or a call that never returns), but it can fall through"
   | .patternDoesNotFit pat ty => s!"{pat} does not fit a scrutinee of type '{ty}'"
+  | .unreachableMatchArm why => s!"this match arm can never be selected: {why}, and the first arm in source order that matches is the one that runs"
   | .ifCondNotBool ty => s!"if condition must be Bool, got {ty}"
   | .condNotBool what ty => s!"{what} condition must be Bool, got {ty}"
   | .ifBranchTypeMismatch thenTy elseTy => s!"if-expression then type '{thenTy}' does not match else type '{elseTy}'"
@@ -809,6 +812,7 @@ def CheckError.hint : CheckError → Option String
   | .shadowsLiveLinear name => some s!"consume '{name}' before re-binding the name, or use a different name"
   | .refStoredInAggregate _ _ => some "pass the reference down as a function argument, store an owned value or a raw pointer (trusted), or use a scoped callback (docs/language/VALUE_MODEL.md)"
   | .guardMovesLinear name => some s!"borrow '{name}' in the guard (`&{name}`), or move it inside the arm body"
+  | .unreachableMatchArm _ => some "delete the arm, or move it before the arms that cover it"
   | .mainHasParams _ => some "read command-line arguments through `std.args` (`import std.args.{count, get};`, which need `with(Env)`) and declare `fn main() -> Int`"
   | .conflictingCallBorrows _ _ => some "pass one borrow, or restructure so the exclusive access happens in its own statement"
   | .variableUsedAfterMove _ => some "consider cloning or restructuring to avoid the move"
@@ -899,6 +903,7 @@ def CheckError.code : CheckError → String
   | .missingReturn _ _ => "E0307"
   | .letElseFallsThrough => "E0308"
   | .patternDoesNotFit _ _ => "E0309"
+  | .unreachableMatchArm _ => "E0325"
   | .ifCondNotBool _ => "E0223"
   | .condNotBool _ _ => "E0223"
   | .ifBranchTypeMismatch _ _ => "E0224"

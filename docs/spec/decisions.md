@@ -119,7 +119,7 @@ These entries were retired when the owner answered them; their IDs are never reu
 - **OPEN-12** (OD12, contracts): decided 2026-10-29. Now CON-1 (pending) and CON-3 (partial).
 - **OPEN-13** (OD13, raw-pointer ownership): decided 2026-10-29. Now TRUST-7.
 - **OPEN-14** (OD14, type validity): decided 2026-10-29. Now REF-2 and REF-4 (the single judgment before specialization is R-0499's).
-- **OPEN-18** (OD18, match arm order and unreachable arms): decided 2026-10-29. Now PAT-9 (pending, R-0500).
+- **OPEN-18** (OD18, match arm order and unreachable arms): decided 2026-10-29. Now PAT-9 (enforced by bug 317's fix).
 - **OPEN-19** (OD19, the provable subset): decided 2026-10-29. Now the scope of [PROVABLE_V1.md](../verification/PROVABLE_V1.md), not a language rule.
 - **OPEN-2** (OD2, `&mut` arguments, deferred loans and the exit order): decided 2026-10-29. Now
   REF-10@2 (lending), REF-11@3 (exclusivity at a call by root plus path), REF-13 (a `&mut` refers to the

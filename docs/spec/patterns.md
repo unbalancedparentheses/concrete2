@@ -475,20 +475,26 @@ fn main() -> Int {
 
 - Kind: refusal
 - Uses: none
-- Codes: new (check)
-- Status: pending R-0500
+- Codes: E0325 (check)
+- Status: enforced
+- Enforced by: Concrete.unreachableMatchArm
 - Semantics: none
 - Obligation: none
 - Evidence: tested
 
 **Rationale.** Decided by the owner on 2026-10-29 (OD18). Source order is the order a reader sees,
-so the arm that runs is the first one written that matches. This changes main: CoreCanonicalize
-moves unguarded catch-all arms after the others (bug 213's provisional repair), so a specific arm
-written after `_` is reached and the program below returns 42 on both consumers; under this rule the
-catch-all wins and the later arm is unreachable, a refusal. Repeating a variant an earlier
-unguarded arm covers is already PAT-3's refusal.
+so the arm that runs is the first one written that matches. Before bug 317, CoreCanonicalize moved
+unguarded catch-all arms after the others (bug 213's provisional repair), so a specific arm written
+after `_` was reached and the first program below returned 42 on both consumers; under this rule
+the catch-all wins and the later arm is unreachable, a refusal. A guarded arm can fall through, so
+it covers nothing, and an arm after full coverage is refused whether or not it has a guard.
+Coverage is counted per pattern form: an unguarded catch-all covers every value; over an enum, the
+unguarded variant arms, every value once each variant has one; over `bool`, `true` and `false`;
+over an integer, the literals and ranges. Repeating a variant an earlier unguarded arm covers is
+already PAT-3's refusal. Ranges that together span an integer type's whole range are not counted as
+covering every value, since PAT-2 requires the catch-all after them.
 
-```con reject name=arm-after-catch-all code=new stage=check pair=catch-all-last pending=R-0500 now=accept:42
+```con reject name=arm-after-catch-all code=E0325 stage=check pair=catch-all-last
 fn main() -> Int {
     let x: Int = 1;
     match x {
@@ -511,6 +517,175 @@ fn main() -> Int {
         },
         _ => {
             return 1;
+        },
+    }
+}
+```
+
+```con reject name=literal-repeated code=E0325 stage=check pair=catch-all-last
+fn main() -> Int {
+    let x: Int = 1;
+    match x {
+        1 => {
+            return 42;
+        },
+        1 => {
+            return 1;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+```
+
+```con reject name=literal-inside-earlier-range code=E0325 stage=check pair=literal-before-range
+fn main() -> Int {
+    let x: Int = 5;
+    match x {
+        0..=9 => {
+            return 42;
+        },
+        5 => {
+            return 1;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+```
+
+```con reject name=after-both-bools code=E0325 stage=check pair=both-bools
+fn main() -> Int {
+    let b: bool = true;
+    match b {
+        true => {
+            return 42;
+        },
+        false => {
+            return 1;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+```
+
+```con reject name=after-every-variant code=E0325 stage=check pair=every-variant
+enum Copy Light {
+    Red,
+    Green,
+}
+
+fn main() -> Int {
+    let l: Light = Light::Red;
+    match l {
+        Light::Red => {
+            return 42;
+        },
+        Light::Green => {
+            return 1;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+```
+
+```con reject name=guarded-after-its-variant code=E0325 stage=check pair=guarded-before-its-variant
+enum Copy Light {
+    Red,
+    Green,
+}
+
+fn main() -> Int {
+    let l: Light = Light::Red;
+    let n: Int = 1;
+    match l {
+        Light::Red => {
+            return 42;
+        },
+        Light::Red if n == 1 => {
+            return 1;
+        },
+        Light::Green => {
+            return 0;
+        },
+    }
+}
+```
+
+```con accept name=literal-before-range exit=42
+fn main() -> Int {
+    let x: Int = 5;
+    match x {
+        5 => {
+            return 42;
+        },
+        0..=9 => {
+            return 1;
+        },
+        _ => {
+            return 0;
+        },
+    }
+}
+```
+
+```con accept name=both-bools exit=42
+fn main() -> Int {
+    let b: bool = true;
+    match b {
+        true => {
+            return 42;
+        },
+        false => {
+            return 1;
+        },
+    }
+}
+```
+
+```con accept name=every-variant exit=42
+enum Copy Light {
+    Red,
+    Green,
+}
+
+fn main() -> Int {
+    let l: Light = Light::Red;
+    match l {
+        Light::Red => {
+            return 42;
+        },
+        Light::Green => {
+            return 1;
+        },
+    }
+}
+```
+
+```con accept name=guarded-before-its-variant exit=42
+enum Copy Light {
+    Red,
+    Green,
+}
+
+fn main() -> Int {
+    let l: Light = Light::Red;
+    let n: Int = 0;
+    match l {
+        Light::Red if n == 1 => {
+            return 1;
+        },
+        Light::Red => {
+            return 42;
+        },
+        Light::Green => {
+            return 0;
         },
     }
 }

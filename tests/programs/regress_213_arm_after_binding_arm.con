@@ -1,6 +1,7 @@
 // Bug 213: arms after an unguarded binding arm (or `_`) can never be selected; the binary failed SSA
 // verification (E0703, a use in the predecessor-less block they were lowered into) while `--interp`
-// ran the program. The fuzz farm's crash-5ff5654bc7eb / crash-7dec4da326b6 shape. Expected: 42.
+// ran the program. The fuzz farm's crash-5ff5654bc7eb / crash-7dec4da326b6 shape. Since bug 317
+// (PAT-9, OD18) such an arm is refused at check: Expected: E0325 on both consumers.
 enum Copy E { A { v: i32 }, B { w: i32 } }
 
 fn pick(e0: E, k: i32) -> i32 {

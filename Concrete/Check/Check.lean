@@ -653,6 +653,75 @@ def deferScopeExit (entry : List LocalId × List LocalId × List LocalId) : Chec
     -- D1: the deferred call that held a reference's loan has run; the reference is usable again.
     if vi.heldByDefer && !entry.2.2.contains vi.uid then { vi with heldByDefer := false } else vi) env.vars }
 
+/-- `[lo, hi]` lies inside the union of the closed intervals `ivals`. Each pass moves the first
+    uncovered value past one interval that contains it, so one pass per interval suffices. -/
+private def intervalCovered (ivals : List (Int × Int)) (lo hi : Int) : Bool := Id.run do
+  let mut cur := lo
+  for _ in ivals do
+    if cur > hi then return true
+    match ivals.find? fun (a, b) => a ≤ cur && cur ≤ b with
+    | some (_, b) => cur := b + 1
+    | none => return false
+  return cur > hi
+
+-- spec: PAT-9 (docs/spec/patterns.md; this declaration enforces the rule)
+/-- PAT-9 (bug 317, OD18): a `match` selects the first arm in source order whose pattern matches
+    and whose guard holds, so an arm every value of which earlier UNGUARDED arms already match is
+    never selected, and is refused. Returns the first such arm's span and the reason. A guarded arm
+    can fall through, so it covers nothing; an arm after the coverage is unreachable guarded or not.
+    Coverage: an unguarded catch-all (`_` or a binding) covers every value; over an enum
+    (`variants`), the unguarded variant arms, all of them once every variant has one; over `bool`,
+    `true` and `false`; over an integer, the literals and non-empty ranges. An integer type's whole
+    range spanned by ranges is not counted as covering every value, since PAT-2 still requires
+    the catch-all there. An unguarded arm repeating a variant is PAT-3's refusal (E0532, CoreCheck)
+    and is left to it. Patterns are flat (a variant arm's fields are binders), so a variant arm
+    matches every value of its variant. -/
+def unreachableMatchArm (variants : Option (List String)) (arms : List MatchArm) :
+    Option (Span × String) := Id.run do
+  let intOf : Expr → Option Int
+    | .intLit _ n => some n
+    | .unaryOp _ .neg (.intLit _ n) => some (-n)
+    | _ => none
+  let mut everything : Option String := none
+  let mut seenVariants : List String := []
+  let mut seenBools : List Bool := []
+  let mut ivals : List (Int × Int) := []
+  for arm in arms do
+    let sp := match arm with
+      | .mk sp .. | .litArm sp .. | .varArm sp .. | .rangeArm sp .. => sp
+    if let some why := everything then return some (sp, why)
+    match arm with
+    | .varArm _ b g _ =>
+      if g.isNone then
+        everything := some s!"the unguarded catch-all arm `{b}` before it matches every value"
+    | .mk _ _ v _ g _ =>
+      if seenVariants.contains v then
+        if g.isSome then return some (sp, s!"an earlier unguarded arm matches every `{v}`")
+      else if g.isNone then
+        seenVariants := v :: seenVariants
+        if let some vs := variants then
+          if !vs.isEmpty && vs.all seenVariants.contains then
+            everything := some "the unguarded arms before it match every variant"
+    | .litArm _ (.boolLit _ b) g _ =>
+      if seenBools.contains b then return some (sp, s!"an earlier unguarded arm matches `{b}`")
+      if g.isNone then
+        seenBools := b :: seenBools
+        if seenBools.contains true && seenBools.contains false then
+          everything := some "the unguarded arms before it match both `true` and `false`"
+    | .litArm _ v g _ =>
+      if let some n := intOf v then
+        if intervalCovered ivals n n then
+          return some (sp, s!"the unguarded arms before it already match {n}")
+        if g.isNone then ivals := (n, n) :: ivals
+    | .rangeArm _ lo hi incl g _ =>
+      if let (some l, some h) := (intOf lo, intOf hi) then
+        let h := if incl then h else h - 1
+        if l ≤ h then
+          if intervalCovered ivals l h then
+            return some (sp, s!"the unguarded arms before it already match every value from {l} to {h}")
+          if g.isNone then ivals := (l, h) :: ivals
+  return none
+
 set_option backward.do.legacy true in
 mutual
 
@@ -1766,6 +1835,12 @@ partial def checkExprCore (e : Expr) (hint : Option Ty := none) (mode : UseMode 
       | .named n => (n, ([] : List Ty))
       | .generic n args _ => (n, args)
       | _ => ("", [])
+    -- PAT-9 (bug 317): arms are tried in source order, so one earlier unguarded arms already
+    -- cover can never be selected.
+    let armVariants ← if enumName == "" then pure none else
+      pure ((← lookupEnum enumName).map fun ed => ed.variants.map (·.name))
+    if let some (armSp, why) := unreachableMatchArm armVariants arms then
+      throwCheck (.unreachableMatchArm why) (some armSp)
     if enumName != "" then
       match ← lookupEnum enumName with
       | some ed =>

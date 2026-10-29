@@ -1495,8 +1495,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       -- Bug 213: an arm after an unguarded binding (or `_`) arm can never be selected, and
       -- the block it would be lowered into has no predecessor (the binding arm branches
       -- unconditionally), so uses of earlier values there failed SSA verification (E0703).
-      -- The source admits such arms (PAT-3 refuses only a repeated variant); they are not
-      -- lowered.
+      -- Check refuses such arms (PAT-9, E0325, bug 317), so none reaches here from a source
+      -- program; lowering still stops at the first catch-all so it never emits a block
+      -- without a predecessor.
       let mut catchAllSeen := false
       for (idx, arm) in enumerate arms do
         if catchAllSeen then continue
@@ -1618,8 +1619,9 @@ partial def lowerExpr (e : CExpr) : LowerM SVal := do
       -- Bug 213: an arm after an unguarded binding (or `_`) arm can never be selected, and
       -- the block it would be lowered into has no predecessor (the binding arm branches
       -- unconditionally), so uses of earlier values there failed SSA verification (E0703).
-      -- The source admits such arms (PAT-3 refuses only a repeated variant); they are not
-      -- lowered.
+      -- Check refuses such arms (PAT-9, E0325, bug 317), so none reaches here from a source
+      -- program; lowering still stops at the first catch-all so it never emits a block
+      -- without a predecessor.
       let mut catchAllSeen := false
       for (idx, arm) in enumerate arms do
         if catchAllSeen then continue

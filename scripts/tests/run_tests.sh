@@ -10265,14 +10265,30 @@ else
     FAIL=$((FAIL + 1))
 fi
 # Bug 213: arms after an unguarded binding / `_` arm were lowered into a predecessor-less block
-# (E0703 natively); binary and --interp must agree on 42.
-run_ok "$TESTDIR/regress_213_arm_after_binding_arm.con" 42
+# (E0703 natively). Bug 317 (PAT-9, OD18): such an arm can never be selected and is refused at
+# check (E0325), so the fixture is now a refusal on both consumers.
+run_err "$TESTDIR/regress_213_arm_after_binding_arm.con" "(E0325)"
 r213_interp=$($COMPILER "$TESTDIR/regress_213_arm_after_binding_arm.con" --interp 2>&1 || true)
-if [ "$r213_interp" = "42" ]; then
-    echo "  ok  bug 213: arms after a catch-all are not lowered — interp == binary (42)"
+if printf '%s' "$r213_interp" | grep -qF "(E0325)"; then
+    echo "  ok  bug 213/317: arms after a catch-all are refused under --interp too (E0325)"
     PASS=$((PASS + 1))
 else
-    echo "FAIL  bug 213: interp gave '$r213_interp', want 42"
+    echo "FAIL  bug 213/317: --interp did not refuse with E0325: $(printf '%s' "$r213_interp" | head -1)"
+    FAIL=$((FAIL + 1))
+fi
+# Bug 317 (PAT-9): the first arm in source order that matches runs; an arm earlier unguarded arms
+# already cover is refused (E0325), guarded or not; a partly covered arm stays reachable.
+run_err "tests/regressions/bug317_a_match_ran_a_specific_arm_written_after_an_ungu/repro.con" "(E0325)"
+run_err "$TESTDIR/error_317_guarded_after_catch_all.con" "(E0325)"
+run_err "$TESTDIR/error_317_range_inside_ranges.con" "(E0325)"
+run_err "$TESTDIR/error_317_value_match_after_every_variant.con" "(E0325)"
+run_ok "$TESTDIR/regress_317_partial_range_coverage.con" 42
+r317_interp=$($COMPILER "$TESTDIR/regress_317_partial_range_coverage.con" --interp 2>&1 || true)
+if [ "$r317_interp" = "42" ]; then
+    echo "  ok  bug 317: partly covered arms stay reachable — interp == binary (42)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  bug 317: interp gave '$r317_interp', want 42"
     FAIL=$((FAIL + 1))
 fi
 # Bug 211: a generic operator instantiated at a struct or enum reached the backend; the post-Mono
