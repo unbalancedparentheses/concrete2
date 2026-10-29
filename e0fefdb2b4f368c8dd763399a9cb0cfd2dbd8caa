@@ -1,0 +1,3 @@
+[piece 5 of 5: docs]
+- docs/spec/types.md:519: The new visibility table presents strict module isolation as enforced, including refusing foreign newtype construction and private-field access. Current code grants parents these rights over imported child declarations (bug 262). This also picks the strict-isolation side of unresolved owner decision OD21 without the owner’s answer; the table must preserve that unresolved conflict.
+- docs/spec/references.md:791: The claim that `break` and `continue` cannot skip an unconsumed `&mut` binding contradicts `Concrete/Check/Check.lean:3074–3096`: both checks explicitly exempt `.ref` and `.refMut`, because references own nothing. These exits do not require consuming the reference.
