@@ -1,0 +1,2 @@
+[piece 2 of 3: tests]
+- scripts/tests/check_roadmap_coverage.sh:389: The extra-exit comparison checks only exits already in the deliverable’s blocked-by set. Moving V1c’s `2q` to “not blocked by” passes even though its queue row still says “V1c also waits for exit 2q” (verified against the checker). RocksDB still blocks on `2q`, so the global class check also passes. Parse the named extra prerequisites independently and require the table to include them.
