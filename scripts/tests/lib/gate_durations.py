@@ -4,8 +4,8 @@
 Usage: gate_durations.py JOBS_JSON > scripts/tests/lib/gate_durations.tsv
   JOBS_JSON  `gh run view <id> -R <repo> --json jobs,headSha,databaseId` output
 
-Each workflow step's wall time is split evenly over the gate commands the step runs (select_gates.py's
-replica of run_ci_gates_local.sh's `_extract_cmds`). The table only feeds an ESTIMATE
+Each workflow step's wall time is split evenly over the gate commands the step runs (the manifest's
+rows for that job and step, scripts/tests/gates.tsv). The table only feeds an ESTIMATE
 printed beside the selection; it never decides what is selected, so a stale table costs accuracy,
 not coverage. CI runners are 2-core machines that run a job's steps serially.
 """
@@ -17,7 +17,7 @@ import sys
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from select_gates import WORKFLOW, workflow_commands  # noqa: E402  (one extractor replica)
+from select_gates import MANIFEST, WORKFLOW, manifest_rows  # noqa: E402  (the manifest is the list)
 
 
 def ts(s):
@@ -27,17 +27,18 @@ def ts(s):
 def main():
     run = json.load(open(sys.argv[1]))
     wf = yaml.safe_load(open(WORKFLOW))
-    steps_by_job = {}
-    for job in wf["jobs"].values():
-        steps_by_job[job.get("name", "")] = {s.get("name"): s.get("run", "") for s in job.get("steps", [])}
+    key_by_name = {jd.get("name", k): k for k, jd in wf["jobs"].items()}
+    cmds_by_step = {}
+    for job, step, via, cmd in manifest_rows(open(MANIFEST).read()):
+        if via == "step" or via.startswith("ci-only:"):
+            cmds_by_step.setdefault((job, step), set()).add(cmd)
     secs = {}
     for job in run["jobs"]:
-        decl = steps_by_job.get(job["name"], {})
+        key = key_by_name.get(job["name"])
         for st in job.get("steps", []):
-            text = decl.get(st["name"])
-            if not text or not st.get("startedAt") or not st.get("completedAt"):
+            if not st.get("startedAt") or not st.get("completedAt"):
                 continue
-            cmds = sorted(workflow_commands(text))
+            cmds = sorted(cmds_by_step.get((key, st["name"]), ()))
             if not cmds:
                 continue
             dt = (ts(st["completedAt"]) - ts(st["startedAt"])).total_seconds()

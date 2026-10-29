@@ -109,7 +109,7 @@ test-checker-policy: build ## R-0208 decisions 3-4: compiled checker advisory re
 	$(NIX_DEVELOP) bash ./scripts/tests/check_checker_policy.sh
 
 .PHONY: test-ci-gates
-test-ci-gates: build ## Run every gate the CI workflow runs, locally (extracted from the workflow file; pre-push ritual, ROADMAP #34a)
+test-ci-gates: build ## Run every gate the CI workflow runs, locally (the via=step rows of scripts/tests/gates.tsv; pre-push ritual, ROADMAP #34a)
 	$(NIX_DEVELOP) bash ./scripts/tests/run_ci_gates_local.sh
 
 .PHONY: test-classification-freshness

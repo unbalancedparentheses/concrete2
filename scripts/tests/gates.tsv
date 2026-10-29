@@ -3,10 +3,10 @@
 # Before this file the CI workflow (.github/workflows/lean_action_ci.yml) was the de facto list of
 # gates, scripts/tests/ci_gate_inventory.txt a hand-kept copy of commands extracted from it, the
 # Makefile a third list, and check_gate_registration.sh a fourth (its SKIP table). Each could drift
-# from the others. Now the facts live here, and the copies are generated from it:
+# from the others. Now the facts live here. run_ci_gates_local.sh runs the `cmd` of every `via=step`
+# row, and the pre-push selection (select_gates.py) picks among them; the inventory file is gone.
+# The other copies are generated from this file:
 #
-#   scripts/tests/ci_gate_inventory.txt   the `cmd` of every `via=step` row, LC_ALL=C sorted, unique
-#                                         (run_ci_gates_local.sh compares it with the workflow)
 #   mk/gates.mk                           a .PHONY make target per row with a `make` cell, included from the
 #                                         Makefile: `<make>: [build] ## <claim>`, recipe
 #                                         `$(NIX_DEVELOP) <cmd>` ($(NIX_DEVELOP_PROVERS) for shell
@@ -19,8 +19,9 @@
 #
 # python3 scripts/gen/gates.py --write regenerates them; --check fails when one is stale or a row is
 # invalid. check_gate_registration.sh runs --check, fails on any scripts/tests/{check,test,run}_*.sh,
-# scripts/tests/check_*.py or scripts/ci/*.sh without a row, and cross-checks `via` against its
-# reachability walk of the workflow and the scripts it calls.
+# scripts/tests/check_*.py or scripts/ci/*.sh without a row, compares the gate commands it extracts
+# from the workflow text with the `via=step` rows, and cross-checks `via` against its reachability
+# walk of the workflow and the scripts it calls.
 #
 # ADDING A GATE: add its row here, run `python3 scripts/gen/gates.py --write`, and, for a CI step,
 # either set gen=y and place the row inside a generated block of its job (the generator writes the
@@ -34,18 +35,18 @@
 # COLUMNS
 #   id      unique row name: lowercase letters, digits and '-'; derived from the script name, plus its
 #           arguments or environment when one script runs several ways
-#   cmd     the command as the workflow spells it for a CI step (the inventory line: what
-#           run_ci_gates_local.sh's extraction reads, so step `env:` and a VAR="..." prefix whose
-#           value holds spaces are not part of it), else the plain way to run it
+#   cmd     the command as the workflow spells it for a CI step (what the registration gate's
+#           extraction reads, so step `env:` and a VAR="..." prefix whose value holds spaces are not
+#           part of it), else the plain way to run it
 #           (`bash scripts/tests/x.sh`); it names exactly one script
 #   job     the workflow job that runs it (the key under `jobs:`), or `-` when no CI step does
 #   step    that job's step name as GitHub shows it (the YAML value; an unquoted ` #` ends it), or `-`
 #   via     how CI reaches it:
-#             step              a workflow step runs `cmd`; it is in the inventory and the local full
-#                               run (run_ci_gates_local.sh) runs it
+#             step              a workflow step runs `cmd`, and the local full run
+#                               (run_ci_gates_local.sh) runs it
 #             ci-only:<reason>  a workflow step runs `cmd`, but the local full run does not run this
-#                               form of it (run_ci_gates_local.sh's extraction exclusions, or a step
-#                               env the extraction cannot see); not in the inventory
+#                               form of it (the campaign-tier mutation and checker-pin runs, or a
+#                               step env the command does not carry)
 #             agg:<script>      run by <script> (scripts/tests, scripts/ci or scripts/gen), which CI
 #                               reaches; the reachability walk must see that edge
 #             tool:<script>     the same through scripts/tools/<script>
@@ -396,7 +397,7 @@ check-rocksdb-slice1	bash scripts/tests/check_rocksdb_slice1.sh	-	-	skip:RocksDB
 check-site-generated	bash scripts/tests/check_site_generated.sh	-	-	agg:run_fast_surface_gates.sh	-	-	The website shows the repository's documents, never copies of them (decision B18).	pr	-	-	gates	y	n	-
 check-stdlib-manifest	bash scripts/tests/check_stdlib_manifest.sh	-	-	agg:run_fast_surface_gates.sh	Std	-	P7 2a: five-fact manifest (allocates/ownership/fails/capability/proof-class) complete + signature-agreeing; 2b free-fn duplicate check	pr	-	test-stdlib-manifest	gates	y	n	-
 check-value-flow-spec	bash scripts/tests/check_value_flow_spec.sh	-	-	agg:run_fast_surface_gates.sh	-	-	Value-flow constructor-coverage gate (ROADMAP 13c / 13e prevention program).	pr	-	-	gates	y	n	-
-run-ci-gates-local	bash scripts/tests/run_ci_gates_local.sh	-	-	agg:check_gate_lock.sh	Gates	-	Run every gate the CI workflow runs, locally (extracted from the workflow file; pre-push ritual, ROADMAP #34a)	pr	-	test-ci-gates	gates	y	n	-
+run-ci-gates-local	bash scripts/tests/run_ci_gates_local.sh	-	-	agg:check_gate_lock.sh	Gates	-	Run every gate the CI workflow runs, locally (the via=step rows of scripts/tests/gates.tsv; pre-push ritual, ROADMAP #34a)	pr	-	test-ci-gates	gates	y	n	-
 test-bundle-smoke	bash scripts/tests/test_bundle_smoke.sh	-	-	skip:not run by CI; run by hand with make test-bundle-smoke (wrong-code bundle capture and judgement)	-	-	Evidence-bundle smoke test	manual	-	test-bundle-smoke	gates	y	n	-
 test-determinism	bash scripts/tests/test_determinism.sh	-	-	agg:run_tests.sh	-	-	Deterministic Artifact Regression Suite	pr	-	-	gates	y	n	-
 test-fuzz	bash scripts/tests/test_fuzz.sh	-	-	skip:parser fuzz smoke run by hand; CI fuzzes through fuzz_differential.py and fuzz_linearity.py	-	-	Structured fuzzing for the Concrete compiler.	manual	-	-	gates	y	n	-

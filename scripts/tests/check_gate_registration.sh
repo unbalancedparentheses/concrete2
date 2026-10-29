@@ -36,11 +36,12 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 [ -f "$WORKFLOW" ] || { echo "FATAL: $WORKFLOW missing — reachability cannot be determined" >&2; exit 2; }
 
 # THE MANIFEST IS THE LIST (scripts/tests/gates.tsv). Every gate script has a row there saying how CI
-# reaches it (`via`), and the generated views (ci_gate_inventory.txt) are derived from it. This gate
-# checks the manifest is valid and its views fresh (gates.py --check: column vocabularies, unique ids
-# and make targets, live spec keys, step rows naming a real job and step that runs them), that no
-# check/test/run script lacks a row, and below, that each row's `via` matches what the reachability
-# walk sees.
+# reaches it (`via`); run_ci_gates_local.sh runs its via=step rows, and mk/gates.mk and the workflow's
+# generated steps are derived from it. This gate checks the manifest is valid and its views fresh
+# (gates.py --check: column vocabularies, unique ids and make targets, live spec keys, step rows naming
+# a real job and step that runs them), that no check/test/run script lacks a row, that the workflow's
+# gate commands are exactly the manifest's (below: the text extraction the local runner used to run
+# on), and that each row's `via` matches what the reachability walk sees.
 MANIFEST="scripts/tests/gates.tsv"
 GATES_PY="scripts/gen/gates.py"
 echo "=== the gate manifest is valid, lists every gate script, and its generated views are fresh ==="
@@ -196,6 +197,49 @@ else
   ok "CONTROL: a gate absent from CI is correctly reported unreachable"
 fi
 
+echo "=== the workflow's gate commands are exactly the manifest's step rows ==="
+# THE EXTRACTION, KEPT AS THE CROSS-CHECK. run_ci_gates_local.sh used to regex-extract its list from
+# the workflow text; it now reads the manifest. This is that extractor, run against the whole
+# workflow: every command it finds must be a via=step row and every via=step row must be found, so a
+# workflow step added without a row (which the local run would silently skip) or a row whose step
+# was removed is a failure. The excluded spellings are the via=ci-only rows: CI-only by design.
+#
+# Strip any trailing REDIRECTION from the extracted command. The character class stops at `&`, so a
+# workflow line ending `... --trust-gate 2>&1 | tee /tmp/trust-gate.log` was captured as
+# `... --trust-gate 2>` — a redirect with no target, which the runner then failed to parse.
+_extract_cmds() { # workflow text file -> gate commands, raw spelling, LC_ALL=C sorted unique
+  grep -oE '([A-Z_][A-Z0-9_]*=[^ ;|&]+[[:space:]]+)*((bash|python3|sh)[[:space:]]+)?(\./)?scripts/[^ ;|&]*\.(sh|py)[^;|&]*' "$1" \
+    | grep -v -E 'check_gate_mutation_coverage\.sh|aggregate_mutation_shards\.py|scripts/dev/seed-lake\.sh|check_checker_pin_freshness\.sh --tier campaign' \
+    | sed 's/[[:space:]][0-9]*[<>].*$//' \
+    | sed 's/[[:space:]]*$//' \
+    | LC_ALL=C sort -u
+}
+_manifest_step_cmds() { # manifest -> the cmd of every via=step row, LC_ALL=C sorted unique
+  awk -F'\t' '/^#/ || $1 == "id" { next } NF == 15 && $5 == "step" { print $2 }' "$1" | LC_ALL=C sort -u
+}
+_wf_vs_manifest() { # workflow manifest -> diff lines (< workflow only, > manifest only); empty = agree
+  diff <(_extract_cmds "$1") <(_manifest_step_cmds "$2") | grep -E '^[<>]' || true
+}
+wf_diff="$(_wf_vs_manifest "$WORKFLOW" "$MANIFEST")"
+n_wf="$(_extract_cmds "$WORKFLOW" | grep -c . || true)"
+if [ -z "$wf_diff" ] && [ "$n_wf" -ge 100 ]; then
+  ok "the workflow's $n_wf extracted gate commands are exactly the manifest's via=step rows"
+else
+  no "the workflow's gate commands ($n_wf) and the manifest's via=step rows differ (< workflow only, > manifest only):"
+  printf '       %s\n' "$wf_diff" | head -20
+fi
+printf '      - name: Planted\n        run: bash scripts/tests/check_planted_unlisted_step.sh\n' \
+  | cat "$WORKFLOW" - > "$PLANT_DIR/wf.yml"
+case "$(_wf_vs_manifest "$PLANT_DIR/wf.yml" "$MANIFEST")" in
+  *"< bash scripts/tests/check_planted_unlisted_step.sh"*) ok "CONTROL: a workflow step whose command has no manifest row is reported" ;;
+  *) no "CONTROL: a workflow step with no manifest row passed the cross-check — the local run would skip it silently" ;;
+esac
+grep -vF 'run: bash scripts/tests/check_gate_lock.sh' "$WORKFLOW" > "$PLANT_DIR/wf.yml"
+case "$(_wf_vs_manifest "$PLANT_DIR/wf.yml" "$MANIFEST")" in
+  *"> bash scripts/tests/check_gate_lock.sh"*) ok "CONTROL: a manifest step row whose workflow step is gone is reported" ;;
+  *) no "CONTROL: a step row with no workflow step passed the cross-check" ;;
+esac
+
 echo "=== each manifest row's via agrees with the reachability walk ==="
 # step / ci-only: checked against the YAML by gates.py --check (the step exists and runs the cmd).
 # agg:<s> / tool:<s>: <s> invokes it and CI reaches <s>. skip:<reason>: CI does NOT reach it — a
@@ -247,9 +291,8 @@ _plant() {
     "$PLANT_DIR/r/.githooks" "$PLANT_DIR/r/docs/spec" "$PLANT_DIR/r/docs/bugs"
   local f
   for f in scripts/tests/*; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
-  rm -f "$PLANT_DIR/r/$MANIFEST" "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
+  rm -f "$PLANT_DIR/r/$MANIFEST"
   cp "$MANIFEST" "$PLANT_DIR/r/$MANIFEST"
-  cp scripts/tests/ci_gate_inventory.txt "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
   mkdir -p "$PLANT_DIR/r/mk"; cp Makefile "$PLANT_DIR/r/Makefile"; cp mk/gates.mk "$PLANT_DIR/r/mk/gates.mk"
   for f in scripts/ci scripts/tools scripts/gen; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
   cp "$WORKFLOW" "$PLANT_DIR/r/$WORKFLOW"
@@ -276,8 +319,6 @@ _plant; printf '#!/usr/bin/env bash\nexit 0\n' > "$PLANT_DIR/r/scripts/tests/che
 _gp; _refused "a planted check_ script with no manifest row" "check_planted_unlisted.sh has no row"
 _plant; printf '#!/usr/bin/env bash\nexit 0\n' > "$PLANT_DIR/r/scripts/tests/test_planted_unlisted.sh"
 _gp; _refused "a planted test_ script with no manifest row" "test_planted_unlisted.sh has no row"
-_plant; echo "bash scripts/tests/check_planted_stale.sh" >> "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
-_gp; _refused "a stale (hand-edited) ci_gate_inventory.txt" "ci_gate_inventory.txt is stale"
 _plant; _mut '{print} END {print}'
 _gp; _refused "a duplicate id (the last row twice)" "duplicate id"
 _plant; _mut '$1=="check-gate-hygiene" {$11="test-ssa"} {print}'

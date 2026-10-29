@@ -4,19 +4,20 @@
 # The fast suite is NOT the CI gate set: golden baselines, proof gates, and
 # per-feature check_*.sh gates run only in CI, and twice (2026-06, 2026-07)
 # CI stayed red for 14-15 pushes while local fast-suite green was treated as
-# done. This script extracts the gate commands FROM the workflow file itself
-# (so the list cannot drift) and runs them sequentially, printing only
-# failures. Run it before pushing anything that touches the compiler or the
-# gates; a full pass takes a while (proof/oracle gates are slow) — that is
-# still ~3x faster than one CI round-trip.
+# done. This script runs the gate commands the gate manifest lists for CI
+# (scripts/tests/gates.tsv, its via=step rows), printing only failures; the
+# registration gate (check_gate_registration.sh) fails when the workflow and the
+# manifest disagree, so the list cannot drift. Run it before pushing anything
+# that touches the compiler or the gates; a full pass takes a while
+# (proof/oracle gates are slow) — that is still ~3x faster than one CI round-trip.
 #
-# Extraction contract: a workflow line invoking
-#   [VAR=value ...] [bash|python3|sh] [./]scripts/....(sh|py) [args...]
-# is a gate; the full argument list is preserved (fuzz seeds/counts,
-# --trust-gate, the grammar path), as are VAR=value env prefixes.
-# EXCLUDED on purpose: check_gate_mutation_coverage.sh — a nightly-only gate
-# that mutates compiler source files to verify gate coverage; running it as
-# a pre-push step would dirty the working tree it is meant to protect.
+# A row's cmd is the workflow's spelling, `[VAR=value ...] [bash|python3|sh]
+# [./]scripts/....(sh|py) [args...]`, with its full argument list (fuzz
+# seeds/counts, --trust-gate, the grammar path) and VAR=value env prefixes.
+# NOT RUN on purpose: the via=ci-only rows, such as
+# check_gate_mutation_coverage.sh — a campaign-only gate that mutates compiler
+# source files to verify gate coverage; running it as a pre-push step would
+# dirty the working tree it is meant to protect.
 #
 # Usage: scripts/tests/run_ci_gates_local.sh [filter-substring]
 #        scripts/tests/run_ci_gates_local.sh --job "<CI job name substring>"
@@ -140,41 +141,36 @@ done
 SELECTING=0
 [ "${#JOBSEL[@]}${#FILTERS[@]}${#FIRST_CMDS[@]}${#IMPACT[@]}" = "0000" ] || SELECTING=1
 
-# THE ONE EXTRACTOR. Strip any trailing REDIRECTION from the extracted command. The character
-# class stops at `&`, so a workflow line ending `... --trust-gate 2>&1 | tee
-# /tmp/trust-gate.log` was captured as `... --trust-gate 2>` — a redirect with no
-# target. `eval` then died of a parse error and the gate was counted FAIL, every
-# run, on a clean tree. So the trust gate was never actually EXECUTED locally
-# while appearing in the failure list: the loudest possible way to be silent.
-# Output is discarded by the runner anyway, so redirections are noise here.
-_extract_cmds() { # workflow text file -> gate commands, raw spelling, sorted unique
-  grep -oE '([A-Z_][A-Z0-9_]*=[^ ;|&]+[[:space:]]+)*((bash|python3|sh)[[:space:]]+)?(\./)?scripts/[^ ;|&]*\.(sh|py)[^;|&]*' "$1" \
-    | grep -v -E 'check_gate_mutation_coverage\.sh|aggregate_mutation_shards\.py|scripts/dev/seed-lake\.sh|check_checker_pin_freshness\.sh --tier campaign' \
-    | sed 's/[[:space:]][0-9]*[<>].*$//' \
-    | sed 's/[[:space:]]*$//' \
-    | sort -u
+# THE GATE MANIFEST IS THE LIST (scripts/tests/gates.tsv). The commands a full run executes are the
+# `cmd` of every via=step row: the workflow steps the local run reproduces (a via=ci-only row is a
+# workflow step it deliberately does not run). They used to be regex-extracted from the workflow
+# text; that extraction now lives in check_gate_registration.sh, which fails when the workflow and the
+# manifest disagree, and gates.py --check, which checks each step row against its workflow step.
+# Sorted unique, as the extraction was, so plans keep their order.
+MANIFEST="scripts/tests/gates.tsv"
+_manifest_cmds() { # [job key...] -> the cmd of every via=step row (of those jobs), sorted unique
+  awk -F'\t' -v jobs="$*" '
+    BEGIN { n = split(jobs, want_list, " "); for (i = 1; i <= n; i++) want[want_list[i]] = 1 }
+    /^#/ || $1 == "id" { next }
+    NF == 15 && $5 == "step" && (n == 0 || ($3 in want)) { print $2 }
+  ' "$MANIFEST" | sort -u
+}
+# --job J names jobs by their display name, as before: every job whose `name:` line contains J.
+_job_keys() { # J -> the workflow job keys whose name: line contains J
+  awk -v job="$1" '
+    /^  [a-zA-Z0-9_-]+:[[:space:]]*$/ { key = $1; sub(/:$/, "", key) }
+    /^    name:/ && index($0, job) > 0 { print key }
+  ' "$WORKFLOW"
 }
 # The spelling the runner EXECUTES: `bash ./scripts/x.sh` and `bash scripts/x.sh` are one gate.
 # Deduplication is on this form, so two spellings of one gate can never both run.
 _norm_cmd() { local c="$1"; printf '%s' "${c/bash .\//bash }"; }
 
-# PINNED, not floored. A floor of 100 against 208 accepted the silent loss of 108 commands while
-# still producing a closure artifact, because DISCOVERED is derived from whatever survived.
-# The pin describes the WHOLE workflow, so it applies only when the whole workflow was read. With
-# `--job` the text is deliberately narrowed to one job first, and demanding all 208 commands from that
-# subset made the documented flag unusable (fail-closed, but unusable).
-# The count history (213 -> 273) is in git history; since the ledger migration the
-# pin is the inventory file below, and a gate's line is added in the commit that adds the gate.
-EXPECTED_GATE_COMMANDS=0
-# THE INVENTORY REPLACES THE COUNT once scripts/tests/ci_gate_inventory.txt exists (the ledger migration,
-# scripts/gen/migrate_ledgers.sh, writes it). One extracted command per line, sorted: a branch that
-# adds a gate adds its line, two branches adding different gates touch different lines instead of
-# both rewriting one number, and the check compares CONTENT, so a lost gate cannot hide behind an
-# added one with the same total (ROADMAP_HISTORY "Gate inventory checked in CI, by content").
-GATE_INVENTORY="scripts/tests/ci_gate_inventory.txt"
-if [ -f "$GATE_INVENTORY" ]; then
-  EXPECTED_GATE_COMMANDS="$(grep -c . "$GATE_INVENTORY" || true)"
-fi
+# A FLOOR, NOT A PIN. The pin (EXPECTED_GATE_COMMANDS, then ci_gate_inventory.txt) existed because the
+# list was extracted from the workflow and an extractor drift could silently drop commands. The list is
+# now the manifest's rows, so there is nothing to drift; what remains is the vacuity floor, far below
+# the real count, so a missing or unreadable manifest cannot pass as an empty gate set.
+GATE_FLOOR=100
 
 # RESOLVE THE SELECTION — sets CMDS (raw inventory), SELECTED (normalized, unique, execution order),
 # FIRST_N (how many leading SELECTED entries are the sequential first stage) and OUTSIDE (selected
@@ -182,43 +178,22 @@ fi
 # RESOLVE_MSG; nothing is executed or written here.
 resolve_selection() {
   RESOLVE_ERR=""; RESOLVE_MSG=""; SELECTED=(); FIRST_N=0; OUTSIDE=0
-  mapfile -t CMDS < <(_extract_cmds "$WORKFLOW" 2>/dev/null)
-  # THE INVENTORY, WHEN PRESENT, IS CHECKED FIRST AND BY CONTENT: it names what was lost or added,
-  # where the count below can only say that the total moved. A near-empty inventory is refused as
-  # vacuous, exactly like a near-empty extraction.
-  if [ -f "$GATE_INVENTORY" ]; then
-    if [ "$EXPECTED_GATE_COMMANDS" -lt 100 ]; then
-      RESOLVE_ERR="gate_inventory_vacuous(inventory:$EXPECTED_GATE_COMMANDS)"
-      RESOLVE_MSG="$GATE_INVENTORY lists only $EXPECTED_GATE_COMMANDS gate commands; refusing a vacuous inventory."
-      return 1
-    fi
-    local inv_diff
-    inv_diff="$(diff <(LC_ALL=C sort -u "$GATE_INVENTORY") <(printf '%s\n' "${CMDS[@]}" | LC_ALL=C sort -u) || true)"
-    if [ -n "$inv_diff" ]; then
-      RESOLVE_ERR="gate_inventory_mismatch"
-      RESOLVE_MSG="the workflow's gate commands differ from $GATE_INVENTORY (< inventory only, > workflow only):
-$inv_diff
-       If the workflow legitimately changed, update $GATE_INVENTORY in the SAME commit
-       (one command per line, LC_ALL=C sorted). Refusing to report a verdict."
-      return 1
-    fi
-  fi
-  # VACUITY FLOOR ON THE INVENTORY ITSELF. `mapfile` does not fail when its process substitution
-  # produces nothing, so a missing workflow file or extractor drift yields CMDS=() — after which every
-  # loop below does nothing, DISCOVERED == EXECUTED == 0 holds, and closure mode writes `completed=1`
-  # with `PASS=0 FAIL=0`. PINNED, not floored: see EXPECTED_GATE_COMMANDS below.
-  # THE PIN NOW APPLIES TO EVERY RUN. `--job` used to read only that job's text and so could not
-  # check it; selection is now resolved against the whole workflow, and a job's commands must be a
-  # subset of it.
-  if [ "${#CMDS[@]}" != "$EXPECTED_GATE_COMMANDS" ]; then
-    RESOLVE_ERR="gate_inventory_vacuous(${#CMDS[@]})"
-    RESOLVE_MSG="gate extraction produced ${#CMDS[@]} commands from $WORKFLOW, pinned at $EXPECTED_GATE_COMMANDS.
-       If the workflow legitimately changed, update EXPECTED_GATE_COMMANDS in the SAME commit.
-       That is extractor failure, not an empty gate set. Refusing to report a verdict."
+  if [ ! -f "$MANIFEST" ]; then
+    RESOLVE_ERR="gate_manifest_missing"; RESOLVE_MSG="$MANIFEST is missing; there is no gate list to run."
     return 1
   fi
-  # Every extracted command must be SYNTACTICALLY VALID before anything is run. A truncated command
-  # otherwise reports as a failing gate, which reads as "the tree is red" rather than "the extractor
+  mapfile -t CMDS < <(_manifest_cmds 2>/dev/null)
+  # VACUITY FLOOR. `mapfile` does not fail when its process substitution produces nothing, so an
+  # unreadable manifest yields CMDS=() — after which every loop below does nothing, DISCOVERED ==
+  # EXECUTED == 0 holds, and closure mode writes `completed=1` with `PASS=0 FAIL=0`.
+  if [ "${#CMDS[@]}" -lt "$GATE_FLOOR" ]; then
+    RESOLVE_ERR="gate_inventory_vacuous(${#CMDS[@]})"
+    RESOLVE_MSG="$MANIFEST yields ${#CMDS[@]} via=step commands, under the floor of $GATE_FLOOR.
+       That is a broken manifest, not an empty gate set. Refusing to report a verdict."
+    return 1
+  fi
+  # Every listed command must be SYNTACTICALLY VALID before anything is run. A truncated command
+  # otherwise reports as a failing gate, which reads as "the tree is red" rather than "the manifest
   # is broken" — and those demand opposite responses.
   local cmd bad=""
   for cmd in "${CMDS[@]}"; do
@@ -227,7 +202,7 @@ $inv_diff
   done
   if [ -n "$bad" ]; then
     RESOLVE_ERR="gate_extraction_invalid"
-    RESOLVE_MSG="gate extraction produced unrunnable commands — fix the extractor,
+    RESOLVE_MSG="$MANIFEST lists unrunnable commands — fix the manifest,
        not the gates. A truncated command cannot be told from a red gate:$bad"
     return 1
   fi
@@ -237,7 +212,7 @@ $inv_diff
     n="$(_norm_cmd "$cmd")"
     if [ -n "${inv[$n]:-}" ]; then
       RESOLVE_ERR="gate_inventory_duplicate_spelling"
-      RESOLVE_MSG="the workflow spells one gate two ways ($n); a full run would execute it twice."
+      RESOLVE_MSG="the manifest spells one gate two ways ($n); a full run would execute it twice."
       return 1
     fi
     inv[$n]=1
@@ -266,28 +241,23 @@ $inv_diff
     fi
   done
   FIRST_N="${#SELECTED[@]}"
-  local j f t got
+  local j f got keys
   for j in "${JOBSEL[@]}"; do
-    # Job headers sit at two-space indent under `jobs:`; a name: line at that depth starts a new block.
-    t="$(mktemp)" || { RESOLVE_ERR="tmp_unavailable"; RESOLVE_MSG="mktemp failed"; return 1; }
-    awk -v job="$j" '
-      /^  [a-zA-Z0-9_-]+:[[:space:]]*$/ { inblock=0 }
-      /^    name:/ { inblock = (index($0, job) > 0) }
-      inblock { print }
-    ' "$WORKFLOW" > "$t"
-    if ! [ -s "$t" ]; then rm -f "$t"
+    # Job headers sit at two-space indent under `jobs:`; their `name:` line is at four.
+    keys="$(_job_keys "$j")"
+    if [ -z "$keys" ]; then
       RESOLVE_ERR="no_ci_job($j)"; RESOLVE_MSG="no CI job matching '$j'"; return 1
     fi
     got=0
+    # shellcheck disable=SC2086  # job keys are [a-zA-Z0-9_-] words
     while IFS= read -r cmd; do
       [ -n "$cmd" ] || continue
       n="$(_norm_cmd "$cmd")"
-      if [ -z "${inv[$n]:-}" ]; then rm -f "$t"
-        RESOLVE_ERR="job_command_outside_inventory"; RESOLVE_MSG="job '$j' yields '$n', which the whole-workflow extraction does not"; return 1
+      if [ -z "${inv[$n]:-}" ]; then
+        RESOLVE_ERR="job_command_outside_inventory"; RESOLVE_MSG="job '$j' yields '$n', which the whole manifest does not"; return 1
       fi
       got=$((got+1)); _sel_add "$n" || true
-    done < <(_extract_cmds "$t")
-    rm -f "$t"
+    done < <(_manifest_cmds $keys)
     if [ "$got" -eq 0 ]; then
       RESOLVE_ERR="job_selected_nothing($j)"; RESOLVE_MSG="--job '$j' yielded no gate commands."; return 1
     fi
@@ -954,7 +924,7 @@ END_MUT="$(snapshot_muttargets)"
 
 # STEP-LEVEL `env:` IS NOT CAPTURED, and that is now stated rather than hidden by `sort -u`.
 #
-# The extractor reads only a step's `run:` text, so two steps invoking the SAME script with DIFFERENT
+# A row's cmd carries only a step's `run:` text, so two steps invoking the SAME script with DIFFERENT
 # step-level environments collapse to one command. The workflow does exactly that: a scheduled step
 # sets `MULTI_KERNEL_MUTATE: "1"` for check_multi_kernel.sh, which is a semantically different gate
 # run. `DISCOVERED == EXECUTED` therefore cannot mean "the workflow's gate population ran".

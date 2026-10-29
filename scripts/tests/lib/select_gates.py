@@ -123,20 +123,38 @@ FULL_SET_LOCAL_MIN = 23
 
 
 WORKFLOW = ".github/workflows/lean_action_ci.yml"
-# A replica of run_ci_gates_local.sh's `_extract_cmds` pattern and `_norm_cmd`. It is used only to
-# tell which commands a workflow edit ADDED OR CHANGED; if it ever disagrees with the runner, the
-# disagreement shows up as "new" commands, i.e. as over-selection.
-CMD_RE = re.compile(
-    r"(?:[A-Z_][A-Z0-9_]*=[^ ;|&]+\s+)*(?:(?:bash|python3|sh)\s+)?(?:\./)?scripts/[^ ;|&]*\.(?:sh|py)[^;|&\n]*")
+# THE GATE MANIFEST is the list of gate commands (the runner runs its via=step rows), so a change that
+# adds or re-spells a command is read off the manifest, at the base and now, rather than regex-extracted
+# from the workflow text. The registration gate keeps the workflow and the manifest in agreement.
+MANIFEST = "scripts/tests/gates.tsv"
 
 
 def norm_cmd(cmd):
-    cmd = re.sub(r"\s[0-9]*[<>].*$", "", cmd).rstrip()
+    """run_ci_gates_local.sh's `_norm_cmd`: `bash ./scripts/x` and `bash scripts/x` are one gate."""
     return cmd.replace("bash ./", "bash ", 1)
 
 
-def workflow_commands(text):
-    return {norm_cmd(m) for m in CMD_RE.findall(text)}
+def manifest_rows(text):
+    """[(job, step, via, cmd)] for every manifest row (the cmd normalized as the runner spells it)."""
+    out = []
+    for ln in text.split("\n"):
+        c = ln.split("\t")
+        if ln.startswith("#") or len(c) != 15 or c[0] == "id":
+            continue
+        out.append((c[2], c[3], c[4], norm_cmd(c[1])))
+    return out
+
+
+def manifest_commands(text):
+    """The commands the runner runs: the via=step rows."""
+    return {cmd for _, _, via, cmd in manifest_rows(text) if via == "step"}
+
+
+def base_manifest(base):
+    """The manifest's text at `base`, or None when `base` has none (a test seam: check_gate_selection.sh
+    replaces it to compare against a manifest that lacks a command)."""
+    r = subprocess.run(["git", "show", f"{base}:{MANIFEST}"], capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
 
 
 def git_lines(*args):
@@ -390,26 +408,27 @@ class Repo:
 def select(repo, inventory, changed, base=None):
     """-> ({command: reason}, [unmapped changed files])
 
-    `base` is the commit the change is measured from; it is needed only when the workflow itself
-    changed, to tell which commands the edit added or re-spelled (new arguments, a new env prefix).
-    Without it, a workflow change selects every command."""
+    `base` is the commit the change is measured from; it is needed only when the gate manifest or the
+    workflow changed, to tell which commands the edit added or re-spelled (new arguments, a new env
+    prefix), read off the manifest at `base`. Without it, or when `base` has no manifest, such a change
+    selects every command."""
     info = {cmd: repo.closure(cmd) for cmd in inventory}
     chosen, unmapped = {}, []
 
     def pick(cmd, why):
         chosen.setdefault(cmd, why)
 
-    if WORKFLOW in changed:
+    if WORKFLOW in changed or MANIFEST in changed:
         old = None
         if base:
-            r = subprocess.run(["git", "show", f"{base}:{WORKFLOW}"], capture_output=True, text=True)
-            if r.returncode == 0:
-                old = workflow_commands(r.stdout)
+            text = base_manifest(base)
+            if text is not None:
+                old = manifest_commands(text)
         for cmd in inventory:
             if old is None:
-                pick(cmd, "the workflow changed and no base is known to compare its commands with")
+                pick(cmd, "the gate list changed and the base has no gate manifest to compare it with")
             elif cmd not in old:
-                pick(cmd, "the workflow adds or re-spells this command")
+                pick(cmd, "the gate manifest adds or re-spells this command")
 
     for ch in changed:
         hit = False

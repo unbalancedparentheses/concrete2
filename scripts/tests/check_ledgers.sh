@@ -5,7 +5,8 @@
 #
 #   a bug's status, summary, coverage, classes, silent/loud, exits   its record, docs/bugs/NNN_*.md
 #   a change log entry                                               its fragment, changelog.d/*.md
-#   the CI gate inventory                                            scripts/tests/ci_gate_inventory.txt
+#   the gate list (CI steps, make targets, the local runner's list)  its row, scripts/tests/gates.tsv
+#                                                                    (checked by check_gate_registration.sh)
 #
 # and the views generated from them: the bug lists in docs/bugs/README.md, the bugs column of
 # STRUCTURAL_CLASSES.md's summary table and the exit bug spans in ROADMAP.md (scripts/gen/bug_ledger.py),
@@ -48,11 +49,6 @@ if [ -f docs/bugs/AREAS.md ] && ! has_match 'not compared' < "$TMP/check1.out"; 
 else no "docs/bugs/AREAS.md was not compared against this checkout's history (see above)"; fi
 if python3 -I "$CL" --check; then ok "CHANGELOG.md matches its stamp and every changelog.d/ fragment is well-formed"
 else no "CHANGELOG.md was hand-edited or a fragment is malformed (see above)"; fi
-if [ -f scripts/tests/ci_gate_inventory.txt ]; then
-  if [ "$(LC_ALL=C sort -u scripts/tests/ci_gate_inventory.txt)" = "$(cat scripts/tests/ci_gate_inventory.txt)" ]; then
-    ok "the CI gate inventory is sorted and duplicate-free (run_ci_gates_local.sh compares it with the workflow)"
-  else no "scripts/tests/ci_gate_inventory.txt is not sorted (LC_ALL=C sort -u) or holds a duplicate"; fi
-fi
 
 # ----------------------------------------------------------------------------- the migrated copy
 # BASE is built once: a copy of the inputs, migrated by scripts/gen/migrate_ledgers.py when this tree
@@ -71,7 +67,6 @@ cp scripts/tests/audit_bug_corpus.sh scripts/tests/check_bug_filing_complete.sh 
    scripts/tests/run_tests.sh scripts/tests/run_ci_gates_local.sh "$BASE/scripts/tests/"
 # The copied gates start by sourcing the gate-shell guard from beside themselves.
 mkdir -p "$BASE/scripts/tests/lib" && cp scripts/tests/lib/gate_env.sh scripts/tests/lib/has_match.sh "$BASE/scripts/tests/lib/"
-[ -f scripts/tests/ci_gate_inventory.txt ] && cp scripts/tests/ci_gate_inventory.txt "$BASE/scripts/tests/"
 cp .github/workflows/lean_action_ci.yml "$BASE/.github/workflows/"
 ln -s "$ROOT_DIR/tests" "$BASE/tests"
 MIGRATED_HERE=0; [ -n "$(python3 -I "$BL" corpus)" ] && MIGRATED_HERE=1

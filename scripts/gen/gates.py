@@ -7,8 +7,7 @@
   gates.py --list-via   print "<script path>\t<via>" for every row (the registration gate's
                         reachability walk cross-checks it)
 
-Generated views:
-  scripts/tests/ci_gate_inventory.txt   the cmd of every via=step row, LC_ALL=C sorted, unique
+Generated views (run_ci_gates_local.sh and select_gates.py read the manifest itself):
   mk/gates.mk                           a .PHONY make target for every row with a `make` cell
                                         (included from the Makefile): `<make>: [build] ## <claim>` running
                                         `$(NIX_DEVELOP[_PROVERS]) <cmd>`, the script spelled ./scripts/
@@ -41,7 +40,6 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 MANIFEST = "scripts/tests/gates.tsv"
-INVENTORY = "scripts/tests/ci_gate_inventory.txt"
 WORKFLOW = ".github/workflows/lean_action_ci.yml"
 HOOK = ".githooks/pre-push"
 SPEC_IDS = "docs/spec/ids.tsv"
@@ -381,11 +379,6 @@ def validate(root, rows, wf_text):
     return errs
 
 
-def render_inventory(rows):
-    cmds = sorted({r["cmd"] for r in rows if r["via"] == "step"})
-    return "".join(c + "\n" for c in cmds)
-
-
 def recipe(r):
     m = MAKE_CMD_RE.match(r["cmd"])
     return f"$({DEVSHELL_VAR[r['shell']]}) {m.group(1)}{m.group(2)} ./{m.group(3)}{m.group(4)}"
@@ -405,7 +398,7 @@ def render_mk(rows):
 
 
 def views(rows, wf_text):
-    return {INVENTORY: render_inventory(rows), MK: render_mk(rows), WORKFLOW: wf_text}
+    return {MK: render_mk(rows), WORKFLOW: wf_text}
 
 
 def main():

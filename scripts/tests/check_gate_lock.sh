@@ -741,7 +741,7 @@ RSB="$TMP/runner-sb"; MARK="$TMP/mark"; mkdir -p "$RSB/scripts/tests/lib" "$RSB/
 cp scripts/tests/run_ci_gates_local.sh "$RSB/scripts/tests/"
 cp scripts/tests/lib/*.sh scripts/tests/lib/*.py "$RSB/scripts/tests/lib/"
 cp .github/workflows/lean_action_ci.yml "$RSB/.github/workflows/"
-[ -f scripts/tests/ci_gate_inventory.txt ] && cp scripts/tests/ci_gate_inventory.txt "$RSB/scripts/tests/"
+cp scripts/tests/gates.tsv "$RSB/scripts/tests/"   # the runner's gate list
 cp .gitignore "$RSB/"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/lake"; chmod +x "$TMP/bin/lake"
 printf '#!/bin/sh\nexit 0\n' > "$RSB/.lake/build/bin/concrete"; chmod +x "$RSB/.lake/build/bin/concrete"

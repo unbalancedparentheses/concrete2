@@ -66,7 +66,7 @@ cp scripts/tests/audit_bug_corpus.sh scripts/tests/check_bug_filing_complete.sh 
    scripts/tests/run_tests.sh scripts/tests/run_ci_gates_local.sh "$W/scripts/tests/"
 # The copied gates start by sourcing the gate-shell guard from beside themselves.
 mkdir -p "$W/scripts/tests/lib" && cp scripts/tests/lib/gate_env.sh scripts/tests/lib/has_match.sh "$W/scripts/tests/lib/"
-[ -f scripts/tests/ci_gate_inventory.txt ] && cp scripts/tests/ci_gate_inventory.txt "$W/scripts/tests/"
+cp scripts/tests/gates.tsv "$W/scripts/tests/"   # the copied runner's gate list
 cp .github/workflows/lean_action_ci.yml "$W/.github/workflows/"
 cp .githooks/pre-push "$W/.githooks/"
 ln -s "$ROOT_DIR/tests/programs" "$W/tests/programs"

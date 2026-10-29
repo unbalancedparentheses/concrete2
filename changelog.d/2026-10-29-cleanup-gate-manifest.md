@@ -39,3 +39,15 @@ comments between steps; `--check` refuses a hand edit inside a block and a `gen=
 reaches. The parsed workflow is identical to the one before, job by job (same steps, names, `run`
 strings and order); the text changed only by the marker lines and by 106 step names written without
 their redundant quotes. The `gen` column now means "this row's workflow step is generated".
+
+### The Local Runner and the Hook Read the Gate Manifest (cleanup 5, slice 4, 2026-10-29)
+
+`run_ci_gates_local.sh` now runs the manifest's `via=step` rows instead of regex-extracting commands
+from the workflow text, and `--job` takes those rows for the jobs whose `name:` matches, as before.
+The impact selector (`select_gates.py`) reads which commands a change adds or re-spells off the
+manifest at the base, and `gate_durations.py` maps CI step timings to commands through it. The
+extraction survives in `check_gate_registration.sh` as the cross-check: the workflow's gate commands
+must be exactly the manifest's step rows (controls: a workflow step with no row, a row whose step is
+gone). `scripts/tests/ci_gate_inventory.txt` is retired: it was a copy of those rows, and the
+sandboxes that copied it (`check_gate_lock.sh`, `check_new_bug.sh`) copy the manifest instead.
+`--plan` output is byte-identical before and after, in total and for every job.

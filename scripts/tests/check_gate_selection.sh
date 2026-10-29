@@ -163,15 +163,35 @@ select_fixture expected "$TMPD/expected.paths" && must expected check_example_ou
 # launches its children through this helper: a driver invoked in a bounded mode still runs its helpers.
 printf 'scripts/tests/lib/run_campaign_child.py\n' > "$TMPD/child.paths"
 select_fixture child "$TMPD/child.paths" && must child check_campaign_summary_golden.sh
-# A workflow edit that re-spells a command (new arguments) selects that command: compared against
-# main before this gate was registered, the gate's own command is new.
-if git cat-file -e "713778e2^{commit}" 2>/dev/null; then
-  if SELECT_GATES_BASE=713778e2 select_fixture wfadd "$TMPD/wf.paths"; then
-    must wfadd check_gate_selection.sh
-  fi
-else
-  skip "713778e2 not in this clone: the added-command leg needs the base's workflow"
-fi
+# A manifest edit that adds or re-spells a command selects that command, and only what changed or reads
+# the manifest: the base's manifest (select_gates.base_manifest, the seam) lacks this gate's own row.
+# A base with no manifest at all (713778e2 predates it) cannot be compared, so it selects every gate.
+printf 'scripts/tests/gates.tsv\n' > "$TMPD/manifest.paths"
+mf_out="$(python3 -I - "$TMPD/inventory" "$TMPD/manifest.paths" <<'PY'
+import sys
+sys.path.insert(0, "scripts/tests/lib")
+import select_gates as sg
+inventory = [l.rstrip("\n") for l in open(sys.argv[1]) if l.strip()]
+changed = [l.rstrip("\n") for l in open(sys.argv[2]) if l.strip()]
+text = open(sg.MANIFEST).read()
+sg.base_manifest = lambda base: "\n".join(l for l in text.split("\n") if "\tbash scripts/tests/check_gate_selection.sh\t" not in l)
+chosen, _ = sg.select(sg.Repo(changed), inventory, changed, base="seam")
+print(len(chosen), len(inventory), chosen.get("bash scripts/tests/check_gate_selection.sh", "-"))
+sg.base_manifest = lambda base: None
+chosen, _ = sg.select(sg.Repo(changed), inventory, changed, base="seam")
+print(len(chosen))
+PY
+)"
+read -r mf_n mf_all mf_why <<<"$(head -1 <<<"$mf_out")"
+mf_none="$(sed -n 2p <<<"$mf_out")"
+case "$mf_why" in
+  *"adds or re-spells"*) ok "a manifest edit that adds a command selects it ($mf_why)" ;;
+  *) no "a manifest edit that adds check_gate_selection.sh's row did not select it as added (got: ${mf_why:-nothing})" ;;
+esac
+if [ -n "$mf_n" ] && [ "$mf_n" -lt "${mf_all:-0}" ]; then ok "a manifest edit compared with a base selects $mf_n of $mf_all, not every gate"
+else no "a manifest edit compared with a base selected ${mf_n:-?} of ${mf_all:-?}"; fi
+if [ "${mf_none:-0}" = "${mf_all:-x}" ]; then ok "a base with no manifest selects every gate ($mf_none) — fail-safe"
+else no "a base with no manifest selected ${mf_none:-?} of ${mf_all:-?}"; fi
 
 echo "=== text is not a call: names in keyed-array values (bug 237) ==="
 # A corpus note naming a gate script made run_tests.sh, which runs the corpus audit, look as if it ran
