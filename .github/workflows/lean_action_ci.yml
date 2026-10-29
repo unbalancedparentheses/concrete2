@@ -61,34 +61,44 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      # BEGIN GENERATED: gates grammar from check-workflow-yaml (scripts/tests/gates.tsv; gates.py --write)
       - name: Workflow-YAML gate (every workflow file parses)
         run: bash scripts/tests/check_workflow_yaml.sh
 
       - name: Gate-hygiene gate (every gate is pipe-safe and fails loudly)
         run: bash scripts/tests/check_gate_hygiene.sh
+      # END GENERATED: gates grammar
 
       # Build-free (bug 252): any change selects it, a docs-only one included.
-      - name: "Markdown links (every local link resolves; an anchor names a heading or id of its target)"
+      # BEGIN GENERATED: gates grammar from check-doc-links (scripts/tests/gates.tsv; gates.py --write)
+      - name: Markdown links (every local link resolves; an anchor names a heading or id of its target)
         run: bash scripts/tests/check_doc_links.sh
+      # END GENERATED: gates grammar
 
       # Build-free: drives the landing script against a throwaway repository with a fake gh.
-      - name: "Landing script (trains resolve only generated views and ledgers; refusals hold)"
+      # BEGIN GENERATED: gates grammar from check-landing-script (scripts/tests/gates.tsv; gates.py --write)
+      - name: Landing script (trains resolve only generated views and ledgers; refusals hold)
         run: bash scripts/tests/check_landing_script.sh
+      # END GENERATED: gates grammar
 
       # Build-free: drives the landing bot (and the train script under it) against a throwaway repository.
-      - name: "Landing bot (ready = clean review + passing gates at the head; rule-first order; red member ejected)"
+      # BEGIN GENERATED: gates grammar from check-landing-bot (scripts/tests/gates.tsv; gates.py --write)
+      - name: Landing bot (ready = clean review + passing gates at the head; rule-first order; red member ejected)
         run: bash scripts/tests/check_landing_bot.sh
 
-      - name: "Review tool (R-0544 — review.sh delta/split/refusal-retry/cap/notes, verify.sh; fake reviewer)"
+      - name: Review tool (R-0544 — review.sh delta/split/refusal-retry/cap/notes, verify.sh; fake reviewer)
         run: bash scripts/tests/check_review_tool.sh
+      # END GENERATED: gates grammar
 
       # Source-level (reads gate scripts and fixed diff lists; no build), so it sits in this
       # build-free job rather than the long language-surface job.
+      # BEGIN GENERATED: gates grammar from check-gate-selection (scripts/tests/gates.tsv; gates.py --write)
       - name: "Impact gate selection (R-0513: pre-push selection replays the 2026-10-22 CI-only failures)"
         run: bash scripts/tests/check_gate_selection.sh
 
       - name: Build-cache gate (seeding refuses a key mismatch and never replaces lake build)
         run: bash scripts/tests/check_build_cache.sh
+      # END GENERATED: gates grammar
 
       # Build-free: the CI triage classifier, flake history and coverage diff (the triage, flake_history
       # and coverage_diff tools under the CI scripts, and nightly.yml) against fixture logs and a stub gh.
@@ -98,49 +108,65 @@ jobs:
           bash scripts/tests/check_ci_triage.sh
 
       # Build-free: drives the status page generator, its sanitizer and the notifier with a fake gh.
-      - name: "Status page (generation from fixtures, public variant sanitized, notify dedup)"
+      # BEGIN GENERATED: gates grammar from check-status-page (scripts/tests/gates.tsv; gates.py --write)
+      - name: Status page (generation from fixtures, public variant sanitized, notify dedup)
         run: bash scripts/tests/check_status_page.sh
+      # END GENERATED: gates grammar
 
       # Build-free: drives the work-queue dispatcher against a throwaway repository with stub agents.
-      - name: "Work queue (priority, area conflicts, budgets, slot rotation, stuck release, kill switch)"
+      # BEGIN GENERATED: gates grammar from check-work-queue (scripts/tests/gates.tsv; gates.py --write)
+      - name: Work queue (priority, area conflicts, budgets, slot rotation, stuck release, kill switch)
         run: bash scripts/tests/check_work_queue.sh
 
       - name: VC-bridge register gate (every obligation family is registered)
         run: bash scripts/tests/check_vc_bridge_register.sh
+      # END GENERATED: gates grammar
 
       # Source-level only (greps modules and gate scripts), so it belongs in this
       # build-free job. check_known_wrong_corpus.sh does NOT belong here — it needs the
       # compiled binary and lives in `extra-gates` alongside the other corpus gates.
+      # BEGIN GENERATED: gates grammar from check-evidence-algebra (scripts/tests/gates.tsv; gates.py --write)
       - name: Register C gate (evidence is never stronger than its inputs)
         run: bash scripts/tests/check_evidence_algebra.sh
+      # END GENERATED: gates grammar
 
       # Source-level too: compares hole status across documents and against the corpus
       # gate's fixture list. No build needed.
+      # BEGIN GENERATED: gates grammar from check-hole-status-consistency (scripts/tests/gates.tsv; gates.py --write)
       - name: Hole-status consistency (no document contradicts KNOWN_HOLES)
         run: bash scripts/tests/check_hole_status_consistency.sh
+      # END GENERATED: gates grammar
 
       # Build-free: drives scripts/fuzz/farm/ with a fake compiler and fake generators
       # (classification, dedup, minimizer, re-check, promote, drift alert, status JSON).
+      # BEGIN GENERATED: gates grammar from check-fuzz-farm (scripts/tests/gates.tsv; gates.py --write)
       - name: Fuzz-farm gate (the server farm's findings pipeline)
         run: bash scripts/tests/check_fuzz_farm.sh
+      # END GENERATED: gates grammar
 
       # Build-free: the perf tracker's decision logic (record format, noise-band
       # detection, bisect selection, data-branch layout) runs on fixtures, not timings.
+      # BEGIN GENERATED: gates grammar from check-perf-tracking (scripts/tests/gates.tsv; gates.py --write)
       - name: Perf-tracking harness (no alarm on noise, alarm on a planted 2x)
         run: bash scripts/tests/check_perf_tracking.sh
+      # END GENERATED: gates grammar
 
       # Build-free: the leanprof profile job (R-0551) on synthetic reports, a fake leanprof and a
       # local origin: no finding on noise or a uniform slowdown, a finding on a planted quadratic.
+      # BEGIN GENERATED: gates grammar from check-leanprof-profile (scripts/tests/gates.tsv; gates.py --write)
       - name: Compiler-profile harness (finding on a planted hot spot, none on noise)
         run: bash scripts/tests/check_leanprof_profile.sh
+      # END GENERATED: gates grammar
 
       # The three independent LL(1) checkers (py, c, rs) must agree byte-for-byte on every
       # rule's FIRST set and nullability, report no conflict, and all refuse the planted grammars.
+      # BEGIN GENERATED: gates grammar from check-grammar-ll1 (scripts/tests/gates.tsv; gates.py --write)
       - name: LL(1) grammar (three independent checkers agree)
         env:
           # A push is compared with the revision before ALL of its commits (the known-conflict list only shrinks).
           LL1_BASE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: bash scripts/tests/check_grammar_ll1.sh
+      # END GENERATED: gates grammar
 
   build:
     name: Build
