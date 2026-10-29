@@ -35,16 +35,38 @@ no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 [ -f "$WORKFLOW" ] || { echo "FATAL: $WORKFLOW missing — reachability cannot be determined" >&2; exit 2; }
 
-# DECLARED SKIPS. Each needs a reason, and the reason is checked for existence rather than for
-# content — a skip with an empty justification is the thing this list exists to prevent.
-declare -A SKIP=(
-  ["check_gate_registration.sh"]="this gate; it is the registration rule itself"
-  ["check_rocksdb_slice1.sh"]="RocksDB slice 1 acceptance gate; acceptance is blocked by exits 0b, 2i and 2n (ROADMAP feature prerequisites) and it fails until gap G3 in docs/platform/ROCKSDB_SLICE1.md closes (G1 is closed); wire it into the full gate set, with librocksdb-dev on the runner, when the slice is accepted"
-)
+# THE MANIFEST IS THE LIST (scripts/tests/gates.tsv). Every gate script has a row there saying how CI
+# reaches it (`via`), and the generated views (ci_gate_inventory.txt) are derived from it. This gate
+# checks the manifest is valid and its views fresh (gates.py --check: column vocabularies, unique ids
+# and make targets, live spec keys, step rows naming a real job and step that runs them), that no
+# check/test/run script lacks a row, and below, that each row's `via` matches what the reachability
+# walk sees.
+MANIFEST="scripts/tests/gates.tsv"
+GATES_PY="scripts/gen/gates.py"
+echo "=== the gate manifest is valid, lists every gate script, and its generated views are fresh ==="
+if gp_out="$(python3 -I "$GATES_PY" --check 2>&1)"; then
+  ok "$GATES_PY --check: $MANIFEST is valid, lists every gate script, and its views are current"
+else
+  no "$GATES_PY --check failed:"
+  printf '       %s\n' "$gp_out" | head -40
+fi
+
+# DECLARED SKIPS come from the manifest: a row with via=skip:<reason>. Each needs a reason, and the
+# reason is checked for existence rather than for content — a skip with an empty justification is the
+# thing this list exists to prevent.
+VIA_FILE="$(mktemp)"
+if ! python3 -I "$GATES_PY" --list-via > "$VIA_FILE" 2>/dev/null || [ ! -s "$VIA_FILE" ]; then
+  echo "FATAL: $GATES_PY --list-via produced nothing — the manifest cannot be read" >&2
+  rm -f "$VIA_FILE"; exit 2
+fi
+declare -A SKIP=()
+while IFS=$'\t' read -r vpath vvia; do
+  case "$vvia" in skip:*) SKIP["$(basename "$vpath")"]="${vvia#skip:}" ;; esac
+done < "$VIA_FILE"
 
 # Seed the reachable set with everything the workflow names directly, then repeatedly add any script
 # invoked by something already reachable, until nothing new appears.
-REACHABLE_FILE="$(mktemp)"; trap 'rm -f "$REACHABLE_FILE"; rm -rf "${STRIP_DIR:-}"' EXIT
+REACHABLE_FILE="$(mktemp)"
 # A MENTION IS NOT AN INVOCATION.
 #
 # Reachability was `grep -q "$b" "$file"`: the gate's NAME appearing anywhere counted, including in
@@ -69,7 +91,8 @@ REACHABLE_FILE="$(mktemp)"; trap 'rm -f "$REACHABLE_FILE"; rm -rf "${STRIP_DIR:-
 # scripts/tools/*.sh are containers too: checker_acceptance_evidence.sh is the only run of five gates
 # (R-0546), so the edge from the workflow to those gates passes through it.
 NAMES_FILE="$(mktemp)"; EDGES_FILE="$(mktemp)"
-trap 'rm -f "$REACHABLE_FILE" "$NAMES_FILE" "$EDGES_FILE"' EXIT
+PLANT_DIR="$(mktemp -d)"
+trap 'rm -f "$REACHABLE_FILE" "$NAMES_FILE" "$EDGES_FILE" "$VIA_FILE"; rm -rf "$PLANT_DIR"' EXIT
 # A check_*.py in scripts/tests is a gate too (bug 252: the Markdown-link checker was one, reached only
 # from the Makefile, and this enumeration of shell files never saw it).
 for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh scripts/tools/*.sh scripts/tests/check_*.py; do
@@ -142,7 +165,7 @@ if [ -z "$UNREACHABLE" ]; then
 else
   no "gate(s) unreachable from CI:$UNREACHABLE"
   echo "       A gate nobody runs is indistinguishable from one that does not exist. Add a workflow"
-  echo "       step, or declare it in this gate's SKIP list with a reason."
+  echo "       step, or give it a via=skip:<reason> row in scripts/tests/gates.tsv."
 fi
 
 # THE SKIP LIST IS ALSO CHECKED, in both directions. A skip for a gate that no longer exists is
@@ -167,6 +190,102 @@ else
   ok "CONTROL: a gate absent from CI is correctly reported unreachable"
 fi
 
+echo "=== each manifest row's via agrees with the reachability walk ==="
+# step / ci-only: the workflow invokes the script directly. agg:<s> / tool:<s>: <s> invokes it and CI
+# reaches <s>. skip:<reason>: CI does NOT reach it — a skip that has become false is stale, and would
+# hide the next time the gate silently drops out of CI.
+_edge() { awk -v a="$1" -v b="$2" '$1==a && $2==b {f=1} END {exit !f}' "$EDGES_FILE"; }
+_via_problems() { # via-list file ("<path>\t<via>") -> one line per disagreement
+  local vpath vvia b agg
+  while IFS=$'\t' read -r vpath vvia; do
+    b="$(basename "$vpath")"
+    case "$vvia" in
+      step|ci-only:*)
+        _edge WORKFLOW "$b" || echo "$vpath: via=${vvia%%:*}, but the workflow does not invoke $b" ;;
+      agg:*|tool:*)
+        agg="${vvia#*:}"
+        if ! _edge "$agg" "$b"; then echo "$vpath: via=$vvia, but $agg does not invoke $b"
+        elif ! reachable "$agg"; then echo "$vpath: via=$vvia, but CI does not reach $agg"; fi ;;
+      skip:*)
+        reachable "$b" && echo "$vpath: via=skip, but CI reaches $b — the skip is stale; record how CI runs it" ;;
+      *) echo "$vpath: unknown via '$vvia'" ;;
+    esac
+  done < "$1"
+}
+via_bad="$(_via_problems "$VIA_FILE")"
+if [ -z "$via_bad" ]; then
+  ok "every row's via ($(grep -c . "$VIA_FILE") rows) matches the walk: steps invoked by the workflow, aggregated gates by their reached aggregator, skips unreached"
+else
+  no "manifest via disagrees with the reachability walk:"
+  printf '       %s\n' "$via_bad"
+fi
+# CONTROLS: a stale skip (a gate CI runs, declared skipped), an aggregator that does not invoke the
+# gate, and a step the workflow does not run must each be reported.
+printf 'scripts/tests/check_gate_hygiene.sh\tskip:planted\n' > "$PLANT_DIR/via"
+[ -n "$(_via_problems "$PLANT_DIR/via")" ] \
+  && ok "CONTROL: a skip row for a gate CI reaches is reported stale" \
+  || no "CONTROL: a stale skip row passed the via cross-check"
+printf 'scripts/tests/check_gate_hygiene.sh\tagg:run_fast_surface_gates.sh\n' > "$PLANT_DIR/via"
+[ -n "$(_via_problems "$PLANT_DIR/via")" ] \
+  && ok "CONTROL: an agg row naming an aggregator that does not invoke the gate is reported" \
+  || no "CONTROL: an agg row with the wrong aggregator passed the via cross-check"
+printf 'scripts/tests/check_rocksdb_slice1.sh\tstep\n' > "$PLANT_DIR/via"
+[ -n "$(_via_problems "$PLANT_DIR/via")" ] \
+  && ok "CONTROL: a step row for a script the workflow does not invoke is reported" \
+  || no "CONTROL: a step row for an uninvoked script passed the via cross-check"
+
+echo "=== negative controls: gates.py --check refuses each defect in a planted copy ==="
+# A copy of the inputs gates.py reads, with scripts/tests a directory of links so a script can be
+# planted without touching the tree. Each control mutates one thing and must be refused, naming it.
+_plant() {
+  rm -rf "$PLANT_DIR/r"; mkdir -p "$PLANT_DIR/r/scripts/tests" "$PLANT_DIR/r/.github/workflows" \
+    "$PLANT_DIR/r/.githooks" "$PLANT_DIR/r/docs/spec" "$PLANT_DIR/r/docs/bugs"
+  local f
+  for f in scripts/tests/*; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
+  rm -f "$PLANT_DIR/r/$MANIFEST" "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
+  cp "$MANIFEST" "$PLANT_DIR/r/$MANIFEST"
+  cp scripts/tests/ci_gate_inventory.txt "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
+  for f in scripts/ci scripts/tools scripts/gen; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
+  ln -s "$ROOT_DIR/$WORKFLOW" "$PLANT_DIR/r/$WORKFLOW"
+  ln -s "$ROOT_DIR/.githooks/pre-push" "$PLANT_DIR/r/.githooks/pre-push"
+  ln -s "$ROOT_DIR/docs/spec/ids.tsv" "$PLANT_DIR/r/docs/spec/ids.tsv"
+  ln -s "$ROOT_DIR/docs/bugs/area_map.tsv" "$PLANT_DIR/r/docs/bugs/area_map.tsv"
+}
+_gp() { python3 -I "$GATES_PY" --check --root "$PLANT_DIR/r" > "$PLANT_DIR/out" 2>&1; }
+# _mut <awk program over the manifest's data rows>: rewrite the planted manifest in place.
+_mut() {
+  awk -F'\t' -v OFS='\t' "/^#/ || /^id\t/ {print; next} $1" "$PLANT_DIR/r/$MANIFEST" > "$PLANT_DIR/m" \
+    && mv "$PLANT_DIR/m" "$PLANT_DIR/r/$MANIFEST"
+}
+# _refused <label> <text the refusal must contain>
+_refused() {
+  local rc=$?
+  if [ "$rc" = 1 ] && grep -qF -- "$2" "$PLANT_DIR/out"; then ok "CONTROL: $1 is refused"
+  else no "CONTROL: $1 was not refused (rc=$rc; expected exit 1 naming '$2')"; sed 's/^/       /' "$PLANT_DIR/out" | head -5; fi
+}
+_plant
+if _gp; then ok "CONTROL BASE: the unmodified planted copy passes, so each refusal below is the mutation's"
+else no "CONTROL BASE: the unmodified planted copy fails — every control below is meaningless"; sed 's/^/       /' "$PLANT_DIR/out" | head -5; fi
+_plant; printf '#!/usr/bin/env bash\nexit 0\n' > "$PLANT_DIR/r/scripts/tests/check_planted_unlisted.sh"
+_gp; _refused "a planted check_ script with no manifest row" "check_planted_unlisted.sh has no row"
+_plant; printf '#!/usr/bin/env bash\nexit 0\n' > "$PLANT_DIR/r/scripts/tests/test_planted_unlisted.sh"
+_gp; _refused "a planted test_ script with no manifest row" "test_planted_unlisted.sh has no row"
+_plant; echo "bash scripts/tests/check_planted_stale.sh" >> "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
+_gp; _refused "a stale (hand-edited) ci_gate_inventory.txt" "ci_gate_inventory.txt is stale"
+_plant; _mut '{print} END {print}'
+_gp; _refused "a duplicate id (the last row twice)" "duplicate id"
+_plant; _mut '$1=="check-gate-hygiene" {$11="test-ssa"} {print}'
+_gp; _refused "a make target on two rows" "make target 'test-ssa' is also on line"
+_plant; _mut '$1=="check-gate-hygiene" {$9="sometimes"} {print}'
+_gp; _refused "a tier outside the vocabulary" "tier 'sometimes' is not one of"
+_plant; _mut '$1=="check-gate-hygiene" {$6="Backend"} {print}'
+_gp; _refused "an area outside area_map.tsv's stages" "area 'Backend' is not a stage"
+_plant; _mut '$1=="check-gate-hygiene" {$10="NOT-A-KEY@9"} {print}'
+_gp; _refused "a spec key that is not live in ids.tsv" "spec key 'NOT-A-KEY@9' is not live"
+_plant; _mut '$1=="check-gate-hygiene" {$5="sometimes"} {print}'
+_gp; _refused "a via outside the vocabulary" "via 'sometimes' is not"
+_plant; _mut '$1=="check-gate-hygiene" {$4="No such step"} {print}'
+_gp; _refused "a step row naming a step its job does not have" "has no step named 'No such step'"
 echo "=== a CI gate the host cannot run is a named skip in run_ci_gates_local.sh, never a pass ==="
 # The Examples job runs check_example_outputs.sh under EXAMPLE_VALGRIND=1; macOS has no valgrind.
 # run_ci_gates_local.sh classifies such commands with scripts/tests/lib/host_tools.sh, lists them
