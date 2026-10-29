@@ -1795,8 +1795,10 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates checker-gates from check-lean14576-reproducer (scripts/tests/gates.tsv; gates.py --write)
       - name: "Lean #14576 reproducer (R-0208 — the retained upstream exploit, isolated, must be rejected by the pinned checker)"
         run: bash scripts/tests/check_lean14576_reproducer.sh
+      # END GENERATED: gates checker-gates
 
       # The evidence a measured checker build needs before its digest may be registered (R-0208),
       # SELF-CONTAINED: the identity, the hostile controls with their logs (and tied to that
