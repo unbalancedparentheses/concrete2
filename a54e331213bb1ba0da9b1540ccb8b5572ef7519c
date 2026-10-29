@@ -1,0 +1,7 @@
+[piece 3 of 5: scripts]
+- scripts/spec/one_spec.py:65: If neither `origin/main` nor `HEAD~1` resolves, `default_base()` returns `None`, silently disabling the history check. In a shallow checkout, adding a document together with its inventory row therefore passes S13 despite the “list only shrinks” requirement. Fail with a missing-history diagnostic instead of reporting success.
+[piece 4 of 5: docs]
+- docs/bugs/AREAS.md:239: Bug 199 is incorrectly reclassified as Tooling/spec. Its fix resolves cast targets through aliases in Elab, as the bug record explains; this branch only edits that record’s documentation. Counting that edit as the fix also corrupts the stage and structural-class totals above.
+[piece 5 of 5: docs]
+- docs/spec/decisions.md:40: The claim that deferred-loan rules are unimplemented contradicts `Concrete/Check/Check.lean`: deferred `&mut` arguments set `heldByDefer`, subsequent calls check `refuseDeferHeldRef`, and scope exit clears the reservation. Distinguish this existing provisional enforcement from the remaining gaps.
+- docs/spec/statements.md:188: The stated loop forms omit supported `for (cond) { ... }` and infinite `for { ... }` forms. `parseFor` explicitly accepts both, and `regress_176_loop_shadow_restores_outer.con` exercises them; a `for` initializer is therefore not always required.
