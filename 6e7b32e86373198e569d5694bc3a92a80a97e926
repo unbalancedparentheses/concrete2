@@ -1,0 +1,2 @@
+[piece 4 of 4: docs]
+- docs/spec/references.md:856: REF-11’s rationale still says OD15(b) is open and points to OPEN-15, which this patch removes. This contradicts the recorded owner answer and REF-14’s prohibition on exploiting `&mut` exclusivity before its Lean proof; reference REF-14 as the decided policy.
