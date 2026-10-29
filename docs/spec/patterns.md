@@ -303,7 +303,8 @@ skipped the rest of the function, or reached the backend, which failed in `llvm-
 
 A field binding written `_` in a variant or destructuring pattern holds its field's position, so
 the other binders still bind the right fields, but it adds no name (reading `_` is E0100) and its
-field is not loaded; it may ignore only a Copy field (OWN-5). The pattern forms of ROADMAP old
+field is not loaded; over an owned scrutinee it may ignore only a Copy field (OWN-5), while through a
+borrowed scrutinee it ignores a borrowed payload, which owns nothing. The pattern forms of ROADMAP old
 Phase 6 #5 (ranges, `if let` and `while let`, guards, alternatives, matching through a reference,
 functional update, `_` binders) are gated by `scripts/tests/check_pattern_ergonomics.sh`; their
 implementation history is the archived
