@@ -1,0 +1,2 @@
+[piece 6 of 7: docs]
+- docs/spec/statements.md:601: “Every mutable borrow block writes back” preserves the copy-out model rejected by the owner in OD2(3). REF-13 specifies immediate writes to the borrowed place, and borrow blocks use that storage directly since bug 305’s fix. This contradicts both the implementation and this section’s earlier “no write-back step” statement, reintroducing rejected owner-decision behavior.
