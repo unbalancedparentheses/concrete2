@@ -1,7 +1,5 @@
-# branch	bug	head	state (updated 2026-10-28, rebased onto origin/main 96c9f918)
-wip/bug-310	310 STMT-7 generic main (E0310)	c07a0265	pre-rebase 61c95d88: Codex+Kimi clean, CI 40714251471 success; rebased: reviews and CI 40760265425 running
-wip/bug-311	311 TYPE-11 sibling destructure (E0298)	aad27057	BLOCKED on OD21 (Codex); on bug-310
-wip/bug-312	312 SYN-3 destructuring binders (E0283)	0312c28f	pre-rebase 9f4a1f3d: Codex+Kimi clean, CI 40727025466 success; rebased: reviews and CI 40760269542 running
-wip/bug-313	313 MOD-5 duplicate variants / same-impl methods (E0324)	61a3551c	CI 40727030713 failed R-0550 enums/check heartbeats (+30%); fixed (firstDupBy, no allocation without a duplicate; OVH: no heartbeat failure); reviews and CI 40760274123 running
-wip/bug-314	314 for loop always breaking: E0703 (Lower)	8a578efa	pre-rebase fdb2bbae: Codex+Kimi clean, CI 40731064688 success; rebased: reviews and CI 40760278314 running
-wip/spec	S12, S13 (now one_spec.py via check_docs_drift), OPEN-1..22, 9 docs absorbed	66b2975d	Codex round 4 + Kimi clean before the CI fixes; CI 40731496013 failed gate-selection precision and stale views, both fixed; CI 40760282537 running
+# branch	content	head	state (updated 2026-10-29)
+wip/spec	slice 1: S12 witness gate, S13 one_spec.py, OPEN-1..22, 9 docs/language absorbed	0bf8350a	READY: Codex clean (round 1 of the rewritten series, after fixes); Kimi unavailable (weekly quota exhausted); OVH check_spec PASS=291 FAIL=0, S12 0 missing over 2120 programs; docs drift, doc links, gate selection, LL(1) green
+wip/spec-s2	slice 2 (on slice 1): IGNORED_RESULT, MEMORY_MODEL (to the book), BINDING_IDENTITY_DESIGN (to docs/compiler), NUMERIC_MODEL, LANGUAGE_SHAPE (to docs/project), CONSTRUCTION_RIGHTS, MUT_REF_SEMANTICS, MUT_REF_CLOSURE	21257b19	in progress; needs BuildIdentity (CheckError hint text changed), gates, Codex
+wip/bug-310/312/313/314	parked per coordinator	c07a0265/0312c28f/61a3551c/8a578efa	Codex+Kimi clean on 96c9f918; need rebase onto current main before landing
+wip/bug-311	parked, blocked on OD21	aad27057	
