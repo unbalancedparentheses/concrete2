@@ -1,0 +1,6 @@
+[piece 5 of 6: docs]
+- docs/spec/patterns.md:306: “May ignore only a Copy field” contradicts the checker: `Concrete/Check/Check.lean` permits `_` for non-Copy payloads when the scrutinee is borrowed (`!isRefScrutinee` guards the rejection). Qualify this restriction as applying to owned payloads.
+- docs/spec/overview.md:22: This new overview presents abort-without-cleanup as an unconditional language invariant, picking the proposed side of OD10. ROADMAP’s owner-decision policy explicitly covers documentation migrations and forbids treating existing behavior as settled before the owner answers; OD10 remains proposed.
+[piece 6 of 6: docs]
+- docs/spec/statements.md:495: The new specification prose adopts checked-arithmetic traps and no cleanup on abort as settled rules, choosing OD10’s proposed behavior. ROADMAP.md still marks OD10 unanswered and explicitly forbids encoding a side through documentation or migration.
+- docs/spec/statements.md:517: Saying lossy numeric `as` conversions “are to become compile errors” commits to OD11’s lossless-only cast policy. OD11 remains proposed; migrating an earlier policy into the specification does not supply the required owner decision.
