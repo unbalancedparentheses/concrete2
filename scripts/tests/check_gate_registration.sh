@@ -250,6 +250,7 @@ _plant() {
   rm -f "$PLANT_DIR/r/$MANIFEST" "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
   cp "$MANIFEST" "$PLANT_DIR/r/$MANIFEST"
   cp scripts/tests/ci_gate_inventory.txt "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
+  mkdir -p "$PLANT_DIR/r/mk"; cp Makefile "$PLANT_DIR/r/Makefile"; cp mk/gates.mk "$PLANT_DIR/r/mk/gates.mk"
   for f in scripts/ci scripts/tools scripts/gen; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
   ln -s "$ROOT_DIR/$WORKFLOW" "$PLANT_DIR/r/$WORKFLOW"
   ln -s "$ROOT_DIR/.githooks/pre-push" "$PLANT_DIR/r/.githooks/pre-push"
@@ -291,6 +292,14 @@ _plant; _mut '$1=="check-gate-hygiene" {$5="sometimes"} {print}'
 _gp; _refused "a via outside the vocabulary" "via 'sometimes' is not"
 _plant; _mut '$1=="check-gate-hygiene" {$4="No such step"} {print}'
 _gp; _refused "a step row naming a step its job does not have" "has no step named 'No such step'"
+_plant; sed 's|bash ./scripts/tests/test_ssa.sh|bash ./scripts/tests/test_ssa.sh --planted|' mk/gates.mk > "$PLANT_DIR/r/mk/gates.mk"
+_gp; _refused "a hand-edited recipe in the generated mk/gates.mk" "mk/gates.mk is stale"
+_plant; printf '\ntest-ssa: build ## planted\n\t@true\n' >> "$PLANT_DIR/r/Makefile"
+_gp; _refused "a manifest make target also written by hand in the Makefile" "test-ssa is also written by hand"
+_plant; grep -vx 'include mk/gates.mk' Makefile > "$PLANT_DIR/r/Makefile"
+_gp; _refused "a Makefile that no longer includes mk/gates.mk" "does not have the line 'include mk/gates.mk'"
+_plant; _mut '$1=="test-ssa" {$2="./scripts/tests/test_ssa.sh"} {print}'
+_gp; _refused "a make row whose cmd has no interpreter (no recipe can be generated)" "so no recipe is generated"
 echo "=== a CI gate the host cannot run is a named skip in run_ci_gates_local.sh, never a pass ==="
 # The Examples job runs check_example_outputs.sh under EXAMPLE_VALGRIND=1; macOS has no valgrind.
 # run_ci_gates_local.sh classifies such commands with scripts/tests/lib/host_tools.sh, lists them

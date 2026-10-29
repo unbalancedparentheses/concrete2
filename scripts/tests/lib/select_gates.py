@@ -79,7 +79,7 @@ EXEC_RE = re.compile(r"(?<![\w./-])(bash|sh|python3|python|source|exec|timeout|e
 TOKEN_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*")
 # Changes that select the compiler/Lean gates regardless of module.
 TOOLCHAIN = {"lakefile.toml", "lake-manifest.json", "lean-toolchain", "flake.nix", "flake.lock",
-             "Makefile"}
+             "Makefile", "mk/gates.mk"}
 # Files nothing executes. A change here that no gate names selects nothing.
 INERT_RE = re.compile(r"(^|/)[^/]*\.md$|^(docs|research|paper|site|editor|bench)/|^LICENSE$|\.png$")
 
