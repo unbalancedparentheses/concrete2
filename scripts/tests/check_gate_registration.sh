@@ -306,6 +306,11 @@ _plant; sed 's|^SEL+=(--first "bash scripts/tests/check_gate_hygiene.sh")$|  &|'
 _gp; _refused "a prepush row whose hook line is no longer unconditional (indented)" "has no unconditional line"
 _plant; _mut '$1=="check-gate-hygiene" {$2=$2" --planted"} {print}'
 _gp; _refused "a row whose cmd is not what its step runs" "does not run 'bash scripts/tests/check_gate_hygiene.sh --planted'"
+# Generated workflow blocks: a hand edit inside one is stale, and a gen=y row no block reaches is refused.
+_plant; sed 's|^\(      - name: \)Gate lock (a lock is refused|\1Gate lock EDITED (a lock is refused|' "$WORKFLOW" > "$PLANT_DIR/r/$WORKFLOW"
+_gp; _refused "a hand edit inside a generated workflow block" "lean_action_ci.yml is stale"
+_plant; _mut '$1=="check-multi-kernel" {$14="y"} {print}'
+_gp; _refused "a gen=y row that no generated block of its job reaches" "no generated block of job multi-kernel reaches it"
 echo "=== a CI gate the host cannot run is a named skip in run_ci_gates_local.sh, never a pass ==="
 # The Examples job runs check_example_outputs.sh under EXAMPLE_VALGRIND=1; macOS has no valgrind.
 # run_ci_gates_local.sh classifies such commands with scripts/tests/lib/host_tools.sh, lists them

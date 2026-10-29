@@ -1196,26 +1196,29 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
-      - name: "Fast fail-closed surface gates (R-0022 — the single local/CI checklist; prints the exact failing constituent)"
+      # BEGIN GENERATED: gates language-gates from run-fast-surface-gates (scripts/tests/gates.tsv; gates.py --write)
+      - name: Fast fail-closed surface gates (R-0022 — the single local/CI checklist; prints the exact failing constituent)
         run: bash scripts/tests/run_fast_surface_gates.sh
 
-      - name: "Fast-surface gate-the-gate (R-0022 — removing a representative inventory row turns the aggregate RED)"
+      - name: Fast-surface gate-the-gate (R-0022 — removing a representative inventory row turns the aggregate RED)
         run: bash scripts/tests/run_fast_surface_gates.sh --mutate
 
-      - name: "Generic-enum monomorphization (R-0001 / bug 051 — one declaration per instantiation; values, neighbours, layout; builtins keep the canonical union)"
+      - name: Generic-enum monomorphization (R-0001 / bug 051 — one declaration per instantiation; values, neighbours, layout; builtins keep the canonical union)
         run: bash scripts/tests/check_generic_enum_mono.sh
 
-      - name: "Indirect-call identity (R-0002 / bug 050 — a callee VALUE is never resolved by global name; dispatch, interp agreement, no rewrite, std.io)"
+      - name: Indirect-call identity (R-0002 / bug 050 — a callee VALUE is never resolved by global name; dispatch, interp agreement, no rewrite, std.io)
         run: bash scripts/tests/check_indirect_call_identity.sh
+      # END GENERATED: gates language-gates
 
       # AND THE RULE THAT KEEPS THIS FROM RECURRING. Every check_*.sh must be reachable from CI or
       # explicitly declared as a skip with a reason. A gate nobody runs is indistinguishable from a
       # gate that does not exist, and its absence is quieter than a failure: the pass count keeps
       # rising while coverage does not.
-      - name: "Gate registration (every gate is reachable from CI or explicitly skipped)"
+      # BEGIN GENERATED: gates language-gates from check-gate-registration (scripts/tests/gates.tsv; gates.py --write)
+      - name: Gate registration (every gate is reachable from CI or explicitly skipped)
         run: bash scripts/tests/check_gate_registration.sh
 
-      - name: "Gate lock (a lock is refused, never reclaimed on a dead creator PID)"
+      - name: Gate lock (a lock is refused, never reclaimed on a dead creator PID)
         run: bash scripts/tests/check_gate_lock.sh
 
       - name: "Heavy slots (R-0543: at most N heavy runs per machine; a third waits; a dead holder is reclaimed)"
@@ -1224,26 +1227,29 @@ jobs:
       - name: "Compile cache (R-0546: a hit equals a fresh compile; every covered input invalidates)"
         run: bash scripts/tests/check_compile_cache.sh
 
-      - name: "Pre-push validation record (reused only when every bound input matches)"
+      - name: Pre-push validation record (reused only when every bound input matches)
         run: bash scripts/tests/check_prepush_record.sh
 
-      - name: "Builtin enum ownership (one owner computes the list and the result flag)"
+      - name: Builtin enum ownership (one owner computes the list and the result flag)
         run: bash scripts/tests/check_builtin_enum_owner.sh
 
-      - name: "Policy enforcement (the [policy] surface is gated, not merely documented)"
+      - name: Policy enforcement (the [policy] surface is gated, not merely documented)
         run: bash scripts/tests/check_policy.sh
 
-      - name: "Stack budget fails closed (an unbounded stack is never a number; bug 065)"
+      - name: Stack budget fails closed (an unbounded stack is never a number; bug 065)
         run: bash scripts/tests/check_stack_budget.sh
+      # END GENERATED: gates language-gates
 
       - name: Project-model gate (Phase 5 #2 — Concrete.toml structure)
         run: bash scripts/tests/check_project_model.sh
 
-      - name: "Native libraries (G1 — Concrete.toml [native] links, propagates, fails closed, is a listed trust dependency)"
+      # BEGIN GENERATED: gates language-gates from check-native-libs (scripts/tests/gates.tsv; gates.py --write)
+      - name: Native libraries (G1 — Concrete.toml [native] links, propagates, fails closed, is a listed trust dependency)
         run: bash scripts/tests/check_native_libs.sh
 
       - name: "`concrete test` gate (Phase 5 #3 — project test runner)"
         run: bash scripts/tests/check_concrete_test.sh
+      # END GENERATED: gates language-gates
 
       - name: Diagnostics-quality gate (Phase 5 #4 — span floor)
         run: bash scripts/tests/check_diagnostics_quality.sh
@@ -1254,8 +1260,10 @@ jobs:
       - name: Collections gate (Phase 5 #6 — H1-clean collection surface)
         run: bash scripts/tests/check_collections.sh
 
+      # BEGIN GENERATED: gates language-gates from check-concrete-fmt (scripts/tests/gates.tsv; gates.py --write)
       - name: "`concrete fmt` gate (Phase 6 #1 — subcommand + semantics-preserving)"
         run: bash scripts/tests/check_concrete_fmt.sh
+      # END GENERATED: gates language-gates
 
       - name: Loop-control gate (Phase 6 #4 — break/continue/while-expr + linear cleanup)
         run: bash scripts/tests/check_loop_control.sh
@@ -1266,55 +1274,58 @@ jobs:
       - name: Pattern-ergonomics gate (Phase 6 #5 — range patterns)
         run: bash scripts/tests/check_pattern_ergonomics.sh
 
+      # BEGIN GENERATED: gates language-gates from check-lex-escapes (scripts/tests/gates.tsv; gates.py --write)
       - name: Lex-escapes gate (unknown escapes are E0001, never silently mangled)
         run: bash scripts/tests/check_lex_escapes.sh
 
       - name: Mixed-width binop gate (E0228 + flexible literals + interp cast normalization)
         run: bash scripts/tests/check_mixed_width_binops.sh
+      # END GENERATED: gates language-gates
 
       - name: Type-agreement gate (Phase 6.5 #9 — Check/Elab type through one TypeJudgment)
         run: bash scripts/tests/check_type_agreement.sh
 
-      - name: "Differential-position gate (flexible overflow / signed shift, interp == compiled)"
+      # BEGIN GENERATED: gates language-gates from check-differential-positions (scripts/tests/gates.tsv; gates.py --write)
+      - name: Differential-position gate (flexible overflow / signed shift, interp == compiled)
         run: bash scripts/tests/check_differential_positions.sh
 
-      - name: "Copy-judgment gate (Phase 6.5 — one Copy judgment shared by Check and Core)"
+      - name: Copy-judgment gate (Phase 6.5 — one Copy judgment shared by Check and Core)
         run: bash scripts/tests/check_copy_judgment.sh
 
-      - name: "Ownership-judgment matrix (Check == Lower move/drop == interp consumption)"
+      - name: Ownership-judgment matrix (Check == Lower move/drop == interp consumption)
         run: bash scripts/tests/check_ownership_judgment.sh
 
-      - name: "Totality-judgment matrix (trap/divergence facts agree interp == compiled)"
+      - name: Totality-judgment matrix (trap/divergence facts agree interp == compiled)
         run: bash scripts/tests/check_totality_judgment.sh
 
-      - name: "Trap inventory (R-0005 / bug 053 — one source says which unary ops can trap; DCE may not delete one)"
+      - name: Trap inventory (R-0005 / bug 053 — one source says which unary ops can trap; DCE may not delete one)
         run: bash scripts/tests/check_trap_inventory.sh
 
-      - name: "CoreCheck boundary gate (residue classes rejected before Lower)"
+      - name: CoreCheck boundary gate (residue classes rejected before Lower)
         run: bash scripts/tests/check_corecheck_boundary.sh
 
-      - name: "Divergence-detection gate (each diverging arm lifts E0213; bug 078 lowering)"
+      - name: Divergence-detection gate (each diverging arm lifts E0213; bug 078 lowering)
         run: bash scripts/tests/check_divergence_detection.sh
 
-      - name: "Capability-judgment gate (Phase 6.5 — one direct-call capability decision)"
+      - name: Capability-judgment gate (Phase 6.5 — one direct-call capability decision)
         run: bash scripts/tests/check_capability_judgment.sh
 
-      - name: "Pipeline-refactor contract (Phase 6B capstone — behavior-preserving + fail-closed)"
+      - name: Pipeline-refactor contract (Phase 6B capstone — behavior-preserving + fail-closed)
         run: bash scripts/tests/check_pipeline_refactor_contract.sh
 
       - name: "Pipeline telemetry trace (Phase 6C #1 — stable-schema JSON, no private paths)"
         run: bash scripts/tests/check_pipeline_telemetry.sh
 
-      - name: "SSA-verify behavior preservation (trust pass keeps its verdicts on complex CFGs)"
+      - name: SSA-verify behavior preservation (trust pass keeps its verdicts on complex CFGs)
         run: bash scripts/tests/check_ssa_verify_agreement.sh
 
       - name: "Compiler complexity guard (Phase 6C #2 — no super-linear pass on scaling corpus)"
         run: bash scripts/tests/check_compiler_complexity.sh
 
-      - name: "Match lowering scaling (bug 178 — lower stage near-linear in match arms, by heartbeats and instructions)"
+      - name: Match lowering scaling (bug 178 — lower stage near-linear in match arms, by heartbeats and instructions)
         run: bash scripts/tests/check_ssa_lowering_scaling.sh
 
-      - name: "Compile-time scaling (R-0550, exit 2o — per-stage budgets and near-linear growth on generated 10^4 – 10^5-element programs; bugs 027, 248 – 250, 255 – 261)"
+      - name: Compile-time scaling (R-0550, exit 2o — per-stage budgets and near-linear growth on generated 10^4 – 10^5-element programs; bugs 027, 248 – 250, 255 – 261)
         run: bash scripts/tests/check_compile_scaling.sh
 
       - name: "Pipeline trace (Phase 6C #3 — per-stage --trace-pipeline names the first failing phase)"
@@ -1323,17 +1334,18 @@ jobs:
       - name: "Counterexample reduction (Phase 6C #4 — failures reduce to a minimized fixture + replay)"
         run: bash scripts/tests/check_counterexample_reduction.sh
 
-      - name: "Phase 6D capstone (surface simplified, semantics unweakened)"
+      - name: Phase 6D capstone (surface simplified, semantics unweakened)
         run: bash scripts/tests/check_phase6d_surface_simplification.sh
 
-      - name: "View lifetime (R-0483 — borrowed access cannot outlive its owner, and validation cannot outlive its bytes)"
+      - name: View lifetime (R-0483 — borrowed access cannot outlive its owner, and validation cannot outlive its bytes)
         run: bash scripts/tests/check_view_lifetime.sh
 
-      - name: "Exit 2i rules (MEMORY_SEMANTICS §15 — second-class references and one binding per visible name, with versioned migration diagnostics)"
+      - name: Exit 2i rules (MEMORY_SEMANTICS §15 — second-class references and one binding per visible name, with versioned migration diagnostics)
         run: bash scripts/tests/check_rules_2i.sh
 
-      - name: "Tightening batch (landing train 6 — bugs 136/137/165/166/183/185/190/198/199, D1/D2/D3/D6, G13/G15/G16)"
+      - name: Tightening batch (landing train 6 — bugs 136/137/165/166/183/185/190/198/199, D1/D2/D3/D6, G13/G15/G16)
         run: bash scripts/tests/check_tightening_rules.sh
+      # END GENERATED: gates language-gates
 
       - name: Install Zola for the spec gate's site build (pinned, the version book.yml publishes with)
         run: |
@@ -1352,67 +1364,68 @@ jobs:
           git fetch --no-tags --depth=50 origin main:refs/remotes/origin/main || true
           bash scripts/tests/check_spec.sh
 
-      - name: "Effect opacity (R-0484 — an empty capability set is not a claim of purity)"
+      # BEGIN GENERATED: gates language-gates from check-effect-opacity (scripts/tests/gates.tsv; gates.py --write)
+      - name: Effect opacity (R-0484 — an empty capability set is not a claim of purity)
         run: bash scripts/tests/check_effect_opacity.sh
 
-      - name: "Spawn exec failure (bug 072 — a child that fails to exec must not flush the parent's buffers)"
+      - name: Spawn exec failure (bug 072 — a child that fails to exec must not flush the parent's buffers)
         run: bash scripts/tests/check_spawn_exit.sh
 
-      - name: "Capability parameters across packages (R-0484 — Sink<cap C> imported from another package keeps its authority)"
+      - name: Capability parameters across packages (R-0484 — Sink<cap C> imported from another package keeps its authority)
         run: bash scripts/tests/check_cap_struct_cross_package.sh
 
-      - name: "Inherited foreign assumptions (R-0484 R10 — a report names the dependency bindings a program relies on)"
+      - name: Inherited foreign assumptions (R-0484 R10 — a report names the dependency bindings a program relies on)
         run: bash scripts/tests/check_foreign_assumptions_report.sh
 
-      - name: "Assumption summaries (R-0484 R10 — what each function may reach, with provenance and explicit completeness)"
+      - name: Assumption summaries (R-0484 R10 — what each function may reach, with provenance and explicit completeness)
         run: bash scripts/tests/check_assumption_summary.sh
 
-      - name: "Proof admission (R-0484 R10 — admission reads the shared assumption summary; unknown never admits)"
+      - name: Proof admission (R-0484 R10 — admission reads the shared assumption summary; unknown never admits)
         run: bash scripts/tests/check_proof_admission.sh
 
-      - name: "Trusted boundaries (R-0484 R10 — each trusted memory-safety boundary named, with its absorbed obligation and dependents)"
+      - name: Trusted boundaries (R-0484 R10 — each trusted memory-safety boundary named, with its absorbed obligation and dependents)
         run: bash scripts/tests/check_trusted_boundaries.sh
 
-      - name: "Descriptor coverage (R-0484 R10/R5 — descriptor classification is unchecked; each binding's audit coverage is explicit)"
+      - name: Descriptor coverage (R-0484 R10/R5 — descriptor classification is unchecked; each binding's audit coverage is explicit)
         run: bash scripts/tests/check_descriptor_coverage.sh
 
-      - name: "Capability explanations (R-0484 R10 — explanations follow dependency summaries and name the dependency callee)"
+      - name: Capability explanations (R-0484 R10 — explanations follow dependency summaries and name the dependency callee)
         run: bash scripts/tests/check_capability_explanations.sh
 
-      - name: "Bug 077 contained (OPEN — the build refuses it, reports stay complete-or-honest, no R-0484 case depends on it)"
+      - name: Bug 077 contained (OPEN — the build refuses it, reports stay complete-or-honest, no R-0484 case depends on it)
         run: bash scripts/tests/check_bug077_contained.sh
 
-      - name: "Diff-to-gate mapping (the selector still names the gates a known change breaks)"
+      - name: Diff-to-gate mapping (the selector still names the gates a known change breaks)
         run: bash scripts/tests/check_gates_for_diff.sh
 
-      - name: "Cap-variable inference (bug 063 — an unknown argument type is not an empty capability set)"
+      - name: Cap-variable inference (bug 063 — an unknown argument type is not an empty capability set)
         run: bash scripts/tests/check_cap_inference.sh
 
-      - name: "Absence is not a fact (unknown must not default to empty/pure/safe)"
+      - name: Absence is not a fact (unknown must not default to empty/pure/safe)
         run: bash scripts/tests/check_absence_not_fact.sh
 
-      - name: "Capability headers bind across a sibling submodule (authority laundering)"
+      - name: Capability headers bind across a sibling submodule (authority laundering)
         run: bash scripts/tests/check_cap_sibling_module.sh
 
-      - name: "Cross-package capability enforcement (bug 071, intermediate repair)"
+      - name: Cross-package capability enforcement (bug 071, intermediate repair)
         run: bash scripts/tests/check_cross_package_caps.sh
 
-      - name: "Per-method trusted, and the two safety axes it keeps apart"
+      - name: Per-method trusted, and the two safety axes it keeps apart
         run: bash scripts/tests/check_trusted_method.sh
 
-      - name: "CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)"
+      - name: CLI coherence (Phase 6E — context-free help, alias identity, legacy compat)
         run: bash scripts/tests/check_cli_coherence.sh
 
-      - name: "Doc snippets compile (13r — con/concrete fences compile, reject as declared, or marked pseudocode)"
+      - name: Doc snippets compile (13r — con/concrete fences compile, reject as declared, or marked pseudocode)
         run: bash scripts/tests/check_doc_snippets.sh
 
-      - name: "IO Writer spine (P7 14a — fn-ptr handle; acquisition authority; no-Alloc fixed sink; one shape)"
+      - name: IO Writer spine (P7 14a — fn-ptr handle; acquisition authority; no-Alloc fixed sink; one shape)
         run: bash scripts/tests/check_io_writer.sh
 
-      - name: "Collections Copy-only status quo (H18 — non-Copy element destruction pinned as disclosed hole)"
+      - name: Collections Copy-only status quo (H18 — non-Copy element destruction pinned as disclosed hole)
         run: bash scripts/tests/check_collections_copy_only.sh
 
-      - name: "std.test oracle layer (P7 step 5 — silent/cap-free expects, Console-visible asserts, stable messages, no xUnit)"
+      - name: std.test oracle layer (P7 step 5 — silent/cap-free expects, Console-visible asserts, stable messages, no xUnit)
         run: bash scripts/tests/check_std_test.sh
 
       - name: "Bytes/Text boundary (P7 #4 — raw bytes vs validated UTF-8; checked or named-unchecked crossings only)"
@@ -1421,16 +1434,16 @@ jobs:
       - name: "Error conventions (13t — the three buckets report-visible: E0286 / trap_sites / caps)"
         run: bash scripts/tests/check_error_conventions.sh
 
-      - name: "Exit codes (MAIN_EXIT_MODEL stage 1 — main return = process status, clean stdout; echo only behind the harness knob)"
+      - name: Exit codes (MAIN_EXIT_MODEL stage 1 — main return = process status, clean stdout; echo only behind the harness knob)
         run: bash scripts/tests/check_exit_codes.sh
 
-      - name: "Stdlib hardening (P7 item 0, H1-H5 class gates + unproven-content check)"
+      - name: Stdlib hardening (P7 item 0, H1-H5 class gates + unproven-content check)
         run: bash scripts/tests/check_std_hardening.sh
 
-      - name: "Pure-core proofs (slice 1 — kernel-verified stdlib proof link, mutation-sensitive)"
+      - name: Pure-core proofs (slice 1 — kernel-verified stdlib proof link, mutation-sensitive)
         run: bash scripts/tests/check_purecore_proofs.sh
 
-      - name: "ProofCore callable identity (R-0442 / bug 061 — a locally bound callable is not a global name; two namespaces)"
+      - name: ProofCore callable identity (R-0442 / bug 061 — a locally bound callable is not a global name; two namespaces)
         run: bash scripts/tests/check_proofcore_callable_identity.sh
 
       - name: "Proof freshness witnesses (R-0004 slice 1 — executable reproducers for bugs 058/059/060/062 + controls; TRIPWIRE: gap legs fail when fixed)"
@@ -1475,7 +1488,7 @@ jobs:
       - name: "Incremental shadow (Phase 6C #7 — reuse/invalidate prediction + no-false-reuse over an edit corpus)"
         run: bash scripts/tests/check_incremental_shadow.sh
 
-      - name: "Phase 6C observability capstone (#8 — telemetry, complexity, trace, reduction, mutation sample, hashes, shadow)"
+      - name: Phase 6C observability capstone (#8 — telemetry, complexity, trace, reduction, mutation sample, hashes, shadow)
         run: bash scripts/tests/check_phase6c_observability.sh
 
       - name: Trailing-value gate (if/match as value-block trailing values)
@@ -1483,6 +1496,7 @@ jobs:
 
       - name: Submodule-checking gate (KNOWN_HOLES H12 — user sub-file bodies checked; std exemption disclosed)
         run: bash scripts/tests/check_submodule_check_coverage.sh
+      # END GENERATED: gates language-gates
 
       - name: Struct-update gate (Phase 6 #5 — S { ..base })
         run: bash scripts/tests/check_struct_update.sh
@@ -1502,6 +1516,7 @@ jobs:
       - name: Ignored-result gate (Phase 6 #13 — discarded Result/Option rejected unless acknowledged)
         run: bash scripts/tests/check_ignored_result.sh
 
+      # BEGIN GENERATED: gates language-gates from check-array-bounds (scripts/tests/gates.tsv; gates.py --write)
       - name: Array-bounds gate (KNOWN_HOLES H8 — raw a[i] runtime-checked; OOB read/write/negative/nested/&mut trap)
         run: bash scripts/tests/check_array_bounds.sh
 
@@ -1522,6 +1537,7 @@ jobs:
 
       - name: Linearity fuzz smoke (deterministic seed — consume-once compiles, leak/dup/shadow/param-sink reject)
         run: python3 scripts/tests/fuzz_linearity.py --n 40 --seed 20260706
+      # END GENERATED: gates language-gates
 
       - name: Macro-stance gate (Phase 6 #11 — no v1 macros)
         run: bash scripts/tests/check_no_macros.sh
@@ -1553,8 +1569,10 @@ jobs:
       - name: Arithmetic red-team gate (Phase 6 #10 — overflow/neg/div-mod/shift traps + interp==compiled value agreement)
         run: bash scripts/tests/check_arith_redteam.sh
 
+      # BEGIN GENERATED: gates language-gates from check-report-arithmetic (scripts/tests/gates.tsv; gates.py --write)
       - name: "Report-arithmetic gate (Phase 6 #10 §3.2 — per-site classification: checked/proved/wrapping/saturating)"
         run: bash scripts/tests/check_report_arithmetic.sh
+      # END GENERATED: gates language-gates
 
       - name: Memory-model gate (Phase 6 #33 — no uninitialized reads by construction)
         run: bash scripts/tests/check_memory_model.sh
