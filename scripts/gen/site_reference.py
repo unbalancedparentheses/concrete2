@@ -26,7 +26,6 @@ PAGES = {
     "EXECUTION_MODEL.md": ("Execution Model", "docs/platform/EXECUTION_MODEL.md"),
     "FFI.md": ("FFI", "docs/platform/FFI.md"),
     "IDENTITY.md": ("Identity", "docs/project/IDENTITY.md"),
-    "LANGUAGE_INVARIANTS.md": ("Language Invariants", "docs/language/LANGUAGE_INVARIANTS.md"),
     "LANGUAGE_SHAPE.md": ("Language Shape", "docs/project/LANGUAGE_SHAPE.md"),
     "PASSES.md": ("Compiler Pass Contracts", "docs/compiler/PASSES.md"),
     "PROVABLE_SUBSET.md": ("Provable Subset", "docs/verification/PROVABLE_SUBSET.md"),
