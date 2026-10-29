@@ -934,14 +934,6 @@ partial def checkPredictableModule
   fnViolations ++ m.submodules.foldl (fun acc sub =>
     acc ++ checkPredictableModule recMap recUncertain externNames locMap sub qualPrefix) []
 
-/-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
-def getSourceLine (source : String) (lineNum : Nat) : String :=
-  let lines := source.splitOn "\n"
-  if lineNum == 0 then ""
-  else match lines[lineNum - 1]? with
-    | some l => l
-    | none => ""
-
 /-- Render a violation with Elm-style snippet formatting. -/
 private def renderViolation (v : ProfileViolation) (sourceMap : SourceMap) : String :=
   -- Header: location + label

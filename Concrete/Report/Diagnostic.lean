@@ -189,7 +189,9 @@ private def severityStr : Severity → String
   | .note    => "note"
 
 /-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
-private def getSourceLine (source : String) (lineNum : Nat) : String :=
+/-- Line `lineNum` (1-based) of `source`, or "" when there is none. The one copy: the report
+    layer's source excerpts call it too. -/
+def getSourceLine (source : String) (lineNum : Nat) : String :=
   let lines := source.splitOn "\n"
   if lineNum == 0 then ""
   else match lines[lineNum - 1]? with
