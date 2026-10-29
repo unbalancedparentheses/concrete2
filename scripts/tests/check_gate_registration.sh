@@ -290,8 +290,8 @@ _plant; _mut '$1=="check-gate-hygiene" {$10="NOT-A-KEY@9"} {print}'
 _gp; _refused "a spec key that is not live in ids.tsv" "spec key 'NOT-A-KEY@9' is not live"
 _plant; _mut '$1=="check-gate-hygiene" {$5="sometimes"} {print}'
 _gp; _refused "a via outside the vocabulary" "via 'sometimes' is not"
-_plant; _mut '$1=="check-gate-hygiene" {$4="No such step"} {print}'
-_gp; _refused "a step row naming a step its job does not have" "has no step named 'No such step'"
+_plant; _mut '$1=="check-totality-ratchet" {$4="No such step"} {print}'
+_gp; _refused "a hand-written step row naming a step its job does not have" "has no step named 'No such step'"
 _plant; sed 's|bash ./scripts/tests/test_ssa.sh|bash ./scripts/tests/test_ssa.sh --planted|' mk/gates.mk > "$PLANT_DIR/r/mk/gates.mk"
 _gp; _refused "a hand-edited recipe in the generated mk/gates.mk" "mk/gates.mk is stale"
 _plant; printf '\ntest-ssa: build ## planted\n\t@true\n' >> "$PLANT_DIR/r/Makefile"
@@ -300,12 +300,12 @@ _plant; grep -vx 'include mk/gates.mk' Makefile > "$PLANT_DIR/r/Makefile"
 _gp; _refused "a Makefile that no longer includes mk/gates.mk" "does not have the line 'include mk/gates.mk'"
 _plant; _mut '$1=="test-ssa" {$2="./scripts/tests/test_ssa.sh"} {print}'
 _gp; _refused "a make row whose cmd has no interpreter (no recipe can be generated)" "so no recipe is generated"
-_plant; sed 's|^\( *run: \)bash scripts/tests/check_gate_hygiene.sh$|\1true # bash scripts/tests/check_gate_hygiene.sh|' "$WORKFLOW" > "$PLANT_DIR/r/$WORKFLOW"
-_gp; _refused "a step row whose command the workflow names only in a comment" "does not run 'bash scripts/tests/check_gate_hygiene.sh'"
+_plant; sed 's|^\( *run: \)bash scripts/tests/check_totality_ratchet.sh$|\1true # bash scripts/tests/check_totality_ratchet.sh|' "$WORKFLOW" > "$PLANT_DIR/r/$WORKFLOW"
+_gp; _refused "a hand-written step row whose command the workflow names only in a comment" "does not run 'bash scripts/tests/check_totality_ratchet.sh'"
 _plant; sed 's|^SEL+=(--first "bash scripts/tests/check_gate_hygiene.sh")$|  &|' .githooks/pre-push > "$PLANT_DIR/r/.githooks/pre-push"
 _gp; _refused "a prepush row whose hook line is no longer unconditional (indented)" "has no unconditional line"
-_plant; _mut '$1=="check-gate-hygiene" {$2=$2" --planted"} {print}'
-_gp; _refused "a row whose cmd is not what its step runs" "does not run 'bash scripts/tests/check_gate_hygiene.sh --planted'"
+_plant; _mut '$1=="check-totality-ratchet" {$2=$2" --planted"} {print}'
+_gp; _refused "a hand-written step row whose cmd is not what its step runs" "does not run 'bash scripts/tests/check_totality_ratchet.sh --planted'"
 # Generated workflow blocks: a hand edit inside one is stale, and a gen=y row no block reaches is refused.
 _plant; sed 's|^\(      - name: \)Gate lock (a lock is refused|\1Gate lock EDITED (a lock is refused|' "$WORKFLOW" > "$PLANT_DIR/r/$WORKFLOW"
 _gp; _refused "a hand edit inside a generated workflow block" "lean_action_ci.yml is stale"
