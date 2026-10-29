@@ -235,7 +235,7 @@ grep -q "def foundationOf" "$EV" && grep -q "def foundationSummary" "$EV" \
   && ok "one definition of which kernel rests on which foundation" \
   || no "foundationOf/foundationSummary missing"
 # The duplicate this replaced: independenceOf had its own contains-chain in another module.
-if cat Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean | grep -q 'attest.contains "isabelle"'; then
+if grep -q 'attest.contains "isabelle"' Concrete/Report/Effects.lean Concrete/Report/ProofStatus.lean Concrete/Report/LeanStubs.lean Concrete/Report/VCSchema.lean Concrete/Report/Facts.lean Concrete/Report/Query.lean; then
   no "independenceOf still hard-codes kernel foundations — two copies can disagree"
 else
   ok "independenceOf derives from foundationSummary (no second copy)"

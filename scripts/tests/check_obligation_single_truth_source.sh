@@ -42,7 +42,7 @@ echo "=== Report.VC is a compatibility alias, NOT independent storage ==="
 grep -q "^abbrev VC := Obligation" "$R" \
   && ok "VC is an abbrev of the one record" \
   || no "VC is not an abbrev of Obligation"
-cat $R_ALL | grep -qE "^structure VC\b" \
+grep -qE "^structure VC\b" $R_ALL \
   && no "Report.VC came back as an independent storage struct" \
   || ok "no 'structure VC' (VC is not a second model)"
 
