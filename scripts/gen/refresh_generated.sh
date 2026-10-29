@@ -15,8 +15,8 @@
 #   bug dashboard   ROADMAP.md's bug dashboard (scripts/gen/bug_dashboard.py), when present
 #   candidates      ROADMAP.md's "Implemented, not yet accepted" table (scripts/gen/candidate_table.py)
 #   build identity  Concrete/BuildIdentity.lean (scripts/gen/build_identity.sh, from the compiler sources)
-#   gate views      scripts/tests/ci_gate_inventory.txt and mk/gates.mk (scripts/gen/gates.py, from
-#                   scripts/tests/gates.tsv)
+#   gate views      scripts/tests/ci_gate_inventory.txt, mk/gates.mk and the GENERATED blocks of
+#                   .github/workflows/lean_action_ci.yml (scripts/gen/gates.py, from scripts/tests/gates.tsv)
 #
 # CHANGELOG.md is not here: entries are changelog.d/ fragments, folded on main by
 # scripts/gen/changelog.py --fold, so it never conflicts.

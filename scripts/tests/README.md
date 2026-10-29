@@ -53,12 +53,14 @@ hand-edited or stale.
 - **To add a gate, add its row to `gates.tsv`** (the gate manifest; its header explains every column)
   and run `python3 scripts/gen/gates.py --write`, in the commit that adds the gate (and its workflow
   step, for a CI gate). `ci_gate_inventory.txt` is generated from the manifest's `via=step` rows,
-  and `mk/gates.mk` (included from the Makefile) from its `make` cells;
+  `mk/gates.mk` (included from the Makefile) from its `make` cells, and the workflow's single-gate
+  steps (between `BEGIN/END GENERATED: gates` markers) from its `gen=y` rows;
   `run_ci_gates_local.sh` compares it with the workflow, by content, and `check_gate_registration.sh`
   fails on a check/test/run script without a row or a stale generated view.
 - **Never edit a generated view**: the bug lists in `docs/bugs/README.md`, the bugs column of
   `docs/bugs/STRUCTURAL_CLASSES.md`'s table, ROADMAP's generated exit bug spans and dashboards,
-  `scripts/tests/ci_gate_inventory.txt`, `mk/gates.mk` (the gate make targets), and
+  `scripts/tests/ci_gate_inventory.txt`, `mk/gates.mk` (the gate make targets), the
+  `GENERATED: gates` blocks of `.github/workflows/lean_action_ci.yml`, and
   `Concrete/BuildIdentity.lean`. After a rebase that conflicts in one of them, run
   `bash scripts/gen/refresh_generated.sh` and `git add` the result.
 

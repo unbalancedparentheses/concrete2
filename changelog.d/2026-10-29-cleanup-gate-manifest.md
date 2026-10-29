@@ -28,3 +28,14 @@ include node, `make test-mutation` (the mutation harness, under `$(NIX_DEVELOP)`
 targets that are now `.PHONY` like the rest. `check_gate_hygiene.sh` lints the generated recipes
 too, and the registration gate refuses a stale `mk/gates.mk`, a generated target also written by
 hand, and a Makefile that does not include it.
+
+### Generated CI Steps (cleanup 5, slice 3, 2026-10-29)
+
+`scripts/gen/gates.py` now writes the workflow's single-gate steps: 214 of them, in 44 blocks across
+14 jobs, each between `# BEGIN GENERATED: gates <job> from <row id>` and `# END GENERATED: gates
+<job>` markers, from the manifest's `gen=y` rows (whose order is now the workflow's). Steps with
+`if:`, `env:`, several commands, or a name GitHub cuts short at ` #` stay hand-written, as do the
+comments between steps; `--check` refuses a hand edit inside a block and a `gen=y` row no block
+reaches. The parsed workflow is identical to the one before, job by job (same steps, names, `run`
+strings and order); the text changed only by the marker lines and by 106 step names written without
+their redundant quotes. The `gen` column now means "this row's workflow step is generated".

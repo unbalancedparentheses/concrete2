@@ -77,8 +77,8 @@
 #           depends on the `build` target
 #   gen     y when gates.py generates this row's workflow step (a two-line `- name:` / `run:` step
 #           inside a generated block of its job; via must be step), else n: a step with `if:`, `env:`,
-#           more than one command, a preceding comment, or a name GitHub cuts short at ` #` stays
-#           hand-written
+#           more than one command, or a name GitHub cuts short at ` #` stays hand-written. A comment
+#           between steps stays outside the blocks: one block ends before it, the next starts after it
 #   kind    the test taxonomy of a test-suite row (later slices); `-` for a gate
 #
 # WHY `kind` IS A COLUMN AND NOT A DIRECTORY LAYOUT: classifying tests by moving files (tests/unit,
