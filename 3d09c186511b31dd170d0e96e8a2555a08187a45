@@ -1,0 +1,4 @@
+[piece 1 of 3: compiler]
+- Concrete/Check/Check.lean:688: The patch implements and refines OD18’s unreachable-arm policy by exempting desugared fallback arms and prioritizing PAT-3 for repeated variants. Although it follows the recorded owner answer, it still meets this review’s explicit “implement” criterion; the earlier owner-decision finding remains open.
+[piece 3 of 3: docs]
+- docs/spec/patterns.md:495: The OD18 finding remains open under the review’s explicit “implement” criterion: this change defines which arms its unreachable-arm policy judges, exempting desugared fallbacks. It encodes behavior covered by OD18 even though it follows the recorded owner answer.
