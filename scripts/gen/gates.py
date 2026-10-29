@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the gate views from the gate manifest, scripts/tests/gates.tsv.
 
-  gates.py --write      validate the manifest, then rewrite every generated view
+  gates.py --write      validate the manifest (workflow included), then rewrite every generated view
   gates.py --check      validate the manifest and exit 1 when a generated view differs from what it
                         would generate (stale or hand-edited); check_gate_registration.sh runs this
   gates.py --list-via   print "<script path>\t<via>" for every row (the registration gate's
@@ -128,8 +128,14 @@ def area_vocab(root):
     raise Refuse(f"{AREA_MAP}: the stage vocabulary line (#   stage ...) is missing")
 
 
+def uncommented(text):
+    """Shell text without its comments: a '#' that starts a word ends the line (`.#provers` stays).
+    A command named only in a comment is not run, so it must not satisfy a step row."""
+    return "\n".join(re.sub(r"(^|\s)#.*$", r"\1", ln) for ln in text.split("\n"))
+
+
 def workflow_steps(root):
-    """{job: {step name: run text}} from the workflow (the YAML values GitHub shows)."""
+    """{job: {step name: [run text without comments]}} from the workflow (the YAML values GitHub shows)."""
     try:
         import yaml
     except ImportError:
@@ -143,7 +149,7 @@ def workflow_steps(root):
         steps = {}
         for st in (jd or {}).get("steps") or []:
             if isinstance(st, dict) and st.get("run") is not None:
-                steps.setdefault(str(st.get("name", "")), []).append(str(st["run"]))
+                steps.setdefault(str(st.get("name", "")), []).append(uncommented(str(st["run"])))
         out[job] = steps
     return out
 
@@ -163,7 +169,9 @@ def validate(root, rows, with_workflow):
     errs = []
     spec = live_spec_ids(root)
     areas = area_vocab(root)
-    hook = read(root, HOOK)
+    # The hook's unconditional selections: unindented, uncommented `SEL+=(--first "<cmd>")` lines.
+    # An indented one sits inside a conditional, and a commented one runs nothing.
+    hook_first = set(re.findall(r'^SEL\+=\(--first "([^"]+)"\)[ \t]*$', read(root, HOOK), re.M))
     ids, targets, triples = {}, {}, set()
     prev = None
     for r in rows:
@@ -211,8 +219,8 @@ def validate(root, rows, with_workflow):
             errs.append(f"{at}: a via=skip row cannot be tier {tier} (CI never runs it)")
         if kind == "ci-only" and tier != "campaign":
             errs.append(f"{at}: a ci-only step runs only in the campaign tier; tier must be campaign")
-        if tier == "prepush" and f'--first "{r["cmd"]}"' not in hook:
-            errs.append(f"{at}: tier prepush, but {HOOK} does not run --first \"{r['cmd']}\" unconditionally")
+        if tier == "prepush" and r["cmd"] not in hook_first:
+            errs.append(f"{at}: tier prepush, but {HOOK} has no unconditional line SEL+=(--first \"{r['cmd']}\")")
         if r["spec"] != "-":
             for k in r["spec"].split(","):
                 if k not in spec:
@@ -304,7 +312,7 @@ def main():
             for r in rows:
                 print(f"{script_of(r['cmd']) or '-'}\t{r['via']}")
             return 1 if errs else 0
-        errs += validate(root, rows, with_workflow=a.check)
+        errs += validate(root, rows, with_workflow=True)
         if errs:
             for e in errs:
                 print(f"gates.py: {e}", file=sys.stderr)

@@ -26,15 +26,18 @@
 # COLUMNS
 #   id      unique row name: lowercase letters, digits and '-'; derived from the script name, plus its
 #           arguments or environment when one script runs several ways
-#   cmd     the command, exactly as the workflow spells it for a CI step (the inventory line), else
-#           the plain way to run it (`bash scripts/tests/x.sh`); it names exactly one script
+#   cmd     the command as the workflow spells it for a CI step (the inventory line: what
+#           run_ci_gates_local.sh's extraction reads, so step `env:` and a VAR="..." prefix whose
+#           value holds spaces are not part of it), else the plain way to run it
+#           (`bash scripts/tests/x.sh`); it names exactly one script
 #   job     the workflow job that runs it (the key under `jobs:`), or `-` when no CI step does
 #   step    that job's step name as GitHub shows it (the YAML value; an unquoted ` #` ends it), or `-`
 #   via     how CI reaches it:
 #             step              a workflow step runs `cmd`; it is in the inventory and the local full
 #                               run (run_ci_gates_local.sh) runs it
-#             ci-only:<reason>  a workflow step runs `cmd`, but the local full run deliberately does
-#                               not (run_ci_gates_local.sh's extraction exclusions); not in the inventory
+#             ci-only:<reason>  a workflow step runs `cmd`, but the local full run does not run this
+#                               form of it (run_ci_gates_local.sh's extraction exclusions, or a step
+#                               env the extraction cannot see); not in the inventory
 #             agg:<script>      run by <script> (scripts/tests, scripts/ci or scripts/gen), which CI
 #                               reaches; the reachability walk must see that edge
 #             tool:<script>     the same through scripts/tools/<script>
@@ -47,9 +50,11 @@
 #   claim   one line: what a pass establishes (seeded from the Makefile `##` text, else the script's
 #           header comment); for a make row it is the target's `make help` text, so no `##`
 #   tier    when it runs:
-#             prepush   the pre-push hook runs it on every push (an unconditional --first), and CI does
-#             pr        CI runs it on every push and pull request (the landing tier); the hook may
-#                       select it from the diff (scripts/tests/select_gates.sh)
+#             prepush   the pre-push hook runs it on every push (an unindented, uncommented
+#                       `SEL+=(--first "<cmd>")` line), and CI does
+#             pr        CI's landing tier: every push to main and every pull request, except that a
+#                       label-gated job (multi-kernel) runs on a pull request only with its label;
+#                       the hook may select it from the diff (scripts/tests/select_gates.sh)
 #             campaign  only in CI's campaign tier (workflow_dispatch with campaign=true, nightly), or
 #                       by hand for a campaign-class harness
 #             weekly    on a weekly schedule
@@ -77,7 +82,7 @@ check-artifact-fuzz	bash ./scripts/tests/check_artifact_fuzz.sh	extra-gates	Arti
 check-assume-migration	bash scripts/tests/check_assume_migration.sh	proof-gate	Assert/assume migration gate (Phase 3	step	-	-	Assert/assume migration gate (no-laundering)	pr	-	test-assume-migration	gates	y	n	-
 check-assumption-summary	bash scripts/tests/check_assumption_summary.sh	language-gates	Assumption summaries (R-0484 R10 — what each function may reach, with provenance and explicit completeness)	step	-	-	R-0484 R10: ASSUMPTION SUMMARIES — WHAT A PROGRAM'S CONCLUSIONS REST ON, AND WHETHER THAT	pr	-	-	gates	y	n	-
 check-assumptions	bash scripts/tests/check_assumptions.sh	evidence-gates	Assumptions ledger (declared assumptions match the recorded set)	step	-	-	Assumption-tracking checks	pr	-	test-assumptions	gates	y	n	-
-check-atomic-flip-entrance	bash scripts/tests/check_atomic_flip_entrance.sh	-	-	agg:check_campaign_supervisor.sh	-	-	R-0004 package 2: is the CallableId->DefinitionIdentity flip safe to perform?	pr	-	test-atomic-flip-entrance	gates	y	n	-
+check-atomic-flip-entrance	bash scripts/tests/check_atomic_flip_entrance.sh	-	-	agg:check_gate_mutation_coverage.sh	-	-	R-0004 package 2: is the CallableId->DefinitionIdentity flip safe to perform?	campaign	-	test-atomic-flip-entrance	gates	y	n	-
 check-attestation-manifest	bash scripts/tests/check_attestation_manifest.sh	receipt-gates	Attestation manifest + generated-reference freshness (R-0004 — the tracked generated surface is re-derived and compared)	step	Proof	-	Attestation manifest: table -> attested subject, on the real corpus	pr	-	test-attestation-manifest	gates	y	n	-
 check-attestation-refs-order	bash scripts/tests/check_attestation_refs_order.sh	receipt-gates	Attestation reference order (the byte-for-byte comparison above is a function of content, not of enumeration order)	step	Proof	-	THE GENERATED REFERENCE FILE MUST BE A FUNCTION OF MANIFEST CONTENT, NOT MANIFEST ORDER.	pr	-	-	gates	y	n	-
 check-axiom-inventory	bash scripts/tests/check_axiom_inventory.sh	-	-	tool:checker_acceptance_evidence.sh	Proof	-	Axiom-inventory gate (#print axioms over every proof_by theorem; docs/verification/AXIOMS.md)	pr	-	test-axiom-inventory	gates	y	n	-
@@ -203,7 +208,7 @@ check-identity-rows	bash scripts/tests/check_identity_rows.sh	evidence-gates	Ide
 check-identity-separation	bash scripts/tests/check_identity_separation.sh	evidence-gates	Identity separation (R-0482 — reachable vs context edits, tagged origins, D1/D5/D6, the map, old bytes)	step	-	-	IDENTITY SEPARATION — the R-0482 migration's own controls (IDENTITY_MIGRATION_PLAN.md section 6).	pr	-	-	gates	y	n	-
 check-identity-use-bytes	bash scripts/tests/check_identity_use_bytes.sh	evidence-gates	Identity-use bytes (R-0004 — flat typed-use serialization; NOT the body canonical form)	step	-	-	R-0004: ProofBodyCanonicalV2 serialization.	pr	-	-	gates	y	n	-
 check-ignored-result	bash scripts/tests/check_ignored_result.sh	language-gates	Ignored-result gate (Phase 6	step	-	-	Ignored-result gate: discarded Result/Option rejected (E0286) unless `let _ =` acknowledged (Phase 6 #13)	pr	-	test-ignored-result	gates	y	n	-
-check-impl-manifest	bash scripts/tests/check_impl_manifest.sh	-	-	agg:check_gate_mutation_coverage.sh	-	-	Implementation manifest accounting on the real corpus (R-0004 slice 6) — shadow	pr	-	test-impl-manifest	gates	y	n	-
+check-impl-manifest	bash scripts/tests/check_impl_manifest.sh	-	-	agg:check_gate_mutation_coverage.sh	-	-	Implementation manifest accounting on the real corpus (R-0004 slice 6) — shadow	campaign	-	test-impl-manifest	gates	y	n	-
 check-incremental-shadow	bash scripts/tests/check_incremental_shadow.sh	language-gates	Incremental shadow (Phase 6C #7 — reuse/invalidate prediction + no-false-reuse over an edit corpus)	step	-	-	Phase 6C #7: cache-free incremental shadow — per-query reuse/invalidate prediction over an edit corpus; a false reuse (missing dependency edge) is a hard failure	pr	-	test-incremental-shadow	gates	y	n	-
 check-indirect-call-identity	bash scripts/tests/check_indirect_call_identity.sh	language-gates	Indirect-call identity (R-0002 / bug 050 — a callee VALUE is never resolved by global name; dispatch, interp agreement, no rewrite, std.io)	step	-	-	R-0002 / bug 050 — a callee VALUE is never resolved by global name.	pr	-	-	gates	y	n	-
 check-int-arith-semantics	bash scripts/tests/check_int_arith_semantics.sh	language-gates	Int-arith semantics gate (Phase 6.5	step	-	-	Integer-arithmetic semantics gate (ROADMAP Phase 6.5 #1).	pr	-	-	gates	y	n	-
@@ -234,7 +239,7 @@ check-model-diff	bash scripts/tests/check_model_diff.sh	evidence-gates	Model vs 
 check-module-visibility	bash scripts/tests/check_module_visibility.sh	-	-	agg:run_fast_surface_gates.sh	Check	-	Module/import/visibility gate (Phase 5 #1)	pr	-	test-module-visibility	gates	y	n	-
 check-mono-name-collision	bash scripts/tests/check_mono_name_collision.sh	infra-gates	Mono name-collision known-hole gate (nested-generic specialization merge)	step	Mono	-	Mono name-collision known-hole gate (nested-generic specializations merge)	pr	-	test-mono-collision	gates	y	n	-
 check-multi-kernel	bash ./scripts/tests/check_multi_kernel.sh	multi-kernel	Multi-kernel evidence gate	step	Proof	-	Multi-kernel evidence gate (Rocq/Isabelle; skip-if-absent)	pr	-	test-multi-kernel	provers	y	n	-
-check-multi-kernel-mutation	bash ./scripts/tests/check_multi_kernel.sh	multi-kernel	Multi-kernel mutation coverage (scheduled only — mutates source, 2 rebuilds)	step	Proof	-	Multi-kernel evidence gate (spike/multi-prover-evidence).	campaign	-	-	provers	y	n	-
+check-multi-kernel-mutation	bash ./scripts/tests/check_multi_kernel.sh	multi-kernel	Multi-kernel mutation coverage (scheduled only — mutates source, 2 rebuilds)	ci-only:CI sets MULTI_KERNEL_MUTATE=1 in the step env, which the extraction cannot see; the local full run executes this command once, without it	Proof	-	Multi-kernel evidence gate (spike/multi-prover-evidence).	campaign	-	-	provers	y	n	-
 check-mutation-anchors	bash scripts/tests/check_mutation_anchors.sh	evidence-gates	Mutation anchors (every MUT_OLD still exists in its file — the harness itself is not run in CI)	step	Gates	-	MUTATION ANCHORS — every mutation's target text still exists in its file.	pr	-	-	gates	y	n	-
 check-mutation-shard-aggregate	bash scripts/tests/check_mutation_shard_aggregate.sh	campaign-publisher	Sharded mutation campaign aggregator (hostile shard sets fail closed)	step	Gates	-	THE SHARDED CAMPAIGN'S AGGREGATOR, ATTACKED DIRECTLY.	pr	-	-	gates	y	n	-
 check-native-libs	bash scripts/tests/check_native_libs.sh	language-gates	Native libraries (G1 — Concrete.toml [native] links, propagates, fails closed, is a listed trust dependency)	step	-	-	NATIVE LIBRARIES DECLARED IN Concrete.toml [native] (gap G1, docs/platform/NATIVE_LIBRARIES.md).	pr	-	-	gates	y	n	-
@@ -382,7 +387,7 @@ test-golden	bash ./scripts/tests/test_golden.sh	main-tests	Run golden tests (--e
 test-mutation	bash scripts/tests/test_mutation.sh	-	-	skip:the compiler-source mutation harness (mutates the tree in place, rebuilds per mutation); no CI step runs it, run it by hand with make test-mutation	Gates	-	Mutation testing for the compiler: each targeted source mutation must be killed by a gate (HEAVY: rebuilds per mutation; refuses outside the gate shell)	campaign	-	test-mutation	gates	y	n	-
 test-oracle	bash scripts/tests/test_oracle.sh	-	-	agg:run_tests.sh	-	-	Differential oracle tests	pr	-	test-oracle	gates	y	n	-
 test-parser-fuzz	bash scripts/tests/test_parser_fuzz.sh	-	-	skip:not run by CI; run by hand with make test-fuzz (parser fuzzing)	Parse	-	Parser fuzzing	manual	-	test-fuzz	gates	y	n	-
-test-perf	bash scripts/tests/test_perf.sh	-	-	agg:run_tests.sh	-	-	Performance regression tracking for the Concrete compiler.	pr	-	-	gates	y	n	-
+test-perf	bash scripts/tests/test_perf.sh	-	-	agg:run_tests.sh	-	-	Performance regression tracking for the Concrete compiler.	manual	-	-	gates	y	n	-
 test-prove-cli	bash scripts/tests/test_prove_cli.sh	infra-gates	concrete prove CLI gate	step	CLI	-	`concrete prove` CLI gate	pr	-	test-prove-cli	gates	y	n	-
 test-reducer-smoke	bash ./scripts/tests/test_reducer_smoke.sh	extra-gates	Reducer smoke	step	-	-	Test-case reducer smoke test	pr	-	test-reducer-smoke	gates	y	n	-
 test-release-bundle	bash ./scripts/tests/test_release_bundle.sh	extra-gates	Release bundle	step	-	-	Release bundle capture test	pr	-	test-release-bundle	gates	y	n	-

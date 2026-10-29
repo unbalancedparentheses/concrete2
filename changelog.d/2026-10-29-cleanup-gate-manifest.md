@@ -9,8 +9,10 @@ taxonomy will be a `kind` column rather than a directory move. `scripts/gen/gate
 runs from `scripts/gen/refresh_generated.sh`. `check_gate_registration.sh` now runs `gates.py
 --check` (valid vocabularies, unique ids and make targets, live spec keys, step rows matching the
 workflow, fresh views), fails on any check/test/run script without a row, takes its skip list from
-the manifest, and cross-checks each row's `via` against its reachability walk, with a negative
-control for each refusal. The seeding found three scripts no CI step reaches: `test_bundle_smoke.sh`,
+the manifest, and cross-checks each row's `via` against its reachability walk; negative controls on
+a planted copy cover the unlisted script, a stale view, duplicate ids and make targets, values
+outside the vocabularies, a dead spec key, a missing or comment-only workflow step, a conditional
+pre-push line, and stale or wrong `via` routes. The seeding found three scripts no CI step reaches: `test_bundle_smoke.sh`,
 `test_parser_fuzz.sh` and `test_verify_gates.sh` (make targets only); they are recorded as
 `skip` rows with tier `manual`.
 

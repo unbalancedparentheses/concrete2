@@ -252,8 +252,8 @@ _plant() {
   cp scripts/tests/ci_gate_inventory.txt "$PLANT_DIR/r/scripts/tests/ci_gate_inventory.txt"
   mkdir -p "$PLANT_DIR/r/mk"; cp Makefile "$PLANT_DIR/r/Makefile"; cp mk/gates.mk "$PLANT_DIR/r/mk/gates.mk"
   for f in scripts/ci scripts/tools scripts/gen; do ln -s "$ROOT_DIR/$f" "$PLANT_DIR/r/$f"; done
-  ln -s "$ROOT_DIR/$WORKFLOW" "$PLANT_DIR/r/$WORKFLOW"
-  ln -s "$ROOT_DIR/.githooks/pre-push" "$PLANT_DIR/r/.githooks/pre-push"
+  cp "$WORKFLOW" "$PLANT_DIR/r/$WORKFLOW"
+  cp .githooks/pre-push "$PLANT_DIR/r/.githooks/pre-push"
   ln -s "$ROOT_DIR/docs/spec/ids.tsv" "$PLANT_DIR/r/docs/spec/ids.tsv"
   ln -s "$ROOT_DIR/docs/bugs/area_map.tsv" "$PLANT_DIR/r/docs/bugs/area_map.tsv"
 }
@@ -300,6 +300,12 @@ _plant; grep -vx 'include mk/gates.mk' Makefile > "$PLANT_DIR/r/Makefile"
 _gp; _refused "a Makefile that no longer includes mk/gates.mk" "does not have the line 'include mk/gates.mk'"
 _plant; _mut '$1=="test-ssa" {$2="./scripts/tests/test_ssa.sh"} {print}'
 _gp; _refused "a make row whose cmd has no interpreter (no recipe can be generated)" "so no recipe is generated"
+_plant; sed 's|^\( *run: \)bash scripts/tests/check_gate_hygiene.sh$|\1true # bash scripts/tests/check_gate_hygiene.sh|' "$WORKFLOW" > "$PLANT_DIR/r/$WORKFLOW"
+_gp; _refused "a step row whose command the workflow names only in a comment" "does not run 'bash scripts/tests/check_gate_hygiene.sh'"
+_plant; sed 's|^SEL+=(--first "bash scripts/tests/check_gate_hygiene.sh")$|  &|' .githooks/pre-push > "$PLANT_DIR/r/.githooks/pre-push"
+_gp; _refused "a prepush row whose hook line is no longer unconditional (indented)" "has no unconditional line"
+_plant; _mut '$1=="check-gate-hygiene" {$2=$2" --planted"} {print}'
+_gp; _refused "a row whose cmd is not what its step runs" "does not run 'bash scripts/tests/check_gate_hygiene.sh --planted'"
 echo "=== a CI gate the host cannot run is a named skip in run_ci_gates_local.sh, never a pass ==="
 # The Examples job runs check_example_outputs.sh under EXAMPLE_VALGRIND=1; macOS has no valgrind.
 # run_ci_gates_local.sh classifies such commands with scripts/tests/lib/host_tools.sh, lists them
