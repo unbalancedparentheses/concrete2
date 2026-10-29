@@ -1,0 +1,2 @@
+[piece 1 of 1: tests]
+- scripts/tests/check_roadmap_coverage.sh:393: `(\S+)` truncates multiword deliverable names. For the existing `RocksDB slice 1`, a valid declaration `RocksDB slice 1 also waits for exit 2q` captures `1` and incorrectly reports an unknown deliverable, even when its blocked-by list agrees. Match complete deliverable names, as the preceding comparison does.
