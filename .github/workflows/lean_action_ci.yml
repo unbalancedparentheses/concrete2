@@ -1850,122 +1850,126 @@ jobs:
       # a fact has a single authoritative producer, and check_gate_vacuity catches assertions that
       # pass because they measure nothing. Both encode the discipline the rest of this suite is
       # written to, and neither was running.
-      - name: "One producer (a fact has one authoritative producer; reconciliation copies are the defect)"
+      # BEGIN GENERATED: gates evidence-gates from check-one-producer (scripts/tests/gates.tsv; gates.py --write)
+      - name: One producer (a fact has one authoritative producer; reconciliation copies are the defect)
         run: bash scripts/tests/check_one_producer.sh
 
-      - name: "Gate vacuity (an assertion that passes because it measures nothing is not a gate)"
+      - name: Gate vacuity (an assertion that passes because it measures nothing is not a gate)
         run: bash scripts/tests/check_gate_vacuity.sh
 
-      - name: "Coverage baseline (proved/eligible and the exact unproved dispositions, pinned)"
+      - name: Coverage baseline (proved/eligible and the exact unproved dispositions, pinned)
         run: bash scripts/tests/check_coverage_baseline.sh
 
-      - name: "Bool kernel (boolean decision procedure agreement)"
+      - name: Bool kernel (boolean decision procedure agreement)
         run: bash scripts/tests/check_bool_kernel.sh
 
-      - name: "Table migration (proof tables convert without changing what they attest)"
+      - name: Table migration (proof tables convert without changing what they attest)
         run: bash scripts/tests/check_table_migration.sh
 
-      - name: "VCgen diff (verification-condition generation is stable across the refactor)"
+      - name: VCgen diff (verification-condition generation is stable across the refactor)
         run: bash scripts/tests/check_vcgen_diff.sh
 
-      - name: "Dependency edges (per-edge justification, scoped joins, and the classification vocabulary)"
+      - name: Dependency edges (per-edge justification, scoped joins, and the classification vocabulary)
         run: bash scripts/tests/check_dependency_edges.sh
+      # END GENERATED: gates evidence-gates
 
       # REGISTERED 2026-09-02. These gates existed, passed, and were run by nothing. The registration
       # gate reported them reachable because their names appeared somewhere in a file CI runs — for
       # check_classification_freshness.sh, inside a comment saying the gate runs elsewhere.
-      - name: "Classification freshness (the checked-in theorem inventory and table match their canonical producer)"
+      # BEGIN GENERATED: gates evidence-gates from check-classification-freshness (scripts/tests/gates.tsv; gates.py --write)
+      - name: Classification freshness (the checked-in theorem inventory and table match their canonical producer)
         run: bash scripts/tests/check_classification_freshness.sh
 
-      - name: "Migration manifest (every source proof link has one owned, deterministic migration row)"
+      - name: Migration manifest (every source proof link has one owned, deterministic migration row)
         run: bash scripts/tests/check_migration_manifest.sh
 
-      - name: "Assumptions ledger (declared assumptions match the recorded set)"
+      - name: Assumptions ledger (declared assumptions match the recorded set)
         run: bash scripts/tests/check_assumptions.sh
 
-      - name: "Evidence reproducibility (retained evidence regenerates to the same digests)"
+      - name: Evidence reproducibility (retained evidence regenerates to the same digests)
         run: bash scripts/tests/check_evidence_reproducibility.sh
 
-      - name: "Subject facts (identity-threaded facts; v1 values become needs_recheck)"
+      - name: Subject facts (identity-threaded facts; v1 values become needs_recheck)
         run: bash scripts/tests/check_subject_facts.sh
 
-      - name: "Identity freeze (the pre-migration attestation population is pinned)"
+      - name: Identity freeze (the pre-migration attestation population is pinned)
         run: bash scripts/tests/check_identity_freeze.sh
 
       - name: "Identity over-binding (R-0482 positive controls: std/sibling edits move artifact or context, never scope)"
         run: bash scripts/tests/check_identity_overbinding.sh
 
-      - name: "Identity rows (R-0482 — the canonical rows the migration reproduced; unused std edits rename nothing)"
+      - name: Identity rows (R-0482 — the canonical rows the migration reproduced; unused std edits rename nothing)
         run: bash scripts/tests/check_identity_rows.sh
 
-      - name: "Identity separation (R-0482 — reachable vs context edits, tagged origins, D1/D5/D6, the map, old bytes)"
+      - name: Identity separation (R-0482 — reachable vs context edits, tagged origins, D1/D5/D6, the map, old bytes)
         run: bash scripts/tests/check_identity_separation.sh
 
-      - name: "Subject binding (bug 079 — a claim is proved only when its body and parameters ARE its theorem's specification)"
+      - name: Subject binding (bug 079 — a claim is proved only when its body and parameters ARE its theorem's specification)
         run: bash scripts/tests/check_subject_binding.sh
 
-      - name: "Model vs runtime (bug 080 — the extracted proof model and the interpreter compute the same values)"
+      - name: Model vs runtime (bug 080 — the extracted proof model and the interpreter compute the same values)
         run: bash scripts/tests/check_model_diff.sh
 
-      - name: "Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)"
+      - name: Match guard effects (bug 066 — a guard's effects are observable and identical under interp and compiled)
         run: bash scripts/tests/check_match_guard_effects.sh
 
-      - name: "Convergence inventory (every recorded R-0004 / multi-prover gap, machine-checked)"
+      - name: Convergence inventory (every recorded R-0004 / multi-prover gap, machine-checked)
         run: bash scripts/tests/check_convergence_inventory.sh
 
-      - name: "Bug filing completeness (a bug needs a document, a corpus entry, and coverage)"
+      - name: Bug filing completeness (a bug needs a document, a corpus entry, and coverage)
         run: bash scripts/tests/check_bug_filing_complete.sh
 
-      - name: "Bug scaffold (new_bug.sh allocates race-safely, writes a ledger-consistent record; hook reservation tier)"
+      - name: Bug scaffold (new_bug.sh allocates race-safely, writes a ledger-consistent record; hook reservation tier)
         run: bash scripts/tests/check_new_bug.sh
 
-      - name: "Evidence builders (R-0004 — semantic decisions tested before the producer cutover)"
+      - name: Evidence builders (R-0004 — semantic decisions tested before the producer cutover)
         run: bash scripts/tests/check_evidence_build.sh
 
       - name: "Evidence tree (R-0004 — typed evidence IR: nesting representable, gaps mandatory, no bound names)"
         run: bash scripts/tests/check_evidence_tree.sh
 
-      - name: "Identity-use bytes (R-0004 — flat typed-use serialization; NOT the body canonical form)"
+      - name: Identity-use bytes (R-0004 — flat typed-use serialization; NOT the body canonical form)
         run: bash scripts/tests/check_identity_use_bytes.sh
 
-      - name: "Shadow body V2 (R-0004 — structural body digest reaches the report and nothing authoritative; coverage ratchet)"
+      - name: Shadow body V2 (R-0004 — structural body digest reaches the report and nothing authoritative; coverage ratchet)
         run: bash scripts/tests/check_shadow_body_v2.sh
 
-      - name: "Mutation anchors (every MUT_OLD still exists in its file — the harness itself is not run in CI)"
+      - name: Mutation anchors (every MUT_OLD still exists in its file — the harness itself is not run in CI)
         run: bash scripts/tests/check_mutation_anchors.sh
 
-      - name: "Wired definitions (evidence-layer code with no consumer is a fact nobody checks)"
+      - name: Wired definitions (evidence-layer code with no consumer is a fact nobody checks)
         run: bash scripts/tests/check_wired_definitions.sh
 
-      - name: "Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)"
+      - name: Binder refs (R-0004 — elaboration emits relative lexical positions; empty scopes, binding timing, uncovered fallback)
         run: bash scripts/tests/check_binder_refs.sh
 
       - name: "Body scope (R-0004 — scoped lexical binder frames: relative positions, shadowing, refusal)"
         run: bash scripts/tests/check_body_scope.sh
 
-      - name: "Subject coverage (R-0004 — corpus inventory of which declarations can produce a subject digest, grouped by cause)"
+      - name: Subject coverage (R-0004 — corpus inventory of which declarations can produce a subject digest, grouped by cause)
         run: bash scripts/tests/check_subject_coverage.sh
 
-      - name: "Type identity (R-0004 V2 input — aliases, transport, nesting, builtins, and Elab use sites)"
+      - name: Type identity (R-0004 V2 input — aliases, transport, nesting, builtins, and Elab use sites)
         run: bash scripts/tests/check_type_identity.sh
 
-      - name: "Pipeline artifacts (R-0497 slice 1 / bug 180 — sealed, certified ValidatedCore/Mono/SSA; forgery, mutation reuse and diagnostic bypass do not elaborate)"
+      - name: Pipeline artifacts (R-0497 slice 1 / bug 180 — sealed, certified ValidatedCore/Mono/SSA; forgery, mutation reuse and diagnostic bypass do not elaborate)
         run: bash scripts/tests/check_pipeline_artifacts.sh
 
-      - name: "Local binder identity (R-0492 slice 1 / bug 202 — the checker's environment is keyed by LocalId minted by the one lexical walk; no lookup by spelling)"
+      - name: Local binder identity (R-0492 slice 1 / bug 202 — the checker's environment is keyed by LocalId minted by the one lexical walk; no lookup by spelling)
         run: bash scripts/tests/check_local_identity.sh
 
-      - name: "Fn-pointer values (R-0436 / bug 056 — a function reference is a value; rebindable across control flow; devirtualization preserved)"
+      - name: Fn-pointer values (R-0436 / bug 056 — a function reference is a value; rebindable across control flow; devirtualization preserved)
         run: bash scripts/tests/check_fnptr_values.sh
 
-      - name: "HashMap probe invariants (R-0003 / bugs 047+048 — no duplicate past a tombstone; missing-key lookup always terminates; reference-map oracle)"
+      - name: HashMap probe invariants (R-0003 / bugs 047+048 — no duplicate past a tombstone; missing-key lookup always terminates; reference-map oracle)
         run: bash scripts/tests/check_hashmap_probe_invariants.sh
 
-      - name: "Builtin layout sizes (bug 057 — hardcoded sizes match the std declarations they describe)"
+      - name: Builtin layout sizes (bug 057 — hardcoded sizes match the std declarations they describe)
         run: bash scripts/tests/check_builtin_layout_sizes.sh
 
       - name: "Generic-enum fixture inventory (R-0001 — every user-generic-enum fixture classified: positive mono or E0808 containment)"
         run: bash scripts/tests/check_generic_enum_inventory.sh
+      # END GENERATED: gates evidence-gates
   infra-gates:
     name: Compiler-infra gates (ledger, diagnostics, codegen, CLI, known holes)
     runs-on: ${{ (github.event_name != 'pull_request' && vars.CONCRETE_SELF_HOSTED == 'true') && fromJSON('["self-hosted","linux","x64","concrete"]') || 'ubuntu-latest' }}
