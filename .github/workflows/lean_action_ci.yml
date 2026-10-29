@@ -2050,13 +2050,14 @@ jobs:
       - name: Callable-values gate (Phase 5 #24 step 1 — context modes; &mut *ctx reborrow aliases)
         run: bash scripts/tests/check_callable_values.sh
 
+      # BEGIN GENERATED: gates infra-gates from check-returned-ref-provenance (scripts/tests/gates.tsv; gates.py --write)
       - name: Returned-ref provenance known-hole gate (aggregate-ref public API freeze)
         run: bash scripts/tests/check_returned_ref_provenance.sh
 
       - name: Proven-violation enforcement known-hole gate (constant OOB / div-zero)
         run: bash scripts/tests/check_proven_violation_enforcement.sh
 
-      - name: "Checked float-cast gate (float->int NaN/inf/out-of-range abort, in-range truncates — closes H2)"
+      - name: Checked float-cast gate (float->int NaN/inf/out-of-range abort, in-range truncates — closes H2)
         run: bash scripts/tests/check_float_cast.sh
 
       - name: Mono name-collision known-hole gate (nested-generic specialization merge)
@@ -2079,6 +2080,7 @@ jobs:
 
       - name: Cast-matrix differential gate (every width pair x edge value, interp == compiled)
         run: bash scripts/tests/check_cast_matrix.sh
+      # END GENERATED: gates infra-gates
 
       - name: CLI-plumbing gate (Phase 4 #14a — shared prologue + exit-code taxonomy)
         run: bash scripts/tests/check_cli_plumbing.sh
@@ -2086,6 +2088,7 @@ jobs:
       - name: CLI-contract gate (Phase 4 #15 — golden command behavior matrix)
         run: bash scripts/tests/check_cli_contract.sh
 
+      # BEGIN GENERATED: gates infra-gates from check-campaign-supervisor (scripts/tests/gates.tsv; gates.py --write)
       - name: Campaign-supervisor gate (only a supervisor may publish qualification)
         run: bash scripts/tests/check_campaign_supervisor.sh
 
@@ -2094,6 +2097,7 @@ jobs:
 
       - name: concrete prove CLI gate
         run: bash scripts/tests/test_prove_cli.sh
+      # END GENERATED: gates infra-gates
 
   # Split out of infra-gates (2026-10-10): each of these re-runs report-heavy gates many
   # times, and after the R-0484 assumption summaries roughly doubled the report path's cost,
