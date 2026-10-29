@@ -2511,6 +2511,7 @@ jobs:
       # These gates had Makefile targets but zero CI coverage ("dark gates") —
       # test_wrong_code was already silently red (WC-0005's stale expectation)
       # when wired here. One job, fail-fast per step.
+      # BEGIN GENERATED: gates extra-gates from check-catches (scripts/tests/gates.tsv; gates.py --write)
       - name: Catches (negative corpus)
         run: bash ./scripts/tests/check_catches.sh
 
@@ -2519,22 +2520,28 @@ jobs:
 
       - name: Wrong-code corpus
         run: bash ./scripts/tests/test_wrong_code.sh
+      # END GENERATED: gates extra-gates
 
       # Counterexample fixtures for OPEN holes (H23, H24). Here rather than in the
       # build-free `grammar` job because it compiles and RUNS the fixtures to assert they
       # still trap. A red result usually means a hole got fixed — see the script header.
+      # BEGIN GENERATED: gates extra-gates from check-known-wrong-corpus (scripts/tests/gates.tsv; gates.py --write)
       - name: Known-wrong corpus (open holes still reproduce)
         run: bash ./scripts/tests/check_known_wrong_corpus.sh
+      # END GENERATED: gates extra-gates
 
       # R-0462: run the compiled BINARY against the safety claims. Here, not in the
       # build-free job, because it compiles and executes generated drivers — that is the
       # point: it crosses surface -> Core -> SSA -> LLVM, which no register row covers.
+      # BEGIN GENERATED: gates extra-gates from check-artifact-fuzz (scripts/tests/gates.tsv; gates.py --write)
       - name: Artifact fuzz (the binary vs the safety claims)
         run: bash ./scripts/tests/check_artifact_fuzz.sh
+      # END GENERATED: gates extra-gates
 
       # R-0455 Register B: transformation soundness. Cheap (grep + the build is the proof),
       # but it lives here rather than in the build-free job because it asserts theorems exist
       # in a compiled module.
+      # BEGIN GENERATED: gates extra-gates from check-transform-register (scripts/tests/gates.tsv; gates.py --write)
       - name: Transformation register (Register B rows)
         run: bash ./scripts/tests/check_transform_register.sh
 
@@ -2552,6 +2559,7 @@ jobs:
 
       - name: string_char_at differential
         run: bash ./scripts/tests/check_string_char_at.sh
+      # END GENERATED: gates extra-gates
 
   # Independent-kernel evidence (Rocq + Isabelle). Deliberately NOT on every PR:
   # Isabelle is a multi-GB closure and cold proof runs cost ~30s/goal, so this job
