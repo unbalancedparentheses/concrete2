@@ -1,0 +1,6 @@
+[piece 1 of 4: compiler]
+- Concrete/Check/Check.lean:3946: Removing child declarations from the local name and identity sets implements OD21: parents lose newtype construction and private-field access rights over children. Although ROADMAP.md records the owner’s decision, this still implements behaviour covered by OD21 and therefore meets your explicit owner-decision finding criterion.
+[piece 2 of 4: tests]
+- scripts/tests/run_tests.sh:10259: The three parent/child rejection tests encode OD21’s declaring-module-only representation rights. Although ROADMAP.md records that choice as owner-decided, this patch implements and pins behaviour covered by OD21, so it meets your explicit owner-decision blocking criterion.
+[piece 3 of 4: docs]
+- docs/spec/types.md:646: The patch implements OD21’s “only the declaring module” side by activating parent-child rejection examples and removing the checker’s parent representation rights. Although the docs record an earlier owner decision, this explicitly implements behavior covered by OD21 and therefore triggers the owner-decision landing prohibition in this review request.
