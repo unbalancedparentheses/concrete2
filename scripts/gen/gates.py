@@ -12,11 +12,20 @@ Generated views:
   mk/gates.mk                           a .PHONY make target for every row with a `make` cell
                                         (included from the Makefile): `<make>: [build] ## <claim>` running
                                         `$(NIX_DEVELOP[_PROVERS]) <cmd>`, the script spelled ./scripts/
+  .github/workflows/lean_action_ci.yml  the steps between each pair of markers
+                                          # BEGIN GENERATED: gates <job> from <id> (...)
+                                          # END GENERATED: gates <job>
+                                        one `- name: <step>` / `run: <cmd>` step per gen=y row of <job>,
+                                        in manifest order, starting at row <id> and running until a
+                                        gen=n row of the job, the start of the job's next block, or
+                                        the job's last row. Everything outside the markers is the
+                                        workflow's own text and is never touched.
 
 FAIL-CLOSED: an invalid manifest (wrong column line, wrong cell count, an empty cell, a duplicate id
 or make target, a value outside a column's vocabulary, a spec key that is not live in
-docs/spec/ids.tsv, rows out of id order, a script without a row, a step row whose job or step the
-workflow does not have or whose step does not run its cmd, a make row whose cmd is not a plain
+docs/spec/ids.tsv, rows out of order (workflow rows in workflow order, then the rest by id), a script
+without a row, a step row whose job or step the workflow does not have or whose step does not run its
+cmd, a gen=y row no block generates or that is not a plain one-command step, a make row whose cmd is not a plain
 `bash`/`python3` invocation, a make target the Makefile also defines by hand, a Makefile that does not
 include mk/gates.mk) is reported row by row and exits 1;
 nothing is written. Unreadable inputs exit 2.
@@ -25,6 +34,7 @@ nothing is written. Unreadable inputs exit 2.
 The column vocabulary is documented in the manifest's header; this file enforces it.
 """
 import argparse
+import json
 import os
 import re
 import sys
@@ -39,6 +49,10 @@ AREA_MAP = "docs/bugs/area_map.tsv"
 MAKEFILE = "Makefile"
 MK = "mk/gates.mk"
 MK_INCLUDE = "include mk/gates.mk"
+# Workflow block markers. They name no scripts/... .sh/.py path: run_ci_gates_local.sh extracts gate
+# commands from the whole workflow text, comments included.
+BEGIN_RE = re.compile(r"^( *)# BEGIN GENERATED: gates ([a-z0-9-]+) from ([a-z0-9-]+) \(.*\)$")
+END_RE = re.compile(r"^ *# END GENERATED: gates ([a-z0-9-]+)$")
 
 COLS = ["id", "cmd", "job", "step", "via", "area", "owner", "claim", "tier", "spec", "make",
         "shell", "build", "gen", "kind"]
@@ -134,24 +148,92 @@ def uncommented(text):
     return "\n".join(re.sub(r"(^|\s)#.*$", r"\1", ln) for ln in text.split("\n"))
 
 
-def workflow_steps(root):
-    """{job: {step name: [run text without comments]}} from the workflow (the YAML values GitHub shows)."""
+def yaml_mod():
     try:
         import yaml
     except ImportError:
         raise Refuse("pyyaml is not importable; run inside the gate shell (nix develop .#gates)")
+    return yaml
+
+
+def workflow_steps(text):
+    """{job: [(step name, run text without comments)]} in workflow order, from the workflow text as
+    it will be written (the YAML values GitHub shows)."""
+    yaml = yaml_mod()
     try:
-        wf = yaml.safe_load(read(root, WORKFLOW))
+        wf = yaml.safe_load(text)
     except yaml.YAMLError as e:
-        raise Refuse(f"{WORKFLOW} does not parse: {e}")
+        raise Refuse(f"{WORKFLOW} does not parse (after regenerating its blocks): {e}")
     out = {}
     for job, jd in (wf.get("jobs") or {}).items():
-        steps = {}
-        for st in (jd or {}).get("steps") or []:
-            if isinstance(st, dict) and st.get("run") is not None:
-                steps.setdefault(str(st.get("name", "")), []).append(uncommented(str(st["run"])))
-        out[job] = steps
+        out[job] = [(str(st.get("name", "")), uncommented(str(st["run"])))
+                    for st in (jd or {}).get("steps") or []
+                    if isinstance(st, dict) and st.get("run") is not None]
     return out
+
+
+def yaml_scalar(value):
+    """The plain scalar when YAML reads it back unchanged, else a double-quoted one."""
+    yaml = yaml_mod()
+    try:
+        plain = yaml.safe_load("k: " + value) == {"k": value} and not value.startswith(("'", '"'))
+    except yaml.YAMLError:
+        plain = False
+    return value if plain else json.dumps(value, ensure_ascii=False)
+
+
+def render_workflow(root, rows):
+    """(workflow text with every generated block rewritten, errors)."""
+    lines = read(root, WORKFLOW).split("\n")
+    errs = []
+    byjob = {}
+    for r in rows:
+        if r["job"] != "-":
+            byjob.setdefault(r["job"], []).append(r)
+    starts = {}
+    for ln in lines:
+        m = BEGIN_RE.match(ln)
+        if m:
+            starts.setdefault(m.group(2), set()).add(m.group(3))
+    used = {}
+    out, i = [], 0
+    while i < len(lines):
+        m = BEGIN_RE.match(lines[i])
+        if not m:
+            if END_RE.match(lines[i]):
+                errs.append(f"{WORKFLOW}:{i + 1}: END GENERATED with no BEGIN")
+            out.append(lines[i]); i += 1
+            continue
+        ind, job, start = m.group(1), m.group(2), m.group(3)
+        j = i + 1
+        while j < len(lines) and not END_RE.match(lines[j]) and not BEGIN_RE.match(lines[j]):
+            j += 1
+        if j == len(lines) or BEGIN_RE.match(lines[j]) or END_RE.match(lines[j]).group(1) != job:
+            raise Refuse(f"{WORKFLOW}:{i + 1}: BEGIN GENERATED gates {job} has no matching END GENERATED gates {job}")
+        seq = byjob.get(job, [])
+        k = next((n for n, r in enumerate(seq) if r["id"] == start), None)
+        block = []
+        if k is None:
+            errs.append(f"{WORKFLOW}:{i + 1}: block starts at row '{start}', which is not a row of job {job}")
+        elif seq[k]["gen"] != "y":
+            errs.append(f"{WORKFLOW}:{i + 1}: block starts at row '{start}', which is gen=n")
+        else:
+            while k < len(seq) and seq[k]["gen"] == "y" and (not block or seq[k]["id"] not in starts[job]):
+                block.append(seq[k]); k += 1
+        content = []
+        for r in block:
+            if r["id"] in used:
+                errs.append(f"row {r['id']} is generated by two blocks ({WORKFLOW}:{used[r['id']]} and :{i + 1})")
+            used[r["id"]] = i + 1
+            if content:
+                content.append("")
+            content += [f"{ind}- name: {yaml_scalar(r['step'])}", f"{ind}  run: {r['cmd']}"]
+        out += [lines[i]] + content + [lines[j]]
+        i = j + 1
+    for r in rows:
+        if r["gen"] == "y" and r["id"] not in used:
+            errs.append(f"{MANIFEST}:{r['_line']} ({r['id']}): gen=y, but no generated block of job {r['job']} reaches it")
+    return "\n".join(out), errs
 
 
 def listed_scripts(root):
@@ -165,7 +247,7 @@ def listed_scripts(root):
     return sorted(set(out))
 
 
-def validate(root, rows, with_workflow):
+def validate(root, rows, wf_text):
     errs = []
     spec = live_spec_ids(root)
     areas = area_vocab(root)
@@ -173,7 +255,6 @@ def validate(root, rows, with_workflow):
     # An indented one sits inside a conditional, and a commented one runs nothing.
     hook_first = set(re.findall(r'^SEL\+=\(--first "([^"]+)"\)[ \t]*$', read(root, HOOK), re.M))
     ids, targets, triples = {}, {}, set()
-    prev = None
     for r in rows:
         at = f"{MANIFEST}:{r['_line']} ({r['id']})"
         if not ID_RE.match(r["id"]):
@@ -181,9 +262,6 @@ def validate(root, rows, with_workflow):
         if r["id"] in ids:
             errs.append(f"{at}: duplicate id (also line {ids[r['id']]})")
         ids.setdefault(r["id"], r["_line"])
-        if prev is not None and r["id"] < prev:
-            errs.append(f"{at}: rows are not sorted by id (LC_ALL=C); '{r['id']}' follows '{prev}'")
-        prev = r["id"]
         s = script_of(r["cmd"])
         if s is None:
             errs.append(f"{at}: cmd must name exactly one scripts/... .sh or .py file")
@@ -236,6 +314,11 @@ def validate(root, rows, with_workflow):
         for c in ("build", "gen"):
             if r[c] not in YN:
                 errs.append(f"{at}: {c} must be y or n")
+        if r["gen"] == "y":
+            if kind != "step":
+                errs.append(f"{at}: gen=y generates a workflow step, so via must be step")
+            elif yaml_mod().safe_load("k: " + r["cmd"]) != {"k": r["cmd"]}:
+                errs.append(f"{at}: gen=y, but cmd is not a plain YAML scalar; keep the step hand-written")
         if r["kind"] not in KINDS:
             errs.append(f"{at}: kind '{r['kind']}' is not one of {' '.join(sorted(KINDS))}")
     hand = set(re.findall(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", read(root, MAKEFILE), re.M))
@@ -255,18 +338,34 @@ def validate(root, rows, with_workflow):
     for s in listed_scripts(root):
         if s not in covered:
             errs.append(f"{s} has no row in {MANIFEST}: add one (a gate nobody lists is a gate nobody runs)")
-    if with_workflow:
-        wf = workflow_steps(root)
-        for r in rows:
-            if r["via"].split(":", 1)[0] not in ("step", "ci-only"):
-                continue
-            at = f"{MANIFEST}:{r['_line']} ({r['id']})"
-            if r["job"] not in wf:
-                errs.append(f"{at}: the workflow has no job '{r['job']}'")
-            elif r["step"] not in wf[r["job"]]:
-                errs.append(f"{at}: job '{r['job']}' has no step named '{r['step']}'")
-            elif not any(r["cmd"] in run for run in wf[r["job"]][r["step"]]):
-                errs.append(f"{at}: step '{r['step']}' of job '{r['job']}' does not run '{r['cmd']}'")
+    wf = workflow_steps(wf_text)
+    for r in rows:
+        if r["via"].split(":", 1)[0] not in ("step", "ci-only"):
+            continue
+        at = f"{MANIFEST}:{r['_line']} ({r['id']})"
+        if r["job"] not in wf:
+            errs.append(f"{at}: the workflow has no job '{r['job']}'")
+        elif r["step"] not in [n for n, _ in wf[r["job"]]]:
+            errs.append(f"{at}: job '{r['job']}' has no step named '{r['step']}'")
+        elif not any(r["cmd"] in run for n, run in wf[r["job"]] if n == r["step"]):
+            errs.append(f"{at}: step '{r['step']}' of job '{r['job']}' does not run '{r['cmd']}'")
+    # ORDER: the workflow's rows in workflow order (job, step, position of the cmd in the step), so a
+    # generated block reads its steps straight off the manifest; the rest sorted by id.
+    jobs = {j: n for n, j in enumerate(wf)}
+
+    def key(r):
+        if r["job"] == "-":
+            return (1, 0, 0, 0, r["id"])
+        for si, (n, run) in enumerate(wf.get(r["job"], [])):
+            if n == r["step"] and r["cmd"] in run:
+                return (0, jobs[r["job"]], si, run.index(r["cmd"]), r["id"])
+        return (0, jobs.get(r["job"], len(jobs)), 1 << 30, 0, r["id"])
+    want = sorted(rows, key=key)
+    for got, exp in zip(rows, want):
+        if got["id"] != exp["id"]:
+            errs.append(f"{MANIFEST}:{got['_line']} ({got['id']}): out of order; '{exp['id']}' belongs here "
+                        "(workflow rows in workflow job/step order, then the others by id)")
+            break
     return errs
 
 
@@ -293,8 +392,8 @@ def render_mk(rows):
     return "\n".join(out)
 
 
-def views(rows):
-    return {INVENTORY: render_inventory(rows), MK: render_mk(rows)}
+def views(rows, wf_text):
+    return {INVENTORY: render_inventory(rows), MK: render_mk(rows), WORKFLOW: wf_text}
 
 
 def main():
@@ -312,14 +411,15 @@ def main():
             for r in rows:
                 print(f"{script_of(r['cmd']) or '-'}\t{r['via']}")
             return 1 if errs else 0
-        errs += validate(root, rows, with_workflow=True)
+        wf_text, wf_errs = render_workflow(root, rows)
+        errs += wf_errs + validate(root, rows, wf_text)
         if errs:
             for e in errs:
                 print(f"gates.py: {e}", file=sys.stderr)
             print(f"gates.py: {len(errs)} manifest error(s); nothing written", file=sys.stderr)
             return 1
         stale = []
-        for rel, text in views(rows).items():
+        for rel, text in views(rows, wf_text).items():
             path = os.path.join(root, rel)
             try:
                 cur = open(path, encoding="utf-8").read()
