@@ -1,0 +1,2 @@
+[piece 3 of 4: docs]
+- docs/spec/ids.tsv:435: `REF-11@3` changes its registered hash and transitions from `live` to `pending`, both forbidden by the S3 history check. Checking against the round-2 commit fails with “registered hash changed” and an invalid state transition. Preserve the old row as superseded and allocate a new version for the revised pending guarantee.
