@@ -1,0 +1,4 @@
+[piece 6 of 7: docs]
+- docs/verification/PROOF_SEMANTICS_BOUNDARY.md:236: The absorbed section incorrectly guarantees normal return and deferred cleanup for proved functions because “no abort path exists”; line 259 repeats this claim. Admitted mathematical arithmetic can overflow and abort at runtime, as PROVABLE_V1.md explicitly documents. These guarantees require separate trap-unreachability and termination obligations; proof status alone does not provide them.
+[piece 7 of 7: docs]
+- research/workloads/port-candidates.md:40: The migrated citation retains `§10`, but `docs/spec/overview.md` has no numbered sections and explicitly states no rules of its own. Cite its “No global mutable state” row or the referenced TRUST-8 rule instead so readers can locate the prohibition.
