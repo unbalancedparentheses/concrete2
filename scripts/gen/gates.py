@@ -9,8 +9,8 @@
 
 Generated views:
   scripts/tests/ci_gate_inventory.txt   the cmd of every via=step row, LC_ALL=C sorted, unique
-  mk/gates.mk                           a make target for every row with a `make` cell (included
-                                        from the Makefile): `<make>: [build] ## <claim>` running
+  mk/gates.mk                           a .PHONY make target for every row with a `make` cell
+                                        (included from the Makefile): `<make>: [build] ## <claim>` running
                                         `$(NIX_DEVELOP[_PROVERS]) <cmd>`, the script spelled ./scripts/
 
 FAIL-CLOSED: an invalid manifest (wrong column line, wrong cell count, an empty cell, a duplicate id
@@ -281,7 +281,7 @@ def render_mk(rows):
            ""]
     for r in sorted((r for r in rows if r["make"] != "-"), key=lambda r: r["make"]):
         pre = " build" if r["build"] == "y" else ""
-        out += [f"{r['make']}:{pre} ## {r['claim']}", "\t" + recipe(r), ""]
+        out += [f".PHONY: {r['make']}", f"{r['make']}:{pre} ## {r['claim']}", "\t" + recipe(r), ""]
     return "\n".join(out)
 
 
