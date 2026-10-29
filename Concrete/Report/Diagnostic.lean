@@ -188,7 +188,6 @@ private def severityStr : Severity → String
   | .warning => "warning"
   | .note    => "note"
 
-/-- Extract a 1-indexed line from source text. Returns "" if out of bounds. -/
 /-- Line `lineNum` (1-based) of `source`, or "" when there is none. The one copy: the report
     layer's source excerpts call it too. -/
 def getSourceLine (source : String) (lineNum : Nat) : String :=
