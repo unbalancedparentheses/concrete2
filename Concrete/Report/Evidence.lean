@@ -233,7 +233,7 @@ theorem c2_under_hypotheses_proved (e : Evidence) (hyps : List Hypothesis) :
     than standing as proved substrate — `docs/verification/KNOWN_HOLES.md` is the authority on that
     status. It cannot present as any `proved_*` class because it presents as a
     single fixed literal — and that literal is proved to be outside `proofClasses` by a
-    companion `example` next to the discharge-adapter firewall in `Report.lean`, which is
+    companion `example` next to the discharge-adapter firewall in `VCSchema.lean`, which is
     where that list lives. The two together are the full statement: capped claims land on
     a status the evidence-class firewall already forbids untrusted backends from
     emitting. -/
@@ -377,7 +377,7 @@ def MultiKernelVerdict.displayStatus (v : MultiKernelVerdict) : String :=
     are not two chances to catch a foundational error. `proved_by_two_kernels (lean, rocq)`
     read as more independence than it had.
 
-    One definition, consumed by both the display here and `independenceOf` in `Report.lean`,
+    One definition, consumed by both the display here and `independenceOf` in `VCSchema.lean`,
     which previously carried its own `contains "isabelle"` / `contains "rocq"` chain. Two
     copies of which kernel is which foundation is the shape this codebase keeps finding. -/
 inductive Foundation where
@@ -517,7 +517,7 @@ counts and never behaviour.
 
 These `example`s close that. Each pins one row of the truth table by `rfl`, so such a
 mutation is a BUILD failure rather than something a gate might notice. Same discipline as
-the discharge-adapter firewall in Report.lean: a green build is the guarantee, and the
+the discharge-adapter firewall in VCSchema.lean: a green build is the guarantee, and the
 shell gate's job is only to prove these locks were not deleted.
 
 Written as the cases that were actually confusable, not as coverage for its own sake, and

@@ -73,7 +73,7 @@ def kindVocabulary : List String :=
     -- R-0464 / H24: the two trap conditions obligation generation used to omit.
     -- `div_quotient_in_range` is signed `MIN / -1`, which `div_nonzero` does not imply;
     -- `shift_amount_in_range` had no family at all. Both are tied to
-    -- `IntArith.allTrapConditions` by a totality example in Report.lean, so a condition
+    -- `IntArith.allTrapConditions` by a totality example in ObligationDiscovery.lean, so a condition
     -- added to the semantics cannot be left unclaimed by a family.
     "div_quotient_in_range", "shift_amount_in_range",
     "loop_invariant_init", "loop_invariant_preservation", "loop_exit_implies_post",

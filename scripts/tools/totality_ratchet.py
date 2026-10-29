@@ -213,6 +213,25 @@ def tracked_sources():
     return [l for l in out.split("\n") if l]
 
 
+def baseline_additions(base_rows, rows):
+    """The rows of `rows` that the base revision's baseline `base_rows` did not have. A declaration
+    that MOVED to another file (a module split) is the same declaration: each new row may claim one
+    REMOVED base row of the same kind, name and stage, one to one, so a copy that leaves the
+    original in place still counts as added."""
+    before = {key(r[0], r[1], r[2]) for r in base_rows}
+    now = {key(r[0], r[1], r[2]) for r in rows}
+    removed = collections.Counter((r[0], r[1], r[3]) for r in base_rows if key(r[0], r[1], r[2]) not in now)
+    added = []
+    for row in rows:
+        if key(row[0], row[1], row[2]) in before:
+            continue
+        if removed[(row[0], row[1], row[3])] > 0:
+            removed[(row[0], row[1], row[3])] -= 1
+        else:
+            added.append(row)
+    return added
+
+
 def cmd_check(args):
     stages = load_stages()
     inv = load_inventory(args.inventory)
@@ -284,14 +303,9 @@ def cmd_check(args):
 
     if args.base_baseline:
         base_rows = read_tsv_abs(args.base_baseline, len(HEADER)) if os.path.getsize(args.base_baseline) else []
-        before = {key(r[0], r[1], r[2]) for r in base_rows}
-        # A declaration that MOVED to another file (a module split) is the same declaration: it
-        # counts as added only if the base had no row of that kind and name in the stage it left.
-        moved_from = {(r[0], r[1], r[3]) for r in base_rows}
-        for k, row in base_keys.items():
-            if k not in before and (row[0], row[1], row[3]) not in moved_from:
-                fails.append(f"baseline row ADDED: {row[0]} {row[1]} ({row[2]}) is not in the base revision's "
-                             f"baseline. The baseline only shrinks; make the declaration total instead")
+        for row in baseline_additions(base_rows, base):
+            fails.append(f"baseline row ADDED: {row[0]} {row[1]} ({row[2]}) is not in the base revision's "
+                         f"baseline. The baseline only shrinks; make the declaration total instead")
 
     for path, short, why in pinned:
         if not re.search(r"\bdef " + re.escape(short) + r"\b", "\n".join(source_lines(path))):

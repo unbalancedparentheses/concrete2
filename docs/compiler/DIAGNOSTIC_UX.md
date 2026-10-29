@@ -141,7 +141,7 @@ This is a documentation and message-quality item, not a structural change. The `
 1. Expand `hint` strings in Check.lean, Policy.lean, ProofCore.lean to include "why it matters"
 2. Add per-construct explanations for E0803 extraction blockers in ProofCore.lean
 3. Add per-gate explanations for E0610 predictable violations in Policy.lean
-4. Update `--report diagnostic-codes` in Report.lean to include rule + consequence per code
+4. Update `--report diagnostic-codes` in Report/Query.lean to include rule + consequence per code
 
 No new Lean types or infrastructure needed. The existing `message`, `hint`, `details`, and `context` fields are sufficient.
 

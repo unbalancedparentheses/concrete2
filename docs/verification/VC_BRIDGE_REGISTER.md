@@ -25,7 +25,7 @@ badge that depends on it. Until then the row is an honest, enumerated IOU rather
 an open-ended aspiration.
 
 **Gated.** `scripts/tests/check_vc_bridge_register.sh` fails if a family generator
-exists in `Concrete/Report/ReportObligations.lean` without a row here. A new
+exists in `Concrete/Report/Obligation{Discovery,Discharge,Validation}.lean` without a row here. A new
 obligation family cannot ship undocumented.
 
 **Owned by R-0460**, which discharges these rows one at a time. Not R-0449: realization

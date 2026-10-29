@@ -968,7 +968,7 @@ example : callableTableComplete cryptoFns verifyMessageExpr := by decide
 The R-01..R-21 theorems above are about ProofCore *extraction* (source body →
 PExpr, meaning preserved). This section is the meta-level justification for the
 *source-contract* obligation pipeline — the `#[requires]`/`#[ensures]`/
-`#[invariant]` machinery in `Report.lean` and `Main.lean`.
+`#[invariant]` machinery in `ObligationDiscovery.lean` and `Main.lean`.
 
 The VC generators (`Report.callPrecondGoals`, `assertGoals`, `vacuityGoals`,
 loop O1–O5) lower a contract clause to a Lean `Prop` *string* and hand it to

@@ -170,6 +170,19 @@ if python3 "$RATCHET" check --inventory "$TMP/inv.tsv" --base-baseline "$TMP/c7_
   no "C7 a row added to the baseline was accepted"
 elif grep -qF "baseline row ADDED" "$TMP/neg.out"; then ok "C7 a row added to the baseline (relative to the base) fails"
 else no "C7 failed, but not as an addition"; head -5 "$TMP/neg.out"; fi
+# C9/C10: a row that MOVED file within its stage is not an addition; a copy beside the original is.
+cat > "$TMP/c9.py" <<'PY'
+import sys
+sys.path.insert(0, "scripts/tools")
+from totality_ratchet import baseline_additions
+r = ["partial", "Concrete.Report.f", "Concrete/Report/Effects.lean", "Report", "self", "-", "-", "R-0506"]
+moved = [r[0], r[1], "Concrete/Report/Query.lean"] + r[3:]
+print("move", len(baseline_additions([r], [moved])), "copy", len(baseline_additions([r], [r, moved])))
+PY
+case "$(python3 "$TMP/c9.py")" in
+  "move 0 copy 1") ok "C9/C10 a moved baseline row is accepted, a copy beside the original is an addition" ;;
+  *) no "C9/C10 move/copy accounting is wrong: $(python3 "$TMP/c9.py" 2>&1)" ;;
+esac
 # C8: two inventory rows that collapse to one name are refused rather than merged.
 { cat "$TMP/inv.tsv"; grep -m1 '^partial	' "$TMP/inv.tsv"; } > "$TMP/c8.tsv"
 expect_fail "C8 two declarations sharing a normalized name are refused" "$TMP/c8.tsv" "share the name"

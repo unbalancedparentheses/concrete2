@@ -122,7 +122,7 @@ an omission. Today:
   (`ineligible` status, E0802); no Lean spec is generated for it.
 - **`defer` is visible to reports, not to proofs.** The defer collector in
   `ProofCore.lean` (`collectDefersStmts`) feeds the allocation/cleanup report
-  surfaces in `Report.lean` (cleanup lines, alloc/free/defer counts), and the
+  surfaces in `Report/Effects.lean` (cleanup lines, alloc/free/defer counts), and the
   checker's linearity rules account for it (`defer` *reserves* a linear value
   rather than consuming it). None of that is proof evidence — it is reporting
   and type discipline.

@@ -15,7 +15,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/gate_env.sh" || exit 2
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 # The report layer was split (2026-07-07): the obligation collectors live in
-# Concrete/Report/ReportObligations.lean, so search the whole Report/ dir to
+# Concrete/Report/Obligation{Discovery,Discharge,Validation}.lean, so search the whole Report/ dir to
 # keep the "no duplicate walkers ANYWHERE in the report layer" guarantee.
 R="Concrete/Report"; M="Main.lean"
 PASS=0; FAIL=0

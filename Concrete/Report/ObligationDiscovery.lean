@@ -185,7 +185,7 @@ def dropStaleHyps (scope : List Expr) (assigned : List String) : List Expr :=
 
 /-- `{fnQual}@{line}#{obl}`: the stable identity of one loop obligation, shared by the goal
     collector, the renderer and discovery, so discharge results map back to the right line.
-    (There used to be a second copy, `loopVCKey`, because the first use came before the
+    (There used to be a forward copy, `loopVCKeyFwd`, because the first use came before the
     definition in one file.) -/
 def loopVCKey (fnQual : String) (line : Nat) (obl : String) : String :=
   s!"{fnQual}@{line}#{obl}"

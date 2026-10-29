@@ -419,7 +419,7 @@ rather than the hole, so a regression is a red gate. The description below is re
 because the three lessons under it outlived the bug.
 
 Runtime-safety obligations inside a loop may assume the loop's `#[invariant]`
-(`loopHypsAt`, `Concrete/Report/ReportObligations.lean:80`). Whether that invariant is
+(`loopHypsAt`, `Concrete/Report/ObligationDiscovery.lean`). Whether that invariant is
 *established* (O1) and *preserved* (O2) is computed as a separate VC — and the two
 statuses are never composed. An obligation is reported at the strength of its own proof,
 ignoring the strength of the facts it assumed.
@@ -462,10 +462,10 @@ Three things this demonstrates, beyond the specific bug:
 **How it was closed (R-0461).** Three parts, because two of them alone would each have
 left a hole with better manners:
 
-1. *Provenance.* `loopInvariantDebt` (`ReportObligations.lean`) matches an obligation's
+1. *Provenance.* `loopInvariantDebt` (`ObligationDiscovery.lean`) matches an obligation's
    hypotheses against the enclosing loop's `#[invariant]` list and records the O1/O2 VC ids
    it therefore owes. Carried as `hypDebt` on the family obligations and on `VC`.
-2. *Composition.* `capOnHypothesisDebt` (`Report.lean`) runs **after** `dischargeVCs` —
+2. *Composition.* `capOnHypothesisDebt` (`VCSchema.lean`) runs **after** `dischargeVCs` —
    necessarily, since whether O2 is proved is only known once every status is final — and
    demotes any `proved*` obligation with outstanding debt to `assumed` via Register C's
    `Evidence.present`. C3 is what guarantees the demoted value is never a `proved_*` string;

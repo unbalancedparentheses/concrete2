@@ -229,7 +229,7 @@ The mapping from compiler source files to test sections lives in `test_dep_map.t
 Example mappings:
 - `Concrete/Check/Check.lean` → positive, negative, passlevel (type/cap/linearity tests)
 - `Concrete/IR/Lower.lean` → positive, codegen, O2, passlevel (lowering + backend tests)
-- `Concrete/Report/Report.lean` → report (report output tests only)
+- `Concrete/Report/*.lean` → report (report output tests only)
 - `std/src/*` → stdlib, collection (stdlib tests only)
 - Unknown files → full suite (safe fallback)
 

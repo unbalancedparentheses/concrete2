@@ -50,7 +50,7 @@ Rationale, and why it cannot wait:
   second prover ever ships. It is identity-and-freshness work that happens to also
   unlock portability.
 - **It closes a live defect.** The multi-kernel fold currently matches kernels on the
-  obligation *id* (`Report.lean`, `foldMultiKernelResults`), not on a subject digest —
+  obligation *id* (`VCSchema.lean`, `foldMultiKernelResults`), not on a subject digest —
   exactly the gap the graduation criteria named. Digest-matching fixes it.
 
 ## The record
@@ -167,7 +167,7 @@ dischargeable immediately — and they are discharged as compile-time theorems i
 | C5 | guards and `#[requires]` never cap a claim — the modularity guarantee |
 
 C3's companion, `example : (!proofClasses.contains "assumed") = true := rfl`, lives beside
-the discharge-adapter firewall in `Report.lean` because that is where `proofClasses` is
+the discharge-adapter firewall in `VCSchema.lean` because that is where `proofClasses` is
 defined.
 
 **What C3 does and does not close — corrected twice, and the second correction is the
@@ -437,7 +437,7 @@ description of the code would mislead. Audited by running the evidence, not by r
 | `checkedAgainstDigest` | No `subjectDigest` field exists in `Concrete/` yet — which is why R-0454 is a closing window, not a cleanup. |
 | Conformance-vectors clause | Not implemented; no second `eval` port exists, so the clause is currently vacuous rather than satisfied. |
 | `trustedDeps` identical | Not checked by the fold. |
-| `independence` as a 3-tuple | Ships as **four** fields (`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`) in `Report.lean:3895`. The doc is the stale one here, not the code. |
+| `independence` as a 3-tuple | Ships as **four** fields (`spec_formalization`, `kernel_implementation`, `kernel_foundations`, `bridge`) in `Report/Facts.lean`. The doc is the stale one here, not the code. |
 | Register A rows | Enumerated in [VC_BRIDGE_REGISTER.md](VC_BRIDGE_REGISTER.md); **0 of 5 fully discharged, 4 of 5 half** (semantics half proved and tight; lowering half open). Owned by R-0460. |
 | Register B rows | Not started; the transformation pipeline it registers does not exist yet (R-0455). |
 | "Lowering agreed with the reference evaluator" | Real, and the best-built part — but applied to the *external* drivers only. See below. |
