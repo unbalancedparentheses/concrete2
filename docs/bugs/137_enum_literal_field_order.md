@@ -11,7 +11,7 @@ exit: 0b
 **Status:** FIXED (branch `soundness-holes`)
 **Found:** 2026-10-21, while fixing [bug 127](127_struct_literal_field_order.md) (recorded as
 violated, unfiled, in the evaluation-order table of
-[STATEMENT_EXPRESSION_MODEL](../language/STATEMENT_EXPRESSION_MODEL.md#evaluation-order-and-assignment);
+[STATEMENT_EXPRESSION_MODEL](../archive/design-records/STATEMENT_EXPRESSION_MODEL.md#evaluation-order-and-assignment);
 the semantics probe `evalorder.con` measured it first).
 **Severity:** silent wrong code against the normative rule. The binary and `--interp` agree with each
 other, so the differential harness cannot see it.
