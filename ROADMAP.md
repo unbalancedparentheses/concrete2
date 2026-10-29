@@ -132,7 +132,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | workload: Phase 7 workload 10 stackvm (assembler, bytecode codec and load-time verifier, interpreter and disassembler over a 23-variant enum, a generic bounded stack, two traits and defer cleanup) with a differential gate against an independent Python implementation, and 25 probe programs on its shapes (imported enums with impls and trait bounds through each import path, import aliases, linear values in loops, Destroy impls, temporaries as receivers, borrow conflicts, diagnostics) | 2026-10-23 | 26 programs | 5 | 0 | 5 | found bugs |
 | hunt: differential hunt (interpreter vs native binary) on main 9622f7e0: 3500 fuzz_differential.py cases (seeds 102501, 102502) and hand probes on module constants, enum payloads across modules, generics and traits across module boundaries, nested submodules, defer and loops under --interp | 2026-10-24 | 60 programs | 5 | 0 | 5 | found bugs |
 | hunt: Lower borrows and address-taken locals: hand probes of every CExpr and CStmt constructor, and the differential fuzzer's borrow mode (fuzz_differential.py --mode borrow) | 2026-10-26 | 3000 programs | 6 | 2 | 4 | found bugs |
-| spec: OD18 (decided 2026-10-29) check: an Int match whose unguarded catch-all arm precedes a literal arm, native against --interp, on main 0bf8350a (wip/bug-od18) | 2026-10-29 | 2 probes | 1 | 1 | 0 | found bugs |
+| spec: OD18 (decided 2026-10-29) check: an Int match whose unguarded catch-all arm precedes a literal arm, native against --interp, on main 0bf8350a (wip/bug-317) | 2026-10-29 | 2 probes | 1 | 1 | 0 | found bugs |
 
 | discovery rate by primary structural class | quiet counting batches in a row | holds |
 |---|---|---|

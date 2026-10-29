@@ -114,4 +114,4 @@ date	kind	probe	effort	bugs	silent
 2026-10-26	ci	train 37 candidate CI (run 40289036334): assignments/monomorphize over its wall budget at an unchanged instruction count; re-measured on concrete-ci-2 under load with perf instruction counts	unrecorded	294	-
 2026-10-26	hunt	Lower borrows and address-taken locals: hand probes of every CExpr and CStmt constructor, and the differential fuzzer's borrow mode (fuzz_differential.py --mode borrow)	3000 programs	301,302,303,304,308,309	301,302
 2026-10-28	development	pre-push hook on the OVH dev host (perf_event_paranoid=4, load 15-26): check_compile_scaling.sh enums/lower wall growth x80	unrecorded	315	-
-2026-10-29	spec	OD18 (decided 2026-10-29) check: an Int match whose unguarded catch-all arm precedes a literal arm, native against --interp, on main 0bf8350a (wip/bug-od18)	2 probes	317	317
+2026-10-29	spec	OD18 (decided 2026-10-29) check: an Int match whose unguarded catch-all arm precedes a literal arm, native against --interp, on main 0bf8350a (wip/bug-317)	2 probes	317	317

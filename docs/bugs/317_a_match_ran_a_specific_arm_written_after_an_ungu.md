@@ -1,6 +1,6 @@
 # Bug 317 — A match ran a specific arm written after an unguarded catch-all arm instead of refusing it
 
-**Status:** FIXED (branch `wip/bug-od18`)
+**Status:** FIXED (branch `wip/bug-317`)
 **Found:** 2026-10-29, by checking main against the owner's answer to OD18 (PAT-9, decided 2026-10-29): an `Int` match whose unguarded catch-all arm precedes a literal arm, native against `--interp`, on main 0bf8350a.
 **Severity:** silent. Both consumers accepted the program and ran an arm the decided rule never selects: the `_` arm is first in source order and matches every value, yet the later `1` arm ran and the program returned 42.
 

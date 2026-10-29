@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-280 records: 170 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 5 open bugs are not fixed yet and 1 fixed bugs have no commit the history can place.
+280 records: 171 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 10 by the commit that filed or closed the record, 23 by an `area:` override; 5 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -21,7 +21,7 @@ checker refusal is a Check bug here.
 | Check | 72 | 0 | 39 | 5 | Check 33, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 38 | 0 | 12 | 3 | Lower 37, - 1 |
 | Resolve | 27 | 2 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
-| Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
+| Elab | 27 | 0 | 10 | 7 | Elab 25, CoreCanonicalize 1, TypeSpelling 1 |
 | Proof | 19 | 1 | 8 | 2 | ProofCore 11, Proof 3, CallCollect 2, BodyIdentity 1 |
 | Interp | 18 | 0 | 4 | 8 | Interp 18 |
 | Parse | 11 | 0 | 3 | 0 | Parser 7, Lexer 2, AST 1, LocalId 1 |
@@ -51,7 +51,7 @@ checker refusal is a Check bug here.
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
 | 11. Absence read as a fact (fail-open defaults) | 13 | Gates 4, Resolve 2, Proof 2, Report 2, Check 1, SSA 1, Tooling 1 |
 | 12. One fact kept in two places | 27 | Resolve 11, Check 5, Elab 3, Parse 2, Interp 2, Proof 1, Std 1, CLI 1, Tooling 1 |
-| 13. Documented rules with no enforcing site | 18 | Check 11, Resolve 4, Parse 1, Elab 1, Lower 1 |
+| 13. Documented rules with no enforcing site | 19 | Check 11, Resolve 4, Elab 2, Parse 1, Lower 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
 | 15. Ownership state not modeled along control-flow paths | 7 | Check 7 |
 | 16. Artifacts at paths no run owns | 5 | Tooling 2, Std 1, CLI 1, Gates 1 |
@@ -343,6 +343,6 @@ checker refusal is a Check bug here.
 | [308](308_a_value_if_or_match_passed_to_a_generic_paramete.md) | Resolve | PeekType | commits | — |
 | [309](309_a_loop_in_the_right_operand_of_or_rebound_an_agg.md) | Lower | Lower | commits | — |
 | [315](315_the_scaling_gate_judged_wall_time_growth_on_a_ho.md) | Gates | compile_scaling | commits | — |
-| [317](317_a_match_ran_a_specific_arm_written_after_an_ungu.md) | — | — | underived | — |
+| [317](317_a_match_ran_a_specific_arm_written_after_an_ungu.md) | Elab | CoreCanonicalize | commits | Check |
 
 <!-- END GENERATED: bug areas -->
