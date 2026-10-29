@@ -213,7 +213,7 @@ grep -q "def capOnHypothesisDebt" Concrete/Report/VCSchema.lean \
 grep -q "Report.capOnHypothesisDebt (Report.dischargeVCs" Main.lean \
   && ok "the cap runs AFTER discharge (statuses are final when it reads them)" \
   || no "the cap is not composed with dischargeVCs — it would read non-final statuses"
-grep -q "def loopInvariantDebt" Concrete/Report/ReportObligations.lean \
+grep -q "def loopInvariantDebt" <(cat Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean) \
   && ok "hypothesis debt is derived from loop contracts, not asserted" \
   || no "loopInvariantDebt MISSING — hypDebt would be empty and the cap vacuous"
 grep -q "def enforceNoCappedHypotheses" Concrete/Check/Policy.lean \
@@ -256,11 +256,13 @@ echo "=== R-0450 (partial): the linear fragment is lowered by ONE function ==="
 # `exprToProver` case for case — differing only in negative-literal parentheses, a space,
 # and `¬` vs `~`. Two functions that must agree, which is R-0450's stated defect. Two of
 # those differences were cosmetic; the third is now a driver parameter.
-RO="Concrete/Report/ReportObligations.lean"
-grep -q "def exprToProverU" "$RO" \
+# ReportObligations.lean is split into three modules, in order; this gate reads them as the one
+# text it was, so counts and blocks mean what they meant before the split.
+OBL="Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean"
+grep -q "def exprToProverU" <(cat $OBL) \
   && ok "one parameterised lowering (exprToProverU) exists" \
   || no "exprToProverU missing — the fragment may be duplicated again"
-grep -qE "^  exprToProverU leanBinOp \"¬\" e$" "$RO" \
+grep -qE "^  exprToProverU leanBinOp \"¬\" e$" <(cat $OBL) \
   && ok "exprToLeanProp DELEGATES rather than re-implementing the recursion" \
   || no "exprToLeanProp is not a delegation — the fragment is defined twice"
 # A RATCHET, not a claim of victory. R-0450 is only partly done: the module still contains
@@ -274,7 +276,7 @@ grep -qE "^  exprToProverU leanBinOp \"¬\" e$" "$RO" \
 #   evalBoolEnv     ditto, boolean
 # Six today. Removing exprToLeanProp took it from seven. The number may only go DOWN: a new
 # recursion is either a new duplicate or a change that should update this bound deliberately.
-N="$(grep -c "| .binOp _ op l r => do" "$RO" || true)"
+N="$(grep -c "| .binOp _ op l r => do" <(cat $OBL) || true)"
 [ "$N" -le 6 ] \
   && ok "$N expression recursions over .binOp (ratchet: <=6; was 7 before R-0450's slice)" \
   || no "$N separate .binOp recursions — one was ADDED; R-0450 exists to reduce this"
@@ -283,19 +285,19 @@ echo "=== R-0450: Lean's own rendering is validated, and it is ENFORCED ==="
 # Lean was the last unvalidated rendering, and the one that matters most: every other
 # kernel checks a goal derived from it, so a fault there produces unanimous agreement on the
 # wrong proposition — the single failure mode kernel multiplicity provably cannot detect.
-grep -q "def leanLowering" "$RO" \
+grep -q "def leanLowering" <(cat $OBL) \
   && ok "a Lean driver exists (its lowering is expressible like any other)" \
   || no "no leanLowering — Lean's rendering cannot be put on the agreement scale"
-grep -q "notSym : String" "$RO" \
+grep -q "notSym : String" <(cat $OBL) \
   && ok "expression-level negation is driver-supplied (the blocker that kept Lean out)" \
   || no "notSym gone — exprToProver hard-codes negation again"
-grep -q "def leanAgreementGoals" "$RO" && grep -q "def leanValidatedObligations" "$RO" \
+grep -q "def leanAgreementGoals" <(cat $OBL) && grep -q "def leanValidatedObligations" <(cat $OBL) \
   && ok "Lean agreement goals and the all-instances-closed rule exist" \
   || no "leanAgreementGoals/leanValidatedObligations missing"
 # The domain restriction is load-bearing: omega is LINEAR, and the in-process path reports
 # only the closed set, so an undecided nonlinear instance is indistinguishable from a
 # refusal. Measured: without this, 48 of 96 instances read as DISAGREES with no real fault.
-grep -q "exprHasNonlinMul o.mainExpr then none" "$RO" \
+grep -q "exprHasNonlinMul o.mainExpr then none" <(cat $OBL) \
   && ok "restricted to omega's linear domain (no false 'disagrees' on nonlinear)" \
   || no "the nonlinear filter is gone — this check will cry wolf and be ignored"
 # Enforcement, not display. This is the H23 lesson applied in advance.

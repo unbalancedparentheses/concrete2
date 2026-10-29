@@ -84,18 +84,20 @@ grep -q "validated, plausibly forever" "$REG" \
 echo "=== R-0455: tactics are DATA, and no driver silently loses a field ==="
 # R-0455's measured defect: `rocqNiaLowering` was a full clone of `rocqLowering` whose only
 # substantive difference was `lia` becoming `nia`. Reaching a different tactic cost a driver.
-RO="Concrete/Report/ReportObligations.lean"
-grep -q "tactics : List String" "$RO" \
+# ReportObligations.lean is split into three modules, in order; this gate reads them as the one
+# text it was, so counts and blocks mean what they meant before the split.
+OBL="Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean"
+grep -q "tactics : List String" <(cat $OBL) \
   && ok "ProverLowering carries tactics as a field" \
   || no "no tactics field — the tactic is a template literal again and a clone is the only way to change it"
-grep -q "def rocqNiaLowering : ProverLowering :=" "$RO" \
+grep -q "def rocqNiaLowering : ProverLowering :=" <(cat $OBL) \
   && ok "rocqNiaLowering is a field override, not a cloned record" \
   || no "rocqNiaLowering is a full record again — the duplication R-0455 measured has returned"
-grep -q "def rocqScript" "$RO" \
+grep -q "def rocqScript" <(cat $OBL) \
   && ok "one shared Rocq script builder" \
   || no "rocqScript gone — each Rocq driver templates its own script"
 # Inline render literals: the count that measures the duplication. 5 before this slice, 3 now.
-N="$(grep -c "render := fun vars hyps concl =>" "$RO" || true)"
+N="$(grep -c "render := fun vars hyps concl =>" <(cat $OBL) || true)"
 [ "$N" -le 3 ] \
   && ok "$N inline render literals (was 5 before R-0455's slice; ratchet <=3)" \
   || no "$N inline render literals — a driver went back to templating its own script"
@@ -106,7 +108,7 @@ N="$(grep -c "render := fun vars hyps concl =>" "$RO" || true)"
 # Rocq cell read "LOWERING DISAGREES" and the badge silently vanished: 78/78 became three
 # failures with `rocq:lia = closed` sitting beside a refused attestation.
 for d in rocqLowering isabelleLowering; do
-  BLOCK="$(awk -v pat="def $d" 'index($0,pat){f=1} f{print} f&&/^$/{exit}' "$RO")"
+  BLOCK="$(awk -v pat="def $d" 'index($0,pat){f=1} f{print} f&&/^$/{exit}' <(cat $OBL))"
   grep -q -- "batchRender" <<<"$BLOCK" \
     && ok "$d keeps batchRender (the agreement script, distinct from render)" \
     || no "$d has NO batchRender — its lowering-agreement check would have nothing to check"
@@ -269,13 +271,13 @@ CON
 else
   no "build FAILED or binary missing — the end-to-end bounds check ran against nothing"
 fi
-grep -q "def arrayRootName" "$RO" \
+grep -q "def arrayRootName" <(cat $OBL) \
   && ok "arrayRootName roots an access through its parens" \
   || no "arrayRootName is gone"
 # It must NOT over-peel: a field path has no name for the length lookup, so peeling it would
 # manufacture an obligation about the wrong array. A wrong obligation beats no obligation only
 # in the sense that it is louder; it is still unsound.
-grep -qE "^  \| \.fieldAccess" "$RO" && grep -A6 "def arrayRootName" "$RO" | grep "fieldAccess" >/dev/null \
+grep -qE "^  \| \.fieldAccess" <(cat $OBL) && grep -A6 "def arrayRootName" <(cat $OBL) | grep "fieldAccess" >/dev/null \
   && no "arrayRootName peels .fieldAccess — the length lookup would read the WRONG array" \
   || ok "arrayRootName stops at .paren (no wrong-array obligations)"
 
@@ -386,7 +388,7 @@ fi
 # Matched on the CALL, not its arguments. Pinning the argument list broke twice in a row when
 # a parameter changed -- each time reporting a regression where there was none. The property is
 # "both consumers iterate the same walk", and that is what this counts.
-SHARED="$(grep -c 'in scopedBoundsB' "$RO")"
+SHARED="$(grep -c 'in scopedBoundsB' <(cat $OBL))"
 [ "$SHARED" = "2" ] \
   && ok "bounds obligations and the unresolved list share one walk (2 call sites)" \
   || no "expected 2 shared scopedBoundsB call sites, found $SHARED — accesses can fall between them"
@@ -435,11 +437,11 @@ CON
     && ok "the shadowed i8 addition gets an overflow VC at the i8 range" \
     || no "an addition in an #[overflow_checked] function silently has no obligation again"
 fi
-grep -q "def varTyMap" "$RO" \
+grep -q "def varTyMap" <(cat $OBL) \
   && no "the flat varTyMap is back — shift/overflow widths can come from the wrong binding" \
   || ok "varTyMap is gone; types are threaded per scope"
 # One environment, so a new declaration kind cannot be added to types and forgotten in sizes.
-grep -q "structure ScopeDecls" "$RO" \
+grep -q "structure ScopeDecls" <(cat $OBL) \
   && ok "types and array sizes are threaded as one record" \
   || no "ScopeDecls is gone — the two environments can drift apart again"
 
@@ -468,7 +470,7 @@ CON
     || no "expected 2 array-bounds VCs for field accesses, got $NFB"
 fi
 # `placeTy` must not invent a struct it has never seen.
-grep -q "let fields ← structs.lookup sname" "$RO" \
+grep -q "let fields ← structs.lookup sname" <(cat $OBL) \
   && ok "placeTy resolves fields only through known struct definitions" \
   || no "placeTy no longer looks the struct up — it could resolve a field of an unknown type"
 

@@ -825,7 +825,7 @@ add "mono-name-hygiene" "Concrete/IR/Mono.lean" "check_mono_name_collision.sh" y
 add "diagnostic-quality" "Concrete/Check/CoreCheck.lean" "check_diagnostics_quality.sh" yes \
   '| .insufficientCapabilities _ required _ => some s!"add '"'"'with({required})'"'"' to the calling function, or wrap the call in a trusted function"' \
   '| .insufficientCapabilities _ _ _ => none'
-add "fact-invalidation" "Concrete/Report/ReportObligations.lean" "check_scoped_collector.sh" yes \
+add "fact-invalidation" "Concrete/Report/ObligationDiscovery.lean" "check_scoped_collector.sh" yes \
   '| _ => scope.drop aHere' \
   '| _ => scope'
 add "report-schema-row" "Concrete/Report/Facts.lean" "check_vc_schema.sh" yes \
@@ -887,7 +887,7 @@ add "reference-division" "Concrete/Semantics/TermIR.lean" "check_vc_bridge_regis
 # The artifact fuzzer's claim classification: treat every function as claimed and a
 # trap in an admittedly-unproved function is reported as a Register A counterexample —
 # a false alarm, which is how a fuzzer gets switched off.
-add "fuzz-claim-classes" "Concrete/Report/ReportObligations.lean" "check_artifact_fuzz.sh" yes \
+add "fuzz-claim-classes" "Concrete/Report/ObligationDischarge.lean" "check_artifact_fuzz.sh" yes \
   'artifactFuzzDriverFor (cases.filter (fun c => c.claim != "unproved")) "artifact_fuzz_all"' \
   'artifactFuzzDriverFor cases "artifact_fuzz_all"'
 
@@ -910,13 +910,13 @@ add "trap-preservation-unary" "Concrete/IR/SSACleanup.lean" "check_trap_inventor
 
 # NO FALSE GREEN, the obligation red-team's first clause: make the constant-divisor
 # verdict unconditionally true and `x / 0` at compile time reads proved.
-add "const-divisor-verdict" "Concrete/Report/ReportObligations.lean" "check_obligation_redteam.sh" yes \
+add "const-divisor-verdict" "Concrete/Report/ObligationDiscovery.lean" "check_obligation_redteam.sh" yes \
   '| some k => (some (decide (k ≠ 0)), none)' \
   '| some k => (some (decide (k == k)), none)'
 
 # The same false-green in the bounds family: a constant index outside the array
 # reads proved.
-add "const-bounds-verdict" "Concrete/Report/ReportObligations.lean" "check_obligation_redteam.sh" yes \
+add "const-bounds-verdict" "Concrete/Report/ObligationDiscovery.lean" "check_obligation_redteam.sh" yes \
   '| some k => (some (decide (0 ≤ k) && decide (k < (Int.ofNat n))), none)' \
   '| some k => (some (decide (k == k)), none)'
 

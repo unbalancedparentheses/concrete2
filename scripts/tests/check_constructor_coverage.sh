@@ -119,7 +119,7 @@ covers_def() {
     || no "$fn is MISSING:$missing  (a constructor this walker never recurses into loses every obligation beneath it)"
 }
 for W in collectDivisorsE collectIndexUsesE collectArithE collectShiftsE; do
-  covers_def Concrete/Report/ReportObligations.lean "$W" "${OBLIGATION_COMPOUND[@]}"
+  covers_def <(cat Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean) "$W" "${OBLIGATION_COMPOUND[@]}"
 done
 
 # STATEMENT side. The expression walkers above are half the story: each has a `…S` partner that
@@ -137,7 +137,7 @@ for c in "${STMT_CTORS[@]}"; do
   esac
 done
 for W in collectDivisorsS collectIndexUsesS collectArithS collectShiftsS; do
-  covers_def Concrete/Report/ReportObligations.lean "$W" "${STMT_COMPOUND[@]}"
+  covers_def <(cat Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean) "$W" "${STMT_COMPOUND[@]}"
 done
 
 # THE LEAVES, which is where the statement traversal actually looks. `scopedWalkSized` owns
@@ -152,7 +152,7 @@ done
 LEAF_STMTS=(letDecl assign expr defer return_ ifElse while_ forLoop fieldAssign derefAssign
             arrayIndexAssign assert_ assume_)
 for L in divLeaf boundsLeaf arithLeaf shiftLeaf; do
-  covers_def Concrete/Report/ReportObligations.lean "$L" "${LEAF_STMTS[@]}"
+  covers_def <(cat Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean) "$L" "${LEAF_STMTS[@]}"
 done
 
 echo ""

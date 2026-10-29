@@ -23,20 +23,23 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 REG="docs/verification/VC_BRIDGE_REGISTER.md"
-SRC="Concrete/Report/ReportObligations.lean"
+# ReportObligations.lean is split into three modules, in order; this gate reads them as the one
+# text it was, so counts and blocks mean what they meant before the split.
+OBL="Concrete/Report/ObligationDiscovery.lean Concrete/Report/ObligationDischarge.lean Concrete/Report/ObligationValidation.lean"
+SRC="the obligation modules"
 
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
 
 [ -f "$REG" ] || { echo "error: $REG missing" >&2; exit 2; }
-[ -f "$SRC" ] || { echo "error: $SRC missing" >&2; exit 2; }
+for f in $OBL; do [ -f "$f" ] || { echo "error: $f missing" >&2; exit 2; }; done
 
 echo "=== every obligation family generator has a register row ==="
 # The families are the top-level `def <name>Obligations (modules : List Module)`
 # generators. Derived from the source, not hardcoded, so adding a family is what
 # trips this gate rather than someone remembering to update a list here.
-FAMILIES="$(grep -oE '^def [a-zA-Z]+Obligations \(modules' "$SRC" \
+FAMILIES="$(grep -oE '^def [a-zA-Z]+Obligations \(modules' <(cat $OBL) \
             | sed -E 's/^def ([a-zA-Z]+Obligations) .*/\1/' | sort -u)"
 
 if [ -z "$FAMILIES" ]; then
@@ -62,7 +65,7 @@ if [ -z "$ROWS" ]; then
   no "no register rows found in $REG (heading format changed?)"
 else
   for r in $ROWS; do
-    grep -qE "^def $r \(modules" "$SRC" \
+    grep -qE "^def $r \(modules" <(cat $OBL) \
       && ok "row $r corresponds to a real generator" \
       || no "row $r names no generator in $SRC — stale register row"
   done
@@ -229,20 +232,19 @@ echo "=== the reference evaluator's division convention (2026-08-04) ==="
 # examples and this gate only has to prove those were not deleted.
 # That evalIntEnv and evalBoolEnv stay total is pinned in docs/compiler/totality_pinned.tsv and held
 # by scripts/tests/check_totality_ratchet.sh, which reads the elaborated environment.
-RO="Concrete/Report/ReportObligations.lean"
 # The locks that grep stood in for. Truncating vs flooring divergence at a negative dividend
 # is where a silent re-pointing of the reference would hide.
-grep -q 'example : evalIntEnv \[("a", -7), ("b", 2)\]' "$RO" \
+grep -q 'example : evalIntEnv \[("a", -7), ("b", 2)\]' <(cat $OBL) \
   && ok "evalIntEnv's division is pinned by rfl at a negative dividend (-7 / 2 = -3)" \
   || no "the division-convention lock is gone — a swap to floored division becomes invisible"
-grep -q '(.binOp spR .div (.ident spR "a") (.ident spR "b")) = none := rfl' "$RO" \
+grep -q '(.binOp spR .div (.ident spR "a") (.ident spR "b")) = none := rfl' <(cat $OBL) \
   && ok "division by zero yields no reference value (never guessed)" \
   || no "the divide-by-zero lock is gone"
-grep -q 'example : evalIntEnv \[\] (.call spR "f" \[\] \[.intLit spR 1\]) = none := rfl' "$RO" \
+grep -q 'example : evalIntEnv \[\] (.call spR "f" \[\] \[.intLit spR 1\]) = none := rfl' <(cat $OBL) \
   && ok "a spec call has no reference value — uninterpreted means uninterpreted" \
   || no "the uninterpreted-symbol lock is gone: the evaluator could invent a value"
 # The convention examples in the IR itself must survive too.
-grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' Concrete/Report/ReportObligations.lean \
+grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' <(cat $OBL) \
   || grep -q 'example : (-7 : Int).fdiv 2 = -4 := rfl' Concrete/Semantics/TermIR.lean \
   && ok "the divergent spellings remain distinguished at compile time" \
   || no "the tdiv/fdiv distinction is no longer pinned"

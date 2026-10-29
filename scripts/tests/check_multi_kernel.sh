@@ -692,7 +692,7 @@ if [ "${MULTI_KERNEL_MUTATE:-0}" = "1" ]; then
   # classifyRocqFailure keys on for a GENUINE refusal — `reflexivity` was tried first
   # and classifies as `error` (our bug), which is the correct reading of a malformed
   # script but tests a different path.
-  MUT2="Concrete/Report/ReportObligations.lean"
+  MUT2="Concrete/Report/ObligationDischarge.lean"
   if ! git diff --quiet -- "$MUT2" 2>/dev/null; then
     no "verdict-disagreement mutation skipped — $MUT2 has uncommitted changes"
   else
