@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-292 records: 172 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 11 by the commit that filed or closed the record, 23 by an `area:` override; 15 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+292 records: 173 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 33 by commits shared with other bugs, 11 by the commit that filed or closed the record, 23 by an `area:` override; 15 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -20,7 +20,7 @@ checker refusal is a Check bug here.
 |--|-:|-:|-:|-:|--|
 | Check | 72 | 0 | 39 | 5 | Check 33, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 39 | 0 | 13 | 3 | Lower 38, - 1 |
-| Resolve | 27 | 1 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
+| Resolve | 27 | 1 | 4 | 7 | Resolve 15, FileSummary 7, PeekType 2, BuiltinEnums 1 |
 | Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
 | Interp | 19 | 0 | 5 | 8 | Interp 19 |
 | Proof | 19 | 1 | 8 | 2 | ProofCore 11, Proof 3, CallCollect 2, BodyIdentity 1 |
@@ -293,7 +293,7 @@ checker refusal is a Check bug here.
 | [223](223_aliased_import_is_a_different_type.md) | Resolve | TypeId | commits | Check, Elab | spec gap (MOD) |
 | [224](224_failed_let_recovered_immutable.md) | Interp | Interp | shared | Check | outside (tooling) |
 | [225](225_bound_refusal_names_type_as_placeholder.md) | Interp | Interp | shared | Check | outside (tooling) |
-| [226](226_submodule_imports_private_function.md) | Resolve | Resolve | shared | — | violates MOD-2@1, MOD-6@1 |
+| [226](226_submodule_imports_private_function.md) | Resolve | FileSummary | commits | — | violates MOD-2@1, MOD-6@1 |
 | [227](227_user_result_captures_builtin_in_other_module.md) | Elab | Elab | commits | Resolve | violates MOD-1@1 |
 | [228](228_interp_loop_env_grows.md) | Interp | Interp | override | — | outside (performance) |
 | [229](229_resolve_scope_refuses_check_names.md) | Resolve | Resolve | commits | — | spec gap (MOD) |
