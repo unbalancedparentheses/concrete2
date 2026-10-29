@@ -2264,6 +2264,7 @@ jobs:
       - name: Install clang
         run: if [ "$RUNNER_ENVIRONMENT" = self-hosted ] && command -v clang >/dev/null; then echo "self-hosted runner, using preinstalled clang"; else sudo apt-get update && sudo apt-get install -y clang; fi
 
+      # BEGIN GENERATED: gates campaign-publisher from check-mint-missing-result (scripts/tests/gates.tsv; gates.py --write)
       - name: Mint missing-result refusal (the single case the mutation family covers)
         run: bash scripts/tests/check_mint_missing_result.sh
 
@@ -2272,6 +2273,7 @@ jobs:
 
       - name: Sharded mutation campaign aggregator (hostile shard sets fail closed)
         run: bash scripts/tests/check_mutation_shard_aggregate.sh
+      # END GENERATED: gates campaign-publisher
 
       # Stage (c)'s verdict is one record over EVERY job of this workflow at one SHA
       # (the qualification_record tool under the CI scripts); the mutation aggregate above is one component.
