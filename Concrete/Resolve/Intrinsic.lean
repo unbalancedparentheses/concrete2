@@ -213,6 +213,7 @@ def IntrinsicId.ofCanonical? (name : String) : Option IntrinsicId :=
   | none => none
 
 /-- Required capability set for an intrinsic, if any. -/
+-- spec: STMT-13 (docs/spec/statements.md; this declaration enforces the rule)
 def IntrinsicId.capability : IntrinsicId → Option String
   -- Process
   | .getArgs | .abort => some "Process"
