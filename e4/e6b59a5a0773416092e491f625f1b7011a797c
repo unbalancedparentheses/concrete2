@@ -1,0 +1,4 @@
+[piece 1 of 1: compiler]
+- Concrete/Resolve/FileSummary.lean:496: The previous OD20 finding remains open. This retains std-only access to `std.libc` callables and changes how non-callable declarations are treated, implementing behavior covered by OD20. The recorded decision does not exempt it from your explicit no-land rule.
+- scripts/tests/run_tests.sh:8944: The previous OD20 finding remains open: the unchanged test section still encodes std-only access to `std.libc`, prohibited by your owner-decision review criterion.
+- docs/spec/modules.md:219: The previous OD20 finding remains open: MOD-6 still declares the policy enforced and defines std membership by definition path, continuing to encode OD20 behavior.
