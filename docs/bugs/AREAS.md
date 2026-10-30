@@ -12,13 +12,13 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-297 records: 176 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 11 by the commit that filed or closed the record, 23 by an `area:` override; 16 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+297 records: 177 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 34 by commits shared with other bugs, 11 by the commit that filed or closed the record, 23 by an `area:` override; 15 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
 | stage | bugs | open | silent | shared or fallback | top modules |
 |--|-:|-:|-:|-:|--|
-| Check | 72 | 0 | 39 | 5 | Check 33, CoreCheck 13, CheckHelpers 9, Verify 5 |
+| Check | 73 | 1 | 40 | 5 | Check 33, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 40 | 0 | 13 | 3 | Lower 39, - 1 |
 | Resolve | 27 | 2 | 4 | 8 | Resolve 16, FileSummary 6, PeekType 2, BuiltinEnums 1 |
 | Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
@@ -49,7 +49,7 @@ checker refusal is a Check bug here.
 | 8. Storage, places and control flow decided ad hoc in `Lower` | 17 | Lower 14, Check 2, Elab 1 |
 | 9. Evidence verdicts computed per surface and joined to their subject by name | 4 | Proof 2, CLI 2 |
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
-| 11. Absence read as a fact (fail-open defaults) | 15 | Gates 4, Tooling 3, Resolve 2, Proof 2, Report 2, Check 1, SSA 1 |
+| 11. Absence read as a fact (fail-open defaults) | 16 | Gates 4, Tooling 3, Resolve 2, Check 2, Proof 2, Report 2, SSA 1 |
 | 12. One fact kept in two places | 29 | Resolve 11, Check 5, Interp 4, Elab 3, Parse 2, Proof 1, Std 1, CLI 1, Tooling 1 |
 | 13. Documented rules with no enforcing site | 19 | Check 11, Resolve 4, Parse 1, Elab 1, Lower 1, Report 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
@@ -90,7 +90,7 @@ checker refusal is a Check bug here.
 | permitted | 1 | Lower 1 |
 | outside (library) | 11 | Std 6, EmitLLVM 5 |
 | outside (performance) | 44 | Check 10, Lower 7, Parse 6, Elab 4, Interp 4, Resolve 3, SSA 3, EmitSSA 3, Proof 2, Mono 1, Report 1 |
-| outside (tooling) | 45 | Proof 12, Tooling 7, Gates 6, Check 4, Report 4, Elab 3, CLI 3, Interp 2, Parse 1, Resolve 1, SSA 1, Std 1 |
+| outside (tooling) | 46 | Proof 12, Tooling 7, Gates 6, Check 5, Report 4, Elab 3, CLI 3, Interp 2, Parse 1, Resolve 1, SSA 1, Std 1 |
 | unrecorded | 3 | Parse 1, Resolve 1, EmitSSA 1 |
 
 ### Every bug
@@ -393,6 +393,6 @@ checker refusal is a Check bug here.
 | [328](328_a_method_taking_self_or_mut_self_is_called_on_an.md) | — | — | unfixed | — | violates OWN-15@3 |
 | [329](329_the_ll_1_checkers_never_computed_follow_sets_a_f.md) | Tooling | check_ll1 | commits | — | violates SYN-1@1 |
 | [330](330_a_continue_inside_a_for_loop_s_step_the_binary_n.md) | Interp | Interp | commits | Check | spec gap (STMT) |
-| [335](335_the_layout_and_stack_depth_reports_panic_on_a_pr.md) | — | — | unfixed | — | outside (tooling) |
+| [335](335_the_layout_and_stack_depth_reports_panic_on_a_pr.md) | Check | Layout | commits | CLI, Report | outside (tooling) |
 
 <!-- END GENERATED: bug areas -->
