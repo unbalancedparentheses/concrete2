@@ -34,12 +34,6 @@ def enumerateList (l : List α) (idx : Nat := 0) : List (Nat × α) :=
   | [] => []
   | a :: rest => (idx, a) :: enumerateList rest (idx + 1)
 
-def listGetIdx (l : List α) (idx : Nat) : Option α :=
-  match l, idx with
-  | [], _ => none
-  | a :: _, 0 => some a
-  | _ :: rest, n + 1 => listGetIdx rest n
-
 def tyToString : Ty → String
   | .int => "i64"
   | .uint => "u64"
@@ -368,15 +362,6 @@ def activeBorrowRefs (env : TypeEnv) (var : LocalRef) : List VarInfo :=
       if source == var && info.state != .consumed then info :: acc else acc
     | none => acc) []
 
-partial def tyContainsTypeVar : Ty → Bool
-  | .typeVar _ => true
-  | .ref inner | .refMut inner | .ptrMut inner | .ptrConst inner | .heap inner | .heapArray inner =>
-    tyContainsTypeVar inner
-  | .array elem _ => tyContainsTypeVar elem
-  | .generic _ args _ => args.any tyContainsTypeVar
-  | .fn_ params _ retTy => params.any tyContainsTypeVar || tyContainsTypeVar retTy
-  | _ => false
-
 def lookupStruct (name : String) : CheckM (Option StructDef) := do
   let env ← getEnv
   return env.typeIndex.structs.get? name
@@ -392,11 +377,6 @@ def lookupStructField (structName : String) (fieldName : String) : CheckM (Optio
 def lookupEnum (name : String) : CheckM (Option EnumDef) := do
   let env ← getEnv
   return env.typeIndex.enums.get? name
-
-def lookupEnumVariant (enumName : String) (variantName : String) : CheckM (Option EnumVariant) := do
-  match ← lookupEnum enumName with
-  | some ed => return ed.variants.find? fun v => v.name == variantName
-  | none => return none
 
 def lookupNewtype (name : String) : CheckM (Option NewtypeDef) := do
   let env ← getEnv

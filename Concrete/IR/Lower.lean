@@ -455,21 +455,6 @@ private def getLayoutCtx : LowerM Layout.Ctx := do
   return { structDefs := s.structDefs, enumDefs := s.enumDefs, newtypes := s.newtypes,
            index := s.layoutIndex }
 
-/-- Look up a struct definition's fields by type name. -/
-private def lookupStructFields (tyName : String) : LowerM (List (String × Ty)) := do
-  match Layout.lookupStruct (← getLayoutCtx) tyName with
-  | some sd => return sd.fields
-  | none =>
-    throwLower s!"Lower.lookupStructFields: struct '{tyName}' not found in struct defs"
-
-/-- Get field index within a struct definition. Returns 0 if not found. -/
-private def fieldIndex (tyName : String) (fieldName : String) : LowerM Nat := do
-  let fields ← lookupStructFields tyName
-  match (enumerate fields).find? fun (_, (n, _)) => n == fieldName with
-  | some (idx, _) => return idx
-  | none =>
-    throwLower s!"Lower.fieldIndex: field '{fieldName}' not found in struct '{tyName}'"
-
 /-- Get variant index within an enum definition. Returns 0 if not found. -/
 private def variantIndex (enumName : String) (variantName : String) : LowerM Nat := do
   match Layout.lookupEnum (← getLayoutCtx) enumName with
@@ -638,15 +623,6 @@ private def addBreakEdgeToLoop (vars : VarMap) (srcLabel : String) (targetExitLa
     else info
   setState { s with loopStack := newStack }
 
-/-- Record a break edge on the innermost loop. -/
-private def addBreakEdge (vars : VarMap) (label : String) : LowerM Unit := do
-  let s ← getState
-  match s.loopStack with
-  | info :: rest =>
-    let info' := { info with breakEdges := info.breakEdges ++ [(vars, label)] }
-    setState { s with loopStack := info' :: rest }
-  | [] => pure ()
-
 /-- Record a continue edge on a specific loop (identified by headerLabel). -/
 private def addContinueEdgeToLoop (vars : VarMap) (srcLabel : String) (targetHeaderLabel : String) : LowerM Unit := do
   let s ← getState
@@ -655,15 +631,6 @@ private def addContinueEdgeToLoop (vars : VarMap) (srcLabel : String) (targetHea
       { info with continueEdges := info.continueEdges ++ [(vars, srcLabel)] }
     else info
   setState { s with loopStack := newStack }
-
-/-- Record a continue edge on the innermost loop. -/
-private def addContinueEdge (vars : VarMap) (label : String) : LowerM Unit := do
-  let s ← getState
-  match s.loopStack with
-  | info :: rest =>
-    let info' := { info with continueEdges := info.continueEdges ++ [(vars, label)] }
-    setState { s with loopStack := info' :: rest }
-  | [] => pure ()
 
 /-- Peek at the continue edges of the innermost loop without popping. -/
 private def peekContinueEdges : LowerM (List (VarMap × String)) := do
@@ -2816,11 +2783,6 @@ def lowerFn (f : CFnDef) (structDefs : List CStructDef) (enumDefs : List CEnumDe
       isMethod := f.isMethod
     }, finalState.stringLits)
   | ((.error e), _) => .error e
-
-private partial def collectAllFunctions (m : CModule) : List CFnDef :=
-  let own := m.functions
-  let sub := m.submodules.foldl (fun acc s => acc ++ collectAllFunctions s) []
-  own ++ sub
 
 /-- Collect all functions with their dot-separated module path prefix. -/
 private partial def collectAllFunctionsWithPath (m : CModule) (parentPath : String := "") : List (CFnDef × String) :=

@@ -2068,27 +2068,6 @@ partial def parseTraitDef : ParseM TraitDef := do
   expect .rbrace
   return { name, typeParams, methods := methods.toList, span := declSp }
 
-partial def parseFnDef : ParseM FnDef := do
-  let sp ← peekSpan
-  expect .fn
-  let name ← expectIdent
-  let (typeParams, typeBounds, capParams) ← parseTypeAndCapParams
-  expect .lparen
-  let params ← parseParamList
-  expect .rparen
-  let withCaps ← parseWithCaps
-  let capSet := resolveCapVars capParams withCaps
-  let tk ← peek
-  let retTy ← if tk == .arrow then
-    advance
-    parseType
-  else
-    pure .unit
-  let before := (← get).loopContracts.length
-  let body ← parseBlock
-  let loopContracts := ((← get).loopContracts).drop before
-  return { name, typeParams, typeBounds, capParams, params, retTy, body, capSet, loopContracts, span := sp }
-
 /-- Parse a fn that may have a body ({...}) or be a declaration (;). -/
 partial def parseFnDefOrDecl : ParseM (FnDef ⊕ ExternFnDecl) := do
   let sp ← peekSpan

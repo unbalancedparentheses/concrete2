@@ -91,7 +91,6 @@ partial	Concrete.stmtNonTerminating	Concrete/Check/CheckHelpers.lean	Check	mutua
 partial	Concrete.stmtsEscape?	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Stmt	nested-inductive	R-0499
 partial	Concrete.stmtsLeaveLoop	Concrete/Check/CheckHelpers.lean	Check	mutual	Concrete.Stmt	mutual-walker	R-0499
 partial	Concrete.stmtsMentionedNames	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Stmt	nested-inductive	R-0499
-partial	Concrete.tyContainsTypeVar	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Ty	nested-inductive	R-0499
 partial	Concrete.tyHoldsRefInAggregate	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Ty	nested-inductive	R-0499
 partial	Concrete.tyMayHoldRefAt	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Ty	nested-inductive	R-0499
 partial	Concrete.tyParamOccursIn	Concrete/Check/CheckHelpers.lean	Check	self	Concrete.Ty	nested-inductive	R-0499
@@ -282,7 +281,6 @@ partial	Concrete.cmatchArmAddrTaken	Concrete/IR/Lower.lean	Lower	mutual	Concrete
 partial	Concrete.collectAllEnums	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
 partial	Concrete.collectAllExternLinkNames	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
 partial	Concrete.collectAllExterns	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
-partial	Concrete.collectAllFunctions	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
 partial	Concrete.collectAllFunctionsWithPath	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
 partial	Concrete.collectAllLinkerAliases	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
 partial	Concrete.collectAllNewtypes	Concrete/IR/Lower.lean	Lower	self	Concrete.CModule	nested-inductive	R-0501
@@ -375,7 +373,6 @@ partial	Concrete.Interp.collectTraitImpls	Concrete/Interp/Interp.lean	Semantics	
 partial	Concrete.Interp.copyMem	Concrete/Interp/Interp.lean	Semantics	self	-	worklist-fixpoint	R-0496
 partial	Concrete.Interp.destroyValue	Concrete/Interp/Interp.lean	Semantics	self	Concrete.Interp.IVal	nested-inductive	R-0496
 partial	Concrete.Interp.envItemsGet	Concrete/Interp/Interp.lean	Semantics	self	Concrete.Interp.IVal	nested-inductive	R-0496
-partial	Concrete.Interp.envItemsSet	Concrete/Interp/Interp.lean	Semantics	self	Concrete.Interp.IVal	nested-inductive	R-0496
 partial	Concrete.Interp.evalBorrowTarget	Concrete/Interp/Interp.lean	Semantics	mutual	Concrete.CExpr	object-divergence	R-0496
 partial	Concrete.Interp.evalCallArgs	Concrete/Interp/Interp.lean	Semantics	self	Concrete.CExpr	object-divergence	R-0496
 partial	Concrete.Interp.evalExpr	Concrete/Interp/Interp.lean	Semantics	mutual	Concrete.CExpr	object-divergence	R-0496
@@ -389,7 +386,6 @@ partial	Concrete.Interp.evalStmts	Concrete/Interp/Interp.lean	Semantics	mutual	C
 partial	Concrete.Interp.evalStmtsD	Concrete/Interp/Interp.lean	Semantics	self	Concrete.CExpr,Concrete.CStmt	object-divergence	R-0496
 partial	Concrete.Interp.evalTraitParamCall	Concrete/Interp/Interp.lean	Semantics	mutual	Concrete.Interp.IVal	object-divergence	R-0496
 partial	Concrete.Interp.evalWhile	Concrete/Interp/Interp.lean	Semantics	self	Concrete.CExpr,Concrete.CStmt	object-divergence	R-0496
-partial	Concrete.Interp.evalWhileExpr	Concrete/Interp/Interp.lean	Semantics	self	Concrete.CExpr,Concrete.CStmt	object-divergence	R-0496
 implemented_by	Concrete.Interp.hostCanonical	Concrete/Interp/Interp.lean	Semantics	-	-	host-io	R-0496
 unsafe	Concrete.Interp.hostCanonicalImpl	Concrete/Interp/Interp.lean	Semantics	-	-	host-io	R-0496
 implemented_by	Concrete.Interp.hostGetEnv	Concrete/Interp/Interp.lean	Semantics	-	-	host-io	R-0496

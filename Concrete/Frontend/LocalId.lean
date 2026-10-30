@@ -126,10 +126,6 @@ def useAt? (t : LocalTable) (sp : Span) (name : String) : Option LocalId :=
 def shadowsAt (t : LocalTable) (id : LocalId) : Bool :=
   (t.binders[id.idx]?.map (·.shadows)).getD false
 
-/-- The spelling of a binding, for messages. -/
-def nameOf (t : LocalTable) (id : LocalId) : String :=
-  (t.binders[id.idx]?.map (·.name)).getD s!"<local#{id.idx}>"
-
 end LocalTable
 
 end Concrete

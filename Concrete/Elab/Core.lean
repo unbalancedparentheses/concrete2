@@ -155,11 +155,6 @@ def directName? : Callee → Option String
   | .indirect _ => none
   | .runtime _ => none
 
-/-- A call the method namespace resolved (see `CallSpace`). -/
-def isMethod : Callee → Bool
-  | .direct _ .method => true
-  | _ => false
-
 /-- A method call of `name`: what Elab emits where a type's method table answered. -/
 def method (name : String) : Callee := .direct name .method
 

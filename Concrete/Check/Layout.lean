@@ -461,11 +461,6 @@ partial def tyToLLVM (ctx : Ctx) : Ty → String
         | none =>
           panic! s!"Layout.tyToLLVM: unknown named type '{name}'"
 
-/-- LLVM type for function parameters (pass-by-ptr types become ptr). -/
-def paramTyToLLVM (ctx : Ctx) (ty : Ty) : String :=
-  if isPassByPtr ctx ty then "ptr"
-  else tyToLLVM ctx ty
-
 -- ============================================================
 -- LLVM type definition generators
 -- ============================================================

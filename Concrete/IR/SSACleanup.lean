@@ -164,9 +164,8 @@ private def findTrivialPhis (blocks : List SBlock) : List (String × SVal) :=
     ) acc
   ) []
 
--- The register uses of a value, instruction and terminator: one definition in `IR/SSA.lean`,
+-- The register uses of an instruction and a terminator: one definition in `IR/SSA.lean`,
 -- shared with the backend (bug 250).
-private def svalUses : SVal → List String := SVal.regUses
 private def instUses : SInst → List String := SInst.regUses
 private def termUses : STerm → List String := STerm.regUses
 

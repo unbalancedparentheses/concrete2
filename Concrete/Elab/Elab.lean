@@ -355,11 +355,6 @@ private def recordVariantUse (ed : EnumDef) (_variant : String) : ElabM Unit :=
 -- Helpers
 -- ============================================================
 
-private def isIntLit : Expr → Bool
-  | .intLit _ _ => true
-  | .paren _ inner => isIntLit inner
-  | _ => false
-
 private def isPointerType : Ty → Bool
   | .ptrMut _ | .ptrConst _ => true
   | _ => false

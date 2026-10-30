@@ -137,8 +137,6 @@ structure CoreCheckEnv where
   currentFnSpan : Option Span := none
   errors : Diagnostics
 
-abbrev CoreCheckM := StateM CoreCheckEnv Unit
-
 inductive CoreCheckError where
   -- Type consistency
   | typeMismatchVariable (name : String) (declared : String) (used : String)

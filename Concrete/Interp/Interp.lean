@@ -138,21 +138,10 @@ private partial def envItemsGet (l : List (LocalKey × IVal)) (name : LocalKey) 
   | [] => none
   | (n, v) :: rest => if n == name then some v else envItemsGet rest name
 
-private partial def envItemsSet (l : List (LocalKey × IVal)) (name : LocalKey) (val : IVal)
-    : List (LocalKey × IVal) :=
-  match l with
-  | [] => []
-  | (n, v) :: rest =>
-    if n == name then (n, val) :: rest
-    else (n, v) :: envItemsSet rest name val
-
 def envGet (env : Env) (name : LocalKey) : Option IVal := envItemsGet env.items name
 
 def envBind (env : Env) (name : LocalKey) (val : IVal) : Env :=
   { items := (name, val) :: env.items, size := env.size + 1 }
-
-def envSet (env : Env) (name : LocalKey) (val : IVal) : Env :=
-  { env with items := envItemsSet env.items name val }
 
 /-- Reserved binding pushed at the start of every function frame (`$` cannot occur in a source
     identifier). The environment is one list shared by all frames, so that borrows of a
@@ -1098,9 +1087,6 @@ def resolveCall (cx : Ctx) (name : String) (onlyMethods : Bool := false)
 /-- The scope a callee found under a reserved key (trait impl / destructor) runs in. -/
 def keyScope (cx : Ctx) (key : String) : Option Nat := cx.keyScopes.lookup key
 
-def findEnum (enums : List CEnumDef) (name : String) : Option CEnumDef :=
-  enums.find? (fun e => e.name == name)
-
 -- ============================================================
 -- Array safe access
 -- ============================================================
@@ -1527,7 +1513,7 @@ private partial def modifyAt (val : IVal) (steps : List RefStep) (g : IVal → E
 private def updateAt (val : IVal) (steps : List RefStep) (newVal : IVal) : Except String IVal :=
   modifyAt val steps fun _ => .ok newVal
 
-/-- Like envSet but only rewrites bindings at depth >= `skip` (counting
+/-- Rewrite the first binding of `name` at depth >= `skip` (counting
     from the head). Used so that a ref-update walks past intervening
     callee frames and rewrites the binding that was actually borrowed. -/
 private partial def listSetSkipping (l : List (LocalKey × IVal)) (skip : Nat) (name : LocalKey)
@@ -3451,7 +3437,7 @@ partial def evalStmts (cx : Ctx) (env : Env) (stmts : List CStmt) : IM (Env × F
 
 /-- Bug 228: `baseLen` is the environment's length when the loop was entered. Each iteration's
     bindings (the body's `let`s, the condition's temporaries) are dropped before the next
-    iteration and when the loop ends, as `evalWhileExpr` already did at its end. They used to be
+    iteration and when the loop ends. They used to be
     carried into the next iteration, so the environment grew by every binding of every iteration
     and each lookup or assignment of an outer variable walked all of them: a loop's cost was
     quadratic in its iteration count. Assignments to outer variables update entries below
@@ -3518,36 +3504,6 @@ partial def evalWhile (cx : Ctx) (baseLen : Nat) (env : Env) (cond : CExpr) (bod
           -- Continue targets an OUTER loop: this loop terminates and the signal
           -- propagates up (the outer loop runs its own next iteration).
           return (restore bodyEnv, .cont contLabel)
-    | _ => fail "interp: while condition is not a boolean"
-
-/-- `while cond { body } else { elseBody }` as a value-producing expression
-    (loop-control #4). The value is `break v` when the loop breaks with a value,
-    or the `else` block's value when the condition becomes false. A bare `break`
-    (no value) yields unit. `baseLen` is the env length at loop entry; each return
-    restores the env to it so body-local bindings don't leak past the loop. -/
-partial def evalWhileExpr (cx : Ctx) (baseLen : Nat) (env : Env) (cond : CExpr) (body : List CStmt) (elseBody : List CStmt) (fuel : Nat) : IM (Env × Flow) := do
-  if fuel == 0 then fail s!"{loopBudgetExhausted} (iteration limit reached)"
-  else
-    let (env, cv) ← evalExprVal cx env cond
-    let restore := fun (e : Env) => e.drop (e.length - baseLen)
-    match cv with
-    | .bool false =>
-      -- Loop finished without break: the value is the else block's value.
-      let (branchEnv, flow) ← evalStmts cx env elseBody
-      return (restore branchEnv, flow)
-    | .bool true =>
-      let (bodyEnv, flow) ← evalStmts cx env body
-      match flow with
-      | .ret v        => return (restore bodyEnv, .ret v)
-      -- A while-EXPRESSION has no label; a bare break/continue is handled here, a
-      -- LABELED one targets an outer loop and re-propagates.
-      | .brk bv brkLabel =>
-        if brkLabel == none then return (restore bodyEnv, .val (bv.getD .unit))
-        else return (restore bodyEnv, .brk bv brkLabel)
-      | .val _        => evalWhileExpr cx baseLen bodyEnv cond body elseBody (fuel - 1)
-      | .cont contLabel =>
-        if contLabel == none then evalWhileExpr cx baseLen bodyEnv cond body elseBody (fuel - 1)
-        else return (restore bodyEnv, .cont contLabel)
     | _ => fail "interp: while condition is not a boolean"
 
 end -- mutual

@@ -785,9 +785,6 @@ partial def collectFreeVarsStmts (stmts : List Stmt) (bound : List String) : Lis
     freeVars ++ collectFreeVarsStmts rest newBound
 end
 
-def collectFreeVars (stmts : List Stmt) (paramNames : List String) : List String :=
-  (collectFreeVarsStmts stmts paramNames).eraseDups
-
 /-- Does a desugared continuation end with the block's value (a trailing expression, no `;`)?
     Then the match a destructuring `let` becomes is that value (exit 2i review: it was always a
     discarded statement, so a destructure in a value block lost the block's value). -/
@@ -884,9 +881,5 @@ partial def desugarModule (m : Module) : Module :=
     traitImpls := m.traitImpls.map fun tb =>
       { tb with methods := tb.methods.map fun f => { f with body := desugarStmts f.body } }
     submodules := m.submodules.map desugarModule }
-
-/-- Apply desugaring to all modules. -/
-def desugarProgram (modules : List Module) : List Module :=
-  modules.map desugarModule
 
 end Concrete

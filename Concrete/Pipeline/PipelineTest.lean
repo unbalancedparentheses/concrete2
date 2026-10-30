@@ -33,23 +33,6 @@ def runTest (name : String) (action : Unit → Except Diagnostics Unit) : IO UIn
     IO.eprintln (renderDiagnostics ds)
     return 1
 
-/-- Expect a successful result from an Except. -/
-def expectOk (result : Except Diagnostics α) (name : String) : IO (Option α) := do
-  match result with
-  | .ok a => return some a
-  | .error ds =>
-    IO.eprintln s!"FAIL: {name} — unexpected error"
-    IO.eprintln (renderDiagnostics ds)
-    return none
-
-/-- Expect a failure result from an Except. -/
-def expectError (result : Except Diagnostics α) (name : String) : IO (Option Diagnostics) := do
-  match result with
-  | .error ds => return some ds
-  | .ok _ =>
-    IO.eprintln s!"FAIL: {name} — expected error but got success"
-    return none
-
 /-- Run frontend passes (parse → buildSummary → resolve → check → elaborate → coreCheck) on a source string.
     No file I/O — no resolveFiles step (single-file programs only). -/
 def frontendNoIO (source : String) : Except Diagnostics (ParsedProgram × SummaryTable × ValidatedCore) :=
