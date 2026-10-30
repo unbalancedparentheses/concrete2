@@ -53,6 +53,7 @@ FILTER=""             # glob pattern to match test file paths
 SECTION=""            # internal: which sections to run
 STDLIB_MODULE=""      # single stdlib module to target (e.g., "string", "map")
 AFFECTED_FILES=""     # comma-separated list of changed files for --affected mode
+LIST_ONLY=0           # --list: print the tests the selected mode runs, run nothing
 
 usage() {
     cat <<'USAGE'
@@ -77,6 +78,7 @@ Modes:
   --affected          Auto-detect changed files (git diff) and run affected tests
   --affected FILES    Run tests affected by specific files (comma-separated)
   --manifest          List all test files with categories (no execution)
+  --list              Print one line per test the selected mode runs (id, kind, section, mode); run nothing
 
 Options:
   -j N                Override parallelism (default: number of CPU cores; --full: fair share, R-0543)
@@ -148,6 +150,7 @@ while [ $# -gt 0 ]; do
             ;;
         --filter)  FILTER="$2"; shift 2 ;;
         --manifest) MODE="manifest"; shift ;;
+        --list)    LIST_ONLY=1; shift ;;
         -j)        TEST_JOBS="$2"; TEST_JOBS_EXPLICIT=1; shift 2 ;;
         --no-wait) HEAVY_NO_WAIT=1; shift ;;
         -h|--help) usage ;;
@@ -327,6 +330,15 @@ section_active() {
     [[ ",$SECTION," == *",$1,"* ]]
 }
 
+# --list: one line per test the selected mode would run — a stable id, its kind, the section(s) that
+# run it and the mode — in run order. A code unit (a run of statements that is not a single helper
+# call) is one test named script:<block>.<n>. Nothing is compiled or run.
+if [ "$LIST_ONLY" = "1" ]; then
+    SUMMARY_WRITTEN=1   # nothing was meant to run, so the incomplete-run banner does not apply
+    python3 -I "$ROOT_DIR/scripts/tests/lib/run_tests_list.py" "$ROOT_DIR/scripts/tests/run_tests.sh" "$SECTION" "$MODE"
+    exit $?
+fi
+
 # If --filter is set, check whether a file path matches the pattern
 filter_match() {
     local file="$1"
@@ -428,11 +440,22 @@ save_failure() {
 # Clean previous failure artifacts at start of run
 rm -rf "$FAILDIR"
 
+# --- Call trace (RUN_TESTS_TRACE=FILE) ---
+# Every call of a shared assertion helper appends one line to FILE: the helper and its arguments,
+# shell-quoted, in call order. Two runs that make the same calls write the same trace, which is how
+# the suite's move into data (tests/cases) is shown not to change what runs.
+_rt_trace() {
+    [ -n "${RUN_TESTS_TRACE:-}" ] || return 0
+    printf '%q ' "$@" >> "$RUN_TESTS_TRACE"
+    printf '\n' >> "$RUN_TESTS_TRACE"
+}
+
 # --- Report assertion helper ---
 # check_report FILE MODE GREP_PATTERN OK_MSG FAIL_MSG [NEGATE]
 # Compiles FILE with --report MODE (cached), greps for PATTERN.
 # If NEGATE is "!" then the pattern must NOT match.
 check_report() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1" mode="$2" pattern="$3" ok_msg="$4" fail_msg="$5"
     local negate="${6:-}"
     local output
@@ -468,6 +491,7 @@ check_report() {
 # check_report_multi FILE MODE OK_MSG FAIL_MSG PATTERN1 [PATTERN2 ...]
 # All patterns must match.
 check_report_multi() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1" mode="$2" ok_msg="$3" fail_msg="$4"
     shift 4
     local output
@@ -496,6 +520,7 @@ check_report_multi() {
 # If NEGATE is "!" then the pattern must NOT match.
 # Note: --check may return non-zero exit (profile violation), so we suppress errors.
 check_profile() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1" profile="$2" pattern="$3" ok_msg="$4" fail_msg="$5"
     local negate="${6:-}"
     local output
@@ -530,6 +555,7 @@ check_profile() {
 # check_profile_multi FILE PROFILE OK_MSG FAIL_MSG PATTERN1 [PATTERN2 ...]
 # All patterns must match.
 check_profile_multi() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1" profile="$2" ok_msg="$3" fail_msg="$4"
     shift 4
     local output
@@ -778,6 +804,7 @@ run_ok_worker() {
 }
 
 run_ok() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1"
     local expected="$2"
     local expected_rc="${3:-}"
@@ -843,6 +870,7 @@ run_ok_O2_worker() {
 }
 
 run_ok_O2() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1"
     local expected="$2"
     local expected_rc="${3:-}"
@@ -903,6 +931,7 @@ run_err_worker() {
 }
 
 run_err() {
+    _rt_trace "${FUNCNAME[0]}" "$@"
     local file="$1"
     local expected_err="$2"
     if ! filter_match "$file"; then SKIP=$((SKIP + 1)); return; fi
