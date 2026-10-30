@@ -2,13 +2,13 @@
 
 **Status:** OPEN
 **Found:** 2026-10-30, by the cleanup pass's identity sweeps (every report kind over the examples: `examples/cli_tool` panicked identically on both binaries); confirmed by Codex review
-**Severity:** the reports print a Lean `PANIC` (on stderr), exit 0, and state sizes, alignments, offsets and frame sizes computed with 0 for the unknown type
+**Severity:** silent wrong result. The reports printed a Lean `PANIC` on stderr but exited 0 and stated sizes, alignments, offsets and frame sizes computed with 0 for the unknown type, so any consumer of the output read wrong numbers (ruling of 2026-10-30: stderr noise does not count as failing)
 
 <!-- bug-ledger
 summary: The layout and stack-depth reports panic on a project file that uses std's Bytes and report zero sizes
 class: 11
-coverage: reproducer tests/regressions/bug335_the_layout_and_stack_depth_reports_panic_on_a_pr/repro.con (the main of a project; also examples/cli_tool); no gate pins it yet, the open status is the rationale
-silent: no
+coverage: reproducer tests/regressions/bug335_the_layout_and_stack_depth_reports_panic_on_a_pr/project (repro.con as a project's main); containment pinned by check_stack_budget.sh leg 6 (both reports refuse with a nonzero exit, name the type, print no figure)
+silent: yes
 ruling: Outside the spec: tooling — the layout and stack-depth reports are report surfaces, not language behaviour; compilation is unaffected
 -->
 
@@ -77,7 +77,15 @@ side of the same rule.
 
 ## Containment while open
 
-No gate pins it yet; the record's open status is the rationale. A user who needs layouts for
-types that contain std's `Bytes` reads them from the build (`--emit-llvm`), not from these two
-reports, and treats any report run that prints `PANIC` as invalid. A silent defect is stopped at once by repair or fail-closed containment
+Fail-closed (the defect disposition rule for a silent defect): `Layout.unknownTypes`
+(`Concrete/Check/Layout.lean`) returns exactly the named types for which `tySize`/`tyAlign` would
+reach their `panic!` default, walking fields, variants and newtypes as they do. Before printing,
+`Main.lean` asks `Report.layoutReportUnknownTypes` (every non-generic struct and enum the layout
+report lists) and `Report.stackDepthUnknownTypes` (every parameter and local of every function the
+stack-depth report sizes); a non-empty answer prints `error: --report layout cannot lay out Bytes
+(...; bug 335)` (likewise for stack-depth), prints no figure and exits 1. No other input changes:
+across the identity sweep's 14389 report outputs, only `examples/cli_tool`'s layout and
+stack-depth runs reached the panic. `check_stack_budget.sh` leg 6 pins the refusal on the project
+reproducer. The repair (one layout context over the whole program, see the structural owner)
+replaces the refusal with correct figures. A silent defect is stopped at once by repair or fail-closed containment
 ([defect disposition rule](../../ROADMAP.md#the-current-execution-queue)).

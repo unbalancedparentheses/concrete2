@@ -732,6 +732,20 @@ private partial def stackExternNames (ms : List CModule) : List String × List S
     let (subEx, subIntr) := stackExternNames m.submodules
     (ex ++ m.externFns.map (·.1) ++ subEx, intr ++ m.intrinsicDecls.map (·.1) ++ subIntr)) ([], [])
 
+/-- Every function of the modules and their submodules, to `depth` levels of nesting. -/
+private def stackFnsOf : Nat → CModule → List CFnDef
+  | 0, _ => []
+  | depth + 1, m => m.functions ++ m.submodules.flatMap (stackFnsOf depth)
+
+/-- The named types the stack-depth report would size without a definition (bug 335): a frame
+    holds a parameter or local whose type reaches one, which `computeFrameBytes` would count as 0.
+    Main refuses the report when this is non-empty. -/
+def stackDepthUnknownTypes (modules : List CModule) : List String :=
+  let ctx := buildLayoutCtx modules
+  let fns := modules.flatMap (stackFnsOf 64)
+  let tys := fns.flatMap fun f => f.params.map (·.2) ++ collectLocalTys f.body
+  tys.flatMap (Layout.unknownTypes ctx 256) |>.eraseDups
+
 /-- Stack-depth report for functions passing the no-recursion profile. -/
 def stackDepthReport (modules : List CModule) (locMap : FnLocMap := [])
     (pc : Concrete.ProofCore) : String :=

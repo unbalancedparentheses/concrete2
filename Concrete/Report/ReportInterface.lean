@@ -681,6 +681,16 @@ partial def collectAllStructs (m : CModule) : List CStructDef :=
 partial def collectAllEnums (m : CModule) : List CEnumDef :=
   m.enums ++ m.submodules.foldl (fun acc sub => acc ++ collectAllEnums sub) []
 
+/-- The named types the layout report would size without a definition (bug 335): its listing
+    scope is the requested file, so a field of a std type it does not hold would be laid out with
+    the `panic!` default 0. Main refuses the report when this is non-empty. -/
+def layoutReportUnknownTypes (modules : List CModule) : List String :=
+  let ctx := buildLayoutCtx modules
+  let structs := (modules.foldl (fun acc m => acc ++ collectAllStructs m) []).filter (·.typeParams.isEmpty)
+  let enums := (modules.foldl (fun acc m => acc ++ collectAllEnums m) []).filter (·.typeParams.isEmpty)
+  ((structs.map (·.name)) ++ (enums.map (·.name))).flatMap
+    (fun n => Layout.unknownTypes ctx 256 (.named n)) |>.eraseDups
+
 def layoutReport (modules : List CModule) : String :=
   let ctx := buildLayoutCtx modules
   let header := "=== Type Layout Report ==="

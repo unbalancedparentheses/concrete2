@@ -2893,8 +2893,14 @@ def compileAndReport (inputPath : String) (reportType : String)
       IO.println (Report.trustEdgeReport scopedCore)
       return 0
     if reportType == "layout" then
-      IO.println (Report.layoutReport scopedCore)
-      return 0
+      -- Bug 335, fail-closed: a type the report cannot lay out is an error, never a size of 0.
+      match Report.layoutReportUnknownTypes scopedCore with
+      | [] =>
+        IO.println (Report.layoutReport scopedCore)
+        return 0
+      | unknown =>
+        IO.eprintln s!"error: --report layout cannot lay out {", ".intercalate unknown} (defined outside the reported modules; bug 335); no layout is reported"
+        return 1
     if reportType == "alloc" then
       IO.println (Report.allocReport scopedCore)
       return 0
@@ -3517,8 +3523,15 @@ def compileAndReport (inputPath : String) (reportType : String)
       IO.println (Report.recursionReport pc)
       return 0
     if reportType == "stack-depth" then
-      IO.println (Report.stackDepthReport scopedCore locMap pc)
-      return 0
+      -- Bug 335, fail-closed: a frame holding a type the report cannot lay out is an error, never
+      -- a frame size counted with 0.
+      match Report.stackDepthUnknownTypes scopedCore with
+      | [] =>
+        IO.println (Report.stackDepthReport scopedCore locMap pc)
+        return 0
+      | unknown =>
+        IO.eprintln s!"error: --report stack-depth cannot lay out {", ".intercalate unknown} (defined outside the reported modules; bug 335); no stack bound is reported"
+        return 1
     if reportType == "fingerprints" then
       IO.println (Report.fingerprintReport pc)
       return 0

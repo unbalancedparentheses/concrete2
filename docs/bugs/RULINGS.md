@@ -27,7 +27,7 @@ of [docs/spec/ids.tsv](../spec/ids.tsv), or the generator refuses the record.
 | spec gap | 33 | 2 | 5 |
 | open owner question | 0 | 0 | 0 |
 | permitted by a rule (not a bug) | 1 | 0 | 0 |
-| outside the spec | 103 | 5 | 16 |
+| outside the spec | 103 | 5 | 17 |
 | not ruled yet | 3 | 0 | 0 |
 
 ### By chapter

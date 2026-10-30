@@ -241,6 +241,35 @@ private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty �
     | none =>
       panic! s!"Layout.tyAlign: unknown named type '{name}'"
 
+/-- The named types `ty` reaches whose definition `ctx` does not hold: exactly the names for which
+    `tySize`/`tyAlign` would reach their `panic!` and continue with 0 (bug 335). A caller that
+    renders sizes runs this first and refuses on a non-empty answer, so no report prints a number
+    computed from that default. `fuel` bounds the walk through nested field types; a newtype is
+    followed one layer per step, as `resolveNewtype` does. -/
+def unknownTypes (ctx : Ctx) : Nat → Ty → List String
+  | 0, _ => []
+  | fuel + 1, ty =>
+    let go := unknownTypes ctx fuel
+    match ty with
+    | .generic "Heap" _ _ | .generic "HeapArray" _ _ | .generic "Vec" _ _
+    | .generic "HashMap" _ _ => []
+    | .array elem _ => go elem
+    | .named name => named go name []
+    | .generic name args _ => named go name args
+    | _ => []
+where
+  named (go : Ty → List String) (name : String) (args : List Ty) : List String :=
+    match lookupNewtype ctx name with
+    | some nt => go (ntSubstTy (nt.typeParams.zip args) nt.innerTy)
+    | none =>
+      match lookupStruct ctx name with
+      | some sd => (substStructTypeArgs sd args).fields.flatMap (fun (_, ft) => go ft)
+      | none =>
+        match lookupEnum ctx name with
+        | some ed => (substEnumTypeArgs ed args).variants.flatMap
+            (fun (_, vfields) => vfields.flatMap (fun (_, ft) => go ft))
+        | none => [name]
+
 /-- Natural alignment of a type in bytes. -/
 partial def tyAlign (ctx : Ctx) : Ty → Nat
   | .int | .uint | .float64 => 8

@@ -18,6 +18,8 @@
 #   4. one reader: no other script scrapes a number out of the summary line.
 #   5. an extern or unresolved direct edge is not a leaf: its callers are unbounded; a compiler
 #      intrinsic edge is (positive control).
+#   6. bug 335: a type the stack-depth or layout report cannot lay out is an error with a nonzero
+#      exit, never a figure computed with size 0 (tests/regressions/bug335_*/project).
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate_env.sh" || exit 2
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fresh.sh"
@@ -123,6 +125,21 @@ line="$("$CC" "$FIX/intrinsic.con" --report stack-depth 2>&1 | grep -E '^Max sta
 [ "$line" = "Max stack bound: 24 bytes (main)" ] \
   && ok "positive control: a compiler intrinsic edge (print_int) keeps the bound: $line" \
   || no "intrinsic control changed: '${line:-<no summary line>}'"
+
+echo "=== 6. bug 335: a type the report cannot lay out fails closed ==="
+# The project's main reaches std.cli's Cli, whose Bytes field is defined in a std module outside
+# the reported scope. Both reports used to print Lean PANIC lines and numbers computed with 0, and
+# exit 0. Now each refuses, names the type, exits nonzero and prints no figure.
+B335="$(ls -d tests/regressions/bug335_*/project/src)"
+for kind in stack-depth layout; do
+  out="$(cd "$B335" && "$CC" main.con --report "$kind" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF "cannot lay out Bytes" <<<"$out" && ! grep -qF "PANIC" <<<"$out" \
+     && ! grep -qE '^(Max stack bound|struct |enum )' <<<"$out"; then
+    ok "bug 335: --report $kind refuses (exit $rc), names Bytes, prints no figure"
+  else
+    no "bug 335: --report $kind returned $rc: $(head -c 300 <<<"$out")"
+  fi
+done
 
 echo
 echo "STACK-BUDGET: PASS=$PASS FAIL=$FAIL"
