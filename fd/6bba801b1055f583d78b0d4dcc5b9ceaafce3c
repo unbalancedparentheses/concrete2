@@ -1,0 +1,8 @@
+[piece 1 of 2: compiler]
+- Concrete/Resolve/FileSummary.lean:496: The previous OD20 finding remains open: `importRefusal` still implements std-only access to `std.libc` callables and now narrows when that policy applies. This implements and extends behavior covered by OD20, triggering your explicit no-land criterion despite the recorded owner decision.
+- scripts/tests/run_tests.sh:8944: The previous OD20 finding remains open: the tests still encode std-only access to `std.libc`, which your review rule includes as implementing an owner decision.
+- docs/spec/modules.md:219: The previous OD20 finding remains open: MOD-6 still declares `std.libc` privacy enforced and defines std membership by definition path, encoding behavior covered by OD20.
+[piece 2 of 2: tests]
+- Concrete/Resolve/FileSummary.lean:491: Previous finding remains open: `importRefusal` still implements OD20 by allowing std modules to import `std.libc` bindings while rejecting outside imports. The recorded owner decision does not exempt implementation from your explicit no-land criterion.
+- scripts/tests/run_tests.sh:8944: Previous finding remains open: the test section still encodes OD20’s std-only visibility rule. Adding the private-function/public-constant regression does not resolve this owner-decision blocker.
+- docs/spec/modules.md:219: Previous finding remains open: MOD-6 still declares OD20 enforced and defines std membership by definition path. This continues to encode behavior covered by OD20, prohibited by your review criterion.
