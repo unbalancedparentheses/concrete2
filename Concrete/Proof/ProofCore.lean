@@ -3950,22 +3950,6 @@ def extractProofCore (vc : CoreSubset) (identity : Proof.ResolvedIdentity)
     , callGraph := graph, recMap, externNames, obligations, diagnostics, identity }
     graph
 
--- ============================================================
--- Pretty-printing (for --report proofcore)
--- ============================================================
-
-def ProofCore.summary (pc : ProofCore) : String :=
-  let eligibleNames := pc.entries.map (·.qualName)
-  let excludedNames := pc.excluded.map (·.qualName)
-  let extractedCount := (pc.entries.filter (·.extracted.isSome)).length
-  s!"ProofCore fragment:\n" ++
-  s!"  {pc.entries.length} eligible functions ({extractedCount} extracted to PExpr)\n" ++
-  s!"  {pc.excluded.length} excluded functions\n" ++
-  s!"  {pc.structs.length} proof-eligible structs\n" ++
-  s!"  {pc.enums.length} proof-eligible enums\n" ++
-  s!"  eligible:  {eligibleNames}\n" ++
-  s!"  excluded:  {excludedNames}"
-
 /-- Why a ProofCore could not be extracted. -/
 inductive ProofIdentityRefusal where
   /-- No package identity could be formed for this compilation, so no definition in it can be

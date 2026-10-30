@@ -3,7 +3,7 @@
 
 Input is the inventory scripts/tools/dead_code_inventory.lean prints from the elaborated
 environment (decl, kind, module, line, reached-without-allowlist, reached-with-allowlist), one
-file per walk (the gate runs two: Main and Concrete.Pipeline.PipelineTest both declare `main`).
+file per walk (the gate runs three: Main, Concrete.Pipeline.PipelineTest and Browser each declare `main`).
 A declaration is reachable when ANY walk reaches it. Data:
 
   docs/compiler/dead_code_baseline.tsv   every known unreachable compiler declaration, with the
