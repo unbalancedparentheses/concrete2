@@ -1437,9 +1437,6 @@ jobs:
       - name: Bug 077 contained (OPEN — the build refuses it, reports stay complete-or-honest, no R-0484 case depends on it)
         run: bash scripts/tests/check_bug077_contained.sh
 
-      - name: Diff-to-gate mapping (the selector still names the gates a known change breaks)
-        run: bash scripts/tests/check_gates_for_diff.sh
-
       - name: Cap-variable inference (bug 063 — an unknown argument type is not an empty capability set)
         run: bash scripts/tests/check_cap_inference.sh
 

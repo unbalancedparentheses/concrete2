@@ -1307,12 +1307,6 @@
    "rc": 0
   },
   {
-   "cmd": "bash scripts/tests/check_gates_for_diff.sh",
-   "wall_s": 0.5,
-   "instr": 2587092147,
-   "rc": 0
-  },
-  {
    "cmd": "bash scripts/tests/check_partial_facts.sh",
    "wall_s": 0.6,
    "instr": 2477150028,

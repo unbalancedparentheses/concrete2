@@ -99,7 +99,6 @@ bash scripts/tests/check_gate_hygiene.sh	4
 bash scripts/tests/check_gate_lock.sh	2
 bash scripts/tests/check_gate_registration.sh	3
 bash scripts/tests/check_gate_vacuity.sh	1
-bash scripts/tests/check_gates_for_diff.sh	0
 bash scripts/tests/check_generic_enum_inventory.sh	0
 bash scripts/tests/check_generic_enum_mono.sh	3
 bash scripts/tests/check_hashmap_probe_invariants.sh	13

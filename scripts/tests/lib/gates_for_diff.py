@@ -1,37 +1,12 @@
 #!/usr/bin/env python3
-"""Select the gates a set of changed files can break.
+"""The impact selector's curated tables (scripts/tests/lib/select_gates.py imports them).
 
-Reads changed paths on stdin (one per line), writes `gate<TAB>reason` on stdout.
-
-THE MAPPING IS READ OUT OF THE GATES, not hand-maintained. Gates name the files they
-check — `check_byte_view.sh` contains `std/src/numeric.con` — so a curated list would
-drift and this cannot. Gate-to-gate references come along for free and matter:
-`check_mutation_anchors.sh` names `check_gate_mutation_coverage.sh`, so editing that
-driver implicates the anchor gate.
-
-IT IS NOT A PROOF OF COMPLETENESS. A gate can be broken by a change it never names — it
-may compile a whole corpus, or assert a count derived from everything. Believing
-otherwise would repeat the defect R-0483 removed from `ByteView`, where a check that
-caught some substitutions read at the call site like one that caught all of them.
+The selector derives most of what a change can break from the gates themselves; these tables hold
+what cannot be derived: the derived artifacts a change under a tree moves (ALWAYS_IF), the gates
+every change can break (EVERY_CHANGE), and the whole-suite drivers a selection never runs in full
+(NOT_AUTO_RUN). The older diff-to-gate selector that also lived here (gates_for_diff.sh, tested by
+check_gates_for_diff.sh) was retired once the pre-push hook used select_gates.sh alone.
 """
-import os
-import re
-import sys
-import glob
-
-PATH_RE = re.compile(
-    r'(?:std|Concrete|examples|scripts|tests|docs|proofs|grammar|site)/[A-Za-z0-9_./-]+'
-)
-
-# Nearly every gate mentions `scripts/tests/` to reach a helper. Treating that as "this
-# gate checks that tree" selects most of the suite, and a list that is always long is
-# ignored exactly as fast as one that is always empty. Broad trees are covered by
-# ALWAYS_IF instead, which is curated and carries a reason per entry.
-UMBRELLA = {
-    "scripts", "scripts/tests", "scripts/tests/lib", "scripts/gen", "scripts/ci",
-    "docs", "tests", "tests/programs", "examples", "std", "std/src",
-    "Concrete", "proofs", "site",
-}
 
 # A change anywhere in these trees moves something a derived artifact is built from, so
 # the freshness gates run whether or not they name the file. This set is what four
@@ -84,31 +59,8 @@ EVERY_CHANGE = [
 ]
 
 
-def tokens(text, exists=os.path.exists):
-    """Path tokens a gate names, keeping only those specific enough to mean something."""
-    out = set()
-    for m in PATH_RE.findall(text):
-        t = m.rstrip('.,;:)"\'')
-        if not t or t in UMBRELLA or t.rstrip("/") in UMBRELLA:
-            continue
-        # A token naming nothing is a stale reference, not a signal.
-        if os.path.isfile(t) or os.path.isdir(t.rstrip("/")):
-            out.add(t)
-    return out
-
-
-def covers(token, changed_path):
-    """Does `token`, as written in a gate, cover `changed_path`?"""
-    if token == changed_path:
-        return True
-    if token.endswith("/") and changed_path.startswith(token):
-        return True
-    return changed_path.startswith(token.rstrip("/") + "/")
-
-
-# NOT AUTO-RUN, but still listed — the point is to say what a change touches, and
-# silently dropping something from the list would be the same lie as a short list read as
-# "nothing can break".
+# NOT AUTO-RUN: the whole-suite drivers. A selection depends on them and on the helpers they run,
+# but never runs every gate they could run.
 #
 #   run_ci_gates_local.sh          executes most of the suite itself, so running it from a
 #                                  SELECTIVE runner defeats the selection, and it holds the
@@ -120,63 +72,7 @@ def covers(token, changed_path):
 #                                  FAMILY_ID/FAMILY_SPEC for a single-family run, which is
 #                                  a deliberate act, not something to trigger by editing a
 #                                  file it happens to name.
-# A SCRIPT IS NOT A GATE — an invocation is. CI runs `run_tests.sh` plain AND
-# `run_tests.sh --trust-gate`, which exercise different sections; the trust gate caught a
-# DIAG-STATUS inconsistency that the plain run does not check. Selecting the script while
-# suggesting only its bare form is a mapping that looks complete and is not, so the
-# flagged forms are named here and printed alongside.
-EXTRA_INVOCATIONS = {
-    "run_tests.sh": ["run_tests.sh --trust-gate"],
-    "run_fast_surface_gates.sh": ["run_fast_surface_gates.sh --mutate"],
-}
-
 NOT_AUTO_RUN = {
     "run_ci_gates_local.sh": "runs most of the suite itself; run it directly",
     "check_gate_mutation_coverage.sh": "full campaign, exclusive and hours; use FAMILY_ID for one family",
 }
-
-
-def select(changed, gate_paths=None):
-    """-> {gate basename: [reasons]}"""
-    if gate_paths is None:
-        gate_paths = sorted(
-            glob.glob("scripts/tests/check_*.sh") + glob.glob("scripts/tests/run_*.sh")
-        )
-    selected = {}
-    for gate in gate_paths:
-        name = os.path.basename(gate)
-        try:
-            toks = tokens(open(gate, errors="ignore").read())
-        except OSError:
-            continue
-        for ch in changed:
-            hit = next((t for t in toks if covers(t, ch)), None)
-            if hit:
-                selected.setdefault(name, []).append(f"names {hit}")
-                break
-    for prefix, gates in ALWAYS_IF.items():
-        if any(c.startswith(prefix) for c in changed):
-            for g, why in gates:
-                if os.path.exists(f"scripts/tests/{g}"):
-                    selected.setdefault(g, []).append(why)
-    if changed:
-        for g, why in EVERY_CHANGE:
-            if os.path.exists(f"scripts/tests/{g}"):
-                selected.setdefault(g, []).append(why)
-    return selected
-
-
-def main():
-    changed = [l.strip() for l in sys.stdin if l.strip()]
-    for gate, reasons in sorted(select(changed).items()):
-        # One reason is enough to act on; more would bury the gate name.
-        why = sorted(set(reasons))[0]
-        if gate in NOT_AUTO_RUN:
-            why += f"  [not auto-run: {NOT_AUTO_RUN[gate]}]"
-        print(f"{gate}\t{why}")
-        for extra in EXTRA_INVOCATIONS.get(gate, []):
-            print(f"{extra}\tCI also runs this flagged form, which checks different sections")
-
-
-if __name__ == "__main__":
-    main()
