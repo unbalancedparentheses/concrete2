@@ -223,7 +223,7 @@ def argv_of(stmts):
     for h in list(ROW_HELPERS) + list(NONTEST_HELPERS):
         prog.append(f'{h}() {{ _p {h} "$@"; }}')
     prog += stmts
-    r = subprocess.run(['bash', '--noprofile', '--norc', '-c', '\n'.join(prog)], capture_output=True, text=True)
+    r = subprocess.run(['bash', '--noprofile', '--norc', '-s'], input='\n'.join(prog) + '\n', capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f'bash could not evaluate the pure statements: {r.stderr[:500]}')
     recs = r.stdout.split('\036')[:-1]
