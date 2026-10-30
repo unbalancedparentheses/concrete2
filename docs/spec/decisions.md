@@ -74,6 +74,7 @@ recommendation and not a decision; the entry below states the question, the opti
 | 55 | [OPEN-48](#OPEN-48) | — | The index type of a counted loop over two literals | not checked | (a) refused, as OD31 refuses any literal with no expected type; a typed bound supplies the other bound's type, in either order | — |
 | 56 | [OPEN-49](#OPEN-49) | — | The arithmetic of a counted loop's termination measure | not applicable | (a) a mathematical integer in the proof only, never computed at run time | — |
 | 57 | [OPEN-51](#OPEN-51) | — | Reverse, stepped and collection iteration | a counted loop and `while` | (a) none now; each a later decision when a workload needs it | one loop construct in proofs |
+| 58 | [OPEN-9X1](#OPEN-9X1) | — | `as` applied to a reference | not checked | none given (raised by the MEMORY_SEMANTICS absorption) | — |
 
 <a id="OPEN-33"></a>
 ### OPEN-33. Inline submodules under one file per module
@@ -1015,6 +1016,22 @@ OD51; the owner's answer is recorded there. Austral: a counted loop and `while`.
 - Evidence: open
 
 **Rationale.** Bears on SYN-1, SYN-3, OWN-D1. Current main: contextual; the `struct Copy <T>` conflict is invisible to the checkers' token model. Options: (a) contextual, the LL(1) checkers taught to model a quoted unreserved terminal as also IDENT, each conflict found listed for the owner; (b) reserve `Copy` as a keyword, refusing it as an identifier. Austral: its keywords are reserved. Pick (the coordinator's pick after the Kimi, Codex and Grok review of 2026-10-30, a recommendation and not a decision): (b) reserve `Copy`: one lexical rule, consistent with OD50 (reserved `from` and `until`) and OD43 (builtin names refused as user names). The pick rests on admission checks 1 (a simple invariant) and 3 (no phase coupling) (PROJECT.md, [admission checks](../project/PROJECT.md#design-policy)). Item Copy of the owner picks of 2026-10-30; the owner's answer is recorded in ROADMAP's row OD90.
+
+<a id="OPEN-9X1"></a>
+### OPEN-9X1. `as` applied to a reference
+
+**OPEN-9X1@1.** Whether `as` may be applied to a reference, given that REF-5 lists borrowing and projecting as the only operations that form a reference, is an open owner decision (OD9X1).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X1
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on REF-5, REF-6, ARITH-5, TRUST-4. Current main: an identity cast between equal reference types is accepted and denotes the operand's place (`read(r as &Int)` with `r: &Int`, and `read(&v as &Int)`, exit 42 on both consumers); every other cast between reference types, `&mut Int as &Int` included, is E0553 at core-check under ARITH-5's tag, whose sentence covers only numeric, `bool` and `char` conversions; a cast from a reference to a raw pointer is allowed (TRUST-4). The design record (MEMORY_SEMANTICS §15.3) listed a cast of a traced reference binding (`r as &U`) among the reference-forming operations. Options: (a) refuse `as` whenever its operand or target is a reference type; (b) allow the identity cast as a no-op on the operand's place. Austral: not checked. Pick: none given (raised by the MEMORY_SEMANTICS absorption, 2026-10-30).
 
 ## Decided
 

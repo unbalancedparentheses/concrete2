@@ -577,3 +577,17 @@ OPEN-87@1	live	383da0a04225d91631eaa606e660967b
 OPEN-88@1	live	9c698e463c986dcca6683f581e5f143f
 OPEN-89@1	live	0e8880ade4308fdc3a98fbbbc3838e09
 OPEN-90@1	live	1ea686b5ced9397b5ff03e9658e4cbaf
+REF-D3@1	live	b0c118e16ff5aff8a902294e1067dc10
+REF-D3/owner-restored	live	-
+REF-5/borrow-reference-binding	live	-
+REF-5/branch-value-base	live	-
+REF-5/bind-branch-first	live	-
+REF-6/constant-borrows	live	-
+REF-6/erased-generic-at-ref	live	-
+REF-6/constant-and-erased-value	live	-
+REF-8/read-owner-in-borrow-block	live	-
+MEM-D1@1	live	7010fb4c566b6dff04435a4b32eaacf6
+TRUST-11@1	live	a40f5b568fa77f7dfec54870fe968cd6
+TRUST-11/refill-emptied-slot	live	-
+TRUST-12@1	live	0a0e1779998ed9485653744ad74b69e7
+TRUST-12/trusted-consumes-once	live	-

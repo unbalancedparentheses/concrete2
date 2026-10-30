@@ -32,6 +32,7 @@ Linearity rules (matching Concrete/Rust design):
 -- Types and Environment
 -- ============================================================
 
+-- spec: MEM-D1 (docs/spec/memory.md; this declaration enforces the rule)
 inductive VarState where
   | unconsumed  -- never touched
   | used        -- read/borrowed but not moved
