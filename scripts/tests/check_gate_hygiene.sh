@@ -770,7 +770,7 @@ echo "=== no gate uses a fixed shared /tmp path (R-0546) ==="
 # fixture string, recorded command text) is listed below with its reason.
 declare -A TMP_OK=(
   ["run_tests.sh:/tmp/test_rerun"]="text of a '# Rerun:' hint printed for a human, never written by the suite"
-  ["run_tests.sh:/tmp/test"]="text of a recorded repro command (save_failure), never written by the suite"
+  ["report.sh:/tmp/test"]="text of a recorded repro command (save_failure in a run_tests.sh code unit, scripts/tests/suite/report.sh), never written by the suite"
   ["check_native_libs.sh:/tmp/evil.so"]="fixture string inside a Concrete.toml under test; the compiler must refuse it"
   ["check_replay_producer.sh:/tmp/x"]="argument to a Lean #eval of a refusal message; nothing touches the path"
   ["capture_wrong_code_bundle.sh:/tmp/bug_bin"]="text written into a bundle's command.txt, not executed"
