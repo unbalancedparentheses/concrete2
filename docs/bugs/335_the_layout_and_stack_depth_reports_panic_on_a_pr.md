@@ -79,7 +79,8 @@ side of the same rule.
 
 Fail-closed (the defect disposition rule for a silent defect): `Layout.unknownTypes`
 (`Concrete/Check/Layout.lean`) returns exactly the named types for which `tySize`/`tyAlign` would
-reach their `panic!` default, walking fields, variants and newtypes as they do. Before printing,
+reach their `panic!` default, walking fields, variants and newtypes as they do; a nesting deeper
+than its bound (256 type levels, 64 module levels) is refused too, never passed unchecked. Before printing,
 `Main.lean` asks `Report.layoutReportUnknownTypes` (every non-generic struct and enum the layout
 report lists) and `Report.stackDepthUnknownTypes` (every parameter and local of every function the
 stack-depth report sizes); a non-empty answer prints `error: --report layout cannot lay out Bytes

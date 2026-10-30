@@ -245,9 +245,11 @@ private partial def tyAlign_namedOrGeneric (ctx : Ctx) (tyAlignFn : Ctx → Ty �
     `tySize`/`tyAlign` would reach their `panic!` and continue with 0 (bug 335). A caller that
     renders sizes runs this first and refuses on a non-empty answer, so no report prints a number
     computed from that default. `fuel` bounds the walk through nested field types; a newtype is
-    followed one layer per step, as `resolveNewtype` does. -/
+    followed one layer per step, as `resolveNewtype` does. Running out of fuel answers a
+    placeholder name rather than nothing, so a nesting deeper than the bound is refused, never
+    passed unchecked (fail-closed). -/
 def unknownTypes (ctx : Ctx) : Nat → Ty → List String
-  | 0, _ => []
+  | 0, _ => ["(a type nested deeper than the layout check follows)"]
   | fuel + 1, ty =>
     let go := unknownTypes ctx fuel
     match ty with
