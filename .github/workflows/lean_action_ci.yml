@@ -160,13 +160,11 @@ jobs:
 
       # The three independent LL(1) checkers (py, c, rs) must agree byte-for-byte on every
       # rule's FIRST set and nullability, report no conflict, and all refuse the planted grammars.
-      # BEGIN GENERATED: gates grammar from check-grammar-ll1 (scripts/tests/gates.tsv; gates.py --write)
       - name: LL(1) grammar (three independent checkers agree)
         env:
           # A push is compared with the revision before ALL of its commits (the known-conflict list only shrinks).
           LL1_BASE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: bash scripts/tests/check_grammar_ll1.sh
-      # END GENERATED: gates grammar
 
   build:
     name: Build
