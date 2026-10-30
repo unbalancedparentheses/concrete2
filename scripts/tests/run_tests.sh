@@ -20,7 +20,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 #   2. An EXIT trap that fires when the file was never written, printing an unmistakable banner and
 #      exiting 97 — a code no assertion produces, so "died early" cannot be confused with "failed".
 SUMMARY_FILE="${TEST_SUMMARY_FILE:-$ROOT_DIR/.test-summary}"
-rm -f "$SUMMARY_FILE"
+# Removed first, before anything can exit, so no exit path leaves the previous run's summary to be
+# read as this one's. --list runs nothing and replaces nothing, so it keeps the summary (and, below,
+# the failure artifacts) of the last real run.
+_rt_listing=0; for _a in "$@"; do [ "$_a" = "--list" ] && _rt_listing=1; done
+[ "$_rt_listing" = "1" ] || rm -f "$SUMMARY_FILE"
 SUMMARY_WRITTEN=0
 on_exit() {
   local rc=$?
@@ -430,7 +434,7 @@ save_failure() {
 }
 
 # Clean previous failure artifacts at start of run
-rm -rf "$FAILDIR"
+[ "$LIST_ONLY" = "1" ] || rm -rf "$FAILDIR"
 
 # --- Call trace (RUN_TESTS_TRACE=FILE) ---
 # Every call of a shared assertion helper appends one line to FILE: the helper and its arguments,
