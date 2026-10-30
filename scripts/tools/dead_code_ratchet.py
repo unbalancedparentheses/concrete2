@@ -205,6 +205,7 @@ def cmd_check(args):
             fails.append(f"baseline row {decl}: reason {reason!r} is not `unreviewed`, `dead` or `keep: <why>`")
 
     allow_keys = {}
+    tracked = set(git_ls("scripts", "tests"))
     by_decl = collections.defaultdict(list)
     for r in inv.values():
         by_decl[r["decl"]].append(r)
@@ -218,10 +219,14 @@ def cmd_check(args):
         if not found:
             fails.append(f"allowlist row {decl}: no such compiler declaration (renamed or deleted: update {ALLOWLIST})")
             continue
+        if len(found) > 1:
+            fails.append(f"allowlist row {decl} names {len(found)} declarations "
+                         f"({', '.join(r['file'] for r in found)}); a root by name would keep all of them. Rename one.")
         if all(r["r0"] for r in found):
             fails.append(f"allowlist row {decl} is reachable without the allowlist: delete the row, so the "
                          f"allowlist only holds what the environment cannot see")
-        if not path.startswith(("scripts/", "tests/")) or path.startswith("scripts/tools/dead_code"):
+        if (os.path.normpath(path) != path or not path.startswith(("scripts/", "tests/"))
+                or path.startswith("scripts/tools/dead_code") or path not in tracked):
             fails.append(f"allowlist row {decl}: {path} is not a script or test; only a reference the Lean "
                          f"environment cannot see (a gate, a generator, a test) is a reason to allowlist")
         elif not mentions(path, short(decl)):

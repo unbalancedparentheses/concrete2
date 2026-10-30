@@ -201,6 +201,9 @@ expect_fail "C8 two declarations sharing a normalized name, one unreachable, are
 { cat docs/compiler/dead_code_allowlist.tsv; printf '%s\t%s\tplanted\n' "$P" "Concrete/IR/Lower.lean"; } > "$TMP/c9_allow.tsv"
 expect_fail "C9 an allowlist row citing compiler source fails" "is not a script or test" \
   "${WALKS[@]}" --walk "$TMP/planted.tsv" --allowlist "$TMP/c9_allow.tsv"
+{ cat docs/compiler/dead_code_allowlist.tsv; printf '%s\t%s\tplanted\n' "$P" "scripts/../Concrete/IR/Lower.lean"; } > "$TMP/c9b_allow.tsv"
+expect_fail "C9 ... nor reach it through a non-normal path" "is not a script or test" \
+  "${WALKS[@]}" --walk "$TMP/planted.tsv" --allowlist "$TMP/c9b_allow.tsv"
 
 echo "DEAD-CODE-RATCHET: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

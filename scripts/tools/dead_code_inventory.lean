@@ -60,6 +60,20 @@ def userName (n : Name) : Name :=
 def isCompilerModule (m : Name) : Bool :=
   m == `Concrete || (`Concrete).isPrefixOf m || m == `Main || m == `Browser
 
+/-- The constant a declaration's type is, through definitions that are themselves a constant
+(type aliases such as `abbrev Spec := SpecDecl`): the generator matches types up to definitional
+equality, so an alias of a root type is that root type. -/
+def typeHead (env : Environment) (ty : Expr) (fuel : Nat := 8) : Option Name :=
+  match ty, fuel with
+  | .const t _, 0 => some t
+  | .const t _, f + 1 =>
+    match env.find? t with
+    | some (.defnInfo d) => match d.value with
+      | .const .. => typeHead env d.value f
+      | _ => some t
+    | _ => some t
+  | _, _ => none
+
 def lineOf (env : Environment) (n : Name) : Nat :=
   match declRangeExt.find? env n with
   | some r => r.range.pos.line
@@ -215,7 +229,7 @@ def inventory (env : Environment) (moduleOf : Name → Option Name) (isFixedRoot
       if let some i := getInitFnNameFor? env n then roots := roots.push i
     if isUnit && (simp.isLemma (.decl n) || simp.isDeclToUnfold n) then roots := roots.push n
     if isRootType ci.type then roots := roots.push n
-    if let .const t _ := ci.type then
+    if let some t := typeHead env ci.type then
       if rootTypes.contains t then roots := roots.push n
     if Meta.isInstanceCore env n then
       let deps := ci.type.getUsedConstants.filter fun c =>
