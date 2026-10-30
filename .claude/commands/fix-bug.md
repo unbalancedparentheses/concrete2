@@ -22,7 +22,8 @@ Rules: [docs/project/AGENTS.md](../../docs/project/AGENTS.md). Read it first if 
    is loud, contain and pin it instead of patching (ROADMAP defect disposition rule).
 5. **Repair at the owner**, not at the symptom: the single source of the rule (for example
    `Concrete/Semantics/IntArith.lean` for traps), not a second copy of it.
-6. **Regression leg.** A fixture under `tests/programs/` registered in `scripts/tests/run_tests.sh`,
+6. **Regression leg.** A fixture under `tests/programs/` registered in the test suite (a row in
+   `tests/cases/<block>.tsv`, run by `scripts/tests/run_tests.sh`),
    or a leg in the gate that owns the area. Show it fails on the pre-fix compiler and passes now.
    Point the record's `fixtures:` or `coverage:` at it; set `**Status:** FIXED (branch, commit)`;
    remove the reproducer from the open-bug table of `check_example_outputs.sh` if it was pinned there.

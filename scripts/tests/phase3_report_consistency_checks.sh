@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Phase 3: Report consistency cross-checks
-# Paste these into scripts/tests/run_tests.sh inside the report section.
+# Add these as check_report / check_report_multi rows of tests/cases/report.tsv (the report section of
+# scripts/tests/run_tests.sh; columns at run_cases there).
 # All checks use $TESTDIR and the check_report / check_report_multi helpers.
 
 # ============================================================

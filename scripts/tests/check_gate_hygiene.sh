@@ -96,8 +96,13 @@ echo "=== no '| head -N' inside an errexit+pipefail script (SIGPIPE self-abort) 
 # using `set -uo pipefail` (no -e) absorb it. If a script here gains `set -e`,
 # this check starts covering it.
 hazard=0
-for f in "$ROOT_DIR"/scripts/tests/*.sh; do
-  head -20 "$f" | has_match -E "set -[a-z]*e[a-z]* .*pipefail|set -o errexit" || continue
+# The run_tests.sh code units (scripts/tests/suite/) are sourced into run_tests.sh, which runs them
+# under its own `set -euo pipefail`, so they are errexit scripts whatever their own first lines say.
+for f in "$ROOT_DIR"/scripts/tests/*.sh "$ROOT_DIR"/scripts/tests/suite/*.sh; do
+  case "$f" in
+    */scripts/tests/suite/*) ;;
+    *) head -20 "$f" | has_match -E "set -[a-z]*e[a-z]* .*pipefail|set -o errexit" || continue ;;
+  esac
   # `[h]ead` so this scan does not match its own pattern literal.
   hits="$(grep -nE "\| *[h]ead -[0-9]" "$f" || true)"
   if [ -n "$hits" ]; then
@@ -123,7 +128,7 @@ echo "=== no 'local' statement reads a variable it assigns in the same statement
 # spell the same line with `$1`, which is always set, which is why this read as
 # idiomatic rather than as a hazard.
 selfref=0
-for f in "$ROOT_DIR"/scripts/tests/*.sh; do
+for f in "$ROOT_DIR"/scripts/tests/*.sh "$ROOT_DIR"/scripts/tests/suite/*.sh; do
   while IFS=: read -r lineno line; do
     [ -z "${lineno:-}" ] && continue
     body="${line#*local }"
@@ -544,7 +549,7 @@ has_match_unloaded() {
     grep -qE '(lib/gate_env\.sh|/has_match\.sh)' "$f" || echo "$f"
   done
 }
-SC_FILES=("$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/*/*.sh "$ROOT_DIR"/scripts/tests/lib/*.sh "$ROOT_DIR"/.githooks/pre-push)
+SC_FILES=("$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/*/*.sh "$ROOT_DIR"/scripts/tests/lib/*.sh "$ROOT_DIR"/scripts/tests/suite/*.sh "$ROOT_DIR"/.githooks/pre-push)
 SC="$(pipe_into_short_circuit "${SC_FILES[@]}")"
 if [ -z "$SC" ]; then ok "no script pipes into a short-circuiting grep or through head into a match"
 else no "pipe into a short-circuiting consumer (SIGPIPE can decide the leg; use has_match): $(cut -c1-200 <<<"$SC" | tr '\n' ';')"; fi

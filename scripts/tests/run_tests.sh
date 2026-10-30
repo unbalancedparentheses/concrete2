@@ -437,8 +437,10 @@ save_failure() {
 [ "$LIST_ONLY" = "1" ] || rm -rf "$FAILDIR"
 
 # --- Call trace (RUN_TESTS_TRACE=FILE) ---
-# Every call of a shared assertion helper appends one line to FILE: the helper and its arguments,
-# shell-quoted, in call order. Two runs that make the same calls write the same trace, which is how
+# Every call of the seven assertion helpers defined here (run_ok, run_ok_O2, run_err, check_report,
+# check_report_multi, check_profile, check_profile_multi) appends one line to FILE: the helper and
+# its arguments, shell-quoted, in call order. Helpers a code unit defines for itself (ext_check,
+# norm_check, policy_err, run_abort, run_test, check_collection_tests) are not traced. Two runs that make the same calls write the same trace, which is how
 # the suite's move into data (tests/cases) is shown not to change what runs.
 _rt_trace() {
     [ -n "${RUN_TESTS_TRACE:-}" ] || return 0
