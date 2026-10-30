@@ -1545,6 +1545,102 @@ OD51; the owner's answer is recorded there. Current main: main has no counted lo
 
 **Rationale.** Bears on REF-5, MEM-4, MEM-8, TYPE-7. Current main: refused (E0238, `untraceablePlace`), whether the projection reads a Copy value or forms a reference: `(if c { a } else { b }).f`, `(**r).f`, `*w.r`. No entry states the refusal: REF-5 forbids a branch value or a stored reference as a reference's root, and MEM-4, MEM-8 and TYPE-7 do not restrict a projection's base. [KNOWN_HOLES.md](../verification/KNOWN_HOLES.md) H28 calls it a deliberate restriction until R-0499's checker on Core. Options: (a) state the restriction as a rule (a projection's base is a place: a binding, its fields and elements, or `*` of a named reference); (b) accept such projections of owned values and Copy reads once the checker traces them, refusing only what REF-5 refuses. Austral: not checked. Pick: none given (raised by the absorption of docs/verification, 2026-10-30).
 
+<a id="OPEN-9X1"></a>
+### OPEN-9X1. `->` between a match arm's pattern and body
+
+**OPEN-9X1@1.** Whether a match arm may separate its pattern from its body with `->` as well as `=>` is an open owner decision (OD9X1).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X1
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on SYN-1 and PAT-7. Current main: the parser accepts both (`parseMatchArms`; `2 -> { return 42; }` exits 42 on both consumers), and the grammar's `match_arm` has only `=>`. The syntax freeze review (2026-04, [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) §1.5) recommended `=>` as the canonical form with a warning for `->`, which also spells a return type. Options: (a) `=>` only, `->` refused; (b) both accepted. Austral: not applicable. Pick: none given (raised by the absorption of docs/compiler, 2026-10-30).
+
+<a id="OPEN-9X2"></a>
+### OPEN-9X2. Type arguments of an enum literal taken from its expected type
+
+**OPEN-9X2@1.** Whether an enum literal or variant written without type arguments (`Option::Some { value: 42 }`, `Option::None`) takes them from the type its position expects, and from which positions, is an open owner decision (OD9X2).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X2
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on TYPE-7, TYPE-15 and OPEN-46, which asks the same of a generic call's type arguments and whose pick excludes the expected result type. Current main: the type arguments come from the expected type of a `return` (the function's result type), of an annotated `let` and of a call argument (the parameter's type); all three exit 42 on both consumers, and spec examples rely on it (PAT-1). The syntax freeze review (§1.3, kill-list items 1, 4 and 5) proposed this inference for enum literals and for constructor calls such as `Vec::new()`. Options: (a) explicit type arguments always; (b) from the expected type in the positions main uses; (c) the answer to OPEN-46, applied to enum literals. Austral: type parameters are inferred from the arguments, and a declaration's type can disambiguate. Pick: none given (raised by the absorption of docs/compiler, 2026-10-30).
+
+<a id="OPEN-9X3"></a>
+### OPEN-9X3. Unlabeled pattern binders: by position or by name
+
+**OPEN-9X3@1.** Whether an unlabeled binder in a struct or variant pattern (`E::V { y, x }`) binds the field of its own name or the field at its position is an open owner decision (OD9X3).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X3
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on PAT-1, PAT-3 and PAT-10. Current main disagrees with itself: with `enum E { V { x: Int, y: Int } }` and `E::V { x: 40, y: 2 }`, the arm `E::V { y, x } => y` gives 40 in `match` and in `if let` (binders zip the variant's fields in declaration order, `Concrete/Elab/Elab.lean` `bindings.zip ev.fields`), while the struct destructuring `let S { y, x } = s; y` gives 2 (by name); both consumers agree. PAT-1's `field: binder` form and the grammar's `binding_list` comment ("positional") point different ways. Options: (a) by name (field punning) everywhere; (b) by position everywhere; (c) refuse an unlabeled list whose order differs from the declaration. Austral: not applicable (no punning). Pick: none given (raised by the absorption of docs/compiler, 2026-10-30; the variant-pattern disagreement may also be filed as a bug).
+
+<a id="OPEN-9X4"></a>
+### OPEN-9X4. `union` declarations
+
+**OPEN-9X4@1.** Whether the language has `union` declarations, and if so what reading a field other than the one last written means, is an open owner decision (OD9X4).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X4
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on SYN-1, TYPE-7, FFI-7 and FFI-8. Current main: `union U { a: Int, b: Uint }` parses (`Concrete/Frontend/Parser.lean`, as a struct whose fields share storage) and compiles; a value built as `U { a: 42 }` is linear, and `union` is neither a keyword nor in the grammar. No document specifies it. Options: (a) remove it; (b) keep it, for the foreign boundary only, with its layout and read rules specified. Austral: no unions. Pick: none given (raised by the absorption of docs/compiler, 2026-10-30).
+
+<a id="OPEN-9X5"></a>
+### OPEN-9X5. Polymorphic recursion
+
+**OPEN-9X5@1.** Whether a generic function that calls itself at a strictly larger type argument (`f::<Box<T>>` inside `f<T>`) is refused, and by which check, is an open owner decision (OD9X5).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X5
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on TYPE-13, PASS-7 and PASS-12. Current main: such a program is not refused; compilation does not terminate (more than 200 s and 2 GB on 2026-10-30, natively and with `--interp`), since monomorphization specializes without a bound on function instances (the bound `closeInstances` has covers only generic type definitions). [PASSES.md](../compiler/PASSES.md) §7 lists unbounded polymorphic recursion as Mono's error. Options: (a) refuse a call cycle whose type arguments grow, before Mono; (b) refuse at Mono when specialization exceeds a stated limit. Austral: not checked. Pick: none given (raised by the absorption of docs/compiler, 2026-10-30; the non-termination may also be filed as a bug).
+
+<a id="OPEN-9X6"></a>
+### OPEN-9X6. User functions named `print`, `println` or `append`
+
+**OPEN-9X6@1.** Whether a program may declare a function named `print`, `println` or `append`, which then replaces the builtin of that name in calls the program writes, is an open owner decision (OD9X6).
+
+- Kind: open
+- Uses: none
+- Codes: none
+- Status: open OD9X6
+- Enforced by: none
+- Semantics: none
+- Obligation: none
+- Evidence: open
+
+**Rationale.** Bears on MOD-3, MOD-8 and TYPE-10. Current main: accepted; with `fn print(x: Int) -> Int`, `print(42)` calls it (exit 42 on both consumers), because Elab desugars the variadic builtins only when no function of that name is visible, and MOD-3's reserved names do not include them. MOD-8 already binds the calls the compiler itself generates by identity. Options: (a) reserve the three names (MOD-3); (b) allow the replacement, as main does. Austral: not applicable. Pick: none given (raised by the absorption of docs/compiler, 2026-10-30).
+
 ## Decided
 
 These entries were retired when the owner answered them; their IDs are never reused.

@@ -576,7 +576,7 @@ Every syntax construct in the language and its freeze status.
 | `let Type::Variant { fields } = expr;` | Irrefutable enum destructuring | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
 | `let StructType { fields } = expr;` | Irrefutable struct destructuring | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
 | `let Type::Variant { fields } = expr else { diverging_body };` | Refutable destructuring with else | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
-| Elaboration-time generic inference | Omit type params when context provides them | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) #1, #4 |
+| Elaboration-time generic inference | Omit type params when context provides them | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) #1, #4 |
 
 These are designed, LL(1)-verified, and approved. They may be implemented before release. Once implemented, they become stable.
 
@@ -589,19 +589,19 @@ These are designed, LL(1)-verified, and approved. They may be implemented before
 | Macros | Permanent exclusion: breaks phase separation and auditability | [ANTI_FEATURES.md](../project/ANTI_FEATURES.md) |
 | Operator overloading | Permanent for first release: hidden effects | [ANTI_FEATURES.md](../project/ANTI_FEATURES.md) |
 | Default function arguments | Hidden parameters; deferred | [ANTI_FEATURES.md](../project/ANTI_FEATURES.md) |
-| String interpolation | Requires macros or special parser form; deferred | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) |
-| `for x in collection` | Requires iterator protocol; deferred | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) #18 |
-| Compound assignment (`+=`, `-=`) | Low priority sugar; deferred | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) #20 |
+| String interpolation | Requires macros or special parser form; deferred | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) |
+| `for x in collection` | Requires iterator protocol; deferred | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) #18 |
+| Compound assignment (`+=`, `-=`) | Low priority sugar; deferred | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) #20 |
 | Guard clauses in match | Grammar ambiguity with `if`; deferred | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
 | Nested patterns in match/let | Complexity; deferred | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
 | `_` wildcard in destructuring | Can be added without grammar changes; deferred | [PATTERN_DESTRUCTURING.md](../archive/design-records/PATTERN_DESTRUCTURING.md) |
-| Byte-string literals (`b"..."`) | Byte/string boundary not settled; deferred | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) #8 |
+| Byte-string literals (`b"..."`) | Byte/string boundary not settled; deferred | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) #8 |
 | Raw strings (`r"..."`) | Deferred | [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) |
 | Multi-line strings | Deferred | [STRING_TEXT_CONTRACT.md](STRING_TEXT_CONTRACT.md) |
 | Pre/post conditions (`requires`/`ensures`) | Proof pipeline not mature; deferred | [ANTI_FEATURES.md](../project/ANTI_FEATURES.md) |
 | `comptime` evaluation | Blurs parse-time/run-time boundary; deferred | [ANTI_FEATURES.md](../project/ANTI_FEATURES.md) |
 | `pub(pkg)` visibility | Deferred until package management | [VISIBILITY_AND_MODULE_HYGIENE.md](../archive/design-records/VISIBILITY_AND_MODULE_HYGIENE.md) |
-| Unifying `#` with `::` | Deferred pending user feedback | [SYNTAX_FREEZE_REVIEW.md](../compiler/SYNTAX_FREEZE_REVIEW.md) #10 |
+| Unifying `#` with `::` | Deferred pending user feedback | [SYNTAX_FREEZE_REVIEW.md](../archive/design-records/SYNTAX_FREEZE_REVIEW.md) #10 |
 
 ---
 
