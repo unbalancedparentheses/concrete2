@@ -58,15 +58,14 @@ GENERATED=(Concrete.BuildIdentity Concrete.Proof.ClassificationTable Concrete.Pr
 # each `PFnDef` and `SpecDecl` in the environment with evalConst (the spec bindings, bug 079).
 ROOT_TYPES=(Concrete.Proof.PFnDef Concrete.Proof.SpecDecl)
 
-# Browser.lean (concrete-browser-native) does not build (`Unknown identifier Pipeline.desugar`,
-# see check_totality_ratchet.sh), so it cannot be imported: its identifiers enter as text roots,
-# and its OWN declarations are not inventoried. Add it to the walk when it builds again.
-mapfile -t SRCS < <(git ls-files 'Concrete.lean' 'Concrete/*.lean' 'Main.lean')
+# Browser.lean, the concrete-browser-native root, is a third executable (check_browser_native.sh
+# builds it): its own declarations are candidates and its `main` is a root, in a walk of its own.
+mapfile -t SRCS < <(git ls-files 'Concrete.lean' 'Concrete/*.lean' 'Main.lean' 'Browser.lean')
 MODS=(); for f in "${SRCS[@]}"; do m="${f%.lean}"; MODS+=("${m//\//.}"); done
 [ "${#MODS[@]}" -gt 0 ] || { echo "FAIL: no compiler modules found"; exit 1; }
 
 echo "=== build the compiler and the proof libraries (the inventory reads their .olean files) ==="
-if lake build "${MODS[@]}" Examples DesignExamples > "$TMP/build.log" 2>&1; then ok "${#MODS[@]} modules and the proof libraries built"
+if lake build "${MODS[@]}" Browser Examples DesignExamples > "$TMP/build.log" 2>&1; then ok "${#MODS[@]} modules, Browser and the proof libraries built"
 else tail -20 "$TMP/build.log"; no "lake build failed"; echo "DEAD-CODE-RATCHET: PASS=$PASS FAIL=$FAIL"; exit 1; fi
 
 echo "=== C1: the finder sees what it must on a known source ==="
@@ -109,19 +108,21 @@ python3 "$RATCHET" allow-names > "$TMP/allow.txt" || no "could not read the allo
 ARGS=(--roots "$TMP/roots.txt" --allow "$TMP/allow.txt")
 for g in "${GENERATED[@]}"; do ARGS+=(--root-module "$g"); done
 for t in "${ROOT_TYPES[@]}"; do ARGS+=(--root-type "$t"); done
-# TWO WALKS. Main and Concrete.Pipeline.PipelineTest both declare `main`, so one environment cannot
-# import them together. The second walk imports PipelineTest alone; a declaration is reachable when
-# either walk reaches it (dead_code_ratchet.py merges them).
+# THREE WALKS. Main, Concrete.Pipeline.PipelineTest and Browser each declare `main`, so one
+# environment cannot import them together. The second walk imports PipelineTest alone, the third
+# Browser alone; a declaration is reachable when any walk reaches it (dead_code_ratchet.py merges
+# them).
 SEPARATE="Concrete.Pipeline.PipelineTest"
-MAIN_MODS=(); for m in "${MODS[@]}"; do [ "$m" = "$SEPARATE" ] || MAIN_MODS+=("$m"); done
+MAIN_MODS=(); for m in "${MODS[@]}"; do [ "$m" = "$SEPARATE" ] || [ "$m" = Browser ] || MAIN_MODS+=("$m"); done
 inventory_failed() { head -5 "$1"; no "the inventory tool failed"; echo "DEAD-CODE-RATCHET: PASS=$PASS FAIL=$FAIL"; exit 1; }
 lake env lean --run "$TOOL" "${ARGS[@]}" "${MAIN_MODS[@]}" Examples DesignExamples > "$TMP/w1.tsv" 2> "$TMP/w1.err" || inventory_failed "$TMP/w1.err"
 lake env lean --run "$TOOL" "${ARGS[@]}" "$SEPARATE" > "$TMP/w2.tsv" 2> "$TMP/w2.err" || inventory_failed "$TMP/w2.err"
-WALKS=(--walk "$TMP/w1.tsv" --walk "$TMP/w2.tsv")
+lake env lean --run "$TOOL" "${ARGS[@]}" Browser > "$TMP/w3.tsv" 2> "$TMP/w3.err" || inventory_failed "$TMP/w3.err"
+WALKS=(--walk "$TMP/w1.tsv" --walk "$TMP/w2.tsv" --walk "$TMP/w3.tsv")
 missing=""
 for i in "${!MODS[@]}"; do
   grep -qE '^(private |protected |noncomputable |partial |unsafe |@\[[^]]*\] )*(def|theorem|structure|inductive|abbrev|instance|class|opaque|axiom) ' "${SRCS[$i]}" || continue
-  grep -qxF -- "$(printf 'visited\t%s' "${MODS[$i]}")" <(cut -f1,2 "$TMP/w1.err" "$TMP/w2.err") || missing="$missing ${MODS[$i]}"
+  grep -qxF -- "$(printf 'visited\t%s' "${MODS[$i]}")" <(cut -f1,2 "$TMP/w1.err" "$TMP/w2.err" "$TMP/w3.err") || missing="$missing ${MODS[$i]}"
 done
 [ -z "$missing" ] && ok "the walk saw declarations from every declaring module (${#MODS[@]} asked for)" \
   || no "modules that declare things contributed nothing to the walk:$missing"

@@ -18,8 +18,7 @@ Commands:
                               the text of `#guard` / `#eval` / `#check` / `#print` / `#reduce` /
                               `example` commands in the Lean libraries (commands leave no
                               declaration behind), and every Lean file outside the libraries
-                              (Browser.lean, which does not build; scripts/**/*.lean, which
-                              import the compiler). The inventory tool takes them as roots.
+                              (scripts/**/*.lean, which import the compiler). The inventory tool takes them as roots.
   allow-names                 print the allowlist's declaration names (the tool's --allow input)
   check --walk F [--walk F]... [--base-baseline FILE]
                               exit 1 on any finding (the gate):
@@ -66,7 +65,7 @@ def git_ls(*patterns):
 
 
 def lib_sources():
-    return git_ls("Concrete.lean", "Concrete/*.lean", "Main.lean", "proofs/*.lean")
+    return git_ls("Concrete.lean", "Concrete/*.lean", "Main.lean", "Browser.lean", "proofs/*.lean")
 
 
 def outside_sources():
@@ -302,7 +301,7 @@ def cmd_allow_names(_args):
 def cmd_seed_allow(args):
     inv, _ = load_walks(args.walk)
     files = [f for f in git_ls("scripts", "tests") if not f.endswith((".con", ".golden", ".out", ".expected"))]
-    lib = git_ls("Concrete.lean", "Concrete/*.lean", "Main.lean")
+    lib = git_ls("Concrete.lean", "Concrete/*.lean", "Main.lean", "Browser.lean")
     texts = {}
     for f in files:
         try:
