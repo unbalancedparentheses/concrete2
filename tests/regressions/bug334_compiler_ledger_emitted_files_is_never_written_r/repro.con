@@ -1,0 +1,6 @@
+// Bug 334: Compiler ledger emitted_files is never written: --report compiler-ledger shows [] even after a build
+// FILL-IN(new_bug.sh) replace this body with the smallest program that shows the defect, and state
+// here what it does (Observed) and what it should do (Expected).
+fn main() -> Int {
+    return 0;
+}
