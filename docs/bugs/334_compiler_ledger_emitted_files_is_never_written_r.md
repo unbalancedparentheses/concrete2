@@ -1,45 +1,67 @@
 # Bug 334 — Compiler ledger emitted_files is never written: --report compiler-ledger shows [] even after a build
 
 **Status:** OPEN
-**Found:** 2026-10-30, FILL-IN(new_bug.sh) by what (workload, probe, review, example)
-**Severity:** FILL-IN(new_bug.sh) what goes wrong for a user (silent wrong code, unsound claim, crash, refusal)
+**Found:** 2026-10-30, by the dead-code finder (`recordEmitted` has no caller), confirmed by Codex review
+**Severity:** a report states an absence that is not true: `emitted_files` is always `[]`
 
 <!-- bug-ledger
 summary: Compiler ledger emitted_files is never written: --report compiler-ledger shows [] even after a build
-coverage: reproducer tests/regressions/bug334_compiler_ledger_emitted_files_is_never_written_r/repro.con, pinned by FILL-IN(new_bug.sh) the gate leg that pins it (for example check_example_outputs.sh, open-bug reproducers leg)
+class: 11
+coverage: reproducer tests/regressions/bug334_compiler_ledger_emitted_files_is_never_written_r/repro.con (a project build, then the ledger report); no gate pins it yet, the open status is the rationale; the dead-code baseline keeps recordEmitted with a keep: reason naming this bug
 silent: no
 ruling: Outside the spec: tooling — the compiler ledger is a report surface, not a language behaviour
 -->
 
 ## Reproducer
 
-`tests/regressions/bug334_compiler_ledger_emitted_files_is_never_written_r/repro.con`: FILL-IN(new_bug.sh) the smallest program that shows the defect.
+`tests/regressions/bug334_compiler_ledger_emitted_files_is_never_written_r/repro.con`, built as
+the only source of a project (any program shows it; the defect is in the driver):
+
+```
+$ mkdir -p p/src && cp repro.con p/src/main.con
+$ printf '[package]\nname = "ledgerprobe"\nversion = "0.1.0"\n' > p/Concrete.toml
+$ cd p && concrete build -o probe        # Built probe
+$ concrete --report compiler-ledger --json | jq .emitted_files
+[]
+```
 
 ## Observed
 
-FILL-IN(new_bug.sh) what the binary and `--interp` do (exit status, output, diagnostic).
+On main `14121934` (OVH): the build succeeds and writes `probe`; the ledger report exits 0 and
+its `emitted_files` is `[]`. The same holds with any project and any build output path.
 
 ## Expected
 
-FILL-IN(new_bug.sh) what the normative rule says, with a link to it.
+No language rule decides it (a report surface). The ledger's own design says it records
+"emitted files and replay commands" ([COMPILER_PIPELINE.md](../compiler/COMPILER_PIPELINE.md),
+the compiler-ledger fact list), so either the list names the files the build wrote, or the field
+is absent or marked unknown. An empty list claims that nothing was emitted.
 
 ## Cause
 
-FILL-IN(new_bug.sh) the code that produces it (file, function).
+`Concrete/Report/CompilerLedger.lean`: `recordEmitted` is the only writer of `emittedFiles`, and
+nothing calls it. The report also rebuilds the ledger from scratch at report time
+(`Main.lean`, the `compiler-ledger` report), before and independently of any emission, so even a
+caller in the build path would not reach the report.
 
 ## Structural cause
 
-FILL-IN(new_bug.sh) the design fact that let this bug exist: which class of
-[STRUCTURAL_CLASSES.md](STRUCTURAL_CLASSES.md) it is an instance of (or the new class it adds),
-and the other bugs of that class.
+Class 11 of [STRUCTURAL_CLASSES.md](STRUCTURAL_CLASSES.md), absence read as a fact: a field
+that no run fills defaults to the empty list, and the empty list is rendered as the fact "no files
+were emitted". Like 058 and 063, a default stands in for "not observed".
 
 ## Structural owner
 
-FILL-IN(new_bug.sh) the roadmap task, exit or verified-pipeline stage that removes the
-cause for the whole class, not only this spelling.
+The compiler-ledger work recorded in
+[PHASE4_COMPILER_LEDGER_AUDIT.md](../verification/PHASE4_COMPILER_LEDGER_AUDIT.md): the ledger
+must either be persisted by the build that emits (so the report reads the build's record) or say
+"not recorded" for facts no run filled. For the class, R-0494's single verdict authority is the
+pattern: a surface renders an observed absence and an unobserved field differently.
 
 ## Containment while open
 
-FILL-IN(new_bug.sh) the gate leg that pins the current behaviour, and what a user
-does meanwhile. A silent defect is stopped at once by repair or fail-closed containment
+No gate pins it yet; the record's open status is the rationale. The dead-code ratchet
+(`wip/cleanup-dead-code`) keeps `recordEmitted` in its baseline with a `keep:` reason naming this
+defect, so the writer is not removed before the fix. Meanwhile a user reads the build's own output
+path, not `emitted_files`. A silent defect is stopped at once by repair or fail-closed containment
 ([defect disposition rule](../../ROADMAP.md#the-current-execution-queue)).

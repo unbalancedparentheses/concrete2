@@ -114,11 +114,10 @@ a link failure, an interpreter refusal or an unrejected leak.
 |---|---|---|---|
 | 1. Declaration identity by spelled name, not a resolved `DefId` | 4 | 1 | 054, 077, 114, 122 |
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
-| 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
+| 11. Absence read as a fact (fail-open defaults) | 3 | 0 | 049, 058, 334 |
 | 12. One fact kept in two places | 2 | 0 | 064, 226 |
 | 13. Documented rules with no enforcing site | 11 | 10 | 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
-| no class yet | 1 | 0 | 334 |
 
 | open bugs by Phase 1 exit | open | silent | bugs |
 |---|---|---|---|
