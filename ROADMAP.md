@@ -108,13 +108,13 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 21** (11 silent, 5 loud, 5 filed before the discovery record) of 296 bug records.
+**Open bugs: 22** (11 silent, 6 loud, 5 filed before the discovery record) of 297 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
 | 1. Declaration identity by spelled name, not a resolved `DefId` | 4 | 1 | 054, 077, 114, 122 |
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
-| 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
+| 11. Absence read as a fact (fail-open defaults) | 3 | 0 | 049, 058, 335 |
 | 12. One fact kept in two places | 2 | 0 | 064, 226 |
 | 13. Documented rules with no enforcing site | 11 | 10 | 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
@@ -124,7 +124,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | exit 0b | 1 | 1 | 122 |
 | exit 2c | 1 | 0 | 114 |
 | exit 2q | 13 | 10 | 216, 226, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328 |
-| no exit names it | 6 | 0 | 049, 054, 058, 064, 077, 270 |
+| no exit names it | 7 | 0 | 049, 054, 058, 064, 077, 270, 335 |
 
 | open bugs by spec ruling ([RULINGS.md](docs/bugs/RULINGS.md)) | open | silent | bugs |
 |---|---|---|---|
@@ -145,7 +145,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | violates TYPE-6@2 | 1 | 1 | 322 |
 | spec gap (PASS) | 2 | 0 | 054, 077 |
 | outside the spec (performance) | 1 | 0 | 270 |
-| outside the spec (tooling) | 3 | 0 | 049, 058, 064 |
+| outside the spec (tooling) | 4 | 0 | 049, 058, 064, 335 |
 
 | discovery rate: counting probe batch | date | effort | found | silent | loud | signal |
 |---|---|---|---|---|---|---|
@@ -179,7 +179,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | 19. A mention read as a use (tool facts inferred from where a name is spelled) | 11 | yes |
 | no class yet | 11 | yes |
 
-Discovery signal (exit 2m): 17 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 20 counting batches recorded, 1 of them token batches. 74 attribution-only batches (reviews, follow-ons, CI, controls, development) found 120 further bugs.
+Discovery signal (exit 2m): 17 of 20 classes have 3 consecutive eligible quiet counting batches (for a class: no silent bug of that class, at most one loud, effort at least 4 hours or 10 programs); the exit needs every class. 20 counting batches recorded, 1 of them token batches. 75 attribution-only batches (reviews, follow-ons, CI, controls, development) found 121 further bugs.
 
 <!-- END GENERATED: bug dashboard -->
 

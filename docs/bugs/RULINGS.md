@@ -17,7 +17,7 @@ of [docs/spec/ids.tsv](../spec/ids.tsv), or the generator refuses the record.
 
 <!-- BEGIN GENERATED: spec rulings (scripts/gen/bug_ledger.py; edit the records' ruling lines) -->
 
-296 bug records, 293 of them ruled: violates a rule 157, spec gap 33, open owner question 0, permitted by a rule 1, outside the spec 102; not ruled yet (fixed bugs filed before bug 300) 3. Open bugs are in bold.
+297 bug records, 294 of them ruled: violates a rule 157, spec gap 33, open owner question 0, permitted by a rule 1, outside the spec 103; not ruled yet (fixed bugs filed before bug 300) 3. Open bugs are in bold.
 
 ### By kind
 
@@ -27,7 +27,7 @@ of [docs/spec/ids.tsv](../spec/ids.tsv), or the generator refuses the record.
 | spec gap | 33 | 2 | 5 |
 | open owner question | 0 | 0 | 0 |
 | permitted by a rule (not a bug) | 1 | 0 | 0 |
-| outside the spec | 102 | 4 | 16 |
+| outside the spec | 103 | 5 | 16 |
 | not ruled yet | 3 | 0 | 0 |
 
 ### By chapter
@@ -170,7 +170,7 @@ No rule decides these bugs' behaviour. Each fix starts by writing the rule (spec
 
 | reason | bugs |
 |---|---|
-| tooling | **049**, **058**, 059, 060, 062, **064**, 065, 067, 068, 075, 076, 079, 080, 081, 083, 084, 085, 086, 089, 106, 135, 179, 180, 191, 203, 206, 207, 209, 214, 219, 224, 225, 232, 237, 244, 247, 252, 263, 268, 272, 283, 284, 294, 299, 300, 315, 316 |
+| tooling | **049**, **058**, 059, 060, 062, **064**, 065, 067, 068, 075, 076, 079, 080, 081, 083, 084, 085, 086, 089, 106, 135, 179, 180, 191, 203, 206, 207, 209, 214, 219, 224, 225, 232, 237, 244, 247, 252, 263, 268, 272, 283, 284, 294, 299, 300, 315, 316, **335** |
 | performance | 015, 026, 027, 178, 228, 234, 235, 236, 248, 249, 250, 255, 256, 257, 258, 259, 260, 261, 265, 266, 267, 269, **270**, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 286, 288, 289, 290, 291, 292, 293, 295, 296, 297, 298 |
 | library | 007, 010, 011, 012, 017, 043, 046, 047, 048, 072, 152 |
 
