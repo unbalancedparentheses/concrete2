@@ -498,6 +498,7 @@ the report counts those bugs as ambiguous.
 - [326_a_field_access_opens_a_heap_or_heaparray_implici.md](326_a_field_access_opens_a_heap_or_heaparray_implici.md) — A field access opens a Heap or HeapArray implicitly, which MEM-4 refuses as the owner decided OD30 on 2026-10-29
 - [327_an_integer_or_float_literal_with_no_expected_typ.md](327_an_integer_or_float_literal_with_no_expected_typ.md) — An integer or float literal with no expected type defaults to Int or Float64, which ARITH-2 refuses as the owner decided OD31 on 2026-10-29
 - [328_a_method_taking_self_or_mut_self_is_called_on_an.md](328_a_method_taking_self_or_mut_self_is_called_on_an.md) — A method taking &self or &mut self is called on an owned place with an implicit borrow, which OWN-15 refuses as the owner decided OD32 on 2026-10-29
+- [336_a_destructuring_let_without_mut_binds_assignable.md](336_a_destructuring_let_without_mut_binds_assignable.md) — a destructuring let without mut binds assignable names
 
 <!-- END GENERATED: bug list -->
 
