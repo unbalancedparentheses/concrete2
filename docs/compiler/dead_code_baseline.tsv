@@ -14,6 +14,7 @@ Concrete.ObligationStatus.allCanonical	def	Concrete/Proof/ProofCore.lean	keep: n
 Concrete.ProofRegistryEntry.allCoverageKinds	def	Concrete/Proof/ProofCore.lean	keep: tests/showcase/manifest.toml names it as the coverage-kind vocabulary
 Concrete.cExprIdentToPExpr	def	Concrete/Proof/ProofCore.lean	keep: cross-check helper recorded in docs/verification/PROOF_OBLIGATIONS_REGISTER.md
 Concrete.cExprLitToPExpr	def	Concrete/Proof/ProofCore.lean	keep: cross-check helper recorded in docs/verification/PROOF_OBLIGATIONS_REGISTER.md and ProofSoundness.lean
+Concrete.CompilerLedger.CompilerLedger.recordEmitted	def	Concrete/Report/CompilerLedger.lean	keep: the only writer of emitted_files, which docs/compiler/COMPILER_PIPELINE.md says the ledger records; nothing calls it (reported: the field is always empty)
 Concrete.CompilerLedger.CompilerLedger.recordReplayCommand	def	Concrete/Report/CompilerLedger.lean	keep: ledger API listed in docs/compiler/COMPILER_PIPELINE.md
 Concrete.withContext	def	Concrete/Report/Diagnostic.lean	keep: diagnostics helper documented in docs/compiler/TESTING.md
 Concrete.Capabilities.trustedGrantsUnsafeOnCalls	def	Concrete/Semantics/Capabilities.lean	keep: records the R-0484 trusted-extern decision as a named constant

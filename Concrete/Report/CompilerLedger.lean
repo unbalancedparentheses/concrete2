@@ -88,6 +88,7 @@ def recordDependency (l : CompilerLedger) (name path : String) : CompilerLedger 
 def recordTiming     (l : CompilerLedger) (pass : String) (millis : Nat) : CompilerLedger := { l with timings := l.timings ++ [{ pass, millis }] }
 def recordSourceMap  (l : CompilerLedger) (file : String) (modules : List String) : CompilerLedger :=
   { l with sourceFiles := l.sourceFiles ++ [{ file, modules }] }
+def recordEmitted    (l : CompilerLedger) (file : String) : CompilerLedger := { l with emittedFiles := l.emittedFiles ++ [file] }
 def recordReplayCommand (l : CompilerLedger) (id cmd : String) : CompilerLedger := { l with replayCommands := l.replayCommands ++ [(id, cmd)] }
 
 /-- Link this fact store to the ObligationCore (proof) ledger. -/

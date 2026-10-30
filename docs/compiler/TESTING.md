@@ -629,7 +629,7 @@ Trust-gate now covers 5 contract sections (determinism, consistency, terminology
 
 Goal: compiler diagnostics accumulate human-readable context as errors propagate up.
 
-`Diagnostic` now carries a `context : List String` field. Helpers: `Diagnostic.addContext`, `Diagnostics.addContext`, `withContext` (monadic), `Except.addContext` (pure). Rendering appends `= while ...` lines. Annotated at: Check (per-module, per-function), Elab (per-module, per-function), Lower (per-function).
+`Diagnostic` now carries a `context : List String` field. Helpers: `Diagnostic.addContext`, `Diagnostics.addContext`, `withContext` (monadic). Rendering appends `= while ...` lines. Annotated at: Check (per-module, per-function), Elab (per-module, per-function), Lower (per-function).
 
 ### Phase 13: Module/Package Policy Checks (complete)
 
