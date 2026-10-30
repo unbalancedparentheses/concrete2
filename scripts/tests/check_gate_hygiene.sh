@@ -546,7 +546,10 @@ has_match_unloaded() {
   for f in "$@"; do
     [ "${f##*/}" = has_match.sh ] && continue
     has_match -E '(^|[^A-Za-z0-9_.-])has_match([[:space:]]|$)' <<<"$(logical_lines "$f")" || continue
-    grep -qE '(lib/gate_env\.sh|/has_match\.sh)' "$f" || echo "$f"
+    # A run_tests.sh code unit is sourced into run_tests.sh, so the runner's loader is its loader.
+    local loader="$f"
+    case "$f" in */scripts/tests/suite/*) loader="${f%/suite/*}/run_tests.sh" ;; esac
+    grep -qE '(lib/gate_env\.sh|/has_match\.sh)' "$loader" || echo "$f"
   done
 }
 SC_FILES=("$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/*/*.sh "$ROOT_DIR"/scripts/tests/lib/*.sh "$ROOT_DIR"/scripts/tests/suite/*.sh "$ROOT_DIR"/.githooks/pre-push)
