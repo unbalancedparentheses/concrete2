@@ -624,21 +624,6 @@ def ProofEvidenceReceipt.isCurrentAgainst
   r.facts.isCurrentAgainst subjectDigest edge tableBindings dependencyRoot theoremArtifact
     carriesTrust trustedBoundaries toolchainId scopeId contextId importsId
 
-/-- Thin wrapper: a STORED receipt's currency, through the same comparison.
-
-    This is the only thing a stored receipt can do. It cannot become evidence, it cannot be minted
-    from, and it cannot make a claim proved on its own — it can only agree or disagree with material
-    computed fresh from the program right now. A receipt swapped onto another claim's name in the
-    storage file disagrees here, because the subject digest is compared rather than the file key. -/
-def StoredReceipt.isCurrentAgainst
-    (r : StoredReceipt) (subjectDigest : String) (edge : DependencyEdge)
-    (tableBindings : List (Name × String))
-    (dependencyRoot theoremArtifact : String)
-    (carriesTrust : Bool) (trustedBoundaries : List String)
-    (toolchainId scopeId contextId importsId : String) : Bool :=
-  r.facts.isCurrentAgainst subjectDigest edge tableBindings dependencyRoot theoremArtifact
-    carriesTrust trustedBoundaries toolchainId scopeId contextId importsId
-
 /-- A stored receipt is comparable only when it was written under this envelope version.
     Distinct from "the contents differ" for the same reason `needsRecheck` is distinct from
     `stale`: the format changed, and the program may not have. -/

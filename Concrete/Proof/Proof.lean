@@ -410,11 +410,6 @@ def PFnDef.identified? (d : PFnDef) : Option IdentifiedPFnDef :=
     some { callableId := id, displayName := d.displayName,
            params := d.params, body := d.body }
 
-/-- Widen back, for evaluation. -/
-def IdentifiedPFnDef.toPFnDef (d : IdentifiedPFnDef) : PFnDef :=
-  { identity := .semantic d.callableId, displayName := d.displayName,
-    params := d.params, body := d.body }
-
 /-- An environment maps variable names to values. -/
 abbrev Env := String → Option PVal
 

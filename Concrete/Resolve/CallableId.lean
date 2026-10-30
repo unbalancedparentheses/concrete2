@@ -205,10 +205,6 @@ def CallableId.ofExtern (declName : String) : CallableId :=
 def CallableId.ofSpec (defModule declName : String) : CallableId :=
   { ns := .spec, defModule := defModule, declName := declName }
 
-/-- Is this a specialization of a generic callable? -/
-def CallableId.isSpecialized (id : CallableId) : Bool :=
-  !id.typeArgs.isEmpty
-
 /-- Does this identity say WHICH callable it means?
 
     A generic declaration with no recorded type arguments does not: one such

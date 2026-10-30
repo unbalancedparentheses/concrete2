@@ -4713,12 +4713,6 @@ structure TraceEntry where
   claimBoundary  : String       -- where the claim stops being guaranteed
   loc            : Option SourceLoc
 
-/-- Collect all function names from SSA modules. -/
-private partial def collectSSANames (sm : SModule) (pfx : String := "") : List (String × String) :=
-  let modPfx := if pfx.isEmpty then sm.name else pfx ++ "." ++ sm.name
-  let fns := sm.functions.map fun f => (f.name, modPfx)
-  fns
-
 /-- Collect all function names from monomorphized Core modules. -/
 private partial def collectMonoFnNames (m : CModule) (pfx : String := "") : List String :=
   let modPfx := if pfx.isEmpty then m.name else pfx ++ "." ++ m.name

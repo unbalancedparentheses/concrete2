@@ -239,15 +239,6 @@ def synthesizeSourceLinks (astModules : List Module) (coreModules : List CModule
       | _ => pure ()  -- ambiguous/absent: no silent guess (surfaces as no-registered-proof)
   return entries
 
-/-- Merge JSON-registry entries with synthesized in-source link entries. A
-    function defining a proof link in BOTH places is an error — one source of
-    truth. -/
-def mergeSourceLinks (jsonRegistry sourceEntries : ProofRegistry) : Except String ProofRegistry :=
-  let jsonFns := jsonRegistry.map (·.function)
-  let conflicts := sourceEntries.filter (fun e => jsonFns.contains e.function)
-  if conflicts.isEmpty then .ok (jsonRegistry ++ sourceEntries)
-  else .error s!"function(s) have both an in-source proof link and a proof-registry.json entry: {", ".intercalate (conflicts.map (·.function))}. Use one source of truth."
-
 -- ---- source-contract expression validation ----
 
 /-- Function/spec/extern names that contract expressions may call. Includes

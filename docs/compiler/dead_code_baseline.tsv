@@ -10,39 +10,12 @@ Concrete.exemptExitBranch	def	Concrete/Check/CheckHelpers.lean	keep: the bug 149
 Concrete.Pipeline.VerifyReport.allDiagnostics	def	Concrete/Pipeline/Pipeline.lean	keep: VerifyReport API documented in docs/verification/VERIFY_GATES.md
 Concrete.Pipeline.VerifyReport.isClean	def	Concrete/Pipeline/Pipeline.lean	keep: VerifyReport API documented in docs/verification/VERIFY_GATES.md
 Concrete.Pipeline.VerifyReport.warningCount	def	Concrete/Pipeline/Pipeline.lean	keep: VerifyReport API documented in docs/verification/VERIFY_GATES.md
-Concrete.Proof.BodyScope.depth	def	Concrete/Proof/BodyScope.lean	unreviewed
-Concrete.collectCalleesArm	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectCalleesStmt	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectCallsExpr	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectFnValueRefsArm	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectFnValueRefsExpr	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectFnValueRefsStmt	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectMethodValueRefsArm	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectMethodValueRefsExpr	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectMethodValueRefsStmt	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.collectRuntimeCallsStmts	def	Concrete/Proof/CallCollect.lean	unreviewed
-Concrete.Proof.IdentifiedPFnDef.toPFnDef	def	Concrete/Proof/Proof.lean	unreviewed
-Concrete.CFnDef.isProofEligible	def	Concrete/Proof/ProofCore.lean	unreviewed
 Concrete.ObligationStatus.allCanonical	def	Concrete/Proof/ProofCore.lean	keep: named by the proof-module overlap audit (research/process/proof-module-overlap-2026-10.md); decide with that consolidation
 Concrete.ProofRegistryEntry.allCoverageKinds	def	Concrete/Proof/ProofCore.lean	keep: tests/showcase/manifest.toml names it as the coverage-kind vocabulary
-Concrete.allDefinedNames	partial	Concrete/Proof/ProofCore.lean	unreviewed
 Concrete.cExprIdentToPExpr	def	Concrete/Proof/ProofCore.lean	keep: cross-check helper recorded in docs/verification/PROOF_OBLIGATIONS_REGISTER.md
 Concrete.cExprLitToPExpr	def	Concrete/Proof/ProofCore.lean	keep: cross-check helper recorded in docs/verification/PROOF_OBLIGATIONS_REGISTER.md and ProofSoundness.lean
-Concrete.tableResolutionRefusalsOf	def	Concrete/Proof/ProofCore.lean	unreviewed
-Concrete.Proof.StoredReceipt.isCurrentAgainst	def	Concrete/Proof/Receipt.lean	unreviewed
-Concrete.Assumptions.Table.summary?	def	Concrete/Report/AssumptionSummary.lean	unreviewed
-Concrete.CompilerLedger.CompilerLedger.recordEmitted	def	Concrete/Report/CompilerLedger.lean	unreviewed
 Concrete.CompilerLedger.CompilerLedger.recordReplayCommand	def	Concrete/Report/CompilerLedger.lean	keep: ledger API listed in docs/compiler/COMPILER_PIPELINE.md
-Concrete.Except.addContext	def	Concrete/Report/Diagnostic.lean	unreviewed
 Concrete.withContext	def	Concrete/Report/Diagnostic.lean	keep: diagnostics helper documented in docs/compiler/TESTING.md
-Concrete.Report.parseFacts	def	Concrete/Report/Diff.lean	unreviewed
-Concrete.Report.collectSSANames	def	Concrete/Report/Report.lean	unreviewed
-Concrete.Report.AllocInfo	structure	Concrete/Report/ReportBase.lean	unreviewed
-Concrete.Report.CallSite	structure	Concrete/Report/ReportBase.lean	unreviewed
-Concrete.Report.calleeTag	def	Concrete/Report/ReportBase.lean	unreviewed
-Concrete.Report.instBEqCallSite	instance	Concrete/Report/ReportBase.lean	unreviewed
-Concrete.Report.mergeSourceLinks	def	Concrete/Report/ReportVC.lean	unreviewed
-Concrete.CallableId.isSpecialized	def	Concrete/Resolve/CallableId.lean	unreviewed
 Concrete.Capabilities.trustedGrantsUnsafeOnCalls	def	Concrete/Semantics/Capabilities.lean	keep: records the R-0484 trusted-extern decision as a named constant
 Concrete.TermIR.Op.resultSrt	def	Concrete/Semantics/TermIR.lean	keep: TermIR sort seed (docs/verification/VERIFICATION_IR.md; ROADMAP_TASKS typed-authority work)
 Concrete.TermIR.Srt	inductive	Concrete/Semantics/TermIR.lean	keep: TermIR sort seed (docs/verification/VERIFICATION_IR.md; ROADMAP_TASKS typed-authority work)

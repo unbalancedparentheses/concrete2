@@ -162,23 +162,6 @@ def fingerprintReport (pc : Concrete.ProofCore) : String :=
   "=== Body Fingerprints ===\n" ++ "\n".intercalate lines ++ "\n"
 
 -- ============================================================
--- Report-specific data types
--- ============================================================
-
-/-- A call site found in a function body. -/
-structure CallSite where
-  callee : String
-  deriving BEq
-
-/-- Info about allocation-related activity in a function body. -/
-structure AllocInfo where
-  allocCalls : List String   -- intrinsic names: alloc, vec_new, etc.
-  freeCalls  : List String   -- intrinsic names: free, destroy, vec_free, etc.
-  deferExprs : List String   -- descriptions of deferred expressions
-  hasAllocCall : Bool        -- CExpr.allocCall node (with(Alloc = ...))
-
-
--- ============================================================
 -- Callee CapSet lookup
 -- ============================================================
 
@@ -236,14 +219,6 @@ def lookupCalleeCap (lookup : CapLookup) (name : String) : Option CapSet :=
       | some cap => some (.concrete [cap])
       | none => some .empty
     | none => none
-
-/-- Classify a callee for display purposes. -/
-def calleeTag (lookup : CapLookup) (name : String) : String :=
-  match lookup.find? (fun (n, _) => n == name) with
-  | some _ => ""
-  | none =>
-    if (resolveIntrinsic name).isSome then " (intrinsic)"
-    else " (unknown)"
 
 
 

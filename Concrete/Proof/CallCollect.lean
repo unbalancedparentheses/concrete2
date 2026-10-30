@@ -83,8 +83,6 @@ def calleeHere : CExpr → List Callee
 -- Every callee of every call in a body, in walk order: THE one walk. The views below select
 -- by the callee's form, so they cannot disagree about which expressions are visited.
 def collectCalleesExpr (e : CExpr) : List Callee := (collectGoExpr calleeHere [] e).reverse
-def collectCalleesArm (arm : CMatchArm) : List Callee := (collectGoArm calleeHere [] arm).reverse
-def collectCalleesStmt (s : CStmt) : List Callee := (collectGoStmt calleeHere [] s).reverse
 def collectCalleesStmts (ss : List CStmt) : List Callee := (collectGoStmts calleeHere [] ss).reverse
 
 /-- Direct callees. Only a direct callee names a definition. An indirect callee is a fn-typed
@@ -94,7 +92,6 @@ def collectCalleesStmts (ss : List CStmt) : List Callee := (collectGoStmts calle
     compiler-generated runtime-helper call (`Callee.runtime`, bug 165) names no program
     definition either, so it is no edge: resolving its spelling would find a module's own
     `fn print_int`, which the call never reaches. -/
-def collectCallsExpr (e : CExpr) : List String := (collectCalleesExpr e).filterMap (·.directName?)
 def collectCallsStmts (ss : List CStmt) : List String := (collectCalleesStmts ss).filterMap (·.directName?)
 
 /-- The free direct calls of a function that its resolver bound to a foreign declaration
@@ -134,12 +131,6 @@ def collectIndirectCallsExpr (e : CExpr) : List String :=
 def collectIndirectCallsStmts (ss : List CStmt) : List String :=
   (collectCalleesStmts ss).filterMap fun | .indirect b => some b.name | _ => none
 
-/-- The runtime helpers a body calls through compiler-generated calls (`println`'s
-    `print_int`, bug 165): the helper names, for reports that explain which intrinsic supplies
-    a capability. Never resolved against program definitions. -/
-def collectRuntimeCallsStmts (ss : List CStmt) : List String :=
-  (collectCalleesStmts ss).filterMap fun | .runtime h => some h | _ => none
-
 /-! ### Function values
 
 A function taken as a VALUE (`write_fn: console_write`) may be called later through that
@@ -160,9 +151,6 @@ def fnValueHere : CExpr → List String
   | .ident n (.fn_ ..) => if n.id.isNone && n.space == .free then [n.name] else []
   | _ => []
 
-def collectFnValueRefsExpr (e : CExpr) : List String := (collectGoExpr fnValueHere [] e).reverse
-def collectFnValueRefsArm (arm : CMatchArm) : List String := (collectGoArm fnValueHere [] arm).reverse
-def collectFnValueRefsStmt (s : CStmt) : List String := (collectGoStmt fnValueHere [] s).reverse
 def collectFnValueRefsStmts (ss : List CStmt) : List String :=
   (collectGoStmts fnValueHere [] ss).reverse
 
@@ -174,11 +162,6 @@ def methodValueHere : CExpr → List String
   | .ident n (.fn_ ..) => if n.id.isNone && n.space == .method then [n.name] else []
   | _ => []
 
-def collectMethodValueRefsExpr (e : CExpr) : List String := (collectGoExpr methodValueHere [] e).reverse
-def collectMethodValueRefsArm (arm : CMatchArm) : List String :=
-  (collectGoArm methodValueHere [] arm).reverse
-def collectMethodValueRefsStmt (s : CStmt) : List String :=
-  (collectGoStmt methodValueHere [] s).reverse
 def collectMethodValueRefsStmts (ss : List CStmt) : List String :=
   (collectGoStmts methodValueHere [] ss).reverse
 

@@ -142,9 +142,9 @@ ProofCore extraction requires all five gates to pass. Each gate corresponds to o
 
 | Gate | Check | Effect category | ProofCore.lean location |
 |------|-------|----------------|------------------------|
-| Authority-free | `f.capSet.isEmpty` | Capabilities | `CFnDef.isProofEligible` |
-| Not trusted | `!f.isTrusted && f.trustedImplOrigin.isNone` | Trusted code | `CFnDef.isProofEligible` |
-| Not entry point | `!f.isEntryPoint` | Host interaction | `CFnDef.isProofEligible` |
+| Authority-free | `f.capSet.isEmpty` | Capabilities | `assessEligibility` |
+| Not trusted | `!f.isTrusted` (since bug 189 a method is trusted only by its own `trusted`) | Trusted code | `assessEligibility` |
+| Not entry point | `!f.isEntryPoint` | Host interaction | `assessEligibility` |
 | Body extractable | `cExprToPExpr body ≠ none` | All (construct support) | `extractProofCore` |
 | Profile gates | No recursion, bounded loops, no alloc, no FFI, no blocking | All effects | `--report proof` heuristic |
 

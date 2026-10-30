@@ -210,10 +210,6 @@ def returnsAllocation : Ty → Bool
 
 abbrev CallGraph := List (String × List String)
 
-/-- Collect all function names defined in a module tree (bare names). -/
-private partial def allDefinedNames (m : CModule) : List String :=
-  m.functions.map (·.name) ++ m.submodules.foldl (fun acc sub => acc ++ allDefinedNames sub) []
-
 /-- Qualify a callee name: if the bare name is defined in this compilation unit,
     resolve it to qualified form. Otherwise keep it bare (it's an intrinsic or extern). -/
 private def qualifyCallee (_qualPrefix : String) (definedNames : List (String × String))
@@ -1568,14 +1564,6 @@ def identifyUnsupported (body : List CStmt) : List String :=
 -- ============================================================
 -- Eligibility predicates
 -- ============================================================
-
-/-- A function is proof-eligible when it is pure, not trusted, and has
-    no type parameters (monomorphic or pre-mono with concrete types only). -/
-def CFnDef.isProofEligible (f : CFnDef) : Bool :=
-  f.capSet.isEmpty &&
-  !f.isTrusted &&
-  !f.isEntryPoint &&
-  f.trustedImplOrigin.isNone
 
 /-- A struct is proof-eligible when it has no FFI annotations. -/
 def CStructDef.isProofEligible (s : CStructDef) : Bool :=
@@ -4335,21 +4323,6 @@ def ProofCore.relocate (pc : ProofCore) (locMap : List (String × SourceLoc)) : 
       { x with loc := at_ x.qualName x.loc, eligibility := { x.eligibility with loc := at_ x.qualName x.eligibility.loc } }
     obligations := pc.obligations.map fun o => { o with loc := at_ o.functionId.qualName o.loc }
     diagnostics := pc.diagnostics.map fun d => { d with loc := at_ d.function d.loc } }
-
-/-- Table-resolution refusals encountered while building a subject's correspondence witnesses.
-
-    The witness derivation cannot act on these — an unreadable table justifies nothing either way —
-    but the REASON must survive, or an unjustified edge cannot be told apart from an unreadable
-    dependency. Reported beside the correspondence line rather than folded into it. -/
-def tableResolutionRefusalsOf (pc : ProofCore) (graph : CallGraph) (id : CallableId) : List String :=
-  let graph := if pc.program.isSome then pc.closureView.callGraph else graph
-  let pc := pc.closureView
-  -- A SUBJECT WITHOUT A SCOPED IDENTITY HAS NO CORRESPONDENCE OPERATION AT ALL, so it has no table
-  -- refusals either — reporting an empty list here says "none encountered", and the reason the
-  -- subject could not be corresponded is reported by the correspondence line itself.
-  match correspondenceInputOf pc graph id with
-  | .error _ => []
-  | .ok i    => i.resolverRefusals.map (·.explain)
 
 /-- The calls whose key does not denote the callee the compiler resolved (bug 081), explained.
     The same correspondence input the verdict reads, so the reason printed is the reason refused. -/

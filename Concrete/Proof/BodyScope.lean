@@ -49,8 +49,6 @@ def push (s : BodyScope) (binders : List String) : BodyScope :=
 def pop (s : BodyScope) : BodyScope :=
   { frames := s.frames.tail }
 
-def depth (s : BodyScope) : Nat := s.frames.length
-
 /-- Resolve a name to its RELATIVE position: frames crossed outward, then index
     within that frame.
 

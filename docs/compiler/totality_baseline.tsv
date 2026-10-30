@@ -475,7 +475,6 @@ partial	Concrete.Proof.instBEqPExpr.beq	Concrete/Proof/Proof.lean	Proof	self	Con
 partial	Concrete.Proof.instBEqPVal.beq	Concrete/Proof/Proof.lean	Proof	self	Concrete.Proof.PVal	derived-instance	R-0506
 partial	Concrete.Proof.instReprPExpr.repr	Concrete/Proof/Proof.lean	Proof	self	Concrete.Proof.PExpr	derived-instance	R-0506
 partial	Concrete.Proof.instReprPVal.repr	Concrete/Proof/Proof.lean	Proof	self	Concrete.Proof.PVal	derived-instance	R-0506
-partial	Concrete.allDefinedNames	Concrete/Proof/ProofCore.lean	ProofCore	self	Concrete.CModule	nested-inductive	R-0495
 partial	Concrete.allLinkerAliases	Concrete/Proof/ProofCore.lean	ProofCore	self	Concrete.CModule	nested-inductive	R-0495
 partial	Concrete.allMethodDefNames	Concrete/Proof/ProofCore.lean	ProofCore	self	Concrete.CModule	nested-inductive	R-0495
 partial	Concrete.buildCallGraphModule	Concrete/Proof/ProofCore.lean	ProofCore	self	Concrete.CModule	nested-inductive	R-0495

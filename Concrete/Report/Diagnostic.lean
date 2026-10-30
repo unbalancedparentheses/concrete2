@@ -347,10 +347,5 @@ def withContext [Monad m] (ctx : String) (action : ExceptT Diagnostics m α) : E
     | .ok a => return .ok a
     | .error ds => return .error (ds.map (·.addContext ctx))
 
-/-- Add context to an `Except Diagnostics` value. -/
-def Except.addContext (ctx : String) : Except Diagnostics α → Except Diagnostics α
-  | .ok a => .ok a
-  | .error ds => .error (ds.map (·.addContext ctx))
-
 
 end Concrete

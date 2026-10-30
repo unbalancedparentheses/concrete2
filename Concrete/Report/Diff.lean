@@ -361,9 +361,4 @@ where
     ) ([], 0)
     issues.1
 
-open Json in
-/-- Backward-compatible wrapper: parse facts without warnings. -/
-def parseFacts (jsonStr : String) : Option (List Val) :=
-  (parseFactsWarn jsonStr).1
-
 end Concrete.Report

@@ -478,8 +478,6 @@ def build (modules : List CModule)
 
 /-! ## Queries shared by every consumer -/
 
-def Table.summary? (t : Table) (fn : String) : Option FnSummary := t.fns.get? fn
-
 /-- Dependency functions and foreign bindings by call spelling, with display name and declared
     capabilities (a binding's declared effects). -/
 partial def dependencyCallees (deps : List CModule) : Std.HashMap String (Array (String × CapSet)) :=
