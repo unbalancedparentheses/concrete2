@@ -448,3 +448,33 @@ fn main() -> Int {
     return out;
 }
 ```
+
+<a id="ARITH-11"></a>
+### ARITH-11. Float remainder
+
+**ARITH-11@1.** `x % y` on floats is C's `fmod(x, y)`: the exact value `x - n * y` for the integer `n` that is `x / y` truncated toward zero, which has the sign of `x`, and NaN when `y` is zero or `x` is infinite or either is NaN.
+
+- Kind: guarantee
+- Uses: none
+- Codes: none
+- Status: enforced
+- Enforced by: Concrete.Interp.floatRem, Concrete.Pipeline.emit
+- Semantics: none
+- Obligation: none
+- Evidence: tested
+
+**Rationale.** It is LLVM's `frem`, which the binary emits, and the interpreter computes the same
+value. Unlike IEEE 754's `remainder`, it truncates rather than rounding the quotient to nearest.
+Absorbed from [INTERPRETER_TRUST.md](../verification/INTERPRETER_TRUST.md) §2.
+
+```con accept name=float-remainder exit=42
+fn main() -> Int {
+    let a: f64 = -7.5;
+    let b: f64 = 2.0;
+    let r: f64 = a % b;
+    if r == -1.5 {
+        return 42;
+    }
+    return 1;
+}
+```

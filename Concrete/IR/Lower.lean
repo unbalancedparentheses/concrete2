@@ -1103,6 +1103,7 @@ private def reconcileBranchVars (rules : BranchMergeRules)
 
 mutual
 
+-- spec: TYPE-22 (docs/spec/types.md; this declaration enforces the rule)
 partial def lowerExpr (e : CExpr) : LowerM SVal := do
   match e with
   | .intLit v ty => return .intConst v ty
