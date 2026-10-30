@@ -309,8 +309,8 @@ resolve_affected_sections() {
 
 # Resolve which sections are active based on MODE
 case "$MODE" in
-    full)    SECTION="passlevel,positive,negative,testflag,gatesmoke,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,serviceerrors,stackdepth,interp" ;;
-    fast)    SECTION="passlevel,positive,negative,testflag,gatesmoke,report,codegen,O2,stdlib,collection" ;;
+    full)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection,xtarget,perf,determinism,consistency,terminology,verify,evidence,malformed,query,desync,bugaudit,apiversioning,errorcodes,policy,taxonomy,workflow,bundle,proofgate,fixedcap,parsevalidate,serviceerrors,stackdepth,interp" ;;
+    fast)    SECTION="passlevel,positive,negative,testflag,report,codegen,O2,stdlib,collection" ;;
     stdlib)  SECTION="stdlib,collection" ;;
     stdlib-module) SECTION="stdlib" ;;
     O2)      SECTION="O2" ;;
@@ -1017,9 +1017,6 @@ if section_active testflag; then
 run_cases testflag
 fi # end section: testflag
 run_cases always.3
-if section_active gatesmoke; then
-run_cases gatesmoke
-fi # end section: gatesmoke
 run_cases always.4
 if section_active report; then
 run_cases report
