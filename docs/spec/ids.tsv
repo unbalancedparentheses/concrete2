@@ -578,3 +578,13 @@ OPEN-88@1	live	9c698e463c986dcca6683f581e5f143f
 OPEN-89@1	live	0e8880ade4308fdc3a98fbbbc3838e09
 OPEN-90@1	live	9398c9e248004e83532fa595887bd03e
 OPEN-91@1	live	187106c3f46ce850035eb53fb6c7b7bd
+TYPE-D1@1	live	222e345cf9ceb18ee05de3d0871103e6
+TYPE-4/capabilities-not-erased	live	-
+TYPE-4/same-capabilities	live	-
+TYPE-17@1	live	58c6ca5fb16598acad38e5040351fad0
+TYPE-17/set-order	live	-
+TYPE-17/combinator-carries-capabilities	live	-
+TYPE-17/field-keeps-capabilities	live	-
+TYPE-18@1	live	df1fef4c8eeb0674932fb84008893d3e
+TYPE-18/same-layout	live	-
+TRUST-D1@1	live	8c6b1abf9478818e83112320302b3ba4
