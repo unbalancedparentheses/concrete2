@@ -1,0 +1,7 @@
+# bugaudit: the tests of run_tests.sh's `if section_active bugaudit; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_bugaudit_<n> from scripts/tests/suite/bugaudit.sh.
+id	kind	section	helper	args
+-	-	bugaudit	echo	
+-	-	bugaudit	echo	=== Bug-to-regression corpus audit ===
+script:bugaudit.1	script	bugaudit	suite	1

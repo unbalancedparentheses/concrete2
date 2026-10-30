@@ -1,0 +1,7 @@
+# evidence+trust-gate: the tests of run_tests.sh's `if section_active evidence || section_active trust-gate; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_evidence_trust_gate_<n> from scripts/tests/suite/evidence+trust-gate.sh.
+id	kind	section	helper	args
+-	-	evidence,trust-gate	echo	
+-	-	evidence,trust-gate	echo	=== Workflow tests ===
+script:evidence+trust-gate.1	script	evidence,trust-gate	suite	1

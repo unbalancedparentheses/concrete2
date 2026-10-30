@@ -1,0 +1,7 @@
+# stdlib: the tests of run_tests.sh's `if section_active stdlib; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_stdlib_<n> from scripts/tests/suite/stdlib.sh.
+id	kind	section	helper	args
+-	-	stdlib	echo	=== Stdlib module tests ===
+script:stdlib.1	script	stdlib	suite	1
+

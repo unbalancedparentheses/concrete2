@@ -1,0 +1,7 @@
+# serviceerrors: the tests of run_tests.sh's `if section_active serviceerrors; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_serviceerrors_<n> from scripts/tests/suite/serviceerrors.sh.
+id	kind	section	helper	args
+-	-	serviceerrors	echo	
+-	-	serviceerrors	echo	=== Service-errors error-propagation tests ===
+script:serviceerrors.1	script	serviceerrors	suite	1

@@ -1,0 +1,12 @@
+# evidence: the tests of run_tests.sh's `if section_active evidence; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_evidence_<n> from scripts/tests/suite/evidence.sh.
+id	kind	section	helper	args
+-	-	evidence	echo	
+-	-	evidence	echo	=== Evidence gates ===
+script:evidence.1	script	evidence	suite	1
+
+# --- Drift demo: snapshot/diff detects trust weakening on all drifted examples ---
+-	-	evidence	echo	
+-	-	evidence	echo	  --- Drift demo (snapshot/diff) ---
+script:evidence.2	script	evidence	suite	2

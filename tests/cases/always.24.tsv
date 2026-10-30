@@ -1,0 +1,12 @@
+# always.24: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_24_<n> from scripts/tests/suite/always.24.sh.
+id	kind	section	helper	args
+
+-	-	*	echo	
+-	-	*	flush_jobs
+
+# ============================================================
+# Policy enforcement adversarial tests
+# ============================================================
+

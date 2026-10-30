@@ -76,6 +76,7 @@ LEAN_RE = re.compile(r"lake env\b|lake lean\b|lake build[ \t]+[A-Za-z\"'$]")
 DATA_RE = re.compile(r"\b(grep|egrep|rg|sed|awk|echo|printf|cat|diff|cmp|wc|head|tail|ok|no|fail|die|note|warn)\b"
                      r"|\bopen\(|read_text\(|\.read\(\)|^\s*for\s+\w+\s+in\b")
 EXEC_RE = re.compile(r"(?<![\w./-])(bash|sh|python3|python|source|exec|timeout|env)\b|^\s*\.\s|\$\(\s*\"?\$")
+SOURCE_RE = re.compile(r"(^|[\s;&|])(source|\.)\s")
 TOKEN_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*")
 # Changes that select the compiler/Lean gates regardless of module.
 TOOLCHAIN = {"lakefile.toml", "lake-manifest.json", "lean-toolchain", "flake.nix", "flake.lock",
@@ -348,6 +349,10 @@ class Repo:
             if isinstance(kind, tuple) or kind == "subst" \
                     or not (DATA_RE.search(line) and not EXEC_RE.search(line)):
                 runs |= {x for x in f if x.endswith(SCRIPT_EXT)}
+            # A `source` of a computed name in a literal directory (run_tests.sh sources the unit file
+            # of each block, scripts/tests/suite/<block>.sh) may run every script in that directory.
+            if d and SOURCE_RE.search(line):
+                runs |= {x for x in self.files if x.endswith(".sh") and os.path.dirname(x) in d}
         text = "\n".join(l for l, k in lines if not (isinstance(k, tuple) and level(k) == st.TEXT))
         if path.endswith(".py"):
             for m in re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.M):

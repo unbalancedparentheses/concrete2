@@ -1,0 +1,7 @@
+# parsevalidate: the tests of run_tests.sh's `if section_active parsevalidate; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_parsevalidate_<n> from scripts/tests/suite/parsevalidate.sh.
+id	kind	section	helper	args
+-	-	parsevalidate	echo	
+-	-	parsevalidate	echo	=== Parse-validate error-flow tests ===
+script:parsevalidate.1	script	parsevalidate	suite	1

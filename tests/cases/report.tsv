@@ -1,0 +1,591 @@
+# report: the tests of run_tests.sh's `if section_active report; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_report_<n> from scripts/tests/suite/report.sh.
+id	kind	section	helper	args
+-	-	report	echo	=== Report output tests ===
+
+# --report unsafe should show trusted boundaries.
+# The heading reads "trusted methods in impl X", not "trusted impl X". Since per-method
+# `trusted` exists (2026-09-25), `trustedImplOrigin` is set from the FUNCTION's flag, so a
+# method may be audited inside a block that is NOT — and the old wording asserted
+# something about the block that need not be true. Since bug 189 there is no block-level
+# trust at all: this fixture's method declares `trusted fn` itself.
+check_report_multi:trusted_report_check.con	report	report	check_report_multi	tests/programs/trusted_report_check.con	unsafe	trusted_report_check.con --report unsafe shows trusted boundaries	trusted_report_check.con --report unsafe missing trusted boundaries	trusted methods in impl Buffer	trusted fn raw_read
+
+# --report unsafe should show trusted extern fn declarations separately from regular extern fn
+check_report_multi:trusted_extern_basic.con	report	report	check_report_multi	tests/programs/trusted_extern_basic.con	unsafe	trusted_extern_basic.con --report unsafe shows trusted extern functions	trusted_extern_basic.con --report unsafe missing trusted extern functions	Trusted extern functions	trusted extern fn abs
+
+# --report caps should show trusted extern with (none) capability
+check_report_multi:trusted_extern_basic.con#2	report	report	check_report_multi	tests/programs/trusted_extern_basic.con	caps	trusted_extern_basic.con --report caps shows trusted extern with no capability	trusted_extern_basic.con --report caps missing trusted extern info	trusted extern:	abs : (none)
+script:report.1	script	report	suite	1
+
+# --- report caps: pure, single cap, multi cap ---
+check_report:report_caps_check.con	report	report	check_report	tests/programs/report_caps_check.con	caps	pure_fn : (no external authority)	report_caps_check.con --report caps shows pure_fn : (no external authority)	report_caps_check.con --report caps missing pure_fn : (no external authority)
+
+check_report:report_caps_check.con#2	report	report	check_report	tests/programs/report_caps_check.con	caps	alloc_fn : Alloc	report_caps_check.con --report caps shows alloc_fn : Alloc	report_caps_check.con --report caps missing alloc_fn : Alloc
+
+check_report:report_caps_check.con#3	report	report	check_report	tests/programs/report_caps_check.con	caps	multi_fn : File, Network	report_caps_check.con --report caps shows multi_fn : File, Network	report_caps_check.con --report caps missing multi_fn : File, Network
+
+# --- report unsafe: Unsafe capability + raw pointer signatures ---
+check_report_multi:report_unsafe_rawptr.con	report	report	check_report_multi	tests/programs/report_unsafe_rawptr.con	unsafe	report_unsafe_rawptr.con --report unsafe shows Unsafe capability for ptr_swap	report_unsafe_rawptr.con --report unsafe missing Unsafe capability for ptr_swap	Functions with Unsafe capability	ptr_swap
+
+check_report_multi:report_unsafe_rawptr.con#2	report	report	check_report_multi	tests/programs/report_unsafe_rawptr.con	unsafe	report_unsafe_rawptr.con --report unsafe shows raw pointer signatures for ptr_swap	report_unsafe_rawptr.con --report unsafe missing raw pointer signatures for ptr_swap	Functions with raw pointer signatures	ptr_swap
+
+# --- report layout: struct sizes, packed, enum tags ---
+check_report_multi:report_layout_check.con	report	report	check_report_multi	tests/programs/report_layout_check.con	layout	report_layout_check.con --report layout shows struct Padded with size and align	report_layout_check.con --report layout missing struct Padded with size/align	struct Padded	size:	align:
+
+check_report_multi:report_layout_check.con#2	report	report	check_report_multi	tests/programs/report_layout_check.con	layout	report_layout_check.con --report layout shows struct Packed with #[packed]	report_layout_check.con --report layout missing struct Packed with #[packed]	struct Packed	#\\[packed\\]
+
+check_report_multi:report_layout_check.con#3	report	report	check_report_multi	tests/programs/report_layout_check.con	layout	report_layout_check.con --report layout shows enum Shape with tag and payload_offset	report_layout_check.con --report layout missing enum Shape with tag/payload_offset	enum Shape	tag:	payload_offset:
+script:report.2	script	report	suite	2
+
+# --- report interface: public API, struct fields, private exclusion ---
+check_report_multi:report_interface_check.con	report	report	check_report_multi	tests/programs/report_interface_check.con	interface	report_interface_check.con --report interface shows fn add_points with [Alloc]	report_interface_check.con --report interface missing fn add_points with [Alloc]	fn add_points	\\[Alloc\\]
+
+check_report_multi:report_interface_check.con#2	report	report	check_report_multi	tests/programs/report_interface_check.con	interface	report_interface_check.con --report interface shows struct Point with x: i32	report_interface_check.con --report interface missing struct Point with x: i32	struct Point	x: i32
+
+check_report:report_interface_check.con	report	report	check_report	tests/programs/report_interface_check.con	interface	private_helper	report_interface_check.con --report interface excludes private_helper	report_interface_check.con --report interface should not show private_helper	!
+
+# --- report mono: generic count and specializations ---
+check_report:report_mono_check.con	report	report	check_report	tests/programs/report_mono_check.con	mono	Generic functions:	report_mono_check.con --report mono shows Generic functions	report_mono_check.con --report mono missing Generic functions
+
+check_report:report_mono_check.con#2	report	report	check_report	tests/programs/report_mono_check.con	mono	Specializations:	report_mono_check.con --report mono shows Specializations	report_mono_check.con --report mono missing Specializations
+
+# --- bug 180: a project's --report mono describes the program the build compiles ---
+# Mono runs on the whole validated program, not the invoked file's modules re-run without std,
+# so the std generic's u16 instance is listed (before the fix: "Specializations: 0").
+check_report:regress_180_report_scope/src/main.con	report	report	check_report	tests/programs/regress_180_report_scope/src/main.con	mono	max<u16> -> 	regress_180_report_scope --report mono lists the std generic's u16 instance	regress_180_report_scope --report mono lost the dependency's specialization (bug 180)
+script:report.3	script	report	suite	3
+
+# === Authority report tests (--report authority) ===
+
+check_report:report_caps_check.con#4	report	report	check_report	tests/programs/report_caps_check.con	authority	capability Alloc	report_caps_check.con --report authority shows Alloc capability section	report_caps_check.con --report authority missing Alloc section
+
+check_report:report_caps_check.con#5	report	report	check_report	tests/programs/report_caps_check.con	authority	capability File	report_caps_check.con --report authority shows File capability section	report_caps_check.con --report authority missing File section
+
+check_report:report_caps_check.con#6	report	report	check_report	tests/programs/report_caps_check.con	authority	pure_fn	report_caps_check.con --report authority excludes pure_fn from cap sections	report_caps_check.con --report authority wrongly includes pure_fn	!
+
+check_report:report_integration.con	report	report	check_report	tests/programs/report_integration.con	authority	capability Alloc	report_integration.con --report authority shows Alloc section	report_integration.con --report authority missing Alloc section
+
+check_report:report_integration.con#2	report	report	check_report	tests/programs/report_integration.con	authority	capability Unsafe	report_integration.con --report authority shows Unsafe section	report_integration.con --report authority missing Unsafe section
+
+check_report:report_integration.con#3	report	report	check_report	tests/programs/report_integration.con	authority	uses_alloc.*vec_new	report_integration.con --report authority traces uses_alloc -> vec_new	report_integration.con --report authority missing uses_alloc chain
+
+check_report:report_integration.con#4	report	report	check_report	tests/programs/report_integration.con	authority	call_raw.*raw_extern	report_integration.con --report authority traces call_raw -> raw_extern	report_integration.con --report authority missing call_raw chain
+
+check_report:report_integration.con#5	report	report	check_report	tests/programs/report_integration.con	authority	Totals:.*7 functions	report_integration.con --report authority totals correct	report_integration.con --report authority wrong totals
+
+# === Proof eligibility report tests (--report proof) ===
+
+check_report:report_caps_check.con#7	report	report	check_report	tests/programs/report_caps_check.con	proof	✓ pure_fn	report_caps_check.con --report proof marks pure_fn eligible	report_caps_check.con --report proof missing pure_fn eligible
+
+check_report:report_caps_check.con#8	report	report	check_report	tests/programs/report_caps_check.con	proof	✗ alloc_fn.*capabilities.*Alloc	report_caps_check.con --report proof excludes alloc_fn for Alloc	report_caps_check.con --report proof missing alloc_fn exclusion
+
+check_report:report_integration.con#6	report	report	check_report	tests/programs/report_integration.con	proof	✓ pure_add	report_integration.con --report proof marks pure_add eligible	report_integration.con --report proof missing pure_add eligible
+
+check_report:report_integration.con#7	report	report	check_report	tests/programs/report_integration.con	proof	✗ call_raw.*trusted boundary	report_integration.con --report proof excludes call_raw for trusted	report_integration.con --report proof missing call_raw trusted exclusion
+
+check_report:report_integration.con#8	report	report	check_report	tests/programs/report_integration.con	proof	✗ call_raw.*calls extern.*raw_extern	report_integration.con --report proof excludes call_raw for extern call	report_integration.con --report proof missing call_raw extern exclusion
+
+check_report:report_integration.con#9	report	report	check_report	tests/programs/report_integration.con	proof	2 eligible for ProofCore	report_integration.con --report proof shows 2 eligible	report_integration.con --report proof wrong eligible count
+
+check_report:report_integration.con#10	report	report	check_report	tests/programs/report_integration.con	proof	5 excluded	report_integration.con --report proof shows 5 excluded	report_integration.con --report proof wrong excluded count
+
+# --- Proof boundary: pure-only program ---
+check_report_multi:test_proof_eligible_pure.con	report	report	check_report_multi	tests/programs/test_proof_eligible_pure.con	proof	test_proof_eligible_pure.con --report proof 4 eligible, 1 excluded	test_proof_eligible_pure.con --report proof wrong counts	4 eligible for ProofCore	1 excluded
+
+check_report_multi:test_proof_eligible_pure.con#2	report	report	check_report_multi	tests/programs/test_proof_eligible_pure.con	proof	test_proof_eligible_pure.con --report proof add,multiply,make_point,color_value eligible	test_proof_eligible_pure.con --report proof missing eligible fns	✓ add	✓ multiply	✓ make_point	✓ color_value
+
+check_report:test_proof_eligible_pure.con	report	report	check_report	tests/programs/test_proof_eligible_pure.con	proof	✗ main.*capabilities	test_proof_eligible_pure.con --report proof main excluded for caps	test_proof_eligible_pure.con --report proof main not excluded
+
+# --- Proof boundary: mixed eligible/ineligible ---
+check_report_multi:test_proof_mixed.con	report	report	check_report_multi	tests/programs/test_proof_mixed.con	proof	test_proof_mixed.con --report proof add,max eligible	test_proof_mixed.con --report proof missing eligible fns	✓ add	✓ max
+
+check_report:test_proof_mixed.con	report	report	check_report	tests/programs/test_proof_mixed.con	proof	✗ read_data.*capabilities.*File	test_proof_mixed.con --report proof read_data excluded for File cap	test_proof_mixed.con --report proof read_data not excluded
+
+check_report:test_proof_mixed.con#2	report	report	check_report	tests/programs/test_proof_mixed.con	proof	✗ ptr_op.*trusted boundary	test_proof_mixed.con --report proof ptr_op excluded for trusted	test_proof_mixed.con --report proof ptr_op not excluded
+
+check_report_multi:test_proof_mixed.con#2	report	report	check_report_multi	tests/programs/test_proof_mixed.con	proof	test_proof_mixed.con --report proof 2 eligible, 3 excluded	test_proof_mixed.con --report proof wrong counts	2 eligible for ProofCore	3 excluded
+
+# --- Proof boundary: trusted excluded even without pointer ops ---
+check_report:test_proof_trusted_excluded.con	report	report	check_report	tests/programs/test_proof_trusted_excluded.con	proof	✗ safe_transform.*trusted boundary	test_proof_trusted_excluded.con --report proof safe_transform excluded	test_proof_trusted_excluded.con --report proof safe_transform not excluded
+
+check_report:test_proof_trusted_excluded.con#2	report	report	check_report	tests/programs/test_proof_trusted_excluded.con	proof	✓ pure_helper	test_proof_trusted_excluded.con --report proof pure_helper eligible	test_proof_trusted_excluded.con --report proof pure_helper not eligible
+
+check_report_multi:test_proof_trusted_excluded.con	report	report	check_report_multi	tests/programs/test_proof_trusted_excluded.con	proof	test_proof_trusted_excluded.con --report proof 2 eligible, 1 excluded	test_proof_trusted_excluded.con --report proof wrong counts	2 eligible for ProofCore	1 excluded
+
+# === Phase 3: Report consistency cross-checks ===
+
+# Cross-check 1: proof-eligible functions are pure in caps report
+check_report:phase3_report_consistency.con	report	report	check_report	tests/programs/phase3_report_consistency.con	proof	✓ pure_compute	consistency: proof marks pure_compute eligible	consistency: pure_compute not proof-eligible
+
+check_report:phase3_report_consistency.con#2	report	report	check_report	tests/programs/phase3_report_consistency.con	caps	pure_compute.*(no external authority)	consistency: caps confirms pure_compute is pure	consistency: caps disagrees on pure_compute
+
+check_report:phase3_report_consistency.con#3	report	report	check_report	tests/programs/phase3_report_consistency.con	proof	✓ pure_multiply	consistency: proof marks pure_multiply eligible	consistency: pure_multiply not proof-eligible
+
+check_report:phase3_report_consistency.con#4	report	report	check_report	tests/programs/phase3_report_consistency.con	caps	pure_multiply.*(no external authority)	consistency: caps confirms pure_multiply is pure	consistency: caps disagrees on pure_multiply
+
+# Cross-check 2: trusted functions in unsafe report AND excluded from proof
+check_report:phase3_report_consistency.con#5	report	report	check_report	tests/programs/phase3_report_consistency.con	unsafe	trusted_read	consistency: unsafe shows trusted_read	consistency: unsafe missing trusted_read
+
+check_report:phase3_report_consistency.con#6	report	report	check_report	tests/programs/phase3_report_consistency.con	proof	✗ trusted_read.*trusted boundary	consistency: proof excludes trusted_read	consistency: proof doesn't exclude trusted_read
+
+check_report:phase3_report_consistency.con#7	report	report	check_report	tests/programs/phase3_report_consistency.con	unsafe	safe_abs	consistency: unsafe shows safe_abs	consistency: unsafe missing safe_abs
+
+# Cross-check 3: functions with capabilities appear in caps report
+check_report:phase3_report_consistency.con#8	report	report	check_report	tests/programs/phase3_report_consistency.con	caps	needs_alloc.*Alloc	consistency: caps shows needs_alloc requires Alloc	consistency: caps missing needs_alloc Alloc
+
+check_report:phase3_report_consistency.con#9	report	report	check_report	tests/programs/phase3_report_consistency.con	proof	✗ needs_alloc.*capabilities.*Alloc	consistency: proof excludes needs_alloc for Alloc	consistency: proof doesn't exclude needs_alloc
+
+# Cross-check 4: generic functions appear in mono report
+check_report:phase3_report_consistency.con#10	report	report	check_report	tests/programs/phase3_report_consistency.con	mono	identity.*identity_for_i32	consistency: mono shows identity<i32> specialization	consistency: mono missing identity specialization
+
+check_report:phase3_report_consistency.con#11	report	report	check_report	tests/programs/phase3_report_consistency.con	mono	generic_add_one.*generic_add_one_for_i32	consistency: mono shows generic_add_one<i32> specialization	consistency: mono missing generic_add_one specialization
+
+# Cross-check 5: allocating functions in alloc report
+check_report:phase3_report_consistency.con#12	report	report	check_report	tests/programs/phase3_report_consistency.con	alloc	needs_alloc	consistency: alloc shows needs_alloc	consistency: alloc missing needs_alloc
+
+check_report:phase3_report_consistency.con#13	report	report	check_report	tests/programs/phase3_report_consistency.con	alloc	alloc_and_free	consistency: alloc shows alloc_and_free	consistency: alloc missing alloc_and_free
+
+# Cross-check 6: repr(C) struct in layout report
+check_report:phase3_report_consistency.con#14	report	report	check_report	tests/programs/phase3_report_consistency.con	layout	CPoint.*repr(C)	consistency: layout shows CPoint as repr(C)	consistency: layout missing CPoint repr(C)
+
+# Cross-check 7: proof eligible count matches pure count in caps
+check_report:phase3_report_consistency.con#15	report	report	check_report	tests/programs/phase3_report_consistency.con	proof	5 eligible for ProofCore	consistency: proof shows 5 eligible	consistency: proof wrong eligible count
+script:report.4	script	report	suite	4
+
+# === Predictable profile tests (--check predictable) ===
+
+-	-	report	echo	
+-	-	report	echo	=== Predictable profile tests ===
+
+# --- Gate 0: full pass (all functions pass all five gates) ---
+check_profile:report_check_predictable_pass.con	profile	report	check_profile	tests/programs/report_check_predictable_pass.con	predictable	predictable profile: pass	predictable_pass.con passes all five gates	predictable_pass.con should pass but failed
+
+check_profile:report_check_predictable_pass.con#2	profile	report	check_profile	tests/programs/report_check_predictable_pass.con	predictable	4 functions checked	predictable_pass.con checks all 4 functions	predictable_pass.con wrong function count
+
+# --- Gate 1: recursion rejection ---
+check_profile:report_check_predictable_fail_recursion.con	profile	report	check_profile	tests/programs/report_check_predictable_fail_recursion.con	predictable	countdown.*direct recursion	predictable rejects direct recursion	predictable should reject recursion
+
+# Was "1 function(s) failed". Now 2: `main` calls `countdown`, so main's own execution is
+# unbounded recursion. Predictable execution is a property of RUNNING a function, and the label
+# used to be computed from each body in isolation.
+check_profile:report_check_predictable_fail_recursion.con#2	profile	report	check_profile	tests/programs/report_check_predictable_fail_recursion.con	predictable	2 function(s) failed	predictable recursion: caller of a recursive fn fails too (transitive)	predictable recursion: wrong fail count
+
+# --- Gate 2: unbounded loop rejection ---
+check_profile:report_check_predictable_fail_loops.con	profile	report	check_profile	tests/programs/report_check_predictable_fail_loops.con	predictable	spin.*unbounded loop	predictable rejects unbounded while loop	predictable should reject unbounded loop
+
+# --- Gate 3: allocation rejection ---
+check_profile:report_check_predictable_fail_alloc.con	profile	report	check_profile	tests/programs/report_check_predictable_fail_alloc.con	predictable	heap_op.*allocates	predictable rejects allocation	predictable should reject allocation
+
+# --- Gate 4: FFI rejection ---
+check_profile:report_check_predictable_fail_ffi.con	profile	report	check_profile	tests/programs/report_check_predictable_fail_ffi.con	predictable	call_extern.*calls extern	predictable rejects FFI/extern calls	predictable should reject FFI
+
+# --- Gate 5: blocking rejection ---
+check_profile:report_check_predictable_fail_blocking.con	profile	report	check_profile	tests/programs/report_check_predictable_fail_blocking.con	predictable	read_something.*may block.*File	predictable rejects blocking I/O (File)	predictable should reject blocking
+
+check_profile:report_check_predictable_fail_blocking.con#2	profile	report	check_profile	tests/programs/report_check_predictable_fail_blocking.con	predictable	main.*may block.*File	predictable rejects blocking I/O in main (File)	predictable should reject blocking in main
+
+# --- Core vs shell: thesis demo ---
+check_profile:report_check_predictable_core_vs_shell.con	profile	report	check_profile	tests/programs/report_check_predictable_core_vs_shell.con	predictable	1 function(s) failed, 3 passed	predictable core-vs-shell: 3 pass, 1 fail (main)	predictable core-vs-shell: wrong pass/fail split
+
+check_profile:report_check_predictable_core_vs_shell.con#2	profile	report	check_profile	tests/programs/report_check_predictable_core_vs_shell.con	predictable	main.*may block	predictable core-vs-shell: main fails for blocking	predictable core-vs-shell: main should fail
+
+check_profile:report_check_predictable_core_vs_shell.con#3	profile	report	check_profile	tests/programs/report_check_predictable_core_vs_shell.con	predictable	parse_byte	predictable core-vs-shell: parse_byte not in violations	predictable core-vs-shell: parse_byte wrongly rejected	!
+
+check_profile:report_check_predictable_core_vs_shell.con#4	profile	report	check_profile	tests/programs/report_check_predictable_core_vs_shell.con	predictable	validate	predictable core-vs-shell: validate not in violations	predictable core-vs-shell: validate wrongly rejected	!
+
+# --- Packet decoder: flagship thesis example ---
+check_profile_multi:examples/packet/src/main.con	profile	report	check_profile_multi	examples/packet/src/main.con	predictable	predictable packet decoder: validation core passes, main fails	predictable packet decoder: wrong pass/fail split	1 function(s) failed	passed
+
+check_profile:examples/packet/src/main.con	profile	report	check_profile	examples/packet/src/main.con	predictable	main.*may block	predictable packet decoder: main fails for blocking	predictable packet decoder: main should fail
+
+# === Evidence level tests (--report effects + proved) ===
+
+-	-	report	echo	
+-	-	report	echo	=== Evidence level tests ===
+
+# parse_byte has a Lean proof → evidence: proved (name + detail on adjacent lines)
+check_report:report_check_predictable_core_vs_shell.con	report	report	check_report	tests/programs/report_check_predictable_core_vs_shell.con	effects	evidence: proved	evidence: parse_byte shows proved (has Lean proof)	evidence: parse_byte should show proved
+
+# validate passes profile but has no proof → evidence: enforced
+check_report:report_check_predictable_core_vs_shell.con#2	report	report	check_report	tests/programs/report_check_predictable_core_vs_shell.con	effects	loops: bounded.*evidence: enforced	evidence: validate shows enforced (passes profile, no proof)	evidence: validate should show enforced
+
+# main fails profile (blocking I/O) → evidence: reported
+check_report:report_check_predictable_core_vs_shell.con#3	report	report	check_report	tests/programs/report_check_predictable_core_vs_shell.con	effects	evidence: reported	evidence: main shows reported (fails profile)	evidence: main should show reported
+
+# Summary includes proved count
+check_report:report_check_predictable_core_vs_shell.con#4	report	report	check_report	tests/programs/report_check_predictable_core_vs_shell.con	effects	1 proved	evidence summary: 1 proved function	evidence summary: wrong proved count
+
+# Packet decoder: trusted functions show trusted-assumption
+check_report:examples/packet/src/main.con	report	report	check_report	examples/packet/src/main.con	effects	trusted-assumption	evidence: packet decoder has trusted-assumption functions	evidence: packet decoder should have trusted-assumption
+
+# --- Proof maintenance: rename drops evidence ---
+check_report:report_evidence_rename_drops.con	report	report	check_report	tests/programs/report_evidence_rename_drops.con	effects	read_byte	evidence maintenance: renamed function exists in report	evidence maintenance: renamed function missing from report
+
+check_report:report_evidence_rename_drops.con#2	report	report	check_report	tests/programs/report_evidence_rename_drops.con	effects	evidence: proved	evidence maintenance: renamed function should not be proved	evidence maintenance: renamed function wrongly proved	!
+
+check_report:report_evidence_rename_drops.con#3	report	report	check_report	tests/programs/report_evidence_rename_drops.con	effects	0 proved	evidence maintenance: 0 proved after rename	evidence maintenance: wrong proved count after rename
+
+# --- Proof maintenance: stable across refactor ---
+check_report:report_evidence_stable.con	report	report	check_report	tests/programs/report_evidence_stable.con	effects	evidence: proved	evidence maintenance: parse_byte stays proved with surrounding changes	evidence maintenance: parse_byte lost proof after refactor
+
+check_report:report_evidence_stable.con#2	report	report	check_report	tests/programs/report_evidence_stable.con	effects	1 proved	evidence maintenance: exactly 1 proved in refactored file	evidence maintenance: wrong proved count in refactored file
+
+# --- check_length: bounds guard with Lean proof ---
+check_report:report_evidence_check_length.con	report	report	check_report	tests/programs/report_evidence_check_length.con	effects	evidence: proved	evidence: check_length shows proved (bounds guard theorem)	evidence: check_length should show proved
+
+check_report:report_evidence_check_length.con#2	report	report	check_report	tests/programs/report_evidence_check_length.con	effects	1 proved, 1 enforced	evidence: check_length file has 1 proved + 1 enforced	evidence: check_length file wrong evidence counts
+
+# --- decode_header: proved parser-core function ---
+# 3 proved -> 2 proved ON 2026-08-15, and this is the intended consequence of R-0004 package 2's
+# authority transition rather than a regression.
+#
+# `decode_header` calls `parse_byte` and `check_length`, and its in-source proof link (migrated from
+# the deleted hardcoded table by bug 083) names `Concrete.Proof.proofFnsExt` — a table with ZERO canonical entries. A table with
+# no entries can describe no definitions, so it cannot say that the theorem is about THIS program's
+# `parse_byte` rather than another program's function of the same name. Both body edges are therefore
+# unjustified and the verdict is `correspondence_unjustified`, not `proved`.
+#
+# The two leaf functions stay proved, and should: their own fingerprints match their own bodies and
+# neither has an outgoing edge.
+#
+# CLOSING IT MEANS POPULATING AND ATTESTING `proofFnsExt`, which needs a manifest row, which needs a
+# fixture subject that claims it. `tests/programs/` is deliberately OUTSIDE the attested population:
+# these are compiler test inputs, not evidence-corpus fixtures, and their proof links are documented
+# here as backward compatibility. So the honest state for this file today is a claim the authority
+# pass refuses — which is what the counts now say.
+check_report:proof_decode_header.con	report	report	check_report	tests/programs/proof_decode_header.con	effects	2 proved, 2 enforced	evidence: decode_header file has 2 proved + 2 enforced (decode_header's closure is unjustified)	evidence: decode_header file wrong evidence counts
+
+check_report:proof_decode_header.con#2	report	report	check_report	tests/programs/proof_decode_header.con	effects	evidence: proved	evidence: decode_header shows proved (parser-core proof)	evidence: decode_header should show proved
+
+# --- Proof maintenance: refactored decode_header shows stale proof ---
+check_report:proof_maintenance_decode_header.con	report	report	check_report	tests/programs/proof_maintenance_decode_header.con	effects	proof stale: body changed	proof maintenance: refactored decode_header shows stale warning	proof maintenance: should show stale warning after refactor
+
+check_report:proof_maintenance_decode_header.con#2	report	report	check_report	tests/programs/proof_maintenance_decode_header.con	effects	2 proved, 3 enforced	proof maintenance: 2 proved (helpers) + 3 enforced after refactor	proof maintenance: wrong evidence counts after refactor
+
+# --- Thesis demo: all three pillars ---
+check_report:examples/thesis_demo/src/main.con	report	report	check_report	examples/thesis_demo/src/main.con	effects	2 proved, 2 enforced, 0 trusted-assumption, 1 reported	thesis demo: evidence counts 2/2/0/1	thesis demo: wrong evidence counts
+
+check_profile:examples/thesis_demo/src/main.con	profile	report	check_profile	examples/thesis_demo/src/main.con	predictable	4 passed	thesis demo: 4 functions pass predictable	thesis demo: wrong pass count
+
+check_profile:examples/thesis_demo/src/main.con#2	profile	report	check_profile	examples/thesis_demo/src/main.con	predictable	main.*may block	thesis demo: only main fails (blocking I/O)	thesis demo: unexpected failure reason
+
+# === Adversarial tests ===
+
+-	-	report	echo	
+-	-	report	echo	=== Adversarial tests ===
+
+# --- Proof integrity: wrong semantics detected via body fingerprint ---
+check_report:adversarial_proof_wrong_semantics.con	report	report	check_report	tests/programs/adversarial_proof_wrong_semantics.con	effects	evidence: proved	adversarial: wrong-semantics parse_byte not proved (fingerprint mismatch)	adversarial: wrong-semantics parse_byte should not be proved	!
+
+check_report:adversarial_proof_wrong_semantics.con#2	report	report	check_report	tests/programs/adversarial_proof_wrong_semantics.con	effects	proof stale: body changed	adversarial: wrong-semantics parse_byte shows stale proof warning	adversarial: wrong-semantics should show stale proof warning
+
+check_report:adversarial_proof_wrong_semantics.con#3	report	report	check_report	tests/programs/adversarial_proof_wrong_semantics.con	effects	evidence: enforced	adversarial: wrong-semantics parse_byte drops to enforced	adversarial: wrong-semantics parse_byte should be enforced
+
+# --- Proof integrity: impure function cannot be "proved" ---
+check_report:adversarial_proof_impure.con	report	report	check_report	tests/programs/adversarial_proof_impure.con	effects	evidence: proved	adversarial: impure parse_byte correctly blocked from proved	adversarial: impure function wrongly claimed as proved	!
+
+check_report:adversarial_proof_impure.con#2	report	report	check_report	tests/programs/adversarial_proof_impure.con	effects	evidence: reported	adversarial: impure parse_byte shows reported	adversarial: impure parse_byte should be reported
+
+# --- Evidence: trusted overrides proof ---
+check_report:adversarial_evidence_trusted_not_proved.con	report	report	check_report	tests/programs/adversarial_evidence_trusted_not_proved.con	effects	evidence: trusted-assumption	adversarial: trusted parse_byte shows trusted-assumption, not proved	adversarial: trusted function should not claim proved
+
+check_report:adversarial_evidence_trusted_not_proved.con#2	report	report	check_report	tests/programs/adversarial_evidence_trusted_not_proved.con	effects	evidence: proved	adversarial: trusted parse_byte not proved	adversarial: trusted function wrongly shows proved	!
+
+# --- Profile: mutual recursion caught ---
+check_profile:adversarial_profile_mutual_recursion.con	profile	report	check_profile	tests/programs/adversarial_profile_mutual_recursion.con	predictable	mutual recursion	adversarial: mutual recursion detected by profile	adversarial: mutual recursion not caught
+
+# Was "2 function(s) failed" (ping + pong). Now 3, including whatever calls into the cycle.
+check_profile:adversarial_profile_mutual_recursion.con#2	profile	report	check_profile	tests/programs/adversarial_profile_mutual_recursion.con	predictable	3 function(s) failed	adversarial: the mutual cycle AND its caller are flagged	adversarial: mutual recursion wrong fail count
+
+# --- Profile: hidden Alloc capability caught ---
+check_profile:adversarial_profile_hidden_alloc.con	profile	report	check_profile	tests/programs/adversarial_profile_hidden_alloc.con	predictable	has Alloc capability	adversarial: Alloc capability detected even without intrinsic calls	adversarial: Alloc capability not caught
+
+check_profile:adversarial_profile_hidden_alloc.con#2	profile	report	check_profile	tests/programs/adversarial_profile_hidden_alloc.con	predictable	3 function(s) failed	adversarial: all 3 Alloc functions flagged	adversarial: hidden Alloc wrong fail count
+
+# --- Profile: all 5 violations in one function ---
+check_profile:adversarial_all_violations.con	profile	report	check_profile	tests/programs/adversarial_all_violations.con	predictable	direct recursion	adversarial: all-violations recursion detected	adversarial: all-violations recursion missed
+
+check_profile:adversarial_all_violations.con#2	profile	report	check_profile	tests/programs/adversarial_all_violations.con	predictable	unbounded loop	adversarial: all-violations unbounded loops detected	adversarial: all-violations unbounded loops missed
+
+check_profile:adversarial_all_violations.con#3	profile	report	check_profile	tests/programs/adversarial_all_violations.con	predictable	has Alloc capability	adversarial: all-violations Alloc detected	adversarial: all-violations Alloc missed
+
+check_profile:adversarial_all_violations.con#4	profile	report	check_profile	tests/programs/adversarial_all_violations.con	predictable	calls extern	adversarial: all-violations FFI detected	adversarial: all-violations FFI missed
+
+check_profile:adversarial_all_violations.con#5	profile	report	check_profile	tests/programs/adversarial_all_violations.con	predictable	may block	adversarial: all-violations blocking detected	adversarial: all-violations blocking missed
+
+# --- Capability: escalation rejected at compile time ---
+run_err:adversarial_cap_escalation.con	reject-diagnostic	report	run_err	tests/programs/adversarial_cap_escalation.con	but caller has
+
+# --- Proof identity: same name in different module must not inherit proof ---
+check_report:adversarial_proof_cross_module.con	report	report	check_report	tests/programs/adversarial_proof_cross_module.con	effects	1 proved, 3 enforced	adversarial: cross-module same-name only 1 proved (qualified identity)	adversarial: cross-module proof isolation failed
+
+check_report:adversarial_proof_cross_module.con#2	report	report	check_report	tests/programs/adversarial_proof_cross_module.con	effects	inner_parse_byte	adversarial: inner parse_byte present in report	adversarial: inner parse_byte missing from report
+
+check_report:adversarial_proof_cross_module.con#3	report	report	check_report	tests/programs/adversarial_proof_cross_module.con	effects	evidence: proved	adversarial: outer parse_byte is proved	adversarial: outer parse_byte should be proved
+
+# --- Proof identity: wrong arity function not proved ---
+check_report:adversarial_proof_wrong_arity.con	report	report	check_report	tests/programs/adversarial_proof_wrong_arity.con	effects	evidence: proved	adversarial: wrong-arity parse_byte not proved	adversarial: wrong-arity parse_byte should not be proved	!
+
+check_report:adversarial_proof_wrong_arity.con#2	report	report	check_report	tests/programs/adversarial_proof_wrong_arity.con	effects	proof stale: body changed	adversarial: wrong-arity parse_byte shows stale warning	adversarial: wrong-arity should show stale warning
+
+# --- Bug 083: a function NAME is not a proof claim ---
+# Three functions named (two with the exact bodies) like entries of the deleted name-keyed
+# `Proof.provedFunctions` table, no proof attributes: before the fix all three were `proved`
+# (origin: hardcoded). A claim now requires an in-source #[spec]/#[proof_by]/#[proof_fingerprint].
+check_report:regress_083_no_claim_by_name.con	report	report	check_report	tests/programs/regress_083_no_claim_by_name.con	proof-status	0 proved.*3 unproved	bug 083: unannotated name-colliding functions report no claim	bug 083: an unannotated function was attached a claim by name
+
+check_report:regress_083_no_claim_by_name.con#2	report	report	check_report	tests/programs/regress_083_no_claim_by_name.con	proof-status	origin: hardcoded	bug 083: no hardcoded origin on unannotated code	bug 083: hardcoded origin resurfaced	!
+
+check_report:regress_083_no_claim_by_name.con#3	report	report	check_report	tests/programs/regress_083_no_claim_by_name.con	effects	0 proved, 4 enforced	bug 083: effects evidence has no proved function	bug 083: effects evidence still upgrades by name
+
+# --- Capability: trusted does not bypass callee capability checking ---
+run_err:adversarial_trusted_cap_laundering.con	reject-diagnostic	report	run_err	tests/programs/adversarial_trusted_cap_laundering.con	but caller has
+
+# --- Loop: unbounded while with comparison but no progress ---
+check_report:adversarial_loop_disguised.con	report	report	check_report	tests/programs/adversarial_loop_disguised.con	effects	loops: unbounded	adversarial: disguised unbounded loop detected	adversarial: disguised unbounded loop not caught
+
+check_report:adversarial_loop_disguised.con#2	report	report	check_report	tests/programs/adversarial_loop_disguised.con	effects	evidence: reported	adversarial: unbounded loop function is reported (not enforced)	adversarial: unbounded loop function should not be enforced
+
+check_profile:adversarial_loop_disguised.con	profile	report	check_profile	tests/programs/adversarial_loop_disguised.con	predictable	spin.*unbounded	adversarial: spin rejected by predictable profile	adversarial: spin should fail predictable profile
+
+# --- Fn pointer: indirect call does not claim proved ---
+check_report:adversarial_fn_ptr_indirect.con	report	report	check_report	tests/programs/adversarial_fn_ptr_indirect.con	effects	evidence: proved	adversarial: fn pointer apply not proved	adversarial: fn pointer apply should not be proved	!
+
+# Was "0 proved, 3 enforced". The fixture's own comment says an indirect callee "cannot be
+# statically resolved", and this assertion checked only that it does not claim PROVED -- while
+# `enforced` means "passes all five predictable gates", which was equally unwarranted: the call
+# graph records no edge for an indirect call, so no-recursion could not be established either.
+# `apply` is now `reported`, which is what the fixture always intended.
+# 2 enforced -> 1: `apply` is `reported` because it calls through a fn pointer (the callee set
+# is unknown, so acyclicity is not established), and `main` is `reported` because it calls
+# `apply`. Only `add_one` is genuinely predictable.
+check_report:adversarial_fn_ptr_indirect.con#2	report	report	check_report	tests/programs/adversarial_fn_ptr_indirect.con	effects	0 proved, 1 enforced	adversarial: fn pointer file has 0 proved (no registered proof)	adversarial: fn pointer file wrong evidence counts
+
+check_report:adversarial_fn_ptr_indirect.con#3	report	report	check_report	tests/programs/adversarial_fn_ptr_indirect.con	effects	2 reported	adversarial: the indirect call AND its caller are reported, not enforced	adversarial: an indirect call still claims the predictable profile
+
+# --- Linear type system: compiler rejects violations ---
+run_err:adversarial_linear_double_use.con	reject-diagnostic	report	run_err	tests/programs/adversarial_linear_double_use.con	used after move
+run_err:adversarial_linear_leak.con	reject-diagnostic	report	run_err	tests/programs/adversarial_linear_leak.con	was never consumed
+run_err:adversarial_linear_branch_consume.con	reject-diagnostic	report	run_err	tests/programs/adversarial_linear_branch_consume.con	consumed in one branch
+run_err:adversarial_linear_borrow_and_move.con	reject-diagnostic	report	run_err	tests/programs/adversarial_linear_borrow_and_move.con	frozen by borrow
+
+# --- Linear type system: correct chain compiles and runs ---
+check_report:adversarial_linear_correct_chain.con	report	report	check_report	tests/programs/adversarial_linear_correct_chain.con	effects	5 functions	adversarial: linear correct chain has expected function count	adversarial: linear correct chain wrong function count
+
+# --- Capability system: compiler rejects violations ---
+run_err:adversarial_cap_transitive.con	reject-diagnostic	report	run_err	tests/programs/adversarial_cap_transitive.con	but caller has
+run_err:adversarial_cap_alloc_without_cap.con	reject-diagnostic	report	run_err	tests/programs/adversarial_cap_alloc_without_cap.con	but caller has
+run_err:adversarial_cap_subset.con	reject-diagnostic	report	run_err	tests/programs/adversarial_cap_subset.con	but caller has
+run_err:adversarial_cap_pure_no_io.con	reject-diagnostic	report	run_err	tests/programs/adversarial_cap_pure_no_io.con	but caller has
+
+# --- Negative adversarial: ownership/borrow hostile patterns ---
+run_err:adversarial_neg_double_move_branch.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_double_move_branch.con	consumed in if-without-else
+run_err:adversarial_neg_borrow_outlives_owner.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_borrow_outlives_owner.con	frozen by borrow
+run_err:adversarial_neg_mut_ref_alias.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_mut_ref_alias.con	frozen by borrow
+run_err:adversarial_neg_move_loop_body.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_move_loop_body.con	inside a loop
+
+# --- Negative adversarial: module/visibility abuse ---
+run_err:adversarial_neg_private_fn_call.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_private_fn_call.con	is not public
+run_err:adversarial_neg_private_struct_field.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_private_struct_field.con	unknown struct type
+
+# --- Negative adversarial: capability abuse ---
+run_err:adversarial_neg_cap_escalate_indirect.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_cap_escalate_indirect.con	but caller has
+run_err:adversarial_neg_cap_forge.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_cap_forge.con	but caller has
+# fn-pointer smuggling: calling through a with(...) fn type requires the caps
+# (ROADMAP Phase 5 #24a red-team gate — closed)
+run_err:adversarial_neg_cap_fnptr_smuggle.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_cap_fnptr_smuggle.con	requires capability 'Network' but 'smuggle' does not declare it
+run_ok:cap_fnptr_declared.con	run-value	report	run_ok	tests/programs/cap_fnptr_declared.con	0
+
+# --- Negative adversarial: type system abuse ---
+run_err:adversarial_neg_enum_variant_type_mismatch.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_enum_variant_type_mismatch.con	type mismatch
+run_err:adversarial_neg_return_type_mismatch.con	reject-diagnostic	report	run_err	tests/programs/adversarial_neg_return_type_mismatch.con	type mismatch
+
+# --- Capability system: correct propagation works ---
+check_report:adversarial_cap_correct_propagation.con	report	report	check_report	tests/programs/adversarial_cap_correct_propagation.con	effects	3 functions	adversarial: cap correct propagation compiles	adversarial: cap correct propagation should compile
+
+# --- Predictable profile: nested bounded loops pass ---
+check_profile:adversarial_profile_nested_loops.con	profile	report	check_profile	tests/programs/adversarial_profile_nested_loops.con	predictable	pass	adversarial: nested bounded loops pass predictable	adversarial: nested bounded loops should pass
+
+check_report:adversarial_profile_nested_loops.con	report	report	check_report	tests/programs/adversarial_profile_nested_loops.con	effects	loops: bounded	adversarial: nested loops classified as bounded	adversarial: nested loops should be bounded
+
+# --- Predictable profile: bounded vs unbounded in same file ---
+check_report:adversarial_profile_bounded_then_unbounded.con	report	report	check_report	tests/programs/adversarial_profile_bounded_then_unbounded.con	effects	loops: unbounded	adversarial: unbounded while(true) detected	adversarial: unbounded while(true) not caught
+
+# --- Predictable profile: deep pure call chain ---
+check_report:adversarial_profile_deep_call_chain.con	report	report	check_report	tests/programs/adversarial_profile_deep_call_chain.con	effects	0 reported	adversarial: deep call chain all enforced (0 reported)	adversarial: deep call chain should have 0 reported
+
+# --- Predictable profile: all 4 evidence levels in one file ---
+check_report:adversarial_profile_mixed_evidence.con	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	effects	1 proved	adversarial: mixed evidence has 1 proved	adversarial: mixed evidence wrong proved count
+
+check_report:adversarial_profile_mixed_evidence.con#2	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	effects	1 trusted-assumption	adversarial: mixed evidence has 1 trusted-assumption	adversarial: mixed evidence wrong trusted count
+
+check_report:adversarial_profile_mixed_evidence.con#3	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	effects	1 reported	adversarial: mixed evidence has 1 reported	adversarial: mixed evidence wrong reported count
+
+# --- Predictable profile: mutual recursion through 2 functions ---
+check_profile:adversarial_profile_recursive_through_two.con	profile	report	check_profile	tests/programs/adversarial_profile_recursive_through_two.con	predictable	alpha.*mutual\\|beta.*mutual	adversarial: mutual recursion A<->B detected	adversarial: mutual recursion A<->B not caught
+
+# --- Source locations in reports ---
+check_report:adversarial_profile_mixed_evidence.con#4	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	effects	@ .*adversarial_profile_mixed_evidence.con:	adversarial: effects report includes source locations	adversarial: effects report missing source locations
+
+check_profile:adversarial_profile_bounded_then_unbounded.con	profile	report	check_profile	tests/programs/adversarial_profile_bounded_then_unbounded.con	predictable	adversarial_profile_bounded_then_unbounded.con:[0-9].*spin	adversarial: predictable failure includes file:line	adversarial: predictable failure missing file:line
+
+check_profile:adversarial_profile_bounded_then_unbounded.con#2	profile	report	check_profile	tests/programs/adversarial_profile_bounded_then_unbounded.con	predictable	18 |.*while true	adversarial: unbounded loop violation shows while source line	adversarial: unbounded loop violation missing while source line
+
+check_profile:adversarial_profile_bounded_then_unbounded.con#3	profile	report	check_profile	tests/programs/adversarial_profile_bounded_then_unbounded.con	predictable	hint: Use a for loop	adversarial: predictable failure includes Elm-style hint	adversarial: predictable failure missing Elm-style hint
+
+# --- Proof status report ---
+# Stale proof detection with fingerprint diff
+check_report:proof_maintenance_decode_header.con#3	report	report	check_report	tests/programs/proof_maintenance_decode_header.con	proof-status	proof stale	proof-status: stale proof detected	proof-status: stale proof not detected
+
+# The stored side of the stale comparison. Before bug 083 this file's links came from the deleted
+# name-keyed table, whose stored value was a V1 body STRING printed as "expected fingerprint:" (and one
+# of the two stale entries was a false claim on the new helper check_version). The in-source v2 link
+# stores a digest, and the stale diagnostic names it against the current one.
+check_report:proof_maintenance_decode_header.con#4	report	report	check_report	tests/programs/proof_maintenance_decode_header.con	proof-status	stale fingerprint for 'main.decode_header' (#\\[proof_fingerprint\\] "v2:[0-9a-f]*" ≠ current	proof-status: stored v2 pin shown against the current digest	proof-status: stored v2 pin missing from the stale diagnostic
+
+check_report:proof_maintenance_decode_header.con#5	report	report	check_report	tests/programs/proof_maintenance_decode_header.con	proof-status	current fingerprint	proof-status: current fingerprint shown	proof-status: current fingerprint missing
+
+# Proved function
+check_report:adversarial_profile_mixed_evidence.con#5	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	proof-status	proof matches current body	proof-status: proved function shown	proof-status: proved function missing
+
+# Trusted function
+check_report:adversarial_profile_mixed_evidence.con#6	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	proof-status	trusted assumption	proof-status: trusted function shown	proof-status: trusted function missing
+
+# Not eligible
+check_report:adversarial_profile_mixed_evidence.con#7	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	proof-status	fails the proof-eligibility gates	proof-status: ineligible function shown with reason	proof-status: ineligible function missing
+
+# Summary counts
+check_report:adversarial_profile_mixed_evidence.con#8	report	report	check_report	tests/programs/adversarial_profile_mixed_evidence.con	proof-status	1 proved.*0 stale.*1 unproved.*0 blocked.*2 ineligible.*1 trusted	proof-status: summary counts correct	proof-status: summary counts wrong
+script:report.5	script	report	suite	5
+
+ext_check:main.add_simple	report	report	ext_check	main.add_simple	extracted		proofcore-extraction: add_simple extracted successfully	proofcore-extraction: add_simple should be extracted
+
+ext_check:main.uses_struct	report	report	ext_check	main.uses_struct	extracted		proofcore-extraction: struct literal extracts (Phase 4)	proofcore-extraction: struct literal should extract
+
+ext_check:main.uses_while	report	report	ext_check	main.uses_while	excluded		proofcore-extraction: while loop excluded by eligibility	proofcore-extraction: while loop should be excluded
+
+ext_check:main.uses_match	report	report	ext_check	main.uses_match	extracted		proofcore-extraction: match expression extracts (Phase 4)	proofcore-extraction: match expression should extract
+
+ext_check:main.uses_mut	report	report	ext_check	main.uses_mut	eligible_not_extractable	mutable assignment	proofcore-extraction: mutable assignment blocks extraction	proofcore-extraction: mutable assignment should block extraction
+script:report.6	script	report	suite	6
+
+norm_check:main.dead_let	report	report	norm_check	main.dead_let	y	proofcore-norm: dead let eliminated	proofcore-norm: dead let should be eliminated
+
+norm_check:main.add_zero	report	report	norm_check	main.add_zero	x	proofcore-norm: x+0 simplified to x	proofcore-norm: x+0 should simplify to x
+
+norm_check:main.zero_add	report	report	norm_check	main.zero_add	x	proofcore-norm: 0+x simplified to x	proofcore-norm: 0+x should simplify to x
+
+norm_check:main.mul_one	report	report	norm_check	main.mul_one	x	proofcore-norm: x*1 simplified to x	proofcore-norm: x*1 should simplify to x
+
+norm_check:main.one_mul	report	report	norm_check	main.one_mul	x	proofcore-norm: 1*x simplified to x	proofcore-norm: 1*x should simplify to x
+
+norm_check:main.mul_zero	report	report	norm_check	main.mul_zero	0	proofcore-norm: x*0 simplified to 0	proofcore-norm: x*0 should simplify to 0
+
+norm_check:main.sub_zero	report	report	norm_check	main.sub_zero	x	proofcore-norm: x-0 simplified to x	proofcore-norm: x-0 should simplify to x
+
+norm_check:main.comm_add	report	report	norm_check	main.comm_add	(a + 3)	proofcore-norm: 3+a canonicalized to a+3	proofcore-norm: 3+a should canonicalize to a+3
+
+norm_check:main.comm_mul	report	report	norm_check	main.comm_mul	(b * 7)	proofcore-norm: 7*b canonicalized to b*7	proofcore-norm: 7*b should canonicalize to b*7
+
+norm_check:main.comm_alpha	report	report	norm_check	main.comm_alpha	(a + b)	proofcore-norm: b+a canonicalized to a+b	proofcore-norm: b+a should canonicalize to a+b
+
+norm_check:main.if_true	report	report	norm_check	main.if_true	x	proofcore-norm: if true short-circuited	proofcore-norm: if true should short-circuit
+
+norm_check:main.if_false	report	report	norm_check	main.if_false	y	proofcore-norm: if false short-circuited	proofcore-norm: if false should short-circuit
+
+norm_check:main.no_simplify	report	report	norm_check	main.no_simplify	let c = (a + b); (c * 2)	proofcore-norm: non-trivial expr preserved	proofcore-norm: non-trivial expr should be preserved
+script:report.7	script	report	suite	7
+
+# Authority report should show chain traces correctly
+check_report:report_integration.con#11	report	report	check_report	tests/programs/report_integration.con	authority	uses_alloc.*vec_new	qualified-authority: uses_alloc chain traces vec_new	qualified-authority: uses_alloc chain should trace vec_new
+
+check_report:report_integration.con#12	report	report	check_report	tests/programs/report_integration.con	authority	call_raw.*raw_extern	qualified-authority: call_raw chain traces raw_extern	qualified-authority: call_raw chain should trace raw_extern
+script:report.8	script	report	suite	8
+
+# --- diagnostics-json: machine-readable diagnostic records ---
+-	-	report	echo	
+-	-	report	echo	=== Diagnostics JSON tests ===
+script:report.9	script	report	suite	9
+
+# =============================================================
+# Report-consistency tests: JSON ↔ human reports, intra-JSON
+# =============================================================
+-	-	report	echo	
+-	-	report	echo	=== Report consistency tests ===
+script:report.10	script	report	suite	10
+
+# =============================================================
+# Fact query CLI tests (--query)
+# =============================================================
+-	-	report	echo	
+-	-	report	echo	=== Fact query CLI tests ===
+script:report.11	script	report	suite	11
+
+# =============================================================
+# Authority trace query tests (--query why-capability)
+# =============================================================
+-	-	report	echo	
+-	-	report	echo	=== Authority trace query tests ===
+script:report.12	script	report	suite	12
+
+# =============================================================
+# Semantic query tests: predictable, proof, evidence
+# =============================================================
+-	-	report	echo	
+-	-	report	echo	=== Semantic query tests ===
+script:report.13	script	report	suite	13
+
+# --- audit:fn ---
+-	-	report	echo	
+-	-	report	echo	=== Audit query tests ===
+script:report.14	script	report	suite	14
+
+-	-	report	echo	
+-	-	report	echo	=== Proof registry artifact tests ===
+script:report.15	script	report	suite	15
+
+-	-	report	echo	
+-	-	report	echo	=== Proof obligations report tests ===
+script:report.16	script	report	suite	16
+
+-	-	report	echo	
+-	-	report	echo	=== Source-to-ProofCore extraction tests ===
+script:report.17	script	report	suite	17
+
+-	-	report	echo	
+-	-	report	echo	=== Source/Core/SSA/LLVM traceability tests ===
+script:report.18	script	report	suite	18
+
+-	-	report	echo	
+-	-	report	echo	=== Named spec/proof identity tests ===
+script:report.19	script	report	suite	19
+
+-	-	report	echo	
+-	-	report	echo	=== Semantic diff / trust drift tests ===
+script:report.20	script	report	suite	20
+
+-	-	report	echo	
+-	-	report	echo	=== Adversarial diff tests ===
+script:report.21	script	report	suite	21
+
+-	-	report	echo	
+-	-	report	echo	=== Fact artifact snapshot tests ===
+script:report.22	script	report	suite	22
+
+# === Crypto verification core (flagship example #2) ===
+-	-	report	echo	
+-	-	report	echo	=== Crypto verification core tests ===
+script:report.23	script	report	suite	23
+
+# === ELF header validator (flagship example — file I/O shell + proved core) ===
+-	-	report	echo	
+-	-	report	echo	=== ELF header validator tests ===
+script:report.24	script	report	suite	24
+
+# === Adversarial proof system tests ===
+-	-	report	echo	
+-	-	report	echo	=== Adversarial proof system tests ===
+script:report.25	script	report	suite	25
+

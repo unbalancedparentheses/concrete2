@@ -1,0 +1,7 @@
+# fixedcap: the tests of run_tests.sh's `if section_active fixedcap; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_fixedcap_<n> from scripts/tests/suite/fixedcap.sh.
+id	kind	section	helper	args
+-	-	fixedcap	echo	
+-	-	fixedcap	echo	=== Fixed-capacity validation tests ===
+script:fixedcap.1	script	fixedcap	suite	1

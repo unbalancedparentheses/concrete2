@@ -1,0 +1,7 @@
+# perf: the tests of run_tests.sh's `if section_active perf; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_perf_<n> from scripts/tests/suite/perf.sh.
+id	kind	section	helper	args
+-	-	perf	echo	
+-	-	perf	echo	=== Performance regression check ===
+script:perf.1	script	perf	suite	1

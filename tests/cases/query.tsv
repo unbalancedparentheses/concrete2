@@ -1,0 +1,7 @@
+# query: the tests of run_tests.sh's `if section_active query; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_query_<n> from scripts/tests/suite/query.sh.
+id	kind	section	helper	args
+-	-	query	echo	
+-	-	query	echo	=== Invalid-query diagnostic tests ===
+script:query.1	script	query	suite	1

@@ -1,0 +1,7 @@
+# proofgate: the tests of run_tests.sh's `if section_active proofgate; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_proofgate_<n> from scripts/tests/suite/proofgate.sh.
+id	kind	section	helper	args
+-	-	proofgate	echo	
+-	-	proofgate	echo	=== Proof gate CI tests ===
+script:proofgate.1	script	proofgate	suite	1

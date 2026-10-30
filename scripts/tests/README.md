@@ -4,7 +4,8 @@ This directory contains shell entrypoints for the non-Rust, non-Lean parts of th
 
 Main entrypoints:
 
-- `run_tests.sh`: primary regression runner
+- `run_tests.sh`: primary regression runner; its tests are data in `tests/cases/<block>.tsv` (a row
+  per test, run by `run_cases`) and its code units in `suite/<block>.sh`; `--list` prints them
 - `test_golden.sh`: golden-file verification for `--emit-core`, `--emit-ssa`, and `--fmt`
 - `update_golden.sh`: refresh golden baselines
 - `test_ssa.sh`: SSA-focused backend checks

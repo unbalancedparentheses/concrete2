@@ -122,10 +122,18 @@ _exec_lines() { # path -> comment-stripped lines that INVOKE something
 # edges: "<container> <invoked-gate>", container "" meaning the workflow itself
 _exec_lines "$WORKFLOW" | grep -oFf "$NAMES_FILE" 2>/dev/null | sort -u \
   | while IFS= read -r n; do [ -n "$n" ] && echo "WORKFLOW $n"; done > "$EDGES_FILE"
+# A script that sources scripts/tests/suite/ (run_tests.sh: each block's code units) runs what those
+# unit files invoke, so their lines count as its own.
+_exec_lines_with_units() {
+  _exec_lines "$1"
+  if _exec_lines "$1" | grep -E '(^|[[:space:];&|])(source|\.)[[:space:]].*scripts/tests/suite/' >/dev/null; then
+    local u; for u in scripts/tests/suite/*.sh; do [ -f "$u" ] && _exec_lines "$u"; done
+  fi
+}
 for f in scripts/tests/*.sh scripts/ci/*.sh scripts/gen/*.sh scripts/tools/*.sh; do
   [ -f "$f" ] || continue
   src="$(basename "$f")"
-  _exec_lines "$f" | grep -oFf "$NAMES_FILE" 2>/dev/null | sort -u \
+  _exec_lines_with_units "$f" | grep -oFf "$NAMES_FILE" 2>/dev/null | sort -u \
     | while IFS= read -r n; do
         [ -n "$n" ] && [ "$n" != "$src" ] && echo "$src $n"
       done >> "$EDGES_FILE"

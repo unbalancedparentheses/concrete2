@@ -1,0 +1,7 @@
+# bundle: the tests of run_tests.sh's `if section_active bundle; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_bundle_<n> from scripts/tests/suite/bundle.sh.
+id	kind	section	helper	args
+-	-	bundle	echo	
+-	-	bundle	echo	=== Proof evidence bundle tests ===
+script:bundle.1	script	bundle	suite	1

@@ -18,32 +18,50 @@ TOTAL=0
 
 # Extract test cases handling multiline expected values, output as individual files
 python3 -c '
-import re, sys, os
-content = open("scripts/tests/run_tests.sh").read()
+import glob, re, sys, os
+# THE run_ok CORPUS of run_tests.sh: its case-table rows (tests/cases/*.tsv, helper run_ok: file,
+# expected, optional rc, with \\ \t \n escapes) and the inline calls in the runner and its code units
+# (scripts/tests/suite/*.sh), in that order.
+specs = []
+def unesc(a):
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), a)
+comments = []
+for t in sorted(glob.glob("tests/cases/*.tsv")):
+    for line in open(t).read().split("\n"):
+        if line.startswith("#"):
+            comments.append(line)
+            continue
+        c = line.split("\t")
+        if len(c) >= 6 and c[3] == "run_ok":
+            specs.append((c[4], c[6] if len(c) > 6 else "", unesc(c[5])))
+content = "\n".join([open("scripts/tests/run_tests.sh").read()]
+                    + [open(f).read() for f in sorted(glob.glob("scripts/tests/suite/*.sh"))] + comments)
 pattern = r"""run_ok\s+"([^"]+)"\s+("([^"]*(?:\n[^"]*)*?)"|(\S+))([ \t]+(\d+))?"""
 resdir = sys.argv[1]
-for i, m in enumerate(re.finditer(pattern, content)):
+for m in re.finditer(pattern, content):
     path = m.group(1).replace("$TESTDIR/", "tests/programs/")
     # A scraped path must be literal: a shell variable here (a run_ok inside a loop) would
     # become a program name that does not exist. Refuse the corpus rather than guess.
     if "$" in path:
-        sys.exit(f"test_ssa.sh: run_ok path {m.group(1)!r} in run_tests.sh is not literal; "
+        sys.exit(f"test_ssa.sh: run_ok path {m.group(1)!r} in the suite is not literal; "
                  "write one run_ok per program so the SSA scraper sees it")
     if m.group(3) is not None:
         expected = m.group(3)
     else:
         expected = m.group(4)
-    # run_tests.sh writes multiline expectations as "$(printf ...)"; the regex
+    # an inline call writes multiline expectations as "$(printf ...)"; the regex
     # captures that literally, so expand the idiom or the spec can never match.
     p = re.fullmatch(r"\$\(printf \x27(.*)\x27\)", expected, re.S)
     if p:
         expected = p.group(1).replace("\\n", "\n").replace("\\t", "\t")
     rc = m.group(6) if m.group(6) is not None else ""
+    specs.append((path, rc, expected))
+for i, (path, rc, expected) in enumerate(specs):
     with open(os.path.join(resdir, f"test_{i:04d}.spec"), "w") as f:
         f.write(path + "\n")
         f.write(rc + "\n")
         f.write(expected)
-' "$RESDIR" || { echo "FAIL: could not extract the run_ok corpus from run_tests.sh"; exit 1; }
+' "$RESDIR" || { echo "FAIL: could not extract the run_ok corpus from the suite"; exit 1; }
 
 for spec in "$RESDIR"/test_*.spec; do
     [ -f "$spec" ] || continue

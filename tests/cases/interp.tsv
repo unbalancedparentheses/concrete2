@@ -1,0 +1,12 @@
+# interp: the tests of run_tests.sh's `if section_active interp; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_interp_<n> from scripts/tests/suite/interp.sh.
+id	kind	section	helper	args
+-	-	interp	echo	
+-	-	interp	echo	=== Interpreter (semantic oracle) tests ===
+script:interp.1	script	interp	suite	1
+
+# Phase A.1 differential corpus: compiled vs --interp across tests/oracle/vectors.txt.
+-	-	interp	echo	
+-	-	interp	echo	=== Interpreter (semantic oracle) corpus ===
+script:interp.2	script	interp	suite	2

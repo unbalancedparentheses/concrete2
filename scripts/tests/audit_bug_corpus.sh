@@ -23,6 +23,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUGS_DIR="$ROOT_DIR/docs/bugs"
 TESTS_DIR="$ROOT_DIR/tests/programs"
 RUN_TESTS="$ROOT_DIR/scripts/tests/run_tests.sh"
+# The suite's sources: the runner, its case tables (tests/cases) and its code units (scripts/tests/suite).
+SUITE_SOURCES=("$RUN_TESTS" "$ROOT_DIR"/tests/cases/*.tsv "$ROOT_DIR"/scripts/tests/suite/*.sh)
 
 PASS=0
 FAIL=0
@@ -97,7 +99,7 @@ for bugfile in "$BUGS_DIR"/[0-9][0-9][0-9]_*.md; do
     fi
     # Check test is registered in run_tests.sh
     testbase="${testfile%.con}"
-    if ! grep -q "$testbase" "$RUN_TESTS" 2>/dev/null; then
+    if ! grep -q "$testbase" "${SUITE_SOURCES[@]}" 2>/dev/null; then
       issues="${issues}$testfile not in run_tests.sh; "
     fi
   done

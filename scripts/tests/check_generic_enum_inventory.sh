@@ -32,6 +32,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/gate_env.sh" || exit 2
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 RUN_TESTS="scripts/tests/run_tests.sh"
+# The suite's sources: case-table rows (helper and file in tab-separated columns) and the runner's
+# and unit files' inline calls.
+SUITE_CODE=("$RUN_TESTS" scripts/tests/suite/*.sh)
+CASE_ROWS=(tests/cases/*.tsv)
 PASS=0; FAIL=0
 ok(){ echo "  ok   $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL $1"; FAIL=$((FAIL+1)); }
@@ -55,8 +59,10 @@ for f in "${FILES[@]}"; do
   base="$(basename "$f")"
   in_programs=0; [[ "$f" == ./tests/programs/* || "$f" == tests/programs/* ]] && in_programs=1
   # classification from run_tests.sh
-  errline="$(grep -E "run_err\s+\"[^\"]*${base%.con}\.con\"" "$RUN_TESTS" 2>/dev/null || true)"
-  okline="$(grep -E "run_ok\s+\"[^\"]*${base%.con}\.con\"" "$RUN_TESTS" 2>/dev/null || true)"
+  errline="$( { grep -hE "run_err\s+\"[^\"]*${base%.con}\.con\"" "${SUITE_CODE[@]}"
+                grep -hE $'\trun_err\t[^\t]*'"${base%.con}\.con(\$|"$'\t)' "${CASE_ROWS[@]}"; } 2>/dev/null || true)"
+  okline="$( { grep -hE "run_ok\s+\"[^\"]*${base%.con}\.con\"" "${SUITE_CODE[@]}"
+               grep -hE $'\trun_ok\t[^\t]*'"${base%.con}\.con(\$|"$'\t)' "${CASE_ROWS[@]}"; } 2>/dev/null || true)"
   if [ "$in_programs" -ne 1 ]; then
     no "$f declares a user generic enum but is OUTSIDE tests/programs — no run_ok/run_err reaches it; classify it via a corpus with an assertion mechanism first"
   elif [ -n "$errline" ] && grep -q '(E0808)' <<<"$errline"; then

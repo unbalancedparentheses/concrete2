@@ -1,0 +1,7 @@
+# always.1: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_1_<n> from scripts/tests/suite/always.1.sh.
+id	kind	section	helper	args
+
+-	-	*	echo	
+-	-	*	flush_jobs

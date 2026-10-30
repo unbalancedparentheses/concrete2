@@ -69,6 +69,8 @@ cp scripts/tests/audit_bug_corpus.sh scripts/tests/check_bug_filing_complete.sh 
 mkdir -p "$BASE/scripts/tests/lib" && cp scripts/tests/lib/gate_env.sh scripts/tests/lib/has_match.sh "$BASE/scripts/tests/lib/"
 cp .github/workflows/lean_action_ci.yml "$BASE/.github/workflows/"
 ln -s "$ROOT_DIR/tests" "$BASE/tests"
+# The suite's code units (its case tables come with tests/): audit_bug_corpus.sh finds registrations there.
+mkdir -p "$BASE/scripts/tests/suite" && cp scripts/tests/suite/*.sh "$BASE/scripts/tests/suite/"
 MIGRATED_HERE=0; [ -n "$(python3 -I "$BL" corpus)" ] && MIGRATED_HERE=1
 : > "$TMP/migrate.log"
 if [ "$MIGRATED_HERE" = 0 ]; then

@@ -428,7 +428,7 @@ logical_lines() { # files... -> FILE:LINE:joined logical line
 _GIT_GREP="git( +-[Cc] +(\"[^\"]*\"|'[^']*'|[^ ]+))* +grep"
 gitgrep_gnuisms() { logical_lines "$@" | grep -E "${_GIT_GREP}"'.*\\[b<>]' || true; }
 gitgrep_into_quiet_grep() { logical_lines "$@" | grep -E "${_GIT_GREP}"'[^;]*\| *grep( +-[A-Za-z]+)* +-[A-Za-z]*q' || true; }
-GG_FILES=("$ROOT_DIR"/scripts/tests/*.sh "$ROOT_DIR"/scripts/tests/lib/*.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/gen/*.sh "$ROOT_DIR"/.githooks/pre-push)
+GG_FILES=("$ROOT_DIR"/scripts/tests/*.sh "$ROOT_DIR"/scripts/tests/lib/*.sh "$ROOT_DIR"/scripts/tests/suite/*.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/gen/*.sh "$ROOT_DIR"/.githooks/pre-push)
 GG="$(gitgrep_gnuisms "${GG_FILES[@]}")"
 if [ -z "$GG" ]; then ok "no git-grep pattern uses \\b, \\< or \\> (portable boundaries only)"
 else no "git grep patterns depend on the regex engine: $(cut -c1-160 <<<"$GG" | tr '\n' ';')"; fi
@@ -779,7 +779,7 @@ fixed_tmp_scan() {
     }
     close ARGV if eof;' "$@"
 }
-mapfile -t TMPSCAN < <(find "$ROOT_DIR/scripts/tests" "$ROOT_DIR/scripts/tests/lib" "$ROOT_DIR/scripts/ci" \
+mapfile -t TMPSCAN < <(find "$ROOT_DIR/scripts/tests" "$ROOT_DIR/scripts/tests/lib" "$ROOT_DIR/scripts/tests/suite" "$ROOT_DIR/scripts/ci" \
   -maxdepth 1 -type f -name '*.sh' ! -name 'check_gate_hygiene.sh' 2>/dev/null | LC_ALL=C sort -u)
 # The examples' scripts (benchmarks, demos) run on the same shared hosts (bug 191: four bench.sh
 # wrote fixed /tmp names).

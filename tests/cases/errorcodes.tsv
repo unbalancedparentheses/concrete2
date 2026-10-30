@@ -1,0 +1,7 @@
+# errorcodes: the tests of run_tests.sh's `if section_active errorcodes; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_errorcodes_<n> from scripts/tests/suite/errorcodes.sh.
+id	kind	section	helper	args
+-	-	errorcodes	echo	
+-	-	errorcodes	echo	=== Error code taxonomy tests ===
+script:errorcodes.1	script	errorcodes	suite	1

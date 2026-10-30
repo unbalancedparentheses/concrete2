@@ -1,0 +1,7 @@
+# determinism: the tests of run_tests.sh's `if section_active determinism; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_determinism_<n> from scripts/tests/suite/determinism.sh.
+id	kind	section	helper	args
+-	-	determinism	echo	
+-	-	determinism	echo	=== Determinism regression check ===
+script:determinism.1	script	determinism	suite	1

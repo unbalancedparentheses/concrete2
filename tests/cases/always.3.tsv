@@ -1,0 +1,9 @@
+# always.3: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_3_<n> from scripts/tests/suite/always.3.sh.
+id	kind	section	helper	args
+
+# === gate smoke (fast per-feature gates, so regressions surface in the edit
+# loop instead of at push time; the full gate set stays in CI / test-ci-gates) ===
+-	-	*	echo	
+-	-	*	flush_jobs

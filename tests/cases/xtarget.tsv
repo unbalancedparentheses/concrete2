@@ -1,0 +1,7 @@
+# xtarget: the tests of run_tests.sh's `if section_active xtarget; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_xtarget_<n> from scripts/tests/suite/xtarget.sh.
+id	kind	section	helper	args
+-	-	xtarget	echo	
+-	-	xtarget	echo	=== Cross-target IR verification (x86_64) ===
+script:xtarget.1	script	xtarget	suite	1

@@ -1,0 +1,7 @@
+# verify: the tests of run_tests.sh's `if section_active verify; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_verify_<n> from scripts/tests/suite/verify.sh.
+id	kind	section	helper	args
+-	-	verify	echo	
+-	-	verify	echo	=== Verifier passes ===
+script:verify.1	script	verify	suite	1

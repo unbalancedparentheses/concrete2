@@ -1,0 +1,475 @@
+# positive: the tests of run_tests.sh's `if section_active positive; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_positive_<n> from scripts/tests/suite/positive.sh.
+id	kind	section	helper	args
+-	-	positive	echo	=== Positive tests ===
+run_ok:fib.con	run-value	positive	run_ok	tests/programs/fib.con	55
+run_ok:arithmetic.con	run-value	positive	run_ok	tests/programs/arithmetic.con	65
+run_ok:if_else.con	run-value	positive	run_ok	tests/programs/if_else.con	1
+run_ok:while_loop.con	run-value	positive	run_ok	tests/programs/while_loop.con	5050
+run_ok:recursion.con	run-value	positive	run_ok	tests/programs/recursion.con	479001600
+run_ok:nested_calls.con	run-value	positive	run_ok	tests/programs/nested_calls.con	42
+run_ok:struct_basic.con	run-value	positive	run_ok	tests/programs/struct_basic.con	7
+run_ok:struct_field_assign.con	run-value	positive	run_ok	tests/programs/struct_field_assign.con	33
+run_ok:struct_loop_field_assign.con	run-value	positive	run_ok	tests/programs/struct_loop_field_assign.con	42
+run_ok:struct_loop_break.con	run-value	positive	run_ok	tests/programs/struct_loop_break.con	42
+run_ok:struct_nested_loop.con	run-value	positive	run_ok	tests/programs/struct_nested_loop.con	42
+run_ok:struct_if_else_merge.con	run-value	positive	run_ok	tests/programs/struct_if_else_merge.con	42
+run_ok:struct_match_merge.con	run-value	positive	run_ok	tests/programs/struct_match_merge.con	42
+run_ok:match_int_basic.con	run-value	positive	run_ok	tests/programs/match_int_basic.con	42
+run_ok:match_int_default.con	run-value	positive	run_ok	tests/programs/match_int_default.con	42
+run_ok:match_int_negative.con	run-value	positive	run_ok	tests/programs/match_int_negative.con	42
+run_ok:match_bool.con	run-value	positive	run_ok	tests/programs/match_bool.con	42
+run_ok:wildcard_pattern.con	run-value	positive	run_ok	tests/programs/wildcard_pattern.con	0
+run_ok:field_punning.con	run-value	positive	run_ok	tests/programs/field_punning.con	0
+run_ok:let_else.con	run-value	positive	run_ok	tests/programs/let_else.con	0
+run_ok:struct_destructure.con	run-value	positive	run_ok	tests/programs/struct_destructure.con	0
+run_ok:linear_consume.con	run-value	positive	run_ok	tests/programs/linear_consume.con	42
+run_ok:linear_branch_agree.con	run-value	positive	run_ok	tests/programs/linear_branch_agree.con	42
+run_ok:linear_loop_inner.con	run-value	positive	run_ok	tests/programs/linear_loop_inner.con	3
+run_ok:enum_basic.con	run-value	positive	run_ok	tests/programs/enum_basic.con	2
+run_ok:enum_fields.con	run-value	positive	run_ok	tests/programs/enum_fields.con	12
+run_ok:enum_linear.con	run-value	positive	run_ok	tests/programs/enum_linear.con	42
+run_ok:borrow_read.con	run-value	positive	run_ok	tests/programs/borrow_read.con	10
+run_ok:borrow_mut.con	run-value	positive	run_ok	tests/programs/borrow_mut.con	42
+run_ok:borrow_no_consume.con	run-value	positive	run_ok	tests/programs/borrow_no_consume.con	42
+run_ok:sequential_mut_borrow.con	run-value	positive	run_ok	tests/programs/sequential_mut_borrow.con	43
+run_ok:generic_fn.con	run-value	positive	run_ok	tests/programs/generic_fn.con	42
+run_ok:generic_infer_through_ref.con	run-value	positive	run_ok	tests/programs/generic_infer_through_ref.con	42
+run_ok:callback_context_modes.con	run-value	positive	run_ok	tests/programs/callback_context_modes.con	245
+run_ok:generic_struct.con	run-value	positive	run_ok	tests/programs/generic_struct.con	30
+run_ok:string_basic.con	run-value	positive	run_ok	tests/programs/string_basic.con	5
+run_ok:string_borrow.con	run-value	positive	run_ok	tests/programs/string_borrow.con	10
+run_ok:result_ok.con	run-value	positive	run_ok	tests/programs/result_ok.con	42
+run_ok:result_err.con	run-value	positive	run_ok	tests/programs/result_err.con	99
+run_ok:result_generic_propagation.con	run-value	positive	run_ok	tests/programs/result_generic_propagation.con	42
+script:positive.1	script	positive	suite	1
+run_ok:module_basic.con	run-value	positive	run_ok	tests/programs/module_basic.con	42
+run_ok:module_struct.con	run-value	positive	run_ok	tests/programs/module_struct.con	30
+run_ok:array_basic.con	run-value	positive	run_ok	tests/programs/array_basic.con	20
+run_ok:array_assign.con	run-value	positive	run_ok	tests/programs/array_assign.con	5
+run_ok:cast_basic.con	run-value	positive	run_ok	tests/programs/cast_basic.con	42
+run_ok:cast_float.con	run-value	positive	run_ok	tests/programs/cast_float.con	7
+run_ok:impl_method.con	run-value	positive	run_ok	tests/programs/impl_method.con	30
+run_ok:impl_mut_method.con	run-value	positive	run_ok	tests/programs/impl_mut_method.con	42
+run_ok:impl_static.con	run-value	positive	run_ok	tests/programs/impl_static.con	7
+run_ok:trait_basic.con	run-value	positive	run_ok	tests/programs/trait_basic.con	30
+run_ok:trait_multiple.con	run-value	positive	run_ok	tests/programs/trait_multiple.con	50
+run_ok:cap_basic.con	run-value	positive	run_ok	tests/programs/cap_basic.con	0
+run_ok:cap_bang.con	run-value	positive	run_ok	tests/programs/cap_bang.con	30
+run_ok:cap_method.con	run-value	positive	run_ok	tests/programs/cap_method.con	0
+run_ok:break_basic.con	run-value	positive	run_ok	tests/programs/break_basic.con	5
+run_ok:continue_basic.con	run-value	positive	run_ok	tests/programs/continue_basic.con	25
+run_ok:break_for.con	run-value	positive	run_ok	tests/programs/break_for.con	10
+run_ok:continue_for.con	run-value	positive	run_ok	tests/programs/continue_for.con	27
+# Phase 3: defer/destroy/Copy
+run_ok:defer_basic.con	run-value	positive	run_ok	tests/programs/defer_basic.con	10
+run_ok:defer_lifo.con	run-value	positive	run_ok	tests/programs/defer_lifo.con	42
+run_ok:defer_early_return.con	run-value	positive	run_ok	tests/programs/defer_early_return.con	10
+run_ok:defer_loop.con	run-value	positive	run_ok	tests/programs/defer_loop.con	42
+run_ok:destroy_trait.con	run-value	positive	run_ok	tests/programs/destroy_trait.con	42
+run_ok:copy_struct.con	run-value	positive	run_ok	tests/programs/copy_struct.con	42
+run_ok:copy_enum.con	run-value	positive	run_ok	tests/programs/copy_enum.con	42
+
+# Adversarial codegen tests
+run_ok:adversarial_codegen_deeply_nested_if.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_deeply_nested_if.con	42
+run_ok:adversarial_codegen_for_loop_zero_iters.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_for_loop_zero_iters.con	99
+run_ok:adversarial_codegen_cast_chain.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_cast_chain.con	42
+run_ok:adversarial_codegen_many_params.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_many_params.con	36
+script:positive.2	script	positive	suite	2
+run_ok:adversarial_codegen_bool_logic.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_bool_logic.con	42
+run_ok:adversarial_codegen_nested_struct_array.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_nested_struct_array.con	37
+run_ok:adversarial_codegen_array_in_loop.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_array_in_loop.con	100
+run_ok:adversarial_codegen_struct_return_chain.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_struct_return_chain.con	10
+run_ok:adversarial_codegen_array_bounds.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_array_bounds.con	77
+run_ok:adversarial_codegen_large_struct.con	run-value	positive	run_ok	tests/programs/adversarial_codegen_large_struct.con	55
+# Adversarial linear/cap positive tests
+run_ok:adversarial_linear_correct_chain.con	run-value	positive	run_ok	tests/programs/adversarial_linear_correct_chain.con	30
+run_ok:adversarial_cap_correct_propagation.con	run-value	positive	run_ok	tests/programs/adversarial_cap_correct_propagation.con	0
+script:positive.3	script	positive	suite	3
+run_abort:abort_basic.con	trap	positive	run_abort	tests/programs/abort_basic.con
+
+# Phase 5: Allocator system
+run_ok:alloc_basic.con	run-value	positive	run_ok	tests/programs/alloc_basic.con	30
+run_ok:alloc_propagate.con	run-value	positive	run_ok	tests/programs/alloc_propagate.con	30
+run_ok:heap_arrow.con	run-value	positive	run_ok	tests/programs/heap_arrow.con	20
+run_ok:heap_arrow_mut.con	run-value	positive	run_ok	tests/programs/heap_arrow_mut.con	42
+
+# Phase 6: Borrow regions
+run_ok:borrow_named.con	run-value	positive	run_ok	tests/programs/borrow_named.con	30
+run_ok:borrow_mut_named.con	run-value	positive	run_ok	tests/programs/borrow_mut_named.con	42
+run_ok:borrow_multi.con	run-value	positive	run_ok	tests/programs/borrow_multi.con	35
+
+# Memory semantics edge cases (valid programs)
+run_ok:adversarial_memory_edge_field_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_field_borrow.con	13
+run_ok:adversarial_memory_edge_array_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_array_borrow.con	30
+run_ok:adversarial_memory_edge_controlflow.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_controlflow.con	5
+run_ok:adversarial_memory_edge_defer.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_defer.con	45
+run_ok:adversarial_memory_edge_borrow_sequential.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_borrow_sequential.con	335
+run_ok:adversarial_memory_edge_reserved_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_reserved_borrow.con	42
+run_ok:adversarial_memory_edge_match_agree.con	run-value	positive	run_ok	tests/programs/adversarial_memory_edge_match_agree.con	0
+run_ok:bug_int_match_consume.con	run-value	positive	run_ok	tests/programs/bug_int_match_consume.con	0
+# Ownership/borrow adversarial tests
+run_ok:adversarial_borrow_then_consume.con	run-value	positive	run_ok	tests/programs/adversarial_borrow_then_consume.con	84
+run_ok:adversarial_copy_no_linearity.con	run-value	positive	run_ok	tests/programs/adversarial_copy_no_linearity.con	233
+run_ok:adversarial_copy_in_loop.con	run-value	positive	run_ok	tests/programs/adversarial_copy_in_loop.con	90
+run_ok:adversarial_return_consumes.con	run-value	positive	run_ok	tests/programs/adversarial_return_consumes.con	77
+run_ok:adversarial_shared_borrow_multi_use.con	run-value	positive	run_ok	tests/programs/adversarial_shared_borrow_multi_use.con	60
+run_ok:adversarial_nested_borrow_different_owners.con	run-value	positive	run_ok	tests/programs/adversarial_nested_borrow_different_owners.con	30
+run_ok:adversarial_linear_enum_consume.con	run-value	positive	run_ok	tests/programs/adversarial_linear_enum_consume.con	37
+run_ok:adversarial_deep_branch_linear.con	run-value	positive	run_ok	tests/programs/adversarial_deep_branch_linear.con	0
+run_ok:adversarial_for_loop_linear.con	run-value	positive	run_ok	tests/programs/adversarial_for_loop_linear.con	10
+run_ok:adversarial_multiple_defer_order.con	run-value	positive	run_ok	tests/programs/adversarial_multiple_defer_order.con	6
+run_ok:adversarial_linear_field_read_no_consume.con	run-value	positive	run_ok	tests/programs/adversarial_linear_field_read_no_consume.con	90
+run_ok:adversarial_newtype_consume.con	run-value	positive	run_ok	tests/programs/adversarial_newtype_consume.con	183
+run_ok:adversarial_heap_ownership.con	run-value	positive	run_ok	tests/programs/adversarial_heap_ownership.con	360
+run_ok:adversarial_heap_defer_cleanup.con	run-value	positive	run_ok	tests/programs/adversarial_heap_defer_cleanup.con	300
+# H17: an owned [linear; N] is inexpressible to consume until array
+# destructure lands (H11 note) — the fixture asserts the honest E0208.
+run_err:adversarial_linear_array.con	reject-diagnostic	positive	run_err	tests/programs/adversarial_linear_array.con	was never consumed
+run_ok:adversarial_mut_ref_deref_only.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_deref_only.con	15
+run_ok:adversarial_mut_ref_single_call.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_single_call.con	11
+run_ok:adversarial_mut_ref_sequential_borrows.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_sequential_borrows.con	12
+run_ok:adversarial_mut_ref_branch_both_consume.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_branch_both_consume.con	11
+run_ok:adversarial_mut_ref_branch_neither.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_branch_neither.con	15
+run_ok:adversarial_mut_ref_param_multi_use.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_param_multi_use.con	12
+run_ok:adversarial_mut_ref_deref_then_call.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_deref_then_call.con	16
+run_ok:adversarial_mut_ref_loop_deref.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_loop_deref.con	5
+run_ok:adversarial_mut_ref_nested_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_nested_borrow.con	32
+run_ok:adversarial_mut_ref_param_return.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_param_return.con	15
+run_ok:adversarial_mut_ref_method_on_owner.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_method_on_owner.con	13
+run_ok:adversarial_mut_ref_return_in_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_return_in_borrow.con	15
+run_ok:adversarial_mut_ref_return_deref_in_borrow.con	run-value	positive	run_ok	tests/programs/adversarial_mut_ref_return_deref_in_borrow.con	43
+
+# Adversarial parser stress tests
+run_ok:adversarial_parser_complex_match.con	run-value	positive	run_ok	tests/programs/adversarial_parser_complex_match.con	42
+run_ok:adversarial_parser_deep_nesting.con	run-value	positive	run_ok	tests/programs/adversarial_parser_deep_nesting.con	42
+run_ok:adversarial_parser_empty_bodies.con	run-value	positive	run_ok	tests/programs/adversarial_parser_empty_bodies.con	42
+run_ok:adversarial_parser_long_expression.con	run-value	positive	run_ok	tests/programs/adversarial_parser_long_expression.con	50
+run_ok:adversarial_parser_many_locals.con	run-value	positive	run_ok	tests/programs/adversarial_parser_many_locals.con	42
+run_ok:adversarial_parser_many_params.con	run-value	positive	run_ok	tests/programs/adversarial_parser_many_params.con	42
+run_ok:adversarial_parser_mixed_operators.con	run-value	positive	run_ok	tests/programs/adversarial_parser_mixed_operators.con	42
+run_ok:adversarial_parser_nested_parens.con	run-value	positive	run_ok	tests/programs/adversarial_parser_nested_parens.con	42
+
+# Adversarial lowering stress tests
+run_ok:adversarial_lower_array_of_structs.con	run-value	positive	run_ok	tests/programs/adversarial_lower_array_of_structs.con	42
+run_ok:adversarial_lower_chain_of_calls.con	run-value	positive	run_ok	tests/programs/adversarial_lower_chain_of_calls.con	42
+run_ok:adversarial_lower_defer_ordering.con	run-value	positive	run_ok	tests/programs/adversarial_lower_defer_ordering.con	42
+run_ok:adversarial_lower_enum_in_struct.con	run-value	positive	run_ok	tests/programs/adversarial_lower_enum_in_struct.con	42
+run_ok:adversarial_lower_large_enum_payload.con	run-value	positive	run_ok	tests/programs/adversarial_lower_large_enum_payload.con	42
+run_ok:adversarial_lower_many_match_arms.con	run-value	positive	run_ok	tests/programs/adversarial_lower_many_match_arms.con	42
+run_ok:adversarial_lower_nested_loops.con	run-value	positive	run_ok	tests/programs/adversarial_lower_nested_loops.con	42
+run_ok:adversarial_lower_nested_struct_access.con	run-value	positive	run_ok	tests/programs/adversarial_lower_nested_struct_access.con	42
+run_ok:adversarial_lower_struct_in_loop.con	run-value	positive	run_ok	tests/programs/adversarial_lower_struct_in_loop.con	42
+
+# Adversarial monomorphization tests
+run_ok:adversarial_mono_generic_enum.con	run-value	positive	run_ok	tests/programs/adversarial_mono_generic_enum.con	42
+run_ok:regress_generic_enum_051.con	run-value	positive	run_ok	tests/programs/regress_generic_enum_051.con	43
+run_ok:adversarial_mono_generic_return_struct.con	run-value	positive	run_ok	tests/programs/adversarial_mono_generic_return_struct.con	42
+run_ok:adversarial_mono_many_instantiations.con	run-value	positive	run_ok	tests/programs/adversarial_mono_many_instantiations.con	42
+run_ok:adversarial_mono_nested_generics.con	run-value	positive	run_ok	tests/programs/adversarial_mono_nested_generics.con	42
+run_ok:adversarial_mono_recursive_generic_struct.con	run-value	positive	run_ok	tests/programs/adversarial_mono_recursive_generic_struct.con	42
+run_ok:adversarial_mono_trait_method_chain.con	run-value	positive	run_ok	tests/programs/adversarial_mono_trait_method_chain.con	42
+run_ok:adversarial_mono_trait_multi_impl.con	run-value	positive	run_ok	tests/programs/adversarial_mono_trait_multi_impl.con	42
+
+# Adversarial module tests
+run_ok:adversarial_module_cap_across.con	run-value	positive	run_ok	tests/programs/adversarial_module_cap_across.con	0	42
+run_ok:adversarial_module_deep_nesting.con	run-value	positive	run_ok	tests/programs/adversarial_module_deep_nesting.con	42
+run_ok:adversarial_module_enum_across.con	run-value	positive	run_ok	tests/programs/adversarial_module_enum_across.con	42
+run_ok:adversarial_module_many_siblings.con	run-value	positive	run_ok	tests/programs/adversarial_module_many_siblings.con	42
+run_ok:adversarial_module_same_name.con	run-value	positive	run_ok	tests/programs/adversarial_module_same_name.con	42
+run_ok:adversarial_module_struct_across.con	run-value	positive	run_ok	tests/programs/adversarial_module_struct_across.con	42
+run_ok:adversarial_module_transitive.con	run-value	positive	run_ok	tests/programs/adversarial_module_transitive.con	42
+
+# Adversarial proof/report tests
+run_ok:adversarial_proof_generic_mono.con	run-value	positive	run_ok	tests/programs/adversarial_proof_generic_mono.con	42
+run_ok:adversarial_proof_many_eligible.con	run-value	positive	run_ok	tests/programs/adversarial_proof_many_eligible.con	55
+run_ok:adversarial_proof_mixed_eligibility.con	run-value	positive	run_ok	tests/programs/adversarial_proof_mixed_eligibility.con	42
+run_ok:adversarial_proof_module_isolation.con	run-value	positive	run_ok	tests/programs/adversarial_proof_module_isolation.con	60
+run_ok:adversarial_report_many_functions.con	run-value	positive	run_ok	tests/programs/adversarial_report_many_functions.con	42
+
+# Adversarial error-flow tests (Copy enum error propagation patterns)
+run_ok:adversarial_errorflow_many_error_variants.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_many_error_variants.con	0
+run_ok:adversarial_errorflow_nested_result.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_nested_result.con	0
+run_ok:adversarial_errorflow_chain_propagation.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_chain_propagation.con	0
+run_ok:adversarial_errorflow_struct_in_error.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_struct_in_error.con	0
+run_ok:adversarial_errorflow_multiple_enums.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_multiple_enums.con	0
+run_ok:adversarial_errorflow_match_all_paths.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_match_all_paths.con	0
+run_ok:adversarial_errorflow_many_variants.con	run-value	positive	run_ok	tests/programs/adversarial_errorflow_many_variants.con	0
+run_ok:adversarial_pipeline_stage_conversion.con	run-value	positive	run_ok	tests/programs/adversarial_pipeline_stage_conversion.con	0
+run_ok:adversarial_pipeline_severity.con	run-value	positive	run_ok	tests/programs/adversarial_pipeline_severity.con	0
+run_ok:adversarial_pipeline_partial_success.con	run-value	positive	run_ok	tests/programs/adversarial_pipeline_partial_success.con	0
+run_ok:adversarial_pipeline_fan_in.con	run-value	positive	run_ok	tests/programs/adversarial_pipeline_fan_in.con	0
+
+# Adversarial stack-depth programs (compile-and-run, also tested in stackdepth section)
+run_ok:adversarial_stackdepth_deep_chain.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_deep_chain.con	1
+run_ok:adversarial_stackdepth_wide_fan.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_wide_fan.con	0
+run_ok:adversarial_stackdepth_mixed_recursion.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_mixed_recursion.con	0
+run_ok:adversarial_stackdepth_large_frame.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_large_frame.con	0
+run_ok:adversarial_stackdepth_diamond.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_diamond.con	0
+run_ok:adversarial_stackdepth_zero_params.con	run-value	positive	run_ok	tests/programs/adversarial_stackdepth_zero_params.con	0
+
+# Adversarial predictable boundary programs (pure ones that should pass)
+run_ok:adversarial_predict_bound_nested_match.con	run-value	positive	run_ok	tests/programs/adversarial_predict_bound_nested_match.con	0
+run_ok:adversarial_predict_bound_copy_enum_chain.con	run-value	positive	run_ok	tests/programs/adversarial_predict_bound_copy_enum_chain.con	0
+
+# Adversarial scaling/hostile workload tests
+run_ok:adversarial_scale_deep_call_chain.con	run-value	positive	run_ok	tests/programs/adversarial_scale_deep_call_chain.con	42
+run_ok:adversarial_scale_generic_explosion.con	run-value	positive	run_ok	tests/programs/adversarial_scale_generic_explosion.con	42
+run_ok:adversarial_scale_large_enum.con	run-value	positive	run_ok	tests/programs/adversarial_scale_large_enum.con	42
+run_ok:adversarial_scale_large_struct.con	run-value	positive	run_ok	tests/programs/adversarial_scale_large_struct.con	42
+run_ok:adversarial_scale_many_arrays.con	run-value	positive	run_ok	tests/programs/adversarial_scale_many_arrays.con	42
+run_ok:adversarial_scale_many_enums.con	run-value	positive	run_ok	tests/programs/adversarial_scale_many_enums.con	42
+run_ok:adversarial_scale_many_functions.con	run-value	positive	run_ok	tests/programs/adversarial_scale_many_functions.con	42
+run_ok:adversarial_scale_many_modules.con	run-value	positive	run_ok	tests/programs/adversarial_scale_many_modules.con	42
+run_ok:adversarial_scale_nested_match.con	run-value	positive	run_ok	tests/programs/adversarial_scale_nested_match.con	42
+
+# Capability polymorphism
+run_ok:cap_poly.con	run-value	positive	run_ok	tests/programs/cap_poly.con	42
+run_ok:cap_poly_chain.con	run-value	positive	run_ok	tests/programs/cap_poly_chain.con	42
+
+# Borrow escape (positive — deref value is OK)
+run_ok:escape_return.con	run-value	positive	run_ok	tests/programs/escape_return.con	10
+
+# Complex multi-feature programs
+run_ok:complex_linked_list.con	run-value	positive	run_ok	tests/programs/complex_linked_list.con	42
+run_ok:complex_closure_pipeline.con	run-value	positive	run_ok	tests/programs/complex_closure_pipeline.con	27
+run_ok:complex_struct_methods.con	run-value	positive	run_ok	tests/programs/complex_struct_methods.con	42
+run_ok:complex_defer_destroy.con	run-value	positive	run_ok	tests/programs/complex_defer_destroy.con	42
+run_ok:complex_enum_result.con	run-value	positive	run_ok	tests/programs/complex_enum_result.con	25
+run_ok:result_string.con	run-value	positive	run_ok	tests/programs/result_string.con	5
+run_ok:complex_borrow_compute.con	run-value	positive	run_ok	tests/programs/complex_borrow_compute.con	170
+run_ok:complex_generic_container.con	run-value	positive	run_ok	tests/programs/complex_generic_container.con	42
+run_ok:complex_loop_accumulate.con	run-value	positive	run_ok	tests/programs/complex_loop_accumulate.con	50
+
+# Phase 4: while-as-expression
+run_ok:loop_break_result_basic.con	run-value	positive	run_ok	tests/programs/loop_break_result_basic.con	5
+run_ok:loop_result_no_iterations.con	run-value	positive	run_ok	tests/programs/loop_result_no_iterations.con	99
+run_ok:loop_break_result_nested.con	run-value	positive	run_ok	tests/programs/loop_break_result_nested.con	6
+run_ok:break_accumulate.con	run-value	positive	run_ok	tests/programs/break_accumulate.con	10
+run_ok:while_nested_break.con	run-value	positive	run_ok	tests/programs/while_nested_break.con	6
+
+# Additional capability tests
+run_ok:cap_std_expand.con	run-value	positive	run_ok	tests/programs/cap_std_expand.con	0
+run_ok:cap_nested_call.con	run-value	positive	run_ok	tests/programs/cap_nested_call.con	42
+
+# Additional defer/Copy tests
+run_ok:defer_nested_scope.con	run-value	positive	run_ok	tests/programs/defer_nested_scope.con	42
+run_ok:defer_result_return.con	run-value	positive	run_ok	tests/programs/defer_result_return.con	42
+run_ok:copy_multiple_use.con	run-value	positive	run_ok	tests/programs/copy_multiple_use.con	50
+
+# Additional allocator tests
+run_ok:heap_struct_method.con	run-value	positive	run_ok	tests/programs/heap_struct_method.con	30
+run_ok:alloc_free_loop.con	run-value	positive	run_ok	tests/programs/alloc_free_loop.con	45
+
+# Additional borrow region tests
+run_ok:borrow_sequential.con	run-value	positive	run_ok	tests/programs/borrow_sequential.con	30
+run_ok:borrow_copy_in_block.con	run-value	positive	run_ok	tests/programs/borrow_copy_in_block.con	42
+
+# Phase 7: Bitwise operators + hex/bin/oct literals
+run_ok:bitwise_and.con	run-value	positive	run_ok	tests/programs/bitwise_and.con	15
+run_ok:bitwise_or.con	run-value	positive	run_ok	tests/programs/bitwise_or.con	255
+run_ok:bitwise_xor.con	run-value	positive	run_ok	tests/programs/bitwise_xor.con	240
+run_ok:bitwise_shift.con	run-value	positive	run_ok	tests/programs/bitwise_shift.con	1056
+run_ok:bitwise_not.con	run-value	positive	run_ok	tests/programs/bitwise_not.con	-1
+run_ok:hex_literal.con	run-value	positive	run_ok	tests/programs/hex_literal.con	255
+run_ok:bin_oct_literal.con	run-value	positive	run_ok	tests/programs/bin_oct_literal.con	73
+
+# Phase 7b: Print / basic I/O
+run_ok:print_int_basic.con	run-value	positive	run_ok	tests/programs/print_int_basic.con	42
+run_ok:print_bool_basic.con	run-value	positive	run_ok	tests/programs/print_bool_basic.con	true
+run_ok:builtin_println_mixed.con	run-value	positive	run_ok	tests/programs/builtin_println_mixed.con	42\nhello\ntrue\nfalse
+run_ok:builtin_print_multi_arg.con	run-value	positive	run_ok	tests/programs/builtin_print_multi_arg.con	count: 42 ok: true
+run_ok:builtin_println_i32.con	run-value	positive	run_ok	tests/programs/builtin_println_i32.con	42\nA
+run_ok:print_in_loop.con	run-value	positive	run_ok	tests/programs/print_in_loop.con	0\n1\n2
+
+# Phase 7c: Module file resolution
+run_ok:module_file/main.con	run-value	positive	run_ok	tests/programs/module_file/main.con	42
+run_ok:module_qualified/main.con	run-value	positive	run_ok	tests/programs/module_qualified/main.con	42
+run_ok:module_qualified_mixed/main.con	run-value	positive	run_ok	tests/programs/module_qualified_mixed/main.con	42
+run_ok:module_qualified_two_mods/main.con	run-value	positive	run_ok	tests/programs/module_qualified_two_mods/main.con	42
+run_ok:module_qualified_toplevel_shadow/main.con	run-value	positive	run_ok	tests/programs/module_qualified_toplevel_shadow/main.con	42
+run_ok:module_qualified_extern/main.con	run-value	positive	run_ok	tests/programs/module_qualified_extern/main.con	42
+run_ok:module_qualified_impl/main.con	run-value	positive	run_ok	tests/programs/module_qualified_impl/main.con	42
+run_ok:module_qualified_collision/main.con	run-value	positive	run_ok	tests/programs/module_qualified_collision/main.con	54
+run_ok:module_qualified_parent_shadow/main.con	run-value	positive	run_ok	tests/programs/module_qualified_parent_shadow/main.con	42
+run_ok:module_import_collision/main.con	run-value	positive	run_ok	tests/programs/module_import_collision/main.con	54
+
+# Additional complex tests
+run_ok:complex_fibonacci_closure.con	run-value	positive	run_ok	tests/programs/complex_fibonacci_closure.con	55
+run_ok:complex_state_machine.con	run-value	positive	run_ok	tests/programs/complex_state_machine.con	42
+run_ok:complex_builder_pattern.con	run-value	positive	run_ok	tests/programs/complex_builder_pattern.con	60
+run_ok:complex_error_chain.con	run-value	positive	run_ok	tests/programs/complex_error_chain.con	40
+run_ok:complex_defer_cleanup.con	run-value	positive	run_ok	tests/programs/complex_defer_cleanup.con	30
+
+# Phase C: Self keyword
+run_ok:self_type_basic.con	run-value	positive	run_ok	tests/programs/self_type_basic.con	42
+run_ok:self_type_method.con	run-value	positive	run_ok	tests/programs/self_type_method.con	42
+
+# Phase D: Labeled loops
+run_ok:labeled_break.con	run-value	positive	run_ok	tests/programs/labeled_break.con	42
+run_ok:labeled_continue.con	run-value	positive	run_ok	tests/programs/labeled_continue.con	0
+
+# Phase E: Trait bounds
+run_ok:trait_bound_basic.con	run-value	positive	run_ok	tests/programs/trait_bound_basic.con	30
+run_ok:trait_bound_multiple.con	run-value	positive	run_ok	tests/programs/trait_bound_multiple.con	50
+
+# Phase G: Recursive data structure tests
+run_ok:complex_recursive_list.con	run-value	positive	run_ok	tests/programs/complex_recursive_list.con	42
+run_ok:complex_recursive_tree.con	run-value	positive	run_ok	tests/programs/complex_recursive_tree.con	42
+run_ok:complex_recursive_mutual.con	run-value	positive	run_ok	tests/programs/complex_recursive_mutual.con	42
+
+# Phase 7c: Heap dereference
+run_ok:heap_deref_basic.con	run-value	positive	run_ok	tests/programs/heap_deref_basic.con	30
+run_ok:heap_deref_int.con	run-value	positive	run_ok	tests/programs/heap_deref_int.con	42
+run_ok:heap_deref_enum.con	run-value	positive	run_ok	tests/programs/heap_deref_enum.con	42
+run_ok:heap_deref_recursive.con	run-value	positive	run_ok	tests/programs/heap_deref_recursive.con	42
+
+# Phase 9a: Option<T>
+run_ok:option_basic.con	run-value	positive	run_ok	tests/programs/option_basic.con	52
+run_ok:option_heap.con	run-value	positive	run_ok	tests/programs/option_heap.con	42
+run_ok:option_string.con	run-value	positive	run_ok	tests/programs/option_string.con	2
+run_ok:option_mixed_payloads.con	run-value	positive	run_ok	tests/programs/option_mixed_payloads.con	44
+
+# Phase 11: File I/O builtins
+run_ok:file_write_read.con	run-value	positive	run_ok	tests/programs/file_write_read.con	5
+run_ok:file_read_basic.con	run-value	positive	run_ok	tests/programs/file_read_basic.con	12
+script:positive.4	script	positive	suite	4
+
+# Phase 10: Monomorphized trait dispatch
+run_ok:trait_dispatch_basic.con	run-value	positive	run_ok	tests/programs/trait_dispatch_basic.con	30
+run_ok:trait_dispatch_multi.con	run-value	positive	run_ok	tests/programs/trait_dispatch_multi.con	47
+run_ok:trait_dispatch_chain.con	run-value	positive	run_ok	tests/programs/trait_dispatch_chain.con	42
+
+# Phase 12: New stdlib builtins
+run_ok:string_slice_basic.con	run-value	positive	run_ok	tests/programs/string_slice_basic.con	5
+run_ok:string_char_at_basic.con	run-value	positive	run_ok	tests/programs/string_char_at_basic.con	65
+run_ok:string_contains_basic.con	run-value	positive	run_ok	tests/programs/string_contains_basic.con	1
+run_ok:string_eq_basic.con	run-value	positive	run_ok	tests/programs/string_eq_basic.con	1
+run_ok:int_to_string_basic.con	run-value	positive	run_ok	tests/programs/int_to_string_basic.con	2
+run_ok:string_to_int_basic.con	run-value	positive	run_ok	tests/programs/string_to_int_basic.con	123
+run_ok:string_trim_basic.con	run-value	positive	run_ok	tests/programs/string_trim_basic.con	5
+run_ok:print_char_basic.con	run-value	positive	run_ok	tests/programs/print_char_basic.con	A	0
+
+# Vec<T> tests
+run_ok:vec_basic.con	run-value	positive	run_ok	tests/programs/vec_basic.con	23
+run_ok:vec_push_get.con	run-value	positive	run_ok	tests/programs/vec_push_get.con	500
+run_ok:vec_pop.con	run-value	positive	run_ok	tests/programs/vec_pop.con	42
+run_ok:vec_set_basic.con	run-value	positive	run_ok	tests/programs/vec_set_basic.con	99
+run_ok:vec_len_after_ops.con	run-value	positive	run_ok	tests/programs/vec_len_after_ops.con	32
+run_ok:vec_stress_realloc.con	run-value	positive	run_ok	tests/programs/vec_stress_realloc.con	249
+run_ok:vec_set_all.con	run-value	positive	run_ok	tests/programs/vec_set_all.con	60
+run_ok:vec_pop_until_empty.con	run-value	positive	run_ok	tests/programs/vec_pop_until_empty.con	29
+script:positive.5	script	positive	suite	5
+run_ok:socket_listen_close.con	run-value	positive	run_ok	tests/programs/socket_listen_close.con	0
+
+# Phase 7: FFI / Unsafe
+run_ok:ffi_basic.con	run-value	positive	run_ok	tests/programs/ffi_basic.con	42
+run_ok:trusted_extern_basic.con	run-value	positive	run_ok	tests/programs/trusted_extern_basic.con	42
+
+# Phase 8: Additional coverage
+run_ok:nested_match_enum.con	run-value	positive	run_ok	tests/programs/nested_match_enum.con	60
+run_ok:generic_pair.con	run-value	positive	run_ok	tests/programs/generic_pair.con	42
+run_ok:enum_multi_variant.con	run-value	positive	run_ok	tests/programs/enum_multi_variant.con	8
+run_ok:trait_multi_bound.con	run-value	positive	run_ok	tests/programs/trait_multi_bound.con	42
+run_ok:while_nested_labeled.con	run-value	positive	run_ok	tests/programs/while_nested_labeled.con	25
+run_ok:if_else_while.con	run-value	positive	run_ok	tests/programs/if_else_while.con	3
+run_ok:while_seq_scoping.con	run-value	positive	run_ok	tests/programs/while_seq_scoping.con	400
+run_ok:fmt_parse_roundtrip.con	run-value	positive	run_ok	tests/programs/fmt_parse_roundtrip.con	0
+run_ok:vec_trace.con	run-value	positive	run_ok	tests/programs/vec_trace.con	0
+run_ok:struct_nested.con	run-value	positive	run_ok	tests/programs/struct_nested.con	42
+run_ok:complex_multi_feature.con	run-value	positive	run_ok	tests/programs/complex_multi_feature.con	40
+run_ok:complex_heap_borrow.con	run-value	positive	run_ok	tests/programs/complex_heap_borrow.con	42
+run_ok:complex_enum_nested.con	run-value	positive	run_ok	tests/programs/complex_enum_nested.con	87
+run_ok:defer_multiple.con	run-value	positive	run_ok	tests/programs/defer_multiple.con	30
+run_ok:borrow_in_method.con	run-value	positive	run_ok	tests/programs/borrow_in_method.con	67
+run_ok:generic_multi_bound_dispatch.con	run-value	positive	run_ok	tests/programs/generic_multi_bound_dispatch.con	49
+run_ok:complex_recursive_enum.con	run-value	positive	run_ok	tests/programs/complex_recursive_enum.con	19
+run_ok:struct_method_chain.con	run-value	positive	run_ok	tests/programs/struct_method_chain.con	39
+run_ok:complex_option_chain.con	run-value	positive	run_ok	tests/programs/complex_option_chain.con	26
+run_ok:complex_trait_hierarchy.con	run-value	positive	run_ok	tests/programs/complex_trait_hierarchy.con	45
+run_ok:cap_propagation_deep.con	run-value	positive	run_ok	tests/programs/cap_propagation_deep.con	1	42
+
+# Unsafe boundary: ref-to-ptr is safe (no Unsafe needed)
+run_ok:ref_to_ptr_safe.con	run-value	positive	run_ok	tests/programs/ref_to_ptr_safe.con	0
+
+# repr(C) / FFI safety
+run_ok:repr_c_basic.con	run-value	positive	run_ok	tests/programs/repr_c_basic.con	42
+run_ok:repr_c_nested.con	run-value	positive	run_ok	tests/programs/repr_c_nested.con	42
+run_ok:repr_c_cross_module.con	run-value	positive	run_ok	tests/programs/repr_c_cross_module.con	30
+
+# Function pointer from struct field (indirect call fix)
+run_ok:fn_ptr_struct_field.con	run-value	positive	run_ok	tests/programs/fn_ptr_struct_field.con	42
+run_ok:fn_ptr_method_call.con	run-value	positive	run_ok	tests/programs/fn_ptr_method_call.con	42
+run_ok:stdlib_hashmap.con	run-value	positive	run_ok	tests/programs/stdlib_hashmap.con	0
+
+# Integration tests: multi-feature programs
+run_ok:integration_text_processing.con	run-value	positive	run_ok	tests/programs/integration_text_processing.con	0
+run_ok:integration_data_structures.con	run-value	positive	run_ok	tests/programs/integration_data_structures.con	0
+run_ok:integration_error_handling.con	run-value	positive	run_ok	tests/programs/integration_error_handling.con	0
+run_ok:integration_generic_pipeline.con	run-value	positive	run_ok	tests/programs/integration_generic_pipeline.con	42
+run_ok:integration_state_machine.con	run-value	positive	run_ok	tests/programs/integration_state_machine.con	42
+run_ok:integration_compiler_stress.con	run-value	positive	run_ok	tests/programs/integration_compiler_stress.con	42
+run_ok:integration_multi_module.con	run-value	positive	run_ok	tests/programs/integration_multi_module.con	42
+run_ok:integration_recursive_structures.con	run-value	positive	run_ok	tests/programs/integration_recursive_structures.con	42
+# Bug 205 (silent on --interp): a struct holding itself through a generic instantiation.
+run_err:error_205_recursive_through_instantiation.con	reject-diagnostic	positive	run_err	tests/programs/error_205_recursive_through_instantiation.con	(E0583)
+run_ok:regress_205_instantiations_without_cycle.con	run-value	positive	run_ok	tests/programs/regress_205_instantiations_without_cycle.con	42
+run_ok:integration_multi_file_calculator.con	run-value	positive	run_ok	tests/programs/integration_multi_file_calculator.con	42
+run_ok:integration_type_registry.con	run-value	positive	run_ok	tests/programs/integration_type_registry.con	42
+run_ok:integration_pipeline_processor.con	run-value	positive	run_ok	tests/programs/integration_pipeline_processor.con	42
+run_ok:integration_stress_workload.con	run-value	positive	run_ok	tests/programs/integration_stress_workload.con	42
+run_ok:bug_cross_module_struct_field.con	run-value	positive	run_ok	tests/programs/bug_cross_module_struct_field.con	42
+run_ok:bug_i32_literal_type.con	run-value	positive	run_ok	tests/programs/bug_i32_literal_type.con	42
+run_ok:bug_cross_module_mut_borrow.con	run-value	positive	run_ok	tests/programs/bug_cross_module_mut_borrow.con	42
+run_ok:bug_array_var_index_assign.con	run-value	positive	run_ok	tests/programs/bug_array_var_index_assign.con	42
+run_ok:bug_if_expression.con	run-value	positive	run_ok	tests/programs/bug_if_expression.con	0
+run_ok:bug_print_builtins.con	run-value	positive	run_ok	tests/programs/bug_print_builtins.con	hello 42	0
+run_ok:bug_string_building.con	run-value	positive	run_ok	tests/programs/bug_string_building.con	0
+run_ok:variadic_append.con	run-value	positive	run_ok	tests/programs/variadic_append.con	0
+# Bug 203: E0420 named two unrelated errors; the append() refusal is now E0421.
+run_err:error_203_append_unsupported_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_203_append_unsupported_argument.con	(E0421)
+script:positive.6	script	positive	suite	6
+# Bug 330: a `break` or `continue` inside a `for` loop's step that targets that loop is refused
+# (E0245); for a `continue` the binary never terminated where --interp went to the condition. The
+# allowed exits
+# (a `return` in the step, a nested loop's own exits, an outer loop's labelled `continue`) agree.
+run_err:error_330_continue_in_for_step.con	reject-diagnostic	positive	run_err	tests/programs/error_330_continue_in_for_step.con	(E0245)
+run_err:error_330_break_in_for_step.con	reject-diagnostic	positive	run_err	tests/programs/error_330_break_in_for_step.con	(E0245)
+run_err:error_330_continue_outer_from_nested_step.con	reject-diagnostic	positive	run_err	tests/programs/error_330_continue_outer_from_nested_step.con	(E0245)
+run_err:error_330_break_outer_from_nested_step.con	reject-diagnostic	positive	run_err	tests/programs/error_330_break_outer_from_nested_step.con	(E0245)
+run_ok:regress_330_for_step_exits_allowed.con	run-value	positive	run_ok	tests/programs/regress_330_for_step_exits_allowed.con	42
+script:positive.7	script	positive	suite	7
+run_err:error_203_ghost_read_at_runtime.con	reject-diagnostic	positive	run_err	tests/programs/error_203_ghost_read_at_runtime.con	(E0420)
+run_err:error_203_print_unsupported_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_203_print_unsupported_argument.con	(E0421)
+run_ok:bug_clock_builtin.con	run-value	positive	run_ok	tests/programs/bug_clock_builtin.con	0
+run_ok:bug_enum_in_struct.con	run-value	positive	run_ok	tests/programs/bug_enum_in_struct.con	0
+run_ok:bug_stack_array_borrow_copy.con	run-value	positive	run_ok	tests/programs/bug_stack_array_borrow_copy.con	42
+run_ok:bug_array_struct_field_mutation.con	run-value	positive	run_ok	tests/programs/bug_array_struct_field_mutation.con	99	0
+run_ok:hardening_int_literal_inference.con	run-value	positive	run_ok	tests/programs/hardening_int_literal_inference.con	42
+run_ok:hardening_borrow_edge_cases.con	run-value	positive	run_ok	tests/programs/hardening_borrow_edge_cases.con	42
+run_ok:hardening_cross_module_enum.con	run-value	positive	run_ok	tests/programs/hardening_cross_module_enum.con	42
+run_ok:hardening_cross_module_trait.con	run-value	positive	run_ok	tests/programs/hardening_cross_module_trait.con	42
+run_ok:hardening_cross_module_type_alias.con	run-value	positive	run_ok	tests/programs/hardening_cross_module_type_alias.con	42
+run_ok:struct_enum_field_vec.con	run-value	positive	run_ok	tests/programs/struct_enum_field_vec.con	123
+
+# Pressure tests: memory-model (item 6)
+run_ok:pressure_borrow_in_loop.con	run-value	positive	run_ok	tests/programs/pressure_borrow_in_loop.con	10
+run_ok:pressure_interleaved_linear.con	run-value	positive	run_ok	tests/programs/pressure_interleaved_linear.con	30
+run_ok:pressure_nested_linear_struct.con	run-value	positive	run_ok	tests/programs/pressure_nested_linear_struct.con	7
+run_ok:pressure_branch_create_consume.con	run-value	positive	run_ok	tests/programs/pressure_branch_create_consume.con	10
+run_ok:pressure_match_linear_arms.con	run-value	positive	run_ok	tests/programs/pressure_match_linear_arms.con	42
+
+# Pressure tests: borrow/aliasing (item 7)
+run_ok:pressure_sequential_mut_ref.con	run-value	positive	run_ok	tests/programs/pressure_sequential_mut_ref.con	18
+run_ok:pressure_param_ref_multiuse.con	run-value	positive	run_ok	tests/programs/pressure_param_ref_multiuse.con	9
+run_ok:pressure_borrow_then_consume.con	run-value	positive	run_ok	tests/programs/pressure_borrow_then_consume.con	31
+
+# Pressure tests: cleanup/leak-boundary (item 8)
+run_ok:pressure_defer_nested.con	run-value	positive	run_ok	tests/programs/pressure_defer_nested.con	42
+run_ok:pressure_defer_in_loop.con	run-value	positive	run_ok	tests/programs/pressure_defer_in_loop.con	20
+run_ok:pressure_defer_with_borrow.con	run-value	positive	run_ok	tests/programs/pressure_defer_with_borrow.con	42
+run_ok:pressure_destroy_wrapper.con	run-value	positive	run_ok	tests/programs/pressure_destroy_wrapper.con	42
+run_ok:pressure_linear_helper_consume.con	run-value	positive	run_ok	tests/programs/pressure_linear_helper_consume.con	42
+run_ok:pressure_heap_defer_free.con	run-value	positive	run_ok	tests/programs/pressure_heap_defer_free.con	42
+

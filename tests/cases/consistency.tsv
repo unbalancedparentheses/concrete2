@@ -1,0 +1,7 @@
+# consistency: the tests of run_tests.sh's `if section_active consistency; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_consistency_<n> from scripts/tests/suite/consistency.sh.
+id	kind	section	helper	args
+-	-	consistency	echo	
+-	-	consistency	echo	=== Self-consistency checks ===
+script:consistency.1	script	consistency	suite	1

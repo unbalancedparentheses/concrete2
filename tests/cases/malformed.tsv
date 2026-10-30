@@ -1,0 +1,7 @@
+# malformed: the tests of run_tests.sh's `if section_active malformed; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_malformed_<n> from scripts/tests/suite/malformed.sh.
+id	kind	section	helper	args
+-	-	malformed	echo	
+-	-	malformed	echo	=== Malformed artifact attack tests ===
+script:malformed.1	script	malformed	suite	1

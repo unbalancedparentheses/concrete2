@@ -1,0 +1,7 @@
+# terminology: the tests of run_tests.sh's `if section_active terminology; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_terminology_<n> from scripts/tests/suite/terminology.sh.
+id	kind	section	helper	args
+-	-	terminology	echo	
+-	-	terminology	echo	=== Terminology gate ===
+script:terminology.1	script	terminology	suite	1

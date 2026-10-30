@@ -1,0 +1,47 @@
+# always.34: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_34_<n> from scripts/tests/suite/always.34.sh.
+id	kind	section	helper	args
+
+-	-	*	echo	
+-	-	*	flush_jobs
+
+# --- Per-file scoping regressions inside Concrete.toml projects ---
+# These exercise compileAndCheck/compileAndReport's project-mode
+# routing: invoking on a sibling/nested file must scope the report to
+# that file (count of functions checked) without leaking into registry
+# validation (no spurious "unknown function" for sibling-file entries).
+-	-	*	echo	=== Project-mode per-file scoping ===
+script:always.34.1	script	*	suite	1
+
+# --- Project-level tests (require Concrete.toml + std) ---
+# Auto-discovers every tests/programs/<proj>/ with a Concrete.toml (build+run).
+# Bug-regression projects run here (referenced by name for audit_bug_corpus.sh):
+#   submodule_linear_consume/src/main  (bug 022 — submodule impl-offset)
+#   scand_aggregate_in_scope/src/main  (bug 023 — short-circuit aggregate phi)
+#   regress_050_generic_f_std_io/src/main  (bug 050 — a generic named `f` no
+#     longer hijacks std.io's local fn-pointer of the same name; pre-fix ANY
+#     project defining one was unbuildable as soon as it touched std.io)
+#   regress_047_048_hashmap_probe/src/main.con  (bugs 047+048 — overwrite past a
+#     tombstone must not duplicate a key, and a missing-key lookup with zero
+#     empty slots must return instead of wrapping forever)
+#   regress_057_hashmap_by_value/src/main.con  (bug 057 — a HashMap passed BY
+#     VALUE must arrive whole: hash_fn for get (SIGSEGV pre-fix), cap for drop)
+#   regress_082_project_alias_binding/src/main.con  (bugs 082+055 — a sibling
+#     submodule alias builds, and std.math.abs is not hijacked by a sibling's abs)
+#   regress_087_borrow_shadow_uaf/src/main.con  (bug 087 — an `if` body's
+#     `let r` shadowing a borrow-block ref must not outlive the `if`; pre-fix
+#     the later `r` read the inner, dropped String: a heap use-after-free)
+#   regress_179_concurrent_build/src/main.con  (bug 179 — also built concurrently
+#     in the bug 102/105/175 block; pre-fix the builds shared src/main.con.ll)
+#   regress_202_project_let_else/src/main.con  (bug 202 — a project's `let … else`
+#     reached Check undesugared and was refused; desugaring is part of resolve now)
+# The watchdog is lib/bounded.sh (python3, present in the devshell and on CI). Without
+# python3 it degrades to running without a watchdog rather than skipping the fixtures,
+# and says so once, so a hang on such a machine is at least explicable.
+# (lib/bounded.sh is sourced once, right after SUITE_TMPDIR is set, so every section can use it.)
+
+-	-	*	echo	=== Project-level tests ===
+script:always.34.2	script	*	suite	2
+
+# --- Coherent workflow tests (concrete build summary + concrete check) ---

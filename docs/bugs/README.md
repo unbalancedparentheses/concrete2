@@ -80,7 +80,8 @@ The record owns the bug's facts:
 
 - **status**: the first `**Status:**` line. Changing it is the whole of recording a fix.
 - **the ledger block** (it renders as nothing): `summary` is required, and exactly one of
-  `fixtures` (regression fixtures, each registered in `scripts/tests/run_tests.sh`) or `coverage`
+  `fixtures` (regression fixtures, each registered in the test suite: a `tests/cases/` row or a
+  `scripts/tests/suite/` unit of `scripts/tests/run_tests.sh`) or `coverage`
   (a rationale naming the gate or fixture that covers it), and a `ruling` ([Spec rulings](#spec-rulings)).
   `class` (one line per structural class;
   the primary class is the first in the summary table's order), `silent`, `exit` and `area` are

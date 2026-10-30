@@ -1,0 +1,137 @@
+# O2: the tests of run_tests.sh's `if section_active O2; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_O2_<n> from scripts/tests/suite/O2.sh.
+id	kind	section	helper	args
+-	-	O2	echo	=== -O2 regression tests ===
+run_ok_O2:struct_loop_field_assign.con	run-value	O2	run_ok_O2	tests/programs/struct_loop_field_assign.con	42
+run_ok_O2:struct_loop_break.con	run-value	O2	run_ok_O2	tests/programs/struct_loop_break.con	42
+run_ok_O2:struct_nested_loop.con	run-value	O2	run_ok_O2	tests/programs/struct_nested_loop.con	42
+run_ok_O2:struct_if_else_merge.con	run-value	O2	run_ok_O2	tests/programs/struct_if_else_merge.con	42
+run_ok_O2:struct_match_merge.con	run-value	O2	run_ok_O2	tests/programs/struct_match_merge.con	42
+
+# Narrow-int field-assign bugs: emit `store i64` to an i32/u32/i16/...
+# field, which clang -O2 deletes as dead UB. Cover both the direct
+# (.fieldAssign) and arrow (.arrowAssign) paths.
+run_ok_O2:bug_field_assign_narrow_field.con	run-value	O2	run_ok_O2	tests/programs/bug_field_assign_narrow_field.con	100
+run_ok_O2:bug_arrow_assign_narrow_field.con	run-value	O2	run_ok_O2	tests/programs/bug_arrow_assign_narrow_field.con	107
+
+# O2 variants for optimization-sensitive codegen tests
+run_ok_O2:test_dead_code_after_return.con	run-value	O2	run_ok_O2	tests/programs/test_dead_code_after_return.con	42
+run_ok_O2:test_branch_same_value.con	run-value	O2	run_ok_O2	tests/programs/test_branch_same_value.con	42
+run_ok_O2:test_deeply_nested_return.con	run-value	O2	run_ok_O2	tests/programs/test_deeply_nested_return.con	42
+run_ok_O2:test_loop_nested_three.con	run-value	O2	run_ok_O2	tests/programs/test_loop_nested_three.con	42
+run_ok_O2:test_early_return_loop.con	run-value	O2	run_ok_O2	tests/programs/test_early_return_loop.con	42
+run_ok_O2:test_constant_fold_complex.con	run-value	O2	run_ok_O2	tests/programs/test_constant_fold_complex.con	42
+run_ok_O2:test_loop_invariant.con	run-value	O2	run_ok_O2	tests/programs/test_loop_invariant.con	42
+run_ok_O2:test_recursive_fibonacci.con	run-value	O2	run_ok_O2	tests/programs/test_recursive_fibonacci.con	42
+
+# Phase 3: Expanded O2 differential testing
+# Core computation
+run_ok_O2:fib.con	run-value	O2	run_ok_O2	tests/programs/fib.con	55
+run_ok_O2:arithmetic.con	run-value	O2	run_ok_O2	tests/programs/arithmetic.con	65
+run_ok_O2:while_loop.con	run-value	O2	run_ok_O2	tests/programs/while_loop.con	5050
+run_ok_O2:recursion.con	run-value	O2	run_ok_O2	tests/programs/recursion.con	479001600
+run_ok_O2:nested_calls.con	run-value	O2	run_ok_O2	tests/programs/nested_calls.con	42
+
+# Struct/enum codegen
+run_ok_O2:struct_basic.con	run-value	O2	run_ok_O2	tests/programs/struct_basic.con	7
+run_ok_O2:struct_field_assign.con	run-value	O2	run_ok_O2	tests/programs/struct_field_assign.con	33
+run_ok_O2:struct_nested.con	run-value	O2	run_ok_O2	tests/programs/struct_nested.con	42
+run_ok_O2:struct_method_chain.con	run-value	O2	run_ok_O2	tests/programs/struct_method_chain.con	39
+run_ok_O2:enum_basic.con	run-value	O2	run_ok_O2	tests/programs/enum_basic.con	2
+run_ok_O2:enum_fields.con	run-value	O2	run_ok_O2	tests/programs/enum_fields.con	12
+run_ok_O2:enum_linear.con	run-value	O2	run_ok_O2	tests/programs/enum_linear.con	42
+run_ok_O2:nested_match_enum.con	run-value	O2	run_ok_O2	tests/programs/nested_match_enum.con	60
+
+# Linearity and borrows
+run_ok_O2:linear_consume.con	run-value	O2	run_ok_O2	tests/programs/linear_consume.con	42
+run_ok_O2:linear_branch_agree.con	run-value	O2	run_ok_O2	tests/programs/linear_branch_agree.con	42
+run_ok_O2:borrow_read.con	run-value	O2	run_ok_O2	tests/programs/borrow_read.con	10
+run_ok_O2:borrow_mut.con	run-value	O2	run_ok_O2	tests/programs/borrow_mut.con	42
+run_ok_O2:sequential_mut_borrow.con	run-value	O2	run_ok_O2	tests/programs/sequential_mut_borrow.con	43
+run_ok_O2:borrow_in_method.con	run-value	O2	run_ok_O2	tests/programs/borrow_in_method.con	67
+
+# Generics and traits
+run_ok_O2:generic_fn.con	run-value	O2	run_ok_O2	tests/programs/generic_fn.con	42
+run_ok_O2:generic_struct.con	run-value	O2	run_ok_O2	tests/programs/generic_struct.con	30
+run_ok_O2:generic_pair.con	run-value	O2	run_ok_O2	tests/programs/generic_pair.con	42
+run_ok_O2:trait_basic.con	run-value	O2	run_ok_O2	tests/programs/trait_basic.con	30
+run_ok_O2:trait_dispatch_chain.con	run-value	O2	run_ok_O2	tests/programs/trait_dispatch_chain.con	42
+run_ok_O2:trait_numeric_abs.con	run-value	O2	run_ok_O2	tests/programs/trait_numeric_abs.con	57
+
+# Result/Option
+run_ok_O2:result_ok.con	run-value	O2	run_ok_O2	tests/programs/result_ok.con	42
+run_ok_O2:result_generic_propagation.con	run-value	O2	run_ok_O2	tests/programs/result_generic_propagation.con	42
+run_ok_O2:option_basic.con	run-value	O2	run_ok_O2	tests/programs/option_basic.con	52
+run_ok_O2:option_heap.con	run-value	O2	run_ok_O2	tests/programs/option_heap.con	42
+
+# String operations
+run_ok_O2:string_basic.con	run-value	O2	run_ok_O2	tests/programs/string_basic.con	5
+run_ok_O2:string_slice_basic.con	run-value	O2	run_ok_O2	tests/programs/string_slice_basic.con	5
+run_ok_O2:string_to_int_roundtrip.con	run-value	O2	run_ok_O2	tests/programs/string_to_int_roundtrip.con	42
+
+# Break/continue/defer
+run_ok_O2:labeled_break.con	run-value	O2	run_ok_O2	tests/programs/labeled_break.con	42
+run_ok_O2:loop_break_result_basic.con	run-value	O2	run_ok_O2	tests/programs/loop_break_result_basic.con	5
+run_ok_O2:defer_basic.con	run-value	O2	run_ok_O2	tests/programs/defer_basic.con	10
+run_ok_O2:defer_lifo.con	run-value	O2	run_ok_O2	tests/programs/defer_lifo.con	42
+run_ok_O2:defer_early_return.con	run-value	O2	run_ok_O2	tests/programs/defer_early_return.con	10
+
+# Heap/alloc
+run_ok_O2:alloc_basic.con	run-value	O2	run_ok_O2	tests/programs/alloc_basic.con	30
+run_ok_O2:heap_arrow.con	run-value	O2	run_ok_O2	tests/programs/heap_arrow.con	20
+run_ok_O2:heap_deref_basic.con	run-value	O2	run_ok_O2	tests/programs/heap_deref_basic.con	30
+run_ok_O2:heap_deref_recursive.con	run-value	O2	run_ok_O2	tests/programs/heap_deref_recursive.con	42
+
+# Vec
+run_ok_O2:vec_basic.con	run-value	O2	run_ok_O2	tests/programs/vec_basic.con	23
+run_ok_O2:vec_push_get.con	run-value	O2	run_ok_O2	tests/programs/vec_push_get.con	500
+run_ok_O2:vec_pop.con	run-value	O2	run_ok_O2	tests/programs/vec_pop.con	42
+run_ok_O2:vec_stress_realloc.con	run-value	O2	run_ok_O2	tests/programs/vec_stress_realloc.con	249
+
+# Complex programs
+run_ok_O2:complex_linked_list.con	run-value	O2	run_ok_O2	tests/programs/complex_linked_list.con	42
+run_ok_O2:complex_struct_methods.con	run-value	O2	run_ok_O2	tests/programs/complex_struct_methods.con	42
+run_ok_O2:complex_generic_container.con	run-value	O2	run_ok_O2	tests/programs/complex_generic_container.con	42
+run_ok_O2:complex_state_machine.con	run-value	O2	run_ok_O2	tests/programs/complex_state_machine.con	42
+run_ok_O2:complex_recursive_list.con	run-value	O2	run_ok_O2	tests/programs/complex_recursive_list.con	42
+run_ok_O2:complex_recursive_tree.con	run-value	O2	run_ok_O2	tests/programs/complex_recursive_tree.con	42
+
+# Integration programs
+run_ok_O2:integration_generic_pipeline.con	run-value	O2	run_ok_O2	tests/programs/integration_generic_pipeline.con	42
+run_ok_O2:integration_state_machine.con	run-value	O2	run_ok_O2	tests/programs/integration_state_machine.con	42
+run_ok_O2:integration_compiler_stress.con	run-value	O2	run_ok_O2	tests/programs/integration_compiler_stress.con	42
+run_ok_O2:integration_stress_workload.con	run-value	O2	run_ok_O2	tests/programs/integration_stress_workload.con	42
+
+# Bug regressions under O2
+run_ok_O2:bug_cross_module_struct_field.con	run-value	O2	run_ok_O2	tests/programs/bug_cross_module_struct_field.con	42
+run_ok_O2:bug_i32_literal_type.con	run-value	O2	run_ok_O2	tests/programs/bug_i32_literal_type.con	42
+run_ok_O2:bug_cross_module_mut_borrow.con	run-value	O2	run_ok_O2	tests/programs/bug_cross_module_mut_borrow.con	42
+run_ok_O2:bug_array_var_index_assign.con	run-value	O2	run_ok_O2	tests/programs/bug_array_var_index_assign.con	42
+run_ok_O2:bug_if_expression.con	run-value	O2	run_ok_O2	tests/programs/bug_if_expression.con	0
+run_ok_O2:bug_print_builtins.con	run-value	O2	run_ok_O2	tests/programs/bug_print_builtins.con	hello 42	0
+run_ok_O2:bug_string_building.con	run-value	O2	run_ok_O2	tests/programs/bug_string_building.con	0
+run_ok_O2:variadic_append.con	run-value	O2	run_ok_O2	tests/programs/variadic_append.con	0
+## bug_clock_builtin excluded from O2: loop between clock calls gets optimized away
+run_ok_O2:bug_enum_in_struct.con	run-value	O2	run_ok_O2	tests/programs/bug_enum_in_struct.con	0
+run_ok_O2:bug_stack_array_borrow_copy.con	run-value	O2	run_ok_O2	tests/programs/bug_stack_array_borrow_copy.con	42
+run_ok_O2:bug_array_struct_field_mutation.con	run-value	O2	run_ok_O2	tests/programs/bug_array_struct_field_mutation.con	99	0
+
+# Hardening tests under O2
+run_ok_O2:hardening_int_literal_inference.con	run-value	O2	run_ok_O2	tests/programs/hardening_int_literal_inference.con	42
+run_ok_O2:hardening_cross_module_enum.con	run-value	O2	run_ok_O2	tests/programs/hardening_cross_module_enum.con	42
+
+# Phase 3 mixed-feature programs under O2
+run_ok_O2:phase3_expression_evaluator.con	run-value	O2	run_ok_O2	tests/programs/phase3_expression_evaluator.con	42
+run_ok_O2:phase3_task_scheduler.con	run-value	O2	run_ok_O2	tests/programs/phase3_task_scheduler.con	42
+run_ok_O2:phase3_data_pipeline.con	run-value	O2	run_ok_O2	tests/programs/phase3_data_pipeline.con	42
+run_ok_O2:phase3_type_checker.con	run-value	O2	run_ok_O2	tests/programs/phase3_type_checker.con	42
+run_ok_O2:phase3_state_machine.con	run-value	O2	run_ok_O2	tests/programs/phase3_state_machine.con	42
+
+# Newtype/repr under O2
+run_ok_O2:newtype_basic.con	run-value	O2	run_ok_O2	tests/programs/newtype_basic.con	42
+run_ok_O2:newtype_enum_payload.con	run-value	O2	run_ok_O2	tests/programs/newtype_enum_payload.con	8080
+run_ok_O2:newtype_struct_copy_field.con	run-value	O2	run_ok_O2	tests/programs/newtype_struct_copy_field.con	443
+run_ok_O2:repr_c_basic.con	run-value	O2	run_ok_O2	tests/programs/repr_c_basic.con	42
+run_ok_O2:union_basic.con	run-value	O2	run_ok_O2	tests/programs/union_basic.con	42
+

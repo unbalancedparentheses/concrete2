@@ -1,0 +1,7 @@
+# workflow: the tests of run_tests.sh's `if section_active workflow; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_workflow_<n> from scripts/tests/suite/workflow.sh.
+id	kind	section	helper	args
+-	-	workflow	echo	
+-	-	workflow	echo	=== Proof workflow tests ===
+script:workflow.1	script	workflow	suite	1

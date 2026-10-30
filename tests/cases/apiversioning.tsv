@@ -1,0 +1,7 @@
+# apiversioning: the tests of run_tests.sh's `if section_active apiversioning; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_apiversioning_<n> from scripts/tests/suite/apiversioning.sh.
+id	kind	section	helper	args
+-	-	apiversioning	echo	
+-	-	apiversioning	echo	=== API versioning envelope tests ===
+script:apiversioning.1	script	apiversioning	suite	1

@@ -1,0 +1,18 @@
+# codegen: the tests of run_tests.sh's `if section_active codegen; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_codegen_<n> from scripts/tests/suite/codegen.sh.
+id	kind	section	helper	args
+-	-	codegen	echo	=== Codegen differential tests ===
+script:codegen.1	script	codegen	suite	1
+# Bug 166 (contained, D4): a foreign fn value was called with the Concrete ABI and the fn type's
+# capabilities; an extern fn is never a value (E0588). The reproducer is refused too.
+run_err:error_166_foreign_fn_value_repr_c.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_foreign_fn_value_repr_c.con	(E0588)
+run_err:error_166_foreign_fn_value_repr_c_let.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_foreign_fn_value_repr_c_let.con	(E0588)
+run_err:tests/regressions/bug166_foreign_fn_value_abi/repro.con	reject-diagnostic	codegen	run_err	tests/regressions/bug166_foreign_fn_value_abi/repro.con	(E0588)
+run_err:error_166_foreign_fn_value_scalar.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_foreign_fn_value_scalar.con	(E0588)
+run_err:error_166_imported_extern_value.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_imported_extern_value.con	(E0588)
+run_err:error_166_extern_value_in_const.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_extern_value_in_const.con	(E0588)
+run_err:error_166_extern_value_after_scope.con	reject-diagnostic	codegen	run_err	tests/programs/error_166_extern_value_after_scope.con	(E0588)
+run_ok:regress_166_wrapper_value.con	run-value	codegen	run_ok	tests/programs/regress_166_wrapper_value.con	42
+script:codegen.2	script	codegen	suite	2
+

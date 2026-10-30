@@ -1,0 +1,6 @@
+# passlevel: the tests of run_tests.sh's `if section_active passlevel; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_passlevel_<n> from scripts/tests/suite/passlevel.sh.
+id	kind	section	helper	args
+-	-	passlevel	echo	=== Pass-level pipeline tests ===
+script:passlevel.1	script	passlevel	suite	1

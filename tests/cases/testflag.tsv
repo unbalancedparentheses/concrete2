@@ -1,0 +1,27 @@
+# testflag: the tests of run_tests.sh's `if section_active testflag; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_testflag_<n> from scripts/tests/suite/testflag.sh.
+id	kind	section	helper	args
+-	-	testflag	echo	=== --test flag tests ===
+script:testflag.1	script	testflag	suite	1
+
+run_test:test_flag_pass.con	test-flag	testflag	run_test	tests/programs/test_flag_pass.con	0
+run_test:test_flag_mixed.con	test-flag	testflag	run_test	tests/programs/test_flag_mixed.con	1
+run_test:test_flag_submodule.con	test-flag	testflag	run_test	tests/programs/test_flag_submodule.con	0
+
+# #[test] validation errors
+run_err:error_test_with_params.con	reject-diagnostic	testflag	run_err	tests/programs/error_test_with_params.con	must have no parameters
+# Bug 206: refusals that had no diagnostic code; each now names its code (and run_err refuses a code-less error).
+run_err:error_206_newtype_field_other_than_zero.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_newtype_field_other_than_zero.con	(E0316)
+run_err:error_206_newtype_constructor_arity.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_newtype_constructor_arity.con	(E0313)
+run_err:error_206_receiverless_trait_method.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_receiverless_trait_method.con	(E0317)
+run_err:error_206_wrapping_on_non_integers.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_wrapping_on_non_integers.con	(E0314)
+run_err:error_206_print_without_arguments.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_print_without_arguments.con	(E0315)
+run_err:error_206_destructure_in_for_header.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_destructure_in_for_header.con	(E0318)
+run_err:error_206_test_with_parameter.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_test_with_parameter.con	(E0319)
+run_err:error_206_integer_requires.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_integer_requires.con	(E0320)
+run_err:error_206_spec_fn_calls_runtime_code.con	reject-diagnostic	testflag	run_err	tests/programs/error_206_spec_fn_calls_runtime_code.con	(E0321)
+run_err:error_test_generic.con	reject-diagnostic	testflag	run_err	tests/programs/error_test_generic.con	must not be generic
+run_err:error_test_wrong_return.con	reject-diagnostic	testflag	run_err	tests/programs/error_test_wrong_return.con	must return i32
+run_err:error_test_on_struct.con	reject-diagnostic	testflag	run_err	tests/programs/error_test_on_struct.con	can only be applied to function
+

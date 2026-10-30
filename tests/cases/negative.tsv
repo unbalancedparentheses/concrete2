@@ -1,0 +1,913 @@
+# negative: the tests of run_tests.sh's `if section_active negative; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_negative_<n> from scripts/tests/suite/negative.sh.
+id	kind	section	helper	args
+-	-	negative	echo	=== Negative tests (expected errors) ===
+run_err:error_unconsumed.con	reject-diagnostic	negative	run_err	tests/programs/error_unconsumed.con	was never consumed
+run_err:error_use_after_move.con	reject-diagnostic	negative	run_err	tests/programs/error_use_after_move.con	used after move
+run_err:error_branch_disagree.con	reject-diagnostic	negative	run_err	tests/programs/error_branch_disagree.con	consumed in one branch
+run_err:error_loop_consume.con	reject-diagnostic	negative	run_err	tests/programs/error_loop_consume.con	inside a loop
+run_err:error_type_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_type_mismatch.con	type mismatch
+run_err:error_no_else_consume.con	reject-diagnostic	negative	run_err	tests/programs/error_no_else_consume.con	no else branch
+run_err:error_fn_bang_removed.con	reject-diagnostic	negative	run_err	tests/programs/error_fn_bang_removed.con	got !
+run_err:error_enum_nonexhaustive.con	reject-diagnostic	negative	run_err	tests/programs/error_enum_nonexhaustive.con	non-exhaustive match
+run_err:error_enum_match_disagree.con	reject-diagnostic	negative	run_err	tests/programs/error_enum_match_disagree.con	match arms disagree
+run_err:error_enum_unknown_variant.con	reject-diagnostic	negative	run_err	tests/programs/error_enum_unknown_variant.con	unknown variant
+run_err:error_borrow_after_move.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_after_move.con	used after move
+run_err:error_linear_used_not_consumed.con	reject-diagnostic	negative	run_err	tests/programs/error_linear_used_not_consumed.con	was never consumed
+run_err:error_deref_non_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_deref_non_ref.con	cannot dereference
+run_err:error_generic_count.con	reject-diagnostic	negative	run_err	tests/programs/error_generic_count.con	expects 2 arguments
+run_err:error_generic_infer_ambiguous.con	reject-diagnostic	negative	run_err	tests/programs/error_generic_infer_ambiguous.con	type mismatch
+run_err:error_generic_type.con	reject-diagnostic	negative	run_err	tests/programs/error_generic_type.con	type mismatch
+run_err:error_generic_unused_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_generic_unused_linear.con	was never consumed
+run_err:error_string_unconsumed.con	reject-diagnostic	negative	run_err	tests/programs/error_string_unconsumed.con	was never consumed
+script:negative.1	script	negative	suite	1
+run_err:error_import_private.con	reject-diagnostic	negative	run_err	tests/programs/error_import_private.con	is not public
+run_err:error_private_field.con	reject-diagnostic	negative	run_err	tests/programs/error_private_field.con	unknown module
+run_err:error_array_type.con	reject-diagnostic	negative	run_err	tests/programs/error_array_type.con	type mismatch
+run_err:error_array_index.con	reject-diagnostic	negative	run_err	tests/programs/error_array_index.con	type mismatch
+run_err:error_cast_invalid.con	reject-diagnostic	negative	run_err	tests/programs/error_cast_invalid.con	cannot cast
+run_err:error_unknown_method.con	reject-diagnostic	negative	run_err	tests/programs/error_unknown_method.con	no method
+run_err:error_trait_missing_method.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_missing_method.con	missing method
+run_err:error_trait_wrong_sig.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_wrong_sig.con	signature does not match
+# Bug 091: trait/impl conformance — an impl method may require only the capabilities
+# its trait method declares (E0586), the whole signature must match (E0587), a call
+# through a trait bound costs the trait method's capabilities (E0240), and generic
+# trait methods are refused rather than silently erased.
+run_err:error_trait_impl_caps_exceed_generic.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_impl_caps_exceed_generic.con	(E0586)
+run_err:error_trait_impl_caps_exceed_direct.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_impl_caps_exceed_direct.con	(E0586)
+run_err:error_trait_bound_call_missing_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_bound_call_missing_cap.con	function 'Act::act' requires capability 'Console'
+run_err:error_trait_impl_sig_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_impl_sig_mismatch.con	expected receiver
+run_err:error_trait_method_generic.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_method_generic.con	generic trait methods are not supported
+run_ok:trait_impl_caps_declared.con	run-value	negative	run_ok	tests/programs/trait_impl_caps_declared.con	3	7
+# Bug 186: trait impl selection is a function (docs/spec/traits.md). Each refusal has its own
+# code: duplicate impl (E0590), overlapping impls (E0591), orphan impl (E0592), an impl target
+# that is not its type applied to the impl's own parameters (E0593: before, `impl Tr for
+# Box2<i32>` implemented Tr for every Box2 — silent wrong code), one method name from two impls
+# of a type (E0594), an ambiguous call through bounds (E0595). The positive control is one
+# program written in two orders: 42 natively and under --interp, both orders.
+run_err:error_186_duplicate_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_duplicate_impl.con	(E0590)
+run_err:error_186_duplicate_generic_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_duplicate_generic_impl.con	(E0590)
+run_err:error_186_overlap_generic_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_overlap_generic_impl.con	(E0591)
+run_err:error_186_overlap_blanket_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_overlap_blanket_impl.con	(E0591)
+run_err:error_186_orphan_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_orphan_impl.con	(E0592)
+run_err:error_186_specialized_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_186_specialized_impl.con	(E0593)
+run_err:error_186_method_clash.con	reject-diagnostic	negative	run_err	tests/programs/error_186_method_clash.con	(E0594)
+run_err:error_186_inherent_clash.con	reject-diagnostic	negative	run_err	tests/programs/error_186_inherent_clash.con	(E0594)
+run_err:error_186_ambiguous_bound_method.con	reject-diagnostic	negative	run_err	tests/programs/error_186_ambiguous_bound_method.con	(E0595)
+# Codex round 1: `Int`/`i64` are one head (E0590); a sibling submodule's type is foreign to
+# the module beside it (E0592); an imported alias and bare `Option` are refused targets (E0593).
+run_err:error_186_duplicate_primitive_spelling.con	reject-diagnostic	negative	run_err	tests/programs/error_186_duplicate_primitive_spelling.con	(E0590)
+run_err:error_186_orphan_sibling.con	reject-diagnostic	negative	run_err	tests/programs/error_186_orphan_sibling.con	(E0592)
+run_err:error_186_imported_alias_target.con	reject-diagnostic	negative	run_err	tests/programs/error_186_imported_alias_target.con	(E0593)
+run_err:error_186_builtin_arity.con	reject-diagnostic	negative	run_err	tests/programs/error_186_builtin_arity.con	(E0593)
+run_ok:regress_186_primitive_impl_spellings.con	run-value	negative	run_ok	tests/programs/regress_186_primitive_impl_spellings.con	42
+run_ok:regress_186_visible_targets.con	run-value	negative	run_ok	tests/programs/regress_186_visible_targets.con	42
+run_ok:regress_186_coherent_impls.con	run-value	negative	run_ok	tests/programs/regress_186_coherent_impls.con	42
+run_ok:regress_186_coherent_impls_reversed.con	run-value	negative	run_ok	tests/programs/regress_186_coherent_impls_reversed.con	42
+script:negative.2	script	negative	suite	2
+# Codex round 2: a NESTED module's Destroy impl is fenced too (its destructor is
+# `inner_Noisy_destroy`; the fence looked up `Noisy_destroy` and silently passed).
+run_err:error_091_nested_destroy_caps.con	reject-diagnostic	negative	run_err	tests/programs/error_091_nested_destroy_caps.con	(E0584)
+# Codex round 2: a bound call applies the trait's receiver form — by-value `self` moves
+# the receiver (E0205 on reuse), `&self`/`&mut self` borrow an owned receiver (4030412,
+# was 4020410), and by-value `self` through a reference is refused (E0290).
+run_err:error_091_generic_receiver_moved.con	reject-diagnostic	negative	run_err	tests/programs/error_091_generic_receiver_moved.con	(E0205)
+run_err:error_091_receiver_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_receiver_through_ref.con	(E0290)
+run_ok:trait_generic_receiver_forms.con	run-value	negative	run_ok	tests/programs/trait_generic_receiver_forms.con	4030412	0
+script:negative.3	script	negative	suite	3
+run_err:error_091_mut_receiver_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_through_ref.con	(E0237)
+run_err:error_091_mut_receiver_through_ref_concrete.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_through_ref_concrete.con	(E0237)
+run_err:error_091_mut_receiver_through_ref_projection.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_through_ref_projection.con	(E0237)
+run_err:error_091_mut_receiver_in_ref_self.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_in_ref_self.con	(E0237)
+run_err:error_091_mut_receiver_immutable.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_immutable.con	(E0233)
+run_err:error_091_mut_receiver_immutable_concrete.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_immutable_concrete.con	(E0233)
+run_err:error_091_mut_receiver_borrowed.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_borrowed.con	(E0302)
+run_err:error_091_mut_receiver_paren_deref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_paren_deref.con	(E0237)
+run_err:error_091_mut_receiver_deref_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_deref_borrow.con	(E0237)
+run_err:error_091_receiver_deref_borrow_moved.con	reject-diagnostic	negative	run_err	tests/programs/error_091_receiver_deref_borrow_moved.con	(E0290)
+run_err:error_091_destroy_deref_if_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_deref_if_ref.con	(E0238)
+run_err:error_091_mut_receiver_deref_if_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_deref_if_ref.con	(E0238)
+# Codex review of round 3 (second pass): a newtype projection through `&W`, a `&mut` reborrow
+# of a shared reference, a parenthesized `&(p)` that lost its provenance, and the EXPLICIT
+# `&mut` forms (through `&`, parenthesized immutable, projection through `&`). Owned
+# temporaries remain legal `&mut self` receivers, compiled and under --interp.
+run_err:error_091_destroy_newtype_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_newtype_through_ref.con	(E0290)
+run_err:error_091_mut_receiver_reborrow_shared.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_reborrow_shared.con	(E0237)
+run_err:error_091_mut_receiver_paren_borrow_live.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_paren_borrow_live.con	(E0302)
+run_err:error_091_mut_borrow_explicit_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_borrow_explicit_through_ref.con	(E0237)
+run_err:error_091_mut_borrow_explicit_paren_immutable.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_borrow_explicit_paren_immutable.con	(E0233)
+run_err:error_091_mut_borrow_explicit_projection_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_borrow_explicit_projection_through_ref.con	(E0237)
+run_err:error_091_norm_temporaries.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_temporaries.con	(E0238)
+# Codex review of round 3 (third pass): by-value `*r`, parenthesized call arguments, provenance
+# of `(&p)` and `&w.p`, and an owned `if` under a projection.
+run_err:error_091_destroy_defname_deref_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_defname_deref_arg.con	(E0290)
+run_err:error_091_destroy_defname_paren_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_defname_paren_arg.con	(E0205)
+run_err:error_091_mut_receiver_paren_borrow_outer.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_paren_borrow_outer.con	(E0302)
+run_err:error_091_mut_receiver_projection_borrow_live.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_projection_borrow_live.con	(E0302)
+run_err:error_091_deref_ref_by_value.con	reject-diagnostic	negative	run_err	tests/programs/error_091_deref_ref_by_value.con	(E0290)
+run_err:error_091_paren_call_arg_not_consumed.con	reject-diagnostic	negative	run_err	tests/programs/error_091_paren_call_arg_not_consumed.con	(E0205)
+run_err:error_091_norm_if_projection.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_if_projection.con	(E0238)
+# Codex review of round 3 (fourth pass): `*` of a borrow is through a reference, `match *r`
+# reads the pointee by value, provenance follows `*` and borrows, untraceable reference
+# bindings are refused, and a block-local owned tail is an owned temporary.
+run_err:error_091_destroy_deref_borrow_mut.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_deref_borrow_mut.con	(E0290)
+run_err:error_091_match_deref_ref_payload.con	reject-diagnostic	negative	run_err	tests/programs/error_091_match_deref_ref_payload.con	(E0290)
+run_err:error_091_mut_receiver_deref_borrow_provenance.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_deref_borrow_provenance.con	(E0302)
+run_err:error_091_borrow_provenance_unknown.con	reject-diagnostic	negative	run_err	tests/programs/error_091_borrow_provenance_unknown.con	(E0302)
+run_err:error_091_norm_if_local_binding.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_if_local_binding.con	(E0238)
+# Codex review of round 3 (fifth pass): a `&mut` receiver reached through `&`, an exclusive
+# reference used under a live reborrow, provenance at reassignment, local-binding chains.
+run_err:error_091_mut_receiver_ref_to_mut_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_ref_to_mut_ref.con	(E0302)
+run_err:error_091_mut_receiver_reborrowed_mut_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_reborrowed_mut_ref.con	(E0302)
+run_err:error_091_mut_receiver_reassigned_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_reassigned_ref.con	(E0302)
+run_err:error_091_norm_if_local_chain.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_if_local_chain.con	(E0238)
+# Codex review of round 3 (sixth pass): re-pointing a reference in a branch, parenthesized and
+# dereferenced argument borrows against the receiver, owned match binders under a projection.
+run_err:error_091_ref_repointed_in_branch.con	reject-diagnostic	negative	run_err	tests/programs/error_091_ref_repointed_in_branch.con	(E0302)
+run_err:error_091_mut_receiver_paren_borrow_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_paren_borrow_arg.con	(E0293)
+run_err:error_091_mut_receiver_deref_reborrow_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_deref_reborrow_arg.con	(E0293)
+run_err:error_091_norm_match_owned_binder.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_match_owned_binder.con	(E0238)
+# Codex review of round 3 (seventh pass): a newtype payload through `&W`, `(*r).p` vs `r.p` as one
+# place, and the owned `w.0.destroy()` (exactly once).
+run_err:error_091_newtype_payload_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_newtype_payload_through_ref.con	(E0290)
+run_err:error_091_mut_receiver_deref_field_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_deref_field_arg.con	(E0293)
+run_ok:trait_destroy_newtype_payload.con	run-value	negative	run_ok	tests/programs/trait_destroy_newtype_payload.con	1	0
+# Codex review of round 3 (eighth pass): nested and conditional reborrow arguments, a heap
+# interior read through `&Heap<W>`, and `(w).0.destroy()`.
+run_err:error_091_mut_receiver_nested_reborrow_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_nested_reborrow_arg.con	(E0293)
+run_err:error_091_mut_receiver_if_reborrow_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_if_reborrow_arg.con	(E0238)
+run_err:error_091_heap_field_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_heap_field_through_ref.con	(E0290)
+run_ok:trait_destroy_newtype_payload_paren.con	run-value	negative	run_ok	tests/programs/trait_destroy_newtype_payload_paren.con	1	0
+# Codex review of round 3 (ninth pass): block-local reborrows in `if` arguments, and a `&self`
+# receiver read through a reference under a live exclusive reborrow.
+run_err:error_091_mut_receiver_if_local_reborrow_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_091_mut_receiver_if_local_reborrow_arg.con	(E0302)
+run_err:error_091_ref_receiver_under_mut_reborrow.con	reject-diagnostic	negative	run_err	tests/programs/error_091_ref_receiver_under_mut_reborrow.con	(E0302)
+run_ok:trait_mut_receiver_nested_reborrow.con	run-value	negative	run_ok	tests/programs/trait_mut_receiver_nested_reborrow.con	4	0
+# The normalized place rule (bug 091 round 3, structural fix): Codex's last three open
+# shapes are rejected, and one table records what every spelling of the bug-091 corpus now
+# does, so a change to the rule shows up as a changed row.
+run_err:error_091_norm_heap_deref_payload.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_heap_deref_payload.con	(E0290)
+# Bug 105 (FIXED): a reference-valued `if`/`match` named in source stays refused (E0238, the
+# normalized place rule); one reached through a generic instantiated at a reference type
+# compiled to a segfault (EmitSSA stored the reference as an aggregate) and now runs.
+run_err:error_105_ref_valued_if_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_105_ref_valued_if_arg.con	(E0238)
+run_ok:regress_105_ref_valued_branch_generic.con	run-value	negative	run_ok	tests/programs/regress_105_ref_valued_branch_generic.con	111
+# Bug 102 (FIXED): `&mut p` on a pointer-typed local is the address of p's slot; bug 126
+# (FIXED): `&h` / `&mut h` on a Heap<S> local is h's slot and a field access through
+# `&Heap<S>` / `&mut Heap<S>` dereferences twice (MEMORY_SEMANTICS §5 one-hop rule).
+run_ok:regress_102_pointer_local_address.con	run-value	negative	run_ok	tests/programs/regress_102_pointer_local_address.con	63
+# Two distinct elements of an array of a zero-sized type share one address natively. The
+# interpreter (interpreter-coverage pass) knows the element size from the layout, so it
+# answers 1 as the binary does; pointers to zero-sized values in different storage are
+# still refused (the stack layout decides).
+run_ok:regress_102_zero_sized_ptr_eq.con	run-value	negative	run_ok	tests/programs/regress_102_zero_sized_ptr_eq.con	1
+run_ok:regress_102_ptr_eq_through_raw_base.con	run-value	negative	run_ok	tests/programs/regress_102_ptr_eq_through_raw_base.con	3
+script:negative.4	script	negative	suite	4
+run_ok:regress_126_heap_ref_one_hop.con	run-value	negative	run_ok	tests/programs/regress_126_heap_ref_one_hop.con	255
+run_ok:tests/regressions/bug126_field_write_through_mut_heap_ref/repro.con	run-value	negative	run_ok	tests/regressions/bug126_field_write_through_mut_heap_ref/repro.con	43
+run_ok:tests/regressions/bug126_field_write_through_mut_heap_ref/repro_read.con	run-value	negative	run_ok	tests/regressions/bug126_field_write_through_mut_heap_ref/repro_read.con	10
+# Bug 115 (FIXED): the builtin vec_get / vec_set require a Copy element (E0290 / E0291).
+run_err:error_115_vec_get_non_copy.con	reject-diagnostic	negative	run_err	tests/programs/error_115_vec_get_non_copy.con	(E0290)
+run_err:error_115_vec_get_generic_unbounded.con	reject-diagnostic	negative	run_err	tests/programs/error_115_vec_get_generic_unbounded.con	(E0290)
+run_err:error_115_vec_set_non_copy.con	reject-diagnostic	negative	run_err	tests/programs/error_115_vec_set_non_copy.con	(E0291)
+# G17 (MEMORY_SEMANTICS §15.7, closed 2026-10-23): the root of a borrowed scrutinee cannot move
+# while an arm binder borrows it (TIGHTENING_DECISIONS T-G17).
+run_err:error_g17_match_borrow_root_moved_in_arm.con	reject-diagnostic	negative	run_err	tests/programs/error_g17_match_borrow_root_moved_in_arm.con	(E0204)
+run_err:error_g17_if_let_borrow_root_moved.con	reject-diagnostic	negative	run_err	tests/programs/error_g17_if_let_borrow_root_moved.con	(E0204)
+run_err:error_g17_match_borrow_heap_freed_in_arm.con	reject-diagnostic	negative	run_err	tests/programs/error_g17_match_borrow_heap_freed_in_arm.con	(E0204)
+script:negative.5	script	negative	suite	5
+# Bug 179 (FIXED): the compiler's intermediate LLVM file was `<input>.ll` (file mode) or
+# `<main>.ll` (project mode), shared by every compile of one source, so concurrent compiles to
+# different outputs removed or rewrote it under each other's llvm-as / clang (found when the loop
+# above raced the run_ok worker on bug 102's fixture). Each compile now owns a private temp
+# directory. File mode: eight concurrent compiles of regress_179_concurrent_compile.con, five
+# rounds, every binary exits 42. Project mode: four concurrent `build`s of
+# regress_179_concurrent_build/src/main.con, three rounds, every binary exits 0.
+run_ok:regress_179_concurrent_compile.con	run-value	negative	run_ok	tests/programs/regress_179_concurrent_compile.con	42
+script:negative.6	script	negative	suite	6
+# Bugs 096 - 098: two modules' same-named types, private functions and generic functions are
+# distinct definitions in Core (types spelled by their defining module, colliding top-level
+# functions by theirs). Each reproducer prints its value natively and under --interp; the
+# nested-methods one is native only (an interpreter sibling-submodule method call is the bug
+# 118 family).
+run_ok:regress_096_type_identity_same_named.con	run-value	negative	run_ok	tests/programs/regress_096_type_identity_same_named.con	1234567	0
+run_ok:regress_096_imported_type_layout.con	run-value	negative	run_ok	tests/programs/regress_096_imported_type_layout.con	7	0
+run_ok:regress_096_local_and_imported_same_name.con	run-value	negative	run_ok	tests/programs/regress_096_local_and_imported_same_name.con	7	0
+run_ok:regress_096_same_named_destroy.con	run-value	negative	run_ok	tests/programs/regress_096_same_named_destroy.con	102	0
+run_ok:regress_097_098_same_named_private_fns.con	run-value	negative	run_ok	tests/programs/regress_097_098_same_named_private_fns.con	112124	0
+run_ok:regress_096_nested_same_named_methods.con	run-value	negative	run_ok	tests/programs/regress_096_nested_same_named_methods.con	751300	0
+run_ok:regress_096_imported_struct_field_binding.con	run-value	negative	run_ok	tests/programs/regress_096_imported_struct_field_binding.con	73	0
+run_ok:regress_097_param_named_like_colliding_fn.con	run-value	negative	run_ok	tests/programs/regress_097_param_named_like_colliding_fn.con	1211099	0
+run_ok:regress_097_free_fn_named_like_method.con	run-value	negative	run_ok	tests/programs/regress_097_free_fn_named_like_method.con	51001	0
+run_ok:regress_096_method_value_same_named.con	run-value	negative	run_ok	tests/programs/regress_096_method_value_same_named.con	1017	0
+run_err:error_096_imported_sig_binds_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_imported_sig_binds_other_type.con	(E0220)
+run_err:error_096_canonical_type_spelling_clash.con	reject-diagnostic	negative	run_err	tests/programs/error_096_canonical_type_spelling_clash.con	(E0299)
+run_err:error_097_canonical_fn_spelling_clash.con	reject-diagnostic	negative	run_err	tests/programs/error_097_canonical_fn_spelling_clash.con	(E0299)
+run_ok:regress_096_import_closure_copy.con	run-value	negative	run_ok	tests/programs/regress_096_import_closure_copy.con	4	0
+run_ok:regress_096_generic_method_param_named_like_type.con	run-value	negative	run_ok	tests/programs/regress_096_generic_method_param_named_like_type.con	3	0
+run_err:error_096_method_spelling_clash.con	reject-diagnostic	negative	run_err	tests/programs/error_096_method_spelling_clash.con	(E0299)
+run_err:error_096_import_precedence_binding.con	reject-diagnostic	negative	run_err	tests/programs/error_096_import_precedence_binding.con	(E0299)
+run_ok:regress_096_method_owner_exact.con	run-value	negative	run_ok	tests/programs/regress_096_method_owner_exact.con	9	0
+run_ok:regress_096_sibling_types_unused.con	run-value	negative	run_ok	tests/programs/regress_096_sibling_types_unused.con	1	0
+run_ok:regress_096_method_owner_same_module.con	run-value	negative	run_ok	tests/programs/regress_096_method_owner_same_module.con	101007	0
+run_err:error_096_chained_alias_signature.con	reject-diagnostic	negative	run_err	tests/programs/error_096_chained_alias_signature.con	(E0220)
+run_ok:regress_096_transitive_signature_binding.con	run-value	negative	run_ok	tests/programs/regress_096_transitive_signature_binding.con	93	0
+run_err:error_096_qualified_call_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_qualified_call_other_type.con	(E0299)
+run_err:error_096_alias_signature_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_alias_signature_other_type.con	(E0299)
+run_ok:regress_096_sibling_injected_binding.con	run-value	negative	run_ok	tests/programs/regress_096_sibling_injected_binding.con	7	0
+run_err:error_096_generic_qualified_call_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_generic_qualified_call_other_type.con	(E0299)
+run_err:error_096_fn_value_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_fn_value_other_type.con	(E0299)
+run_ok:regress_096_enum_payload_binding_other_type.con	run-value	negative	run_ok	tests/programs/regress_096_enum_payload_binding_other_type.con	7	0
+run_ok:regress_096_const_initializer_other_type.con	run-value	negative	run_ok	tests/programs/regress_096_const_initializer_other_type.con	7	0
+run_err:error_096_trait_dispatch_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_trait_dispatch_other_type.con	(E0299)
+run_err:error_096_extern_signature_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_extern_signature_other_type.con	(E0220)
+run_err:error_096_generic_trait_impl_dispatch_other_type.con	reject-diagnostic	negative	run_err	tests/programs/error_096_generic_trait_impl_dispatch_other_type.con	(E0299)
+run_ok:regress_096_newtype_field_nominal.con	run-value	negative	run_ok	tests/programs/regress_096_newtype_field_nominal.con	7	0
+run_err:error_098_nested_generic_collision.con	reject-diagnostic	negative	run_err	tests/programs/error_098_nested_generic_collision.con	(E0299)
+run_ok:regress_096_alias_typed_const.con	run-value	negative	run_ok	tests/programs/regress_096_alias_typed_const.con	7	0
+run_ok:regress_096_newtype_unwrap_other_type.con	run-value	negative	run_ok	tests/programs/regress_096_newtype_unwrap_other_type.con	7	0
+run_err:error_098_nested_collision_same_tree.con	reject-diagnostic	negative	run_err	tests/programs/error_098_nested_collision_same_tree.con	(E0299)
+run_ok:regress_096_extern_alias_param.con	run-value	negative	run_ok	tests/programs/regress_096_extern_alias_param.con	0	0
+run_ok:regress_096_nested_newtype_construct.con	run-value	negative	run_ok	tests/programs/regress_096_nested_newtype_construct.con	7	0
+run_ok:regress_096_diverging_initializer.con	run-value	negative	run_ok	tests/programs/regress_096_diverging_initializer.con	5	0
+run_ok:regress_097_colliding_fn_in_const.con	run-value	negative	run_ok	tests/programs/regress_097_colliding_fn_in_const.con	1112	0
+run_ok:regress_096_alias_copy_unused.con	run-value	negative	run_ok	tests/programs/regress_096_alias_copy_unused.con	4	0
+run_ok:regress_097_let_shadows_colliding_fn.con	run-value	negative	run_ok	tests/programs/regress_097_let_shadows_colliding_fn.con	1112	0
+run_ok:regress_096_private_method_not_transported.con	run-value	negative	run_ok	tests/programs/regress_096_private_method_not_transported.con	71	0
+script:negative.7	script	negative	suite	7
+# Bug 123: a module constant of reference type is refused at the declaration (E0239), and a
+# borrow rooted at a module constant (explicit, field, index or implicit `&self`) is refused
+# (E0238) until constants have storage; a copy into a local is the working spelling.
+run_err:error_123_const_ref_type.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_ref_type.con	(E0239)
+run_err:error_123_const_borrow_in_body.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_borrow_in_body.con	(E0238)
+run_err:error_123_const_field_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_field_borrow.con	(E0238)
+run_err:error_123_const_receiver_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_receiver_borrow.con	(E0238)
+run_err:error_123_const_index_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_index_borrow.con	(E0238)
+run_ok:const_copy_then_borrow.con	run-value	negative	run_ok	tests/programs/const_copy_then_borrow.con	42	0
+# A local shadows a module constant (and a second `let` shadows the first): locals resolve first.
+run_ok:regress_087_local_shadows_const.con	run-value	negative	run_ok	tests/programs/regress_087_local_shadows_const.con	4	0
+# A constant's initializer is lowered with the caller's locals hidden: no borrow of a constant
+# inside it (E0602 at Lower), and no capture of a local shadowing a constant it names.
+# Exit 2i: a borrow in a constant initializer is refused at Check (REF-6@1, E0302 constBorrows)
+# before Elab's E0602, which stays as defense in depth.
+run_err:error_123_const_initializer_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_initializer_borrow.con	(E0302)
+run_ok:regress_123_const_initializer_hygiene.con	run-value	negative	run_ok	tests/programs/regress_123_const_initializer_hygiene.con	43	0
+run_err:error_123_const_initializer_array_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_initializer_array_borrow.con	(E0302)
+run_err:error_123_const_initializer_mut_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_initializer_mut_arg.con	(E0302)
+run_err:error_123_const_initializer_elab_error.con	reject-diagnostic	negative	run_err	tests/programs/error_123_const_initializer_elab_error.con	(E0100)
+# Bug 132: constants are flattened by bare name: two modules defining one name are refused at the use.
+run_err:error_132_const_name_collision.con	reject-diagnostic	negative	run_err	tests/programs/error_132_const_name_collision.con	(E0602)
+run_ok:regress_123_local_shadows_const_other_type.con	run-value	negative	run_ok	tests/programs/regress_123_local_shadows_const_other_type.con	1	0
+run_ok:regress_123_local_shadows_const_generic.con	run-value	negative	run_ok	tests/programs/regress_123_local_shadows_const_generic.con	5	0
+# Bug 111: `main` takes no parameters (the entry wrapper passes none; arguments come from
+# std.args), at the top level and in a module, used or not (E0310).
+run_err:error_111_main_params.con	reject-diagnostic	negative	run_err	tests/programs/error_111_main_params.con	(E0310)
+run_err:error_111_main_params_unit.con	reject-diagnostic	negative	run_err	tests/programs/error_111_main_params_unit.con	(E0310)
+run_err:error_111_submodule_main_params.con	reject-diagnostic	negative	run_err	tests/programs/error_111_submodule_main_params.con	(E0310)
+run_err:tests/regressions/bug111_main_params_accepted/repro.con	reject-diagnostic	negative	run_err	tests/regressions/bug111_main_params_accepted/repro.con	(E0310)
+script:negative.8	script	negative	suite	8
+# Bug 131: a reference parameter is never re-pointed (the re-pointing rule, with 104).
+# Exit 2i REF-6@1: a reference binding is never assigned (E0303), and a `let` never binds a
+# reference (E0302), so the 091/104/131 shapes that named a reference across statements are
+# refused at that `let` or assignment; the E0238/E0231/E0232/E0204 checks they used to reach stay
+# as defense in depth for borrow-block, arm and argument references (MEMORY_SEMANTICS §15.3).
+run_err:error_131_param_repointed_block_local.con	reject-diagnostic	negative	run_err	tests/programs/error_131_param_repointed_block_local.con	(E0303)
+run_err:error_131_param_repointed_param.con	reject-diagnostic	negative	run_err	tests/programs/error_131_param_repointed_param.con	(E0303)
+run_err:error_104_assigned_ref_heap_block.con	reject-diagnostic	negative	run_err	tests/programs/error_104_assigned_ref_heap_block.con	(E0302)
+run_err:error_104_assigned_ref_stack_block.con	reject-diagnostic	negative	run_err	tests/programs/error_104_assigned_ref_stack_block.con	(E0302)
+run_err:error_107_shadow_under_live_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_107_shadow_under_live_ref.con	(E0301)
+run_err:error_107_shadow_in_block_under_live_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_107_shadow_in_block_under_live_ref.con	(E0301)
+# Bugs 134 and 140: comparison operators are defined on integers, floats, bool and char (raw
+# pointers in trusted/Unsafe code), never consume an operand, and refuse references (E0229);
+# a Copy-bounded generic comparison is re-checked per instantiation after Mono.
+run_err:error_134_enum_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_134_enum_eq.con	(E0229)
+run_err:error_134_struct_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_134_struct_eq.con	(E0229)
+run_err:error_140_heap_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_140_heap_eq.con	(E0229)
+run_err:error_140_linear_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_140_linear_eq.con	(E0229)
+run_err:error_140_ref_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_140_ref_eq.con	(E0229)
+run_err:error_140_string_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_140_string_eq.con	(E0229)
+run_err:error_140_generic_unbounded_eq.con	reject-diagnostic	negative	run_err	tests/programs/error_140_generic_unbounded_eq.con	(E0229)
+run_err:error_140_generic_copy_at_struct.con	reject-diagnostic	negative	run_err	tests/programs/error_140_generic_copy_at_struct.con	(E0229)
+run_err:error_140_rawptr_eq_safe.con	reject-diagnostic	negative	run_err	tests/programs/error_140_rawptr_eq_safe.con	(E0229)
+# Bug 185: the same comparison through a safe Copy-bounded generic is refused post-mono; the
+# instance carries its definition's authority (trusted and Unsafe generics still compare).
+run_err:error_185_generic_rawptr_eq_safe.con	reject-diagnostic	negative	run_err	tests/programs/error_185_generic_rawptr_eq_safe.con	(E0229)
+run_err:error_140_generic_self_compare.con	reject-diagnostic	negative	run_err	tests/programs/error_140_generic_self_compare.con	(E0229)
+# Bug 145: vec_free of a Vec with non-Copy elements is E0287 (its vec_set half is bug 115's
+# fix, E0291).
+run_err:error_145_vec_free_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_145_vec_free_linear.con	(E0287)
+run_ok:regress_145_vec_free_copy_param.con	run-value	negative	run_ok	tests/programs/regress_145_vec_free_copy_param.con		0
+run_ok:regress_145_vec_free_nested_copy_param.con	run-value	negative	run_ok	tests/programs/regress_145_vec_free_nested_copy_param.con		0
+# Bug 146: `*h` frees the cell it moves the value out of.
+run_ok:regress_146_heap_deref_frees.con	run-value	negative	run_ok	tests/programs/regress_146_heap_deref_frees.con	42	0
+run_err:error_146_deref_heap_place_write.con	reject-diagnostic	negative	run_err	tests/programs/error_146_deref_heap_place_write.con	(E0290)
+run_err:error_146_deref_heap_field_read.con	reject-diagnostic	negative	run_err	tests/programs/error_146_deref_heap_field_read.con	(E0290)
+script:negative.9	script	negative	suite	9
+run_ok:regress_140_scalar_comparisons.con	run-value	negative	run_ok	tests/programs/regress_140_scalar_comparisons.con	175	0
+run_ok:regress_185_generic_rawptr_eq_authority.con	run-value	negative	run_ok	tests/programs/regress_185_generic_rawptr_eq_authority.con	42
+# Bug 142, rule (d): no return/break/continue inside a call argument, a literal element or an
+# operator operand (E0278); exits in statement position, tails and let initializers stay legal.
+run_err:error_142_struct_field_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_struct_field_return.con	(E0278)
+run_err:error_142_call_arg_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_call_arg_return.con	(E0278)
+run_err:error_142_array_elem_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_array_elem_return.con	(E0278)
+run_err:error_142_enum_field_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_enum_field_return.con	(E0278)
+run_err:error_142_operand_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_operand_return.con	(E0278)
+run_err:error_142_method_arg_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_method_arg_return.con	(E0278)
+run_err:error_142_break_in_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_142_break_in_arg.con	(E0278)
+run_err:error_142_deref_operand_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_deref_operand_return.con	(E0278)
+run_err:error_142_for_cond_break.con	reject-diagnostic	negative	run_err	tests/programs/error_142_for_cond_break.con	(E0278)
+run_err:error_142_assign_index_return.con	reject-diagnostic	negative	run_err	tests/programs/error_142_assign_index_return.con	(E0278)
+run_ok:regress_142_exits_allowed.con	run-value	negative	run_ok	tests/programs/regress_142_exits_allowed.con	1 4 5 2 0	0
+script:negative.10	script	negative	suite	10
+# Bug 143, defer rule (a), reserve by place: deferred arguments are locals, borrows of locals or
+# constants (E0279); a borrowed local is pinned until the deferred call runs (E0206).
+run_err:error_143_defer_borrow_then_free.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_borrow_then_free.con	(E0206)
+run_err:error_143_defer_borrow_then_consume.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_borrow_then_consume.con	(E0206)
+run_err:error_143_defer_observer_before_consumer.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_observer_before_consumer.con	(E0206)
+run_err:error_143_defer_field_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_field_arg.con	(E0279)
+run_err:error_143_defer_call_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_call_arg.con	(E0279)
+run_err:error_143_defer_then_use_after_block.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_then_use_after_block.con	(E0205)
+run_err:error_143_defer_borrow_only.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_borrow_only.con	(E0208)
+run_err:error_143_defer_last_in_match_arm.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_last_in_match_arm.con	(E0205)
+run_ok:regress_143_defer_reserve_by_place.con	run-value	negative	run_ok	tests/programs/regress_143_defer_reserve_by_place.con	7 1 4 2 2 5 5 5 	0
+run_err:error_143_defer_shadow_refused.con	reject-diagnostic	negative	run_err	tests/programs/error_143_defer_shadow_refused.con	(E0301)
+run_ok:regress_143_defer_sibling_scopes.con	run-value	negative	run_ok	tests/programs/regress_143_defer_sibling_scopes.con	1 7 70 	0
+script:negative.11	script	negative	suite	11
+# EVALUATION2 D14: E0555 names the type in source spelling, not the internal Ty term.
+run_err:error_d14_heap_deref_assign.con	reject-diagnostic	negative	run_err	tests/programs/error_d14_heap_deref_assign.con	cannot assign through 'Heap<Int>'
+# Bug 144: heap interiors are linearity-tracked: a by-value non-Copy heap-field read is E0290,
+# free(h) of a non-Copy pointee is E0287.
+run_err:error_144_heap_field_read_twice.con	reject-diagnostic	negative	run_err	tests/programs/error_144_heap_field_read_twice.con	(E0290)
+run_err:error_144_free_drops_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_144_free_drops_linear.con	(E0287)
+run_err:error_144_defer_free_drops_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_144_defer_free_drops_linear.con	(E0287)
+run_err:error_144_heap_newtype_unwrap.con	reject-diagnostic	negative	run_err	tests/programs/error_144_heap_newtype_unwrap.con	(E0290)
+# Bug 147: proof-only statements (assert, assume, ghost let) may not move a runtime value (E0243).
+run_err:error_147_assert_consumes_heap.con	reject-diagnostic	negative	run_err	tests/programs/error_147_assert_consumes_heap.con	(E0243)
+run_err:error_147_ghost_let_consumes_heap.con	reject-diagnostic	negative	run_err	tests/programs/error_147_ghost_let_consumes_heap.con	(E0243)
+run_ok:regress_147_assert_reads.con	run-value	negative	run_ok	tests/programs/regress_147_assert_reads.con		0
+run_err:error_147_assert_revives_binding.con	reject-diagnostic	negative	run_err	tests/programs/error_147_assert_revives_binding.con	(E0243)
+run_ok:regress_147_ghost_consumes_ghost.con	run-value	negative	run_ok	tests/programs/regress_147_ghost_consumes_ghost.con		0
+# Bug 148: the right operand of && / || may not move a value (it may not run). E0244.
+run_err:error_148_and_operand_consumes.con	reject-diagnostic	negative	run_err	tests/programs/error_148_and_operand_consumes.con	(E0244)
+run_err:error_148_or_operand_consumes.con	reject-diagnostic	negative	run_err	tests/programs/error_148_or_operand_consumes.con	(E0244)
+run_ok:regress_148_short_circuit_reads.con	run-value	negative	run_ok	tests/programs/regress_148_short_circuit_reads.con		0
+# Bug 149: loop conditions, returns in nested blocks and labelled exits account for owned values.
+run_err:error_149_loop_cond_moves_outer.con	reject-diagnostic	negative	run_err	tests/programs/error_149_loop_cond_moves_outer.con	(E0207)
+run_err:error_149_return_after_unreached_defer.con	reject-diagnostic	negative	run_err	tests/programs/error_149_return_after_unreached_defer.con	(E0208)
+run_err:error_149_return_in_borrow_block.con	reject-diagnostic	negative	run_err	tests/programs/error_149_return_in_borrow_block.con	(E0208)
+run_err:error_149_labelled_break_skips.con	reject-diagnostic	negative	run_err	tests/programs/error_149_labelled_break_skips.con	(E0210)
+run_err:error_149_labelled_continue_skips.con	reject-diagnostic	negative	run_err	tests/programs/error_149_labelled_continue_skips.con	(E0211)
+run_ok:regress_149_exits_accounted.con	run-value	negative	run_ok	tests/programs/regress_149_exits_accounted.con	9	0
+run_ok:regress_149_labelled_exit_runs_defers.con	run-value	negative	run_ok	tests/programs/regress_149_labelled_exit_runs_defers.con	3	0
+run_ok:regress_149_return_in_borrow_with_defer.con	run-value	negative	run_ok	tests/programs/regress_149_return_in_borrow_with_defer.con	42	0
+run_ok:regress_149_break_in_borrow_with_defer.con	run-value	negative	run_ok	tests/programs/regress_149_break_in_borrow_with_defer.con	1	0
+run_err:error_149_diverging_branches_in_loop.con	reject-diagnostic	negative	run_err	tests/programs/error_149_diverging_branches_in_loop.con	(E0208)
+run_err:error_149_loop_cond_in_exiting_branch.con	reject-diagnostic	negative	run_err	tests/programs/error_149_loop_cond_in_exiting_branch.con	(E0207)
+run_err:error_149_match_diverge_in_loop.con	reject-diagnostic	negative	run_err	tests/programs/error_149_match_diverge_in_loop.con	(E0208)
+run_ok:regress_149_both_branches_return.con	run-value	negative	run_ok	tests/programs/regress_149_both_branches_return.con		1
+run_ok:regress_149_cond_return_in_borrow.con	run-value	negative	run_ok	tests/programs/regress_149_cond_return_in_borrow.con		1
+run_err:error_149_continue_in_exit_branch.con	reject-diagnostic	negative	run_err	tests/programs/error_149_continue_in_exit_branch.con	(E0207)
+run_ok:regress_149_nested_loop_in_exit_branch.con	run-value	negative	run_ok	tests/programs/regress_149_nested_loop_in_exit_branch.con		0
+run_ok:regress_149_break_value_statement_loop.con	run-value	negative	run_ok	tests/programs/regress_149_break_value_statement_loop.con		0
+run_err:error_149_break_value_non_copy.con	reject-diagnostic	negative	run_err	tests/programs/error_149_break_value_non_copy.con	(E0287)
+run_err:error_149_break_value_moves_outer.con	reject-diagnostic	negative	run_err	tests/programs/error_149_break_value_moves_outer.con	(E0207)
+run_err:error_149_loop_revives_consumed.con	reject-diagnostic	negative	run_err	tests/programs/error_149_loop_revives_consumed.con	(E0212)
+run_err:error_149_rebinding_nested_loop.con	reject-diagnostic	negative	run_err	tests/programs/error_149_rebinding_nested_loop.con	(E0207)
+run_ok:regress_149_inner_label_in_exit_branch.con	run-value	negative	run_ok	tests/programs/regress_149_inner_label_in_exit_branch.con		0
+script:negative.12	script	negative	suite	12
+run_ok:regress_146_heap_deref_cast.con	run-value	negative	run_ok	tests/programs/regress_146_heap_deref_cast.con	42	0
+run_ok:regress_144_heap_node_destructure.con	run-value	negative	run_ok	tests/programs/regress_144_heap_node_destructure.con	12 7	0
+script:negative.13	script	negative	suite	13
+run_err:error_105_ref_valued_if_field.con	reject-diagnostic	negative	run_err	tests/programs/error_105_ref_valued_if_field.con	(E0238)
+run_err:error_091_norm_conditional_receiver.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_conditional_receiver.con	(E0238)
+run_err:error_091_norm_deref_read_under_reborrow.con	reject-diagnostic	negative	run_err	tests/programs/error_091_norm_deref_read_under_reborrow.con	(E0302)
+script:negative.14	script	negative	suite	14
+run_ok:trait_mut_receiver_forms.con	run-value	negative	run_ok	tests/programs/trait_mut_receiver_forms.con	8	0
+run_ok:trait_generic_fn_value_param.con	run-value	negative	run_ok	tests/programs/trait_generic_fn_value_param.con	7	0
+script:negative.15	script	negative	suite	15
+# Bug 091 self-review: an impl spelling its own type `Self` in a parameter or return
+# conforms to the trait (was a false E0587 / E0582).
+run_ok:trait_impl_self_spelling.con	run-value	negative	run_ok	tests/programs/trait_impl_self_spelling.con	42
+# Codex round 2: return-position `Self` is the impl's full type (`Cell<T>`) and return
+# types are alias-normalized (was a false E0582); a genuinely wrong return still is E0582.
+run_ok:trait_impl_generic_self_return.con	run-value	negative	run_ok	tests/programs/trait_impl_generic_self_return.con	42
+# Gate regression of batch 2: builtin Destroy admits the by-value `destroy(self)` form
+# (canonical terminal consumer) as well as `&self`; `&mut self` is still E0587.
+# Round 3 (Codex): `Destroy::destroy` CONSUMES its receiver whichever form the impl
+# declares — each owner is destroyed exactly once (11111); destroying through a
+# reference outside trusted drop glue is E0290 (generic and concrete), and an owned
+# `t.destroy()` moves `t` (a later `destroy(t)` is E0205).
+run_ok:trait_destroy_owned_receiver.con	run-value	negative	run_ok	tests/programs/trait_destroy_owned_receiver.con	11111	0
+run_err:error_091_destroy_mut_receiver.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_mut_receiver.con	(E0587)
+run_err:error_091_destroy_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_through_ref.con	(E0290)
+run_err:error_091_destroy_concrete_through_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_concrete_through_ref.con	(E0290)
+run_err:error_091_destroy_method_then_destroy.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_method_then_destroy.con	(E0205)
+# Codex review of round 3: parentheses, `*r`, the static `T::destroy(&x)` spelling and the
+# definition name `T_destroy` (also as a function value) reach the same contract.
+run_err:error_091_destroy_paren_then_destroy.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_paren_then_destroy.con	(E0205)
+run_err:error_091_destroy_static_borrowed.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_static_borrowed.con	(E0290)
+run_err:error_091_destroy_deref_ref.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_deref_ref.con	(E0290)
+run_err:error_091_destroy_defname_borrowed.con	reject-diagnostic	negative	run_err	tests/programs/error_091_destroy_defname_borrowed.con	(E0290)
+run_err:error_091_receiver_deref_moved.con	reject-diagnostic	negative	run_err	tests/programs/error_091_receiver_deref_moved.con	(E0290)
+script:negative.16	script	negative	suite	16
+run_err:error_091_generic_self_return_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_091_generic_self_return_mismatch.con	(E0582)
+# Bug 099: generic inference reads ONE argument-type peek (Resolve.PeekType) in Check and
+# Elab, through fields, indexes, calls and method calls. Bug 100: a generic impl's `&self`
+# destructor reached by `destroy(h)` is specialized through the receiver's implicit borrow.
+# Each reproducer runs natively and under --interp, and both print the recorded value.
+run_ok:regress_099_generic_infer_field_index.con	run-value	negative	run_ok	tests/programs/regress_099_generic_infer_field_index.con	43043	0
+run_ok:regress_099_generic_infer_call_results.con	run-value	negative	run_ok	tests/programs/regress_099_generic_infer_call_results.con	4	0
+run_ok:regress_100_generic_ref_destroy.con	run-value	negative	run_ok	tests/programs/regress_100_generic_ref_destroy.con	2	0
+run_ok:regress_099_generic_infer_cap_method.con	run-value	negative	run_ok	tests/programs/regress_099_generic_infer_cap_method.con	14	0
+script:negative.17	script	negative	suite	17
+run_err:error_cap_pure.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_pure.con	but caller has
+run_err:error_cap_propagation.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_propagation.con	but caller has
+run_err:error_cap_method.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_method.con	but caller has
+run_err:error_cap_poly_inline.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_poly_inline.con	requires capability
+run_err:error_break_outside.con	reject-diagnostic	negative	run_err	tests/programs/error_break_outside.con	break outside of loop
+run_err:error_continue_outside.con	reject-diagnostic	negative	run_err	tests/programs/error_continue_outside.con	continue outside of loop
+# Phase 3: defer/destroy/Copy errors
+run_err:error_defer_move.con	reject-diagnostic	negative	run_err	tests/programs/error_defer_move.con	reserved by defer
+run_err:error_copy_destroy.con	reject-diagnostic	negative	run_err	tests/programs/error_copy_destroy.con	implements Destroy and cannot be Copy
+run_err:error_enum_explicit_discriminant.con	reject-diagnostic	negative	run_err	tests/programs/error_enum_explicit_discriminant.con	explicit enum discriminant values are not supported
+run_err:error_unknown_attribute.con	reject-diagnostic	negative	run_err	tests/programs/error_unknown_attribute.con	unknown attribute
+run_err:error_type_arg_count_extra.con	reject-diagnostic	negative	run_err	tests/programs/error_type_arg_count_extra.con	E0113
+run_err:error_type_arg_count_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_type_arg_count_missing.con	E0113
+# Bug 200 (silent): a generic type named without its argument list compiled.
+run_err:error_200_bare_generic_type.con	reject-diagnostic	negative	run_err	tests/programs/error_200_bare_generic_type.con	(E0113)
+run_err:error_200_bare_generic_signature.con	reject-diagnostic	negative	run_err	tests/programs/error_200_bare_generic_signature.con	(E0113)
+run_ok:regress_200_generic_type_with_arguments.con	run-value	negative	run_ok	tests/programs/regress_200_generic_type_with_arguments.con	42
+run_ok:regress_200_type_param_shadows_generic.con	run-value	negative	run_ok	tests/programs/regress_200_type_param_shadows_generic.con	42
+run_ok:regress_200_self_receiver_of_generic_impl.con	run-value	negative	run_ok	tests/programs/regress_200_self_receiver_of_generic_impl.con	42
+run_ok:type_arg_count_ok.con	run-value	negative	run_ok	tests/programs/type_arg_count_ok.con	7
+# R-0484: structs with capability parameters (`struct Sink<cap C>`). Positives build and use
+# them; negatives are the authority escapes they must refuse, and the kind/count checks.
+run_ok:cap_struct_generic_helper.con	run-value	negative	run_ok	tests/programs/cap_struct_generic_helper.con	42
+run_ok:cap_struct_method.con	run-value	negative	run_ok	tests/programs/cap_struct_method.con	42
+run_ok:cap_struct_inferred.con	run-value	negative	run_ok	tests/programs/cap_struct_inferred.con	42
+run_err:error_cap_struct_leak_generic.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_struct_leak_generic.con	E0240
+run_err:error_cap_struct_leak_field.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_struct_leak_field.con	E0240
+run_err:error_cap_struct_leak_method.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_struct_leak_method.con	E0240
+run_err:error_cap_struct_mislabel.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_struct_mislabel.con	E0220
+run_err:error_cap_struct_assign_launder.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_struct_assign_launder.con	E0220
+run_err:error_cap_arg_type_where_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_arg_type_where_cap.con	E0114
+run_err:error_cap_arg_cap_where_type.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_arg_cap_where_type.con	E0114
+run_err:error_cap_arg_count.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_arg_count.con	E0115
+run_err:error_copy_linear_field.con	reject-diagnostic	negative	run_err	tests/programs/error_copy_linear_field.con	contains non-copy field
+# Conditional Copy (Phase 7 #3): Box<MyResource> silently LOSES Copy (not an
+# instantiation error) — the move-after-use is what rejects, matching the
+# fixture's stated intent.
+run_err:error_copy_generic_non_copy_instantiation.con	reject-diagnostic	negative	run_err	tests/programs/error_copy_generic_non_copy_instantiation.con	used after move
+run_err:error_conditional_copy_option.con	reject-diagnostic	negative	run_err	tests/programs/error_conditional_copy_option.con	used after move
+run_err:error_conditional_copy_result.con	reject-diagnostic	negative	run_err	tests/programs/error_conditional_copy_result.con	used after move
+run_err:error_destroy_no_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_destroy_no_impl.con	does not implement Destroy
+run_err:error_destroy_reserved.con	reject-diagnostic	negative	run_err	tests/programs/error_destroy_reserved.con	is a reserved identifier
+# Phase 5: Allocator errors
+run_err:error_alloc_no_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_alloc_no_cap.con	but caller has
+run_ok:heap_dot_access.con	run-value	negative	run_ok	tests/programs/heap_dot_access.con	1
+run_err:error_heap_leak.con	reject-diagnostic	negative	run_err	tests/programs/error_heap_leak.con	was never consumed
+run_err:error_alloc_reserved.con	reject-diagnostic	negative	run_err	tests/programs/error_alloc_reserved.con	is a reserved identifier
+# Phase 6: Borrow region errors
+run_err:error_borrow_escape.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_escape.con	(E0302)
+run_err:error_borrow_frozen.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_frozen.con	is frozen by borrow block
+run_err:error_borrow_shadow.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_shadow.con	(E0301)
+run_err:error_borrow_mut_conflict.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_mut_conflict.con	is frozen by borrow block
+run_err:error_named_ref_mut_conflict.con	reject-diagnostic	negative	run_err	tests/programs/error_named_ref_mut_conflict.con	(E0302)
+# Additional escape analysis errors
+run_err:error_escape_return.con	reject-diagnostic	negative	run_err	tests/programs/error_escape_return.con	may not return a reference
+# Bug 092: a struct field of reference type is no longer expressible, so the
+# field-path escape is now stopped at the declaration (E0239), before E0234.
+run_err:error_escape_field.con	reject-diagnostic	negative	run_err	tests/programs/error_escape_field.con	E0239
+# While-as-expression errors
+run_err:error_while_expr_removed.con	reject-diagnostic	negative	run_err	tests/programs/error_while_expr_removed.con	while is a statement, not an expression
+# Additional break/continue errors
+run_err:error_break_linear_skip.con	reject-diagnostic	negative	run_err	tests/programs/error_break_linear_skip.con	break would skip unconsumed linear variable
+# Additional borrow errors
+run_err:error_borrow_double_mut.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_double_mut.con	is frozen by borrow block
+run_err:error_borrow_assign_frozen.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_assign_frozen.con	frozen by borrow block
+# Memory semantics edge cases (must-reject)
+run_err:error_memory_edge_use_after_move.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_use_after_move.con	used after move
+run_err:error_memory_edge_linear_reassign.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_linear_reassign.con	cannot reassign linear
+run_err:error_memory_edge_branch_disagree.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_branch_disagree.con	consumed in one branch
+run_err:error_memory_edge_if_no_else_consume.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_if_no_else_consume.con	consumed in if-without-else
+run_err:error_memory_edge_loop_consume_outer.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_loop_consume_outer.con	cannot consume linear variable
+run_err:error_memory_edge_move_while_borrowed.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_move_while_borrowed.con	frozen by borrow block
+run_err:error_memory_edge_defer_then_move.con	reject-diagnostic	negative	run_err	tests/programs/error_memory_edge_defer_then_move.con	reserved by defer
+run_err:bug_int_match_disagree.con	reject-diagnostic	negative	run_err	tests/programs/bug_int_match_disagree.con	match arms disagree
+# Trusted linearity enforcement
+run_err:error_trusted_use_after_move.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_use_after_move.con	used after move
+run_err:error_trusted_leak.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_leak.con	was never consumed
+run_err:error_trusted_linear_reassign.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_linear_reassign.con	cannot reassign linear
+# Heap ownership errors
+run_err:error_heap_double_free.con	reject-diagnostic	negative	run_err	tests/programs/error_heap_double_free.con	used after move
+run_err:error_heap_use_after_free.con	reject-diagnostic	negative	run_err	tests/programs/error_heap_use_after_free.con	used after move
+run_err:error_heap_deref_double.con	reject-diagnostic	negative	run_err	tests/programs/error_heap_deref_double.con	used after move
+run_err:error_heap_leak_no_free.con	reject-diagnostic	negative	run_err	tests/programs/error_heap_leak_no_free.con	was never consumed
+# Newtype/enum linearity errors
+run_err:error_newtype_double_unwrap.con	reject-diagnostic	negative	run_err	tests/programs/error_newtype_double_unwrap.con	used after move
+run_err:error_linear_enum_leak.con	reject-diagnostic	negative	run_err	tests/programs/error_linear_enum_leak.con	was never consumed
+run_err:error_enum_match_disagree.con#2	reject-diagnostic	negative	run_err	tests/programs/error_enum_match_disagree.con	match arms disagree
+# Branch/borrow errors
+run_err:error_deep_branch_disagree.con	reject-diagnostic	negative	run_err	tests/programs/error_deep_branch_disagree.con	consumed in one branch
+run_err:error_borrow_consumed_var.con	reject-diagnostic	negative	run_err	tests/programs/error_borrow_consumed_var.con	already moved
+run_err:error_assign_frozen_by_borrow.con	reject-diagnostic	negative	run_err	tests/programs/error_assign_frozen_by_borrow.con	frozen by borrow block
+run_err:error_linear_array_leak.con	reject-diagnostic	negative	run_err	tests/programs/error_linear_array_leak.con	was never consumed
+# &mut T borrow-block ref consumption errors
+run_ok:regress_d1_mut_ref_double_use.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_double_use.con	12
+run_ok:regress_d1_mut_ref_double_call.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_double_call.con	12
+run_ok:regress_d1_mut_ref_call_then_deref.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_call_then_deref.con	99
+run_ok:regress_d1_mut_ref_use_after_call.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_use_after_call.con	11
+run_ok:regress_d1_mut_ref_branch_disagree.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_branch_disagree.con	11
+run_ok:regress_d1_mut_ref_loop_consume.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_loop_consume.con	13
+run_err:error_mut_ref_rebind_then_use.con	reject-diagnostic	negative	run_err	tests/programs/error_mut_ref_rebind_then_use.con	(E0302)
+run_ok:regress_d1_mut_ref_method_on_borrow_ref.con	run-value	negative	run_ok	tests/programs/regress_d1_mut_ref_method_on_borrow_ref.con	12
+# Memory regression checklist gap-closing tests
+run_err:error_continue_skip_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_continue_skip_linear.con	continue would skip unconsumed linear
+run_err:error_mut_borrow_immutable.con	reject-diagnostic	negative	run_err	tests/programs/error_mut_borrow_immutable.con	cannot take mutable borrow of immutable
+# Pressure error tests: cleanup/leak-boundary (item 8)
+run_err:pressure_err_defer_then_move.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_defer_then_move.con	reserved by defer
+run_err:pressure_err_heap_leak.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_heap_leak.con	was never consumed
+run_err:pressure_err_linear_no_destroy.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_linear_no_destroy.con	was never consumed
+run_err:pressure_err_destroy_then_use.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_destroy_then_use.con	used after move
+run_err:pressure_err_branch_leak.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_branch_leak.con	was never consumed
+run_err:pressure_err_consume_in_inner_loop.con	reject-diagnostic	negative	run_err	tests/programs/pressure_err_consume_in_inner_loop.con	inside a loop
+# Bitwise errors
+run_err:error_bitwise_float.con	reject-diagnostic	negative	run_err	tests/programs/error_bitwise_float.con	type mismatch
+# Print errors
+run_err:error_print_no_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_print_no_cap.con	but caller has
+# Module errors
+run_err:error_module_not_found.con	reject-diagnostic	negative	run_err	tests/programs/error_module_not_found.con	module file not found
+# check_spec.sh S12: one negative witness per rule code the spec names (docs/spec/rule_sites.tsv)
+run_err:error_s12_e0106_unknown_static_method.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0106_unknown_static_method.con	(E0106)
+run_err:error_s12_e0112_recursive_alias.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0112_recursive_alias.con	(E0112)
+run_err:error_s12_e0242_cannot_infer_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0242_cannot_infer_cap.con	(E0242)
+run_err:error_s12_e0251_no_field.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0251_no_field.con	(E0251)
+run_err:error_s12_e0268_alloc_two_args.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0268_alloc_two_args.con	(E0268)
+run_err:error_s12_e0270_builtin_first_arg.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0270_builtin_first_arg.con	(E0270)
+run_err:error_s12_e0272_destroy_non_named.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0272_destroy_non_named.con	(E0272)
+run_err:error_s12_e0282_defer_not_call.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0282_defer_not_call.con	(E0282)
+run_err:error_s12_e0289_let_underscore.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0289_let_underscore.con	(E0289)
+run_err:error_s12_e0304_label_field_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0304_label_field_mismatch.con	(E0304)
+run_err:error_s12_e0503_cmp_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0503_cmp_mismatch.con	(E0503)
+run_err:error_s12_e0505_logical_and_int.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0505_logical_and_int.con	(E0505)
+run_err:error_s12_e0507_neg_bool.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0507_neg_bool.con	(E0507)
+run_err:error_s12_e0508_not_int.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0508_not_int.con	(E0508)
+run_err:error_s12_e0509_bitnot_bool.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_e0509_bitnot_bool.con	(E0509)
+run_err:error_s12_E0123_module_cycle/main.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_E0123_module_cycle/main.con	(E0123)
+run_err:error_s12_E0269_vec_new_type_args.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_E0269_vec_new_type_args.con	(E0269)
+run_err:error_s12_E0266_method_on_array.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_E0266_method_on_array.con	(E0266)
+run_err:error_s12_E0226_break_value_types.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_E0226_break_value_types.con	(E0226)
+run_err:error_s12_E0552_index_non_array.con	reject-diagnostic	negative	run_err	tests/programs/error_s12_E0552_index_non_array.con	(E0552)
+run_err:module_circular/main.con	reject-diagnostic	negative	run_err	tests/programs/module_circular/main.con	circular module import
+# Self keyword errors
+run_err:error_self_outside_impl.con	reject-diagnostic	negative	run_err	tests/programs/error_self_outside_impl.con	Self can only be used inside impl blocks
+# Labeled loop errors
+run_err:error_unknown_label.con	reject-diagnostic	negative	run_err	tests/programs/error_unknown_label.con	unknown loop label
+run_err:error_label_not_loop.con	reject-diagnostic	negative	run_err	tests/programs/error_label_not_loop.con	label can only precede while or for
+# Trait bound errors
+run_err:error_trait_bound_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_bound_missing.con	does not implement trait
+# Bug 204 (silent): a trait bound on a primitive type argument was never checked.
+run_err:error_204_primitive_bound_unchecked.con	reject-diagnostic	negative	run_err	tests/programs/error_204_primitive_bound_unchecked.con	(E0241)
+run_err:error_204_primitive_bound_unused.con	reject-diagnostic	negative	run_err	tests/programs/error_204_primitive_bound_unused.con	(E0241)
+run_ok:regress_204_primitive_bound_satisfied.con	run-value	negative	run_ok	tests/programs/regress_204_primitive_bound_satisfied.con	42
+# Trait dispatch errors
+run_err:error_trait_dispatch_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_trait_dispatch_missing.con	no method
+# File I/O errors
+run_err:error_file_no_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_file_no_cap.con	but caller has
+# FFI errors
+run_err:error_ffi_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_ffi_no_unsafe.con	but caller has
+# Vec errors
+run_err:error_vec_no_alloc.con	reject-diagnostic	negative	run_err	tests/programs/error_vec_no_alloc.con	but caller has
+# Network errors
+run_err:error_network_no_cap.con	reject-diagnostic	negative	run_err	tests/programs/error_network_no_cap.con	but caller has
+# Match exhaustiveness
+run_err:error_match_missing_variant.con	reject-diagnostic	negative	run_err	tests/programs/error_match_missing_variant.con	missing variant
+# Return type mismatch
+run_err:error_return_type_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_return_type_mismatch.con	type mismatch
+# Capability propagation errors
+run_err:error_cap_deep_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_deep_missing.con	but caller has
+# Borrow conflict errors
+run_err:error_borrow_double_mut.con#2	reject-diagnostic	negative	run_err	tests/programs/error_borrow_double_mut.con	frozen by borrow
+
+# Span-bearing diagnostics (Resolve errors include line:col prefix)
+run_err:error_resolve_undeclared_span.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_undeclared_span.con	4:12: error[resolve]: (E0100) undeclared variable
+run_err:error_resolve_unknown_func_span.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_unknown_func_span.con	3:18: error[resolve]: (E0101) unknown function
+run_err:error_resolve_unknown_type.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_unknown_type.con	error[resolve]: (E0108) unknown type 'Foo'
+run_err:error_resolve_not_enum.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_not_enum.con	is not an enum
+run_err:error_resolve_multi_errors.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_multi_errors.con	unknown function 'unknown2'
+run_err:error_resolve_unknown_enum.con	reject-diagnostic	negative	run_err	tests/programs/error_resolve_unknown_enum.con	unknown enum 'Phantom'
+# Check error variants
+run_err:error_assign_immutable.con	reject-diagnostic	negative	run_err	tests/programs/error_assign_immutable.con	cannot assign to immutable
+run_err:error_assign_overwrites_linear.con	reject-diagnostic	negative	run_err	tests/programs/error_assign_overwrites_linear.con	cannot reassign linear variable
+run_err:error_linear_reassign_after_drop.con	reject-diagnostic	negative	run_err	tests/programs/error_linear_reassign_after_drop.con	was never consumed
+run_ok:copy_reassign.con	run-value	negative	run_ok	tests/programs/copy_reassign.con	0
+# Match-as-expression
+run_ok:match_expr.con	run-value	negative	run_ok	tests/programs/match_expr.con	0
+run_ok:match_expr_linear.con	run-value	negative	run_ok	tests/programs/match_expr_linear.con	0
+run_ok:match_expr_return_arm.con	run-value	negative	run_ok	tests/programs/match_expr_return_arm.con	0
+run_err:error_match_arm_type_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_match_arm_type_mismatch.con	match arm type
+script:negative.18	script	negative	suite	18
+# repr(C) / FFI safety errors
+run_err:error_repr_c_generic.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_c_generic.con	cannot have type parameters
+run_err:error_repr_c_string_field.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_c_string_field.con	non-FFI-safe field
+run_err:error_extern_string_param.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_string_param.con	non-FFI-safe parameter
+run_err:error_extern_non_repr_struct.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_non_repr_struct.con	non-FFI-safe parameter
+run_err:error_repr_c_on_enum.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_c_on_enum.con	can only be applied to struct
+# Unsafe boundary errors
+run_err:error_ptr_deref_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_ptr_deref_no_unsafe.con	requires capability
+run_err:error_ptr_assign_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_ptr_assign_no_unsafe.con	requires capability
+run_err:error_ptr_cast_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_ptr_cast_no_unsafe.con	requires capability
+run_err:error_int_to_ptr_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_int_to_ptr_no_unsafe.con	requires capability
+# Trusted boundary tests
+run_ok:trusted_fn_ptr_deref.con	run-value	negative	run_ok	tests/programs/trusted_fn_ptr_deref.con	0
+run_ok:trusted_impl_basic.con	run-value	negative	run_ok	tests/programs/trusted_impl_basic.con	0
+# Bug 189: `trusted impl` is refused — a block never confers trust; each method declares it.
+run_err:error_189_trusted_impl_refused.con	reject-diagnostic	negative	run_err	tests/programs/error_189_trusted_impl_refused.con	'trusted impl' is not allowed
+run_ok:trusted_ptr_assign.con	run-value	negative	run_ok	tests/programs/trusted_ptr_assign.con	0
+run_ok:trusted_ptr_cast.con	run-value	negative	run_ok	tests/programs/trusted_ptr_cast.con	0
+run_ok:trusted_absorbs_extern_unsafe.con	run-value	negative	run_ok	tests/programs/trusted_absorbs_extern_unsafe.con	0
+run_err:error_trusted_extern_effect_not_absorbed.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_extern_effect_not_absorbed.con	requires Console
+run_err:error_trusted_on_struct.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_on_struct.con	trusted
+run_ok:trusted_trait_impl.con	run-value	negative	run_ok	tests/programs/trusted_trait_impl.con	0
+run_ok:trusted_ptr_arith.con	run-value	negative	run_ok	tests/programs/trusted_ptr_arith.con	0
+run_err:error_ptr_arith_no_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_ptr_arith_no_unsafe.con	requires capability
+# Trusted runtime tests
+run_ok:trusted_deref_runtime.con	run-value	negative	run_ok	tests/programs/trusted_deref_runtime.con	42
+run_ok:trusted_assign_runtime.con	run-value	negative	run_ok	tests/programs/trusted_assign_runtime.con	77
+run_ok:trusted_cast_runtime.con	run-value	negative	run_ok	tests/programs/trusted_cast_runtime.con	0
+run_ok:trusted_arith_runtime.con	run-value	negative	run_ok	tests/programs/trusted_arith_runtime.con	32
+run_ok:trusted_with_alloc.con	run-value	negative	run_ok	tests/programs/trusted_with_alloc.con	10
+run_ok:trusted_report_check.con	run-value	negative	run_ok	tests/programs/trusted_report_check.con	0
+# Capability propagation errors
+run_err:error_cap_alloc_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_alloc_missing.con	but caller has
+run_err:error_cap_console_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_console_missing.con	but caller has
+run_err:error_cap_multi_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_multi_missing.con	but caller has
+# Trusted + capabilities interaction errors
+run_err:error_trusted_no_alloc.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_no_alloc.con	but caller has
+# Trusted boundary negative tests
+run_err:error_untrusted_calls_trusted_ptr.con	reject-diagnostic	negative	run_err	tests/programs/error_untrusted_calls_trusted_ptr.con	requires capability
+run_err:error_untrusted_ptr_assign.con	reject-diagnostic	negative	run_err	tests/programs/error_untrusted_ptr_assign.con	requires capability
+# Builtin capability enforcement
+run_err:error_abort_no_process.con	reject-diagnostic	negative	run_err	tests/programs/error_abort_no_process.con	but caller has
+# Multi-error recovery: multiple errors reported from one function body
+run_err:error_multi_body.con	reject-diagnostic	negative	run_err	tests/programs/error_multi_body.con	type mismatch in let binding 'y'
+run_err:error_multi_body.con#2	reject-diagnostic	negative	run_err	tests/programs/error_multi_body.con	type mismatch in let binding 'x'
+run_err:error_multi_recovery.con	reject-diagnostic	negative	run_err	tests/programs/error_multi_recovery.con	type mismatch in let binding 'x'
+run_err:error_multi_recovery.con#2	reject-diagnostic	negative	run_err	tests/programs/error_multi_recovery.con	type mismatch in let binding 'y'
+# Capability alias tests
+run_ok:cap_alias_basic.con	run-value	negative	run_ok	tests/programs/cap_alias_basic.con	1
+run_ok:cap_alias_pub.con	run-value	negative	run_ok	tests/programs/cap_alias_pub.con	42
+run_err:error_cap_alias_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_alias_missing.con	requires Network but caller has
+# Union tests
+run_ok:union_basic.con	run-value	negative	run_ok	tests/programs/union_basic.con	42
+
+# === Type system soundness tests ===
+run_ok:test_generic_chain.con	run-value	negative	run_ok	tests/programs/test_generic_chain.con	42
+run_ok:test_generic_nested_struct.con	run-value	negative	run_ok	tests/programs/test_generic_nested_struct.con	42
+run_ok:test_method_generic.con	run-value	negative	run_ok	tests/programs/test_method_generic.con	42
+# Conditional Copy (Phase 7 #3): Copy iff all substituted fields/payloads Copy
+run_ok:conditional_copy.con	run-value	negative	run_ok	tests/programs/conditional_copy.con	37
+run_ok:test_enum_recursive_sum.con	run-value	negative	run_ok	tests/programs/test_enum_recursive_sum.con	42
+run_ok:test_match_exhaustive_nested.con	run-value	negative	run_ok	tests/programs/test_match_exhaustive_nested.con	42
+run_ok:test_linearity_branch_agree.con	run-value	negative	run_ok	tests/programs/test_linearity_branch_agree.con	42
+run_ok:test_linearity_match_consume.con	run-value	negative	run_ok	tests/programs/test_linearity_match_consume.con	42
+run_ok:test_defer_linearity.con	run-value	negative	run_ok	tests/programs/test_defer_linearity.con	42
+run_ok:test_defer_drop_string.con	run-value	negative	run_ok	tests/programs/test_defer_drop_string.con	hello\nhello	1
+run_ok:test_defer_multi_consuming.con	run-value	negative	run_ok	tests/programs/test_defer_multi_consuming.con	ab\ncd	2
+run_ok:test_defer_break_no_double.con	run-value	negative	run_ok	tests/programs/test_defer_break_no_double.con	ok	3
+run_ok:test_defer_nested_if.con	run-value	negative	run_ok	tests/programs/test_defer_nested_if.con	yes\nyes	1
+run_ok:test_defer_consuming_lifo.con	run-value	negative	run_ok	tests/programs/test_defer_consuming_lifo.con	first second	0
+run_ok:test_defer_in_loop_func.con	run-value	negative	run_ok	tests/programs/test_defer_in_loop_func.con	xxx	3
+run_ok:test_defer_block_scope.con	run-value	negative	run_ok	tests/programs/test_defer_block_scope.con	inner	1
+run_ok:test_defer_loop_iteration.con	run-value	negative	run_ok	tests/programs/test_defer_loop_iteration.con	xxx	3
+run_ok:test_defer_loop_break_scope.con	run-value	negative	run_ok	tests/programs/test_defer_loop_break_scope.con	yyy	2
+run_ok:test_defer_loop_continue_scope.con	run-value	negative	run_ok	tests/programs/test_defer_loop_continue_scope.con	zzz	3
+run_ok:test_defer_result_nested.con	run-value	negative	run_ok	tests/programs/test_defer_result_nested.con	inner outer	109
+run_ok:test_defer_nested_lifo.con	run-value	negative	run_ok	tests/programs/test_defer_nested_lifo.con	cba	0
+run_ok:test_defer_loop_inner_return.con	run-value	negative	run_ok	tests/programs/test_defer_loop_inner_return.con	IIIIO	3
+run_ok:test_alloca_loop_stress.con	run-value	negative	run_ok	tests/programs/test_alloca_loop_stress.con	200000
+run_ok:test_string_literal_in_loop.con	run-value	negative	run_ok	tests/programs/test_string_literal_in_loop.con	5
+run_ok:test_argv.con	run-value	negative	run_ok	tests/programs/test_argv.con	0
+run_ok:test_trait_multi_bound.con	run-value	negative	run_ok	tests/programs/test_trait_multi_bound.con	42
+run_err:error_defer_linear_reuse.con	reject-diagnostic	negative	run_err	tests/programs/error_defer_linear_reuse.con	reserved by defer
+run_err:error_linearity_branch_disagree.con	reject-diagnostic	negative	run_err	tests/programs/error_linearity_branch_disagree.con	consumed in one branch
+run_err:error_linearity_double_consume.con	reject-diagnostic	negative	run_err	tests/programs/error_linearity_double_consume.con	used after move
+run_err:error_match_non_exhaustive.con	reject-diagnostic	negative	run_err	tests/programs/error_match_non_exhaustive.con	non-exhaustive match
+run_err:error_match_int_no_default.con	reject-diagnostic	negative	run_err	tests/programs/error_match_int_no_default.con	non-exhaustive match
+run_err:error_match_bool_no_false.con	reject-diagnostic	negative	run_err	tests/programs/error_match_bool_no_false.con	non-exhaustive match
+run_err:error_generic_bound_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_generic_bound_missing.con	no method
+
+# === Codegen edge case tests ===
+run_ok:test_int_overflow_wrap.con	run-value	negative	run_ok	tests/programs/test_int_overflow_wrap.con	42
+run_ok:test_nested_struct_access.con	run-value	negative	run_ok	tests/programs/test_nested_struct_access.con	42
+run_ok:test_nested_if_else.con	run-value	negative	run_ok	tests/programs/test_nested_if_else.con	42
+run_ok:test_loop_nested_three.con	run-value	negative	run_ok	tests/programs/test_loop_nested_three.con	42
+run_ok:test_large_struct_pass.con	run-value	negative	run_ok	tests/programs/test_large_struct_pass.con	42
+run_ok:test_cast_chain.con	run-value	negative	run_ok	tests/programs/test_cast_chain.con	42
+run_ok:test_early_return_loop.con	run-value	negative	run_ok	tests/programs/test_early_return_loop.con	42
+run_ok:test_many_locals.con	run-value	negative	run_ok	tests/programs/test_many_locals.con	42
+run_ok:test_recursive_fibonacci.con	run-value	negative	run_ok	tests/programs/test_recursive_fibonacci.con	42
+run_ok:test_comparison_chain.con	run-value	negative	run_ok	tests/programs/test_comparison_chain.con	42
+
+# === Optimization-sensitive codegen tests ===
+run_ok:test_dead_code_after_return.con	run-value	negative	run_ok	tests/programs/test_dead_code_after_return.con	42
+run_ok:test_unused_variable.con	run-value	negative	run_ok	tests/programs/test_unused_variable.con	42
+run_ok:test_constant_fold_complex.con	run-value	negative	run_ok	tests/programs/test_constant_fold_complex.con	42
+run_ok:test_branch_same_value.con	run-value	negative	run_ok	tests/programs/test_branch_same_value.con	42
+run_ok:test_loop_invariant.con	run-value	negative	run_ok	tests/programs/test_loop_invariant.con	42
+run_ok:test_deeply_nested_return.con	run-value	negative	run_ok	tests/programs/test_deeply_nested_return.con	42
+run_ok:test_zero_iterations.con	run-value	negative	run_ok	tests/programs/test_zero_iterations.con	42
+run_ok:test_single_iteration_loop.con	run-value	negative	run_ok	tests/programs/test_single_iteration_loop.con	42
+
+# === Capability and trusted tests ===
+run_ok:test_cap_subset_chain.con	run-value	negative	run_ok	tests/programs/test_cap_subset_chain.con	42
+run_ok:test_cap_poly_apply.con	run-value	negative	run_ok	tests/programs/test_cap_poly_apply.con	42
+run_ok:test_cap_alias_nested.con	run-value	negative	run_ok	tests/programs/test_cap_alias_nested.con	42
+run_ok:test_trusted_impl_method.con	run-value	negative	run_ok	tests/programs/test_trusted_impl_method.con	42
+run_ok:test_trusted_extern_call.con	run-value	negative	run_ok	tests/programs/test_trusted_extern_call.con	42
+run_err:error_cap_superset_missing.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_superset_missing.con	requires File, Network but caller has
+run_err:error_cap_poly_insufficient.con	reject-diagnostic	negative	run_err	tests/programs/error_cap_poly_insufficient.con	requires capability
+# Bug 188: a capability VARIABLE entailed every requirement, so a `with(C)` body could
+# print, call `with(Process)`, call an untrusted extern or dereference a raw pointer, and
+# a caller instantiating `C := {}` ran it with no authority. A variable now entails only
+# itself; a callback's `Unsafe` is decided on the instantiated set; a capability parameter
+# may not be spelled like a capability (E0121).
+run_err:error_188_capvar_console.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_console.con	(E0520)
+run_err:error_188_capvar_process.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_process.con	(E0520)
+run_err:error_188_capvar_unsafe_call.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_unsafe_call.con	(E0520)
+run_err:error_188_capvar_unsafe_op.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_unsafe_op.con	(E0521)
+run_err:error_188_capvar_unsafe_callback.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_unsafe_callback.con	(E0240)
+run_err:error_188_capparam_named_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capparam_named_unsafe.con	(E0121)
+run_err:error_188_capvar_method_unsafe_callback.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_method_unsafe_callback.con	(E0240)
+run_err:error_188_capvar_impl_receiver.con	reject-diagnostic	negative	run_err	tests/programs/error_188_capvar_impl_receiver.con	(E0520)
+run_err:error_188_bodyless_capparam.con	reject-diagnostic	negative	run_err	tests/programs/error_188_bodyless_capparam.con	bodiless declaration cannot take capability parameters
+run_ok:regress_188_capvar_polymorphism.con	run-value	negative	run_ok	tests/programs/regress_188_capvar_polymorphism.con	42
+run_err:error_trusted_not_viral.con	reject-diagnostic	negative	run_err	tests/programs/error_trusted_not_viral.con	requires capability
+run_err:error_extern_needs_unsafe.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_needs_unsafe.con	requires Unsafe
+run_err:error_extern_undeclared.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_undeclared.con	E0116
+run_err:error_extern_effectful_declared_pure.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_effectful_declared_pure.con	E0117
+# Bug 113 (fixed): both halves of R3 hold in nested submodules, not only top-level modules.
+run_err:error_113_submodule_extern_undeclared.con	reject-diagnostic	negative	run_err	tests/programs/error_113_submodule_extern_undeclared.con	E0116
+run_err:error_113_submodule_extern_effectful_pure.con	reject-diagnostic	negative	run_err	tests/programs/error_113_submodule_extern_effectful_pure.con	E0117
+# Bug 129 (fixed): every Concrete-defined function has a mangled symbol disjoint from C (FFI.md
+# "Symbol Names"). A safe `fn malloc` no longer becomes the allocator (was SIGABRT), and a
+# module's extern binds C even beside another module's same-named Concrete function.
+run_ok:regress_129_user_fn_named_malloc.con	run-value	negative	run_ok	tests/programs/regress_129_user_fn_named_malloc.con	42
+run_ok:regress_129_extern_beside_same_named_fn.con	run-value	negative	run_ok	tests/programs/regress_129_extern_beside_same_named_fn.con	105
+run_ok:regress_129_imported_extern_beside_fn.con	run-value	negative	run_ok	tests/programs/regress_129_imported_extern_beside_fn.con	105
+run_ok:regress_129_fn_value_extern.con	run-value	negative	run_ok	tests/programs/regress_129_fn_value_extern.con	105
+run_ok:regress_129_runtime_helper_beside_fn.con	run-value	negative	run_ok	tests/programs/regress_129_runtime_helper_beside_fn.con	7
+run_ok:regress_129_generic_extern.con	run-value	negative	run_ok	tests/programs/regress_129_generic_extern.con	105
+run_err:error_extern_named_intrinsic.con	reject-diagnostic	negative	run_err	tests/programs/error_extern_named_intrinsic.con	E0118
+run_err:error_import_alias_intrinsic.con	reject-diagnostic	negative	run_err	tests/programs/error_import_alias_intrinsic.con	E0120
+# #[link_name] binds a C symbol under another Concrete name; it may not name the Concrete
+# namespace (E0118), and R3 judges the C symbol it binds (E0117).
+run_ok:ffi_link_name.con	run-value	negative	run_ok	tests/programs/ffi_link_name.con	7
+run_err:error_link_name_concrete_namespace.con	reject-diagnostic	negative	run_err	tests/programs/error_link_name_concrete_namespace.con	E0118
+run_err:error_link_name_effectful_pure.con	reject-diagnostic	negative	run_err	tests/programs/error_link_name_effectful_pure.con	E0117
+run_err:error_link_name_conflict.con	reject-diagnostic	negative	run_err	tests/programs/error_link_name_conflict.con	E0118
+run_err:error_link_name_runtime_helper.con	reject-diagnostic	negative	run_err	tests/programs/error_link_name_runtime_helper.con	E0118
+run_err:error_intrinsic_unknown_is_foreign.con	reject-diagnostic	negative	run_err	tests/programs/error_intrinsic_unknown_is_foreign.con	E0116
+# #[export_name]: refused for a C runtime symbol, a non-scalar shape, or a symbol an extern
+# imports (E0119); the positive case links with a C caller in the codegen section.
+run_err:error_export_runtime_symbol.con	reject-diagnostic	negative	run_err	tests/programs/error_export_runtime_symbol.con	E0119
+run_err:error_export_shape.con	reject-diagnostic	negative	run_err	tests/programs/error_export_shape.con	E0119
+run_err:error_export_imported_symbol.con	reject-diagnostic	negative	run_err	tests/programs/error_export_imported_symbol.con	E0119
+run_err:error_export_narrow_int.con	reject-diagnostic	negative	run_err	tests/programs/error_export_narrow_int.con	E0119
+# Bug 112 (fixed with 113): an #[intrinsic] declaration is not a foreign binding, so R3 does not
+# refuse it; std.mem's sizeof form compiles outside std (exit 5).
+run_ok:regress_112_user_intrinsic.con	run-value	negative	run_ok	tests/programs/regress_112_user_intrinsic.con	5
+# Bug 177: literals for alias-typed fields, payloads, field stores, returns and constants are
+# typed at the expanded type, so the stricter CoreCheck accepts them (exit 42).
+run_ok:regress_177_alias_value_hints.con	run-value	negative	run_ok	tests/programs/regress_177_alias_value_hints.con	42
+
+# === Cross-module and parser tests ===
+run_ok:test_module_nested.con	run-value	negative	run_ok	tests/programs/test_module_nested.con	42
+run_ok:test_module_struct_method.con	run-value	negative	run_ok	tests/programs/test_module_struct_method.con	42
+run_ok:test_module_enum_match.con	run-value	negative	run_ok	tests/programs/test_module_enum_match.con	42
+run_ok:test_module_reexport_type.con	run-value	negative	run_ok	tests/programs/test_module_reexport_type.con	42
+run_ok:test_module_sibling_qualified.con	run-value	negative	run_ok	tests/programs/test_module_sibling_qualified.con	29
+run_ok:test_deeply_nested_expr.con	run-value	negative	run_ok	tests/programs/test_deeply_nested_expr.con	42
+run_ok:test_many_params.con	run-value	negative	run_ok	tests/programs/test_many_params.con	42
+run_ok:test_empty_struct.con	run-value	negative	run_ok	tests/programs/test_empty_struct.con	42
+run_ok:test_enum_many_variants.con	run-value	negative	run_ok	tests/programs/test_enum_many_variants.con	42
+run_ok:test_defer_early_return.con	run-value	negative	run_ok	tests/programs/test_defer_early_return.con	42
+run_ok:test_defer_loop_break.con	run-value	negative	run_ok	tests/programs/test_defer_loop_break.con	42
+run_err:error_module_private.con	reject-diagnostic	negative	run_err	tests/programs/error_module_private.con	is not public
+run_err:error_private_impl_method.con	reject-diagnostic	negative	run_err	tests/programs/error_private_impl_method.con	no method
+run_err:error_private_trait_impl_method.con	reject-diagnostic	negative	run_err	tests/programs/error_private_trait_impl_method.con	no method
+run_ok:pub_impl_method.con	run-value	negative	run_ok	tests/programs/pub_impl_method.con	30
+run_err:error_deeply_nested_type_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/error_deeply_nested_type_mismatch.con	type mismatch
+
+# === ABI / FFI tests ===
+run_ok:test_repr_c_nested.con	run-value	negative	run_ok	tests/programs/test_repr_c_nested.con	42
+run_ok:test_fn_ptr_call_chain.con	run-value	negative	run_ok	tests/programs/test_fn_ptr_call_chain.con	42
+run_ok:test_fn_ptr_in_struct.con	run-value	negative	run_ok	tests/programs/test_fn_ptr_in_struct.con	42
+run_ok:test_sizeof_basic_types.con	run-value	negative	run_ok	tests/programs/test_sizeof_basic_types.con	42
+run_ok:test_array_bounds.con	run-value	negative	run_ok	tests/programs/test_array_bounds.con	42
+run_ok:test_ptr_round_trip.con	run-value	negative	run_ok	tests/programs/test_ptr_round_trip.con	42
+run_err:error_repr_c_with_generic.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_c_with_generic.con	cannot have type parameters
+run_err:error_fn_ptr_wrong_sig.con	reject-diagnostic	negative	run_err	tests/programs/error_fn_ptr_wrong_sig.con	type mismatch
+
+# === Phase 3: Large mixed-feature programs ===
+run_ok:phase3_expression_evaluator.con	run-value	negative	run_ok	tests/programs/phase3_expression_evaluator.con	42
+run_ok:phase3_task_scheduler.con	run-value	negative	run_ok	tests/programs/phase3_task_scheduler.con	42
+run_ok:phase3_data_pipeline.con	run-value	negative	run_ok	tests/programs/phase3_data_pipeline.con	42
+run_ok:phase3_type_checker.con	run-value	negative	run_ok	tests/programs/phase3_type_checker.con	42
+run_ok:phase3_state_machine.con	run-value	negative	run_ok	tests/programs/phase3_state_machine.con	42
+run_ok:phase3_report_consistency.con	run-value	negative	run_ok	tests/programs/phase3_report_consistency.con	42
+
+# === Phase 3: Diagnostic quality tests ===
+# Multi-error: compiler reports all 3 independent errors in one function body
+run_err:phase3_diag_multi_error.con	reject-diagnostic	negative	run_err	tests/programs/phase3_diag_multi_error.con	type mismatch in let binding 'a'
+# Specific location: error points to correct line in nested code
+run_err:phase3_diag_specific_location.con	reject-diagnostic	negative	run_err	tests/programs/phase3_diag_specific_location.con	type mismatch
+# Hint quality: capability error includes actionable hint
+run_err:phase3_diag_hint_quality.con	reject-diagnostic	negative	run_err	tests/programs/phase3_diag_hint_quality.con	hint:
+# Type mismatch shows both expected and got types
+run_err:phase3_diag_type_mismatch.con	reject-diagnostic	negative	run_err	tests/programs/phase3_diag_type_mismatch.con	expected
+
+# === String edge case tests ===
+run_ok:string_empty.con	run-value	negative	run_ok	tests/programs/string_empty.con	0
+run_ok:string_concat_empty.con	run-value	negative	run_ok	tests/programs/string_concat_empty.con	5
+run_ok:string_eq_same.con	run-value	negative	run_ok	tests/programs/string_eq_same.con	1
+run_ok:string_eq_different.con	run-value	negative	run_ok	tests/programs/string_eq_different.con	0
+run_ok:string_slice_full.con	run-value	negative	run_ok	tests/programs/string_slice_full.con	5
+run_ok:string_multi_fn.con	run-value	negative	run_ok	tests/programs/string_multi_fn.con	8
+run_ok:string_contains_empty.con	run-value	negative	run_ok	tests/programs/string_contains_empty.con	1
+run_ok:string_char_at_first_last.con	run-value	negative	run_ok	tests/programs/string_char_at_first_last.con	196
+run_ok:string_trim_spaces.con	run-value	negative	run_ok	tests/programs/string_trim_spaces.con	2
+run_ok:string_to_int_roundtrip.con	run-value	negative	run_ok	tests/programs/string_to_int_roundtrip.con	42
+
+# === Math function tests ===
+run_ok:math_sqrt.con	run-value	negative	run_ok	tests/programs/math_sqrt.con	5
+run_ok:math_pow.con	run-value	negative	run_ok	tests/programs/math_pow.con	81
+run_ok:math_abs.con	run-value	negative	run_ok	tests/programs/math_abs.con	52
+run_ok:trait_numeric_abs.con	run-value	negative	run_ok	tests/programs/trait_numeric_abs.con	57
+run_ok:math_floor_ceil.con	run-value	negative	run_ok	tests/programs/math_floor_ceil.con	34
+run_ok:math_sin_cos.con	run-value	negative	run_ok	tests/programs/math_sin_cos.con	10
+run_ok:math_exp_log.con	run-value	negative	run_ok	tests/programs/math_exp_log.con	10
+
+# === Integer edge case tests ===
+run_ok:int_arithmetic_negative.con	run-value	negative	run_ok	tests/programs/int_arithmetic_negative.con	50
+run_ok:int_division.con	run-value	negative	run_ok	tests/programs/int_division.con	31
+run_ok:int_bitwise_combined.con	run-value	negative	run_ok	tests/programs/int_bitwise_combined.con	15
+run_ok:int_shift_basic.con	run-value	negative	run_ok	tests/programs/int_shift_basic.con	4
+run_ok:int_cast_i32.con	run-value	negative	run_ok	tests/programs/int_cast_i32.con	42
+run_ok:int_large_multiply.con	run-value	negative	run_ok	tests/programs/int_large_multiply.con	56088
+
+# === Newtype tests ===
+run_ok:newtype_basic.con	run-value	negative	run_ok	tests/programs/newtype_basic.con	42
+run_ok:newtype_copy.con	run-value	negative	run_ok	tests/programs/newtype_copy.con	20
+run_ok:newtype_linear.con	run-value	negative	run_ok	tests/programs/newtype_linear.con	7
+run_ok:newtype_generic.con	run-value	negative	run_ok	tests/programs/newtype_generic.con	100
+run_ok:newtype_validated.con	run-value	negative	run_ok	tests/programs/newtype_validated.con	8081
+run_ok:newtype_enum_payload.con	run-value	negative	run_ok	tests/programs/newtype_enum_payload.con	8080
+run_ok:newtype_struct_copy_field.con	run-value	negative	run_ok	tests/programs/newtype_struct_copy_field.con	443
+run_ok:newtype_method_dispatch.con	run-value	negative	run_ok	tests/programs/newtype_method_dispatch.con	8080
+run_ok:adversarial_module_newtype_across.con	run-value	negative	run_ok	tests/programs/adversarial_module_newtype_across.con	8080
+run_ok:bug_field_assign_narrow_field.con	run-value	negative	run_ok	tests/programs/bug_field_assign_narrow_field.con	100
+run_ok:bug_arrow_assign_narrow_field.con	run-value	negative	run_ok	tests/programs/bug_arrow_assign_narrow_field.con	107
+run_err:error_newtype_no_implicit.con	reject-diagnostic	negative	run_err	tests/programs/error_newtype_no_implicit.con	type mismatch
+run_err:error_newtype_wrong_inner.con	reject-diagnostic	negative	run_err	tests/programs/error_newtype_wrong_inner.con	type mismatch
+run_err:error_newtype_cast_to_unrelated.con	reject-diagnostic	negative	run_err	tests/programs/error_newtype_cast_to_unrelated.con	cannot cast
+run_err:error_newtype_cast_from_unrelated.con	reject-diagnostic	negative	run_err	tests/programs/error_newtype_cast_from_unrelated.con	cannot cast
+
+# === Adversarial tests by feature area ===
+run_ok:adversarial/newtype/chained.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/chained.con	42
+run_ok:adversarial/newtype/struct_field.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/struct_field.con	88
+run_ok:adversarial/newtype/borrow.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/borrow.con	8080
+run_ok:adversarial/newtype/generic_method.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/generic_method.con	99
+run_ok:adversarial/newtype/in_option_chain.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/in_option_chain.con	200
+run_ok:adversarial/newtype/heap_pattern.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/heap_pattern.con	7777
+run_ok:adversarial/newtype/function_pingpong.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/function_pingpong.con	168
+run_ok:adversarial/newtype/array_index.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/array_index.con	30
+run_ok:adversarial/newtype/match_payload_use.con	run-value	negative	run_ok	tests/programs/adversarial/newtype/match_payload_use.con	2046
+run_ok:adversarial/enum_match/copy_enum_in_struct.con	run-value	negative	run_ok	tests/programs/adversarial/enum_match/copy_enum_in_struct.con	5
+run_ok:adversarial/borrow/mut_borrow_through_match.con	run-value	negative	run_ok	tests/programs/adversarial/borrow/mut_borrow_through_match.con	100
+run_ok:adversarial/defer/lifo_with_early_return.con	run-value	negative	run_ok	tests/programs/adversarial/defer/lifo_with_early_return.con	333
+run_ok:adversarial/generic/generic_struct_copy.con	run-value	negative	run_ok	tests/programs/adversarial/generic/generic_struct_copy.con	30
+run_ok:adversarial/linear/linear_through_branches.con	run-value	negative	run_ok	tests/programs/adversarial/linear/linear_through_branches.con	5
+run_ok:adversarial/trait_dispatch/trait_method_via_bound.con	run-value	negative	run_ok	tests/programs/adversarial/trait_dispatch/trait_method_via_bound.con	84
+
+# === ABI / Layout tests ===
+run_ok:sizeof_basic.con	run-value	negative	run_ok	tests/programs/sizeof_basic.con	12
+run_ok:alignof_basic.con	run-value	negative	run_ok	tests/programs/alignof_basic.con	12
+run_ok:repr_packed.con	run-value	negative	run_ok	tests/programs/repr_packed.con	7
+run_ok:repr_align.con	run-value	negative	run_ok	tests/programs/repr_align.con	8
+run_err:error_repr_packed_align.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_packed_align.con	cannot have both
+run_err:error_repr_align_not_pow2.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_align_not_pow2.con	must be a power of two
+# Bug 037: over-aligned repr(align) is rejected (E0585) — codegen cannot carry it.
+run_err:error_repr_align_exceeds_natural.con	reject-diagnostic	negative	run_err	tests/programs/error_repr_align_exceeds_natural.con	exceeds its natural alignment
+
+# === Summary-path tests ===
+run_ok:summary_import_pub_fn.con	run-value	negative	run_ok	tests/programs/summary_import_pub_fn.con	42
+run_ok:summary_import_pub_constant.con	run-value	negative	run_ok	tests/programs/summary_import_pub_constant.con	42
+run_ok:summary_import_pub_extern.con	run-value	negative	run_ok	tests/programs/summary_import_pub_extern.con	42
+run_ok:summary_import_pub_newtype.con	run-value	negative	run_ok	tests/programs/summary_import_pub_newtype.con	42
+run_ok:summary_import_type_alias.con	run-value	negative	run_ok	tests/programs/summary_import_type_alias.con	42
+run_ok:summary_submodule.con	run-value	negative	run_ok	tests/programs/summary_submodule.con	42
+run_ok:summary_trait_impl_cross_module.con	run-value	negative	run_ok	tests/programs/summary_trait_impl_cross_module.con	42
+run_err:error_summary_trait_missing_cross.con	reject-diagnostic	negative	run_err	tests/programs/error_summary_trait_missing_cross.con	missing method
+

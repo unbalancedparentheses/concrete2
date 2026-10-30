@@ -1,0 +1,8 @@
+# always.9: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_9_<n> from scripts/tests/suite/always.9.sh.
+id	kind	section	helper	args
+
+# === Stdlib module tests ===
+-	-	*	echo	
+-	-	*	flush_jobs

@@ -69,6 +69,8 @@ mkdir -p "$W/scripts/tests/lib" && cp scripts/tests/lib/gate_env.sh scripts/test
 cp scripts/tests/gates.tsv "$W/scripts/tests/"   # the copied runner's gate list
 cp .github/workflows/lean_action_ci.yml "$W/.github/workflows/"
 cp .githooks/pre-push "$W/.githooks/"
+# The suite's case tables and code units: audit_bug_corpus.sh finds a fixture's registration there.
+cp -R tests/cases "$W/tests/cases" && mkdir -p "$W/scripts/tests/suite" && cp scripts/tests/suite/*.sh "$W/scripts/tests/suite/"
 ln -s "$ROOT_DIR/tests/programs" "$W/tests/programs"
 cp -R tests/regressions "$W/tests/regressions"
 RAW="$TMP/raw"; cp -RP "$W" "$RAW"   # the unmigrated copy, for the refusal leg

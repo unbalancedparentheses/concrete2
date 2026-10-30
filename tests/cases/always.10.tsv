@@ -1,0 +1,9 @@
+# always.10: the tests of run_tests.sh's `unconditional` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_always_10_<n> from scripts/tests/suite/always.10.sh.
+id	kind	section	helper	args
+
+# === Per-collection test verification ===
+# Verify each new collection's tests are present and passing in the stdlib run.
+# This catches silent regressions where a collection's tests vanish or break.
+-	-	*	echo	

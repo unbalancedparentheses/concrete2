@@ -1,0 +1,7 @@
+# stackdepth: the tests of run_tests.sh's `if section_active stackdepth; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_stackdepth_<n> from scripts/tests/suite/stackdepth.sh.
+id	kind	section	helper	args
+-	-	stackdepth	echo	
+-	-	stackdepth	echo	=== Stack-depth reporting tests ===
+script:stackdepth.1	script	stackdepth	suite	1

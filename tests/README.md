@@ -4,6 +4,10 @@ Concrete keeps test inputs, fixtures, and runner-facing data under `tests/`.
 
 Layout:
 
+- `cases/`: the shell test runner's tests as data (`scripts/tests/run_tests.sh`): one TSV per
+  block of the suite, one row per test, in run order; columns and kinds are documented at
+  `run_cases` in the runner, and code that is not a single helper call lives in
+  `scripts/tests/suite/<block>.sh`
 - `programs/`: Concrete source programs used by the shell test runner
   (`scripts/tests/run_tests.sh`), including the negative `error_*`/
   `pressure_err_*` fixtures and `patterns/` / `adversarial/` subfamilies

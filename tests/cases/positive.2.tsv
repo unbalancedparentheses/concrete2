@@ -1,0 +1,934 @@
+# positive.2: the tests of run_tests.sh's `if section_active positive; then` block, in run order.
+# Columns and escapes: see run_cases() in scripts/tests/run_tests.sh. A `suite` row runs
+# suite_positive_2_<n> from scripts/tests/suite/positive.2.sh.
+id	kind	section	helper	args
+run_ok:regress_deref_field_precedence.con	run-value	positive	run_ok	tests/programs/regress_deref_field_precedence.con	42
+run_ok:regress_mut_field_writeback.con	run-value	positive	run_ok	tests/programs/regress_mut_field_writeback.con	42
+run_ok:regress_char_bool_cast.con	run-value	positive	run_ok	tests/programs/regress_char_bool_cast.con	42
+run_ok:regress_ref_no_spill.con	run-value	positive	run_ok	tests/programs/regress_ref_no_spill.con	42
+run_ok:regress_string_field_access.con	run-value	positive	run_ok	tests/programs/regress_string_field_access.con	42
+run_ok:regress_void_phi.con	run-value	positive	run_ok	tests/programs/regress_void_phi.con	0
+run_ok:regress_loop_addr_taken_var.con	run-value	positive	run_ok	tests/programs/regress_loop_addr_taken_var.con	3
+run_ok:regress_index_through_ref.con	run-value	positive	run_ok	tests/programs/regress_index_through_ref.con	78
+run_ok:regress_unit_payload_enum.con	run-value	positive	run_ok	tests/programs/regress_unit_payload_enum.con	7
+run_ok:regress_if_expr_match_arm.con	run-value	positive	run_ok	tests/programs/regress_if_expr_match_arm.con	42
+run_ok:regress_if_expr_divergent_branch.con	run-value	positive	run_ok	tests/programs/regress_if_expr_divergent_branch.con	8
+run_ok:regress_if_expr_unit_slot.con	run-value	positive	run_ok	tests/programs/regress_if_expr_unit_slot.con	5
+run_ok:regress_029_if_merge_array_addr.con	run-value	positive	run_ok	tests/programs/regress_029_if_merge_array_addr.con	42
+run_ok:regress_029_loop_exit_array_addr.con	run-value	positive	run_ok	tests/programs/regress_029_loop_exit_array_addr.con	7
+# Bug 031: lazy addrOfLocal promotion inside a branch left the promotion alloca
+# uninitialized on the sibling path (if/else, value-if, match). Silent garbage.
+run_ok:regress_031_if_branch_borrow.con	run-value	positive	run_ok	tests/programs/regress_031_if_branch_borrow.con	101
+run_ok:regress_031_ifexpr_branch_borrow.con	run-value	positive	run_ok	tests/programs/regress_031_ifexpr_branch_borrow.con	107
+run_ok:regress_031_match_arm_borrow.con	run-value	positive	run_ok	tests/programs/regress_031_match_arm_borrow.con	8
+# Bug 032: multibyte UTF-8 string literal — .ll global sized by char count with
+# codepoint-hex escapes; llvm-as rejected any compiled program containing one.
+run_ok:regress_032_multibyte_str_literal.con	run-value	positive	run_ok	tests/programs/regress_032_multibyte_str_literal.con	42
+# Bug 033: discard() value-if desugar phied live aggregates (E0714 reject).
+run_ok:regress_033_discard_live_string.con	run-value	positive	run_ok	tests/programs/regress_033_discard_live_string.con	live-across
+# Bug 034: &&/|| RHS borrow skipped lazy-promotion pre-store (031 class, 3rd
+# site). Shape guard; the LOAD-BEARING regression is check_cli_helpers.sh.
+run_ok:regress_034_shortcircuit_borrow_promotion.con	run-value	positive	run_ok	tests/programs/regress_034_shortcircuit_borrow_promotion.con	133
+# Bug 038: promoted aggregate (String) mutated via &mut in an if-arm had the
+# mutation clobbered by the merge's stale snapshot (031 family, 4th site).
+run_ok:regress_038_if_merge_promoted_aggregate.con	run-value	positive	run_ok	tests/programs/regress_038_if_merge_promoted_aggregate.con	qm
+# Bug 040: same-named match binders of different scalar types in one fn
+# (Option<u64> then Option<bool>, both binding `value`) — CoreCheck's
+# first-match var table raised a false E0500; binders are arm-scoped now.
+run_ok:regress_040_match_binder_types.con	run-value	positive	run_ok	tests/programs/regress_040_match_binder_types.con	42
+# Bug 041: post-match merge kept arm binders; a stale Copy `value` poisoned
+# a later linear `value`'s consumed state (false E0208). Positive: consumed
+# linear binder accepted; negative: a real leak in the same shape still fails.
+run_ok:regress_041_match_binder_states.con	run-value	positive	run_ok	tests/programs/regress_041_match_binder_states.con	42
+run_err:error_041_match_leak_still_caught.con	reject-diagnostic	positive	run_err	tests/programs/error_041_match_leak_still_caught.con	was never consumed
+# Bug 045: nested same-named match binders must SHADOW (alpha-renamed at
+# Elab); pre-fix the outer binder read the inner's value on BOTH backends.
+# Exit 2i: the nested binder is now renamed (`Option::Some { value: inner }`,
+# SCOPE-1@1 refuses the shadow); the outer `value` must still read 5.
+run_ok:regress_045_match_binder_shadow.con	run-value	positive	run_ok	tests/programs/regress_045_match_binder_shadow.con	42
+# Bug 087: a block-scoped `let` shadowing an outer let/param (if, else,
+# value-if, while, for bodies) must vanish when its block closes. Pre-fix the
+# interpreter and binary disagreed (1 vs 100, 3 vs 7) and both leaked a loop
+# body's shadow; Elab now alpha-renames shadowing lets (x -> x.bN).
+# Exit 2i: the shadowing itself is refused (SCOPE-1@1, E0301); the renamed twin
+# keeps the lexical answers pinned on the binary, the interpreter and the model.
+run_err:regress_087_let_block_shadow.con	reject-diagnostic	positive	run_err	tests/programs/regress_087_let_block_shadow.con	(E0301)
+run_ok:regress_2i_scope1_087_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_087_renamed.con	42
+# Codex review: sibling branches reusing a DEAD name for a promoted aggregate
+# (`let mut x: [i32; 1]` in both arms) must each read their own storage; Lower's
+# promoted table appended, so the else arm read the then arm's (pre-fix 41).
+run_ok:regress_087_sibling_promoted.con	run-value	positive	run_ok	tests/programs/regress_087_sibling_promoted.con	42
+script:positive.2.1	script	positive	suite	1
+# Codex round 2: an UNPROMOTED re-declaration of the dead name (immutable array, scalar
+# of another type, a declaration after the scope) gets its own binding, never the dead
+# promoted storage (pre-fix: E0715 / invalid LLVM).
+run_ok:regress_087_unpromoted_sibling.con	run-value	positive	run_ok	tests/programs/regress_087_unpromoted_sibling.con	42
+script:positive.2.2	script	positive	suite	2
+# Bug 176: a loop body (and a `for` header) is a lexical block in the CHECKER
+# too. Pre-fix Check's while/for restored only loop depth and labels, so a body
+# `let` shadowing an outer name replaced it for the rest of the function: valid
+# code was refused (E0217/E0233/E0220) and a u8 was typed over an i32 holding 300.
+# The regress fixture now reuses the body's names in LATER siblings (legal under
+# SCOPE-1); the H9 legs below are the leak the rule does not reach.
+# Bug 208: a fn-typed local spelled like an imported function is not renamed to it (both
+# backends returned 141); binary and --interp must agree on 42.
+# Bug 212: the parenthesized heads the diagnostic suggests parse and run; binary and --interp
+# agree on 42.
+run_ok:regress_212_parenthesized_const_head.con	run-value	positive	run_ok	tests/programs/regress_212_parenthesized_const_head.con	42
+script:positive.2.3	script	positive	suite	3
+run_ok:regress_208_fn_local_named_like_import.con	run-value	positive	run_ok	tests/programs/regress_208_fn_local_named_like_import.con	42
+script:positive.2.4	script	positive	suite	4
+run_ok:regress_176_loop_shadow_restores_outer.con	run-value	positive	run_ok	tests/programs/regress_176_loop_shadow_restores_outer.con	42
+script:positive.2.5	script	positive	suite	5
+# Since exit 2i the shadowing trigger itself is SCOPE-1@1: these four are refused
+# with E0301 at the inner binding, before the type/mutability errors the bug-176
+# fix alone produces. The legal sibling-reuse shapes live in the regress fixture.
+run_err:error_176_while_shadow_type.con	reject-diagnostic	positive	run_err	tests/programs/error_176_while_shadow_type.con	E0301
+run_err:error_176_while_shadow_ssa.con	reject-diagnostic	positive	run_err	tests/programs/error_176_while_shadow_ssa.con	E0301
+run_err:error_176_while_shadow_mut.con	reject-diagnostic	positive	run_err	tests/programs/error_176_while_shadow_mut.con	E0301
+run_err:error_176_for_header_type.con	reject-diagnostic	positive	run_err	tests/programs/error_176_for_header_type.con	E0301
+run_err:error_176_loop_body_linear_leak.con	reject-diagnostic	positive	run_err	tests/programs/error_176_loop_body_linear_leak.con	was never consumed
+# Codex review: a body ending in `while let`, or in an inner `while true` that a
+# nested labelled break leaves, terminates; its locals are not exempt from H9.
+run_err:error_176_loop_body_leak_while_let.con	reject-diagnostic	positive	run_err	tests/programs/error_176_loop_body_leak_while_let.con	was never consumed
+# train1: `break 'outer` skipping the unconsumed `r` is E0210 first; the _mid
+# fixture keeps the H9 property with a labelled break that stays in r's scope.
+run_err:error_176_loop_body_leak_labelled_break.con	reject-diagnostic	positive	run_err	tests/programs/error_176_loop_body_leak_labelled_break.con	E0210
+run_err:error_176_loop_body_leak_labelled_break_mid.con	reject-diagnostic	positive	run_err	tests/programs/error_176_loop_body_leak_labelled_break_mid.con	was never consumed
+# Bug 050 / R-0002: a call through a fn-typed LOCAL dispatches to the value the
+# local holds, not to a generic function that shares its name. Pre-fix: compiled
+# 21 (the identity generic) vs interp 42 — silent wrong code.
+run_ok:regress_050_indirect_call_shadow.con	run-value	positive	run_ok	tests/programs/regress_050_indirect_call_shadow.con	42
+# Bug 108: `bool as <int>` widens with zext (it was `trunc i1`, which LLVM
+# rejects) at every width; `<int> as bool` never had a meaning and is refused.
+run_ok:regress_108_bool_cast_widen.con	run-value	positive	run_ok	tests/programs/regress_108_bool_cast_widen.con	42
+run_err:error_108_int_as_bool.con	reject-diagnostic	positive	run_err	tests/programs/error_108_int_as_bool.con	E0553
+# Bug 130: the same refusal for an `Int` source (it was `bitcast i64 to i1`).
+run_err:error_130_int_as_bool_int.con	reject-diagnostic	positive	run_err	tests/programs/error_130_int_as_bool_int.con	E0553
+# Bug 194: a function with a result type and a reachable end reached llvm-as (`ret void`).
+run_err:error_194_missing_return_plain.con	reject-diagnostic	positive	run_err	tests/programs/error_194_missing_return_plain.con	(E0307)
+run_err:error_194_missing_return_if.con	reject-diagnostic	positive	run_err	tests/programs/error_194_missing_return_if.con	(E0307)
+run_err:error_194_missing_return_method.con	reject-diagnostic	positive	run_err	tests/programs/error_194_missing_return_method.con	(E0307)
+run_ok:regress_194_unreachable_end_forms.con	run-value	positive	run_ok	tests/programs/regress_194_unreachable_end_forms.con	42
+# Bug 195: the else block of a let ... else fell through (the rest of the function was skipped).
+run_err:error_195_let_else_falls_through_unit.con	reject-diagnostic	positive	run_err	tests/programs/error_195_let_else_falls_through_unit.con	(E0308)
+run_err:error_195_let_else_falls_through.con	reject-diagnostic	positive	run_err	tests/programs/error_195_let_else_falls_through.con	(E0308)
+# Bug 197: a variant pattern without a field list dropped a non-Copy payload.
+run_err:error_197_variant_pattern_drops_payload.con	reject-diagnostic	positive	run_err	tests/programs/error_197_variant_pattern_drops_payload.con	(E0288)
+run_ok:regress_197_variant_pattern_ignores_copy.con	run-value	positive	run_ok	tests/programs/regress_197_variant_pattern_ignores_copy.con	42
+# Bug 210: arithmetic on a struct, enum or newtype operand compiled (CoreCheck read every named
+# type as a type parameter); TYPE-6 refuses it with E0501.
+run_err:error_210_struct_arith.con	reject-diagnostic	positive	run_err	tests/programs/error_210_struct_arith.con	(E0501)
+run_err:error_210_enum_arith.con	reject-diagnostic	positive	run_err	tests/programs/error_210_enum_arith.con	(E0501)
+run_err:error_210_newtype_arith.con	reject-diagnostic	positive	run_err	tests/programs/error_210_newtype_arith.con	(E0501)
+run_err:error_210_struct_minus_literal.con	reject-diagnostic	positive	run_err	tests/programs/error_210_struct_minus_literal.con	(E0501)
+run_err:error_210_child_module_arith.con	reject-diagnostic	positive	run_err	tests/programs/error_210_child_module_arith.con	(E0501)
+run_err:error_210_child_module_newtype_arith.con	reject-diagnostic	positive	run_err	tests/programs/error_210_child_module_newtype_arith.con	(E0501)
+# Bugs 265-267 and 269: the back end over long functions. Lower kept its variable table in an
+# association list (265: n chained `let`s took 21 s to lower at 40000, 111 s at 80000); every branch
+# merge visited every binding in scope (266: n `let`s each followed by an `if` or a `match` took
+# time cubic in n); SSACleanup settled one link of a chain of constant branches per run of its
+# whole pass sequence (267: n such branches took n runs over the whole function); the post-mono
+# reference-binding verifier searched its environment list per assignment (269: 7.5 s at 40000
+# `let`s with an `if` each, 149 s at 80000). The fixtures pin the behavior each structure must
+# keep. The leg below reads the stage times from --emit-trace-json: `lower` (Lower, SSA verification
+# and cleanup) and `monomorphize` (which runs the post-mono verifiers). 80000 chained `let`s must
+# lower within 8 s, 40000 `let`s each followed by an `if` and 20000 each followed by a `match`
+# within 15 s, and the `if` case must monomorphize within 3 s; each retried once with twice the
+# budget. The old back end took 111 s, over 300 s and over 300 s to lower, and 7.5 s to
+# monomorphize; the new one about 1, 3-6 and 4 s, and 0.5-0.8 s.
+run_ok:regress_265_variable_table.con	run-value	positive	run_ok	tests/programs/regress_265_variable_table.con	42
+run_ok:regress_266_branch_merges.con	run-value	positive	run_ok	tests/programs/regress_266_branch_merges.con	42
+run_ok:regress_267_constant_branch_chains.con	run-value	positive	run_ok	tests/programs/regress_267_constant_branch_chains.con	42
+run_err:error_269_far_binding_assigned.con	reject-diagnostic	positive	run_err	tests/programs/error_269_far_binding_assigned.con	(E0303)
+run_ok:regress_269_generic_bindings_at_value.con	run-value	positive	run_ok	tests/programs/regress_269_generic_bindings_at_value.con	42
+# Bug 271: after a branch whose last-lowered arm diverged, Lower kept that arm's writes (an `if`,
+# a value `if` and a `match` whose last arm writes `x` and returns, and a `break`): the binary
+# returned the diverged arm's value or the program was refused (E0703). Binary = --interp = 42.
+run_ok:regress_271_diverged_arm_writes.con	run-value	positive	run_ok	tests/programs/regress_271_diverged_arm_writes.con	42
+# Bug 297: argument order, `&mut` write-back order and a match's merged values on the paths
+# whose accumulation changed from appends to cons-and-reverse. The binary returns 42 (as
+# `--interp` did when the fixture was written).
+run_ok:regress_297_argument_order.con	run-value	positive	run_ok	tests/programs/regress_297_argument_order.con	42
+# Bug 285: an address taken inside an enum literal's payload was invisible to Lower's
+# pre-promotion (statement `if`, value `if`, `match`, `&&`) and to the loop's slot-or-phi choice:
+# the binary loaded a never-stored slot or looped forever. Binary = --interp = 42.
+run_ok:regress_285_enum_payload_addr_taken.con	run-value	positive	run_ok	tests/programs/regress_285_enum_payload_addr_taken.con	42
+script:positive.2.6	script	positive	suite	6
+# Bug 286: every branch and loop site re-walked its whole region for address-takes, so n nested
+# `if`s took n² to lower (depth 8000: 1275 ms). The binary returns 42 (as `--interp` did when the
+# fixture was written) for the cases where a site must still walk; then the `lower` stage of a nest
+# 8000 deep within 400 ms, retried once at 800 ms (118 ms with the fix on the dev host).
+run_ok:regress_286_nested_region_addr_taken.con	run-value	positive	run_ok	tests/programs/regress_286_nested_region_addr_taken.con	42
+# Bug 287: a deferred call that borrows a local promoted it at the first exit lowered, so the other
+# exits (a second `return`, `break`s and a `continue`) read a never-stored slot. The binary returns
+# 42 (main's returned 208; `--interp` printed 42 when the fixture was written).
+run_ok:regress_287_defer_borrow_promoted_at_registration.con	run-value	positive	run_ok	tests/programs/regress_287_defer_borrow_promoted_at_registration.con	42
+# Bug 301: a borrow of a field or element (`&s.x`, `&q.p.y`, `&w.a[1]`, a method call on a field)
+# promotes its root local, and the address-taken walk did not see that root: the root was promoted
+# inside the branch that borrows it and the other path read a never-stored slot (main's binary
+# returned 249). Binary = --interp = 42; and no root is promoted lazily (`%addr.N`), since every
+# borrow in the fixture is inside a branch.
+run_ok:regress_301_place_borrow_root.con	run-value	positive	run_ok	tests/programs/regress_301_place_borrow_root.con	42
+script:positive.2.7	script	positive	suite	7
+# Bug 302: a loop moved a scalar whose address it takes back into a register at its exit, so a raw
+# pointer taken in the loop no longer aliased the local (a write after the loop on either side was
+# lost). Binary = --interp = 42 (main's binary returned 20).
+run_ok:regress_302_loop_keeps_addr_taken_slot.con	run-value	positive	run_ok	tests/programs/regress_302_loop_keeps_addr_taken_slot.con	42
+# Bug 303: the value `if` kept the bindings its arms declare after its merge, so a later loop's
+# header phi took a loop counter defined on one arm's path and the program was refused (E0708). Every
+# branch merge now drops its arms' bindings. Binary = --interp = 42.
+run_ok:regress_303_value_if_arm_scope.con	run-value	positive	run_ok	tests/programs/regress_303_value_if_arm_scope.con	42
+# Bug 304: a value `if` or `match` written as a comparison operand took the comparison's Bool hint
+# as its type in Elab, so CoreCheck refused the program Check accepted (E0510). Binary = --interp = 42.
+run_ok:regress_304_comparison_operand_hint.con	run-value	positive	run_ok	tests/programs/regress_304_comparison_operand_hint.con	42
+# Bug 308: a value `if` or `match` passed to a bare generic parameter left the type variable
+# uninferred, and Check refused the call (E0220). Binary = --interp = 42.
+run_ok:regress_308_generic_arg_value_if.con	run-value	positive	run_ok	tests/programs/regress_308_generic_arg_value_if.con	42
+# Bug 309: a loop in the right operand of `&&` / `||` rebound an aggregate the short-circuit merge
+# did not reconcile, and the program was refused (E0703). Binary = --interp = 42.
+run_ok:regress_309_shortcircuit_aggregate_merge.con	run-value	positive	run_ok	tests/programs/regress_309_shortcircuit_aggregate_merge.con	42
+# Bug 305: a `break`, `continue` or labelled `break` out of a `borrow mut` block lost the writes
+# made through its reference (the block wrote a copy back only when it fell through its end).
+# OD2 (2026-10-29): the reference is the owner's place. run_ok compares the binary with 42 and the
+# interpreter leg below compares --interp with the same value.
+run_ok:regress_305_borrow_block_early_exit.con	run-value	positive	run_ok	tests/programs/regress_305_borrow_block_early_exit.con	42
+script:positive.2.8	script	positive	suite	8
+# Bug 305, second fixture: raw-pointer, Heap and reference-parameter owners, and early exits from a
+# nested block and from `match` arms inside the borrow block.
+run_ok:regress_305_borrow_block_owners_and_exits.con	run-value	positive	run_ok	tests/programs/regress_305_borrow_block_owners_and_exits.con	42
+script:positive.2.9	script	positive	suite	9
+# Bug 306: the interpreter ran a `for` loop's step before the body's deferred calls on fall-through
+# (and after them on `continue`); the binary runs it after them on both. OD2 part 5 (2026-10-29):
+# the body's exit sequence completes before the step. run_ok compares the binary with 42 and the
+# interpreter leg below compares --interp with the same value.
+run_ok:regress_306_for_step_after_body_defers.con	run-value	positive	run_ok	tests/programs/regress_306_for_step_after_body_defers.con	42
+script:positive.2.10	script	positive	suite	10
+# Bug 307: a call argument `&mut x` is `x`'s place (OD2 part 3), not a copy written back after the
+# call, which agreed with the place only under the checker's unproven exclusivity guarantee (OD15(b)).
+# A differential fixture of defined programs: run_ok compares the binary with 42 and the interpreter
+# leg below compares --interp.
+run_ok:regress_307_call_arg_mut_is_place.con	run-value	positive	run_ok	tests/programs/regress_307_call_arg_mut_is_place.con	42
+script:positive.2.11	script	positive	suite	11
+# Bug 307, second fixture: raw-pointer, Heap and `&mut`-parameter owners of a `&mut` call argument.
+run_ok:regress_307_call_arg_owner_types.con	run-value	positive	run_ok	tests/programs/regress_307_call_arg_owner_types.con	42
+script:positive.2.12	script	positive	suite	12
+# Bug 291: every stage found a struct, enum or newtype by name with a search of the declaration
+# lists per use, so n types each used once took n². The fixture's lookups (layout offsets, a Copy
+# struct, an enum payload, a newtype) return 42; then a program of 8000 Copy structs, each built
+# and read once, must check and elaborate within 150 ms per stage, retried once at 300 ms (dev host:
+# check 48 and elaborate 50 ms with the fix, 548 and 343 ms on main).
+run_ok:regress_291_type_lookups_by_name.con	run-value	positive	run_ok	tests/programs/regress_291_type_lookups_by_name.con	42
+# Bug 292: each loop's header phis were added by mapping the whole finished-block list, so n nested
+# loops took n² to lower (depth 8000: 3011 ms on main, 1084 ms with bug 286's fix). The fixture's
+# nested loops (continue, break, an aggregate-valued match in a loop) return 42; then the `lower` stage of
+# 8000 nested `while`s within 500 ms, retried once at 900 ms (279 ms with the fix, dev host).
+run_ok:regress_292_loop_header_patches.con	run-value	positive	run_ok	tests/programs/regress_292_loop_header_patches.con	42
+script:positive.2.13	script	positive	suite	13
+# Bug 228: the interpreter's loops drop each iteration's bindings, so a loop is linear in its
+# iteration count (200000 iterations did not finish in 60 s on main). Binary 42; --interp 42 in 20 s.
+run_ok:regress_228_interp_loop_env.con	run-value	positive	run_ok	tests/programs/regress_228_interp_loop_env.con	42
+script:positive.2.14	script	positive	suite	14
+# Bug 234: the interpreter's calls cost the call-stack depth (its environment's length was walked at
+# every call, branch, arm and borrow); a depth-100000 recursion must finish under --interp in 20 s.
+run_ok:regress_234_interp_deep_recursion.con	run-value	positive	run_ok	tests/programs/regress_234_interp_deep_recursion.con	42
+script:positive.2.15	script	positive	suite	15
+# Bug 235: an array element read under --interp walked the whole array; 400000 reads of a
+# 10000-element array must finish under --interp in 20 s.
+run_ok:regress_235_interp_array_read.con	run-value	positive	run_ok	tests/programs/regress_235_interp_array_read.con	42
+script:positive.2.16	script	positive	suite	16
+# Bug 027: an array literal compiled natively in time superlinear in its length (EmitSSA searched a
+# list of pointer registers per operand; one store per element made a block clang -O2 schedules in
+# superlinear time). The fixture compiles within 20 s; so does a generated literal of 2 x 100000
+# distinct elements (bug 249: the parser appended explicit elements one by one), which must also
+# parse within 20 s.
+run_ok:regress_027_large_array_literals.con	run-value	positive	run_ok	tests/programs/regress_027_large_array_literals.con	42
+script:positive.2.17	script	positive	suite	17
+run_ok:regress_249_explicit_array_literal.con	run-value	positive	run_ok	tests/programs/regress_249_explicit_array_literal.con	42
+script:positive.2.18	script	positive	suite	18
+# Bug 248: an element write under --interp copied the whole array (and Vec push/set/pop the whole
+# Vec); 100000 writes per shape into 100000-element arrays must run under --interp in 20 s.
+run_ok:regress_248_interp_array_write.con	run-value	positive	run_ok	tests/programs/regress_248_interp_array_write.con	42
+script:positive.2.19	script	positive	suite	19
+# Bug 250: natively, writing an element or field of an aggregate local in a loop rebuilt the whole
+# aggregate (and reading a field loaded the whole struct), which made clang -O2 superlinear in its
+# size; the fixture must compile within 20 s, and binary and interpreter agree on 42.
+run_ok:regress_250_native_array_writes.con	run-value	positive	run_ok	tests/programs/regress_250_native_array_writes.con	42
+script:positive.2.20	script	positive	suite	20
+# Bugs 255-261: a function of many statements took time quadratic in its length in every front-end
+# stage (40000 `s = s + 1;` statements: 11 s to parse, 12-39 s to resolve, 9-11 s each to check
+# and elaborate; 40000 `let`s: over 3 minutes to resolve). Each stage kept per-function state in a
+# list searched or appended per statement: the parser's statement lists (255), the local binder
+# table (256), the resolver's visible bindings (257), the checker's bindings (258), Elab's binder
+# frames and bound locals (259), ElabVerify's visible binders (260) and CoreCheck's bindings (261).
+# The fixtures pin the behavior each new structure must keep; generated functions of 80000
+# statements, 80000 `let`s and 20000 `let`s each followed by an `if`, a `while` or a `match` that
+# reads a binding declared far above must parse, resolve, check and elaborate (`--emit-core`)
+# within 10 s each (retried once with 20 s). The old front end took minutes on each.
+run_ok:regress_255_block_statement_order.con	run-value	positive	run_ok	tests/programs/regress_255_block_statement_order.con	42
+run_ok:regress_256_local_table_lookups.con	run-value	positive	run_ok	tests/programs/regress_256_local_table_lookups.con	42
+run_ok:regress_257_scope_visibility.con	run-value	positive	run_ok	tests/programs/regress_257_scope_visibility.con	42
+run_err:error_257_read_after_block.con	reject-diagnostic	positive	run_err	tests/programs/error_257_read_after_block.con	(E0100) undeclared variable 'inner'
+run_err:error_257_rebind_visible.con	reject-diagnostic	positive	run_err	tests/programs/error_257_rebind_visible.con	(E0301) 'total' is already bound
+run_ok:regress_258_checker_binding_states.con	run-value	positive	run_ok	tests/programs/regress_258_checker_binding_states.con	42
+run_err:error_258_branch_disagreement_order.con	reject-diagnostic	positive	run_err	tests/programs/error_258_branch_disagreement_order.con	(E0212) linear variable 'newer' consumed in one branch
+run_err:error_258_block_leak_order.con	reject-diagnostic	positive	run_err	tests/programs/error_258_block_leak_order.con	(E0208) linear variable 'second' was never consumed
+run_ok:regress_259_binder_positions.con	run-value	positive	run_ok	tests/programs/regress_259_binder_positions.con	42
+run_ok:regress_260_elabverify_scopes.con	run-value	positive	run_ok	tests/programs/regress_260_elabverify_scopes.con	42
+run_ok:regress_261_corecheck_far_reads.con	run-value	positive	run_ok	tests/programs/regress_261_corecheck_far_reads.con	42
+script:positive.2.21	script	positive	suite	21
+# Bug 282: Resolve looked a name up by walking its stack of block scopes from the innermost, so a
+# body nested n blocks deep that reads a binding of its outermost block cost n per use and n² for
+# the nest (depth 10000: 147 ms to resolve, depth 20000: 599 ms). One map counts, per spelling,
+# the open scopes binding it. The fixtures pin visibility across nested, sibling, loop and
+# match-arm blocks and the refusal of a read after a nested block closed; a generated `fn main`
+# of `if` blocks nested 20000 deep, each assigning a binding of the outermost block, must resolve
+# (the `resolve` stage of --emit-trace-json) within 50 ms, retried once at 100 ms (fixed: 11 ms
+# on the dev host; the pre-fix resolver's 599 ms is six times the retry budget).
+run_ok:regress_282_nested_scope_visibility.con	run-value	positive	run_ok	tests/programs/regress_282_nested_scope_visibility.con	42
+run_err:error_282_read_after_nested_block.con	reject-diagnostic	positive	run_err	tests/programs/error_282_read_after_nested_block.con	(E0100) undeclared variable 'mid'
+script:positive.2.22	script	positive	suite	22
+# Bug 222: an imported enum brings its impl blocks and trait impls (trait bounds on it were E0241
+# outside its module, directly imported and through the transitive closure); binary and --interp
+# must agree on 42.
+run_ok:regress_222_imported_enum_impls.con	run-value	positive	run_ok	tests/programs/regress_222_imported_enum_impls.con	42
+script:positive.2.23	script	positive	suite	23
+# Bug 224: a `let` whose initializer fails is recovered with the declaration's mutability, so the
+# assignment to the `let mut` (line 12) gets no E0217 and the one to the plain `let` (line 14) does.
+run_err:error_224_failed_let_keeps_mutability.con	reject-diagnostic	positive	run_err	tests/programs/error_224_failed_let_keeps_mutability.con	(E0241)
+script:positive.2.24	script	positive	suite	24
+# Bug 225: a refused bound names a builtin type as itself and carries the call's position.
+run_err:error_225_bound_names_builtin_type.con	reject-diagnostic	positive	run_err	tests/programs/error_225_bound_names_builtin_type.con	type 'String' does not implement trait 'Copy' required by generic function 'dup'
+script:positive.2.25	script	positive	suite	25
+# Bug 221: a call's explicit type-argument list of the wrong length was zipped (extras dropped).
+run_err:error_221_extra_type_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_221_extra_type_argument.con	(E0322)
+run_err:error_221_type_argument_to_plain_fn.con	reject-diagnostic	positive	run_err	tests/programs/error_221_type_argument_to_plain_fn.con	(E0322)
+run_err:error_221_method_extra_type_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_221_method_extra_type_argument.con	(E0322)
+run_err:error_221_short_type_argument_list.con	reject-diagnostic	positive	run_err	tests/programs/error_221_short_type_argument_list.con	(E0322)
+run_err:error_221_fn_pointer_type_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_221_fn_pointer_type_argument.con	(E0322)
+run_err:error_221_bound_method_type_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_221_bound_method_type_argument.con	(E0322)
+run_ok:regress_221_exact_type_arguments.con	run-value	positive	run_ok	tests/programs/regress_221_exact_type_arguments.con	42
+script:positive.2.26	script	positive	suite	26
+run_ok:regress_220_radix_literals.con	run-value	positive	run_ok	tests/programs/regress_220_radix_literals.con	203
+# Bug 218: two declarations of one name in a module (MOD-3) were accepted (the first silently won,
+# or llvm-as failed); refused with E0299. A type and a value may share a spelling.
+run_err:error_218_duplicate_function.con	reject-diagnostic	positive	run_err	tests/programs/error_218_duplicate_function.con	(E0299)
+run_err:error_218_duplicate_struct.con	reject-diagnostic	positive	run_err	tests/programs/error_218_duplicate_struct.con	(E0299)
+run_err:error_218_struct_and_enum.con	reject-diagnostic	positive	run_err	tests/programs/error_218_struct_and_enum.con	(E0299)
+run_err:error_218_duplicate_constant.con	reject-diagnostic	positive	run_err	tests/programs/error_218_duplicate_constant.con	(E0299)
+run_err:error_218_duplicate_alias.con	reject-diagnostic	positive	run_err	tests/programs/error_218_duplicate_alias.con	(E0299)
+run_ok:regress_218_type_and_value_namespaces.con	run-value	positive	run_ok	tests/programs/regress_218_type_and_value_namespaces.con	42
+# Bug 275: the duplicate-declaration rule searched an association list of the declarations seen so
+# far per declaration, and a call found its callee by a search of the module's function names and
+# a walk of the signature list, so a module of n functions calling each other took n² to check
+# (a 20000-function call chain: 1504 ms). Maps now; every collision is still reported, in the same
+# order (error_275_collision_order: `first`, `second`, then `P`), and a generated chain of 20000
+# functions each calling the next must check (the `check` stage of --emit-trace-json) within
+# 200 ms, retried once at 400 ms (fixed: 77 ms on the dev host).
+run_err:error_275_collision_order.con	reject-diagnostic	positive	run_err	tests/programs/error_275_collision_order.con	(E0299) a function named 'first'
+script:positive.2.27	script	positive	suite	27
+# Bug 215: an unknown type written in a cast or a type-argument list (backend panic / silent
+# acceptance before); Resolve refuses it with E0108.
+run_err:error_215_cast_unknown_type.con	reject-diagnostic	positive	run_err	tests/programs/error_215_cast_unknown_type.con	(E0108)
+run_err:error_215_turbofish_unknown_type.con	reject-diagnostic	positive	run_err	tests/programs/error_215_turbofish_unknown_type.con	(E0108)
+run_err:error_215_cast_field_spelling.con	reject-diagnostic	positive	run_err	tests/programs/error_215_cast_field_spelling.con	(E0108)
+run_err:error_215_const_cast_unknown_type.con	reject-diagnostic	positive	run_err	tests/programs/error_215_const_cast_unknown_type.con	(E0108)
+# Bug 217: Resolve walked only the modules of the top-level list, so a nested submodule (two
+# modules deep, a module written after `main`, every `mod x;` file of a project) produced no
+# Resolve diagnostics: the cast reached the backend (panic), and other name errors met Check's
+# codes. The scope fixture pins that the submodule walk admits what Check and Elab admit.
+run_err:error_217_nested_cast_unknown_type.con	reject-diagnostic	positive	run_err	tests/programs/error_217_nested_cast_unknown_type.con	error[resolve]: (E0108)
+run_err:error_217_nested_undeclared_name.con	reject-diagnostic	positive	run_err	tests/programs/error_217_nested_undeclared_name.con	error[resolve]: (E0100)
+run_err:error_217_nested_annotation_unknown_type.con	reject-diagnostic	positive	run_err	tests/programs/error_217_nested_annotation_unknown_type.con	error[resolve]: (E0108)
+run_err:error_217_module_after_main_cast.con	reject-diagnostic	positive	run_err	tests/programs/error_217_module_after_main_cast.con	error[resolve]: (E0108)
+run_err:error_217_nested_enclosing_alias_cast.con	reject-diagnostic	positive	run_err	tests/programs/error_217_nested_enclosing_alias_cast.con	error[resolve]: (E0108)
+# One literal run_ok per program: test_ssa.sh scrapes run_ok calls textually, so a loop variable
+# in the path would reach it unexpanded.
+run_ok:regress_217_nested_submodule_scope.con	run-value	positive	run_ok	tests/programs/regress_217_nested_submodule_scope.con	42
+run_ok:regress_217_sibling_type_precedence.con	run-value	positive	run_ok	tests/programs/regress_217_sibling_type_precedence.con	42
+script:positive.2.28	script	positive	suite	28
+# Bug 229: Resolve's module scope refused what Check admits: a function hid a same-named enum
+# (E0104), a user `enum Option` hid the builtin (E0113), a child's newtype was unknown (E0108);
+# each fixture has the top-level and the nested shape.
+run_ok:regress_229_value_does_not_hide_type.con	run-value	positive	run_ok	tests/programs/regress_229_value_does_not_hide_type.con	42
+run_ok:regress_229_user_option_does_not_hide_builtin.con	run-value	positive	run_ok	tests/programs/regress_229_user_option_does_not_hide_builtin.con	42
+run_ok:regress_229_child_newtype_known.con	run-value	positive	run_ok	tests/programs/regress_229_child_newtype_known.con	42
+run_ok:regress_229_option_named_alias_or_struct.con	run-value	positive	run_ok	tests/programs/regress_229_option_named_alias_or_struct.con	42
+run_ok:regress_229_alias_and_enum_literal_precedence.con	run-value	positive	run_ok	tests/programs/regress_229_alias_and_enum_literal_precedence.con	42
+script:positive.2.29	script	positive	suite	29
+# Bug 230: a top-level module's known types were program-wide (and held its children's aliases), so
+# a cast to another module's alias passed Resolve and the backend panicked; E0108 now. The positive
+# control keeps what the environment holds: an imported alias, the import closure, own types and a
+# child's newtype. Bug 227's top-level shape (another module's `enum Result` hid the builtin, E0113)
+# was fixed by the same change.
+run_err:error_230_toplevel_foreign_alias_cast.con	reject-diagnostic	positive	run_err	tests/programs/error_230_toplevel_foreign_alias_cast.con	error[resolve]: (E0108)
+run_err:error_230_parent_names_child_alias.con	reject-diagnostic	positive	run_err	tests/programs/error_230_parent_names_child_alias.con	error[resolve]: (E0108)
+run_ok:regress_230_toplevel_type_environment.con	run-value	positive	run_ok	tests/programs/regress_230_toplevel_type_environment.con	42
+run_ok:regress_227_toplevel_builtin_result.con	run-value	positive	run_ok	tests/programs/regress_227_toplevel_builtin_result.con	42
+# Bug 227's nested half: Core spelled a user `Result` and the builtin alike, and Lower's enum lookup
+# by name met the user's (E0602); a user `Result` is now spelled by its module.
+run_ok:regress_227_nested_builtin_result.con	run-value	positive	run_ok	tests/programs/regress_227_nested_builtin_result.con	42
+run_ok:regress_227_user_result_methods_beside_builtin.con	run-value	positive	run_ok	tests/programs/regress_227_user_result_methods_beside_builtin.con	42
+run_ok:regress_227_child_result_beside_builtin.con	run-value	positive	run_ok	tests/programs/regress_227_child_result_beside_builtin.con	42
+run_ok:regress_227_imported_field_builtin_result.con	run-value	positive	run_ok	tests/programs/regress_227_imported_field_builtin_result.con	42
+run_ok:regress_227_value_import_named_result.con	run-value	positive	run_ok	tests/programs/regress_227_value_import_named_result.con	42
+script:positive.2.30	script	positive	suite	30
+# Bug 231: a bound names `Copy`, `Destroy` or a trait of its module (MOD-1, E0125); no bound name
+# was resolved, so an undeclared trait compiled and an enclosing module's trait was satisfied by
+# spelling in a nested module. The positive control keeps every trait Check gives a module.
+run_err:error_231_unknown_bound_trait.con	reject-diagnostic	positive	run_err	tests/programs/error_231_unknown_bound_trait.con	(E0125)
+run_err:error_231_enclosing_trait_bound.con	reject-diagnostic	positive	run_err	tests/programs/error_231_enclosing_trait_bound.con	(E0125)
+run_err:error_231_trait_param_bound.con	reject-diagnostic	positive	run_err	tests/programs/error_231_trait_param_bound.con	bounds on a trait's type parameters are not supported
+run_err:error_231_union_param_bound.con	reject-diagnostic	positive	run_err	tests/programs/error_231_union_param_bound.con	bounds on a union's type parameters are not supported
+run_err:error_231_bodiless_decl_bound.con	reject-diagnostic	positive	run_err	tests/programs/error_231_bodiless_decl_bound.con	a bodiless declaration cannot bound its type parameters
+# Bugs 238 – 241: free functions and impl methods shared one spelled namespace. A method call is
+# resolved in the method table (Check, Elab) and carries its namespace in Core (`CallSpace`), so a
+# free function spelled like a method's definition name or call spelling no longer answers it
+# (238, 239: silent wrong code, 99 for 42); a free function beside its module's own method of that
+# definition name is MOD-3's E0299 (239); a trait in a type position is E0108 (240: an EmitSSA
+# panic); a parent's call of its child's respelled type's method keeps a spelling the child defines
+# (241: an undefined symbol).
+run_ok:regress_238_free_fn_spelled_like_method_call.con	run-value	positive	run_ok	tests/programs/regress_238_free_fn_spelled_like_method_call.con	42
+run_ok:regress_238_other_module_free_fn_takes_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_other_module_free_fn_takes_method_spelling.con	42
+run_ok:regress_238_parent_free_fn_takes_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_parent_free_fn_takes_method_spelling.con	42
+run_ok:regress_239_free_fn_beside_imported_method.con	run-value	positive	run_ok	tests/programs/regress_239_free_fn_beside_imported_method.con	42
+run_err:error_239_method_call_answered_by_free_fn.con	reject-diagnostic	positive	run_err	tests/programs/error_239_method_call_answered_by_free_fn.con	error[check]: (E0264) no method 'get' on type 'P'
+run_err:error_239_free_fn_named_like_own_method.con	reject-diagnostic	positive	run_err	tests/programs/error_239_free_fn_named_like_own_method.con	error[check]: (E0299) a function named 'P_get' is also declared in this module as an impl method
+run_err:error_240_trait_cast_target.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_cast_target.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_struct_field.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_struct_field.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_enum_payload.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_enum_payload.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_parameter.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_parameter.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_type_argument.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_type_argument.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_let_annotation.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_let_annotation.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_ok:regress_240_trait_bounds_and_type_param_shadow.con	run-value	positive	run_ok	tests/programs/regress_240_trait_bounds_and_type_param_shadow.con	42
+run_ok:regress_241_parent_calls_child_respelled_method.con	run-value	positive	run_ok	tests/programs/regress_241_parent_calls_child_respelled_method.con	42
+run_ok:regress_238_method_named_by_definition_name.con	run-value	positive	run_ok	tests/programs/regress_238_method_named_by_definition_name.con	42
+run_ok:regress_238_method_call_in_constant.con	run-value	positive	run_ok	tests/programs/regress_238_method_call_in_constant.con	42
+run_ok:regress_238_extern_takes_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_extern_takes_method_spelling.con	42
+run_ok:regress_238_imported_extern_alias_takes_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_imported_extern_alias_takes_method_spelling.con	42
+run_ok:regress_238_method_definition_name_taken_by_extern.con	run-value	positive	run_ok	tests/programs/regress_238_method_definition_name_taken_by_extern.con	42
+run_ok:regress_238_method_value_spelled_like_extern.con	run-value	positive	run_ok	tests/programs/regress_238_method_value_spelled_like_extern.con	42
+run_ok:regress_238_method_value_beside_unrelated_extern.con	run-value	positive	run_ok	tests/programs/regress_238_method_value_beside_unrelated_extern.con	42
+run_ok:regress_239_method_call_beside_untrusted_extern.con	run-value	positive	run_ok	tests/programs/regress_239_method_call_beside_untrusted_extern.con	42
+run_ok:regress_239_static_method_beside_free_fn_report.con	run-value	positive	run_ok	tests/programs/regress_239_static_method_beside_free_fn_report.con	42
+check_report_multi:regress_239_static_method_beside_free_fn_report.con	report	positive	check_report_multi	tests/programs/regress_239_static_method_beside_free_fn_report.con	caps	bug 239: --report caps resolves a method call to the method, not a free function of its spelling	bug 239: --report caps read the method call as the free function P_get (effects unknown)	pub run : (no external authority)
+run_ok:regress_239_method_call_beside_extern_of_other_arity.con	run-value	positive	run_ok	tests/programs/regress_239_method_call_beside_extern_of_other_arity.con	42
+run_ok:regress_239_extern_call_beside_method_with_indirect_call.con	run-value	positive	run_ok	tests/programs/regress_239_extern_call_beside_method_with_indirect_call.con	42
+check_report_multi:regress_239_extern_call_beside_method_with_indirect_call.con	report	positive	check_report_multi	tests/programs/regress_239_extern_call_beside_method_with_indirect_call.con	caps	bug 239: --report caps reads a free call bound to an extern as that extern, not a method of its spelling	bug 239: --report caps followed an extern call into a method of its spelling (effects unknown)	pub run : (no declared capability)
+run_ok:regress_239_method_call_beside_trusted_extern.con	run-value	positive	run_ok	tests/programs/regress_239_method_call_beside_trusted_extern.con	42
+script:positive.2.31	script	positive	suite	31
+run_ok:regress_238_method_value_beside_extern_of_other_arity.con	run-value	positive	run_ok	tests/programs/regress_238_method_value_beside_extern_of_other_arity.con	42
+run_ok:regress_239_nested_method_beside_extern.con	run-value	positive	run_ok	tests/programs/regress_239_nested_method_beside_extern.con	42
+run_ok:regress_239_respelled_method_beside_extern_types.con	run-value	positive	run_ok	tests/programs/regress_239_respelled_method_beside_extern_types.con	42
+run_ok:regress_239_method_call_not_an_extern_call_report.con	run-value	positive	run_ok	tests/programs/regress_239_method_call_not_an_extern_call_report.con	42
+script:positive.2.32	script	positive	suite	32
+check_report_multi:regress_239_method_call_not_an_extern_call_report.con	report	positive	check_report_multi	tests/programs/regress_239_method_call_not_an_extern_call_report.con	effects	bug 239: --report effects does not read a method call as crossing FFI	bug 239: --report effects reads a method call as crossing FFI	ffi: no  trusted: no  evidence: enforced
+check_report_multi:regress_239_nested_method_beside_extern.con	report	positive	check_report_multi	tests/programs/regress_239_nested_method_beside_extern.con	unsafe	bug 239: --report unsafe does not count a method caller as relying on an extern of its spelling	bug 239: --report unsafe counts a method caller as relying on an extern of its spelling	relied on by: (no caller in this module)
+run_ok:regress_239_method_value_no_foreign_assumption.con	run-value	positive	run_ok	tests/programs/regress_239_method_value_no_foreign_assumption.con	42
+run_ok:regress_239_method_spelled_like_intrinsic.con	run-value	positive	run_ok	tests/programs/regress_239_method_spelled_like_intrinsic.con	42
+run_ok:regress_239_method_call_reaches_ffi_report.con	run-value	positive	run_ok	tests/programs/regress_239_method_call_reaches_ffi_report.con	42
+check_report_multi:regress_239_method_call_reaches_ffi_report.con	report	positive	check_report_multi	tests/programs/regress_239_method_call_reaches_ffi_report.con	effects	bug 239: --report effects keeps FFI reached through a method call	bug 239: --report effects lost the FFI a method call reaches	ffi: yes  trusted: no  evidence: reported
+script:positive.2.33	script	positive	suite	33
+check_report_multi:regress_239_method_value_no_foreign_assumption.con	report	positive	check_report_multi	tests/programs/regress_239_method_value_no_foreign_assumption.con	assumptions	bug 239: a method value reaches the method, not a foreign binding of its spelling	bug 239: --report assumptions attributes a foreign binding to a method value	"fn":"main.factory","package_name":"«standalone»","complete":true,"gaps":\\[\\],"assumes":\\[\\]
+# Codex review r10: a method call is no `Vec` operation, allocation intrinsic or proof-graph
+# intrinsic of its spelling, a free call bound to an extern supplies only the extern's capabilities
+# in explanations, and a method edge is not redirected by a free import alias of its spelling.
+run_ok:regress_239_method_spelled_like_vec_op.con	run-value	positive	run_ok	tests/programs/regress_239_method_spelled_like_vec_op.con	42
+run_ok:regress_239_method_spelled_like_alloc_op.con	run-value	positive	run_ok	tests/programs/regress_239_method_spelled_like_alloc_op.con	42
+script:positive.2.34	script	positive	suite	34
+run_ok:regress_239_alias_spelled_method_reaches_ffi.con	run-value	positive	run_ok	tests/programs/regress_239_alias_spelled_method_reaches_ffi.con	42
+check_report_multi:regress_239_alias_spelled_method_reaches_ffi.con	report	positive	check_report_multi	tests/programs/regress_239_alias_spelled_method_reaches_ffi.con	effects	bug 239: --report effects follows a method call spelled like an intrinsic to its FFI	bug 239: --report effects lost FFI behind a method call spelled like an intrinsic	ffi: yes
+run_ok:regress_239_extern_call_beside_capable_method_explained.con	run-value	positive	run_ok	tests/programs/regress_239_extern_call_beside_capable_method_explained.con	42
+check_report_multi:regress_239_extern_call_beside_capable_method_explained.con	report	positive	check_report_multi	tests/programs/regress_239_extern_call_beside_capable_method_explained.con	caps	bug 239: --report caps does not explain an extern call by a method's capability	bug 239: --report caps explains an extern call by a same-spelled method's capability	Console    <- declared
+run_ok:regress_239_method_edge_beside_free_alias.con	run-value	positive	run_ok	tests/programs/regress_239_method_edge_beside_free_alias.con	42
+check_report_multi:regress_239_method_edge_beside_free_alias.con	report	positive	check_report_multi	tests/programs/regress_239_method_edge_beside_free_alias.con	assumptions	bug 239: a method edge is not redirected by a free import alias of its spelling	bug 239: --report assumptions redirected a method edge through a free import alias	"fn":"user.run","package_name":"«standalone»","complete":true,"gaps":\\[\\],"assumes":\\[\\]
+run_ok:regress_238_free_alias_takes_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_free_alias_takes_method_spelling.con	42
+run_ok:regress_239_fn_parameter_spelled_like_method.con	run-value	positive	run_ok	tests/programs/regress_239_fn_parameter_spelled_like_method.con	42
+run_ok:regress_238_extern_alias_takes_nested_method_spelling.con	run-value	positive	run_ok	tests/programs/regress_238_extern_alias_takes_nested_method_spelling.con	42
+run_ok:regress_238_unrelated_alias_beside_method.con	run-value	positive	run_ok	tests/programs/regress_238_unrelated_alias_beside_method.con	42
+run_ok:regress_239_imported_extern_alias_beside_capable_method.con	run-value	positive	run_ok	tests/programs/regress_239_imported_extern_alias_beside_capable_method.con	42
+run_ok:regress_239_method_ffi_beside_free_alias.con	run-value	positive	run_ok	tests/programs/regress_239_method_ffi_beside_free_alias.con	42
+check_report_multi:regress_239_method_ffi_beside_free_alias.con	report	positive	check_report_multi	tests/programs/regress_239_method_ffi_beside_free_alias.con	effects	bug 239: --report effects follows a method call past a free alias of its spelling to its FFI	bug 239: --report effects lost FFI behind a method call whose spelling a free alias also takes	ffi: yes
+run_ok:regress_239_destructor_call_is_cleanup.con	run-value	positive	run_ok	tests/programs/regress_239_destructor_call_is_cleanup.con	0
+script:positive.2.35	script	positive	suite	35
+run_ok:regress_239_method_value_type_agreement.con	run-value	positive	run_ok	tests/programs/regress_239_method_value_type_agreement.con	42
+run_ok:regress_239_method_cap_explained_past_free_alias.con	run-value	positive	run_ok	tests/programs/regress_239_method_cap_explained_past_free_alias.con	42
+check_report_multi:regress_239_method_cap_explained_past_free_alias.con	report	positive	check_report_multi	tests/programs/regress_239_method_cap_explained_past_free_alias.con	caps	bug 239: --report caps explains a method call by the method, not a free alias of its spelling	bug 239: --report caps explains a method call by a free function its spelling's alias names	Console    <- declared
+run_ok:regress_239_method_spelled_like_free_op.con	run-value	positive	run_ok	tests/programs/regress_239_method_spelled_like_free_op.con	42
+script:positive.2.36	script	positive	suite	36
+run_ok:regress_238_method_value_both_spellings_taken_by_externs.con	run-value	positive	run_ok	tests/programs/regress_238_method_value_both_spellings_taken_by_externs.con	42
+run_ok:regress_239_method_value_beside_constant.con	run-value	positive	run_ok	tests/programs/regress_239_method_value_beside_constant.con	42
+run_ok:regress_239_extern_call_not_trusted_by_method.con	run-value	positive	run_ok	tests/programs/regress_239_extern_call_not_trusted_by_method.con	42
+run_ok:regress_239_trusted_extern_beside_method_edge.con	run-value	positive	run_ok	tests/programs/regress_239_trusted_extern_beside_method_edge.con	42
+run_ok:regress_239_imported_trusted_extern_beside_trusted_method.con	run-value	positive	run_ok	tests/programs/regress_239_imported_trusted_extern_beside_trusted_method.con	42
+run_ok:regress_239_imported_extern_alias_beside_method_arity.con	run-value	positive	run_ok	tests/programs/regress_239_imported_extern_alias_beside_method_arity.con	42
+run_ok:regress_239_untrusted_extern_beside_trusted_extern.con	run-value	positive	run_ok	tests/programs/regress_239_untrusted_extern_beside_trusted_extern.con	1
+script:positive.2.37	script	positive	suite	37
+run_ok:regress_239_extern_alias_assumption_not_method.con	run-value	positive	run_ok	tests/programs/regress_239_extern_alias_assumption_not_method.con	42
+run_ok:regress_239_free_call_not_extern_report.con	run-value	positive	run_ok	tests/programs/regress_239_free_call_not_extern_report.con	42
+run_ok:regress_239_free_call_reaches_ffi_predictable.con	run-value	positive	run_ok	tests/programs/regress_239_free_call_reaches_ffi_predictable.con	42
+script:positive.2.38	script	positive	suite	38
+check_report_multi:regress_239_free_call_not_extern_report.con	report	positive	check_report_multi	tests/programs/regress_239_free_call_not_extern_report.con	effects	bug 239: --report effects does not read a free call of a program function as an extern call	bug 239: --report effects reads a free call as crossing FFI because an unrelated extern shares its name	ffi: no  trusted: no  evidence: enforced
+script:positive.2.39	script	positive	suite	39
+# Bug 272: the calls-ffi edge is the call's binding to a foreign declaration, so a call of an
+# extern imported from another module (plainly, trusted, or under an alias) has one.
+run_ok:regress_272_imported_extern_ffi_edge.con	run-value	positive	run_ok	tests/programs/regress_272_imported_extern_ffi_edge.con	42
+script:positive.2.40	script	positive	suite	40
+# Bug 280: Check searched a nested expression's operands for an escaping exit, and Check and Elab
+# asked whether an operand is a literal-only tree, at every level, each a walk of the subtree
+# below, so an expression nested n deep took n² (depth 20000: check 3791 ms, elaborate 555 ms).
+# At the scaling gate's sizes the pre-fix elaborate stage grows barely past its bound, so a
+# generated expression nested 20000 deep must check and elaborate (the `check` and `elaborate`
+# stages of --emit-trace-json) within 100 ms each, retried once at 200 ms (fixed: 8 and 7 ms on
+# the dev host; pre-fix, 19 and 2.8 times the retry budget).
+run_ok:regress_280_nested_operand_exits.con	run-value	positive	run_ok	tests/programs/regress_280_nested_operand_exits.con	42
+script:positive.2.41	script	positive	suite	41
+# Bug 298: the operand-escape search (bug 142's rule, E0278) ran again at every level of a value
+# `if` or `match` nested as an operand: bug 280's fix handed its answer down only through
+# parentheses and operators, so an operand chain 8000 deep through value `if`s took 2721 ms to
+# check on main 1bcb7c36 (`match`es 2806 ms). The exit diagnostics are pinned by the two error
+# fixtures, a `break` bound by a loop inside such an operand by the run fixture; then each chain
+# 8000 deep must check within 150 ms, retried once at 300 ms (21 and 28 ms with the fix).
+run_ok:regress_298_value_branch_operand_exits.con	run-value	positive	run_ok	tests/programs/regress_298_value_branch_operand_exits.con	42
+script:positive.2.42	script	positive	suite	42
+# Bug 247: a function value written as an identifier reaches what it names in the assumption summary.
+run_ok:regress_247_function_value_reaches_foreign.con	run-value	positive	run_ok	tests/programs/regress_247_function_value_reaches_foreign.con	42
+run_ok:regress_247_free_value_beside_unrelated_extern.con	run-value	positive	run_ok	tests/programs/regress_247_free_value_beside_unrelated_extern.con	42
+run_ok:regress_247_free_call_beside_unrelated_extern.con	run-value	positive	run_ok	tests/programs/regress_247_free_call_beside_unrelated_extern.con	42
+check_report_multi:regress_247_free_call_beside_unrelated_extern.con	report	positive	check_report_multi	tests/programs/regress_247_free_call_beside_unrelated_extern.con	assumptions	bug 247: a free call names the program's function, not an unrelated extern	bug 247: --report assumptions attributes an unrelated extern to a free call	"fn":"main.run","package_name":"«standalone»","complete":true,"gaps":\\[\\],"assumes":\\[\\]
+check_report_multi:regress_247_free_value_beside_unrelated_extern.con	report	positive	check_report_multi	tests/programs/regress_247_free_value_beside_unrelated_extern.con	assumptions	bug 247: a free function value names the program's function, not an unrelated extern	bug 247: --report assumptions attributes an unrelated extern to a free function value	"fn":"main.factory","package_name":"«standalone»","complete":true,"gaps":\\[\\],"assumes":\\[\\]
+check_report_multi:regress_247_function_value_reaches_foreign.con	report	positive	check_report_multi	tests/programs/regress_247_function_value_reaches_foreign.con	caps	bug 247: --report caps follows a function value to the foreign binding it reaches	bug 247: --report caps reports a function returning a value that reaches abs as having no assumption	also assumes main.abs honest
+run_ok:regress_239_extern_call_beside_generic_method.con	run-value	positive	run_ok	tests/programs/regress_239_extern_call_beside_generic_method.con	99
+run_ok:regress_239_extern_call_beside_capable_method.con	run-value	positive	run_ok	tests/programs/regress_239_extern_call_beside_capable_method.con	99
+script:positive.2.43	script	positive	suite	43
+run_err:error_240_trait_in_trait_signature.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_in_trait_signature.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_err:error_240_trait_in_extern_signature.con	reject-diagnostic	positive	run_err	tests/programs/error_240_trait_in_extern_signature.con	error[resolve]: (E0108) 'Marker' is a trait, not a type
+run_ok:regress_239_parent_method_beside_child_free_fn.con	run-value	positive	run_ok	tests/programs/regress_239_parent_method_beside_child_free_fn.con	42
+run_ok:regress_241_parent_names_child_respelled_method.con	run-value	positive	run_ok	tests/programs/regress_241_parent_names_child_respelled_method.con	42
+script:positive.2.44	script	positive	suite	44
+# Bug 223 (R-0492 step 3): an import alias names the imported declaration. Types are compared, and
+# their methods and trait impls looked up, by declaration identity in Resolve, Check and Elab, so
+# `import m.{P as Q}` is `P`: its methods (inherent, trait, Destroy), the values `m` returns, its
+# enum literals and patterns, and a bound satisfied through the alias. Binary and --interp agree.
+run_ok:regress_223_aliased_struct_methods.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_struct_methods.con	42
+run_ok:regress_223_aliased_enum.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_enum.con	42
+run_ok:regress_223_aliased_generic_and_bound.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_generic_and_bound.con	42
+run_ok:regress_223_aliased_destroy_impl.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_destroy_impl.con	42
+run_ok:regress_223_aliased_self_result.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_self_result.con	42
+run_ok:regress_223_aliased_cap_params.con	run-value	positive	run_ok	tests/programs/regress_223_aliased_cap_params.con	42
+# Bugs 238 – 239 lift the containment: the method call is a METHOD call in Core and reaches the
+# method, beside a free function of its mangled name.
+run_ok:regress_223_method_core_name_taken.con	run-value	positive	run_ok	tests/programs/regress_223_method_core_name_taken.con	42
+script:positive.2.45	script	positive	suite	45
+# Bug 233: an import of a public trait, which no import binds, was refused as "not public"; it is
+# refused with the reason (E0126). R-0492 step 4: a public constant is imported by its identity
+# (`ConstId`): Core references it by its defining module, and Lower and the interpreter inline its
+# initializer in that module's scope. Binary and --interp agree.
+run_err:error_233_import_trait.con	reject-diagnostic	positive	run_err	tests/programs/error_233_import_trait.con	(E0126)
+run_err:error_233_import_constant_collides_local.con	reject-diagnostic	positive	run_err	tests/programs/error_233_import_constant_collides_local.con	(E0299)
+run_ok:regress_233_shared_spelling_import.con	run-value	positive	run_ok	tests/programs/regress_233_shared_spelling_import.con	42
+run_ok:regress_233_import_constant.con	run-value	positive	run_ok	tests/programs/regress_233_import_constant.con	42
+run_ok:regress_233_nested_import_constant.con	run-value	positive	run_ok	tests/programs/regress_233_nested_import_constant.con	42
+run_ok:regress_233_import_constant_scope.con	run-value	positive	run_ok	tests/programs/regress_233_import_constant_scope.con	42
+run_ok:regress_233_nested_alias_constant.con	run-value	positive	run_ok	tests/programs/regress_233_nested_alias_constant.con	42
+run_ok:regress_233_constant_type_alias.con	run-value	positive	run_ok	tests/programs/regress_233_constant_type_alias.con	42
+run_ok:regress_233_constant_type_imported_alias.con	run-value	positive	run_ok	tests/programs/regress_233_constant_type_imported_alias.con	42
+# Bug 246: an imported alias's target is expanded through its exporter's aliases.
+run_ok:regress_246_imported_alias_chain.con	run-value	positive	run_ok	tests/programs/regress_246_imported_alias_chain.con	42
+run_ok:regress_246_imported_alias_chain_across_imports.con	run-value	positive	run_ok	tests/programs/regress_246_imported_alias_chain_across_imports.con	42
+run_ok:regress_246_imported_alias_chain_long.con	run-value	positive	run_ok	tests/programs/regress_246_imported_alias_chain_long.con	42
+run_err:error_233_imported_initializer_calls_function.con	reject-diagnostic	positive	run_err	tests/programs/error_233_imported_initializer_calls_function.con	cannot be inlined outside its module
+run_err:error_233_imported_initializer_extern.con	reject-diagnostic	positive	run_err	tests/programs/error_233_imported_initializer_extern.con	cannot be inlined outside its module
+run_err:error_233_imported_initializer_via_constant.con	reject-diagnostic	positive	run_err	tests/programs/error_233_imported_initializer_via_constant.con	cannot be inlined outside its module
+script:positive.2.46	script	positive	suite	46
+# Bug 243: an aliased newtype import binds the alias to the declaration's identity, as a struct's.
+run_ok:regress_243_aliased_newtype_import.con	run-value	positive	run_ok	tests/programs/regress_243_aliased_newtype_import.con	42
+run_ok:regress_243_aliased_newtype_with_original.con	run-value	positive	run_ok	tests/programs/regress_243_aliased_newtype_with_original.con	42
+run_ok:regress_243_aliased_generic_newtype.con	run-value	positive	run_ok	tests/programs/regress_243_aliased_generic_newtype.con	42
+run_ok:regress_243_nested_aliased_newtype.con	run-value	positive	run_ok	tests/programs/regress_243_nested_aliased_newtype.con	42
+script:positive.2.47	script	positive	suite	47
+# Bug 242: a type crossing an import carries its declaration: where the importer binds the
+# definition's spelling to another declaration, the transported type is respelled to its identity.
+run_ok:regress_242_imported_signature_type.con	run-value	positive	run_ok	tests/programs/regress_242_imported_signature_type.con	42
+run_ok:regress_242_toplevel_signature_type.con	run-value	positive	run_ok	tests/programs/regress_242_toplevel_signature_type.con	42
+run_ok:regress_242_imported_enum_beside_own_enum.con	run-value	positive	run_ok	tests/programs/regress_242_imported_enum_beside_own_enum.con	42
+run_ok:regress_242_imported_field_type.con	run-value	positive	run_ok	tests/programs/regress_242_imported_field_type.con	42
+run_ok:regress_242_aliased_self_result.con	run-value	positive	run_ok	tests/programs/regress_242_aliased_self_result.con	42
+run_ok:regress_242_imported_constant_type.con	run-value	positive	run_ok	tests/programs/regress_242_imported_constant_type.con	42
+run_ok:regress_242_imported_alias_target.con	run-value	positive	run_ok	tests/programs/regress_242_imported_alias_target.con	42
+run_ok:regress_242_generic_argument.con	run-value	positive	run_ok	tests/programs/regress_242_generic_argument.con	42
+run_ok:regress_242_newtype_beside_other_import.con	run-value	positive	run_ok	tests/programs/regress_242_newtype_beside_other_import.con	42
+run_ok:regress_242_struct_beside_other_import.con	run-value	positive	run_ok	tests/programs/regress_242_struct_beside_other_import.con	42
+run_ok:regress_242_two_modules_signatures.con	run-value	positive	run_ok	tests/programs/regress_242_two_modules_signatures.con	42
+run_ok:regress_242_alias_target_closure.con	run-value	positive	run_ok	tests/programs/regress_242_alias_target_closure.con	42
+run_ok:regress_242_child_newtype_from_child_function.con	run-value	positive	run_ok	tests/programs/regress_242_child_newtype_from_child_function.con	42
+# Since bugs 238 – 239 (method calls carry their namespace) the two methods are told apart.
+run_ok:regress_242_two_imported_methods_one_core_name.con	run-value	positive	run_ok	tests/programs/regress_242_two_imported_methods_one_core_name.con	42
+script:positive.2.48	script	positive	suite	48
+# Bug 254: a newtype over an aggregate is constructed and unwrapped under --interp as natively.
+run_ok:regress_254_newtype_over_struct.con	run-value	positive	run_ok	tests/programs/regress_254_newtype_over_struct.con	7
+run_ok:regress_254_newtype_over_enum.con	run-value	positive	run_ok	tests/programs/regress_254_newtype_over_enum.con	42
+script:positive.2.49	script	positive	suite	49
+# Bug 245: a bare constant spelling is scoped by the using function's top-level tree in both
+# backends (`CModule.treeConstants`), so two trees' private constants of one spelling are apart.
+run_ok:regress_245_toplevel_private_constants.con	run-value	positive	run_ok	tests/programs/regress_245_toplevel_private_constants.con	42
+run_ok:regress_245_nested_private_constants.con	run-value	positive	run_ok	tests/programs/regress_245_nested_private_constants.con	42
+script:positive.2.50	script	positive	suite	50
+# Bug 251: a generic's specialization reads its defining tree's constants, wherever Mono emits it.
+run_ok:regress_251_generic_reads_defining_tree_constant.con	run-value	positive	run_ok	tests/programs/regress_251_generic_reads_defining_tree_constant.con	40
+run_ok:regress_251_generic_constant_absent_in_instantiating_tree.con	run-value	positive	run_ok	tests/programs/regress_251_generic_constant_absent_in_instantiating_tree.con	40
+run_ok:regress_251_nested_generic_constants.con	run-value	positive	run_ok	tests/programs/regress_251_nested_generic_constants.con	42
+run_ok:regress_251_generic_calls_shadowed_intrinsic.con	run-value	positive	run_ok	tests/programs/regress_251_generic_calls_shadowed_intrinsic.con	40
+run_ok:regress_251_generic_constant_calls_shadowed_intrinsic.con	run-value	positive	run_ok	tests/programs/regress_251_generic_constant_calls_shadowed_intrinsic.con	40
+run_ok:regress_251_generic_call_beside_destination_extern.con	run-value	positive	run_ok	tests/programs/regress_251_generic_call_beside_destination_extern.con	40
+run_ok:regress_251_generic_calls_source_extern.con	run-value	positive	run_ok	tests/programs/regress_251_generic_calls_source_extern.con	40
+run_ok:regress_251_generic_calls_source_import_alias.con	run-value	positive	run_ok	tests/programs/regress_251_generic_calls_source_import_alias.con	40
+script:positive.2.51	script	positive	suite	51
+# Bug 253: construction and field rights are judged by the declaration's identity, so a child type
+# sharing an imported type's spelling grants nothing.
+run_err:error_253_child_newtype_decoy.con	reject-diagnostic	positive	run_err	tests/programs/error_253_child_newtype_decoy.con	(E0296)
+run_err:error_253_aliased_newtype_decoy.con	reject-diagnostic	positive	run_err	tests/programs/error_253_aliased_newtype_decoy.con	(E0296)
+run_err:error_253_child_struct_decoy_literal.con	reject-diagnostic	positive	run_err	tests/programs/error_253_child_struct_decoy_literal.con	(E0297)
+run_err:error_253_child_struct_decoy_field_read.con	reject-diagnostic	positive	run_err	tests/programs/error_253_child_struct_decoy_field_read.con	(E0298)
+run_err:error_253_child_struct_decoy_field_write.con	reject-diagnostic	positive	run_err	tests/programs/error_253_child_struct_decoy_field_write.con	(E0298)
+run_ok:regress_253_local_rights_beside_imports.con	run-value	positive	run_ok	tests/programs/regress_253_local_rights_beside_imports.con	42
+script:positive.2.52	script	positive	suite	52
+# Bug 262: a child's newtype constructor is bound in its parent only by an import (Check and Elab
+# by one definition), and a sibling's or the parent's newtype is not constructed outside it.
+# Refused at Check, so the native build and --interp refuse them alike.
+run_err:error_262_parent_constructs_child_newtype.con	reject-diagnostic	positive	run_err	tests/programs/error_262_parent_constructs_child_newtype.con	(E0263)
+run_err:error_262_sibling_constructs_newtype.con	reject-diagnostic	positive	run_err	tests/programs/error_262_sibling_constructs_newtype.con	(E0296)
+run_err:error_262_child_constructs_parent_newtype.con	reject-diagnostic	positive	run_err	tests/programs/error_262_child_constructs_parent_newtype.con	(E0296)
+run_ok:regress_262_own_rights_beside_child.con	run-value	positive	run_ok	tests/programs/regress_262_own_rights_beside_child.con	42
+run_ok:regress_262_imported_fn_beside_child_newtype.con	run-value	positive	run_ok	tests/programs/regress_262_imported_fn_beside_child_newtype.con	42
+script:positive.2.53	script	positive	suite	53
+run_ok:regress_231_bounds_name_module_traits.con	run-value	positive	run_ok	tests/programs/regress_231_bounds_name_module_traits.con	42
+script:positive.2.54	script	positive	suite	54
+# The enclosing module's `enum Result` is not in the nested scope. Since bug 227's fix the native
+# build agrees (Core spells the user's enum `outer_Result`).
+run_ok:regress_217_enclosing_type_not_in_scope.con	run-value	positive	run_ok	tests/programs/regress_217_enclosing_type_not_in_scope.con	42
+script:positive.2.55	script	positive	suite	55
+# Bug 213: arms after an unguarded binding / `_` arm were lowered into a predecessor-less block
+# (E0703 natively); binary and --interp must agree on 42.
+run_ok:regress_213_arm_after_binding_arm.con	run-value	positive	run_ok	tests/programs/regress_213_arm_after_binding_arm.con	42
+script:positive.2.56	script	positive	suite	56
+# Bug 211: a generic operator instantiated at a struct or enum reached the backend; the post-Mono
+# operator check refuses it (E0501) and admits numeric instances (binary and --interp agree on 42).
+run_err:error_211_generic_add_struct.con	reject-diagnostic	positive	run_err	tests/programs/error_211_generic_add_struct.con	(E0501)
+run_err:error_211_generic_mul_enum.con	reject-diagnostic	positive	run_err	tests/programs/error_211_generic_mul_enum.con	(E0501)
+run_err:error_211_generic_rhs_struct.con	reject-diagnostic	positive	run_err	tests/programs/error_211_generic_rhs_struct.con	(E0501)
+run_err:error_211_generic_mixed_width.con	reject-diagnostic	positive	run_err	tests/programs/error_211_generic_mixed_width.con	(E0501)
+run_ok:regress_211_generic_add_numeric.con	run-value	positive	run_ok	tests/programs/regress_211_generic_add_numeric.con	42
+script:positive.2.57	script	positive	suite	57
+# Bug 196: a match arm whose pattern does not fit the scrutinee (panic / SSA verifier before).
+run_err:error_196_other_enum_variant.con	reject-diagnostic	positive	run_err	tests/programs/error_196_other_enum_variant.con	(E0309)
+run_err:error_196_range_over_enum.con	reject-diagnostic	positive	run_err	tests/programs/error_196_range_over_enum.con	(E0309)
+run_err:error_196_variant_over_int.con	reject-diagnostic	positive	run_err	tests/programs/error_196_variant_over_int.con	(E0309)
+run_err:error_196_literal_type.con	reject-diagnostic	positive	run_err	tests/programs/error_196_literal_type.con	(E0309)
+run_err:error_196_literal_over_type_param.con	reject-diagnostic	positive	run_err	tests/programs/error_196_literal_over_type_param.con	(E0309)
+run_err:error_196_same_name_other_enum.con	reject-diagnostic	positive	run_err	tests/programs/error_196_same_name_other_enum.con	(E0309)
+# Bug 192 (silent): an integer condition of an if / while / for statement compiled (C truthiness in
+# the binary, a run-time error in --interp); TYPE-5 refuses it with E0223.
+run_err:error_192_int_if_condition.con	reject-diagnostic	positive	run_err	tests/programs/error_192_int_if_condition.con	(E0223)
+run_err:error_192_int_while_condition.con	reject-diagnostic	positive	run_err	tests/programs/error_192_int_while_condition.con	(E0223)
+run_err:error_192_int_for_condition.con	reject-diagnostic	positive	run_err	tests/programs/error_192_int_for_condition.con	(E0223)
+run_err:error_192_int_match_guard.con	reject-diagnostic	positive	run_err	tests/programs/error_192_int_match_guard.con	(E0223)
+# Bug 193 (silent): a literal gave a field twice; the binary stored the last, --interp the first.
+run_err:error_193_duplicate_struct_field.con	reject-diagnostic	positive	run_err	tests/programs/error_193_duplicate_struct_field.con	(E0306)
+run_err:error_193_duplicate_variant_field.con	reject-diagnostic	positive	run_err	tests/programs/error_193_duplicate_variant_field.con	(E0306)
+# Bug 109: float constants are the hex of their IEEE bits, f32 rounded first
+# (an inexact f32 was invalid IR; an f64 lost digits past the sixth decimal).
+run_ok:regress_109_float_literals.con	run-value	positive	run_ok	tests/programs/regress_109_float_literals.con	42
+# Bug 110: an array value held as a pointer to its storage was stored as the
+# aggregate (an unhinted `a[i] = [..]` literal coerced by a whole-array cast;
+# an array cast to a raw pointer; a newtype wrap of an array).
+run_ok:regress_110_array_value_store.con	run-value	positive	run_ok	tests/programs/regress_110_array_value_store.con	42
+# Bug 116: GEP-zero elimination gave `&mut p.v` (first field) the type of `p`,
+# so vec_push lost its element type and called the undefined @vec_push.
+run_ok:regress_116_vec_push_first_field.con	run-value	positive	run_ok	tests/programs/regress_116_vec_push_first_field.con	42
+# Bug 133 (silent): `&mut (*p).n` borrowed the field of a copy of `*p`, so the
+# write was lost (binary 39, interpreter 42).
+run_ok:regress_133_deref_field_borrow.con	run-value	positive	run_ok	tests/programs/regress_133_deref_field_borrow.con	42
+# Bug 175 (fails closed): a match whose arms all diverge left its merge block open, so a
+# loop around it failed SSA verification (E0708). --interp agreement: the r102 loop.
+run_ok:regress_175_match_arms_all_diverge.con	run-value	positive	run_ok	tests/programs/regress_175_match_arms_all_diverge.con	42
+# Bug 183 (silent): a dereference assignment lowered its destination first (rule 7: the
+# right-hand side first). --interp agreement: the r102 loop.
+run_ok:regress_183_deref_assign_rhs_first.con	run-value	positive	run_ok	tests/programs/regress_183_deref_assign_rhs_first.con	129
+run_ok:tests/regressions/bug183_deref_assign_destination_first/repro.con	run-value	positive	run_ok	tests/regressions/bug183_deref_assign_destination_first/repro.con	21
+# Bugs 136 and 137 (silent): functional update evaluated its base once per omitted field;
+# enum-variant literal fields ran in declaration order. --interp agreement: the r102 loop.
+run_ok:regress_136_137_literal_eval_order.con	run-value	positive	run_ok	tests/programs/regress_136_137_literal_eval_order.con	42
+# Bug 190 (silent): an array bound or passed by value aliased its source. --interp: the r102 loop.
+run_ok:regress_190_array_value_copy.con	run-value	positive	run_ok	tests/programs/regress_190_array_value_copy.con	42
+# Bug 181 (D3): every binder through a borrowed scrutinee is a reference; the root stays frozen.
+run_ok:regress_181_borrowed_binders.con	run-value	positive	run_ok	tests/programs/regress_181_borrowed_binders.con	42
+run_ok:tests/regressions/bug181_generic_borrowed_scrutinee_binder_mode/repro.con	run-value	positive	run_ok	tests/regressions/bug181_generic_borrowed_scrutinee_binder_mode/repro.con	42
+# Bug 182 / D2 (the Austral model): only a variable or a string literal is a reference's root
+# (E0238), and loans are keyed by root (E0293).
+run_ok:regress_d2_roots_and_projections.con	run-value	positive	run_ok	tests/programs/regress_d2_roots_and_projections.con	42
+# D1: every &mut argument is an implicit reborrow; a deferred call holds its loan; two exclusive
+# reborrows of one reference in one call overlap.
+run_ok:regress_d1_mut_ref_reborrow.con	run-value	positive	run_ok	tests/programs/regress_d1_mut_ref_reborrow.con	42
+run_ok:regress_d1_defer_branches_and_loop_exit.con	run-value	positive	run_ok	tests/programs/regress_d1_defer_branches_and_loop_exit.con	2
+run_ok:regress_d1_append_ref_twice.con	run-value	positive	run_ok	tests/programs/regress_d1_append_ref_twice.con	4
+run_err:error_d1_defer_holds_loan.con	reject-diagnostic	positive	run_err	tests/programs/error_d1_defer_holds_loan.con	(E0206)
+run_err:error_d1_defer_holds_loan_param.con	reject-diagnostic	positive	run_err	tests/programs/error_d1_defer_holds_loan_param.con	(E0206)
+run_err:error_d1_overlapping_mut_args.con	reject-diagnostic	positive	run_err	tests/programs/error_d1_overlapping_mut_args.con	(E0293)
+# Bug 198 (T-RAWDUP): `*p` by value of a non-Copy pointee is refused; `read_owned(p)` moves.
+run_err:error_rawdup_trusted_deref.con	reject-diagnostic	positive	run_err	tests/programs/error_rawdup_trusted_deref.con	(E0311)
+run_ok:regress_198_read_owned.con	run-value	positive	run_ok	tests/programs/regress_198_read_owned.con	42
+# Bug 199: a cast to a type alias crashed the backend.
+run_ok:regress_199_cast_to_alias.con	run-value	positive	run_ok	tests/programs/regress_199_cast_to_alias.con	42
+# Decision D6 (explicit Copy): a declared-Copy generic is Copy exactly when every type argument is;
+# the declaration is checked once with its parameters taken as Copy.
+run_err:error_d6_copy_generic_field_not_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_d6_copy_generic_field_not_copy.con	(E0571)
+run_err:error_d6_copy_enum_payload_not_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_d6_copy_enum_payload_not_copy.con	(E0571)
+run_err:error_d6_phantom_arg_not_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_d6_phantom_arg_not_copy.con	(E0208)
+run_ok:regress_d6_copy_generics.con	run-value	positive	run_ok	tests/programs/regress_d6_copy_generics.con	42
+run_err:error_d2_borrow_literal.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_borrow_literal.con	(E0238)
+run_err:error_d2_borrow_field_of_temporary.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_borrow_field_of_temporary.con	(E0238)
+run_err:error_d2_temporary_receiver.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_temporary_receiver.con	(E0238)
+run_err:error_d2_mut_borrow_string_literal.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_mut_borrow_string_literal.con	(E0238)
+run_err:error_d2_branch_receiver.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_branch_receiver.con	(E0238)
+run_err:error_d2_call_disjoint_fields.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_call_disjoint_fields.con	(E0293)
+run_err:error_od2_call_overlapping_path.con	reject-diagnostic	positive	run_err	tests/programs/error_od2_call_overlapping_path.con	(E0293)
+run_err:error_d2_call_field_read.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_call_field_read.con	(E0293)
+run_err:error_d2_receiver_projection_read.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_receiver_projection_read.con	(E0293)
+run_err:error_d2_call_field_read_in_branch.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_call_field_read_in_branch.con	(E0293)
+run_err:error_d2_explicit_mut_receiver_read.con	reject-diagnostic	positive	run_err	tests/programs/error_d2_explicit_mut_receiver_read.con	(E0293)
+run_err:tests/regressions/bug182_borrowed_call_result_temporary/repro.con	reject-diagnostic	positive	run_err	tests/regressions/bug182_borrowed_call_result_temporary/repro.con	(E0238)
+run_err:tests/regressions/bug182_borrowed_call_result_temporary/repro_linear_leak.con	reject-diagnostic	positive	run_err	tests/regressions/bug182_borrowed_call_result_temporary/repro_linear_leak.con	(E0238)
+run_err:error_181_root_reassigned_match.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_match.con	(E0232)
+run_err:error_181_root_reassigned_while_let.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_while_let.con	(E0232)
+run_err:error_181_root_reassigned_guard.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_guard.con	(E0232)
+run_err:error_181_root_reassigned_nested.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_nested.con	(E0232)
+run_err:error_181_root_reassigned_whole_binder.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_whole_binder.con	(E0232)
+run_err:error_181_root_reassigned_defer.con	reject-diagnostic	positive	run_err	tests/programs/error_181_root_reassigned_defer.con	(E0232)
+run_ok:tests/regressions/bug136_functional_update_base_reevaluated/repro.con	run-value	positive	run_ok	tests/regressions/bug136_functional_update_base_reevaluated/repro.con	59
+run_ok:tests/regressions/bug137_enum_literal_field_order/repro.con	run-value	positive	run_ok	tests/regressions/bug137_enum_literal_field_order/repro.con	56
+# Bug 150: a float self-comparison is not folded (x != x is true for NaN).
+run_ok:regress_150_float_self_compare.con	run-value	positive	run_ok	tests/programs/regress_150_float_self_compare.con	1
+# Bug 152: string_trim("") is the empty string (it was one byte, read past the source).
+run_ok:regress_152_string_trim_empty.con	run-value	positive	run_ok	tests/programs/regress_152_string_trim_empty.con	0
+# Bug 151 (contained): two nested modules' functions with one flattened name are refused (E0299).
+run_err:error_151_nested_name_flattening.con	reject-diagnostic	positive	run_err	tests/programs/error_151_nested_name_flattening.con	(E0299)
+# Bug 165 (silent): a module defining `fn print_int` got it called by every `println`; the
+# reproducer aborted. --interp agreement: the r165 block.
+run_ok:regress_165_generated_helper_call.con	run-value	positive	run_ok	tests/programs/regress_165_generated_helper_call.con	7 hi true x n=hi ok	42
+run_ok:tests/regressions/bug165_generated_helper_call_binds_by_spelling/repro.con	run-value	positive	run_ok	tests/regressions/bug165_generated_helper_call_binds_by_spelling/repro.con	7
+# Bug 088: an unhinted literal is a range-checked `Int` (2^64-1 was accepted:
+# interp 2^64-1, binary -1), and constant casts fold with the interpreter's
+# wrap (the folder compared an unnormalized constant: `u64max as i64 < 0`).
+run_ok:regress_088_const_fold_casts.con	run-value	positive	run_ok	tests/programs/regress_088_const_fold_casts.con	1048575
+run_err:error_088_unhinted_literal_range.con	reject-diagnostic	positive	run_err	tests/programs/error_088_unhinted_literal_range.con	out of range for type 'Int'
+# Range-pattern endpoints take the scrutinee type (a u64 range to 2^64-1 was a
+# false E0227 once the defaulted Int became range-checked).
+run_ok:regress_088_range_pattern_u64.con	run-value	positive	run_ok	tests/programs/regress_088_range_pattern_u64.con	42
+# Bug 090: a match guard moved a linear value; a false guard fell through to an
+# arm that moved it again (double free). Guards are read-only (E0300); reading
+# through a borrow in a guard stays legal.
+run_err:error_090_guard_moves_linear.con	reject-diagnostic	positive	run_err	tests/programs/error_090_guard_moves_linear.con	E0300
+run_err:error_090_guard_moves_binder.con	reject-diagnostic	positive	run_err	tests/programs/error_090_guard_moves_binder.con	E0300
+run_ok:regress_090_guard_reads.con	run-value	positive	run_ok	tests/programs/regress_090_guard_reads.con	42
+# A guard move hidden by `defer` (reserved) or by reassignment is E0300 at the
+# move itself (both compiled and double-freed before).
+run_err:error_090_guard_defer_moves.con	reject-diagnostic	positive	run_err	tests/programs/error_090_guard_defer_moves.con	E0300
+run_err:error_090_guard_move_then_reassign.con	reject-diagnostic	positive	run_err	tests/programs/error_090_guard_move_then_reassign.con	E0300
+# Bug 092: a reference stored in an aggregate outlived its source (only a bare
+# `let r = &s` froze it). References are never stored in an aggregate (E0239);
+# references flowing down (arguments, bare borrows, fn-pointer fields) stay legal.
+run_err:error_092_ref_struct_field.con	reject-diagnostic	positive	run_err	tests/programs/error_092_ref_struct_field.con	E0239
+run_err:error_092_ref_in_option.con	reject-diagnostic	positive	run_err	tests/programs/error_092_ref_in_option.con	E0239
+run_err:error_092_ref_in_array.con	reject-diagnostic	positive	run_err	tests/programs/error_092_ref_in_array.con	E0239
+# The same rule after monomorphization (T = &Int in a generic aggregate; the
+# Box case segfaulted) and for a newtype's inner type.
+run_err:error_092_generic_box_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_092_generic_box_ref.con	E0239
+run_err:error_092_generic_array_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_092_generic_array_ref.con	E0239
+run_err:error_092_newtype_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_092_newtype_ref.con	E0239
+# Through a type alias, at the declaration (the newtype one was accepted).
+run_err:error_092_alias_newtype_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_092_alias_newtype_ref.con	error[check]: (E0239)
+run_err:error_092_alias_struct_field_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_092_alias_struct_field_ref.con	error[check]: (E0239)
+# A declaration's own type parameter shadows a same-named reference alias (Check
+# and Elab both expanded it: Box<Int>'s field became &Int).
+run_ok:regress_092_type_param_shadows_ref_alias.con	run-value	positive	run_ok	tests/programs/regress_092_type_param_shadows_ref_alias.con	42
+# A module constant holding references in an aggregate (compiled before).
+run_err:error_092_const_ref_array.con	reject-diagnostic	positive	run_err	tests/programs/error_092_const_ref_array.con	E0239
+# A phantom reference type argument, checked before Mono renames the instance.
+run_err:error_092_phantom_ref_type_arg.con	reject-diagnostic	positive	run_err	tests/programs/error_092_phantom_ref_type_arg.con	E0239
+run_ok:regress_092_refs_flow_down.con	run-value	positive	run_ok	tests/programs/regress_092_refs_flow_down.con	42
+# Bug 093: a block local or match binder that shadows an outer name escaped the
+# never-consumed check (block locals were found by NAME). Bindings now carry an
+# identity; the shadowing local must itself be consumed.
+# Exit 2i: every shape of bugs 093/094 shadows, so SCOPE-1@1 refuses it first
+# (E0301); the identity-keyed checks stay as defense in depth (MEMORY_SEMANTICS
+# §15.6: their mutation rows move to a leg that disables E0301, R-0498).
+run_err:error_093_shadowing_block_local_leak.con	reject-diagnostic	positive	run_err	tests/programs/error_093_shadowing_block_local_leak.con	(E0301)
+run_err:error_093_shadowing_match_binder_leak.con	reject-diagnostic	positive	run_err	tests/programs/error_093_shadowing_match_binder_leak.con	(E0301)
+run_err:regress_093_shadowing_locals_consumed.con	reject-diagnostic	positive	run_err	tests/programs/regress_093_shadowing_locals_consumed.con	(E0301)
+# Bug 094: per-binding state updates (consume, use, reassign, borrow freeze,
+# defer) marked EVERY entry sharing the name, so a binder that shadowed a live
+# linear binding consumed it too (the outer value leaked). State updates now
+# match the binding by identity (arm binders stay arm-scoped and may shadow),
+# and a destructure binder refuses to shadow a live non-Copy binding (E0292).
+run_err:error_094_arm_binder_shadows_live.con	reject-diagnostic	positive	run_err	tests/programs/error_094_arm_binder_shadows_live.con	(E0301)
+run_err:error_094_destructure_shadows_live.con	reject-diagnostic	positive	run_err	tests/programs/error_094_destructure_shadows_live.con	(E0301)
+run_err:error_094_value_binder_shadows_live.con	reject-diagnostic	positive	run_err	tests/programs/error_094_value_binder_shadows_live.con	(E0301)
+run_err:regress_094_shadowing_binders.con	reject-diagnostic	positive	run_err	tests/programs/regress_094_shadowing_binders.con	(E0301)
+run_err:regress_094_shadow_state_by_identity.con	reject-diagnostic	positive	run_err	tests/programs/regress_094_shadow_state_by_identity.con	(E0301)
+# A borrow-block body local named like the ref was dropped with it by name.
+run_err:error_094_borrow_block_shadow_leak.con	reject-diagnostic	positive	run_err	tests/programs/error_094_borrow_block_shadow_leak.con	(E0301)
+# A local shadowing a `&mut` parameter was exempt from the exit check by name.
+run_err:error_094_mut_ref_param_shadow_leak.con	reject-diagnostic	positive	run_err	tests/programs/error_094_mut_ref_param_shadow_leak.con	(E0301)
+# Exit 2i SCOPE-1@1 (MEMORY_SEMANTICS §15.4): one lexical name, one binding. Each binder kind
+# that reuses a visible name is E0301 (bug 124: duplicate parameters reached llvm-as); each
+# rejected shape has a renamed migration twin. SCOPE-2: sibling scopes, loop bodies and
+# assignment are not collisions. The full manifest is tests/rules/exit_2i.tsv
+# (scripts/tests/check_rules_2i.sh).
+run_err:error_2i_scope1_same_block_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_same_block_let.con	(E0301)
+run_ok:regress_2i_scope1_same_block_let_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_same_block_let_renamed.con	42
+run_err:error_2i_scope1_block_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_block_let.con	(E0301)
+run_ok:regress_2i_scope1_block_let_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_block_let_renamed.con	42
+run_err:error_2i_scope1_param_in_block.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_param_in_block.con	(E0301)
+run_ok:regress_2i_scope1_param_in_block_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_param_in_block_renamed.con	42
+run_err:error_2i_scope1_consuming_rebind.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_consuming_rebind.con	(E0301)
+run_ok:regress_2i_scope1_consuming_rebind_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_consuming_rebind_renamed.con	42
+run_err:error_2i_scope1_for_header.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_for_header.con	(E0301)
+run_ok:regress_2i_scope1_for_header_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_for_header_renamed.con	42
+run_err:error_2i_scope1_arm_binder.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_arm_binder.con	(E0301)
+run_ok:regress_2i_scope1_arm_binder_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_arm_binder_renamed.con	42
+run_err:error_2i_scope1_if_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_if_let.con	(E0301)
+run_ok:regress_2i_scope1_if_let_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_if_let_renamed.con	42
+run_err:error_2i_scope1_while_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_while_let.con	(E0301)
+run_ok:regress_2i_scope1_while_let_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_while_let_renamed.con	42
+run_err:error_2i_scope1_destructure.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_destructure.con	(E0301)
+run_ok:regress_2i_scope1_destructure_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_destructure_renamed.con	42
+run_err:error_2i_scope1_duplicate_params.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_duplicate_params.con	(E0301)
+run_ok:regress_2i_scope1_duplicate_params_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_duplicate_params_renamed.con	42
+run_err:error_2i_scope1_borrow_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_borrow_ref.con	(E0301)
+run_ok:regress_2i_scope1_borrow_ref_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_borrow_ref_renamed.con	42
+run_err:error_2i_scope1_region_name.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_region_name.con	(E0301)
+run_ok:regress_2i_scope1_region_name_renamed.con	run-value	positive	run_ok	tests/programs/regress_2i_scope1_region_name_renamed.con	42
+run_ok:regress_2i_scope2_sibling_branches.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_sibling_branches.con	42
+run_ok:regress_2i_scope2_sibling_arms.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_sibling_arms.con	42
+run_ok:regress_2i_scope2_consecutive_loops.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_consecutive_loops.con	42
+run_ok:regress_2i_scope2_loop_body_let.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_loop_body_let.con	42
+run_ok:regress_2i_scope2_assign_rebind.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_assign_rebind.con	42
+run_ok:regress_2i_renamed_pattern_binder.con	run-value	positive	run_ok	tests/programs/regress_2i_renamed_pattern_binder.con	42
+# Exit 2i REF-6@1 (MEMORY_SEMANTICS §15.3): no `let` binds a reference (E0302), no reference
+# binding is assigned (E0303); after monomorphization too (a generic `T` instantiated to `&Int`).
+run_err:error_2i_ref6_let_shared_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_let_shared_ref.con	(E0302)
+run_err:error_2i_ref6_let_inferred_alias.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_let_inferred_alias.con	(E0302)
+run_err:error_2i_ref6_let_mut_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_let_mut_ref.con	(E0302)
+run_err:error_2i_ref6_let_ref_to_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_let_ref_to_ref.con	(E0302)
+run_err:error_2i_ref6_generic_let_at_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_generic_let_at_ref.con	(E0302)
+run_err:error_2i_ref6_borrow_block_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_borrow_block_copy.con	(E0302)
+run_err:error_2i_ref6_borrow_block_paren_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_borrow_block_paren_copy.con	(E0302)
+run_err:error_2i_ref6_borrow_block_cast_copy.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_borrow_block_cast_copy.con	(E0302)
+run_err:error_2i_ref6_borrow_block_reborrow_escape.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_borrow_block_reborrow_escape.con	(E0302)
+run_err:error_2i_ref8_free_under_projected_borrow.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref8_free_under_projected_borrow.con	(E0302)
+run_err:error_2i_ref8_assign_under_shared.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref8_assign_under_shared.con	(E0302)
+run_err:error_2i_ref6_param_repointed.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_param_repointed.con	(E0303)
+run_err:error_2i_ref6_mut_param_repointed.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_mut_param_repointed.con	(E0303)
+run_err:error_2i_ref6_borrow_binder_assigned.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_borrow_binder_assigned.con	(E0303)
+run_err:error_2i_ref6_arm_binder_assigned.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_arm_binder_assigned.con	(E0303)
+run_err:error_2i_ref6_generic_assign_at_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_generic_assign_at_ref.con	(E0303)
+run_ok:regress_2i_ref6_generic_assign_at_value.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_generic_assign_at_value.con	42
+run_ok:regress_2i_ref6_place_each_use.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_place_each_use.con	42
+run_ok:regress_2i_ref6_index_once.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_index_once.con	42
+run_ok:regress_2i_ref6_borrow_block_projection.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_borrow_block_projection.con	42
+run_ok:regress_2i_ref6_arm_binder_through_ref.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_arm_binder_through_ref.con	42
+run_ok:regress_2i_ref6_write_through_param.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_write_through_param.con	42
+run_err:error_2i_ref6_let_else_through_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_let_else_through_ref.con	(E0302)
+run_ok:regress_2i_ref6_method_let_else.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_method_let_else.con	42
+run_err:error_2i_ref6_nested_let_else_through_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_nested_let_else_through_ref.con	(E0302)
+run_ok:regress_2i_nested_let_destructure.con	run-value	positive	run_ok	tests/programs/regress_2i_nested_let_destructure.con	42
+run_err:error_2i_ref6_ghost_let_at_type_param.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_ghost_let_at_type_param.con	(E0302)
+run_err:error_2i_ref6_struct_destructure_through_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_struct_destructure_through_ref.con	(E0302)
+run_ok:regress_2i_ref6_struct_fields_through_ref.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_struct_fields_through_ref.con	42
+run_ok:regress_2i_scope2_borrow_after_loop.con	run-value	positive	run_ok	tests/programs/regress_2i_scope2_borrow_after_loop.con	42
+run_err:error_2i_ref6_erased_assert_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_erased_assert_let.con	(E0302)
+run_err:error_2i_ref6_erased_assert_assign.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_erased_assert_assign.con	(E0303)
+run_err:error_2i_ref6_ghost_initializer_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_ghost_initializer_let.con	(E0302)
+run_ok:regress_2i_ref6_ghost_ptr_and_fn_types.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_ghost_ptr_and_fn_types.con	42
+run_ok:regress_2i_value_block_destructure.con	run-value	positive	run_ok	tests/programs/regress_2i_value_block_destructure.con	42
+run_err:error_2i_scope1_const_initializer.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_const_initializer.con	(E0301)
+run_err:error_2i_ref6_const_initializer.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_initializer.con	(E0302)
+run_ok:regress_2i_const_initializer_block.con	run-value	positive	run_ok	tests/programs/regress_2i_const_initializer_block.con	42
+run_err:error_2i_ref6_const_branch_borrow.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_branch_borrow.con	(E0302)
+run_err:error_2i_ref6_const_destructure_through_borrow.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_destructure_through_borrow.con	(E0302)
+run_err:error_2i_ref6_const_match_through_borrow.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_match_through_borrow.con	(E0302)
+run_err:error_2i_ref6_const_typed_ref_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_typed_ref_let.con	(E0302)
+run_err:error_2i_spec_body_generic_call.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_spec_body_generic_call.con	(E0305)
+run_err:error_2i_ref5_const_ref_through_raw_ptr.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref5_const_ref_through_raw_ptr.con	(E0238)
+run_err:error_2i_ref6_const_borrow_block.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_borrow_block.con	(E0302)
+run_err:error_2i_ref6_contract_ref_binding.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_contract_ref_binding.con	(E0305)
+run_err:error_2i_scope1_contract_let.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_contract_let.con	(E0305)
+run_err:error_2i_contract_invariant_binds.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_invariant_binds.con	(E0305)
+run_err:error_2i_contract_variant_binds_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_variant_binds_ref.con	(E0305)
+run_err:error_2i_contract_inferred_ref_alias.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_inferred_ref_alias.con	(E0305)
+run_err:error_2i_contract_wrapped_binder.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_wrapped_binder.con	(E0305)
+run_err:error_2i_contract_trait_impl_invariant.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_trait_impl_invariant.con	(E0305)
+run_err:error_2i_contract_place_assignment.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_place_assignment.con	(E0305)
+run_err:error_2i_contract_borrow_to_generic.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_borrow_to_generic.con	(E0305)
+run_err:error_2i_contract_generic_call.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_generic_call.con	(E0305)
+run_err:error_2i_contract_imported_generic.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_imported_generic.con	(E0305)
+run_err:error_2i_scope1_extern_duplicate_params.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_extern_duplicate_params.con	(E0301)
+run_err:error_2i_scope1_trait_decl_duplicate_params.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_trait_decl_duplicate_params.con	(E0301)
+run_ok:regress_2i_contract_aliased_ref_param.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_aliased_ref_param.con	42
+run_ok:regress_2i_contract_ref_receiver.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_ref_receiver.con	42
+run_ok:regress_2i_contract_static_nongeneric_method.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_static_nongeneric_method.con	42
+run_err:error_2i_spec_body_hidden_binder.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_spec_body_hidden_binder.con	(E0305)
+run_ok:regress_2i_contract_nongeneric_call_beside_generic_method.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_nongeneric_call_beside_generic_method.con	42
+run_err:error_2i_contract_generic_method_mangled.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_generic_method_mangled.con	(E0305)
+run_err:error_2i_contract_generic_method_static.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_contract_generic_method_static.con	(E0305)
+run_err:error_2i_ref6_const_cast_to_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_cast_to_ref.con	(E0302)
+run_err:error_2i_ref6_const_aliased_ref.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_const_aliased_ref.con	(E0302)
+run_ok:regress_2i_contract_paren_ref_arg.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_paren_ref_arg.con	42
+run_err:error_2i_scope1_contracted_fn_shadow.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_contracted_fn_shadow.con	(E0301)
+run_err:error_2i_ref6_erased_forwarded_generic.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_erased_forwarded_generic.con	(E0302)
+run_err:error_2i_ref6_erased_generic_call.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_ref6_erased_generic_call.con	(E0302)
+run_ok:regress_2i_ref6_generic_call_outside_assert.con	run-value	positive	run_ok	tests/programs/regress_2i_ref6_generic_call_outside_assert.con	42
+run_ok:regress_2i_const_nested_if_statement.con	run-value	positive	run_ok	tests/programs/regress_2i_const_nested_if_statement.con	42
+run_err:error_2i_scope1_spec_fn_duplicate_params.con	reject-diagnostic	positive	run_err	tests/programs/error_2i_scope1_spec_fn_duplicate_params.con	(E0301)
+run_ok:regress_2i_contract_and_spec_params.con	run-value	positive	run_ok	tests/programs/regress_2i_contract_and_spec_params.con	42
+# Bug 082: one binding per name per module. An import colliding with a local
+# function, or two imports of different definitions under one name, is E0299
+# (the positive alias rows are tests/codegen/import_alias_binding.con).
+run_err:error_082_import_alias_shadows_local.con	reject-diagnostic	positive	run_err	tests/programs/error_082_import_alias_shadows_local.con	E0299
+run_err:error_082_import_duplicate_binding.con	reject-diagnostic	positive	run_err	tests/programs/error_082_import_duplicate_binding.con	E0299
+# Codex review of bug 082: the namespace includes impl methods (`Type_method`), and the
+# program-level spelling an import is emitted under (`a_f`) may not name an unrelated
+# definition, or the backends would call that one.
+run_err:error_082_import_alias_shadows_method.con	reject-diagnostic	positive	run_err	tests/programs/error_082_import_alias_shadows_method.con	E0299
+run_err:error_082_import_spelling_collision.con	reject-diagnostic	positive	run_err	tests/programs/error_082_import_spelling_collision.con	E0299
+# Codex round 2: the import's target is its fully qualified module, not any path ending in
+# its name (top-level a.f vs nested z.a.f, both Core `a_f`; was 55, should be refused).
+run_err:error_082_import_suffix_collision.con	reject-diagnostic	positive	run_err	tests/programs/error_082_import_suffix_collision.con	E0299
+# 0b construction rights: a module constructs its OWN newtype directly;
+# cross-module construction is private (error_047 project fixture).
+run_ok:newtype_construct_local.con	run-value	positive	run_ok	tests/programs/newtype_construct_local.con	5
+# 0b slice 2: pub struct fields are cross-module constructible + readable;
+# private fields (error_048 project) are module-internal.
+run_ok:field_privacy_pub_ok.con	run-value	positive	run_ok	tests/programs/field_privacy_pub_ok.con	7
+# Intrinsic identity (audit 2026-07-16): user fns named sizeof/wrapping_add
+# are USER fns at every pass — never name-hijacked.
+run_ok:regress_intrinsic_shadowing.con	run-value	positive	run_ok	tests/programs/regress_intrinsic_shadowing.con	31
+# Enum canonical union (audit 2026-07-16): align-8 payload reads back through
+# the shared union; class gate is check_enum_union_layout.sh.
+run_ok:regress_enum_canonical_align.con	run-value	positive	run_ok	tests/programs/regress_enum_canonical_align.con	42007
+# Bug 121: enum LLVM types carry exactly tySize/tyAlign (payload-less enums were
+# 8 bytes, align-8 payload enums 4-aligned), so an enum field no longer moves the
+# struct fields after it on a whole-struct copy; class gate check_enum_union_layout.sh.
+run_ok:regress_bug121_enum_field_layout.con	run-value	positive	run_ok	tests/programs/regress_bug121_enum_field_layout.con	42
+run_err:error_030_nonmut_array_write.con	reject-diagnostic	positive	run_err	tests/programs/error_030_nonmut_array_write.con	cannot assign to immutable
+run_ok:regress_mut_array_elem_writeback.con	run-value	positive	run_ok	tests/programs/regress_mut_array_elem_writeback.con	26741
+run_ok:regress_unary_postfix_precedence.con	run-value	positive	run_ok	tests/programs/regress_unary_postfix_precedence.con	42
+run_ok:regress_stmt_match_arm_unit.con	run-value	positive	run_ok	tests/programs/regress_stmt_match_arm_unit.con	42
+run_ok:test_linear_drop.con	run-value	positive	run_ok	tests/programs/test_linear_drop.con	0
+run_ok:test_typevar_copy_bound.con	run-value	positive	run_ok	tests/programs/test_typevar_copy_bound.con	0
+run_ok:test_generic_linearity.con	run-value	positive	run_ok	tests/programs/test_generic_linearity.con	0
+run_ok:test_linear_if_return.con	run-value	positive	run_ok	tests/programs/test_linear_if_return.con	0
+run_ok:test_trusted_loop_consume.con	run-value	positive	run_ok	tests/programs/test_trusted_loop_consume.con	0
+run_ok:test_generic_fnptr_map.con	run-value	positive	run_ok	tests/programs/test_generic_fnptr_map.con	0
+
