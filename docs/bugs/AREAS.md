@@ -12,13 +12,13 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-300 records: 179 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 37 by commits shared with other bugs, 13 by the commit that filed or closed the record, 23 by an `area:` override; 11 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+300 records: 178 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 37 by commits shared with other bugs, 13 by the commit that filed or closed the record, 23 by an `area:` override; 12 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
 | stage | bugs | open | silent | shared or fallback | top modules |
 |--|-:|-:|-:|-:|--|
-| Check | 74 | 1 | 41 | 5 | Check 34, CoreCheck 13, CheckHelpers 9, Verify 5 |
+| Check | 73 | 0 | 40 | 5 | Check 34, CoreCheck 13, CheckHelpers 9, Verify 5 |
 | Lower | 42 | 2 | 15 | 5 | Lower 41, - 1 |
 | Resolve | 27 | 1 | 4 | 7 | Resolve 15, FileSummary 7, PeekType 2, BuiltinEnums 1 |
 | Elab | 26 | 0 | 9 | 7 | Elab 25, TypeSpelling 1 |
@@ -51,7 +51,7 @@ checker refusal is a Check bug here.
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
 | 11. Absence read as a fact (fail-open defaults) | 15 | Gates 4, Tooling 3, Resolve 2, Proof 2, Report 2, Check 1, SSA 1 |
 | 12. One fact kept in two places | 29 | Resolve 11, Check 5, Interp 4, Elab 3, Parse 2, Proof 1, Std 1, CLI 1, Tooling 1 |
-| 13. Documented rules with no enforcing site | 27 | Check 13, Report 5, Resolve 4, Lower 3, Parse 1, Elab 1 |
+| 13. Documented rules with no enforcing site | 26 | Check 12, Report 5, Resolve 4, Lower 3, Parse 1, Elab 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
 | 15. Ownership state not modeled along control-flow paths | 7 | Check 7 |
 | 16. Artifacts at paths no run owns | 5 | Tooling 2, Std 1, CLI 1, Gates 1 |
@@ -73,7 +73,7 @@ checker refusal is a Check bug here.
 | violates PAT | 6 | Check 4, Interp 1, CLI 1 |
 | violates REF | 7 | Check 6, Lower 1 |
 | violates SCOPE | 13 | Check 7, Proof 3, Elab 1, Mono 1, CLI 1 |
-| violates STMT | 11 | Check 4, Elab 2, Lower 2, Report 2, Interp 1 |
+| violates STMT | 10 | Check 3, Elab 2, Lower 2, Report 2, Interp 1 |
 | violates SYN | 4 | Parse 2, Report 1, Tooling 1 |
 | violates TRAIT | 4 | Check 3, Resolve 1 |
 | violates TRUST | 4 | Check 2, Parse 1, Proof 1 |
@@ -376,7 +376,7 @@ checker refusal is a Check bug here.
 | [316](316_browser_lean_the_browser_compiler_root_did_not_b.md) | Tooling | test-parity | commits | — | outside (tooling) |
 | [318](318_a_struct_literal_in_an_if_while_or_match_head_is.md) | Report | Report | record | Check | violates SYN-4@1 |
 | [319](319_a_call_that_re_lends_a_mut_binding_is_not_overla.md) | — | — | unfixed | — | violates REF-11@3 |
-| [320](320_main_may_return_int_or_bool_the_native_exit_stat.md) | Check | CheckError | commits | — | violates STMT-7@3 |
+| [320](320_main_may_return_int_or_bool_the_native_exit_stat.md) | — | — | unfixed | — | violates STMT-7@3 |
 | [321](321_a_bare_variant_name_ignores_a_payload_and_a_stru.md) | — | — | unfixed | — | violates PAT-3@3, PAT-5@3 |
 | [322](322_trusted_code_compares_raw_pointers_with_and_the.md) | — | — | unfixed | — | violates TYPE-6@2 |
 | [323](323_break_with_a_value_is_accepted_inside_a_while_or.md) | Report | Diagnostic | shared | — | violates STMT-6@3 |
