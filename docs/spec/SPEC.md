@@ -1152,7 +1152,7 @@ This appendix is not normative. It records what earlier versions of this chapter
 or why they changed, so that each rationale explains the current version only. The registry,
 [ids.tsv](ids.tsv), keeps every version's state and sentence hash.
 
-- SYN-6@2 (spec audit 6, 2026-10-30) adds the char-literal escapes to the sentence; the compiler accepted them before.
+- SYN-6@2 (spec audits 6 and 10, 2026-10-30) adds the char-literal escapes to the sentence; the compiler accepted them before.
 
 
 <a id="ch-modules"></a>
@@ -2698,7 +2698,7 @@ fn main() -> u8 {
 
 **Rationale.** There are no default arguments, no variadic functions and no method lookup
 through implicit conversions. A method of a type parameter comes only from its bounds, which is
-what lets a generic body be checked once (TYPE-2, PASS-1). The type-argument count is E0322's (bug 221: an extra type argument was once dropped silently). A body-less declaration (an `#[intrinsic]`) keeps no type-parameter
+what lets a generic body be checked once (TYPE-2, PASS-1). E0322 enforces the type-argument count (bug 221: an extra type argument was dropped silently). A body-less declaration (an `#[intrinsic]`) keeps no type-parameter
 list, so the current compiler still skips the count there (bug 333), pinned by the pending example.
 
 ```con reject name=wrong-arity code=E0262 stage=check pair=right-arity
@@ -4064,10 +4064,10 @@ This appendix is not normative. It records what earlier versions of this chapter
 or why they changed, so that each rationale explains the current version only. The registry,
 [ids.tsv](ids.tsv), keeps every version's state and sentence hash.
 
-- TYPE-4@2 drops the `break` value from the positions a literal or expression takes its type from, since a `break` carries no value (OD27).
+- TYPE-4@2 drops the `break` value from the list of positions a value flows into, since a `break` carries no value (OD27).
 - TYPE-6@1 admitted raw-pointer comparison and `p + k` in trusted or `Unsafe` code (bugs 134 and 140). TYPE-6@2 records OD26 (2026-10-29), which removes both, pointer arithmetic becoming `ptr::offset` (TRUST-1).
 - TYPE-9@2 states the type-argument count that E0322 already enforced (bug 221: an extra type argument was dropped silently).
-- TYPE-14@1 (pending, never enforced) required a `T: Copy` bound instead; TIGHTENING_DECISIONS D6 option (a) retired it.
+- TYPE-14@1 (pending, never enforced) required a `T: Copy` bound instead and was retired by the option (a) decision (TIGHTENING_DECISIONS D6, 2026-10-23).
 
 
 <a id="ch-arithmetic"></a>
@@ -5747,7 +5747,7 @@ or why they changed, so that each rationale explains the current version only. T
 
 - STMT-6@2 records OD27 (2026-10-29): `break <expr>` is refused at parse. STMT-6@3 records OD47 (2026-10-29): the loops are `while` and the counted loop, and the C-style `for` is removed.
 - STMT-7@2 masked an integer result to 0–255 and mapped `bool` (stage 1 of MAIN_EXIT_MODEL). STMT-7@3 records OD24 (2026-10-29): `main` returns `u8` or `Unit`.
-- STMT-11@1 (pending, retired before it was enforced) said of the C-style `for` step what STMT-11@2 says of the counted loop of OD47.
+- STMT-11@1 (retired before it was enforced, as the registry records) said of the C-style `for` step, which OD47 removes, what STMT-11@2 says of the counted loop of OD47.
 
 
 <a id="ch-patterns"></a>
@@ -6676,7 +6676,8 @@ This appendix is not normative. It records what earlier versions of this chapter
 or why they changed, so that each rationale explains the current version only. The registry,
 [ids.tsv](ids.tsv), keeps every version's state and sentence hash.
 
-- PAT-3@3 and PAT-5@3 record OD25 (2026-10-29): ignoring a payload is always written, and a struct `let` names every field.
+- PAT-3@3 records OD25 (2026-10-29): ignoring a payload is always written.
+- PAT-5@3 records OD25 (2026-10-29): a struct `let` names every field.
 
 
 <a id="ch-ownership"></a>
@@ -6730,7 +6731,7 @@ Every claim of "exactly once" here holds on every path that does not abort (STMT
 **Rationale.** Copy answers "may this be duplicated", not "may this be dropped". A generic
 declared `Copy` is Copy exactly at the instantiations whose type arguments are Copy:
 `Option<i32>` is, `Option<String>` is not. An instantiation that does not qualify is linear, not
-an error. This is decided from the declaration alone, as a derived `Copy` is (TIGHTENING_DECISIONS D6, option (a), 2026-10-23), so a parameter no field mentions cannot make an instantiation Copy and Mono needs no fixpoint over the type graph. The declaration itself is checked once (OWN-14), and
+an error. TIGHTENING_DECISIONS D6, option (a) (2026-10-23), decides this from the declaration alone, as a derived `Copy` is, so Mono needs no fixpoint over the type graph. The declaration itself is checked once (OWN-14), and
 TYPE-14 states the consequence.
 
 ### Rules
@@ -7376,7 +7377,7 @@ fn main() -> u8 {
 **Rationale.** `2 + 3;` or `f();` with a result is either a dead computation or a deliberate
 discard, and the reader cannot tell which; `discard(e)` says it.
 
-The owner decided on 2026-10-29 (OD29) that every unused non-Unit result needs `discard(e)`, with no purity heuristic. The current compiler still applies version 2's heuristic: it refuses only a syntactically pure non-Unit Copy value (E0294), skipping calls and operations that can trap (`/`, `%`), and drops a call's result silently (bug 325). Its site is `exprPureDiscardable`, a local structural purity predicate in the `Stmt.expr` check (`CheckError.discardedPureValue`).
+The owner decided on 2026-10-29 (OD29) that every unused non-Unit result needs `discard(e)`, with no syntactic purity heuristic. The current compiler still applies that heuristic: it refuses only a syntactically pure non-Unit Copy value (E0294), skipping calls and operations that can trap (`/`, `%`), and drops a call's result silently (bug 325). Its site is `exprPureDiscardable`, a local structural purity predicate in the `Stmt.expr` check (`CheckError.discardedPureValue`).
 
 
 ```con reject name=dead-computation code=E0294 stage=check pair=used-computation
@@ -8999,7 +9000,7 @@ the flow-sensitive half of the rules disappears. The rewrite is to borrow at eac
 (`f(&w.p); g(&w.p);`) or to borrow the owner in a borrow block. Writing *through* a reference
 (`*r = v`) assigns the referenced place, not the binding (REF-7).
 
-Two refusals besides the post-monomorphization one carry this entry's tag and code (E0302). A
+This entry also states two refusals under its tag and code (E0302). A
 constant initializer is checked as an expression of the constant's type and may not
 borrow at all, a cast to a reference type counting as a borrow (`constBorrows`). A generic
 instantiated inside an `assert`, an `assume` or a ghost initializer may not be instantiated at a
@@ -10027,7 +10028,7 @@ fn main() -> u8 {
 `&mut Heap<S>` once corrupted the caller's slot (bug 126). Deeper types (`& &S`)
 need an explicit `*`.
 
-The owner decided on 2026-10-29 (OD30) that a field access does not open a heap cell implicitly. The spelling of the explicit non-consuming place form is OPEN-36. The current compiler still opens one `Heap` layer implicitly (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer, so it reaches `f` through one `Heap` layer (`h.f` on `Heap<S>`, bug 326).
+The owner decided on 2026-10-29 (OD30) that a field access does not open a heap cell implicitly. The spelling of the explicit non-consuming place form is OPEN-36. The current compiler still opens one `Heap` layer implicitly (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer, and reaches `f` through one `Heap` layer (`h.f` on `Heap<S>`, bug 326).
 
 
 ```con accept name=one-hop-field-access exit=42
@@ -10255,7 +10256,7 @@ This appendix is not normative. It records what earlier versions of this chapter
 or why they changed, so that each rationale explains the current version only. The registry,
 [ids.tsv](ids.tsv), keeps every version's state and sentence hash.
 
-- MEM-4@2 opened one `Heap` layer implicitly in a field access (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer. MEM-4@3 recorded OD30 (2026-10-29) and was retired before it was enforced; MEM-4@4 (spec audit 8, 2026-10-30) states the same decision and names OPEN-36 for the spelling of the explicit form.
+- MEM-4@2 opened one `Heap` layer implicitly in a field access (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer. MEM-4@3 recorded OD30 (2026-10-29) and was retired before it was enforced, as the registry records; MEM-4@4 (spec audit 8, 2026-10-30) states the same decision and names OPEN-36 for the spelling of the explicit form.
 
 
 <a id="ch-traits"></a>
@@ -13391,7 +13392,7 @@ This appendix is not normative. It records what earlier versions of this chapter
 or why they changed, so that each rationale explains the current version only. The registry,
 [ids.tsv](ids.tsv), keeps every version's state and sentence hash.
 
-- PASS-2@1 (retired before it was enforced) did not name the case where the carried type changes under substitution; PASS-2@2, the first enforced version, names it (a whole-value binder over a scrutinee of type `T` at `T := &Int`).
+- PASS-2@1 was retired before it was enforced (the registry: the whole-value binder exception is stated in version 2); PASS-2@2, the first enforced version, names the one case where the carried type changes under substitution (a whole-value binder over a scrutinee of type `T` at `T := &Int`).
 
 
 <a id="ch-decisions"></a>
