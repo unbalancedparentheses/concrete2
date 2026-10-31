@@ -511,6 +511,7 @@ open_bug_reproducers() {
 331|bug331_c_style_for_loops_are_accepted_and_the_counted_l/repro.con|runs-exit|42
 341|bug341_two_modules_that_each_declare_main_pass_check_an/repro.con|compile-fails|redefinition of global '@__concrete_argc'
 342|bug342_the_diagnostic_code_completeness_gate_scans_a_fi/repro.con|compile-fails|(E0900)
+348|bug348_float_to_string_runs_natively_and_interp_stops_w/repro.con|interp-fails|undefined function 'float_to_string'
 TABLE
 }
 if [ -z "$ONLY" ]; then
