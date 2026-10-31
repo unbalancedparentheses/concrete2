@@ -149,13 +149,13 @@ a link failure, an interpreter refusal or an unrejected leak.
 
 <!-- BEGIN GENERATED: bug dashboard (scripts/gen/bug_dashboard.py; edit docs/bugs records and docs/bugs/discovery.tsv) -->
 
-**Open bugs: 26** (15 silent, 6 loud, 5 filed before the discovery record) of 303 bug records.
+**Open bugs: 25** (14 silent, 6 loud, 5 filed before the discovery record) of 303 bug records.
 
 | open bugs by primary structural class | open | silent | bugs |
 |---|---|---|---|
 | 1. Declaration identity by spelled name, not a resolved `DefId` | 5 | 1 | 054, 077, 114, 122, 341 |
 | 5. Borrow tracking by syntax instead of normalized places | 1 | 0 | 216 |
-| 11. Absence read as a fact (fail-open defaults) | 3 | 1 | 049, 058, 342 |
+| 11. Absence read as a fact (fail-open defaults) | 2 | 0 | 049, 058 |
 | 12. One fact kept in two places | 1 | 0 | 064 |
 | 13. Documented rules with no enforcing site | 14 | 12 | 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 331, 332, 333 |
 | 17. Pass state in association lists and per-query recomputation (superlinear compile time) | 1 | 0 | 270 |
@@ -166,7 +166,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | exit 0b | 4 | 4 | 122, 332, 333, 340 |
 | exit 2c | 1 | 0 | 114 |
 | exit 2q | 13 | 10 | 216, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 331 |
-| no exit names it | 8 | 1 | 049, 054, 058, 064, 077, 270, 341, 342 |
+| no exit names it | 7 | 0 | 049, 054, 058, 064, 077, 270, 341 |
 
 | open bugs by spec ruling ([RULINGS.md](docs/bugs/RULINGS.md)) | open | silent | bugs |
 |---|---|---|---|
@@ -175,7 +175,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | violates FFI-2@1 | 1 | 1 | 122 |
 | violates FFI-5@1 | 1 | 0 | 114 |
 | violates MEM-4@4 | 1 | 1 | 326 |
-| violates MEM-6@1 | 1 | 1 | 340 |
+| violates MEM-9@1 | 1 | 1 | 340 |
 | violates OWN-10@2 | 1 | 0 | 216 |
 | violates OWN-15@3 | 1 | 1 | 328 |
 | violates OWN-7@3 | 1 | 1 | 325 |
@@ -189,7 +189,7 @@ a link failure, an interpreter refusal or an unrejected leak.
 | violates TYPE-6@2 | 1 | 1 | 322 |
 | violates TYPE-9@2 | 1 | 1 | 333 |
 | outside the spec (performance) | 1 | 0 | 270 |
-| outside the spec (tooling) | 4 | 1 | 049, 058, 064, 342 |
+| outside the spec (tooling) | 3 | 0 | 049, 058, 064 |
 
 | discovery rate: counting probe batch | date | effort | found | silent | loud | signal |
 |---|---|---|---|---|---|---|
