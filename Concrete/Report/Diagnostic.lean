@@ -122,7 +122,7 @@ def codeRuleTag : String → Option String
   | "E0307" => some "STMT-9@1"
   -- docs/spec/arithmetic.md
   | "E0227" => some "ARITH-2@3"
-  | "E0553" => some "ARITH-5@2"
+  | "E0553" => some "ARITH-5@3"
   -- docs/spec/patterns.md
   | "E0530" | "E0534" => some "PAT-2@2"
   | "E0304" | "E0309" | "E0531" | "E0532" | "E0533" => some "PAT-3@3"
