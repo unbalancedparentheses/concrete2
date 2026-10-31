@@ -6167,6 +6167,8 @@ skipped the rest of the function, or reached the backend, which failed in `llvm-
 `else` arm would discard the scrutinee, so `let ... else` there is refused (OWN-5); write a
 `match`.
 
+Three entries cover the destructuring `let`. This one states what it must write: every field, an `else` where the pattern may fail, and an `else` that diverges. PAT-10 states what an enum destructuring `let` means, and PAT-8 where one may appear. The `else` requirement is checked through PAT-10's desugaring: an enum `let` with no `else` over a pattern that may fail becomes a one-arm `match` and is refused as non-exhaustive, E0530 at core-check under PAT-2 (`let E::A { v } = e;` with a variant `B` left out); E0252 and E0308 are this entry's own codes. They stay separate entries because their kinds differ (PAT-10 is a guarantee, PAT-8 and this entry are refusals) and PAT-8 retires with the C-style `for` (OD47).
+
 The owner decided on 2026-10-29 (OD25) that a struct `let` names every field, a
 Copy struct included. The current compiler still lets a pattern over a Copy struct omit fields (bug 321).
 
@@ -6393,8 +6395,7 @@ fn main() -> u8 {
 - Evidence: tested
 
 **Rationale.** A `let` over an enum variant is lowered to a `match` over the rest of its block
-(PAT-10); a `for` header has no block of its own to become that match, so the form is refused
-rather than skipped. A struct destructuring needs no match (it becomes field reads) and is
+(PAT-10); a `for` header has no block of its own to become that match, so the form is refused rather than skipped. PAT-5 states what a destructuring `let` must write wherever it appears. A struct destructuring needs no match (it becomes field reads) and is
 accepted there. Destructure the enum before the loop. OD47 removes the C-style `for` and its header (bug 331), and with it the form this entry
 refuses; the entry retires when that lands.
 
@@ -7311,7 +7312,9 @@ risky() { ... }`), propagating it by matching and returning the error arm, bindi
 risky();`, after which OWN-2 requires `r` be used) and a trailing value expression (the block's
 value, not a discard) never trip E0286. The deliberate acknowledgement is an exhaustive match that
 ignores only Copy payloads (`Option::Some { _ } => {}`): a catch-all `_` arm over the non-Copy value
-is E0288 and `let _ = e;` is E0289 (OWN-5). The future error-set report (`--report error-sets`,
+is E0288 and `let _ = e;` is E0289 (OWN-5). The current compiler also accepts `discard(e)` over a Copy `Result` or `Option`: with `get() -> Option<i32>`, `discard(get());` builds and runs on both consumers. Whether `discard` may drop a `Result` or an `Option` is OPEN-62.
+
+This entry and OWN-7 overlap: a `Result` or `Option` statement expression is also a non-`Unit` result under OWN-7. This entry is that case, and Check reports it as E0286 rather than OWN-7's E0294, whether or not the expression is a call (`get();` above is E0286). They stay two entries, with two codes, statuses and sets of examples; merging them would change which rule and code a diagnostic names. The future error-set report (`--report error-sets`,
 ROADMAP old Phase 6 #14) must keep these diagnostics firing. Site: `mustUseEnumName?` and the
 `Stmt.expr` discard check of `checkStmt` (`CheckError.discardedMustUse`); fixtures in
 `tests/programs/ignored_result/`, gate `scripts/tests/check_ignored_result.sh`.
@@ -7375,7 +7378,7 @@ fn main() -> u8 {
 - Evidence: tested
 
 **Rationale.** `2 + 3;` or `f();` with a result is either a dead computation or a deliberate
-discard, and the reader cannot tell which; `discard(e)` says it.
+discard, and the reader cannot tell which; `discard(e)` says it. A discarded `Result` or `Option` is OWN-6's case, reported as E0286 rather than E0294.
 
 The owner decided on 2026-10-29 (OD29) that every unused non-Unit result needs `discard(e)`, with no syntactic purity heuristic. The current compiler still applies that heuristic: it refuses only a syntactically pure non-Unit Copy value (E0294), skipping calls and operations that can trap (`/`, `%`), and drops a call's result silently (bug 325). Its site is `exprPureDiscardable`, a local structural purity predicate in the `Stmt.expr` check (`CheckError.discardedPureValue`).
 
