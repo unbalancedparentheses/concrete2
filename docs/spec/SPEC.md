@@ -357,6 +357,8 @@ Where Core's semantics in Lean defines a rule, that definition governs and the e
 questions are the last chapter, in the order to read them. The whole specification is also one
 generated page, [SPEC.md](SPEC.md), and how it is maintained (format, registry, gates) is
 [MAINTAINERS.md](MAINTAINERS.md).
+The terms this specification uses are in the [glossary](#glossary) at the end of this chapter, and
+the entries that govern each construct are in [rules by construct](#rules-by-construct).
 
 ### Chapters
 
@@ -426,6 +428,120 @@ entries. An invariant with no entry yet is a gap in the specification, tracked b
   fuzzer's taxonomy (`fuzz_differential.py` classifies any E07xx, panic or crash on a well-typed
   generated program as a compiler bug) and `check_mixed_width_binops.sh`; PASS-5 to PASS-10 state it
   per stage.
+
+### Glossary
+
+This section is explanatory and states no rule. Each term points at the entry or section that fixes
+it; where an entry defines the term, that entry is the definition and this table only finds it.
+
+| term | meaning in this specification | defined or governed by |
+|---|---|---|
+| entry | a rule or definition with an ID, a versioned normative sentence and fields | "How to read this specification" above, [MAINTAINERS.md](MAINTAINERS.md) §2.1 |
+| refusal, guarantee, definition, preservation | the kinds of entry: a rule the compiler reports with a code, a property of programs with no code, a fixed term, a pipeline stage's contract | MAINTAINERS.md §2.1 (`Kind:`) |
+| open entry | an entry of kind `open`: a question only the project owner decides; it encodes no answer | [decisions.md](#ch-decisions), MAINTAINERS.md §2.1 |
+| enforced, partial, pending | an entry's status: implemented; holding for its non-pending examples with the rest tracked; decided and not implemented | MAINTAINERS.md §2.1 (`Status:`) |
+| pending example | an example of an entry not yet implemented, run with `now=` recording what the compiler does today; it never counts as a pass | MAINTAINERS.md §2.2 |
+| consumer | a program that runs a checked program: the native binary, `--interp`, and Core's executable semantics once it exists | MAINTAINERS.md §2.2, PASS-13 |
+| profile | a way the compiler produces an executable: the native profile and the LLVM profile | PASS-3, PASS-4, OPEN-124 |
+| Core | the compiler's internal language after elaboration; its semantics in Lean is the normative definition where it exists | MAINTAINERS.md ("Authority"), [pipeline.md](#ch-pipeline) |
+| Check | the stage that checks the surface program: types, ownership, references, capabilities | PASS-5 |
+| Elab | elaboration: the stage that turns the checked program into Core, desugaring as it goes | PASS-6 |
+| CoreCheck | the stage that checks Core before it proceeds | PASS-8 |
+| Mono | monomorphization: the stage that specializes every generic at its type arguments | PASS-1, PASS-2, PASS-7 |
+| Lower, Emit | the stages that turn Core into verified SSA and SSA into LLVM IR | PASS-9, PASS-10, PASS-11 |
+| builtin | a function, type or enum the compiler provides with no declaration in the program | the [builtin catalog](#builtin-functions), TYPE-10, TYPE-23, MOD-1 |
+| intrinsic | an operation the compiler implements, named by a builtin or by `#[intrinsic = "n"]` | FFI-6, the builtin catalog |
+| place | a root binding followed by field, index or newtype projections | REF-5 |
+| owned value | a value a local binding holds by value rather than through a reference; its states are those of MEM-D1 | MEM-D1, MEM-5 |
+| Copy | a type whose values may be duplicated | OWN-D1, TYPE-14, OWN-14 |
+| linear | a type that is not Copy; its values are used exactly once | OWN-D1, OWN-1, OWN-2 |
+| consume, move | to use a value so that its binding may not be used again: passing it by value, returning it, moving it into a field, destructuring it, and the other forms OWN-15 lists | OWN-15, MEM-D1, OWN-1 |
+| reserved, frozen | the states of a binding passed by value to a pending `defer`, or owning an enclosing borrow block | MEM-D1, OWN-12, REF-D3 |
+| reference | a value of type `&T` or `&mut T`; it is never stored or returned | REF-D1, REF-D2, REF-1, REF-3, REF-5 |
+| borrow | forming a reference to a place (`&x`, `&mut x`), or a borrow block | REF-5, REF-D3 |
+| borrow block | `borrow x as r in R { B }`, which lends `x` to `r` for `B` | REF-D3 |
+| loan | a borrow seen from its root binding, which it freezes while it lives | REF-11, REF-8, STMT-11 |
+| capability | a named logical authority, such as `Console` or `Alloc` | TRUST-D1, TRUST-4 |
+| capability set | the capabilities and capability variables of a `with(...)` or a capability argument | TYPE-D1, TYPE-17, TYPE-18 |
+| `Unsafe` | the capability for raw-memory and foreign operations | TRUST-D1, TRUST-4 |
+| trusted | a function declared `trusted fn`, whose body may use raw pointers and foreign calls without `Unsafe` | TRUST-5, TRUST-6, TRUST-12; "Trusted premises" in [trusted.md](#ch-trusted) |
+| premise | a fact the compiler relies on and does not check, stated by the author of trusted code | TRUST-2, "Trusted premises" in trusted.md |
+| abort, trap | ending the process at once with no cleanup; a trap is the abort a checked operation performs | STMT-2, STMT-13, ARITH-3, MEM-6 |
+| behaviour | the trace of external events of one execution with its ending | STMT-1 |
+| exit sequence | what every non-aborting scope exit runs, in order | STMT-11 |
+| visible | where a local binding may be named | SCOPE-D1 |
+| impl target | the type an impl is for | TRAIT-D1 |
+| ghost | code and bindings for contracts only, erased before code generation | CON-4, CON-5 |
+
+### Rules by construct
+
+This section is explanatory and states no rule. For each construct of the language it lists the
+entries that govern it, so a reader can go from a piece of syntax to its rules. The list follows the
+chapters; an entry not listed here can still bear on a construct.
+
+| construct | entries |
+|---|---|
+| `let x: T = e` | MEM-3, TYPE-4, SCOPE-1, SCOPE-D1, REF-6, OWN-5, SYN-3 |
+| destructuring `let`, `let ... else` | PAT-5, PAT-8, PAT-10, PAT-11, PAT-1, OPEN-52 |
+| `mut` | OWN-10, PAT-11 |
+| assignment `p = e` | OWN-9, OWN-10, OWN-4, REF-6, REF-7, REF-12, STMT-4 |
+| expression statement `e;` | OWN-5, OWN-6, OWN-7 |
+| block value (trailing expression) | STMT-8 |
+| `if` | TYPE-5, SYN-9, SYN-4, STMT-8, OWN-3 |
+| `match` | PAT-2, PAT-3, PAT-9, PAT-7, PAT-1, SYN-8, OWN-3, REF-9, PASS-2 |
+| match guard `if g` | PAT-4, TYPE-5, OPEN-55 |
+| `if let`, `while let` | PAT-6, OPEN-52 |
+| `_` | OWN-5, PAT-2, PAT-3 |
+| `while` | STMT-6, TYPE-5, OWN-4 |
+| `for i from a until b` | STMT-6, STMT-12, STMT-11, OPEN-48, OPEN-49, OPEN-104, OPEN-105 |
+| `break`, `continue` | STMT-6, STMT-5, STMT-11 |
+| `return` | STMT-9, STMT-5, STMT-11, REF-1 |
+| `defer` | OWN-12, OWN-16, OWN-17, STMT-11 |
+| `fn main` | STMT-7, STMT-11, TRUST-9, PASS-10; "Program execution" in [statements.md](#ch-statements) |
+| `#[test]` | STMT-10 |
+| function call `f(a, b)` | TYPE-9, TYPE-4, STMT-4, STMT-5, REF-10, REF-11, OWN-15 |
+| method call `x.m()` | TYPE-9, TRAIT-5, TRAIT-6, OWN-15, SYN-10 |
+| function value, `fn(..) -> R` type | TYPE-1, TYPE-17, REF-2, FFI-1 |
+| `with(...)` | TRUST-4, TRUST-D1, TYPE-D1, TYPE-17, TYPE-18, STMT-13, MEM-7 |
+| `trusted fn` | TRUST-5, TRUST-6, TRUST-12, TRUST-2 |
+| `trusted mod` | TRUST-6 |
+| `extern fn`, `trusted extern fn` | FFI-1, FFI-3, FFI-5, FFI-9, TRUST-4, TRUST-5, MOD-6 |
+| `#[intrinsic = "n"]` | FFI-6 |
+| `#[repr(...)]` | FFI-4, FFI-7, FFI-8, FFI-10, FFI-11 |
+| `struct` declaration | TYPE-16, TYPE-14, OWN-14, REF-3, FFI-7, OPEN-65 |
+| struct literal `S { f: e }` | TYPE-7, TYPE-11, SYN-4, STMT-4, STMT-5, OPEN-53 |
+| field access `e.f` | MEM-4, TYPE-7, TYPE-11, OWN-8 |
+| `enum` declaration, variant literal | TYPE-7, TYPE-23, OWN-14, PAT-3 |
+| `newtype`, `.0` | TYPE-21, TYPE-24, TYPE-11, OPEN-54 |
+| `type A = T` | TYPE-12 |
+| `const` | TYPE-22, TRUST-8, REF-6 |
+| generics `<T>`, `T: Copy` | TYPE-13, TYPE-15, TRAIT-10, REF-4, PASS-1, PASS-7 |
+| `trait`, `impl` | TRAIT-D1, TRAIT-1 to TRAIT-11 |
+| array literal `[a, b]`, `[e; N]` | TYPE-7, STMT-4, OPEN-149 |
+| array index `a[i]` | MEM-6, MEM-8, TYPE-7, OWN-8, STMT-4 |
+| `&x`, `&mut x` | REF-5, REF-8, REF-11, REF-12, REF-13, OWN-10 |
+| `borrow x as r in R { B }` | REF-D3, REF-8, OPEN-57, OPEN-58 |
+| `*e` | TYPE-8, MEM-5, MEM-7, TRUST-3, TRUST-7, TRUST-11 |
+| raw pointers `*mut T`, `*const T` | TRUST-1, TRUST-4, TRUST-13, TRUST-7, TRUST-11 |
+| `as` | ARITH-5, TYPE-24, TRUST-1, OPEN-98 |
+| `+`, `-`, `*`, `/`, `%` | ARITH-3, TYPE-6, SYN-2, ARITH-1, ARITH-12, OPEN-114 |
+| `<<`, `>>` | ARITH-3, ARITH-8, TYPE-6 |
+| `==`, `<` and the other comparisons | ARITH-6, TYPE-6, TYPE-5, OPEN-42, OPEN-100 |
+| `&&`, `\|\|`, `!` | TYPE-5, STMT-4, OWN-11 |
+| integer literal | ARITH-2, SYN-6 |
+| float literal | ARITH-7, OPEN-63 |
+| string and char literals | SYN-5, SYN-6, TYPE-20, OPEN-137 |
+| `wrapping_*`, `saturating_*` | ARITH-4 |
+| `alloc`, `free`, `Heap<T>` | MEM-5, MEM-7 |
+| `destroy`, `Destroy` | OWN-13, TRAIT-8, TRAIT-11 |
+| `discard(e)` | OWN-5, OWN-7 |
+| `abort()` | STMT-13, STMT-2 |
+| other builtins | TYPE-10; the [builtin catalog](#builtin-functions) |
+| `mod`, `import`, `pub` | MOD-2, MOD-4, MOD-7, MOD-9 |
+| names and `::`, `.` | MOD-1, MOD-3, SYN-10, SCOPE-1 to SCOPE-3 |
+| `#[requires]`, `#[ensures]`, `#[invariant]`, `#[variant]` | CON-1, CON-2, CON-3, CON-7, CON-8 |
+| `assert`, `assume` | CON-6 |
+| `ghost let`, `spec fn` | CON-4, CON-5 |
 
 
 <a id="ch-syntax"></a>
@@ -1211,7 +1327,9 @@ R-0492 moves them to identities. Bugs 039 to 045 were names resolved more than o
 are now keyed by identity (SCOPE-1, SCOPE-3), and declarations get the same treatment under R-0492.
 The checker repeats some lookups (E0200 to E0202, E0263, E0267) as defense in depth.
 The builtins include the enums `Option` and `Result`, which a module uses without an import; how
-a user type of the same name resolves is OPEN-43.
+a user type of the same name resolves is OPEN-43. Every builtin function, with its current
+signature, capability and the names the compiler reserves, is listed in the types chapter's
+[builtin catalog](#builtin-functions).
 
 ```con reject name=undeclared-name code=E0100 stage=resolve pair=declared-name
 fn example_value() -> Int {
@@ -1419,8 +1537,8 @@ mod m {
 **Rationale.** A name bound twice in a module made the meaning of a call depend on which binding a
 lookup met first (bug 082). Renaming on import (`import a.{f as g}`) resolves a clash. Importing
 the same declaration twice binds the name to one declaration and is accepted. The reserved names
-are the `__` prefix, `user_main` and the builtins a program may call but not redefine; they are
-reserved for functions only, and a `let` spelling the compiler reserves is SYN-3.
+are the `__` prefix, `user_main` and the builtins a program may call but not redefine (listed in the
+[builtin catalog](#builtin-functions)); they are reserved for functions only, and a `let` spelling the compiler reserves is SYN-3.
 The current compiler also counts an impl method under its definition name `Type_method`, so a free function
 `P_get` beside `impl P { fn get(&self) ... }` in one module is refused with E0299; whether a method
 should occupy that name is OPEN-135.
@@ -2021,7 +2139,8 @@ capability sets in types (TYPE-D1, TYPE-17, TYPE-18), the primitive numeric type
 (TYPE-20), the representation of a newtype (TYPE-21), the builtin `Option` and `Result` (TYPE-23) and
 the conversions of a newtype (TYPE-24). Copy itself is defined in the ownership chapter
 (OWN-D1, OWN-14). What a capability means and when a function may use one are in the trusted
-chapter (TRUST-D1, TRUST-4).
+chapter (TRUST-D1, TRUST-4). The section "Builtin functions" below lists every builtin function
+with its current signature.
 
 The design records are [VALIDATED_WRAPPERS.md](../stdlib/VALIDATED_WRAPPERS.md) (a library pattern built on
 TYPE-11, not a language rule), [VALUE_MODEL.md](../archive/design-records/VALUE_MODEL.md) (absorbed
@@ -4016,6 +4135,125 @@ fn main() -> u8 {
 }
 ```
 
+### Builtin functions
+
+This section is explanatory and states no rule. It lists the builtin functions of the current
+compiler with the signatures Check gives them, the capability each needs and the entries that
+govern it. The sources are `builtinFnSigs` (Concrete/Resolve/BuiltinSigs.lean), `resolveIntrinsic`,
+`IntrinsicId.capability`, `reservedFnNames`, `extraBuiltinFnNames` and `builtinTypeNames`
+(Concrete/Resolve/Intrinsic.lean), and the special cases in `checkExprCore` (Concrete/Check/Check.lean).
+Where a signature is not written as a table there, it was read from Check and confirmed with a probe
+program on the native binary and `--interp` (2026-10-31, at f17645a13). An entry, not this table,
+is the rule: TYPE-10 governs the argument counts and types, TRUST-4 governs the capabilities (E0520
+when a caller lacks one), and the column "entries" names the rest.
+
+Types are written in their source spelling: `Int` is `i64` and `Uint` is `u64` (TYPE-19). "Unit"
+is the type of a call that gives no value; a program writes it by giving no result type. A
+"diverging" result fits any position other than a condition (TYPE-4). "Consumes" means the argument
+is moved (OWN-15).
+
+**Memory and values.**
+
+| builtin | parameters | result | capability | entries | observed |
+|---|---|---|---|---|---|
+| `alloc` | `(v: T)`, consumes `v` | `Heap<T>` | `Alloc` | MEM-5, MEM-7 | exit 42 on both consumers; without `Alloc`, E0520 at core-check |
+| `free` | `(h: Heap<T>)`, consumes `h` | `T` | `Alloc` | MEM-5, MEM-7, TYPE-10 (E0274 for a non-`Heap`) | exit 42 on both consumers |
+| `destroy` | `(x: N)`, `N` a struct or enum (or an instance of one) with a `Destroy` impl, consumes `x` | Unit | none of its own; the impl's method declares its own | OWN-13 (E0272 for a type that is not named, E0273 without an impl), TRAIT-11 | `destroy(5)` is E0272 |
+| `discard` | `(e: T)`, `T` Copy | Unit | none | OWN-5 (E0295 for a non-Copy value), OWN-7 | `discard(s)` with `s: String` is E0295 |
+| `read_owned` | `(p: *mut T)` or `(p: *const T)`; one spelling, no alias | `T` | `Unsafe`, which a `trusted fn` absorbs (TRUST-5) | TRUST-7, TRUST-4 (E0240 at check in a function that is neither) | both pointer kinds exit 42 in a `trusted fn` |
+| `sizeof::<T>()` | none, exactly one type argument; alias `_sizeof` | `Uint` | none | FFI-7, TYPE-20, TYPE-10 (E0268, E0269) | `sizeof::<Int>()` is 8, `_sizeof::<Int>()` too |
+| `alignof::<T>()` | none, exactly one type argument | `Uint` | none | FFI-7, TYPE-10 | `alignof::<i32>()` is 4 |
+| `unwrap` | `(n: N)`, `N` a newtype | `N`'s inner type | none | TYPE-10 (E0270 for an argument that is not a newtype); TYPE-24 lists the conversions of a newtype, and `unwrap` is not among them | `return unwrap(m);` exits 42 on both consumers; `let x: Int = unwrap(m); if x == 42 ...` runs under `--interp` (42) and fails the native build at SSA verification (E0715) |
+| `abort` | none | diverging | `Process` | STMT-13, STMT-2 | native status 134; `--interp` stops with `undefined function 'abort'`; `let y: Int = abort();` fails the native build in LLVM (`value doesn't match function result type`), while `abort();` as a statement compiles |
+
+**`Vec`.** Each has the alias spelled `Vec_` with a capital (`Vec_new`, `Vec_push`, ...), and every
+alias was probed.
+
+| builtin | parameters | result | capability | entries | observed |
+|---|---|---|---|---|---|
+| `vec_new::<T>()` | none, exactly one type argument | `Vec<T>` | `Alloc` | MEM-7, TYPE-10 (E0268, E0269) | exit 42 on both consumers |
+| `vec_push` | `(v: &mut Vec<T>, x: T)`, consumes `x` | Unit | `Alloc` | MEM-7, TYPE-10 (E0270) | without `Alloc`, E0520 at core-check |
+| `vec_get` | `(v: &Vec<T>` or `&mut Vec<T>, i: Int)`, `T` Copy | `T` | none | OWN-8 (E0290 for a non-Copy `T`), TYPE-10 | with a `String` element, E0290 |
+| `vec_set` | `(v: &mut Vec<T>, i: Int, x: T)`, `T` Copy | Unit | none | OWN-9 (E0291 for a non-Copy `T`), TYPE-10 | exit 42 in a function without capabilities |
+| `vec_len` | `(v: &Vec<T>` or `&mut Vec<T>)` | `Int` | none | TYPE-10 | exit 42 in a function without capabilities |
+| `vec_pop` | `(v: &mut Vec<T>)` | `Option<T>` | `Alloc` | MEM-7, TYPE-23 | exit 42 on both consumers |
+| `vec_free` | `(v: Vec<T>)`, consumes `v`; a non-Copy `T` only in a `trusted fn` | Unit | `Alloc` | MEM-7, OWN-5 (E0287 for a non-Copy `T`) | `Vec<String>` is E0287 |
+
+**Strings, conversions, output, time and arguments.** These have a table signature in
+`builtinFnSigs`, so Check looks them up by their canonical name only. `resolveIntrinsic` also maps
+the aliases `string_len`, `String_len`, `String_concat`, `String_eq`, `String_slice`,
+`String_char_at`, `String_contains`, `String_trim`, `String_drop` and `String_substr` to these
+builtins, and the current compiler refuses each of those spellings with E0263 at check (MOD-1);
+every one was probed. `string_reserve` is checked by a special case before the table, so its alias
+`String_reserve` is accepted.
+
+| builtin | parameters | result | capability | entries | observed |
+|---|---|---|---|---|---|
+| `string_length` | `(s: &String)` | `Int` | none | TYPE-10 | exit 42 on both consumers |
+| `string_concat` | `(a: String, b: String)`, consumes both | `String` | none | TYPE-10 | exit 42 in a function without capabilities |
+| `drop_string` | `(s: String)`, consumes `s` | Unit | none | TYPE-10 | |
+| `string_slice` | `(s: &String, start: Int, end_: Int)` | `String` | none | TYPE-10 | |
+| `string_substr` | `(s: &String, start: Int, len: Int)` | `String` | none | TYPE-10 | |
+| `string_char_at` | `(s: &String, index: Int)` | `Int` | none | TYPE-10 | `string_char_at(&"hello world", 0)` is 104 |
+| `string_contains` | `(haystack: &String, needle: &String)` | `bool` | none | TYPE-10 | |
+| `string_eq` | `(a: &String, b: &String)` | `bool` | none | TYPE-10 | |
+| `string_trim` | `(s: &String)` | `String` | none | TYPE-10 | |
+| `int_to_string` | `(n: Int)` | `String` | none | TYPE-10 | |
+| `string_to_int` | `(s: &String)` | `Result<Int, Int>` | none | TYPE-10, TYPE-23 | `"12"` gives `Ok` 12 |
+| `bool_to_string` | `(b: bool)` | `String` | none | TYPE-10 | |
+| `float_to_string` | `(f: f64)` | `String` | none | TYPE-10 | native exit 42; `--interp` stops with `undefined function 'float_to_string'` |
+| `string_reserve` | `(s: &mut String, cap: Int)`; alias `String_reserve` | Unit | `Alloc` | MEM-7 | without `Alloc`, E0520 at core-check |
+| `print_string` | `(s: &String)` | Unit | `Console` | TRUST-4 | |
+| `print_int` | `(n: Int)` | Unit | `Console` | TRUST-4 | without `Console`, E0520 at core-check |
+| `print_char` | `(c: Int)` | Unit | `Console` | TRUST-4 | `print_char(10)` writes a newline |
+| `print_bool` | `(b: bool)` | Unit | `Console` | TRUST-4 | |
+| `clock_monotonic_ns` | none | `Int` | `Time` | TRUST-4 | native exit 42; `--interp` stops: it cannot know the system clock |
+| `get_args` | none | `HeapArray<String>` | `Process` | TRUST-4 | with `Env` only, E0520; with `Process`, a function that returns `get_args()` passes core-check and the native build then fails in LLVM (`use of undefined value '@get_args'`), even when nothing calls it |
+
+Four string operations are checked by special cases and are not in the table. Each has the alias
+spelled `String_` (`String_push_char`, ...), and every alias was probed.
+
+| builtin | parameters | result | capability | entries |
+|---|---|---|---|---|
+| `string_push_char` | `(s: &mut String, c: Int)` | Unit | none | TYPE-10 (E0270) |
+| `string_append` | `(s: &mut String, other: &String)` | Unit | none | TYPE-10 (E0270) |
+| `string_append_int` | `(s: &mut String, n: Int)` | Unit | none | TYPE-10 (E0270) |
+| `string_append_bool` | `(s: &mut String, b: bool)` | Unit | none | TYPE-10 (E0270) |
+
+**Variadic output.** TYPE-10's rationale lists the accepted argument types; Elab expands a call in
+statement position into the calls named here, bound by identity (MOD-8). Whether a program may
+declare its own function of these names is OPEN-133.
+
+| builtin | parameters | result | capability | expands into | entries |
+|---|---|---|---|---|---|
+| `print` | one or more values; a `String` local is read, not moved | Unit | `Console` | `print_string`, `print_int`, `print_char`, `print_bool` | TYPE-10 (E0315, E0421), MOD-8 |
+| `println` | as `print` | Unit | `Console` | as `print`, then `print_char(10)` | TYPE-10 (E0315, E0421), MOD-8 |
+| `append` | `(buf: &mut String, ...)`, one or more values after `buf`; an owned `String` value is moved | Unit | `Alloc` in `IntrinsicId.capability` | `string_append`, `string_append_int`, `string_append_bool`, `string_push_char` | TYPE-10 (E0270, E0315, E0421), MOD-8, MEM-7 |
+
+Observed: `append(&mut s, 1)` in a function with no `with(...)` set compiles and runs (exit 42 on
+both consumers), because the calls it expands into need no capability. MEM-7 lists `append` among
+the builtins that require `Alloc`.
+
+**Arithmetic.**
+
+| builtin | parameters | result | capability | entries |
+|---|---|---|---|---|
+| `wrapping_add`, `wrapping_sub`, `wrapping_mul` | `(a: I, b: I)`, one integer type `I` | `I` | none | ARITH-4, TYPE-10 (E0268, E0314) |
+| `saturating_add`, `saturating_sub`, `saturating_mul` | `(a: I, b: I)`, one integer type `I` | `I` | none | ARITH-4, TYPE-10 (E0268, E0314) |
+
+A probe gave `wrapping_add(250, 10)` at `u8` as 4, `wrapping_sub(0, 1)` at `i32` as -1,
+`saturating_mul(300, 300)` at `u16` as 65535 and `wrapping_mul(2, 21)` at `Int` as 42, on both
+consumers.
+
+**Other names the compiler knows.**
+
+| name | what the current compiler does | entries |
+|---|---|---|
+| `alloc_array`, `free_array`, `realloc_array` | in `reservedFnNames` with the five builtins `destroy`, `discard`, `abort`, `alloc` and `free`; a definition is E0578, a call is E0101 at resolve | MOD-3, MOD-1 |
+| `to_string`, `deref`, `deref_mut`, `add` | in `extraBuiltinFnNames`, so resolution accepts a call; Check then refuses it with E0263 | MOD-1 |
+| a builtin name not reserved, such as `string_length` | a program function of that name is accepted, and the program's calls reach it (exit 42 on both consumers); for `print`, `println` and `append` this is OPEN-133 | MOD-3, OPEN-133 |
+| `Int`, `Uint`, `Bool`, `String`, `Float64`, `Float32`, `Char`, `i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `Heap`, `HeapArray`, `Vec`, `Option`, `Result` | `builtinTypeNames`: in scope in every module without an import | TYPE-19, TYPE-20, TYPE-23, OPEN-43, OPEN-102 |
+
 ### Absent by decision
 
 This section is explanatory: it records type-system features the language does not have, why, and
@@ -4709,6 +4947,8 @@ loop's measure (STMT-12) and the capability `abort()` needs (STMT-13). The desig
 [STATEMENT_EXPRESSION_MODEL.md](../archive/design-records/STATEMENT_EXPRESSION_MODEL.md)
 and [MAIN_EXIT_MODEL.md](../platform/MAIN_EXIT_MODEL.md). [EXECUTION_MODEL.md](../platform/EXECUTION_MODEL.md)
 keeps the runtime and platform description (hosted runtime, startup, allocation, targets).
+The section "Program execution" at the end follows a program from its source files to a running
+process, and what `--interp` does differently.
 
 ### Rules
 
@@ -5783,6 +6023,48 @@ linear values in scope are leaked to the OS; `longjmp` across Concrete frames is
 setjmp-safe code is emitted). A proved function calls no `extern fn` (the proof-eligibility FFI
 gate), so foreign failure is outside the proof model; what proved code may and may not assume about
 failure is in [PROOF_SEMANTICS_BOUNDARY.md](../verification/PROOF_SEMANTICS_BOUNDARY.md).
+
+### Program execution
+
+This section is explanatory and states no rule. It follows a program from its source files to a
+running process and names the entry that governs each step. The runtime and platform side (the
+generated C entry, libc, targets) is described in
+[EXECUTION_MODEL.md](../platform/EXECUTION_MODEL.md).
+
+| step | what happens | entries |
+|---|---|---|
+| source | A program is a root file and the module files its `mod` declarations load. Each file is UTF-8 and must parse as a `program` of the grammar. | MOD-4, SYN-5, SYN-1 |
+| names | Every name resolves once, before checking; builtins resolve without an import (the [builtin catalog](#builtin-functions)). | MOD-1, MOD-3 |
+| compilation | The stages run in order: Parse, Resolve, Check, Elab, CoreCheck, Mono, Lower, Emit and link. Each stage's contract is a preservation entry, and an accepted program reaches a binary. | [pipeline.md](#ch-pipeline), PASS-5 to PASS-13 |
+| entry point | The program's `main` is the entry point. A build with no entry point is refused before the system linker runs. | STMT-7, PASS-10 |
+| start | The generated C `main` calls the program's `main`. No module-level state is initialized, because a module declares none; a constant's initializer runs where the constant is used. | TRUST-8 (pending), TYPE-22 |
+| authority | `main` uses only the capabilities in its own `with(...)` set, as every function does. Global resources are to reach `main` as a root resource value it splits; today `main` takes no parameters, and the parameter lands with R-0557. | TRUST-4, TRUST-9 (pending), TRUST-10 (pending), OPEN-38 |
+| running | One thread runs the program; subexpressions are evaluated left to right; every execution has one behaviour. | STMT-3, STMT-4, STMT-1 (pending) |
+| normal exit | When `main` returns, its body scope runs the exit sequence (deferred calls, then loan ends, then the remaining locals), and its result becomes the process exit status. | STMT-11 (pending), STMT-7 |
+| failure | A trap, running out of memory or a call of `abort()` ends the process at once, with no exit sequence. | STMT-2 (pending), STMT-13, "Abort and failure" above |
+| tests | Under `concrete test`, each `#[test]` function is called as an entry point and its result is its status. | STMT-10 |
+
+**The exit status today.** STMT-7 is partial: its pending example records that the current compiler
+still accepts other result types for `main`. Probes on 2026-10-31 (f17645a13): `fn main() -> u8`
+returning 7 exits with status 7; `fn main()` with no result type exits with 0; `fn main() -> Int`
+returning 300 exits with 44 natively; `fn main() -> bool` returning `true` exits with 1 natively.
+
+**What `--interp` does differently today.** The interpreter is a consumer of the same checked
+program (PASS-13), and it reports the end of a run in its own way. Each row was probed on
+2026-10-31 at f17645a13.
+
+| situation | native binary | `--interp` |
+|---|---|---|
+| `main` returns a `u8` (7, after printing `hello`) | prints `hello`, exit status 7 | prints `hello`, then `7` as the last line, exit status 0 |
+| `main` returns `Int` 300 | exit status 44 | prints `300`, exit status 0 |
+| `main` returns `bool` | exit status 1 for `true` | prints nothing, exit status 0 |
+| a trap (`7 / 0` on `i32`) | SIGABRT, status 134 | stops with the run-time error `interp: division by zero`, exit status 1 |
+| a call of `abort()` that runs | SIGABRT, status 134 | stops with `interp: undefined function 'abort'` |
+| `clock_monotonic_ns()` | runs | stops: the interpreter cannot know the system clock |
+| `float_to_string(1.5)` | runs | stops with `interp: undefined function 'float_to_string'` |
+
+The interpreter runs one file; a project with dependencies is built natively (`concrete build`).
+The traps the interpreter names are listed under "Traps in the current compiler" above.
 
 ### Version history
 
@@ -11465,7 +11747,8 @@ boundary, and a `trusted` body absorbs it. No layer is exempt: compiler builtins
 code follow the same rules. This chapter covers what a capability means (TRUST-D1), raw pointers (TRUST-1, TRUST-3), undefined
 behaviour (TRUST-2), capabilities (TRUST-4), `trusted` (TRUST-5), the trusted-module marker
 (TRUST-6, pending), moving a value out of raw memory (TRUST-7), global state (TRUST-8 to TRUST-10), storing through a raw pointer (TRUST-11), the
-ownership rules in trusted code (TRUST-12) and taking a reference's address (TRUST-13). Capability sets, capability parameters and the capabilities of function types and
+ownership rules in trusted code (TRUST-12) and taking a reference's address (TRUST-13). The section
+"Trusted premises" lists every premise the compiler relies on and does not check. Capability sets, capability parameters and the capabilities of function types and
 handles (`Sink<cap C>`) are in the types chapter (TYPE-D1, TYPE-15, TYPE-17, TYPE-18); this specification governs them. The design records are [SAFETY.md](../verification/SAFETY.md),
 [CAPABILITY_FACTS.md](../compiler/CAPABILITY_FACTS.md),
 [HANDLE_CAPABILITIES.md](../archive/design-records/HANDLE_CAPABILITIES.md),
@@ -12181,6 +12464,34 @@ fn main() -> u8 {
 
 }
 ```
+
+### Trusted premises
+
+This section is explanatory and states no rule. It lists each place where the language relies on a
+premise that the compiler does not check, who states it, and the entry that names it. A premise
+stated here is the entry's; the table only collects them. TRUST-2 (pending) is the rule that every
+undefined behaviour is such a named premise, and
+[TRUSTED_COMPUTING_BASE.md](../verification/TRUSTED_COMPUTING_BASE.md) records the trusted base of
+the compiler and toolchain.
+
+| place | premise the compiler does not check | stated by | entries |
+|---|---|---|---|
+| a `trusted fn`, or a function with `Unsafe` in its `with(...)` set | the premises of every raw-pointer operation and foreign call in its body | the function's author, by writing `trusted` or `with(Unsafe)` | TRUST-5, TRUST-4, TRUST-2 (pending), TRUST-6 (pending) |
+| a raw-pointer read `*p`, a write `*p = v` or an offset (`ptr::offset`) | the validity premises of the operation, which TRUST-2 requires to be named and R-0506 is to state | the author of the trusted or `Unsafe` code | TRUST-4, TRUST-1, TRUST-2 (pending); element stride: FFI-12 |
+| `&*p` and `&mut *p` | `p` is aligned, live and initialized for its type | the author of the trusted or `Unsafe` code | TRUST-3 (pending) |
+| `read_owned(p)` | the slot holds an initialized value, and it is treated as uninitialized until a value is stored back | the author of the trusted or `Unsafe` code | TRUST-7 |
+| a raw store `*p = v` | whether the slot held a live value, which the store does not destroy | the author of the trusted or `Unsafe` code | TRUST-11 |
+| a raw pointer taken from a reference | the pointer is used only while the loan it came from lives | the code that uses the pointer | TRUST-13, REF-14; after the borrow ends: OPEN-64 |
+| an `extern fn` | the declared parameter types, result type and `with(...)` set match the C symbol | the declaration's author | FFI-3, FFI-5; "Abort and failure" in [statements.md](#ch-statements) |
+| a `trusted extern fn` | the foreign function is safe for every argument its types permit and has no effect beyond its `with(...)` set | the declaration's author | FFI-9, TRUST-5 |
+| a singleton token wrapper | what the wrapper asserts about the external state it mints or takes a token for; the gate's list of wrappers is the inventory of trusted external state | the wrapper's author; a gate lists the wrappers | TRUST-9 (pending), TRUST-10 (pending) |
+| `assume e` in a contract | `e` holds, as a hypothesis whose evidence is `assumed` | the programmer | CON-6 |
+| an entry whose `Evidence:` is `trusted: <ID>` | the assumption that ID names in TRUSTED_COMPUTING_BASE.md | the specification ([MAINTAINERS.md](MAINTAINERS.md) §2.1); no entry uses it today | MAINTAINERS.md §2.1 |
+| the native profile | the stated premises of the trusted base under which the forward simulation is proved | the proof of PASS-3 | PASS-3 (pending) |
+| the LLVM profile | the BIR-to-LLVM printer, LLVM and the linker are correct; the results are differential-tested, not proved | the compiler | PASS-4 (pending) |
+
+Ownership is not among the premises: inside a `trusted fn` the move, cleanup and freeze rules are
+checked as in safe code (TRUST-12). Which ownership exceptions trusted code should have is OPEN-113.
 
 ### Absent by decision
 
