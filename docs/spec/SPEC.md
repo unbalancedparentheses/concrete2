@@ -962,8 +962,7 @@ and `LABEL`. So a float has no exponent and no leading or trailing `.`, a litera
 (ARITH-2), and there are no block comments and no byte-string literals (`b"..."`); each of these is
 a parse error (SYN-1). The escapes are `\n`, `\t`, `\r`, `\0` and `\\`, with `\"` in a string literal (SYN-5)
 and `\'` in a char literal; any other `\` sequence is a parse error. Which byte a char literal holds
-when its character is not ASCII is OPEN-137. Version 2 adds the char-literal escapes to the sentence; the current compiler
-accepted them before.
+when its character is not ASCII is OPEN-137.
 
 ```con accept name=token-forms exit=42
 // a line comment
@@ -1146,6 +1145,14 @@ fn main() -> u8 {
 
 }
 ```
+
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- SYN-6@2 (spec audit 6, 2026-10-30) adds the char-literal escapes to the sentence; the compiler accepted them before.
 
 
 <a id="ch-modules"></a>
@@ -2213,7 +2220,7 @@ mod text_owned {
 so the type of every value is visible in the source. An integer literal takes the type its
 position expects. A literal that does not fit that type is an arithmetic rule. CoreCheck repeats
 the variable and return checks on Core as defense in depth.
-Version 2 drops the `break` value from the list of positions: a `break` carries no value (STMT-6@3, OD27).
+A `break` carries no value (STMT-6@3, OD27), so it is not one of the positions.
 The current compiler still parses `break <expr>;`, evaluating and dropping the value (bug 323).
 
 ```con reject name=bool-for-int code=E0220 stage=check pair=one-type
@@ -2416,9 +2423,7 @@ fn main() -> u8 {
 
 **Rationale.** Mixed widths and signedness are a classic source of silent conversion bugs, so they
 are refused rather than promoted. Comparing aggregates would need a definition of equality per
-type, which the language does not have. Version 1 admitted raw-pointer comparison
-and `p + k` in trusted or `Unsafe` code (bugs 134 and 140); OD26 removes both, pointer arithmetic
-becoming `ptr::offset` (TRUST-1).
+type, which the language does not have.
 
 **Codes by case** (probed against the current compiler). Check refuses first, as E0228, two operands of a binary operator
 of different types, and as E0229 a comparison on a type that has none (`a < a` on a struct);
@@ -2428,7 +2433,7 @@ non-numeric type (`b + b` with `b: bool`; also after monomorphization); E0506, a
 a non-integer (`f & f` with `f: f64`); E0507, negation of a non-number (`-b` with `b: bool`); E0509,
 bitwise not on a non-integer (`~f` with `f: f64`).
 
-Version 2 records the owner's decision of 2026-10-29 (OD26), aligned with TRUST-1: arithmetic,
+The owner decided on 2026-10-29 (OD26), aligned with TRUST-1, that arithmetic,
 shifts and comparisons take numbers only, and pointer offset, difference and ordering are
 `ptr::offset` and named functions. Whether "numbers only" also removes comparisons on `bool` and
 `char` is OPEN-42; the current compiler compares them today, and this entry does not decide it. The current compiler still admits pointer arithmetic and comparison in trusted or
@@ -2693,8 +2698,7 @@ fn main() -> u8 {
 
 **Rationale.** There are no default arguments, no variadic functions and no method lookup
 through implicit conversions. A method of a type parameter comes only from its bounds, which is
-what lets a generic body be checked once (TYPE-2, PASS-1). Version 2 states the type-argument count E0322 already enforced (bug 221: an extra type
-argument was dropped silently). A body-less declaration (an `#[intrinsic]`) keeps no type-parameter
+what lets a generic body be checked once (TYPE-2, PASS-1). The type-argument count is E0322's (bug 221: an extra type argument was once dropped silently). A body-less declaration (an `#[intrinsic]`) keeps no type-parameter
 list, so the current compiler still skips the count there (bug 333), pinned by the pending example.
 
 ```con reject name=wrong-arity code=E0262 stage=check pair=right-arity
@@ -3247,8 +3251,7 @@ day. Copy used to be derived from an instantiation's fields, which Mono computed
 over the type graph; the fixpoint is gone. A generic declared `Copy` behaves like a derived
 `Copy`: `struct Copy Bx<T> { v: T }` is accepted, its declaration checked once with `T` taken
 as Copy (OWN-14), and `Bx<Int>` is Copy while `Bx<String>` is linear. A parameter no field
-mentions still counts. A generic not declared `Copy` is never Copy. Version 1 (pending, never
-enforced) required a `T: Copy` bound instead and was retired by the option (a) decision.
+mentions still counts. A generic not declared `Copy` is never Copy.
 
 Decided by the owner on 2026-10-29 (OD5): Copy for a generic struct or enum is declared and checked, never derived, and a generic declared Copy is Copy when every argument is.
 
@@ -4055,6 +4058,17 @@ probe found no workload that needs it, and it is built only when one does. The d
 the forcing conditions and the staged build are in
 [research/language/const-generics-v1-decision.md](../../research/language/const-generics-v1-decision.md).
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- TYPE-4@2 drops the `break` value from the positions a literal or expression takes its type from, since a `break` carries no value (OD27).
+- TYPE-6@1 admitted raw-pointer comparison and `p + k` in trusted or `Unsafe` code (bugs 134 and 140). TYPE-6@2 records OD26 (2026-10-29), which removes both, pointer arithmetic becoming `ptr::offset` (TRUST-1).
+- TYPE-9@2 states the type-argument count that E0322 already enforced (bug 221: an extra type argument was dropped silently).
+- TYPE-14@1 (pending, never enforced) required a `T: Copy` bound instead; TIGHTENING_DECISIONS D6 option (a) retired it.
+
 
 <a id="ch-arithmetic"></a>
 ## Arithmetic
@@ -4106,15 +4120,13 @@ be 44. The negated value is what is range-checked, so `let a: i8 = -128` is acce
 `-129` is not. Hex (`0xFF`) and binary (`0b1010`) literals are accepted; suffixes such as `7u8`
 are not part of the language (an annotation or a conversion says the type).
 
-A hint (an annotation, a parameter, a field, an arm) gives a literal the hinted type; version 1
-typed a literal with no expected type `Int` (`i64`), which is still the current compiler's behaviour. Suffixes are
+A hint (an annotation, a parameter, a field, an arm) gives a literal the hinted type. Suffixes are
 workload-gated: an
 annotation already covers the need, so a suffix would be pure convenience, revisited if a real
 workload finds annotations too noisy. Gated by `scripts/tests/check_numeric_literals.sh` (ROADMAP
 old Phase 6 #6, 2026-06-23).
 
-Version 2 records the owner's decision of 2026-10-29 (OD31): the fallback to `Int` where nothing is
-expected is removed and no suffix is required. Whether a float literal follows the same principle
+The owner decided on 2026-10-29 (OD31) that there is no fallback to `Int` where nothing is expected and that no suffix is required. Whether a float literal follows the same principle
 (its context's float type, refused with none), as OD31's note says, is OPEN-63; which positions supply
 an expected type is OPEN-138. The current compiler still types an unconstrained integer literal `Int` and
 an unconstrained float literal `Float64` (bug 327).
@@ -4304,8 +4316,7 @@ refused once R-0500 lands), and every other such conversion is written with a na
 - Evidence: tested
 
 **Rationale.** Decided 2026-10-21 (ARITHMETIC_POLICY §8, exit 2k): `as` is total and
-obligation-free, and each lossy conversion names what it does. Version 2 lists the accepted
-conversions in the sentence; version 1 gave them here. Today `as` refuses conversions to and from `bool` other than `bool` to an integer
+obligation-free, and each lossy conversion names what it does. Today `as` refuses conversions to and from `bool` other than `bool` to an integer
 (integer, float and `char` to `bool`, and `bool` to `char`: E0553, bugs 108 and 130). Narrowing
 and sign changes are still accepted and truncate or reinterpret, and float to integer truncates
 toward zero and aborts on NaN, an infinity or a value outside the target's range (a checked
@@ -4661,6 +4672,15 @@ fn main() -> u8 {
 }
 ```
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- ARITH-2@1 typed a literal with no expected type `Int` (`i64`), which the current compiler still does. ARITH-2@2 recorded OD31 (2026-10-29) for integer and float literals. ARITH-2@3 (spec audit 8, 2026-10-30) states the integer-literal rule only, the float literal being OPEN-63 and the positions OPEN-138.
+- ARITH-5@1 listed the accepted conversions in its rationale; ARITH-5@2 (spec audit 12, 2026-10-30) lists them in the sentence.
+
 
 <a id="ch-statements"></a>
 ## Statements, Expressions and Execution
@@ -4912,10 +4932,10 @@ fn main() -> u8 {
 value (the value `while … else` form was removed in Phase 6D); a result is a mutable local
 assigned before `break`. In the current compiler's `for (init; cond; step)` loop, `continue` still runs `step`, and
 E0245 refuses a `break` or `continue` in the step that targets its own loop (bug 330); E0245 belongs to
-this entry only while the current compiler parses the step form, which version 3 removes, and retires with it. A
+this entry only while the current compiler parses the step form, which this entry removes (OD47), and retires with it. A
 `break` or `continue` leaves the loop body's scopes like any exit (OWN-2).
 
-The current compiler's loop forms are `while cond { ... }` and the C-style forms that version 3 removes (bug 331):
+The current compiler's loop forms are `while cond { ... }` and the C-style forms that this entry removes (OD47, bug 331):
 `for (init; cond; step) { ... }`, whose `init` is a `let`,
 whose `cond` is the continuation test and whose `step` is an expression or an assignment
 (`for (i = 0; ...)` is a parse error), `for (cond) { ... }` and the unconditional `for { ... }`
@@ -4940,11 +4960,11 @@ Phase 6D item 2 removed the form: a loop result is a mutable local assigned befo
 `scripts/tests/check_loop_control.sh` (fixtures in `tests/programs/loop_control/`; ROADMAP old
 Phase 6 #4, 2026-06-21).
 
-Version 2 records the owner's decision of 2026-10-29 (OD27): `break <expr>` is refused at parse.
+The owner decided on 2026-10-29 (OD27) that `break <expr>` is refused at parse.
 The current compiler still parses a value after `break` inside a `while` or `for` statement and drops it (bug 323).
 
 
-Version 3 records the owner's decision of 2026-10-29 (OD47): the loops are `while` and a counted
+The owner decided on 2026-10-29 (OD47) that the loops are `while` and a counted
 range loop, and the C-style `for` is removed in every form (`for (init; cond; step)`,
 `for (cond)` and the unconditional `for`). The counted loop is half-open, `for i from a until b`
 running `a`, `a + 1`, ..., `b - 1` and nothing when `a >= b`; its index cannot be assigned in the
@@ -5289,14 +5309,12 @@ fn main() -> u8 {
 **Rationale.** Command-line arguments come from `std.args` (`with(Env)`); a parameterized `main`
 used to read an undefined register (bug 111). The language has no exit operation: an early exit would
 skip cleanup the linear rules promise, so status flows back through `main` (std's `process_exit`,
-which does skip it, is OPEN-136). Version 2 masked an integer result to
-0–255 and mapped `bool` (stage 1 of MAIN_EXIT_MODEL); OD24 narrows the result to `u8` or `Unit`, so
-masking is unrepresentable. `--interp` prints the result instead of exiting with it.
+which does skip it, is OPEN-136). The result is `u8` or `Unit` (OD24), so masking is unrepresentable. `--interp` prints the result instead of exiting with it.
 The owner decided OD8 on 2026-10-29: `main` will receive the root resource value and split it
 (TRUST-9); this entry changes with R-0557, which lands that parameter, and until then `main` takes
 none.
 
-Version 3 records the owner's decision of 2026-10-29 (OD24): `main` returns `u8` or `Unit`; there
+The owner decided on 2026-10-29 (OD24) that `main` returns `u8` or `Unit`; there
 is no masking, no `bool` mapping and no other result type. The current compiler still accepts any result type, masks
 an integer natively and prints it under `--interp` (bug 320). Every example of this specification
 uses the decided form, `fn main() -> u8`; an example whose value is computed as an `Int` keeps that
@@ -5515,8 +5533,7 @@ is destroyed implicitly, is OPEN-69. One order on every normal exit
 already computed and the loans it was given still live (OWN-16), and lets the destruction of the
 remaining locals come last. An abort runs none of it (STMT-2; OD10). A counted loop's body is its own scope and advancing the index belongs to the loop,
 outside it, so the body's deferred calls, loan ends and destructions run, on a fall-through or a
-`continue`, before the index advances. Version 2 restates for the counted loop of OD47 what version 1
-said of the C-style `for` step, which OD47 removes. Bugs 305 and 306 brought the borrow block's exits and the interpreter's `for`
+`continue`, before the index advances. Bugs 305 and 306 brought the borrow block's exits and the interpreter's `for`
 step into this order; the entry stays pending until
 R-0496's Core semantics defines the sequence for every exit form.
 
@@ -5722,6 +5739,15 @@ setjmp-safe code is emitted). A proved function calls no `extern fn` (the proof-
 gate), so foreign failure is outside the proof model; what proved code may and may not assume about
 failure is in [PROOF_SEMANTICS_BOUNDARY.md](../verification/PROOF_SEMANTICS_BOUNDARY.md).
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- STMT-6@2 records OD27 (2026-10-29): `break <expr>` is refused at parse. STMT-6@3 records OD47 (2026-10-29): the loops are `while` and the counted loop, and the C-style `for` is removed.
+- STMT-7@2 masked an integer result to 0–255 and mapped `bool` (stage 1 of MAIN_EXIT_MODEL). STMT-7@3 records OD24 (2026-10-29): `main` returns `u8` or `Unit`.
+- STMT-11@1 (pending, retired before it was enforced) said of the C-style `for` step what STMT-11@2 says of the counted loop of OD47.
 
 
 <a id="ch-patterns"></a>
@@ -5910,7 +5936,7 @@ scrutinee's own was silently taken as it, and a range arm over an enum reached t
 Check now refuses each with E0309. A bare variant name over a variant with a non-Copy field
 silently dropped the payload until bug 197; that refusal is OWN-5's (E0288).
 
-Version 3 records the owner's decision of 2026-10-29 (OD25): ignoring a payload is always written,
+The owner decided on 2026-10-29 (OD25) that ignoring a payload is always written,
 `Variant { .. }` or `field: _`, and a bare variant name matches only a fieldless variant. The current compiler still
 lets a bare name ignore a Copy payload (bug 321), pinned by the pending example below; the
 `Variant { .. }` form is not parsed yet.
@@ -6141,7 +6167,7 @@ skipped the rest of the function, or reached the backend, which failed in `llvm-
 `else` arm would discard the scrutinee, so `let ... else` there is refused (OWN-5); write a
 `match`.
 
-Version 3 records the owner's decision of 2026-10-29 (OD25): a struct `let` names every field, a
+The owner decided on 2026-10-29 (OD25) that a struct `let` names every field, a
 Copy struct included. The current compiler still lets a pattern over a Copy struct omit fields (bug 321).
 
 A field binding written `_` in a variant or destructuring pattern holds its field's position, so
@@ -6644,6 +6670,14 @@ A variant is always written with its enum, `Option::Some { value }`, never `Some
 would make the parser depend on name resolution to know which enum it belongs to. A function
 parameter is a name with a type, never a pattern; the body destructures it.
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- PAT-3@3 and PAT-5@3 record OD25 (2026-10-29): ignoring a payload is always written, and a struct `let` names every field.
+
 
 <a id="ch-ownership"></a>
 ## Ownership
@@ -6696,10 +6730,7 @@ Every claim of "exactly once" here holds on every path that does not abort (STMT
 **Rationale.** Copy answers "may this be duplicated", not "may this be dropped". A generic
 declared `Copy` is Copy exactly at the instantiations whose type arguments are Copy:
 `Option<i32>` is, `Option<String>` is not. An instantiation that does not qualify is linear, not
-an error. Version 2 (TIGHTENING_DECISIONS D6, option (a), 2026-10-23) decides this from the
-declaration alone, as a derived `Copy` is: version 1 looked at the fields after substitution, so
-a parameter no field mentions (`struct Copy P<T> { n: Int }`) made every instantiation Copy, and
-Mono needed a fixpoint over the type graph. The declaration itself is checked once (OWN-14), and
+an error. This is decided from the declaration alone, as a derived `Copy` is (TIGHTENING_DECISIONS D6, option (a), 2026-10-23), so a parameter no field mentions cannot make an instantiation Copy and Mono needs no fixpoint over the type graph. The declaration itself is checked once (OWN-14), and
 TYPE-14 states the consequence.
 
 ### Rules
@@ -7343,15 +7374,9 @@ fn main() -> u8 {
 - Evidence: tested
 
 **Rationale.** `2 + 3;` or `f();` with a result is either a dead computation or a deliberate
-discard, and the reader cannot tell which; `discard(e)` says it. Version 2 (CapabilityJudgment slice
-5) flagged only syntactically pure values: it skipped calls, because an empty capability set does not
-prove a call pure (mutation through `&mut` and foreign effects are not capabilities), and operations
-that can trap (`/`, `%`). That is still the current compiler's behaviour: its site is `exprPureDiscardable`, a local
-structural purity predicate in the `Stmt.expr` check (`CheckError.discardedPureValue`).
+discard, and the reader cannot tell which; `discard(e)` says it.
 
-Version 3 records the owner's decision of 2026-10-29 (OD29): every unused non-Unit result needs
-`discard(e)`, and the syntactic purity heuristic of version 2 is removed. The current compiler refuses only a
-syntactically pure non-Unit Copy value (E0294) and drops a call's result silently (bug 325).
+The owner decided on 2026-10-29 (OD29) that every unused non-Unit result needs `discard(e)`, with no purity heuristic. The current compiler still applies version 2's heuristic: it refuses only a syntactically pure non-Unit Copy value (E0294), skipping calls and operations that can trap (`/`, `%`), and drops a call's result silently (bug 325). Its site is `exprPureDiscardable`, a local structural purity predicate in the `Stmt.expr` check (`CheckError.discardedPureValue`).
 
 
 ```con reject name=dead-computation code=E0294 stage=check pair=used-computation
@@ -7576,8 +7601,7 @@ fn main() -> u8 {
 - Evidence: tested
 
 **Rationale.** Mutation is visible at the declaration. A `&mut` parameter is already a mutable
-place, so writing through it needs no `mut` on the parameter. Version 2 records the owner's
-decision of 2026-10-29 (OD17): a field write requires a `mut` binding, as `&mut` of the field and a
+place, so writing through it needs no `mut` on the parameter. The owner decided on 2026-10-29 (OD17) that a field write requires a `mut` binding, as `&mut` of the field and a
 direct array element write already did. The current compiler still accepts a write into a field, a nested array
 element or a heap cell of a binding not declared `mut` (bug 216, which implements the rule), pinned
 by the pending example below.
@@ -7930,8 +7954,7 @@ fn main() -> u8 {
 
 **Rationale.** A Copy value is duplicated freely, so a linear field inside it would be duplicated
 with it. A generic declaration is checked once, with its type parameters taken as Copy, so a
-field that is linear whatever the arguments (`String`) is refused at the declaration (version 2;
-version 1 checked each instantiation and made a non-qualifying one linear).
+field that is linear whatever the arguments (`String`) is refused at the declaration.
 
 ```con reject name=copy-with-linear-field code=E0571 stage=core-check pair=copy-with-copy-fields
 struct S { x: Int }
@@ -8001,7 +8024,7 @@ which named three failure classes, each with its gate: **discard** (a value vani
 `check_linear_nested_scope.sh`). The cross-cutting ruling H17 (2026-07-05) made parameters owned
 locals, by-value `self` and `Destroy` bodies included.
 
-Version 3 records the owner's decision of 2026-10-29 (OD32): there is no receiver auto-borrow; a
+The owner decided on 2026-10-29 (OD32) that there is no receiver auto-borrow; a
 `&self` or `&mut self` method on an owned place is called as `(&s).m()` or `(&mut s).m()`, and a
 receiver that is already a reference is unchanged. The current compiler still borrows an owned receiver implicitly
 (bug 328); the `methodCall` row below states the decided form and notes the current compiler's behaviour. `break <expr>`
@@ -8229,6 +8252,18 @@ fn main() -> u8 {
     return 42;
 }
 ```
+
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- OWN-D1@1 looked at the fields after substitution, so a parameter no field mentions (`struct Copy P<T> { n: Int }`) made every instantiation Copy, and Mono needed a fixpoint over the type graph. OWN-D1@2 (TIGHTENING_DECISIONS D6, option (a), 2026-10-23) decides from the declaration alone.
+- OWN-7@2 (CapabilityJudgment slice 5) flagged only syntactically pure values: it skipped calls, because an empty capability set does not prove a call pure (mutation through `&mut` and foreign effects are not capabilities), and operations that can trap (`/`, `%`). OWN-7@3 records OD29 (2026-10-29), which removes the heuristic.
+- OWN-10@2 records OD17 (2026-10-29): a field write requires a `mut` binding.
+- OWN-14@1 checked each instantiation and made a non-qualifying one linear; OWN-14@2 refuses the declaration.
+- OWN-15@3 records OD32 (2026-10-29): no receiver auto-borrow.
 
 
 <a id="ch-references"></a>
@@ -8964,7 +8999,7 @@ the flow-sensitive half of the rules disappears. The rewrite is to borrow at eac
 (`f(&w.p); g(&w.p);`) or to borrow the owner in a borrow block. Writing *through* a reference
 (`*r = v`) assigns the referenced place, not the binding (REF-7).
 
-Version 2 states two refusals the current compiler already enforced under this entry's tag and code (E0302). A
+Two refusals besides the post-monomorphization one carry this entry's tag and code (E0302). A
 constant initializer is checked as an expression of the constant's type and may not
 borrow at all, a cast to a reference type counting as a borrow (`constBorrows`). A generic
 instantiated inside an `assert`, an `assume` or a ghost initializer may not be instantiated at a
@@ -9502,8 +9537,7 @@ fn main() -> u8 {
 mode used to depend on whether the payload is Copy, and monomorphization can change that
 property. Check and Elab disagreed about it (bug 181: a segfault in safe code at `T := Int`). With
 one mode that substitution cannot change, the class of bugs is gone. A whole-value binder (`n`
-in `match r { n => .. }`) is the scrutinee reference itself, so over `&mut T` it is `&mut T`
-(version 2; version 1 said `&T` for it too). A Copy payload is read with `*value`.
+in `match r { n => .. }`) is the scrutinee reference itself, so over `&mut T` it is `&mut T`. A Copy payload is read with `*value`.
 Literal and range patterns still compare the referenced value. The binder is a loan on the
 scrutinee's root for its arm (REF-8).
 The owner decided OD3 on 2026-10-29 as enforced here: the binder through a borrowed scrutinee is
@@ -9857,6 +9891,14 @@ from it (G19) is valid only while it lives; using one afterwards is outside safe
 (TRUST-3). The current compiler emits no alias assumption today (no `noalias` or alias metadata); the rule is
 pending until a gate checks that and the Core semantics defines loan lifetimes (R-0496).
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- REF-6@2 (spec audit 12, 2026-10-30) states two refusals the compiler already enforced under this entry's tag and code (E0302): a borrowing constant initializer and an erased generic instantiated at a type that could hold a reference.
+- REF-9@1 said a whole-value binder over `&mut T` is `&T` too; REF-9@2 makes it `&mut T`, the scrutinee reference itself.
 
 
 <a id="ch-memory"></a>
@@ -9983,12 +10025,9 @@ fn main() -> u8 {
 **Rationale.** A reference to any place, a heap shell included, denotes that place: `&h` and
 `&mut h` denote the slot `h`. Every consumer gives `e.f` this one meaning; a write through
 `&mut Heap<S>` once corrupted the caller's slot (bug 126). Deeper types (`& &S`)
-need an explicit `*`. Version 2, still the current compiler's behaviour, also opened one `Heap` layer implicitly (a
-`HeapArray<T>` only directly, not through a reference), without consuming the heap pointer.
+need an explicit `*`.
 
-Version 3 records the owner's decision of 2026-10-29 (OD30): a field access no longer opens a heap
-cell implicitly. The spelling of the explicit non-consuming place form is OPEN-36. The current compiler still reaches
-`f` through one `Heap` layer (`h.f` on `Heap<S>`, bug 326).
+The owner decided on 2026-10-29 (OD30) that a field access does not open a heap cell implicitly. The spelling of the explicit non-consuming place form is OPEN-36. The current compiler still opens one `Heap` layer implicitly (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer, so it reaches `f` through one `Heap` layer (`h.f` on `Heap<S>`, bug 326).
 
 
 ```con accept name=one-hop-field-access exit=42
@@ -10209,6 +10248,14 @@ fn main() -> u8 {
 
 }
 ```
+
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- MEM-4@2 opened one `Heap` layer implicitly in a field access (a `HeapArray<T>` only directly, not through a reference), without consuming the heap pointer. MEM-4@3 recorded OD30 (2026-10-29) and was retired before it was enforced; MEM-4@4 (spec audit 8, 2026-10-30) states the same decision and names OPEN-36 for the spelling of the explicit form.
 
 
 <a id="ch-traits"></a>
@@ -10765,7 +10812,7 @@ bound's methods on values of the parameter, and specialization then needs exactl
 argument needs an impl too, matched by its canonical type (`Int` and `i64` are one); before bug
 204 it was not checked, and the program ran when the body called no bound method.
 
-Version 2 records the owner's decision of 2026-10-29 (OD28): a `Destroy` bound is satisfied only by
+The owner decided on 2026-10-29 (OD28) that a `Destroy` bound is satisfied only by
 an impl, and a Copy value is discarded with `discard`. Arrays get one written impl or one language
 impl that is its own entry; which of the two is OPEN-35. The current compiler still counts every Copy type and every
 array of destroyable elements as `Destroy` (bug 324).
@@ -10877,6 +10924,14 @@ fn main() -> u8 {
     return 42;
 }
 ```
+
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- TRAIT-10@2 records OD28 (2026-10-29): a `Destroy` bound is satisfied only by an impl.
 
 
 <a id="ch-contracts"></a>
@@ -12840,8 +12895,7 @@ address. The decision was made in one place and recomputed in another, and nothi
 the two. REF-9 removes the Copy dependence from the rule. This entry requires the mode to be
 data in Core rather than recomputed: since 2026-10-23 a binder's Core type is its mode (a
 reference type is a borrowed binder), decided once from the scrutinee's type, and Lower and the
-interpreter read it from there. The re-check after Mono is the open obligation. Version 2 (the
-first enforced one) names the one case where the carried type changes under substitution: a
+interpreter read it from there. The re-check after Mono is the open obligation. The carried type changes under substitution in one case: a
 whole-value binder `n` over a scrutinee of type `T` at `T := &Int` gets a reference type, and
 Lower and the interpreter bind the scrutinee itself in both modes.
 
@@ -13331,6 +13385,13 @@ fn main() -> u8 {
 }
 ```
 
+### Version history
+
+This appendix is not normative. It records what earlier versions of this chapter's entries said
+or why they changed, so that each rationale explains the current version only. The registry,
+[ids.tsv](ids.tsv), keeps every version's state and sentence hash.
+
+- PASS-2@1 (retired before it was enforced) did not name the case where the carried type changes under substitution; PASS-2@2, the first enforced version, names it (a whole-value binder over a scrutinee of type `T` at `T := &Int`).
 
 
 <a id="ch-decisions"></a>
