@@ -12,7 +12,7 @@ checker refusal is a Check bug here.
 
 <!-- BEGIN GENERATED: bug areas (scripts/gen/bug_ledger.py; derived from the records, docs/bugs/area_map.tsv and git history, never edited here) -->
 
-302 records: 178 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 37 by commits shared with other bugs, 13 by the commit that filed or closed the record, 23 by an `area:` override; 14 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
+302 records: 179 placed by their own fix commits, 37 by the files their record names in commits shared with other bugs, 37 by commits shared with other bugs, 13 by the commit that filed or closed the record, 23 by an `area:` override; 13 open bugs are not fixed yet and 0 fixed bugs have no commit the history can place.
 
 ### By stage
 
@@ -31,8 +31,8 @@ checker refusal is a Check bug here.
 | Std | 8 | 0 | 0 | 0 | map 4, fs 2, libc 1, net 1 |
 | Tooling | 8 | 0 | 1 | 1 | Makefile 1, check_ll1 1, dispatch 1, farm 1 |
 | EmitLLVM | 7 | 0 | 3 | 4 | EmitBuiltins 5, EmitLLVM 1, Symbols 1 |
+| Gates | 7 | 0 | 1 | 0 | authority_facts 1, check_binder_refs 1, check_example_outputs 1, check_gate_lock 1 |
 | CLI | 6 | 0 | 2 | 1 | Main 4, Pipeline 1, PipelineTest 1 |
-| Gates | 6 | 0 | 0 | 0 | authority_facts 1, check_binder_refs 1, check_gate_lock 1, compile_scaling 1 |
 | SSA | 5 | 1 | 0 | 2 | SSACleanup 4, SSAVerify 1 |
 
 ### Structural class by stage (primary class)
@@ -49,7 +49,7 @@ checker refusal is a Check bug here.
 | 8. Storage, places and control flow decided ad hoc in `Lower` | 17 | Lower 14, Check 2, Elab 1 |
 | 9. Evidence verdicts computed per surface and joined to their subject by name | 4 | Proof 2, CLI 2 |
 | 10. Evidence identity computed from a partial subject | 5 | Proof 3, Elab 2 |
-| 11. Absence read as a fact (fail-open defaults) | 15 | Gates 4, Tooling 3, Resolve 2, Proof 2, Report 2, Check 1, SSA 1 |
+| 11. Absence read as a fact (fail-open defaults) | 16 | Gates 5, Tooling 3, Resolve 2, Proof 2, Report 2, Check 1, SSA 1 |
 | 12. One fact kept in two places | 29 | Resolve 11, Check 5, Interp 4, Elab 3, Parse 2, Proof 1, Std 1, CLI 1, Tooling 1 |
 | 13. Documented rules with no enforcing site | 26 | Check 12, Report 5, Resolve 4, Lower 3, Parse 1, Elab 1 |
 | 14. Trusted `std` and FFI code with no checked contract | 7 | Std 5, Parse 1, Check 1 |
@@ -83,7 +83,7 @@ checker refusal is a Check bug here.
 | permitted | 1 | Lower 1 |
 | outside (library) | 11 | Std 6, EmitLLVM 5 |
 | outside (performance) | 44 | Check 10, Lower 7, Parse 6, Elab 4, Interp 4, Resolve 3, SSA 3, EmitSSA 3, Proof 2, Mono 1, Report 1 |
-| outside (tooling) | 45 | Proof 12, Tooling 7, Gates 6, Check 4, Report 4, Elab 3, CLI 3, Interp 2, Parse 1, Resolve 1, SSA 1, Std 1 |
+| outside (tooling) | 46 | Proof 12, Tooling 7, Gates 7, Check 4, Report 4, Elab 3, CLI 3, Interp 2, Parse 1, Resolve 1, SSA 1, Std 1 |
 | unrecorded | 3 | Parse 1, Resolve 1, EmitSSA 1 |
 
 ### Every bug
@@ -391,6 +391,6 @@ checker refusal is a Check bug here.
 | [332](332_a_float_literal_of_type_f32_is_rounded_twice_thr.md) | Lower | Lower | record | — | violates ARITH-7@1 |
 | [333](333_an_extra_type_argument_to_a_body_less_generic_de.md) | Lower | Lower | record | — | violates TYPE-9@2 |
 | [341](341_two_modules_that_each_declare_main_pass_check_an.md) | — | — | unfixed | — | violates PASS-12@1 |
-| [342](342_the_diagnostic_code_completeness_gate_scans_a_fi.md) | — | — | unfixed | — | outside (tooling) |
+| [342](342_the_diagnostic_code_completeness_gate_scans_a_fi.md) | Gates | check_example_outputs | commits | — | outside (tooling) |
 
 <!-- END GENERATED: bug areas -->

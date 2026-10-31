@@ -124,13 +124,13 @@ fn main() -> u8 {
 the case C leaves undefined. Concrete never emits LLVM's `nsw` or `nuw`: checked operations use
 the overflow intrinsics and branch to an abort helper. This holds in every profile; a profile
 changes reports, never code generation (whether a profile may omit a check is OPEN-97). The
-fill of a right shift that does not abort is ARITH-8; how a division rounds and a remainder's sign are OPEN-114. Constant folding may refuse an operation it proves always overflows (E0900),
+fill of a right shift that does not abort is ARITH-8; how a division rounds and a remainder's sign are OPEN-114. Constant folding may refuse an operation it proves always overflows (ARITH-13, E0902),
 but it does not see every such operation, so the run-time trap is the guarantee. Array bounds are
 checked the same way, an index out of bounds aborting.
 
 For example `let c: u8 = 200 + 100` compiles and traps at run time: the folder proves overflow
-only for what it recognizes, so E0900 is a partial guarantee (`provenViolationDiagnostics`, the
-same path as a proven out-of-bounds index or zero divisor); completing the folder is ROADMAP #10.
+only for what it recognizes, so E0902 is a partial guarantee (`provenViolationDiagnostics`, the
+same path as a proven out-of-bounds index, E0900, or zero divisor, E0901); completing the folder is ROADMAP #10.
 
 Decided by the owner on 2026-10-29 (OD10): integer arithmetic is checked by default and the shift count is checked; wrapping and saturating arithmetic are named operations (ARITH-4), and an abort runs no deferred call (STMT-2).
 
@@ -596,6 +596,55 @@ fn main() -> u8 {
     let b: f64 = 2.0;
     let r: f64 = a % b;
     if r == -1.5 {
+        return 42;
+    }
+    return 1;
+}
+```
+
+<a id="ARITH-13"></a>
+### ARITH-13. A division by a proven zero or a proven overflow is refused
+
+**ARITH-13@1.** An integer `/` or `%` whose divisor the compiler proves zero, and an integer operation the compiler proves always overflows its type, are refused.
+
+- Kind: refusal
+- Uses: none
+- Codes: E0901 (runtime-safety), E0902 (runtime-safety)
+- Status: enforced
+- Enforced by: Concrete.Report.provenViolationDiagnostics
+- Semantics: none
+- Obligation: none
+- Evidence: tested
+
+**Rationale.** These are the compile-time half of ARITH-3's traps: what the compiler can decide
+is refused, and everything else traps at run time. E0901 is a divisor that evaluates to the
+constant zero. E0902 is reported only for an operation in a `#[overflow_checked]` function whose
+operands are constants of a known integer type; in the current compiler no program reaches it,
+because an operation whose operands are all literals has no type for the check to use (probed:
+`return (2147483647 as i32) + 1;` in an `#[overflow_checked]` function compiles), so `let c: u8 =
+200 + 100` traps at run time instead (ARITH-3). A function marked `trusted` or declaring `Unsafe`
+is not refused, which is OPEN-118.
+
+```con accept name=divisor-not-zero exit=42
+fn example_value() -> Int {
+    let n: Int = 84;
+    return n / 2;
+}
+fn main() -> u8 {
+    if example_value() == 42 {
+        return 42;
+    }
+    return 1;
+}
+```
+
+```con reject name=divisor-proven-zero code=E0901 stage=runtime-safety pair=divisor-not-zero
+fn example_value() -> Int {
+    let n: Int = 84;
+    return n / 0;
+}
+fn main() -> u8 {
+    if example_value() == 42 {
         return 42;
     }
     return 1;
